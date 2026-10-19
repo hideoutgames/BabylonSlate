@@ -10,6 +10,7 @@ import {
   sceneLayerFrustumSize,
   sceneLayerOrthoBounds,
   sceneLayerRelativeAnchorWorldPosition,
+  sceneLayerViewBounds,
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
 } from "./scene-layer";
@@ -239,7 +240,7 @@ describe("SceneLayer anchors and hit tests", () => {
         frustumWidth: 32,
         frustumHeight: 18,
       }),
-    ).toEqual({ x: 16, y: -9 });
+    ).toEqual({ x: 0, y: -9 });
     expect(
       sceneLayerRelativeAnchorWorldPosition({
         anchor: "bottomLeft",
@@ -250,7 +251,14 @@ describe("SceneLayer anchors and hit tests", () => {
         frustumWidth: 21.333333333333332,
         frustumHeight: 9,
       }),
-    ).toEqual({ x: 10.666666666666666, y: -4.5 });
+    ).toEqual({ x: 5.333333333333334, y: -4.5 });
+  });
+
+  it("widens the layer bounds to the viewport aspect without stretching them", () => {
+    expect(sceneLayerViewBounds({ width: 16, height: 9 }, 16 / 9)).toEqual({ width: 16, height: 9 });
+    expect(sceneLayerViewBounds({ width: 16, height: 9 }, 32 / 9)).toEqual({ width: 32, height: 9 });
+    expect(sceneLayerViewBounds({ width: 16, height: 9 }, 1)).toEqual({ width: 16, height: 16 });
+    expect(sceneLayerViewBounds({ width: 16, height: 9 }, Number.NaN)).toEqual({ width: 16, height: 9 });
   });
 
   it("walks overlay hits high-to-low, skipping Ignore and stopping on Block", () => {

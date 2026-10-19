@@ -20,7 +20,7 @@ function fixture() {
     guidSlot: (guid) => slots.guidSlot(guid),
     streams: () => ({ isStreamActor: (actor) => streamActors.has(actor) }),
     cursor: () => ({ x: 0, y: 0, pressed: false }),
-    overlay: () => ({ canvasSize: () => ({ width: 1, height: 1 }) }),
+    overlay: () => ({ canvasSize: () => ({ width: 1, height: 1 }), viewBounds: () => ({ width: 32, height: 18 }) }),
     physics: () => ({}) as never,
     emit: () => {},
   }));

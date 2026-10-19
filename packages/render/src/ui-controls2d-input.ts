@@ -60,8 +60,8 @@ export class UIControls2DInput {
     const size = this.size();
     const matrix = target.visual.mesh.computeWorldMatrix(true);
     if (Math.abs(matrix.determinant()) < 1e-12) return null;
-    const world = new Vector3((x / Math.max(1, size.width) - 0.5) * target.layer.layerBounds.width,
-      (0.5 - y / Math.max(1, size.height)) * target.layer.layerBounds.height, matrix.getTranslation().z);
+    const world = new Vector3((x / Math.max(1, size.width) - 0.5) * target.layer.viewBounds.width,
+      (0.5 - y / Math.max(1, size.height)) * target.layer.viewBounds.height, matrix.getTranslation().z);
     return Vector3.TransformCoordinates(world, Matrix.Invert(matrix));
   }
 

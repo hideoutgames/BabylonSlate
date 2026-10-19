@@ -247,7 +247,7 @@ export function sceneLayerFrustumSize(aspect: number): {
   return { width: height * safeAspect, height };
 }
 
-/** Play HUD ortho size: the orange design canvas, stretched to the framebuffer. */
+/** The orange design canvas (Layer Width × Height), defaulted when unset or invalid. */
 export function sceneLayerOrthoBounds(bounds?: {
   width?: number;
   height?: number;
@@ -262,6 +262,22 @@ export function sceneLayerOrthoBounds(bounds?: {
         ? bounds.height
         : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
   };
+}
+
+/**
+ * Play HUD ortho size: the design canvas widened or heightened to the
+ * viewport aspect, so it stays whole and centred and its content keeps its
+ * proportions. Anchors carry content out to the extra edges.
+ */
+export function sceneLayerViewBounds(
+  bounds: { width?: number; height?: number } | null | undefined,
+  aspect: number,
+): { width: number; height: number } {
+  const design = sceneLayerOrthoBounds(bounds);
+  if (!Number.isFinite(aspect) || aspect <= 0) return design;
+  return aspect >= design.width / design.height
+    ? { width: design.height * aspect, height: design.height }
+    : { width: design.width, height: design.width / aspect };
 }
 
 export function sceneLayerAnchorOrigin(
@@ -290,7 +306,11 @@ export function sceneLayerAnchorWorldPosition(
   };
 }
 
-/** Map a design-space XY from the orange layer bounds onto the Play frustum. */
+/**
+ * Map a design-space XY from the orange layer bounds onto the Play frustum:
+ * the anchor point moves to the matching frustum point and the actor keeps
+ * its authored distance from it, so nothing is scaled.
+ */
 export function sceneLayerRelativeAnchorWorldPosition(options: {
   anchor: SceneLayerAnchor;
   authoredX: number;
@@ -322,10 +342,7 @@ export function sceneLayerRelativeAnchorWorldPosition(options: {
   );
   const dx = options.authoredX + (options.offsetX ?? 0) - origin.x;
   const dy = options.authoredY + (options.offsetY ?? 0) - origin.y;
-  return {
-    x: screen.x + (dx / layerWidth) * frustumWidth,
-    y: screen.y + (dy / layerHeight) * frustumHeight,
-  };
+  return { x: screen.x + dx, y: screen.y + dy };
 }
 
 export type OverlayPointerHit = {

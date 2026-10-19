@@ -71,8 +71,8 @@ export class Joystick2DInput {
     if (Math.abs(matrix.determinant()) < 1e-12) { this.release(pointerId); return true; }
     // Layer XY and component-local XY can differ through layout, parenting, rotation and scale.
     Vector3.TransformCoordinatesFromFloatsToRef(0, 0, 0, matrix, scratchWorld);
-    scratchWorld.x = (x / Math.max(1, width) - 0.5) * capture.layer.layerBounds.width;
-    scratchWorld.y = (0.5 - y / Math.max(1, height)) * capture.layer.layerBounds.height;
+    scratchWorld.x = (x / Math.max(1, width) - 0.5) * capture.layer.viewBounds.width;
+    scratchWorld.y = (0.5 - y / Math.max(1, height)) * capture.layer.viewBounds.height;
     matrix.invertToRef(scratchInverse);
     const local = Vector3.TransformCoordinatesToRef(scratchWorld, scratchInverse, scratchLocal);
     const value = joystick2DValue(local.x, local.y, capture.visual.properties);

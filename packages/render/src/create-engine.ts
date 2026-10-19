@@ -3112,10 +3112,10 @@ function initializeEngine(
     const blockingLayer = sceneLayerCompositor?.pickHits(mapped.x, mapped.y).find(hit => hit.hitTest === "block")?.layerId;
     for (const layer of [...(sceneLayerCompositor?.sortedLayers() ?? [])].reverse()) {
       if (layerLoads.get(layer.layerId)?.ready === false) continue;
-      const worldX = (x / Math.max(1, size.width) - 0.5) * layer.layerBounds.width;
-      const worldY = (0.5 - y / Math.max(1, size.height)) * layer.layerBounds.height;
+      const worldX = (x / Math.max(1, size.width) - 0.5) * layer.viewBounds.width;
+      const worldY = (0.5 - y / Math.max(1, size.height)) * layer.viewBounds.height;
       const target = overlayLayouts.scrollAt(layer.layerId, worldX, worldY);
-      if (target?.componentId) return { target, layer, scaleX: layer.layerBounds.width / Math.max(1, size.width) / (target.scroll?.scaleX || 1), scaleY: layer.layerBounds.height / Math.max(1, size.height) / (target.scroll?.scaleY || 1) };
+      if (target?.componentId) return { target, layer, scaleX: layer.viewBounds.width / Math.max(1, size.width) / (target.scroll?.scaleX || 1), scaleY: layer.viewBounds.height / Math.max(1, size.height) / (target.scroll?.scaleY || 1) };
       if (layer.layerId === blockingLayer) break;
     }
     return undefined;

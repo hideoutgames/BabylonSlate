@@ -10,6 +10,7 @@ import {
   overlayLayoutKey,
   parseSceneLayerAnchor,
   sceneLayerRelativeAnchorWorldPosition,
+  sceneLayerViewBounds,
   type FocusNavigationSettings,
   type OverlaySafeAreaInsets,
 } from "@babylonslate/core";
@@ -20,6 +21,7 @@ import {
   hydrateClassVariableValue,
   type ActorComponent,
   type SceneActorHooks,
+  type SceneLayer,
   type World,
 } from "@babylonslate/object-model";
 import { actorParentGuid } from "./actor-world-transform";
@@ -97,6 +99,8 @@ export class SceneLayerOverlay {
   private safeAreaInsetsPixels: OverlaySafeAreaInsets = { left: 0, right: 0, top: 0, bottom: 0 };
   private canvasWidth = 1;
   private canvasHeight = 1;
+  /** Output width / height; unknown until the host first reports a size. */
+  private viewportAspect = Number.NaN;
   private spawnDepth = 0;
   private readonly deps: SceneLayerOverlayDeps;
   private readonly host: SceneLayerOverlayHost;
@@ -147,6 +151,11 @@ export class SceneLayerOverlay {
     return { width: this.canvasWidth, height: this.canvasHeight };
   }
 
+  /** A layer's Play ortho extent: its Layer Width × Height widened to the output aspect, as the compositor draws it. */
+  viewBounds(layer: SceneLayer | undefined): { width: number; height: number } {
+    return sceneLayerViewBounds(layer?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS, this.viewportAspect);
+  }
+
   /** Spawn, anchor and assign a Scene Layer's created actors in bounded passes. */
   *realizeActors(actors: readonly Actor[], checkpoint: () => void): Generator<void, void, unknown> {
     const world = this.deps.world;
@@ -194,11 +203,12 @@ export class SceneLayerOverlay {
     const texturePixelSizes = this.deps.texturePixelSizes;
     try {
       for (const layer of world.getSceneLayers()) {
+        const view = this.viewBounds(layer);
         const safeAreaInsets = {
-          left: this.safeAreaInsetsPixels.left * layer.layerBounds.width / this.canvasWidth,
-          right: this.safeAreaInsetsPixels.right * layer.layerBounds.width / this.canvasWidth,
-          top: this.safeAreaInsetsPixels.top * layer.layerBounds.height / this.canvasHeight,
-          bottom: this.safeAreaInsetsPixels.bottom * layer.layerBounds.height / this.canvasHeight,
+          left: this.safeAreaInsetsPixels.left * view.width / this.canvasWidth,
+          right: this.safeAreaInsetsPixels.right * view.width / this.canvasWidth,
+          top: this.safeAreaInsetsPixels.top * view.height / this.canvasHeight,
+          bottom: this.safeAreaInsetsPixels.bottom * view.height / this.canvasHeight,
         };
         let result = this.layout.update(layer.guid, this.layerActors(layer.guid), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets);
         // Only this layer's actors own its virtual items; the index holds them without scanning the World.
@@ -272,6 +282,7 @@ export class SceneLayerOverlay {
     const height = Number(frustumHeight);
     if (!Number.isFinite(width) || width <= 0) return;
     if (!Number.isFinite(height) || height <= 0) return;
+    this.viewportAspect = width / height;
     if (typeof canvasWidth === "number" && canvasWidth > 0) {
       this.canvasWidth = canvasWidth;
     }
@@ -488,6 +499,7 @@ export class SceneLayerOverlay {
     };
     const layer = this.deps.world.findSceneLayer(actor.sceneLayerId!);
     const bounds = layer?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
+    const view = this.viewBounds(layer);
     const pos = sceneLayerRelativeAnchorWorldPosition({
       anchor: parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
       authoredX: authored.x,
@@ -496,8 +508,8 @@ export class SceneLayerOverlay {
       offsetY: Number(anchorComp.getVariable("offsetY")) || 0,
       layerWidth: bounds.width,
       layerHeight: bounds.height,
-      frustumWidth: bounds.width,
-      frustumHeight: bounds.height,
+      frustumWidth: view.width,
+      frustumHeight: view.height,
     });
     actor.transform.position.x = pos.x;
     actor.transform.position.y = pos.y;

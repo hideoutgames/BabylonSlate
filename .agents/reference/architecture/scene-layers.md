@@ -28,7 +28,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Content Browser type `SceneLayer` → document kind `scene-layer`: actors, folders, 2D gravity, `physicsEnabled` (default false), post-process stack, `layerBounds` (default 32×18). Always 2D.
 - The editor tab converts to a locked 2D `SerializedScene` so Viewport / Outliner / Inspector reuse the scene shell; Save converts back. `physicsEnabled` travels as editor-only `layerPhysicsEnabled`.
 - The tab is one locked 2D Unlit viewport with an opaque black clear, not the Play compositor. It hides the 3D/2D toggle, Move/Rotate/Scale and shading menu, and omits Default Camera, fog/IBL, lights and the physics-world picker.
-- Layer Width/Height (the orange frame, `cameraBounds2D` in editor, `layerBounds` on disk) is the design canvas. Play stretches it to the full viewport; authoring is WYSIWYG.
+- Layer Width/Height (the orange frame, `cameraBounds2D` in editor, `layerBounds` on disk) is the design canvas. Play never stretches it: the HUD ortho is the canvas widened (or heightened) to the output aspect (`sceneLayerViewBounds`), so it stays whole and centred at uniform scale; authoring is WYSIWYG.
 - Selection uses the 2D transform box (`overlay-box`). Resize writes actor XY scale; on 2D Text / Rich Text it writes `wrapWidth` / `wrapHeight` instead. A multi-selection frames the visuals of every selected root in the attached root's space (`selectionBoxVisuals` in `create-engine.ts`); the others follow through the gizmo multi-select world delta, which runs before the box re-lays out on each drag step.
 
 ## Object model and placement
@@ -42,7 +42,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 ## Runtime and render
 
 - Readiness is per layer instance: `sceneLayerLoading` → `sceneLayerRealized` → `sceneLayerReady` for that exact load id. Begin Play, ticks, physics and playback wait for owner readiness; late acknowledgements for removed/superseded ids are ignored. Create Scene Layer resolves when ready (30 s deadline).
-- Each layer camera is an independent orthographic HUD camera at `(0, 0, -10)` with `±layerBounds/2` ortho. Never parent overlay cameras or meshes to the world camera or copy world view/projection; re-bind the pose if another owner changed it.
+- Each layer camera is an independent orthographic HUD camera at `(0, 0, -10)` with `±viewBounds/2` ortho (`SceneLayerView.viewBounds`, recomputed on resize; picking, pointer, scroll, joystick, safe-area and cursor-projection maths use the same extent). Never parent overlay cameras or meshes to the world camera or copy world view/projection; re-bind the pose if another owner changed it.
 - Draw order: world, then layers by `zOrder` (ties by instance id). Layers without PP clear depth only; layers with PP render to an RTT through the coordinator FrameGraph, then alpha-composite (targets keep alpha).
 - Overlay identity is `sceneLayerId` / `SNAPSHOT_FLAG_OVERLAY` / overlay-only mesh kind. Overlay visuals never instantiate on the world Scene; leftover `actor-*` world copies are disposed.
 - `2DTexture` / `2DMaterial` share the Engine `ResourceCache`; overlay sampling must not steal a world texture wrapper. Overlay materials compile scene-local unlit (separate cache key).
@@ -57,7 +57,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 
 ## Components with fixed contracts
 
-- `2DAnchor` maps from `layerBounds` onto the Play frustum (identity plus offset). The uppermost anchor in a subtree wins; anchors never bake into positions.
+- `2DAnchor` maps from `layerBounds` onto the Play view bounds: the anchor point moves to the matching view point and the actor keeps its authored distance from it (identity plus offset, never scaled). Unanchored actors keep design positions around the centre. The uppermost anchor in a subtree wins; anchors never bake into positions.
 - 2D Text / Rich Text use glyph-quad meshes (Bitmap default, MSDF when the Font has both chunks), not Babylon GUI or `TextRenderer`. Size is px / `pixelsPerUnit`.
 - Style (Opacity / Tint) and component motion travel separately from structural mesh assignments, so tweens never rebuild visuals.
 - 2D Painter, Joystick, form controls, virtualized collections and masks are overlay-only; script-generated painter commands are never written back to the project.

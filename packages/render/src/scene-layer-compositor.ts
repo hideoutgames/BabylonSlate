@@ -21,6 +21,7 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import {
   parseSceneLayerHitTest,
   sceneLayerOrthoBounds,
+  sceneLayerViewBounds,
   walkOverlayPointerHits,
   type OverlayPointerHit,
   type SceneLayerHitTest,
@@ -51,7 +52,8 @@ export interface SceneLayerView {
   zOrder: number;
   scene: Scene;
   camera: UniversalCamera;
-  layerBounds: { width: number; height: number };
+  /** The ortho extent drawn and picked: Layer Width × Height widened to the output aspect. */
+  viewBounds: { width: number; height: number };
 }
 
 export interface SceneLayerCompositorOptions {
@@ -73,6 +75,8 @@ interface HudCameraPose {
 }
 
 type LayerRecord = SceneLayerView & {
+  /** The authored Layer Width × Height. */
+  designBounds: { width: number; height: number };
   /** Null until the first bind. */
   hudPose: HudCameraPose | null;
   renderer: SceneRenderCoordinator;
@@ -140,7 +144,8 @@ export class SceneLayerCompositor {
       scene,
       camera,
       renderer: new SceneRenderCoordinator(scene),
-      layerBounds: sceneLayerOrthoBounds(command.layerBounds),
+      designBounds: sceneLayerOrthoBounds(command.layerBounds),
+      viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
       hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
@@ -272,6 +277,7 @@ export class SceneLayerCompositor {
     const height = Math.max(1, this.engine.getRenderHeight(true));
     if (width === this.outputWidth && height === this.outputHeight) return;
     for (const layer of this.byId.values()) {
+      layer.viewBounds = sceneLayerViewBounds(layer.designBounds, width / height);
       this.bindHudCamera(layer, true);
       if (layer.rtt) {
         const previous = layer.rtt.getSize();
@@ -281,6 +287,10 @@ export class SceneLayerCompositor {
     }
     this.outputWidth = width;
     this.outputHeight = height;
+  }
+
+  private outputAspect(): number {
+    return Math.max(1, this.engine.getRenderWidth(true)) / Math.max(1, this.engine.getRenderHeight(true));
   }
 
   retainResources(): () => void {
@@ -402,11 +412,11 @@ export class SceneLayerCompositor {
       this.bindHudCamera(layer);
       // The pointer is in pick space (render size x hardware scaling level), as `scene.pick` expects.
       const pickSize = pickBufferSize(layer.scene);
-      const pickWorld = overlayCanvasToWorld(canvasX, canvasY, pickSize.width, pickSize.height, layer.layerBounds.width / 2, layer.layerBounds.height / 2);
+      const pickWorld = overlayCanvasToWorld(canvasX, canvasY, pickSize.width, pickSize.height, layer.viewBounds.width / 2, layer.viewBounds.height / 2);
       const minWorld = overlayMinTargetWorldSize(
         options?.minTargetPx ?? 0,
         options?.canvasCssHeight ?? 0,
-        layer.layerBounds.height,
+        layer.viewBounds.height,
       );
       const touch = minWorld > 0;
       const pickable = (mesh: AbstractMesh) => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y);
@@ -609,14 +619,14 @@ export class SceneLayerCompositor {
       const posed = pose.quaternion;
       if (!posed || quaternion.x !== posed[0] || quaternion.y !== posed[1] || quaternion.z !== posed[2] || quaternion.w !== posed[3]) return false;
     } else if (pose.quaternion) return false;
-    const halfW = layer.layerBounds.width / 2;
-    const halfH = layer.layerBounds.height / 2;
+    const halfW = layer.viewBounds.width / 2;
+    const halfH = layer.viewBounds.height / 2;
     return camera.orthoTop === halfH && camera.orthoBottom === -halfH && camera.orthoLeft === -halfW && camera.orthoRight === halfW;
   }
 
   private applyOrtho(layer: LayerRecord): void {
-    const halfW = layer.layerBounds.width / 2;
-    const halfH = layer.layerBounds.height / 2;
+    const halfW = layer.viewBounds.width / 2;
+    const halfH = layer.viewBounds.height / 2;
     layer.camera.orthoTop = halfH;
     layer.camera.orthoBottom = -halfH;
     layer.camera.orthoLeft = -halfW;
