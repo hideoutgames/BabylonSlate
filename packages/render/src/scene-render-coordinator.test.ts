@@ -110,6 +110,28 @@ describe("deferred WebGPU pipelines", () => {
     expect(starts()).toBe(true);
     renderer.dispose();
   });
+
+  it("ends a hold on invalidation: a switched scene's first frame neither waits for the old pipelines nor inherits an expired cap", async () => {
+    const { renderer } = host(true);
+    await renderer.prepare();
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const begin = scopes(() => 1, () => true);
+    const starts = () => (begin.mock.calls.at(-1)?.[2] as { startsDeferrals?: boolean } | undefined)?.startsDeferrals;
+    renderer.render();
+    expect(renderer.holdingForPipelines).toBe(true);
+    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
+    renderer.invalidate();
+    expect(renderer.holdingForPipelines).toBe(false);
+    await renderer.prepare();
+    // The old scene's pipelines are still pending, yet the new scene's first frame opens its own scope.
+    const frames = begin.mock.calls.length;
+    scopes(() => 0, () => false);
+    expect(renderer.render()).toMatchObject({ rendered: true });
+    expect(begin).toHaveBeenCalledTimes(frames + 1);
+    expect(starts()).toBe(true);
+    renderer.dispose();
+  });
 });
 
 function holdGraphInitialization() {

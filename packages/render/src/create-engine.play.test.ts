@@ -600,12 +600,17 @@ describe("Play createEngine view", () => {
     frame();
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    // A SceneLayer created mid-hold joins the pause instead of running its clock.
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
+    expect(isSceneGameTimePaused(layerScene)).toBe(true);
     // The frame that finds the pipelines ready must still draw.
     expect(handle.scheduler.shouldRender(Number.MAX_SAFE_INTEGER)).toBe(true);
     holding.mockReturnValue(false);
     frame();
     expect(holds).toEqual([true, false]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+    expect(isSceneGameTimePaused(layerScene)).toBe(false);
   });
 
   it("keeps manual Pause and blocking streaming pauses independent", () => {
