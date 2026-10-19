@@ -45,7 +45,8 @@ export const VOLUME_SHADOW_CODE = { none: 0, compare: 1, cube: 2, packedCube: 3,
 /**
  * Every slot can compare a single map (sun or spot light) and read a cube map (point light); only the first reads a
  * cascaded map. The one sun that illuminates ranks before every local light, so it always takes the first slot, and
- * the sampler count stays at 2 × Max Lights + 1 (11 at four lights, within the 16 a fragment stage is guaranteed).
+ * the march's samplers stay at 2 × Max Lights + 3 with its depth and source (11 at four lights, within the 16 a
+ * fragment stage is guaranteed).
  */
 export function volumeSlotSamples(slot: number, kind: VolumeShadow["kind"]): boolean {
   return kind !== "cascades" || slot === 0;
