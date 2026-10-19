@@ -30,55 +30,205 @@ export type VolumeShadow = {
 };
 
 /**
- * Bounded, deterministic selection; borrowed cluster children stay eligible. Distance chooses which lights take part,
- * not their slots: the selected lights take slots by id, so lights crossing in distance change neither the shader
- * layout nor its key.
+ * What the march's shader bakes in about its lights: the shadow sampler shape of each slot, in slot order. A slot
+ * reads its light's type, position, direction, color and range from uniforms, so any light whose shadow has the slot's
+ * shape can take it, and the layout names no light.
  */
+export type VolumetricLayout = readonly VolumeShadow[];
+
+/** The lights taking the march's slots, in slot order, with their current shadow shapes (both valid below `count`). */
+export interface VolumetricSlots {
+  readonly lights: (VolumeLight | undefined)[];
+  readonly shapes: VolumeShadow[];
+  count: number;
+}
+
+export function createVolumetricSlots(): VolumetricSlots {
+  return { lights: [], shapes: [], count: 0 };
+}
+
+const SHADOW_KIND_RANK = { none: 0, compare: 1, cube: 2, cascades: 3 } as const;
+
+/** The canonical order of slot shapes: sampler kind, then cascade count, then packed depth. */
+export function compareVolumeShadows(a: VolumeShadow, b: VolumeShadow): number {
+  return (
+    SHADOW_KIND_RANK[a.kind] - SHADOW_KIND_RANK[b.kind] ||
+    a.cascades - b.cascades ||
+    Number(a.packed) - Number(b.packed)
+  );
+}
+
+// Selection scratch, emptied before each fill returns so no light stays retained.
+const picked: (VolumeLight | undefined)[] = [];
+const pickedDistance: number[] = [];
+
+/** Whether `a` outranks `b` for a place among the lights taking part: directional lights first, then render
+ * priority, then nearest to the camera. */
+function outranks(a: VolumeLight, distanceA: number, b: VolumeLight, distanceB: number): boolean {
+  return (
+    (Number(b instanceof DirectionalLight) - Number(a instanceof DirectionalLight) ||
+      b.renderPriority - a.renderPriority ||
+      distanceA - distanceB ||
+      a.uniqueId - b.uniqueId) < 0
+  );
+}
+
+/**
+ * Fills `slots` with the lights that take part, in the canonical slot order: by shadow shape, then by creation. Bounded
+ * and deterministic; borrowed cluster children stay eligible. Distance (with directional lights and render priority)
+ * chooses which lights take part, not their slots, so lights crossing in distance or swapping places change neither the
+ * shader layout nor the slots' shapes. Allocates nothing once the scratch has grown to the light count.
+ */
+export function fillVolumetricSlots(
+  slots: VolumetricSlots,
+  scene: Scene,
+  camera: Camera,
+  settings: VolumetricLightingSettings,
+): void {
+  const limit = settings.maxLights;
+  const previous = slots.count;
+  let count = 0;
+  if (scene.lightsEnabled) {
+    const lights = sceneEffectLights(scene);
+    for (let index = 0; index < lights.length; index++) {
+      const light = lights[index]!;
+      if (
+        !(
+          light instanceof DirectionalLight ||
+          light instanceof PointLight ||
+          light instanceof SpotLight
+        ) ||
+        !isAuthoredLightEnabled(light) ||
+        light.intensity <= 0 ||
+        light.isDisposed() ||
+        isDirectionalLightExcluded(light) ||
+        isForwardLightExcluded(light) ||
+        !isClusteredLocalAllowed(scene, light) ||
+        (light.parent && !light.parent.isEnabled())
+      )
+        continue;
+      // A parent moved since its world matrix was cached; recomputing an unchanged one would invalidate its subtree.
+      if (light.parent && !light.parent.isSynchronized()) light.parent.computeWorldMatrix(true);
+      const transformed = light.computeTransformedInformation();
+      const distance =
+        light instanceof DirectionalLight
+          ? -1
+          : Vector3.DistanceSquared(
+              transformed ? light.transformedPosition : light.position,
+              camera.globalPosition,
+            );
+      if (distance > (settings.maxDistance + light.range) ** 2) continue;
+      // Insert among the best `limit` so far, shifting the tail (and dropping the last when full).
+      let at = count;
+      while (at > 0 && outranks(light, distance, picked[at - 1]!, pickedDistance[at - 1]!)) at--;
+      if (at >= limit) continue;
+      for (let i = count < limit ? count : limit - 1; i > at; i--) {
+        picked[i] = picked[i - 1];
+        pickedDistance[i] = pickedDistance[i - 1]!;
+      }
+      picked[at] = light;
+      pickedDistance[at] = distance;
+      if (count < limit) count++;
+    }
+  }
+  for (let i = 0; i < count; i++) {
+    const light = picked[i]!;
+    picked[i] = undefined;
+    slots.lights[i] = light;
+    volumeShadowLayout(scene, light, (slots.shapes[i] ??= { kind: "none", cascades: 0, packed: false }));
+  }
+  slots.count = count;
+  for (let i = count; i < previous; i++) slots.lights[i] = undefined;
+  // Insertion sort by shape, then creation: at most `maxLights` entries, each moving its light and shape together.
+  for (let i = 1; i < count; i++) {
+    const light = slots.lights[i]!;
+    const shape = slots.shapes[i]!;
+    let at = i;
+    while (
+      at > 0 &&
+      (compareVolumeShadows(shape, slots.shapes[at - 1]!) || light.uniqueId - slots.lights[at - 1]!.uniqueId) < 0
+    ) {
+      slots.lights[at] = slots.lights[at - 1];
+      slots.shapes[at] = slots.shapes[at - 1]!;
+      at--;
+    }
+    slots.lights[at] = light;
+    slots.shapes[at] = shape;
+  }
+}
+
+/** Whether the shapes in `slots` are exactly the layout, slot by slot. */
+export function volumetricSlotsMatch(slots: VolumetricSlots, layout: VolumetricLayout): boolean {
+  if (slots.count !== layout.length) return false;
+  for (let i = 0; i < slots.count; i++) if (compareVolumeShadows(slots.shapes[i]!, layout[i]!) !== 0) return false;
+  return true;
+}
+
+/**
+ * Whether these lights, in slot order, still have the shadow shapes the layout was compiled for: none disposed, and
+ * each light's map is the sampler kind of its slot. `scratch` receives the current shapes.
+ */
+export function lightsFillVolumetricLayout(
+  scene: Scene,
+  lights: readonly (VolumeLight | undefined)[],
+  layout: VolumetricLayout,
+  scratch: VolumeShadow,
+): boolean {
+  for (let i = 0; i < layout.length; i++) {
+    const light = lights[i];
+    if (!light || light.isDisposed() || compareVolumeShadows(volumeShadowLayout(scene, light, scratch), layout[i]!) !== 0)
+      return false;
+  }
+  return true;
+}
+
+/** The layout of the shapes in `slots`, as storage of its own. */
+export function volumetricLayoutOf(slots: VolumetricSlots): VolumeShadow[] {
+  return slots.shapes.slice(0, slots.count).map(({ kind, cascades, packed }) => ({ kind, cascades, packed }));
+}
+
+/** Shared by the queries below; it keeps no light between calls. */
+const queried = createVolumetricSlots();
+function releaseQueried(): void {
+  for (let i = 0; i < queried.count; i++) queried.lights[i] = undefined;
+  queried.count = 0;
+}
+
+/** The lights taking part, in slot order. */
 export function selectVolumetricLights(
   scene: Scene,
   camera: Camera,
   settings: VolumetricLightingSettings,
 ): VolumeLight[] {
-  if (!scene.lightsEnabled) return [];
-  const candidates: { light: VolumeLight; distance: number }[] = [];
-  for (const light of sceneEffectLights(scene)) {
-    if (
-      !(
-        light instanceof DirectionalLight ||
-        light instanceof PointLight ||
-        light instanceof SpotLight
-      ) ||
-      !isAuthoredLightEnabled(light) ||
-      light.intensity <= 0 ||
-      light.isDisposed() ||
-      isDirectionalLightExcluded(light) ||
-      isForwardLightExcluded(light) ||
-      !isClusteredLocalAllowed(scene, light) ||
-      (light.parent && !light.parent.isEnabled())
-    )
-      continue;
-    // A parent moved since its world matrix was cached; recomputing an unchanged one would invalidate its subtree.
-    if (light.parent && !light.parent.isSynchronized()) light.parent.computeWorldMatrix(true);
-    const transformed = light.computeTransformedInformation();
-    const distance =
-      light instanceof DirectionalLight
-        ? -1
-        : Vector3.DistanceSquared(
-            transformed ? light.transformedPosition : light.position,
-            camera.globalPosition,
-          );
-    if (distance > (settings.maxDistance + light.range) ** 2) continue;
-    candidates.push({ light, distance });
-  }
-  candidates.sort(
-    (a, b) =>
-      Number(b.light instanceof DirectionalLight) -
-        Number(a.light instanceof DirectionalLight) ||
-      b.light.renderPriority - a.light.renderPriority ||
-      a.distance - b.distance ||
-      a.light.uniqueId - b.light.uniqueId,
-  );
-  return candidates.slice(0, settings.maxLights).map(({ light }) => light).sort((a, b) => a.uniqueId - b.uniqueId);
+  fillVolumetricSlots(queried, scene, camera, settings);
+  const lights = queried.lights.slice(0, queried.count) as VolumeLight[];
+  releaseQueried();
+  return lights;
+}
+
+/** The layout the march would be compiled for now. */
+export function volumetricLayout(
+  scene: Scene,
+  camera: Camera,
+  settings: VolumetricLightingSettings,
+): VolumeShadow[] {
+  fillVolumetricSlots(queried, scene, camera, settings);
+  const layout = volumetricLayoutOf(queried);
+  releaseQueried();
+  return layout;
+}
+
+/** Whether a march compiled for `built` can bind the lights taking part now. Allocation-free. */
+export function volumetricLayoutMatches(
+  scene: Scene,
+  camera: Camera,
+  settings: VolumetricLightingSettings,
+  built: VolumetricLayout,
+): boolean {
+  fillVolumetricSlots(queried, scene, camera, settings);
+  const matches = volumetricSlotsMatch(queried, built);
+  releaseQueried();
+  return matches;
 }
 
 export function volumeShadowGenerator(
@@ -120,35 +270,15 @@ export function volumeShadowLayout(
   return out;
 }
 
-/** Sampler topology changes reprepare shaders; motion/color never recompile. */
-export function volumetricLayoutKey(
-  scene: Scene,
-  camera: Camera,
-  settings: VolumetricLightingSettings,
-): string {
-  return volumetricLightsLayoutKey(scene, selectVolumetricLights(scene, camera, settings));
-}
-
-/** The layout key of these lights in these slots, with their current shadow maps. */
-export function volumetricLightsLayoutKey(
-  scene: Scene,
-  lights: readonly VolumeLight[],
-): string {
-  return lights
-    .map((light) => {
-      const layout = volumeShadowLayout(scene, light);
-      return `${light.uniqueId}:${layout.kind}:${layout.cascades}:${Number(layout.packed)}`;
-    })
-    .join(",");
-}
-
+/** Binds the lights to the layout's slots in order; each light's shadow shape must be its slot's. */
 export function bindVolumetricLights(
   effect: Effect,
   scene: Scene,
   camera: Camera,
-  lights: readonly VolumeLight[],
+  lights: readonly (VolumeLight | undefined)[],
+  layout: VolumetricLayout,
 ): void {
-  for (let i = 0; i < lights.length; i++) {
+  for (let i = 0; i < layout.length; i++) {
     const light = lights[i]!;
     const transformed = light.computeTransformedInformation();
     const position = transformed ? light.transformedPosition : light.position;
@@ -188,9 +318,9 @@ export function bindVolumetricLights(
       spot ? light.exponent : 1,
     );
     // Maps remain controller-owned and can be replaced during admission. Resolve
-    // and bind the current map here, after the graph's managed shadow task.
-    const generator = volumeShadowGenerator(scene, light);
-    generator?.bindShadowLight(String(i), effect);
+    // and bind the current map here, after the graph's managed shadow task. A slot
+    // compiled without a shadow has no sampler to bind, whatever map its light has.
+    if (layout[i]!.kind !== "none") volumeShadowGenerator(scene, light)?.bindShadowLight(String(i), effect);
     const min = light.getDepthMinZ(camera);
     effect.setFloat2(`volumeDepth${i}`, min, min + light.getDepthMaxZ(camera));
   }
