@@ -43,16 +43,16 @@ export async function finalizeTestFlight({ identity, appId, group, timeoutMs = 2
       state = appleAvailability(build.attributes.processingState, betaState, false);
       if (state === "failed" || build.attributes.expired === true) return { state: "failed", buildNumber: identity.appleBuildNumber };
       if (build.attributes.processingState === "VALID" && state !== "processing") {
-        const localizations = await allApplePages(api, `/v1/buildBetaLocalizations?filter[build]=${encodeURIComponent(build.id)}&limit=200`);
+        const localizations = await allApplePages(api, `/v1/betaBuildLocalizations?filter[build]=${encodeURIComponent(build.id)}&limit=200`);
         const existing = localizations.find(item => item.attributes.locale === "en-US");
         if (existing?.attributes.whatsNew?.includes("Source:") && !existing.attributes.whatsNew.includes(`Source: ${identity.sourceSha}`)) throw new Error("Existing TestFlight source identity differs; do not relabel a binary");
         const whatsNew = `${identityNotes(identity)}\n\nExercise project creation, native storage and reopen, scene/graph editing, Play/Stop, audio and workers. ${identity.channel === "test" ? "Project policy: do not select this Indev build for the App Store." : "Release candidate for validation; no App Store submission is authorized."}`;
-        if (existing) await api(`/v1/buildBetaLocalizations/${existing.id}`, { method: "PATCH", body: { data: { type: "buildBetaLocalizations", id: existing.id, attributes: { whatsNew } } } });
-        else await api("/v1/buildBetaLocalizations", { method: "POST", body: { data: { type: "buildBetaLocalizations", attributes: { locale: "en-US", whatsNew }, relationships: { build: { data: { type: "builds", id: build.id } } } } } });
-        const assignedGroups = await allApplePages(api, `/v1/builds/${build.id}/betaGroups?limit=200`);
+        if (existing) await api(`/v1/betaBuildLocalizations/${existing.id}`, { method: "PATCH", body: { data: { type: "betaBuildLocalizations", id: existing.id, attributes: { whatsNew } } } });
+        else await api("/v1/betaBuildLocalizations", { method: "POST", body: { data: { type: "betaBuildLocalizations", attributes: { locale: "en-US", whatsNew }, relationships: { build: { data: { type: "builds", id: build.id } } } } } });
+        const assignedGroups = await allApplePages(api, `/v1/betaGroups?filter[builds]=${encodeURIComponent(build.id)}&limit=200`);
         if (assignedGroups.some(item => item.id !== group.id)) throw new Error("Build is assigned to an unexpected TestFlight group; inspect group settings");
         if (!assignedGroups.some(item => item.id === group.id)) await api(`/v1/betaGroups/${group.id}/relationships/builds`, { method: "POST", body: { data: [{ type: "builds", id: build.id }] } });
-        const membership = await allApplePages(api, `/v1/builds/${build.id}/betaGroups?limit=200`);
+        const membership = await allApplePages(api, `/v1/betaGroups?filter[builds]=${encodeURIComponent(build.id)}&limit=200`);
         const assigned = membership.some(item => item.id === group.id);
         state = appleAvailability(build.attributes.processingState, betaState, assigned);
         // External Beta App Review is explicitly reported, never App Store submission.
