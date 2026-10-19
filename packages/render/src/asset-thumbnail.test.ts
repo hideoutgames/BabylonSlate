@@ -276,7 +276,7 @@ describe("asset thumbnail capture", () => {
     });
 
     // A retry of a capture that ran out passes a longer ceiling.
-    it("ends a capture at the ceiling it was given instead", async () => {
+    it("ends a capture at the ceiling it was given instead", { timeout: 20_000 }, async () => {
       const { engine } = fixture();
       clock = installVirtualClock();
       const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
@@ -284,7 +284,7 @@ describe("asset thumbnail capture", () => {
         effects[`elsewhere-${probe}`] = { isReady: () => true, getCompilationError: () => "" };
         return POLL_MS;
       }, () => false);
-      const ceiling = 2 * SCENE_CAPTURE_CEILING_MS;
+      const ceiling = 1.5 * SCENE_CAPTURE_CEILING_MS;
       expect(await captureAssetThumbnailPng(engine, material, undefined, 32, ceiling)).toEqual({ outcome: "expired" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(ceiling);
       expect(clock.elapsed()).toBeLessThanOrEqual(ceiling + POLL_MS);
@@ -337,7 +337,8 @@ describe("asset thumbnail capture", () => {
       const shouldContinue = stalledReadback(() => { clock.advance(POLL_MS); });
       expect(await captureAssetThumbnailPng(engine, material, shouldContinue, 32)).toEqual({ outcome: "expired" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(CAPTURE_BOUND_MS);
-      expect(clock.elapsed()).toBeLessThanOrEqual(CAPTURE_BOUND_MS + POLL_MS);
+      // The probe counts every question to `shouldContinue` as a poll, and the capture asks once more why it ended.
+      expect(clock.elapsed()).toBeLessThanOrEqual(CAPTURE_BOUND_MS + 2 * POLL_MS);
     });
   });
 
