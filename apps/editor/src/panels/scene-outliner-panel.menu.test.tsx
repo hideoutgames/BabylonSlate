@@ -7,6 +7,7 @@ import { createActor, createDefaultScene } from "@babylonslate/core";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 import { SceneEditingProvider } from "../context/scene-editing-context";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
+import { KeybindProvider } from "../context/keybind-context";
 
 if (
   typeof window !== "undefined" &&
@@ -123,9 +124,9 @@ afterEach(() => {
 describe("SceneOutlinerPanel menus", () => {
   it("pastes a copied actor into an empty scene after switching documents", async () => {
     harness.scene = { ...createDefaultScene(), actors: [createActor("actor-1", "Copied Cube")] };
-    const panel = () => <EditorSessionStateProvider><SceneEditingProvider>
+    const panel = () => <KeybindProvider><EditorSessionStateProvider><SceneEditingProvider>
       <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
-    </SceneEditingProvider></EditorSessionStateProvider>;
+    </SceneEditingProvider></EditorSessionStateProvider></KeybindProvider>;
     const view = render(panel());
     fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
@@ -134,7 +135,9 @@ describe("SceneOutlinerPanel menus", () => {
     harness.documentPath = "assets/Empty.scene.babasset";
     harness.scene = { ...createDefaultScene(), actors: [] };
     view.rerender(panel());
-    fireEvent.click(screen.getByTestId("outliner-paste-actors"));
+    const tree = screen.getByRole("tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "v", code: "KeyV", ctrlKey: true });
     await waitFor(() => expect(applySceneChange).toHaveBeenCalledOnce());
     const [documentId, pasted] = applySceneChange.mock.calls[0]!;
     expect(documentId).toBe("scene:assets/Empty.scene.babasset");
