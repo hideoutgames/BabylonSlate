@@ -410,6 +410,11 @@ export interface EngineHandle {
     scene: Scene;
     zOrder: number;
   }>;
+  /**
+   * Every Scene this view owns that is still alive: the world Scene and everything the SceneLayer
+   * compositor built (layer Scenes and their output-blit Scenes, retired generations still releasing).
+   */
+  ownedScenes: () => Scene[];
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
   /** Prepared FrameGraph task names in record order, or [] before preparation. */
@@ -4308,6 +4313,7 @@ function initializeEngine(
         scene: layer.scene,
         zOrder: layer.zOrder,
       })),
+    ownedScenes: () => [scene, ...(sceneLayerCompositor?.ownedScenes() ?? [])],
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;

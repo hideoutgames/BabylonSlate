@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, RawTexture, Scene, StandardMaterial } from "@babylonjs/core";
+import { Constants, NullEngine, RawTexture, RenderTargetTexture, Scene, StandardMaterial } from "@babylonjs/core";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { internalTexturesHeldByScene } from "./scene-texture-references";
 
 describe("internalTexturesHeldByScene", () => {
@@ -29,5 +30,20 @@ describe("internalTexturesHeldByScene", () => {
     expect(internalTexturesHeldByScene(scene)).toEqual(
       new Set([registered, sampled, environment, brdf].map((texture) => texture.getInternalTexture())),
     );
+  });
+
+  it("holds a render target's depth/stencil texture with its colour texture", () => {
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const target = new RenderTargetTexture("target", 4, scene);
+    const depth = target.renderTarget!.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
+    // A second Scene's target is not this Scene's, depth attachment included.
+    const other = new RenderTargetTexture("other", 4, new Scene(engine));
+    const otherDepth = other.renderTarget!.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
+
+    const held = internalTexturesHeldByScene(scene);
+    expect(held).toEqual(new Set([target.getInternalTexture(), depth]));
+    expect(held).not.toContain(otherDepth);
   });
 });

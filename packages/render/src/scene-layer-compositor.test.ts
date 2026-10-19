@@ -441,6 +441,8 @@ describe("SceneLayerCompositor", () => {
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
     const unrendered = layer.camera.outputRenderTarget!;
     const disposeUnrendered = vi.spyOn(unrendered, "dispose");
+    // The held output and the layer's own Scene both belong to the compositor, so a leak check never takes them for editor Scenes.
+    expect(compositor.ownedScenes()).toEqual(expect.arrayContaining([layer.scene, oldBlit]));
     vi.spyOn(renderers[1]!, "render").mockReturnValue({ path: "frameGraph", reason: "Waiting for native upload.", rendered: false, readyForPresentation: false });
     compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
     expect(acknowledged).toBe(false);
@@ -463,7 +465,10 @@ describe("SceneLayerCompositor", () => {
     expect(acknowledged).toBe(true);
     await vi.waitFor(() => { expect(disposeFirst).toHaveBeenCalledOnce(); });
     expect(fallbackDraw).toHaveBeenCalledTimes(2);
+    expect(oldBlit.isDisposed).toBe(true);
+    expect(compositor.ownedScenes()).not.toContain(oldBlit);
     await compositor.dispose();
+    expect(compositor.ownedScenes()).toEqual([]);
   });
 
   it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {

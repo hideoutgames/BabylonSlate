@@ -2043,7 +2043,7 @@ export function startPlaySession(options: {
       preparedSourceScopes.clear();
       const liveAfter = handle.liveObjectCounts();
       // The leak check runs once release confirms, when these Scenes are disposed. One that is not still owns what it holds.
-      const playScenes = new Set([handle.scene, ...handle.sceneLayerScenes().map((layer) => layer.scene)]);
+      const playScenes = new Set(handle.ownedScenes());
       handle.dispose();
       releaseSessionSources?.();
       releaseSessionSources = undefined;
