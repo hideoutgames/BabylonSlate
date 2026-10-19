@@ -8,6 +8,7 @@ import {
   type SerializedScene,
   type SerializedTransform,
 } from "@babylonslate/core";
+import { stableStringify } from "@babylonslate/assets";
 import { mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
@@ -81,8 +82,9 @@ function cloneTransform(
   };
 }
 
+/** Structural equality: object key order is not content, array order is. */
 function jsonEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return stableStringify(left) === stableStringify(right);
 }
 
 function overrideSet(keys: readonly string[] | undefined): Set<string> {
