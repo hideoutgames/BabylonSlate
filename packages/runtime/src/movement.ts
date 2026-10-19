@@ -14,6 +14,8 @@ type MovementState = {
   sinceGround: number;
   jumpRemaining: number;
   jumpRequested: boolean;
+  /** A script wrote `velocity` since the last step; a steered Rigid Body takes it instead of its own. */
+  velocityWritten: boolean;
   unavailable: boolean;
   placement: Placement;
 };
@@ -32,6 +34,9 @@ interface MovementHost {
   event(component: ActorComponent, name: string, args: Record<string, unknown>): void;
   warn(component: ActorComponent): void;
 }
+
+/** Speed along the ground normal above which a steered body is leaving the ground, not resting on it. */
+const LEAVING_GROUND_SPEED = 0.5;
 
 const zero = (): Vec3 => ({ x: 0, y: 0, z: 0 });
 const finite = (value: unknown): number => typeof value === "number" && Number.isFinite(value) ? Math.max(-1e6, Math.min(1e6, value)) : 0;
@@ -70,7 +75,7 @@ export class MovementWorldSync {
     let state = this.states.get(component);
     if (!state) {
       state = { input: zero(), addedInput: zero(), velocity: zero(), grounded: false,
-        moving: false, sinceGround: Infinity, jumpRemaining: 0, jumpRequested: false, unavailable: false,
+        moving: false, sinceGround: Infinity, jumpRemaining: 0, jumpRequested: false, velocityWritten: false, unavailable: false,
         placement: { actor: null, revision: -1, listed: false, ahead: NO_MOTORS } };
       this.states.set(component, state);
       this.publish(component, state);
@@ -94,10 +99,14 @@ export class MovementWorldSync {
         state.addedInput.x += v.x; state.addedInput.z += v.z;
         break;
       }
-      case "setMovementVelocity": state.velocity = vector(args.velocity); break;
+      case "setMovementVelocity":
+        state.velocity = vector(args.velocity);
+        state.velocityWritten = true;
+        break;
       case "addMovementVelocity": {
         const v = vector(args.velocity);
         state.velocity.x += v.x; state.velocity.y += v.y; state.velocity.z += v.z;
+        state.velocityWritten = true;
         break;
       }
       case "jumpMovement":
@@ -107,10 +116,26 @@ export class MovementWorldSync {
       case "stopMovementImmediately":
         state.input = zero(); state.addedInput = zero(); state.velocity = zero();
         state.jumpRequested = false; state.jumpRemaining = 0;
+        state.velocityWritten = true;
         break;
     }
     this.publish(component, state);
     return {};
+  }
+
+  /**
+   * Add Impulse on an actor whose Movement is moved by its character controller:
+   * the velocity changes by impulse / mass (1, or the kinematic Rigid Body's
+   * Mass), and the controller then carries it with collision and its own
+   * gravity. False when a physics body takes the impulse instead.
+   */
+  addImpulse(actor: Actor, impulse: Vec3, strength = 1): boolean {
+    const drive = this.host.physics(actor)?.movementDrive(actor);
+    if (!drive || drive.dynamic) return false;
+    const scale = finite(strength) / drive.mass;
+    const v = vector(impulse);
+    this.invoke(drive.component, "addMovementVelocity", { velocity: { x: v.x * scale, y: v.y * scale, z: v.z * scale } });
+    return true;
   }
 
   private convert(actor: Actor, props: MovementProperties, value: unknown, yaw: number): Vec3 {
@@ -193,20 +218,10 @@ export class MovementWorldSync {
   private advance(actor: Actor, component: ActorComponent, state: MovementState, props: MovementProperties, dt: number): void {
     const physics = this.host.physics(actor);
     if (!physics) return;
+    if (physics.movementDrive(actor)?.dynamic) { this.advanceBody(actor, component, state, props, dt, physics); return; }
     const is2D = physics.getBackend().kind === "2d";
-    let x = state.input.x + state.addedInput.x;
-    let z = is2D ? 0 : state.input.z + state.addedInput.z;
-    state.addedInput = zero();
-    const strength = Math.hypot(x, z);
-    if (strength > 1) { x /= strength; z /= strength; }
-    const hasInput = strength > 1e-6;
-    const deltaX = x * props.maxSpeed - state.velocity.x;
-    const deltaZ = z * props.maxSpeed - state.velocity.z;
-    const distance = Math.hypot(deltaX, deltaZ);
-    const rate = (hasInput ? props.acceleration : props.braking) * (state.grounded ? 1 : props.airControl);
-    const factor = distance > 0 ? Math.min(1, rate * dt / distance) : 0;
-    state.velocity.x += deltaX * factor;
-    state.velocity.z = is2D ? 0 : state.velocity.z + deltaZ * factor;
+    state.velocityWritten = false;
+    this.steer(state, state.velocity, props, is2D, state.grounded, dt);
 
     let jumped = false;
     if (state.jumpRequested && (state.grounded || state.sinceGround <= props.coyoteTime) && props.jumpSpeed > 0) {
@@ -219,14 +234,7 @@ export class MovementWorldSync {
     state.velocity.y = Math.max(-props.maxFallSpeed, state.velocity.y - Math.max(0, this.host.gravity(actor)) * props.gravityScale * dt);
     const translation = { x: state.velocity.x * dt, y: state.velocity.y * dt, z: state.velocity.z * dt };
     const moved = physics.moveMovement(actor, translation, dt, props);
-    if (!moved) {
-      if (!state.unavailable) this.host.warn(component);
-      state.unavailable = true;
-      state.velocity = zero(); state.sinceGround = Infinity;
-      state.jumpRequested = false; state.jumpRemaining = 0;
-      this.transitions(component, state, false, false);
-      return;
-    }
+    if (!moved) { this.unavailable(component, state); return; }
     state.unavailable = false;
     state.velocity = { ...moved.velocity };
     const grounded = moved.grounded && !rising;
@@ -238,6 +246,74 @@ export class MovementWorldSync {
     }
     const moving = Math.hypot(state.velocity.x, state.velocity.z) > 0.01;
     this.transitions(component, state, grounded, moving, jumped);
+  }
+
+  /**
+   * A dynamic Rigid Body: steers its horizontal velocity toward the input and
+   * adds the jump, and leaves gravity, damping, collisions and impulses to
+   * physics. The published velocity and ground are what the last step left.
+   */
+  private advanceBody(actor: Actor, component: ActorComponent, state: MovementState, props: MovementProperties, dt: number, physics: PhysicsWorldSync): void {
+    const body = physics.movementBody(actor, props);
+    if (!body) { this.unavailable(component, state); return; }
+    state.unavailable = false;
+    const is2D = physics.getBackend().kind === "2d";
+    // A velocity a script wrote since the last step stands in for the body's.
+    const written = state.velocityWritten;
+    state.velocityWritten = false;
+    if (!written) state.velocity = body.velocity;
+    if (is2D) state.velocity.z = 0;
+    const read = { ...state.velocity };
+    const { ground } = body;
+    let supported = ground !== null && read.x * ground.x + read.y * ground.y + read.z * ground.z <= LEAVING_GROUND_SPEED;
+    const target = { ...read };
+    this.steer(state, target, props, is2D, supported, dt);
+
+    let jumped = false, vertical = written;
+    if (state.jumpRequested && (supported || state.sinceGround <= props.coyoteTime) && props.jumpSpeed > 0) {
+      target.y = Math.max(target.y, 0) + props.jumpSpeed;
+      state.jumpRequested = false; state.jumpRemaining = 0; state.sinceGround = Infinity;
+      jumped = vertical = true; supported = false;
+      state.velocity.y = target.y;
+    }
+    if (target.y < -props.maxFallSpeed) { target.y = -props.maxFallSpeed; vertical = true; }
+    // Unchanged velocity is not written, so a resting body can sleep.
+    if (vertical || target.x !== read.x || target.z !== read.z)
+      physics.setActorLinearVelocity(actor.guid, vertical ? target : { x: target.x, z: target.z });
+    if (supported) state.sinceGround = 0;
+    else state.sinceGround += dt;
+    if (state.jumpRequested) {
+      state.jumpRemaining -= dt;
+      if (state.jumpRemaining < 0) state.jumpRequested = false;
+    }
+    const moving = Math.hypot(state.velocity.x, state.velocity.z) > 0.01;
+    this.transitions(component, state, supported, moving, jumped);
+  }
+
+  /** Moves the horizontal part of `velocity` toward the input: Acceleration with input, Braking without, scaled by Air Control off the ground. */
+  private steer(state: MovementState, velocity: Vec3, props: MovementProperties, is2D: boolean, grounded: boolean, dt: number): void {
+    let x = state.input.x + state.addedInput.x;
+    let z = is2D ? 0 : state.input.z + state.addedInput.z;
+    state.addedInput = zero();
+    const strength = Math.hypot(x, z);
+    if (strength > 1) { x /= strength; z /= strength; }
+    const hasInput = strength > 1e-6;
+    const deltaX = x * props.maxSpeed - velocity.x;
+    const deltaZ = z * props.maxSpeed - velocity.z;
+    const distance = Math.hypot(deltaX, deltaZ);
+    const rate = (hasInput ? props.acceleration : props.braking) * (grounded ? 1 : props.airControl);
+    const factor = distance > 0 ? Math.min(1, rate * dt / distance) : 0;
+    velocity.x += deltaX * factor;
+    velocity.z = is2D ? 0 : velocity.z + deltaZ * factor;
+  }
+
+  /** Movement cannot move this actor (another motion owner, or no body): warns once and stands still. */
+  private unavailable(component: ActorComponent, state: MovementState): void {
+    if (!state.unavailable) this.host.warn(component);
+    state.unavailable = true;
+    state.velocity = zero(); state.sinceGround = Infinity;
+    state.jumpRequested = false; state.jumpRemaining = 0;
+    this.transitions(component, state, false, false);
   }
 
   /**

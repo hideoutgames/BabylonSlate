@@ -78,6 +78,8 @@ export type RigidBodyDesc = {
   linearDamping: number;
   angularDamping: number;
   gravityScale: number;
+  /** Dynamic bodies only: collisions and impulses never turn the body, so it stays upright. Default false. */
+  lockRotation?: boolean;
   transform: PhysicsTransform;
   /**
    * False when no hit or overlap event involving this body's actor can be observed, so a backend that must ask
@@ -93,6 +95,7 @@ export type RigidBodyTuning = {
   linearDamping?: number;
   angularDamping?: number;
   gravityScale?: number;
+  lockRotation?: boolean;
 };
 
 export type ColliderDesc = {

@@ -75,6 +75,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 
 - Babylon is left-handed (X right, Y up, Z into the screen). `scene.useRightHandedSystem` stays `false`; 2D conventions derive from it.
 - 3D physics: `HavokPlugin` + `PhysicsAggregate` on a never-rendered worker-local `NullEngine` Scene, stepped through its physics engine, Havok wasm loaded with `locateFile`. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier (Babylon has no Rapier plugin).
+- Movement beside a dynamic Rigid Body steers that body's horizontal velocity and leaves gravity, collisions and impulses to physics (rotation locked); without a Rigid Body, or beside a kinematic one, a character controller moves a kinematic capsule. A static Rigid Body, Nav Agent, Ragdoll, Water Buoyancy or a second Movement stops it.
 - Gameplay owns animation time: evaluators run in the worker and send state, normalised time and weights; the main thread seeks explicitly and never lets Babylon auto-advance gameplay animation (replay would break).
 - The game HUD / UserInterface system is removed. Editor chrome and debug overlays (Print, Stats) are DOM. SceneLayers are 2D actor documents on a session compositor, not a HUD revival.
 - Materials lower to NodeMaterial blocks, not shader source, for WebGL + WebGPU portability; the catalog is a curated view over blocks and composes missing builtins from blocks. `CustomBlock` is a GLSL-only escape hatch with an explicit WebGPU diagnostic. Materials pre-warm at load.
