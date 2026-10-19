@@ -6,6 +6,7 @@ import {
   syncForwardLightPolicy,
 } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { sortReceiverLightSources } from "./forward-light-slots";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { CelMaterial } from "./cel-material";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -322,6 +323,31 @@ describe("scene material lighting", () => {
     expect(isForwardLightExcluded(visible)).toBe(true);
   });
 
+  it("puts a re-enabled sun back in its scene-order slot so receivers ask for the shader they compiled before", () => {
+    const scene = host(false);
+    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    const locals = lights(scene, 3);
+    const material = new StandardMaterial("receiver", scene);
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    receiver.material = material;
+    const part = receiver.subMeshes[0]!;
+    syncSceneLighting(scene);
+    material.isReadyForSubMesh(receiver, part);
+    const defines = part.materialDefines!.toString();
+    const effect = part.effect;
+    setAuthoredLightEnabled(sun, false);
+    beginFrame(scene);
+    material.isReadyForSubMesh(receiver, part);
+    // Babylon appends a re-enabled light after every light the receiver kept.
+    setAuthoredLightEnabled(sun, true);
+    beginFrame(scene);
+    expect(receiver.lightSources).toEqual([sun, ...locals]);
+    material.isReadyForSubMesh(receiver, part);
+    expect(part.materialDefines!.toString()).toBe(defines);
+    expect(part.effect).toBe(effect);
+  });
+
   it("uses one directional light and transfers illumination without changing authored intent", () => {
     const scene = host(false);
     const first = new DirectionalLight("first", Vector3.Down(), scene);
@@ -574,12 +600,12 @@ describe("scene material lighting", () => {
     // Nine shader slots; ten lamps 10 m apart. The first sync drops lamp 9 and
     // orders the admitted lamps points first, then spots, each in creation
     // order. With the camera at x = 90 the budget drops lamp 0 and admits lamp 9.
-    function swapFixture(spots: readonly number[] = []) {
+    function swapFixture(spots: readonly number[] = [], x = (index: number) => index * 10) {
       const scene = host(false);
       const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
       scene.activeCamera = camera;
       const lamps = Array.from({ length: 10 }, (_, index) => {
-        const position = new Vector3(index * 10, 3, 0);
+        const position = new Vector3(x(index), 3, 0);
         return spots.includes(index)
           ? new SpotLight(`lamp-${index}`, position, Vector3.Down(), 1, 1, scene)
           : new PointLight(`lamp-${index}`, position, scene);
@@ -644,12 +670,69 @@ describe("scene material lighting", () => {
       );
     });
 
-    it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
+    it("keeps the admitted mix of slot kinds while a light of another kind is at most FORWARD_KIND_CHANGE_DISTANCE_RATIO times nearer", async () => {
       const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4]);
       material.freeze();
       await ready(receiver, material);
-      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(7), "spot", "spot"]);
+      const defines = part.materialDefines!.toString();
+      // The spot at x = 0 is farthest, but only 90 / 80 times as far as the nearest point it would keep out.
       camera.position.x = 90;
+      beginFrame(scene);
+      expect(isForwardLightExcluded(lamps[1]!)).toBe(true);
+      expect(isForwardLightExcluded(lamps[0]!)).toBe(false);
+      // The admitted point takes the dropped point's slot: no receiver changes.
+      expect(receiver.lightSources).toEqual([9, 2, 3, 5, 6, 7, 8, 0, 4].map((index) => lamps[index]));
+      expect(part.materialDefines!.isDirty).toBe(false);
+      expect(part.materialDefines!.toString()).toBe(defines);
+    });
+
+    it("changes the admitted kinds back only past the same margin", () => {
+      // A spot at x = 0 against points from x = 50 to 130.
+      const { scene, camera, lamps } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
+      const spotAdmittedAt = (x: number) => {
+        camera.position.x = x;
+        beginFrame(scene);
+        return !isForwardLightExcluded(lamps[0]!);
+      };
+      expect([130, 60, 50, 60, 70, 100].map(spotAdmittedAt)).toEqual([false, false, true, true, true, false]);
+    });
+
+    it("hands a switched-off light's place to the next light of its kind within the margin", () => {
+      const scene = host(false);
+      scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+      const points = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map((x) => new PointLight(`point-${x}`, new Vector3(x, 3, 0), scene));
+      const near = new SpotLight("near spot", new Vector3(5, 3, 0), Vector3.Down(), 1, 1, scene);
+      const far = new SpotLight("far spot", new Vector3(95, 3, 0), Vector3.Down(), 1, 1, scene);
+      MeshBuilder.CreateBox("receiver", {}, scene).material = new StandardMaterial("receiver", scene);
+      syncSceneLighting(scene);
+      // Nine slots: the near spot and the eight nearest points.
+      expect(isForwardLightExcluded(far)).toBe(true);
+      setAuthoredLightEnabled(near, false);
+      beginFrame(scene);
+      // The far spot is 95 / 80 times as far as the nearest point it keeps out.
+      expect(isForwardLightExcluded(far)).toBe(false);
+      expect(isForwardLightExcluded(points[8]!)).toBe(true);
+    });
+
+    it("counts a light with a shadow map as another kind than one without", () => {
+      const { scene, camera, lamps, receiver } = swapFixture([0, 9]);
+      receiver.receiveShadows = true;
+      new ShadowGenerator(64, lamps[0] as SpotLight).addShadowCaster(MeshBuilder.CreateBox("caster", {}, scene));
+      beginFrame(scene);
+      // The shadowed spot is now farthest, but only 48 / 42 times as far as the unshadowed spot it would admit.
+      camera.position.x = 48;
+      beginFrame(scene);
+      expect(isForwardLightExcluded(lamps[0]!)).toBe(false);
+      expect(isForwardLightExcluded(lamps[9]!)).toBe(true);
+    });
+
+    it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
+      // The spot at x = 0 ends up 130 / 80 times as far as the nearest point it would keep out.
+      const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
+      material.freeze();
+      await ready(receiver, material);
+      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(7), "spot", "spot"]);
+      camera.position.x = 130;
       beginFrame(scene);
       // The admitted point joins the points; the remaining spot moves to the end.
       expect(receiver.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 4].map((index) => lamps[index]));
@@ -728,6 +811,24 @@ describe("scene material lighting", () => {
       const defines = part.materialDefines!.toString();
       expect(defines).toContain("#define SPOTLIGHT8\n");
       expect(defines).not.toContain("#define SHADOW8\n");
+    });
+
+    it("re-sorts a receiver to scene order without dirtying it when only lights with one slot signature move", () => {
+      const { scene, lamps, material, receiver, part } = swapFixture([4]);
+      const other = MeshBuilder.CreateBox("other", {}, scene);
+      other.material = material;
+      material.isReadyForSubMesh(other, other.subMeshes[0]!);
+      const sources = receiver.lightSources;
+      const order = sources.slice();
+      // Two points trade places in one receiver, two lights of different kinds in the other.
+      [sources[0], sources[1]] = [sources[1]!, sources[0]!];
+      const spot = other.lightSources.indexOf(lamps[4]!);
+      [other.lightSources[0], other.lightSources[spot]] = [other.lightSources[spot]!, other.lightSources[0]!];
+      expect(sortReceiverLightSources(scene)).toBe(true);
+      expect(receiver.lightSources).toEqual(order);
+      expect(other.lightSources).toEqual(order);
+      expect(part.materialDefines!.isDirty).toBe(false);
+      expect(other.subMeshes[0]!.materialDefines!.isDirty).toBe(true);
     });
 
     it("hands an exchange back to Babylon when the admitted light's parent is the dropped light", async () => {
