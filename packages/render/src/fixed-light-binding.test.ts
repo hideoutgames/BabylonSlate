@@ -20,7 +20,7 @@ import {
 } from "@babylonjs/core";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
-import { normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
+import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CelMaterial } from "./cel-material";
 import {
@@ -32,6 +32,7 @@ import { emptyLightSeatBuffer, setFixedShapeLightGuard } from "./fixed-light-bin
 import { setAuthoredLightEnabled } from "./light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { syncSceneLighting } from "./scene-lighting";
+import { sceneShadowController } from "./shadow-controller";
 import { withShadowDistanceFade } from "./shadow-shader";
 
 const engines: NullEngine[] = [];
@@ -164,6 +165,69 @@ describe("fixed-shape light binding", () => {
     await unchanged("a new spot in the old one's seat");
     scene.activeCamera!.position.set(20, 2, 0);
     await unchanged("the camera ranked other points into the point seats");
+  });
+
+  it("samples a spot's shadow in its shadow seat and keeps the Effect when the map hands off to the next spot", async () => {
+    const { scene } = world();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1 }) });
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const shadows = sceneShadowController(scene);
+    const near = new SpotLight("near", new Vector3(0, 3, 0), Vector3.Down(), 1, 2, scene);
+    const far = new SpotLight("far", new Vector3(100, 3, 0), Vector3.Down(), 1, 2, scene);
+    for (const light of [near, far]) shadows.register(light, true);
+    const { pairs } = receivers(scene);
+    const sync = () => {
+      syncSceneLighting(scene);
+      shadows.sync();
+      frame(scene);
+    };
+    sync();
+    // One spot shadow seat (seat 0) and one local spot seat (seat 1).
+    expect(fixedLightSlotTable(scene)!.seats.map((seat) => `${seat.classId}:${seat.light?.name}${seat.shadowActive ? " shadowed" : ""}`))
+      .toEqual(["SPOT_SHADOW:near shadowed", "LOCAL_SPOT:far"]);
+    const before: Effect[] = [];
+    for (const [material, mesh] of pairs) {
+      const effect = await effectOf(material, mesh);
+      expect(effect.defines).toContain("#define SHADOW0\n");
+      expect(effect.defines).not.toContain("#define SHADOW1\n");
+      before.push(effect);
+    }
+    clock.mockReturnValue(1_000);
+    scene.activeCamera!.position.set(100, 2, -10);
+    sync();
+    expect(shadows.generator(far)).not.toBeNull();
+    expect(fixedLightSlotTable(scene)!.seats.map((seat) => `${seat.light?.name}${seat.shadowActive ? " shadowed" : ""}`))
+      .toEqual(["far shadowed", "near"]);
+    for (const [index, [material, mesh]] of pairs.entries()) expect(await effectOf(material, mesh)).toBe(before[index]);
+  });
+
+  it("guards a seat the layout grows into after Babylon's path had used that light index", async () => {
+    const { engine, scene } = world();
+    // Two fills: the layout seats one; on Babylon's path both light the Material (LIGHT0, LIGHT1).
+    new HemisphericLight("fill", Vector3.Up(), scene);
+    new HemisphericLight("second fill", Vector3.Down(), scene);
+    const { pairs } = receivers(scene);
+    const compile = async (expected: string, present: boolean) => {
+      frame(scene);
+      for (const [material, mesh] of pairs) {
+        const defines = (await effectOf(material, mesh)).defines;
+        if (present) expect(defines).toContain(expected);
+        else expect(defines).not.toContain(expected);
+      }
+    };
+    await compile("#define LIGHT1\n", false);
+    setFixedShapeLightingEnabled(engine, false);
+    await compile("#define LIGHT1\n", true);
+    setFixedShapeLightingEnabled(engine, true);
+    await compile("#define LIGHT1\n", false);
+    const lamp = new PointLight("lamp", Vector3.Up(), scene);
+    frame(scene);
+    expect(seatOf(scene, lamp)).toBe(1);
+    for (const [material, mesh] of pairs) {
+      const effect = await effectOf(material, mesh);
+      expect(effect.defines).toContain("#define POINTLIGHT1\n");
+      expect(effect.defines).toContain("#define SLATE_FIXED_LIGHT1\n");
+    }
   });
 
   it("binds each seat's light, and a null buffer of the seat's kind to an empty seat", async () => {

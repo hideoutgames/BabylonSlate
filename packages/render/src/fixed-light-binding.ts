@@ -168,8 +168,16 @@ function clearSeatDefines(defines: Defines): void {
   for (const name of SEAT) if (defines[name] !== undefined) defines[name] = false;
 }
 
+const classesWithSeats = new WeakMap<FixedLightLayout, { entry: FixedLightLayout["classes"][number]; kind: FixedLightKind }[]>();
+
+/** The layout's classes that have seats, with the light kind each compiles (cached: it runs per material light refresh). */
 function seatsByClass(layout: FixedLightLayout) {
-  return layout.classes.filter((entry) => entry.seats > 0).map((entry) => ({ entry, kind: classKind(entry.hosts) }));
+  let classes = classesWithSeats.get(layout);
+  if (!classes) {
+    classes = layout.classes.filter((entry) => entry.seats > 0).map((entry) => ({ entry, kind: classKind(entry.hosts) }));
+    classesWithSeats.set(layout, classes);
+  }
+  return classes;
 }
 
 function prepareSeatDefines(
@@ -220,7 +228,8 @@ function prepareSeatDefines(
   const reset = Math.max(maxSimultaneousLights, Number(defines.MAXLIGHTCOUNT) || 0, table.layout.seats);
   for (let unused = index; unused < Math.min(reset, MAX_SEATS); unused++) {
     if (defines[LIGHT[unused]!] === undefined) continue;
-    for (const family of RESET_FAMILIES) defines[family[unused]!] = false;
+    // Only keys that exist: a key added here would miss the defines text when a later seat sets it.
+    for (const family of RESET_FAMILIES) if (defines[family[unused]!] !== undefined) defines[family[unused]!] = false;
   }
   defines.LIGHTCOUNT = index;
   defines.MAXLIGHTCOUNT = table.layout.seats;
