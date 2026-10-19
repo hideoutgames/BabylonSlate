@@ -52,6 +52,7 @@ export {
   type MaterialOperationSource,
   type MaterialTextureBinding,
 } from "./lower";
+export { materialPlanIsLit, materialSamplerBudgetDiagnostics, materialSamplerSources } from "./sampler-budget";
 export { createTypeResolver, type TypeResolver } from "./resolve";
 export {
   hydrateMaterialGraphForEditor,

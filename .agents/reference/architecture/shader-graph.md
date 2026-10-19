@@ -57,7 +57,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 
 ## Validation and lowering
 
-- Codes are `material.*`, each anchored to a node, pin or edge for Compiler Results. `material.postProcessCost` is a warning. `material.stageMismatch` fires when a fragment-only node (derivatives, `texture.sampleLod`, Normal Map, …) reaches World Position Offset, including through functions.
+- Codes are `material.*`, each anchored to a node, pin or edge for Compiler Results. `material.postProcessCost` is a warning. `material.samplerBudget` is a warning the editor adds only while the Engine's fixed-shape lighting switch is on: a lit plan's own samplers (`materialSamplerSources`: Texture parameters, samples with their own Texture, scene buffer and environment sample nodes, and the environment's reflection and BRDF lookup) over the budget, anchored to the first sampler past it. `material.stageMismatch` fires when a fragment-only node (derivatives, `texture.sampleLod`, Normal Map, …) reaches World Position Offset, including through functions.
 - Function validation visits each referenced function once (including disconnected calls); recursion and missing functions are errors.
 - `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`: ordered operations, explicit conversions, texture bindings, `bufferRequirements` (`sceneColor`/`sceneDepth`/`sceneNormal`), cost features and a hash that **ignores node positions**. A call input is lowered only when the body reads it. Lowering is memoized per document, shading variant and functions-record identity, so replace function records, never mutate them.
 

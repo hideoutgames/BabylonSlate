@@ -17,6 +17,7 @@ import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
+  fixedShapeMaterialSamplerBudget,
   setSceneRenderSettings,
   acquireMaterialTexture,
   installPreviewEnvironment,
@@ -32,6 +33,7 @@ import {
   materialCompileKeyFromLowering,
   materialParameterDefaults,
   materialDependencies,
+  materialSamplerBudgetDiagnostics,
   materialPreviewReducer,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -61,6 +63,7 @@ import { textureUploadSignature } from "../lib/texture-upload-signature";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const FUNCTION_KINDS = ["material-function"] as const;
+const NO_DIAGNOSTICS: MaterialDiagnostic[] = [];
 
 /**
  * Node types whose output follows the scene clock. Every other node is a pure
@@ -102,6 +105,8 @@ export interface MaterialEditingValue {
   instance: MaterialInstanceEditing | null;
   previewState: MaterialPreviewState;
   compileDiagnostics: MaterialDiagnostic[];
+  /** The lowered graph's samplers over what fixed-shape lighting leaves a lit Material; empty while the Engine's switch is off. */
+  samplerDiagnostics: MaterialDiagnostic[];
   selectedNodeId: string | null;
   setSelectedNodeId: (nodeId: string | null) => void;
   focusedNodeId: string | null;
@@ -427,6 +432,11 @@ export function MaterialEditingProvider({
     () => (document ? lowerMaterialDocument(document, { functions }) : null),
     [document, functions],
   );
+  const samplerBudget = sharedEngine ? fixedShapeMaterialSamplerBudget(sharedEngine) : null;
+  const samplerDiagnostics = useMemo(
+    () => (samplerBudget === null || !lowering?.ok ? NO_DIAGNOSTICS : materialSamplerBudgetDiagnostics(lowering.plan, samplerBudget)),
+    [lowering, samplerBudget],
+  );
 
   // Static previews redraw only on change. A Particle or Text preview animates itself, and a
   // graph that failed to lower has no frame to judge, so those keep presenting.
@@ -734,6 +744,7 @@ export function MaterialEditingProvider({
       instance,
       previewState,
       compileDiagnostics,
+      samplerDiagnostics,
       selectedNodeId,
       setSelectedNodeId,
       focusedNodeId,
@@ -752,6 +763,7 @@ export function MaterialEditingProvider({
       lowering,
       previewState,
       requestRender,
+      samplerDiagnostics,
       selectedNodeId,
     ],
   );

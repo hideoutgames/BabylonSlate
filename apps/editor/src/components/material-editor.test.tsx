@@ -63,6 +63,7 @@ vi.mock("../context/material-editing-context", () => ({
     lowering: lowerMaterialDocument(normalizeMaterialDocument(harness.content), { functions: {} }),
     previewState: harness.previewState,
     compileDiagnostics: [],
+    samplerDiagnostics: [],
     selectedNodeId: harness.selectedNodeId,
     setSelectedNodeId: vi.fn(),
     focusedNodeId: null,

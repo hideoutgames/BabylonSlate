@@ -282,18 +282,22 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
     useGraphSessionViewport(documentId);
   const textureExists = useTextureExists();
 
+  const samplerDiagnostics = editing.samplerDiagnostics;
   const diagnostics = useMemo(
     () =>
-      validateMaterialDocument(document, {
-        functions,
-        textureExists,
-        warnPostProcessCost: true,
-      }).map((row) => ({
+      [
+        ...validateMaterialDocument(document, {
+          functions,
+          textureExists,
+          warnPostProcessCost: true,
+        }),
+        ...samplerDiagnostics,
+      ].map((row) => ({
         nodeId: row.nodeId,
         severity: row.severity,
         message: row.message,
       })),
-    [document, functions, textureExists],
+    [document, functions, samplerDiagnostics, textureExists],
   );
 
   const initialGraph = useMemo(
@@ -1167,7 +1171,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
     });
   }, [doc?.content, editing.functions, isFunction, textureExists]);
 
-  const rows = [...diagnostics, ...editing.compileDiagnostics];
+  const rows = [...diagnostics, ...(isFunction ? [] : editing.samplerDiagnostics), ...editing.compileDiagnostics];
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof rows)[number] | null>(null);
   const selected = selectedDiagnostic && rows.some((row) => row.code === selectedDiagnostic.code && row.message === selectedDiagnostic.message && row.nodeId === selectedDiagnostic.nodeId) ? selectedDiagnostic : null;
 
