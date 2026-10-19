@@ -127,7 +127,8 @@ function AccountSection({
             <p className="homepage-account-center-note">
               Manage Account opens your account settings, where you can change
               your name, picture and connected accounts, or delete your
-              account.
+              account. Deleting your account does not cancel a subscription;
+              cancel it first with Manage Billing under Subscription.
             </p>
           )}
           {nativeProfile && (

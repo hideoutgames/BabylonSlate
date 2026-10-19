@@ -1,5 +1,8 @@
 import type { MouseEvent, ReactElement } from "react";
-import type { NativeClerkSession } from "../services/native-clerk";
+import type {
+  NativeClerkReverification,
+  NativeClerkSession,
+} from "../services/native-clerk";
 
 /** What the launcher calls a native account: full name, else username, else email. */
 export function nativeAccountName(
@@ -13,8 +16,15 @@ export interface NativeProfileActions {
   updateName: (name: { firstName: string; lastName: string }) => Promise<void>;
   setImage: (file: File) => Promise<void>;
   removeImage: () => Promise<void>;
-  /** Also signs the account out of this device. */
-  deleteAccount: () => Promise<void>;
+  /** Emails the code that deleting the account requires; pass the pending verification to send it again. */
+  sendDeleteCode: (
+    pending?: NativeClerkReverification,
+  ) => Promise<NativeClerkReverification>;
+  /** Checks the emailed code with Clerk and only then deletes. Also signs the account out of this device. */
+  deleteAccount: (
+    pending: NativeClerkReverification,
+    code: string,
+  ) => Promise<void>;
   /**
    * Pauses the foreground session check while the system file picker is open:
    * on mobile that check hides the app, which would drop the picked file.

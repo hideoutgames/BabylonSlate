@@ -23,6 +23,14 @@ export interface NativeClerkSession {
   deleteSelfEnabled?: boolean;
 }
 
+/** A pending session reverification: an emailed code that proves who is at the device. */
+export interface NativeClerkReverification {
+  sessionId: string;
+  emailAddressId: string;
+  /** The address the code went to. */
+  email: string;
+}
+
 export interface NativeClerkChallenge {
   id: string;
   kind: "sign-in" | "sign-up";
@@ -58,6 +66,8 @@ const messages: Record<string, string> = {
   account_delete_failed: "Your account could not be deleted. Please try again.",
   session_reverification_required:
     "For your security, sign out and sign in again, then try once more.",
+  reverification_unavailable:
+    "This account cannot be verified with an email code in the app. Sign in on the web to delete it.",
   name_required: "Enter the missing name and try again.",
   first_name_too_long: "That first name is too long.",
   last_name_too_long: "That last name is too long.",
@@ -450,8 +460,72 @@ export class NativeClerkClient {
   }
 
   /**
+   * Starts Clerk's session reverification (`POST /client/sessions/{id}/verify`
+   * at the first-factor level, as clerk-js does) and emails a code. Accounts
+   * that signed up with an OAuth provider verify the same way: the native
+   * app has no OAuth, and Clerk offers the email-code factor for any user
+   * with a verified address.
+   */
+  async beginReverification(
+    session: NativeClerkSession,
+  ): Promise<NativeClerkReverification> {
+    const sessionId = resourceId(session.id);
+    const verification = await this.fapi({
+      path: `/client/sessions/${sessionId}/verify`,
+      body: { level: "first_factor" },
+      failure: "account_delete_failed",
+    });
+    const factor = (
+      Array.isArray(verification.supported_first_factors)
+        ? verification.supported_first_factors.map(record)
+        : []
+    ).find((candidate) => candidate.strategy === "email_code");
+    if (!factor) throw new NativeClerkError("reverification_unavailable");
+    const reverification = {
+      sessionId,
+      emailAddressId: resourceId(factor.email_address_id),
+      email:
+        typeof factor.safe_identifier === "string" && factor.safe_identifier
+          ? factor.safe_identifier
+          : session.email,
+    };
+    return this.resendReverificationCode(reverification);
+  }
+
+  /** Emails a code for the reverification, again when the first one did not arrive. */
+  async resendReverificationCode(
+    reverification: NativeClerkReverification,
+  ): Promise<NativeClerkReverification> {
+    await this.fapi({
+      path: `/client/sessions/${resourceId(reverification.sessionId)}/verify/prepare_first_factor`,
+      body: {
+        strategy: "email_code",
+        email_address_id: resourceId(reverification.emailAddressId),
+      },
+      failure: "account_delete_failed",
+    });
+    return reverification;
+  }
+
+  /** Throws unless Clerk accepts the emailed code and marks the session verified. */
+  async completeReverification(
+    reverification: NativeClerkReverification,
+    code: string,
+  ): Promise<void> {
+    const attempt = await this.fapi({
+      path: `/client/sessions/${resourceId(reverification.sessionId)}/verify/attempt_first_factor`,
+      body: { strategy: "email_code", code: code.trim() },
+      failure: "account_delete_failed",
+    });
+    if (attempt.status !== "complete")
+      throw new NativeClerkError("additional_verification_required");
+  }
+
+  /**
    * Deletes the Clerk user, then forgets the client token. Only works when the
-   * Clerk dashboard lets users delete their own accounts.
+   * Clerk dashboard lets users delete their own accounts. Callers reverify the
+   * session first; Clerk also refuses with `session_reverification_required`
+   * when its own window has lapsed.
    */
   async deleteAccount(session: NativeClerkSession): Promise<void> {
     await this.fapi({

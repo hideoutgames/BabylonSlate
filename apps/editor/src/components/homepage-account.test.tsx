@@ -205,6 +205,7 @@ describe("Homepage account", () => {
     expect(
       within(dialog).getByText(/change your name, picture and connected accounts, or delete your account/i),
     ).toBeTruthy();
+    expect(within(dialog).getByText(/does not cancel a subscription/i)).toBeTruthy();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Manage Account" }),
     );
