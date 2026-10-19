@@ -159,8 +159,10 @@ export async function runFixedLightProof(backend: "webgl2" | "webgpu" = "webgl2"
       const light = new PointLight("replacement", new Vector3(0.6, 1.5, -0.4), scene);
       authored(light, [0.3, 1, 0.9], 0.9);
     });
+    const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+    const fixedLitEffects = litEffectKeys(engine).filter((key) => effects[key]!.defines.includes("#define SLATE_FIXED_LIGHTS\n")).length;
     graph.dispose();
-    return { backend, width: canvas.width, height: canvas.height, captures, seats, steps };
+    return { backend, width: canvas.width, height: canvas.height, captures, seats, steps, fixedLitEffects };
   } finally {
     scene.dispose();
     engine.dispose();

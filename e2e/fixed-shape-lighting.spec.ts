@@ -45,6 +45,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     // The poses really differ, so a seat that ignored its light would fail above.
     expect(legacy.get("empty seats")).not.toEqual(legacy.get("all lights"));
+    // Both native materials drew with seat-bound shaders (each guard), not Babylon's lightSources path.
+    expect(result.fixedLitEffects).toBeGreaterThanOrEqual(4);
     expect(result.steps).toEqual([
       { step: "a point switched off", newLitEffects: 0 },
       { step: "an unshadowed spot switched off", newLitEffects: 0 },
