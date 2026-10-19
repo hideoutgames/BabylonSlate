@@ -35,6 +35,13 @@ export {
   type NestedMenuProps,
 } from "./nested-menu";
 export {
+  ToolbarOverflow,
+  ToolbarOverflowItem,
+  ToolbarOverflowMenu,
+  ToolbarOverflowTrack,
+} from "./toolbar-overflow";
+export { useToolbarOverflowEntry } from "./toolbar-overflow-registry";
+export {
   clampOverlayMenuPosition,
   overlaySubmenuOrigin,
 } from "./clamp-overlay-menu";

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppWindowIcon, ChevronDownIcon } from "lucide-react";
-import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
+import { NestedMenu, useToolbarOverflowEntry, type NestedMenuItem } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   useActiveDocumentState,
@@ -15,6 +15,7 @@ import {
   isDockviewDocumentKind,
   listDockWindows,
 } from "../shell/window-catalog";
+import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
@@ -90,6 +91,17 @@ export function WindowsMenu() {
     openDockWindowCount,
     toggleDockWindow,
   ]);
+
+  // Collapsed into the toolbar's More Actions menu when the bar is too narrow.
+  useToolbarOverflowEntry("windows", TOOLBAR_OVERFLOW_PRIORITY.windows, [{
+    type: "submenu",
+    id: "windows",
+    label: "Windows",
+    icon: <AppWindowIcon />,
+    disabled: !projectName || !canToggleWindows,
+    items,
+    contentTestId: "windows-menu-overflow-content",
+  }]);
 
   return (
     <NestedMenu

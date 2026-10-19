@@ -32,6 +32,10 @@ To keep more windows visible in Focus, open **Engine Settings > Focus**. It list
 
 Focus is not available in the phone layout.
 
+## Narrow toolbars
+
+The toolbar measures the room it has. When it cannot show everything, controls move into the **More Actions** menu (the ⋮ button), in this order: **Focus**, **Windows**, **Search Project**, **Settings**, **Undo** and **Redo**, **Return To Scene**, the scene mode picker, **Debug Instance**, the compilation error indicator, then **Compile** or **Render**. **Save All**, **Play** or **Simulate**, the Simulation's **Pause**, **Stop** and **Game** / **Edit** input toggle and the **Debug** menu always stay. Menu entries keep their shortcuts and disabled state, and the controls come back when the window widens.
+
 ## Phone layout
 
 On phones, and in narrow windows, the editor switches to a compact layout:
@@ -40,6 +44,7 @@ On phones, and in narrow windows, the editor switches to a compact layout:
 - Windows cannot be dragged, and Focus is not available.
 - The Content Browser button and the **Open Documents** menu replace the tab strip.
 - **More Tools** (the ⋯ button) holds the Debug menu, Windows, Search Project and Settings.
+- The toolbar's **More Actions** menu (the ⋮ button) appears when a running Simulation or a Class leaves too little room, and holds the controls that no longer fit.
 
 Widening the window, for example leaving Split View on iPad, returns to the full layout.
 
