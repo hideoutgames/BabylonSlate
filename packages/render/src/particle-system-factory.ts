@@ -343,8 +343,8 @@ const PREPARATION_POLL_MS = 16;
 
 /**
  * Bounds one particle preparation like the other loading waits (`createHeldThreadBound`): it fails after
- * `SCENE_SHADER_WARM_TIMEOUT_MS` without progress, not in total. A synchronous shader link (WebKit WebGL2,
- * SwiftShader) keeps a plain timer from firing until the link returns, so the thread-held gap is not
+ * `SCENE_SHADER_WARM_TIMEOUT_MS` without progress, not in total. A synchronous shader link (SwiftShader)
+ * keeps a plain timer from firing until the link returns, so the thread-held gap is not
  * charged, up to the bound's own held-thread budget; and the bound starts again while shaders keep
  * finishing on the Engine, up to `SCENE_PREPARATION_CEILING_MS` (`DriverCompileWatch`). A preparation that
  * is stuck therefore still fails, after its bound plus the credited time. `message` is asked when it runs

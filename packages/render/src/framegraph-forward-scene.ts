@@ -1099,7 +1099,7 @@ export class ForwardSceneFrameGraph {
         compiles ??= new DriverCompileWatch(scene.getEngine(), started);
         const probeStart = performance.now();
         const ready = this.disposed || this.isReady();
-        // Where links are synchronous (SwiftShader, WebKit WebGL2) the probe links
+        // Where links are synchronous (SwiftShader) the probe links
         // every effect before it returns: the time inside it is compiling, not
         // waiting. It extends the bound up to a budget, so a scene that never
         // becomes ready still fails.

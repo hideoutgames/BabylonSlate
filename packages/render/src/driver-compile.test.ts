@@ -82,8 +82,9 @@ describe("driver compile watch", () => {
     expect(watch.renew(2)).toBe(false);
   });
 
-  // Synchronous links (SwiftShader; WebKit, which exposes parallel compile but links inside the call) never leave
-  // anything pending: variants that finished since the last renewal are the only sign of progress.
+  // A synchronous link (SwiftShader, which has no parallel compile) never leaves anything pending: variants that
+  // finished since the last renewal are the only sign of progress. With the extension exposed, a program found
+  // complete at its first check looks the same.
   it.each([false, true])("renews for variants that finished since the last renewal (parallel compile exposed: %s)", (parallel) => {
     const { engine, add } = setup(parallel);
     add("before the watch", { ready: true });
