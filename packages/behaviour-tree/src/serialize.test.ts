@@ -115,32 +115,6 @@ describe("behaviour tree serialize", () => {
     expect(canvas.services.map((row) => row.intervalMs)).toEqual([250, 250]);
   });
 
-  it("marks every node on the running stack, not only the leaf", () => {
-    const graph = behaviourTreeToSerialized(createDefaultBehaviourTree(), {
-      lastResults: {},
-      btNodeId: "task",
-      stack: [
-        { nodeId: "root", childIndex: 0, opened: true },
-        { nodeId: "sequence", childIndex: 0, opened: true },
-        { nodeId: "task", childIndex: 0, opened: true },
-      ],
-    });
-    expect(
-      graph.nodes.filter((entry) => entry.data.running === true).map((entry) => entry.id),
-    ).toEqual(["root", "sequence", "task"]);
-  });
-
-  it("marks a Parallel branch that yielded off the stack as running", () => {
-    const graph = behaviourTreeToSerialized(createDefaultBehaviourTree(), {
-      lastResults: { sequence: "running", task: "running" },
-      btNodeId: null,
-      stack: [{ nodeId: "root", childIndex: 1, opened: true }],
-    });
-    expect(
-      graph.nodes.filter((entry) => entry.data.running === true).map((entry) => entry.id),
-    ).toEqual(["root", "sequence", "task"]);
-  });
-
   it("lays out the root above its children", () => {
     const tree = createDefaultBehaviourTree();
     const positions = layoutBehaviourTree(tree);

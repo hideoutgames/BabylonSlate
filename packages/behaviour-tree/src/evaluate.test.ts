@@ -1223,6 +1223,76 @@ describe("evaluateBehaviourTree", () => {
   });
 });
 
+describe("evaluation trace", () => {
+  function traced() {
+    const visited: string[] = [];
+    const links: string[] = [];
+    return {
+      visited,
+      links,
+      trace: { visit: (id: string) => visited.push(id), link: (parent: string, child: string) => links.push(`${parent}>${child}`) },
+    };
+  }
+  const waiting = () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 100 };
+    return tree([
+      node("root", "selector", "bt.composite.selector", ["no", "seq"]),
+      node("no", "task", "bt.task.fail"),
+      node("seq", "sequence", "bt.composite.sequence", ["wait"]),
+      wait,
+    ], "root");
+  };
+
+  it("reports the nodes an evaluation entered and the links it went down, failed branches included", () => {
+    const { visited, links, trace } = traced();
+    evaluateBehaviourTree(waiting(), null, 0.05, { trace });
+    expect([...new Set(visited)]).toEqual(["root", "no", "seq", "wait"]);
+    expect(links).toEqual(["root>no", "root>seq", "seq>wait"]);
+  });
+
+  it("ticks only the running leaf while the tree waits, and goes back up when it finishes", () => {
+    const doc = waiting();
+    const first = evaluateBehaviourTree(doc, null, 0.05);
+    const waitingTick = traced();
+    const second = evaluateBehaviourTree(doc, first, 0.01, { trace: waitingTick.trace });
+    expect(second.status).toBe("running");
+    expect(waitingTick.visited).toEqual(["wait"]);
+    expect(waitingTick.links).toEqual([]);
+
+    const finishing = traced();
+    expect(evaluateBehaviourTree(doc, second, 0.1, { trace: finishing.trace }).status).toBe("success");
+    // The wait ends, then the Sequence and the Selector finish in turn.
+    expect([...new Set(finishing.visited)]).toEqual(["wait", "seq", "root"]);
+  });
+
+  it("resumes every running Parallel branch each tick and reports the link into each", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 1_000 };
+    const doc = tree([
+      node("root", "parallel", "bt.composite.parallel", ["seq", "other"]),
+      node("seq", "sequence", "bt.composite.sequence", ["wait"]),
+      wait,
+      node("other", "task", "bt.task.wait"),
+    ], "root");
+    doc.nodes.find((entry) => entry.id === "other")!.properties = { durationMs: 1_000 };
+    const first = evaluateBehaviourTree(doc, null, 0.05);
+    const { visited, links, trace } = traced();
+    evaluateBehaviourTree(doc, first, 0.05, { trace });
+    expect(new Set(visited)).toEqual(new Set(["root", "seq", "wait", "other"]));
+    expect(links).toContain("root>seq");
+    expect(links).toContain("root>other");
+  });
+
+  it("evaluates the same with and without a trace", () => {
+    const doc = waiting();
+    const plain = evaluateBehaviourTree(doc, evaluateBehaviourTree(doc, null, 0.05), 0.06);
+    const { trace } = traced();
+    const observed = evaluateBehaviourTree(doc, evaluateBehaviourTree(doc, null, 0.05, { trace }), 0.06, { trace });
+    expect(observed).toEqual(plain);
+  });
+});
+
 describe("per-tick decorator scans", () => {
   const decorator = (
     id: string,

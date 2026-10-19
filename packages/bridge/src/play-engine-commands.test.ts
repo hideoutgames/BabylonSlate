@@ -26,8 +26,10 @@ describe("isPlayEngineCommandType", () => {
     expect(isPlayEngineCommandType("despawn")).toBe(true);
   });
 
-  it("does not forward host-only commands such as stats", () => {
-    expect(isPlayEngineCommandType("stats")).toBe(false);
+  it("does not forward host-only commands such as stats or the graph debugger's views", () => {
+    for (const type of ["stats", "debugRoster", "executionTrace", "btState"]) {
+      expect(isPlayEngineCommandType(type), type).toBe(false);
+    }
   });
 
   it("routes bone attachments to both Play engine hosts", () => {

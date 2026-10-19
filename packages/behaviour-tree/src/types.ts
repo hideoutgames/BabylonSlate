@@ -101,7 +101,19 @@ export type BtDecoratorHost = {
   ): boolean;
 };
 
+/**
+ * What one evaluation touched, for an editor that debugs the tree. The evaluator calls it only
+ * when a host passes one, so an unobserved tree pays an optional-call check per visit.
+ */
+export type BtEvalTrace = {
+  /** The evaluation worked on this node: it entered or resumed it, ticked its task, or moved on from a child. */
+  visit(nodeId: string): void;
+  /** The evaluation went down from `parentId` into `childId`, a new execution or a resumed running one. */
+  link(parentId: string, childId: string): void;
+};
+
 export type EvaluateBehaviourTreeOptions = {
+  trace?: BtEvalTrace;
   host?: BtTaskHost;
   serviceHost?: BtServiceHost;
   decoratorHost?: BtDecoratorHost;

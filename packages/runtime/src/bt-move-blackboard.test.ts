@@ -3,6 +3,7 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import type { BehaviourTreeDocument } from "@babylonslate/behaviour-tree";
 import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
 import { generateNavMesh, initNavigation } from "@babylonslate/navigation";
+import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 
 describe("Move To Blackboard Key", () => {
@@ -78,7 +79,7 @@ describe("Move To Blackboard Key", () => {
     await runtime.loadNavMesh(bytes);
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree");
     return { runtime, commands };
   }
 

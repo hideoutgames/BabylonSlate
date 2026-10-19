@@ -190,6 +190,27 @@ describe("FeatureTest starter", () => {
     expect(loadErrors).toEqual([]);
   });
 
+  it("loads every graph compiled with a Simulation's execution probes", async () => {
+    const playContent = createPlayContentService({
+      documents: new DocumentService(),
+      project: reopened,
+      readAssetChunk: (path, chunk) => reopened.readAssetChunk(path, chunk),
+      projectDocument: () => document,
+      onPreviewScriptsCompiled: () => {},
+    });
+    const { bundles } = await playContent.collectPlayPreviewScripts(undefined, undefined, undefined, { traceExecution: true });
+    expect(bundles.some((bundle) => bundle.source.includes("__dbg"))).toBe(true);
+    // The starter's Animation Graphs are probed too, their Animation Object graph under its own id.
+    expect(bundles.some((bundle) => bundle.classId.startsWith("AnimGraph:") && bundle.source.includes('"animation-object")'))).toBe(true);
+    const loadErrors: string[] = [];
+    for (const bundle of bundles) {
+      await loadCompiledModule(bundle.source, bundle.classId).catch((error: unknown) => {
+        loadErrors.push(`${bundle.classId}: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+    expect(loadErrors).toEqual([]);
+  });
+
   it("compiles every Material and validates every Particle and Animation Graph", async () => {
     const registry = reopened.registry!;
     const assets = registry.list();

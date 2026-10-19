@@ -276,11 +276,12 @@ export type ControlMessage =
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
   /**
-   * The Behaviour Tree editor starts or stops showing live state. The runtime publishes `btState`
-   * only while observed (off by default), sending every evaluated tree's current state when
-   * observation starts.
+   * The editor's graph debugger watches `target` (null stops) and follows `instanceId` (null follows
+   * nothing). The runtime publishes `debugRoster` for the target and, only for the followed instance,
+   * a per-tick `executionTrace` (and, for a Behaviour Tree, its `btState`). Each message replaces the
+   * previous request.
    */
-  | { type: "setBehaviourTreeStateObserved"; observed: boolean }
+  | { type: "debugObserve"; target: DebugObserveTarget | null; instanceId: string | null }
   | { type: "console"; line: string }
   | { type: "inspect" }
   | { type: "sceneLayerFocusNavigate"; reverse: boolean }
@@ -425,6 +426,53 @@ export type DebugBehaviourTree = {
     decorators: Array<{ id: string; classId: string }>;
     services: Array<{ id: string; classId: string }>;
   }>;
+};
+
+/**
+ * What the editor's graph debugger watches while a Simulation runs.
+ * - `class`: the live instances whose class is exactly `classId`.
+ * - `behaviourTree`: the Behaviour Tree components that run the tree asset `assetGuid`.
+ * - `animationGraph`: the Animation Graph components that run the graph asset `assetGuid`; the same
+ *   instances serve its State Machine and its Animation Object graph.
+ */
+export type DebugObserveTarget =
+  | { kind: "class"; classId: string }
+  | { kind: "behaviourTree"; assetGuid: string }
+  | { kind: "animationGraph"; assetGuid: string };
+
+/** One live object a graph can be debugged against. */
+export type DebugInstance = {
+  /** Guid of the actor, component, Game Instance or subsystem. */
+  id: string;
+  kind: "actor" | "component" | "gameInstance" | "subsystem";
+  /** The object's name, else its class id. */
+  label: string;
+  /** A component's owning actor, by the same rule. */
+  ownerLabel?: string;
+};
+
+/**
+ * What ran in one graph for the observed instance during one tick. A compiled graph names its asset
+ * as script diagnostics do (a Class or Animation Graph asset path). A graph the runtime evaluates
+ * itself names its asset by guid.
+ */
+export type DebugGraphTrace = {
+  assetGuid: string;
+  /** `event-graph`, a function graph's export name, `animation-object`, `state-machine` or `behaviour-tree`. */
+  graphId: string;
+  /**
+   * Nodes that ran, in first-visit order. A Behaviour Tree reports the nodes its evaluation entered,
+   * resumed or ticked; an Animation Graph's State Machine the states it sampled, including one a
+   * blend is leaving.
+   */
+  nodes: string[];
+  /**
+   * Wires taken: exec wires, the parent-child links a Behaviour Tree evaluation went down, or an
+   * Animation Graph transition (as the id of the edge the canvas draws for it).
+   */
+  edges: string[];
+  /** Values that changed since the last report: node id, pin id, whether read or produced, display text. */
+  values: Array<[nodeId: string, pinId: string, direction: "in" | "out", text: string]>;
 };
 
 export type CommandMessage =
@@ -832,8 +880,14 @@ export type CommandMessage =
         weight: number;
       }>;
     }
+  /**
+   * The followed Behaviour Tree's live state: sent when it changes, and once as the follow starts.
+   * A debug view like `executionTrace`: it carries no scene state.
+   */
   | {
       type: "btState";
+      /** The followed Behaviour Tree component. */
+      instanceId: string;
       slotId: number;
       status: "success" | "failure" | "running";
       btNodeId: string | null;
@@ -841,6 +895,13 @@ export type CommandMessage =
       blackboard: Record<string, unknown>;
       stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
     }
+  /**
+   * The live instances of an observed target: the whole list when `reset`, else the changes. An
+   * `added` entry replaces any entry with its id. The list is capped; later instances join as earlier ones go.
+   */
+  | { type: "debugRoster"; target: DebugObserveTarget; reset: boolean; added: DebugInstance[]; removed: string[] }
+  /** What the followed instance ran during one tick; sent only when something ran. */
+  | { type: "executionTrace"; target: DebugObserveTarget; instanceId: string; tickIndex: number; graphs: DebugGraphTrace[] }
   | {
       type: "playSound";
       assetGuid: string;
