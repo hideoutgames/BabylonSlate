@@ -2064,5 +2064,3 @@ export function startPlaySession(options: {
     },
   };
 }
-
-export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;

@@ -70,7 +70,14 @@ Print and Draw Debug nodes are **Development Only** by default: release exports 
 
 ## After Play
 
-Errors and warnings from the session appear in the **Output Log** window. When Play stops after errors or warnings, the **Preview Session Report** lists them; tap a row to open the graph or tree node that caused it.
+Errors and warnings from the session appear in the **Output Log** window. When Play, Simulate or Preview Build stops after errors or warnings, the **Preview Session Report** opens at the top right of the editor (centered on a phone). It lists the entries under the asset that reported each one; the groups start collapsed.
+
+- Select an entry to open the asset that caused it. A Class opens at the node, including a node inside a function, and a behaviour tree opens at the node.
+- The report stays open while you work through the entries, and the editor behind it stays usable.
+- An entry that names no asset, or one the project no longer has, shows **No Source**. Selecting it says why nothing opens. If an asset cannot be opened, for example while a Simulation is still stopping, the report says why; select the entry again.
+- **Copy Report** copies every entry as text.
+
+The report closes only when you close it: choose **Close** or the close button in its title bar, or press <kbd>Esc</kbd>. Pressing the editor behind it, or opening an asset from it, leaves it open.
 
 ## Runaway loops
 

@@ -1,5 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -9,9 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import {
   EMPTY_SESSION_REPORT_LABELS,
+  NO_SOURCE_LABEL,
   groupSessionReportEntries,
   resolveSessionReportLabels,
   sessionReportAssetLabel,
@@ -22,6 +37,11 @@ import {
   type SessionReportLocationCache,
   type SessionReportLocationSources,
 } from "../lib/session-report-locations";
+import {
+  sessionReportNavigation,
+  type SessionReportNavigationResult,
+} from "../services/diagnostic-navigation";
+import { usePhoneLayout } from "../shell/use-platform-layout";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 
 export interface PreviewSessionReportProps {
@@ -29,12 +49,31 @@ export interface PreviewSessionReportProps {
   entries: SessionReportEntry[];
   dropped: number;
   onOpenChange: (open: boolean) => void;
-  onNavigate: (entry: SessionReportEntry) => void;
+  /**
+   * Opens the entry's source. The report stays open; a result that did not
+   * open shows its message in the report.
+   */
+  onNavigate: (
+    entry: SessionReportEntry,
+  ) => Promise<SessionReportNavigationResult | void> | SessionReportNavigationResult | void;
   /** Resolves asset names and node titles; without it rows show raw ids. */
   locationSources?: SessionReportLocationSources;
 }
 
 const NO_GROUPS: ReadonlySet<string> = new Set();
+
+/**
+ * Desktop and tablet placement: the top right under the toolbar, clear of the
+ * canvas centre where a navigated node is framed. Inline because
+ * `.editor-dialog` positions every dialog from the viewport centre.
+ */
+const ANCHORED_FRAME: CSSProperties = {
+  top: "calc(var(--safe-top) + 5rem)",
+  right: "calc(var(--safe-right) + 0.5rem)",
+  left: "auto",
+  width: "min(26rem, calc(100vw - var(--safe-left) - var(--safe-right) - 1rem))",
+  maxHeight: "min(32rem, calc(100dvh - var(--safe-top) - var(--safe-bottom) - 6rem))",
+};
 
 /**
  * Names for the open report, resolved once per report: open documents
@@ -84,12 +123,14 @@ function SessionReportGroupSection({
   labels,
   expanded,
   onExpandedChange,
+  hasSource,
   onNavigate,
 }: {
   group: SessionReportGroup;
   labels: SessionReportLabels;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  hasSource: (entry: SessionReportEntry) => boolean;
   onNavigate: (entry: SessionReportEntry) => void;
 }) {
   const listId = useId();
@@ -139,7 +180,11 @@ function SessionReportGroupSection({
                   entry.count > 1 ? `${entry.message} ×${entry.count}` : entry.message
                 }
                 code={entry.code}
-                location={sessionReportLocationLabel(labels, entry)}
+                location={
+                  hasSource(entry)
+                    ? sessionReportLocationLabel(labels, entry)
+                    : NO_SOURCE_LABEL
+                }
                 nodeId={sessionReportNodeId(entry) ?? ""}
                 testId="session-report-row"
                 onSelect={() => onNavigate(entry)}
@@ -153,8 +198,10 @@ function SessionReportGroupSection({
 }
 
 /**
- * Centered dialog of runtime errors from the last Play session, grouped by
- * owning asset. Groups start collapsed; a row opens its asset at the node.
+ * Nonmodal panel of runtime errors from the last Play session, grouped by
+ * owning asset. Groups start collapsed; a row opens its asset at the node and
+ * leaves the report open, so the editor stays usable beside it. Only Close,
+ * the title-bar close and Escape dismiss it.
  */
 export function PreviewSessionReport({
   open,
@@ -164,6 +211,7 @@ export function PreviewSessionReport({
   onNavigate,
   locationSources,
 }: PreviewSessionReportProps) {
+  const phone = usePhoneLayout();
   const labels = useSessionReportLabels(open, entries, locationSources);
   const groups = useMemo(() => groupSessionReportEntries(entries), [entries]);
   // Expansion belongs to one report; a new report starts collapsed.
@@ -178,6 +226,31 @@ export function PreviewSessionReport({
     else refs.delete(assetRef);
     setExpansion({ entries, refs });
   };
+
+  // Why the last chosen row opened nothing; it belongs to one report too.
+  const [notice, setNotice] = useState<{
+    entries: SessionReportEntry[];
+    message: string;
+  } | null>(null);
+  const navigation = useRef(0);
+  const navigate = async (entry: SessionReportEntry) => {
+    const request = ++navigation.current;
+    let result: SessionReportNavigationResult | void;
+    try {
+      result = await onNavigate(entry);
+    } catch (error) {
+      result = { opened: false, message: error instanceof Error ? error.message : String(error) };
+    }
+    if (request !== navigation.current) return;
+    setNotice(result && !result.opened ? { entries, message: result.message } : null);
+  };
+  const message = notice?.entries === entries ? notice.message : null;
+
+  // Without sources an entry's asset cannot be resolved, so only an entry that names none is known to lack one.
+  const hasSource = (entry: SessionReportEntry) =>
+    locationSources
+      ? sessionReportNavigation(entry, (ref) => locationSources.findAsset(ref)).document !== undefined
+      : Boolean(entry.assetGuid);
 
   const copyReport = async () => {
     const text = entries
@@ -195,31 +268,54 @@ export function PreviewSessionReport({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // No backdrop and no focus trap: the editor behind stays visible and
+    // usable, and a press outside never dismisses the report.
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
       <DialogContent
-        className="max-h-[min(32rem,80vh)] w-full sm:max-w-lg"
+        className={
+          phone
+            ? "max-h-[min(32rem,80vh)] w-full sm:max-w-lg"
+            : "max-w-none translate-x-0 translate-y-0 sm:max-w-none"
+        }
+        style={phone ? undefined : ANCHORED_FRAME}
+        showOverlay={false}
         bodyClassName="flex flex-col gap-3"
         data-testid="preview-session-report"
       >
         <DialogHeader>
           <DialogTitle>Preview Session Report</DialogTitle>
           <DialogDescription>
-            Runtime errors from the last Play session.
+            Runtime errors from the last Play session. Select an entry to open its source.
             {dropped > 0 ? ` (${dropped} more dropped)` : ""}
           </DialogDescription>
         </DialogHeader>
-        <ul className="flex min-h-0 flex-1 touch-pan-y flex-col overflow-y-auto overscroll-y-contain rounded-md border border-border">
-          {groups.map((group) => (
-            <SessionReportGroupSection
-              key={group.assetRef}
-              group={group}
-              labels={labels}
-              expanded={expanded.has(group.assetRef)}
-              onExpandedChange={(next) => setGroupExpanded(group.assetRef, next)}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </ul>
+        {groups.length === 0 ? (
+          <Empty className="flex-none gap-2 rounded-md border border-border p-3" data-testid="session-report-empty">
+            <EmptyHeader>
+              <EmptyTitle>No Entries</EmptyTitle>
+              <EmptyDescription>The last session reported no errors or warnings.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ul className="flex min-h-0 flex-1 touch-pan-y flex-col overflow-y-auto overscroll-y-contain rounded-md border border-border">
+            {groups.map((group) => (
+              <SessionReportGroupSection
+                key={group.assetRef}
+                group={group}
+                labels={labels}
+                expanded={expanded.has(group.assetRef)}
+                onExpandedChange={(next) => setGroupExpanded(group.assetRef, next)}
+                hasSource={hasSource}
+                onNavigate={(entry) => void navigate(entry)}
+              />
+            ))}
+          </ul>
+        )}
+        {message ? (
+          <Alert data-testid="session-report-notice">
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
+        ) : null}
         <DialogFooter>
           <Button
             variant="secondary"
