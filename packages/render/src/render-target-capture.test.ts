@@ -16,9 +16,22 @@ import { bindParticleMaterial } from "./particle-system-factory";
 import { createSceneStreamAdmission, registerSceneStreamParticle } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
+import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
+
+// NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
+vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
+  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral) };
+});
+const { beginPipelineDeferral: actualBeginPipelineDeferral } =
+  await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 const engines: NullEngine[] = [];
-afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
+  for (const engine of engines.splice(0)) engine.dispose();
+});
 function host(floatingOrigin = false) {
   const engine = new NullEngine();
   if (floatingOrigin) vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
@@ -64,6 +77,23 @@ it("manual capture allocates only on demand, coalesces requests and preserves th
   expect(output.isRenderTarget).toBe(false);
   expect(scene.customRenderTargets).toEqual([]);
   expect(scene.activeCamera).toBe(camera);
+});
+
+it("publishes nothing and keeps a manual request while its draw waits for a compiling pipeline", () => {
+  const { captures, draws } = host();
+  const output = captures.acquireTexture("texture")!.resource;
+  captures.request("capture");
+  // Inside a deferring view's frame, a draw skipped for a pipeline still compiling.
+  vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: () => 1, waiting: () => true }));
+  captures.render();
+  expect(draws).toHaveLength(1);
+  expect(output.getSize()).not.toEqual({ width: 16, height: 8 });
+  vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
+  captures.render();
+  expect(draws).toHaveLength(2);
+  expect(output.getSize()).toEqual({ width: 16, height: 8 });
+  captures.render();
+  expect(draws).toHaveLength(2);
 });
 
 it("keeps color and data sampling distinct while sharing the uncaptured fallback", () => {

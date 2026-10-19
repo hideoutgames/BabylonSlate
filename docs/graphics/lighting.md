@@ -57,6 +57,8 @@ Each scene can light a limited number of local (point, spot and area) lights at 
 
 When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
 
+A different mix of light kinds needs new shaders the first time, which can pause the view. The kind is the light type (point, spot or area) and whether the light has a shadow map, so a shadowed and an unshadowed spot are different kinds. Haptic therefore prefers to switch a light for one of the same kind, including when you switch a light off. A nearer light of another kind can stay off: it takes a place only once it is more than 1.25 times nearer the camera than the light it would replace.
+
 ## Environment lighting
 
 Image-based lighting lights surfaces from a prefiltered environment texture.

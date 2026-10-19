@@ -6,6 +6,7 @@ import { lightingSamplerCapacity } from "./light-sampler-budget";
 import {
   clusteredLightingLimits,
   clusteredLocalContributionCount,
+  hasClusteredLightPolicy,
   syncClusteredLightPolicy,
 } from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
@@ -14,7 +15,7 @@ import {
   takeShadowReceiverHandoffs,
   type ShadowReceiverHandoff,
 } from "./shadow-receiver-handoff";
-import type { ForwardLightSlotExchange } from "./forward-light-slots";
+import { sortReceiverLightSources, type ForwardLightSlotExchange } from "./forward-light-slots";
 import {
   LightBlock,
   Material,
@@ -282,6 +283,11 @@ function installSceneLighting(scene: Scene): SceneLighting {
     const previousShadowLayout = shadowLayout;
     shadowLayout = nextShadowLayout;
     nextShadowLayout = previousShadowLayout;
+    // An authored enable appends its light to each receiver (a re-enabled sun
+    // or fill after every local light): restore scene order so the receiver
+    // asks for the Effects that order compiled before. Clustered Forward and
+    // light sorting order lightSources themselves.
+    if (!hasClusteredLightPolicy(scene) && !scene.requireLightSorting) sortReceiverLightSources(scene);
     // Sized by the light inventory, not the enabled count: turning lights on
     // or off and budget swaps keep MAXLIGHTCOUNT, so a receiver whose own
     // lights are unchanged keeps its Effect. Not the slot count either: Babylon

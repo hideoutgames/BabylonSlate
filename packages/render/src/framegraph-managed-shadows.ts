@@ -68,6 +68,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     };
   }
 
+  /** Whether `renderPassId` is this pass's blended depth pre-pass, which draws with it every frame. */
+  ownsRenderPass(renderPassId: number): boolean {
+    return renderPassId === this.depthPrePass.renderPassId;
+  }
+
   private readonly textureDependencies = new Map<
     string,
     readonly FrameGraphTextureHandle[]

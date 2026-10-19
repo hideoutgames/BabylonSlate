@@ -45,8 +45,8 @@ export const VOLUME_SHADOW_CODE = { none: 0, compare: 1, cube: 2, packedCube: 3,
 /**
  * Every slot can compare a single map (sun or spot light) and read a cube map (point light); only the first reads a
  * cascaded map. The one sun that illuminates ranks before every local light, so it always takes the first slot, and
- * the march's samplers stay at 2 × Max Lights + 3 with its depth and source (11 at four lights, within the 16 a
- * fragment stage is guaranteed).
+ * the march declares 2 × Max Lights + 2 samplers with its depth (10 at four lights, within the 16 a fragment stage is
+ * guaranteed).
  */
 export function volumeSlotSamples(slot: number, kind: VolumeShadow["kind"]): boolean {
   return kind !== "cascades" || slot === 0;
@@ -179,14 +179,22 @@ export function selectVolumetricLights(
   return lights;
 }
 
-/** The light's admitted map; a standby or released one is none, so the march never binds it. */
-export function volumeShadowGenerator(
+/**
+ * The map a march drawn for `camera` samples for `light`. Only an admitted map counts: a standby or released one is
+ * none, so the march never binds it. A view with its own sun maps (a Full Quality capture, `attachView`) samples the
+ * sun map fitted to its camera, whose cascade matrices and splits match its view; one whose mirror the ledger refused
+ * samples the scene view's map, as its materials do. Local maps are shared by every view.
+ */
+function volumeShadowGenerator(
   scene: Scene,
   light: VolumeLight,
+  camera: Camera,
 ): ShadowGenerator | null {
-  return scene.shadowsEnabled && light.shadowEnabled
-    ? (findSceneShadowController(scene)?.generator(light) ?? null)
-    : null;
+  if (!scene.shadowsEnabled || !light.shadowEnabled) return null;
+  const controller = findSceneShadowController(scene);
+  // viewBoundGenerator alone falls back to the light's bound map, which can be on standby.
+  if (!controller?.generator(light)) return null;
+  return controller.viewBoundGenerator(light, camera);
 }
 
 /** The sampler shape of a light's map, written into `out` (a per-frame caller passes scratch storage). */
@@ -214,19 +222,11 @@ function shadowShape(generator: ShadowGenerator | null, out: VolumeShadow): Volu
   return out;
 }
 
-/** The light's current shadow sampler shape, written into `out` (a per-frame caller passes scratch storage). */
-export function volumeShadowLayout(
-  scene: Scene,
-  light: VolumeLight,
-  out: VolumeShadow = { kind: "none", cascades: 0, packed: false },
-): VolumeShadow {
-  return shadowShape(volumeShadowGenerator(scene, light), out);
-}
-
 /**
  * One texel of each shadow sampler type, bound to every sampler a slot's kind does not read: a WebGPU bind group needs
  * a texture of the declared type in every binding, and WebGL2 must not leave a released map (or another type) behind
- * on a slot's unit. The depth ones compare like real maps. Never sampled: the slot's kind skips them.
+ * on a slot's unit. The depth ones carry a comparison function because their samplers compare; which one does not
+ * matter, since the slot's kind skips them and they are never sampled.
  */
 export interface VolumeShadowPlaceholders {
   readonly compare: BaseTexture;
@@ -238,11 +238,14 @@ const placeholders = new WeakMap<Scene, VolumeShadowPlaceholders>();
 
 /**
  * The scene's placeholders, created on first use and disposed with the scene. Create them while preparing a graph:
- * allocating a render target inside a pass would rebind the framebuffer it draws to.
+ * allocating a render target inside a pass would rebind the framebuffer it draws to. Like held images, they are a
+ * fixed cost outside the managed render ledger.
  */
 export function volumeShadowPlaceholders(scene: Scene): VolumeShadowPlaceholders {
   let owned = placeholders.get(scene);
   if (owned) return owned;
+  // A disposed scene never notifies its disposal again, so placeholders made for it would never be released.
+  if (scene.isDisposed) throw new Error("Volumetric shadow placeholders need a live scene.");
   const engine = scene.getEngine();
   const targets: RenderTargetWrapper[] = [];
   const wrap = (target: RenderTargetWrapper, texture: InternalTexture, name: string) => {
@@ -306,7 +309,8 @@ function cubeShadowType(engine: AbstractEngine): number {
  * Binds the lights to the march's `slotCount` slots, slot by slot, and the count of lights taking part; slots past it
  * are skipped by the march but still bind placeholders. Each slot's shadow kind and map are resolved here, after the
  * graph's shadow task: maps stay controller-owned and can be replaced, stood by or released during admission, and a
- * light whose map is gone (or that the slot cannot sample) draws unshadowed rather than sample a released map.
+ * light whose map is gone (or that the slot cannot sample) draws unshadowed rather than sample a released map. A sun's
+ * map is the one fitted to `camera`, the view the march draws (`volumeShadowGenerator`).
  */
 export function bindVolumetricLights(
   effect: Effect,
@@ -363,7 +367,7 @@ export function bindVolumetricLights(
       );
       const min = light.getDepthMinZ(camera);
       effect.setFloat2(`volumeDepth${i}`, min, min + light.getDepthMaxZ(camera));
-      generator = volumeShadowGenerator(scene, light);
+      generator = volumeShadowGenerator(scene, light, camera);
       const shape = shadowShape(generator, scratch);
       if (volumeSlotSamples(i, shape.kind)) kind = shape.kind;
     }
