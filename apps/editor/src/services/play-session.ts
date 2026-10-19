@@ -775,7 +775,9 @@ export function startPlaySession(options: {
     },
   });
   const suppressGameInput = () => {
-    const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
+    // A `rendering` hold stops game time only: it never neutralizes held input or exits pointer lock.
+    const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused ||
+      [...requestedPauses].some((reason) => reason !== "rendering");
     const routed = options.mode === "simulate" || editorInputRoutingEnabled;
     // Ordinary Play keeps shared routing until something actually takes input
     // away; from then on the exclusive capture is told when input returns.
@@ -791,9 +793,9 @@ export function startPlaySession(options: {
     const work = boundaryClient.request(action).then(result => {
       if (result.success && result.requestId > lastBoundaryId) {
         lastBoundaryId = result.requestId;
-        acknowledgedPaused = result.paused;
-        // A `rendering` hold keeps the view drawing; the Engine pauses its own game time for it.
-        handle.setGameTimePaused(result.pauseReasons.some((reason) => reason !== "rendering"));
+        // A `rendering` hold keeps the view drawing and the input flowing; the Engine pauses its own game time for it.
+        acknowledgedPaused = result.pauseReasons.some((reason) => reason !== "rendering");
+        handle.setGameTimePaused(acknowledgedPaused);
         if (!result.paused) last = performance.now();
         suppressGameInput();
       }

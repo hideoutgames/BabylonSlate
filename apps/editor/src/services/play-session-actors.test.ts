@@ -258,6 +258,24 @@ describe.each(["worker", "in-process"] as const)(
       expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
     });
 
+    it("stops game time for a render hold without taking input from the game", async () => {
+      const gameTime: boolean[] = [];
+      await play({ onGameTimePaused: paused => gameTime.push(paused) });
+      capture.setSuppressed.mockClear();
+      gameTime.length = 0;
+      const held = await session!.setPauseReason("rendering", true);
+      expect(held).toMatchObject({ paused: true, pauseReasons: ["rendering"] });
+      expect(capture.setSuppressed).not.toHaveBeenCalledWith(true);
+      expect(gameTime).not.toContain(true);
+      // Any other reason on top of the hold still takes input and stops the Engine's own game time.
+      await session!.setPauseReason("user", true);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(true);
+      expect(gameTime.at(-1)).toBe(true);
+      await session!.setPauseReason("user", false);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
+      await session!.setPauseReason("rendering", false);
+    });
+
     it("ends an editor input transition whose reset fails without holding game input", async () => {
       let refuseReset = false;
       await play({

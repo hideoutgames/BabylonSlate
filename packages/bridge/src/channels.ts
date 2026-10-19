@@ -277,7 +277,11 @@ export type ControlMessage =
   | { type: "play" }
   | { type: "step" }
   | { type: "stop" }
-  | { type: "setPaused"; paused: boolean }
+  /**
+   * Pauses the game, or resumes it. `reason: "rendering"` is the host's render hold (the view waits for
+   * GPU work): it stops time only, so held input stays held; omitted, the pause also resets input.
+   */
+  | { type: "setPaused"; paused: boolean; reason?: "rendering" }
   /**
    * The editor's graph debugger watches `target` (null stops) and follows `instanceId` (null follows
    * nothing). The runtime publishes `debugRoster` for the target and, only for the followed instance,

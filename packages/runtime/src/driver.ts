@@ -1835,11 +1835,14 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.simulation.quiescent && !paused) return;
     if (this.ticks.processing) { this.pendingPauseChanges.set(reason, paused); return; }
     const wasPaused = this.paused;
+    const wasBlockingInput = this.blocksInput();
     if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason);
     this.paused = this.pauseReasons.size > 0;
+    // A `rendering` hold is a time pause only: held keys and buttons stay held and releases still arrive.
+    if (!wasBlockingInput && this.blocksInput()) this.resetInputState();
     if (this.paused === wasPaused) return;
     this.ticks.resetAccumulator();
-    if (this.paused) { this.resetInputState(); return; }
+    if (this.paused) return;
     this.ticks.discardNextElapsed();
     this.admission.flush();
     this.waits.resumeWaiters();
@@ -1879,8 +1882,14 @@ class InProcessRuntime implements RuntimeDriver {
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
   }
 
+  /** Whether a pause reason other than a render hold drops input: only those reset and refuse it. */
+  private blocksInput(): boolean {
+    for (const reason of this.pauseReasons) if (reason !== "rendering") return true;
+    return false;
+  }
+
   pushInput(events: readonly RawInputEvent[]): void {
-    if (this.stopped || this.paused) return;
+    if (this.stopped || this.blocksInput()) return;
     for (const event of events) {
       this.input.push(event);
     }
