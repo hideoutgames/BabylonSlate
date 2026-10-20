@@ -546,6 +546,91 @@ describe("pasteClassMembers variables", () => {
       });
       expect(untouched!.data).toMatchObject({ componentId: "other", variableId: "component:other" });
     });
+
+    it("retarget a call to a custom event of a pasted component onto the copy of that event, on the running object", () => {
+      const hero = source();
+      const get = (id: string) =>
+        node(id, "variables.get", {
+          title: "Get Mesh",
+          variableName: "Mesh",
+          variableId: "component:prefab-mesh",
+          componentId: "prefab-mesh",
+          typeId: "object",
+          typeClassId: "MeshComponent",
+          scope: "member",
+          classId: "Hero",
+        });
+      const call = (id: string, name: string) =>
+        node(id, "flow.event.call", {
+          title: `Call ${name}`,
+          name,
+          classId: "MeshComponent",
+          implicitSelf: false,
+          pins: EVENT_PINS,
+        });
+      hero.nodes.push(
+        node("evt-opened", "flow.event.custom", {
+          title: "Event Opened (Mesh)",
+          name: "Opened",
+          eventQualifier: "Mesh",
+          componentId: "prefab-mesh",
+          pins: EVENT_PINS,
+        }),
+      );
+      const wire = (from: string, fromHandle: string, to: string, toHandle: string) => ({
+        id: `${from}-${to}`,
+        source: from,
+        target: to,
+        sourceHandle: fromHandle,
+        targetHandle: toHandle,
+      });
+      hero.functionGraphs!["fn-helper"] = {
+        nodes: [
+          get("get-opened"),
+          call("call-opened", "Opened"),
+          get("get-shared"),
+          call("call-shared-opened", "Opened"),
+          call("call-other", "Other"),
+          variableNode("get-amount", "variables.get", HEALTH),
+        ],
+        edges: [
+          wire("get-opened", "value", "call-opened", "target"),
+          wire("get-amount", "value", "call-opened", "Amount"),
+          wire("get-shared", "value", "call-shared-opened", "target"),
+          wire("get-shared", "value", "call-other", "target"),
+        ],
+      };
+      const clip = copy(
+        [componentRow(MESH), { id: "evt-opened", kind: "event", name: "Opened" }, row(hero, "function", "Helper")],
+        hero,
+      );
+      const target = {
+        ...targetWith([]),
+        nodes: [node("t-opened", "flow.event.custom", { name: "Opened", pins: EVENT_PINS })],
+      };
+      const result = paste(clip, target, { takenNames: { variable: ["Mesh"], function: [] } });
+      const component = result.graph.components![0]!;
+      const helper = result.pasted.find((entry) => entry.kind === "function")!;
+      const { nodes, edges } = result.graph.functionGraphs![helper.id]!;
+
+      expect(result.graph.nodes.at(-1)!.data).toMatchObject({ name: "Opened 1" });
+      const byTitle = (title: string) => nodes.filter((entry) => entry.data.title === title);
+      // The calls now run the copy on the running object, with the same pins and argument wire.
+      const [retargeted, retargetedShared] = byTitle("Call Opened 1");
+      expect(retargeted!.data).toMatchObject({ name: "Opened 1", implicitSelf: true, classId: "Enemy", pins: EVENT_PINS });
+      expect(retargetedShared!.data).toMatchObject({ name: "Opened 1", implicitSelf: true, classId: "Enemy" });
+      expect(edges.map((edge) => [edge.sourceHandle, edge.targetHandle])).toEqual([
+        ["value", "Amount"],
+        ["value", "target"],
+      ]);
+      // A Get nothing else reads goes; one still read by another call stays, rebound to the copy.
+      const gets = nodes.filter((entry) => entry.type === "variables.get" && entry.data.componentId);
+      expect(gets).toHaveLength(1);
+      expect(gets[0]!.data.componentId).toBe(component.id);
+      expect(edges.find((edge) => edge.targetHandle === "target")!.source).toBe(gets[0]!.id);
+      // A call to an event that was not pasted stays as it was.
+      expect(byTitle("Call Other")[0]!.data).toMatchObject({ name: "Other", implicitSelf: false, classId: "MeshComponent" });
+    });
   });
 });
 

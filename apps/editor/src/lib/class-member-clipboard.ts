@@ -395,6 +395,8 @@ type ReferenceTargets = {
   pastedVariablesByName: Map<string, GraphClassMember>;
   pastedFunctionsByName: Map<string, GraphClassMember>;
   pastedEventsByName: Map<string, { name: string; classId?: string }>;
+  /** `Copy component id + source event name` → the unbound custom event pasted for a custom event of that component. */
+  pastedComponentEvents: Map<string, { name: string; pins: GraphClassMemberPin[] }>;
   variables: TargetMember[];
   functions: TargetMember[];
   events: TargetEvent[];
@@ -478,6 +480,58 @@ function remapReferences(node: GraphNode, fn: FunctionPaste, refs: ReferenceTarg
   }
 }
 
+/**
+ * A Call Custom Event whose target is a Get of a component pasted in the same
+ * paste, and whose event is one of that component's pasted custom events,
+ * calls the copy on the running object instead: the target wire goes, and the
+ * Get with it when nothing else reads it. Every other call stays as it was.
+ */
+function retargetComponentEventCalls(
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] },
+  refs: ReferenceTargets,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  if (refs.pastedComponentEvents.size === 0) return graph;
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const retargeted = new Map<string, GraphNode>();
+  const droppedEdges = new Set<GraphEdge>();
+  const gets = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.type !== "flow.event.call" || node.data.implicitSelf !== false) continue;
+    const wire = graph.edges.find((edge) => edge.target === node.id && edge.targetHandle === "target");
+    const get = wire ? byId.get(wire.source) : undefined;
+    if (!wire || get?.type !== "variables.get" || typeof get.data.componentId !== "string") continue;
+    const copy = refs.pastedComponentEvents.get(
+      `${get.data.componentId}\0${formatEventMemberName(String(node.data.name ?? ""))}`,
+    );
+    if (!copy) continue;
+    droppedEdges.add(wire);
+    gets.add(get.id);
+    retargeted.set(
+      node.id,
+      withClassId(
+        {
+          ...node,
+          data: {
+            ...node.data,
+            name: copy.name,
+            title: `Call ${copy.name}`,
+            implicitSelf: true,
+            pins: structuredClone(copy.pins),
+          },
+        },
+        refs.classId,
+      ),
+    );
+  }
+  if (retargeted.size === 0) return graph;
+  const edges = graph.edges.filter((edge) => !droppedEdges.has(edge));
+  const unused = new Set([...gets].filter((id) => !edges.some((edge) => edge.source === id)));
+  return {
+    nodes: graph.nodes.flatMap((node) => (unused.has(node.id) ? [] : [retargeted.get(node.id) ?? node])),
+    edges: edges.filter((edge) => !unused.has(edge.target)),
+  };
+}
+
 /** The function graph of a copy: fresh ids, wires kept, references remapped. */
 function pastedFunctionGraph(
   fn: FunctionPaste,
@@ -512,7 +566,7 @@ function pastedFunctionGraph(
       target,
     }];
   });
-  return { nodes, edges };
+  return retargetComponentEventCalls({ nodes, edges }, refs);
 }
 
 /** Members a graph declares directly: not a function's locals, not a component's virtual variable. */
@@ -579,6 +633,9 @@ function remapComponentReferences(
  * - An event bound to a component, native or custom, always becomes such a
  *   custom event, bound to no component and without Call Parent, whether or
  *   not the target has that component.
+ * - In a pasted function, a Call Custom Event wired to a Get of a component
+ *   pasted too, for one of that component's pasted custom events, calls the
+ *   copy on the running object (`retargetComponentEventCalls`).
  * - An override of an inherited custom event is wired to Call Parent as well.
  * - A component added by a paste is named like a variable (`Mesh_1`).
  */
@@ -604,6 +661,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     pastedVariablesByName: new Map(),
     pastedFunctionsByName: new Map(),
     pastedEventsByName: new Map(),
+    pastedComponentEvents: new Map(),
     variables: [
       ...declaredMembers(options.graph, "variable").map((member) => ({ member, classId })),
       ...ancestors.flatMap((ancestor) =>
@@ -800,7 +858,11 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     if (source.type === CUSTOM_EVENT) {
       const pins = Array.isArray(source.data.pins) ? (source.data.pins as GraphClassMemberPin[]) : [];
       if (isComponentEvent(source)) {
-        customEvent(uniqueEventName(componentCustomEventName(source), takenEvents), pins);
+        const name = uniqueEventName(componentCustomEventName(source), takenEvents);
+        customEvent(name, pins);
+        // Calls from a pasted function that target the component it came with end up here.
+        const copyComponent = refs.pastedComponents.get(String(source.data.componentId))?.componentId;
+        if (copyComponent) refs.pastedComponentEvents.set(`${copyComponent}\0${customEventName(source)}`, { name, pins });
         continue;
       }
       if (!entry.bound) {
