@@ -923,28 +923,88 @@ describe("pasteClassMembers events", () => {
     ]);
   });
 
-  it("pastes a native event bound to a component the target lacks as a numbered custom event with its outputs", () => {
+  it("pastes a native component event as a numbered custom event bound to nothing, with its outputs", () => {
     const hero = heroGraph();
     hero.nodes.push(
       node("evt-collide", "flow.event.hit", { title: "Event On Hit (Collider)", componentId: "prefab-collider" }),
     );
     const clip = copy([{ id: "evt-collide", kind: "event", name: "Event On Hit (Collider)" }], hero);
+    const hitPins = [
+      { name: "Hit Result", typeId: "struct", direction: "out", typeClassId: "engine:HitResult" },
+      { name: "Other Actor", typeId: "actor", direction: "out", typeClassId: "Actor" },
+      { name: "Location", typeId: "vec3", direction: "out" },
+      { name: "Normal", typeId: "vec3", direction: "out" },
+    ];
 
-    const lacking = paste(clip, emptyTarget(), { componentIds: new Set(["prefab-mesh"]) });
-    expect(lacking.skipped).toEqual([]);
-    expect(lacking.graph.nodes).toHaveLength(1);
-    expect(lacking.graph.nodes[0]).toMatchObject({
+    // The target has the component, lacks it, or the component is pasted in the same paste: the result is the same.
+    const collider: SerializedComponent = { id: "prefab-collider", classId: "ColliderComponent", properties: {}, parentId: null };
+    for (const target of [emptyTarget(), { ...emptyTarget(), components: [collider] }]) {
+      const result = paste(clip, target);
+      expect(result.skipped).toEqual([]);
+      expect(result.graph.nodes).toHaveLength(1);
+      expect(result.graph.nodes[0]).toMatchObject({
+        type: "flow.event.custom",
+        data: { name: "On Hit 1", title: "Event On Hit 1", pins: hitPins },
+      });
+      expect(result.graph.nodes[0]!.data.componentId).toBeUndefined();
+      expect(result.graph.nodes[0]!.data.eventQualifier).toBeUndefined();
+      expect(result.pasted).toEqual([{ kind: "event", id: "new-1", name: "On Hit 1" }]);
+    }
+  });
+
+  it("pastes a component custom event as a custom event bound to nothing, with its own outputs and a free name", () => {
+    const hero = heroGraph();
+    const pins: GraphClassMemberPin[] = [{ name: "Amount", typeId: "int", direction: "out" }];
+    hero.nodes.push(
+      node("evt-open", "flow.event.custom", {
+        name: "Opened",
+        title: "Event Opened (Door)",
+        eventQualifier: "Door",
+        componentId: "prefab-door",
+        pins,
+      }),
+    );
+    const clip = copy([{ id: "evt-open", kind: "event", name: "Opened" }], hero);
+    expect(clip.events[0]!.bound).toBe(true);
+
+    const fresh = paste(clip, emptyTarget());
+    expect(fresh.skipped).toEqual([]);
+    expect(fresh.graph.nodes[0]).toMatchObject({
       type: "flow.event.custom",
-      data: { name: "On Hit 1", pins: [expect.objectContaining({ name: "Hit Result" }), expect.anything(), expect.anything(), expect.anything()] },
+      data: { name: "Opened", title: "Event Opened", pins },
     });
-    expect(lacking.graph.nodes[0]!.data.componentId).toBeUndefined();
+    expect(fresh.graph.nodes[0]!.data.componentId).toBeUndefined();
+    expect(fresh.graph.nodes[0]!.data.eventQualifier).toBeUndefined();
+    expect(fresh.graph.members).toEqual([{ id: "new-1", kind: "event", name: "Opened", pins }]);
 
-    // A Class that has the component keeps the event bound to it.
-    const having = paste(clip, emptyTarget(), { componentIds: new Set(["prefab-collider"]) });
-    expect(having.graph.nodes[0]).toMatchObject({
-      type: "flow.event.hit",
-      data: { componentId: "prefab-collider" },
-    });
+    // A target with that component and event still gets an unbound copy under a free name, with no Call Parent.
+    const target = emptyTarget(
+      [],
+      [node("t-open", "flow.event.custom", { name: "Opened", componentId: "prefab-door", eventQualifier: "Door" })],
+    );
+    const again = paste(clip, { ...target, components: [{ id: "prefab-door", classId: "DoorComponent", properties: {}, parentId: null }] });
+    expect(again.skipped).toEqual([]);
+    expect(again.graph.nodes.map((entry) => entry.type)).toEqual(["flow.event.custom", "flow.event.custom"]);
+    expect(again.graph.nodes[1]!.data).toMatchObject({ name: "Opened 1" });
+    expect(again.graph.nodes[1]!.data.componentId).toBeUndefined();
+  });
+
+  it("pastes a component event as an unbound custom event even when its component is pasted too", () => {
+    const hero = { ...heroGraph(), components: [structuredClone(MESH)] };
+    hero.nodes.push(node("evt-hit", "flow.event.hit", { title: "Event On Hit (Mesh)", componentId: MESH.id }));
+    const clip = copy(
+      [
+        { id: `component:${MESH.id}`, kind: "variable", name: "Mesh", componentId: MESH.id },
+        { id: "evt-hit", kind: "event", name: "Event On Hit (Mesh)" },
+      ],
+      hero,
+    );
+    const result = paste(clip, { ...emptyTarget(), components: [] });
+    expect(result.graph.components).toHaveLength(1);
+    expect(result.graph.nodes).toHaveLength(1);
+    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "On Hit 1" } });
+    expect(result.graph.nodes[0]!.data.componentId).toBeUndefined();
+    expect(result.skipped).toEqual([]);
   });
 
   it("leaves events out of a Class that has no event graph", () => {

@@ -980,15 +980,6 @@ export function ClassMembersView({
       eventOptions: membersOptions,
       // Local variables go into the selected function, else the one whose graph is open.
       targetFunctionId: selectedFunctionId() ?? activeFunctionId,
-      componentIds: new Set(
-        componentGraphMembersForClass({
-          graph,
-          classId,
-          parentClass: membersOptions?.parentClass,
-          parentOf: membersOptions?.parentOf,
-          parentGraphs: membersOptions?.parentGraphs,
-        }).map((member) => member.componentId),
-      ),
     });
     showNotice(skippedMembersNotice(result.skipped));
     const last = result.pasted[result.pasted.length - 1];
