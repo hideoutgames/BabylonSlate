@@ -70,7 +70,7 @@ export type ClipboardFunction = {
 /** A copied event: the event node alone, never the nodes it runs. */
 export type ClipboardEvent = {
   node: GraphNode;
-  /** A custom event the Class does not own (an override, a component event) keeps its binding. */
+  /** A custom event the Class does not own (an override, a component event). An override keeps its binding; a component event pastes unbound. */
   bound: boolean;
   sourceClassId?: string;
 };
@@ -223,8 +223,6 @@ export type ClassMemberPasteOptions = {
   ancestors?: ReadonlyArray<{ classId: string; graph: SerializedGraph }>;
   /** Parent and asset type of the target, which decide the events it can have. */
   eventOptions?: ClassEventOptions;
-  /** Components of the target, for events bound to one. */
-  componentIds?: ReadonlySet<string>;
   /** The function of the target that local variables go into: the selected one, else the focused one. */
   targetFunctionId?: string | null;
   idFactory?: () => string;
@@ -244,7 +242,7 @@ export type SkippedClassMember = {
   kind: "variable" | "function" | "event";
   name: string;
   /**
-   * `kind`: the Class cannot have that member. `unavailable`: a bound custom event whose component or inherited event the Class lacks.
+   * `kind`: the Class cannot have that member. `unavailable`: an override of an inherited custom event the Class does not inherit.
    * `present`: it already has it. `function`: a local variable with no function to go into.
    */
   reason: "kind" | "unavailable" | "present" | "function";
@@ -333,6 +331,16 @@ function nativeEventOutputPins(node: Pick<GraphNode, "type" | "data">): GraphCla
     });
 }
 
+/** A custom event bound to a component keeps the component out of its name: `Open (Door)` → `Open`. */
+function componentCustomEventName(node: Pick<GraphNode, "data">): string {
+  if (typeof node.data.name === "string" && node.data.name) return customEventName(node);
+  return customEventName(node).replace(/\s*\([^)]*\)\s*$/, "").trim() || "Event";
+}
+
+function isComponentEvent(node: Pick<GraphNode, "data">): boolean {
+  return typeof node.data.componentId === "string";
+}
+
 function eventTitleForNotice(node: Pick<GraphNode, "type" | "data">): string {
   return node.type === CUSTOM_EVENT
     ? customEventName(node)
@@ -387,6 +395,8 @@ type ReferenceTargets = {
   pastedVariablesByName: Map<string, GraphClassMember>;
   pastedFunctionsByName: Map<string, GraphClassMember>;
   pastedEventsByName: Map<string, { name: string; classId?: string }>;
+  /** `Copy component id + source event name` → the unbound custom event pasted for a custom event of that component. */
+  pastedComponentEvents: Map<string, { name: string; pins: GraphClassMemberPin[] }>;
   variables: TargetMember[];
   functions: TargetMember[];
   events: TargetEvent[];
@@ -470,6 +480,58 @@ function remapReferences(node: GraphNode, fn: FunctionPaste, refs: ReferenceTarg
   }
 }
 
+/**
+ * A Call Custom Event whose target is a Get of a component pasted in the same
+ * paste, and whose event is one of that component's pasted custom events,
+ * calls the copy on the running object instead: the target wire goes, and the
+ * Get with it when nothing else reads it. Every other call stays as it was.
+ */
+function retargetComponentEventCalls(
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] },
+  refs: ReferenceTargets,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  if (refs.pastedComponentEvents.size === 0) return graph;
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const retargeted = new Map<string, GraphNode>();
+  const droppedEdges = new Set<GraphEdge>();
+  const gets = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.type !== "flow.event.call" || node.data.implicitSelf !== false) continue;
+    const wire = graph.edges.find((edge) => edge.target === node.id && edge.targetHandle === "target");
+    const get = wire ? byId.get(wire.source) : undefined;
+    if (!wire || get?.type !== "variables.get" || typeof get.data.componentId !== "string") continue;
+    const copy = refs.pastedComponentEvents.get(
+      `${get.data.componentId}\0${formatEventMemberName(String(node.data.name ?? ""))}`,
+    );
+    if (!copy) continue;
+    droppedEdges.add(wire);
+    gets.add(get.id);
+    retargeted.set(
+      node.id,
+      withClassId(
+        {
+          ...node,
+          data: {
+            ...node.data,
+            name: copy.name,
+            title: `Call ${copy.name}`,
+            implicitSelf: true,
+            pins: structuredClone(copy.pins),
+          },
+        },
+        refs.classId,
+      ),
+    );
+  }
+  if (retargeted.size === 0) return graph;
+  const edges = graph.edges.filter((edge) => !droppedEdges.has(edge));
+  const unused = new Set([...gets].filter((id) => !edges.some((edge) => edge.source === id)));
+  return {
+    nodes: graph.nodes.flatMap((node) => (unused.has(node.id) ? [] : [retargeted.get(node.id) ?? node])),
+    edges: edges.filter((edge) => !unused.has(edge.target)),
+  };
+}
+
 /** The function graph of a copy: fresh ids, wires kept, references remapped. */
 function pastedFunctionGraph(
   fn: FunctionPaste,
@@ -504,7 +566,7 @@ function pastedFunctionGraph(
       target,
     }];
   });
-  return { nodes, edges };
+  return retargetComponentEventCalls({ nodes, edges }, refs);
 }
 
 /** Members a graph declares directly: not a function's locals, not a component's virtual variable. */
@@ -565,9 +627,15 @@ function remapComponentReferences(
  * - Events go into the event graph below the existing nodes. A native event
  *   the target's own graph lacks, and its Class can have, is pasted as that
  *   event, wired to Call Parent like one added by hand; otherwise (the Class
- *   cannot have it, has it, or lacks the component it is bound to) it becomes
- *   a custom event named like a duplicate (`Begin Play 1`) with the native
- *   event's data outputs as its parameters.
+ *   cannot have it or has it) it becomes a custom event named like a
+ *   duplicate (`Begin Play 1`) with the native event's data outputs as its
+ *   parameters.
+ * - An event bound to a component, native or custom, always becomes such a
+ *   custom event, bound to no component and without Call Parent, whether or
+ *   not the target has that component.
+ * - In a pasted function, a Call Custom Event wired to a Get of a component
+ *   pasted too, for one of that component's pasted custom events, calls the
+ *   copy on the running object (`retargetComponentEventCalls`).
  * - An override of an inherited custom event is wired to Call Parent as well.
  * - A component added by a paste is named like a variable (`Mesh_1`).
  */
@@ -593,6 +661,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     pastedVariablesByName: new Map(),
     pastedFunctionsByName: new Map(),
     pastedEventsByName: new Map(),
+    pastedComponentEvents: new Map(),
     variables: [
       ...declaredMembers(options.graph, "variable").map((member) => ({ member, classId })),
       ...ancestors.flatMap((ancestor) =>
@@ -788,6 +857,14 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     }
     if (source.type === CUSTOM_EVENT) {
       const pins = Array.isArray(source.data.pins) ? (source.data.pins as GraphClassMemberPin[]) : [];
+      if (isComponentEvent(source)) {
+        const name = uniqueEventName(componentCustomEventName(source), takenEvents);
+        customEvent(name, pins);
+        // Calls from a pasted function that target the component it came with end up here.
+        const copyComponent = refs.pastedComponents.get(String(source.data.componentId))?.componentId;
+        if (copyComponent) refs.pastedComponentEvents.set(`${copyComponent}\0${customEventName(source)}`, { name, pins });
+        continue;
+      }
       if (!entry.bound) {
         const name = uniqueEventName(customEventName(source), takenEvents);
         customEvent(name, pins);
@@ -801,8 +878,8 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
       if (key !== undefined && presentEvents.has(key)) {
         skipped.push({ kind: "event", name: title, reason: "present" });
       } else if (
-        (typeof source.data.componentId === "string" && !options.componentIds?.has(source.data.componentId)) ||
-        (source.data.eventQualifier === "Inherited" && !inheritedEvents.has(`${CUSTOM_EVENT}\0${customEventName(source)}`))
+        source.data.eventQualifier === "Inherited" &&
+        !inheritedEvents.has(`${CUSTOM_EVENT}\0${customEventName(source)}`)
       ) {
         skipped.push({ kind: "event", name: title, reason: "unavailable" });
       } else {
@@ -824,14 +901,12 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
       continue;
     }
     const key = eventKey(source);
-    const componentMissing =
-      typeof source.data.componentId === "string" && !options.componentIds?.has(source.data.componentId);
     if (
-      componentMissing ||
+      isComponentEvent(source) ||
       !isScriptCatalogNodeAllowed(source.type, options.eventOptions) ||
       (key !== undefined && presentEvents.has(key))
     ) {
-      // A native event the Class cannot have or already has, or whose component it lacks, is a
+      // A native event the Class cannot have or already has, or that is bound to a component, is a
       // custom event that takes its outputs. The native event holds its own name, so its copy is the first duplicate of it.
       const base = nativeEventBaseName(source);
       customEvent(
@@ -846,7 +921,6 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     // Like a Begin Play added by hand: a child's event replaces its parent's unless it calls it.
     if (
       parentClassId &&
-      typeof source.data.componentId !== "string" &&
       nativeEventStubs(options.eventOptions).some((stub) => stub.eventType === source.type)
     ) {
       callParents.push({ id: node.id, eventType: node.type, parentClassId });
