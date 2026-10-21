@@ -45,6 +45,7 @@ import {
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 import { hasTouchInput } from "../lib/touch-input";
+import { useNativeHomepageAccount } from "./homepage-account-context";
 
 function nativeLocationStatus(
   hostPlatform: HostPlatform,
@@ -125,6 +126,14 @@ export function HomepageCreateDialog({
   const importRequest = useRef<AbortController | null>(null);
   const [imageIssue, setImageIssue] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
+  // Returning from the system picker runs the mobile foreground session check,
+  // which hides the homepage and drops this dialog before the picture arrives.
+  const holdSessionCheck = useNativeHomepageAccount()?.profile.holdSessionCheck;
+  const pickerHold = useRef<(() => void) | null>(null);
+  const releasePicker = () => {
+    pickerHold.current?.();
+    pickerHold.current = null;
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -162,6 +171,7 @@ export function HomepageCreateDialog({
     return () => {
       importRequest.current?.abort();
       importRequest.current = null;
+      releasePicker();
     };
   }, [open]);
 
@@ -196,6 +206,7 @@ export function HomepageCreateDialog({
             : "This picture could not be opened.",
         );
     } finally {
+      releasePicker();
       if (importRequest.current === request) {
         importRequest.current = null;
         setImageBusy(false);
@@ -439,6 +450,7 @@ export function HomepageCreateDialog({
                             const file = event.target.files?.[0];
                             event.target.value = "";
                             if (file) void uploadPicture(file);
+                            else releasePicker();
                           }}
                         />
                         <Button
@@ -446,7 +458,15 @@ export function HomepageCreateDialog({
                           variant="outline"
                           size="sm"
                           disabled={busy || imageBusy}
-                          onClick={() => fileInput.current?.click()}
+                          onClick={() => {
+                            const input = fileInput.current;
+                            if (!input) return;
+                            pickerHold.current ??= holdSessionCheck?.() ?? null;
+                            input.addEventListener("cancel", releasePicker, {
+                              once: true,
+                            });
+                            input.click();
+                          }}
                         >
                           {imageBusy ? (
                             <LoaderCircleIcon
