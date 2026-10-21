@@ -11,6 +11,8 @@ import {
 import { HomepageMobileAccountGate } from "./homepage-mobile-account-gate";
 import { HomepageAccount } from "./homepage-account";
 import { MobileDemoProvider } from "../context/mobile-demo-context";
+import { HomepageCreateDialog } from "./homepage-create-dialog";
+import * as appearanceHelpers from "./homepage-project-appearance";
 
 const auth = vi.hoisted(() => ({
   host: "web",
@@ -530,5 +532,70 @@ describe("native mobile account requirement", () => {
     fireEvent(window, new Event("focus"));
     expect(auth.restoreSession).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the project dialog open while its picture picker is open", async () => {
+    auth.restoreSession.mockResolvedValue(session);
+    vi.spyOn(appearanceHelpers, "prepareProjectPicture").mockResolvedValue(
+      "data:image/webp;base64,AAAA",
+    );
+    auth.host = "ios";
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
+    render(
+      <MobileDemoProvider>
+        <HomepageMobileAccountGate>
+          <HomepageCreateDialog
+            open
+            mode="edit"
+            onOpenChange={vi.fn()}
+            busy={false}
+            name="Moon Garden"
+            onNameChange={vi.fn()}
+            nameIssue={null}
+            appearance={{ icon: "box", color: "coral" }}
+            onAppearanceChange={vi.fn()}
+            templateId="empty"
+            onTemplateIdChange={vi.fn()}
+            templates={[]}
+            hostPlatform="ios"
+            pickFolder={false}
+            onPickFolderChange={vi.fn()}
+            width={1920}
+            onWidthChange={vi.fn()}
+            height={1080}
+            onHeightChange={vi.fn()}
+            blackBars={false}
+            onBlackBarsChange={vi.fn()}
+            onSubmit={vi.fn()}
+          />
+        </HomepageMobileAccountGate>
+      </MobileDemoProvider>,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Edit Project" });
+    const input = within(dialog).getByLabelText("Upload Picture");
+    const upload = () =>
+      fireEvent.click(within(dialog).getByRole("button", { name: "Upload Picture" }));
+
+    upload();
+    fireEvent(window, new Event("focus"));
+    expect(screen.getByRole("dialog", { name: "Edit Project" })).toBe(dialog);
+    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
+
+    fireEvent(input, new Event("cancel"));
+    upload();
+    fireEvent.change(input, {
+      target: { files: [new File([Uint8Array.of(1)], "badge.png", { type: "image/png" })] },
+    });
+    fireEvent(window, new Event("focus"));
+    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Upload Picture" }),
+      ).toHaveProperty("disabled", false),
+    );
+
+    // Once the picture is ready the foreground check runs again.
+    fireEvent(window, new Event("focus"));
+    expect(auth.restoreSession).toHaveBeenCalledTimes(2);
   });
 });
