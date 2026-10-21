@@ -237,7 +237,7 @@ import {
   type ContentBrowserTileLock,
 } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
-import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
+import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout } from "../shell/use-platform-layout";
@@ -392,6 +392,8 @@ function ContentBrowserWorkspaceBody({
     setReplacementPicker(null);
     setConfirmReferencedDelete(false);
   }, [deleteTarget]);
+  const [newAssetMenuOpen, setNewAssetMenuOpen] = useState(false);
+  const [newAssetMenuAnchor, setNewAssetMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
     useState<CreatableAssetType>("Scene");
@@ -2069,11 +2071,18 @@ function ContentBrowserWorkspaceBody({
     importInputRef.current?.click();
   }, [importPickedFiles, setImportErrors]);
 
-  const openNewAssetDialog = useCallback(() => {
+  const openNewAssetMenu = useCallback((anchor: { x: number; y: number } | null = null) => {
     if (busy || !selectedRootWritable) return;
+    setNewAssetMenuAnchor(anchor);
+    setNewAssetMenuOpen(true);
+  }, [busy, selectedRootWritable]);
+  const openNewAssetDialog = useCallback((type: CreatableAssetType) => {
+    if (busy || !selectedRootWritable) return;
+    setNewAssetType(type);
     setNewAssetName("");
     setNewAssetOpen(true);
   }, [busy, selectedRootWritable]);
+  const emptyGridMenuPointRef = useRef<{ x: number; y: number } | null>(null);
 
   // Disabled like the toolbar buttons, so a read-only root offers no action
   // that would then do nothing.
@@ -2094,7 +2103,7 @@ function ContentBrowserWorkspaceBody({
         shortcut: keybinds.get("browser.newAsset")?.[0],
         icon: <PlusIcon />,
         disabled: creationDisabled,
-        onSelect: openNewAssetDialog,
+        onSelect: () => openNewAssetMenu(emptyGridMenuPointRef.current),
       },
       {
         id: "import",
@@ -2107,7 +2116,7 @@ function ContentBrowserWorkspaceBody({
         },
       },
     ],
-    [creationDisabled, handleImport, openNewAssetDialog, keybinds],
+    [creationDisabled, handleImport, openNewAssetMenu, keybinds],
   );
   const {
     menu: emptyGridMenu,
@@ -2117,6 +2126,7 @@ function ContentBrowserWorkspaceBody({
   const emptyGridBind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
       closeMenu();
+      emptyGridMenuPointRef.current = { x: clientX, y: clientY };
       openEmptyGridMenuAt(clientX, clientY);
     },
   });
@@ -2290,7 +2300,7 @@ function ContentBrowserWorkspaceBody({
     searchRef.current?.select();
   }, selectionKeys);
   const creationKeys = { ...selectionKeys, enabled: !busy && selectedRootWritable };
-  useKeybindCommand("browser.newAsset", openNewAssetDialog, creationKeys);
+  useKeybindCommand("browser.newAsset", () => openNewAssetMenu(), creationKeys);
   useKeybindCommand("browser.import", () => void handleImport(), creationKeys);
   useKeybindCommand("edit.newFolder", () => {
     setFoldersOpen(false);
@@ -2634,21 +2644,30 @@ function ContentBrowserWorkspaceBody({
           </TooltipContent>
         </Tooltip>
         <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                size={phone ? "touch" : "sm"}
-                data-testid="content-browser-new-asset"
-                aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.newAsset")?.[0] ?? "")}
-                disabled={busy || !selectedRootWritable}
-                onClick={openNewAssetDialog}
-              >
-                <PlusIcon data-icon="inline-start" />
-                New Asset
-              </Button>
-            }
-          />
+          <ContentBrowserNewAssetMenu
+            open={newAssetMenuOpen}
+            onOpenChange={(open) => {
+              if (open) setNewAssetMenuAnchor(null);
+              setNewAssetMenuOpen(open);
+            }}
+            anchor={newAssetMenuAnchor}
+            onSelect={openNewAssetDialog}
+          >
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size={phone ? "touch" : "sm"}
+                  data-testid="content-browser-new-asset"
+                  aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.newAsset")?.[0] ?? "")}
+                  disabled={busy || !selectedRootWritable}
+                >
+                  <PlusIcon data-icon="inline-start" />
+                  New Asset
+                </Button>
+              }
+            />
+          </ContentBrowserNewAssetMenu>
           <TooltipContent>
             New Asset <ShortcutKeys chord={keybinds.get("browser.newAsset")?.[0]} decorative />
           </TooltipContent>
@@ -2876,7 +2895,7 @@ function ContentBrowserWorkspaceBody({
               if (!isContentBrowserEmptyGridDoubleClickTarget(event.target)) {
                 return;
               }
-              openNewAssetDialog();
+              openNewAssetMenu({ x: event.clientX, y: event.clientY });
             }}
             onContextMenu={emptyGridBind.onContextMenu}
             onPointerDown={emptyGridBind.onPointerDown}
@@ -2899,7 +2918,7 @@ function ContentBrowserWorkspaceBody({
                     <Button variant="outline" size={phone ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
                   ) : selectedRootWritable ? (
                     <div className="flex items-center gap-2">
-                      <Button size={phone ? "touch" : "sm"} disabled={busy} onClick={openNewAssetDialog}><PlusIcon data-icon="inline-start" />New Asset</Button>
+                      <Button size={phone ? "touch" : "sm"} disabled={busy} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); openNewAssetMenu({ x: rect.left, y: rect.bottom + 4 }); }}><PlusIcon data-icon="inline-start" />New Asset</Button>
                       <Button variant="outline" size={phone ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
                     </div>
                   ) : null}
@@ -2968,7 +2987,6 @@ function ContentBrowserWorkspaceBody({
           if (open) setNewAssetName("");
         }}
         type={newAssetType}
-        onTypeChange={setNewAssetType}
         name={newAssetName}
         onNameChange={setNewAssetName}
         parentClass={newAssetParent}

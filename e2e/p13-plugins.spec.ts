@@ -159,9 +159,8 @@ test.describe("P13 plugins", () => {
     ).toBeVisible();
     await page.getByTestId("tree-row-plugins/shared-pack/assets").click();
     await page.getByTestId("content-browser-new-asset").click();
-    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-    await page.getByTestId("new-asset-type").click();
-    await page.getByTestId("new-asset-type-Class").click();
+    await expect(page.getByTestId("new-asset-type-menu")).toBeVisible();
+    await page.getByTestId("search-item-Class").click();
     await page.getByTestId("new-asset-parent").click();
     await page.getByTestId("tree-row-Actor").click();
     await page.getByTestId("new-asset-name").fill("Hero");

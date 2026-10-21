@@ -29,10 +29,17 @@ export interface SearchDropdownProps {
   modal?: boolean;
   /** Max height class for the scrollable list. Default max-h-80. */
   contentClassName?: string;
+  /** Viewport point to open at instead of the trigger (a double-tap on empty space). */
+  anchor?: { x: number; y: number } | null;
   "data-testid"?: string;
 }
 
 const MENU_KEYS = new Set(["Escape", "ArrowDown", "ArrowUp"]);
+
+function pointAnchor(x: number, y: number) {
+  const rect = { x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 };
+  return { getBoundingClientRect: () => ({ ...rect, toJSON: () => rect }) };
+}
 
 /** Searchable dropdown anchored to a trigger. Use for pick lists with a nearby button. */
 export function SearchDropdown({
@@ -47,6 +54,7 @@ export function SearchDropdown({
   children,
   modal = false,
   contentClassName,
+  anchor,
   "data-testid": testId,
 }: SearchDropdownProps) {
   const [query, setQuery] = useState("");
@@ -55,6 +63,12 @@ export function SearchDropdown({
     [items, query],
   );
   const grouped = useMemo(() => groupSearchItems(filtered), [filtered]);
+  const anchorX = anchor?.x;
+  const anchorY = anchor?.y;
+  const virtualAnchor = useMemo(
+    () => (anchorX === undefined || anchorY === undefined ? undefined : pointAnchor(anchorX, anchorY)),
+    [anchorX, anchorY],
+  );
 
   return (
     <DropdownMenu
@@ -68,37 +82,40 @@ export function SearchDropdown({
       <DropdownMenuTrigger render={children} />
       <DropdownMenuContent
         align="start"
+        anchor={virtualAnchor}
         className={
           contentClassName ?? "max-h-96 w-max min-w-52 max-w-sm overflow-y-auto"
         }
         data-testid={testId}
       >
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{title}</DropdownMenuLabel>
-        </DropdownMenuGroup>
-        {description ? (
-          <p className="px-1.5 pb-1 text-xs text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
-        <div
-          className="px-1 pb-1"
-          onKeyDown={(event) => {
-            // Escape closes and the arrows move into the results; other keys
-            // stay in the field instead of driving menu typeahead.
-            if (MENU_KEYS.has(event.key)) return;
-            event.stopPropagation();
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <SearchInput
-            className="h-7 pointer-coarse:h-[var(--touch-target,44px)]"
-            aria-label={placeholder}
-            placeholder={placeholder}
-            value={query}
-            onChange={setQuery}
-            data-testid={testId ? `${testId}-query` : undefined}
-          />
+        <div className="sticky top-0 z-10 -mx-1 -mt-1 bg-popover px-1 pt-1">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>{title}</DropdownMenuLabel>
+          </DropdownMenuGroup>
+          {description ? (
+            <p className="px-1.5 pb-1 text-xs text-muted-foreground">
+              {description}
+            </p>
+          ) : null}
+          <div
+            className="px-1 pb-1"
+            onKeyDown={(event) => {
+              // Escape closes and the arrows move into the results; other keys
+              // stay in the field instead of driving menu typeahead.
+              if (MENU_KEYS.has(event.key)) return;
+              event.stopPropagation();
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <SearchInput
+              className="h-7 pointer-coarse:h-[var(--touch-target,44px)]"
+              aria-label={placeholder}
+              placeholder={placeholder}
+              value={query}
+              onChange={setQuery}
+              data-testid={testId ? `${testId}-query` : undefined}
+            />
+          </div>
         </div>
         {grouped.map((section, index) => (
           <DropdownMenuGroup key={section.items[0]?.id ?? index}>

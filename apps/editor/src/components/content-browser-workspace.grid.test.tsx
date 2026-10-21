@@ -678,7 +678,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     const taken = 'Another Class already uses the class id "Rain_Weather".';
 
     fireEvent.click(screen.getByTestId("content-browser-new-asset"));
-    fireEvent.click(screen.getByTestId("new-asset-type-Class"));
+    fireEvent.click(screen.getByTestId("search-item-Class"));
     fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: "Rain-Weather" } });
     expect(screen.getByTestId("new-asset-name-taken").textContent).toBe(taken);
     expect(screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled")).toBe(true);
@@ -698,6 +698,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     docs.assetRegistry = { ...(docs.assetRegistry as object), createAsset: vi.fn().mockRejectedValue(new Error("Project storage unavailable")) };
     render(<ContentBrowserWorkspace />);
     fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("search-item-Scene"));
     const input = screen.getByTestId("new-asset-name") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Main Scene" } });
     fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
@@ -1362,7 +1363,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
 
   async function createAsset(type: string, name: string) {
     fireEvent.click(screen.getByTestId("content-browser-new-asset"));
-    fireEvent.click(screen.getByTestId(`new-asset-type-${type}`));
+    fireEvent.click(screen.getByTestId(`search-item-${type}`));
     fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: name } });
     fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
     await waitFor(() => expect(screen.queryByTestId("content-browser-new-asset-dialog")).toBeNull());
@@ -1374,11 +1375,24 @@ describe("ContentBrowserWorkspace creating assets", () => {
 
     expect(await screen.findByTestId("content-item-assets/Hero.class.babasset")).toBeTruthy();
     fireEvent.click(screen.getByTestId("content-browser-new-asset"));
-    fireEvent.click(screen.getByTestId("new-asset-type-Class"));
+    fireEvent.click(screen.getByTestId("search-item-Class"));
     expect(screen.getByTestId("tree-row-Hero")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(docs.noteAssetsCreated).toHaveBeenCalledTimes(1);
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
+  });
+
+  it("picks the type from a menu opened by double-tapping empty grid space", async () => {
+    await mountProject();
+    fireEvent.doubleClick(screen.getByTestId("content-browser-asset-grid"), { clientX: 120, clientY: 80 });
+    expect(screen.queryByTestId("content-browser-new-asset-dialog")).toBeNull();
+    fireEvent.change(screen.getByTestId("new-asset-type-menu-query"), { target: { value: "water" } });
+    fireEvent.click(screen.getByTestId("search-item-Water"));
+    await waitFor(() => expect(screen.queryByTestId("new-asset-type-menu")).toBeNull());
+    expect(screen.getByTestId("new-asset-type-description").textContent).toMatch(/water appearance/);
+    fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: "Lagoon" } });
+    fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
+    expect(await screen.findByTestId("content-item-assets/Lagoon.water.babasset")).toBeTruthy();
   });
 
   it("opens a created Scene without remounting the registry", async () => {

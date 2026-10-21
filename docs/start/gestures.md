@@ -54,7 +54,7 @@ Double-tapping does not zoom. Shaking a node back and forth while dragging break
 | Drag across tiles | Select every tile you cross. |
 | Double-tap an asset | Open it. |
 | Double-tap a folder | Go into the folder. |
-| Double-tap empty space | Open **New Asset**. |
+| Double-tap empty space | Open the **New Asset** menu. |
 | Hold a tile | Open its menu. |
 | Hold empty space | **New Folder**, **New Asset** and **Import**. |
 | Hold a row in the folder tree, then drag | Move it to another folder. |

@@ -4,7 +4,7 @@ A [Material](../assets/material.md) is a node graph that decides how a surface, 
 
 ## Create a Material
 
-1. In the **Content Browser**, create a **Material** (in the **Rendering** group of the New Asset dialog) and open it.
+1. In the **Content Browser**, create a **Material** (in the **Rendering** group of the **New Asset** menu) and open it.
 2. Choose **Add Node** in the graph and wire nodes into the output node, such as [Material Output](../scripting/material/material-output.md).
 3. Check the result in **Preview**. Pick a preview shape (**Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane**) or **Custom** to preview on one of your Models.
 4. Save, then assign the Material to a [Mesh](../components/mesh.md) component's **Material** field.

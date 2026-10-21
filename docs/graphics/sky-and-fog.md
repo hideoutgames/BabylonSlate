@@ -26,7 +26,7 @@ See [Skybox](../components/skybox.md) for the full component reference.
 
 A [Skybox Creator](../assets/skybox-creator.md) cuts one cross-layout image into six face Textures.
 
-1. In the **Content Browser**, create a **Skybox Creator** (it is in the **Rendering** group of the New Asset dialog) and open it.
+1. In the **Content Browser**, create a **Skybox Creator** (it is in the **Rendering** group of the **New Asset** menu) and open it.
 2. Choose **Pick Texture** and pick a Texture laid out as a 4×3 cube cross.
 3. Drag the Texture to line up the **Up**, **Left**, **Front**, **Right**, **Back** and **Down** cells.
 4. Choose **Create Skybox Textures**. The status shows how many of the 6 faces were created.

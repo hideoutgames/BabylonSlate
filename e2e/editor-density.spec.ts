@@ -313,6 +313,8 @@ test.describe("Editor density and IA", () => {
   }) => {
     await openTestProject(page);
     await page.getByTestId("content-browser-new-asset").click();
+    await expect(page.getByTestId("new-asset-type-menu")).toBeVisible();
+    await page.getByTestId("search-item-Scene").click();
     await expect(
       page.getByTestId("content-browser-new-asset-dialog"),
     ).toBeVisible();
@@ -320,8 +322,6 @@ test.describe("Editor density and IA", () => {
     await expect(
       page.getByTestId("content-browser-new-asset-create"),
     ).toBeDisabled();
-    await page.getByTestId("new-asset-type").click();
-    await page.getByTestId("new-asset-type-Scene").click();
     await page.getByTestId("new-asset-name").fill("main");
     await expect(page.getByTestId("new-asset-name-taken")).toBeVisible();
     await expect(

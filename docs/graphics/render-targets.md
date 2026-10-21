@@ -12,7 +12,7 @@ Render targets capture the scene from a second viewpoint into a texture, for sec
 
 ## Set up a capture
 
-1. In the **Content Browser**, create a **Render Target** and a **Render Target Texture** (both in the **Rendering** group of the New Asset dialog).
+1. In the **Content Browser**, create a **Render Target** and a **Render Target Texture** (both in the **Rendering** group of the **New Asset** menu).
 2. Open the Render Target Texture and set its **Render Target**.
 3. Open **Place Actors > Camera > Render Target Capture**, and pick the Render Target in the component's **Render Target** field. Aim the actor like a camera.
 4. In a Material, sample the Render Target Texture with a [Texture Sample](../scripting/material/texture-sample.md) or [Texture Parameter](../scripting/material/texture-parameter.md) node, and assign the Material to a mesh.

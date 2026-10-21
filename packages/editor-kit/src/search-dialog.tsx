@@ -45,6 +45,8 @@ export interface SearchDialogItem {
   /** Secondary line, also matched by the filter. */
   description?: string;
   group?: string;
+  /** Extra text the filter matches but never shows, such as an id (`InputAction`). */
+  keywords?: string;
   leading?: ReactNode;
   trailing?: ReactNode;
   /**
@@ -130,7 +132,7 @@ export function filterSearchItems(
   for (const item of items) {
     if (item.pinned) pinned.push(item);
     else if (
-      `${item.label} ${item.description ?? ""} ${item.group ?? ""}`
+      `${item.label} ${item.description ?? ""} ${item.group ?? ""} ${item.keywords ?? ""}`
         .toLowerCase()
         .includes(needle)
     ) {

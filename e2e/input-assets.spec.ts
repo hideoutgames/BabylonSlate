@@ -8,8 +8,7 @@ test(
     await openMinimalTestProject(page);
     await page.evaluate(() => document.documentElement.classList.add("dark"));
     await page.getByTestId("content-browser-new-asset").click();
-    await page.getByTestId("new-asset-type").click();
-    await page.getByTestId("new-asset-type-InputAxis").click();
+    await page.getByTestId("search-item-InputAxis").click();
     await page.getByTestId("new-asset-name").fill("CameraMove");
     await page.getByTestId("content-browser-new-asset-create").click();
     await expect(

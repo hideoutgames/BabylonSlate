@@ -16,8 +16,8 @@ async function openSaveSettings(page: Page) {
 test("Save Game authoring preserves field identity and project defaults through reload", async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
   await page.getByTestId("content-browser-new-asset").click();
-  await page.getByTestId("new-asset-type-search").fill("Save Game");
-  await page.getByTestId("new-asset-type-SaveGame").click();
+  await page.getByTestId("new-asset-type-menu-query").fill("Save Game");
+  await page.getByTestId("search-item-SaveGame").click();
   await page.getByTestId("new-asset-name").fill("PlayerProgress");
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
