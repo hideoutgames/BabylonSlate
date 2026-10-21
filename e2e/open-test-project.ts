@@ -110,11 +110,9 @@ export async function createContentBrowserAsset(
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page.getByTestId("content-browser-new-asset").click();
-  await expect(
-    page.getByTestId("content-browser-new-asset-dialog"),
-  ).toBeVisible();
-  await page.getByTestId("new-asset-type-search").fill(type);
-  await page.getByTestId(`new-asset-type-${type}`).click();
+  await expect(page.getByTestId("new-asset-type-menu")).toBeVisible();
+  await page.getByTestId("new-asset-type-menu-query").fill(type);
+  await page.getByTestId(`search-item-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   if (parentClass) {
     await page

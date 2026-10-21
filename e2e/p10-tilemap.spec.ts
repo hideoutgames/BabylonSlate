@@ -31,8 +31,8 @@ async function createAsset(
 ): Promise<void> {
   await showContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId(`new-asset-type-${type}`).click();
+  await expect(page.getByTestId("new-asset-type-menu")).toBeVisible();
+  await page.getByTestId(`search-item-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);

@@ -392,18 +392,6 @@ export function creatableAssetTypeDescription(
   return CREATABLE_ASSET_TYPE_DESCRIPTIONS[type];
 }
 
-export function filterCreatableAssetTypes(
-  query: string,
-  types: readonly CreatableAssetType[] = CREATABLE_ASSET_TYPES,
-): CreatableAssetType[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [...types];
-  return types.filter((type) => {
-    const haystack = `${type} ${creatableAssetTypeLabel(type)}`.toLowerCase();
-    return haystack.includes(needle);
-  });
-}
-
 /** True when a double-click landed on empty Content Browser grid space, not a tile. */
 export function isContentBrowserEmptyGridDoubleClickTarget(
   target: EventTarget | null,

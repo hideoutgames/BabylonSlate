@@ -10,7 +10,7 @@ Particle effects such as sparks, smoke and magic are built from emitters grouped
 | [Particle Graph](../assets/particle-graph.md) | An emitter built as a node graph, for custom per-particle logic. Always runs on the CPU. |
 | [Particle System](../assets/particle-system.md) | Up to 8 emitters of either kind, played together. This is what the Particle component plays. |
 
-Create them in the **Content Browser** from the **Rendering** group of the New Asset dialog.
+Create them in the **Content Browser** from the **Rendering** group of the **New Asset** menu.
 
 ## Make an effect
 

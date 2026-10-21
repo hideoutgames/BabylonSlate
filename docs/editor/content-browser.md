@@ -15,7 +15,7 @@ The toolbar above the grid has:
 | Control | Use |
 | --- | --- |
 | Import | Import files into the current folder. See [Importing Assets](importing.md). |
-| New Asset | Create an asset in the current folder. See [Assets](../assets/index.md) for every type. |
+| New Asset | Open a menu of asset types, grouped by category, with a search field at the top. Pick a type, then name the asset to create it in the current folder. See [Assets](../assets/index.md) for every type. |
 | Search assets… | Filter the grid by name. |
 | Filter | Show only the asset types you tick under **Asset Types**. |
 | Sort | **Name A–Z**, **Name Z–A**, **Type A–Z**, **Type Z–A**, **Date Modified (Newest)** or **Date Modified (Oldest)**. |
@@ -44,7 +44,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Show References | Open the references graph (below). |
 | Delete | Delete the selection. |
 
-Hold empty space in the grid for **New Folder**, **New Asset** and **Import**.
+Double-tap empty space in the grid to open the **New Asset** menu there. Hold empty space for **New Folder**, **New Asset** and **Import**.
 
 A heavy asset can take a long time to draw on a slow device. A thumbnail that takes too long keeps the asset's type icon, and Haptic may try once more, with more time, when nothing else is waiting. Choose **Generate Thumbnail** to draw it again at any time.
 

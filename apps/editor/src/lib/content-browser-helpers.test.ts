@@ -14,7 +14,6 @@ import {
   CREATABLE_ASSET_TYPE_GROUPS,
   ENGINE_BASE_CLASSES,
   buildParentClassTreeRows,
-  filterCreatableAssetTypes,
   isContentBrowserEmptyGridDoubleClickTarget,
   buildNewAssetResult,
   openSceneViewportMode,
@@ -1490,13 +1489,6 @@ describe("content-browser-helpers", () => {
   it("offers every creatable type as an Asset Type, so Find Assets can target it", () => {
     const targetable = mergeEngineTypeSchemas().enums["engine:AssetType"]!.members.map((member) => member.name);
     for (const type of CREATABLE_ASSET_TYPES) expect(targetable, type).toContain(type);
-  });
-
-  it("filters creatable types by Title Case label", () => {
-    expect(filterCreatableAssetTypes("class")).toEqual(["Class"]);
-    expect(filterCreatableAssetTypes("basic")).toEqual(["ParticleEmitter"]);
-    expect(filterCreatableAssetTypes("particle graph")).toEqual(["ParticleGraph"]);
-    expect(filterCreatableAssetTypes("  ")).toEqual([...CREATABLE_ASSET_TYPES]);
   });
 
   it("treats empty grid space as a new-asset double-click target, not tiles", () => {

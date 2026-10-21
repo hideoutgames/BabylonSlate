@@ -62,8 +62,7 @@ for (const mode of ["Normal Play"] as const) {
     await openContentBrowser(page);
     await selectContentBrowserAssetsFolder(page);
     await page.getByTestId("content-browser-new-asset").click();
-    await page.getByTestId("new-asset-type").click();
-    await page.getByTestId("new-asset-type-InputAction").click();
+    await page.getByTestId("search-item-InputAction").click();
     await page.getByTestId("new-asset-name").fill("Fire");
     await page.getByTestId("content-browser-new-asset-create").click();
     await expect(

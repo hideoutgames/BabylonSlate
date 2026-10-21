@@ -1,8 +1,9 @@
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import type { WaterStyle, WaterStylizedLook } from "@babylonslate/core";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowLeftIcon, ArrowRightIcon, FileIcon, FolderIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { FileIcon, FolderIcon } from "lucide-react";
 import {
+  SearchDropdown,
   SearchInput,
   AssetPicker,
   AssetPickerControl,
@@ -10,6 +11,7 @@ import {
   TypeVisualIcon,
   resolveTypeVisual,
   walkAncestry,
+  type SearchDialogItem,
 } from "@babylonslate/editor-kit";
 import { contentEntryNameError } from "@babylonslate/assets";
 import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
@@ -22,18 +24,10 @@ import {
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -43,7 +37,6 @@ import {
   classParentLookup,
   creatableAssetTypeDescription,
   creatableAssetTypeLabel,
-  filterCreatableAssetTypes,
   newAssetFileName,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
@@ -58,8 +51,8 @@ export type NewAssetClassAssetRef = {
 export interface ContentBrowserNewAssetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Chosen beforehand in the New Asset type menu. */
   type: CreatableAssetType;
-  onTypeChange: (type: CreatableAssetType) => void;
   name: string;
   onNameChange: (name: string) => void;
   parentClass: string;
@@ -122,25 +115,52 @@ function NewAssetSummary({
   );
 }
 
-function navigateChoice(event: KeyboardEvent<HTMLDivElement>) {
-  if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  const choices = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)'));
-  if (!choices.length) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const focused = choices.indexOf(document.activeElement as HTMLButtonElement);
-  const current = focused >= 0 ? focused : choices.findIndex((choice) => choice.getAttribute("aria-checked") === "true");
-  const direction = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
-  const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + direction + choices.length) % choices.length;
-  choices[next]!.focus();
-  choices[next]!.click();
+const NEW_ASSET_TYPE_ITEMS: SearchDialogItem[] = CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) =>
+  group.types.map((type) => ({
+    id: type,
+    label: creatableAssetTypeLabel(type),
+    group: group.label,
+    keywords: type,
+    leading: <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} />,
+  })),
+);
+
+/** Compact searchable menu of creatable types, grouped by category; a pick opens the New Asset dialog. */
+export function ContentBrowserNewAssetMenu({
+  open,
+  onOpenChange,
+  anchor,
+  onSelect,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Viewport point for a menu opened from empty grid space; `null` opens under the trigger. */
+  anchor: { x: number; y: number } | null;
+  onSelect: (type: CreatableAssetType) => void;
+  children: ReactElement;
+}) {
+  return (
+    <SearchDropdown
+      open={open}
+      onOpenChange={onOpenChange}
+      anchor={anchor}
+      title="New Asset"
+      placeholder="Search Asset Types"
+      emptyLabel="No asset types match the search."
+      items={NEW_ASSET_TYPE_ITEMS}
+      onSelect={(id) => onSelect(id as CreatableAssetType)}
+      data-testid="new-asset-type-menu"
+    >
+      {children}
+    </SearchDropdown>
+  );
 }
 
 export function ContentBrowserNewAssetDialog({
   open,
   onOpenChange,
   type,
-  onTypeChange,
   name,
   onNameChange,
   parentClass,
@@ -160,12 +180,9 @@ export function ContentBrowserNewAssetDialog({
   onCreate,
 }: ContentBrowserNewAssetDialogProps) {
   const phone = usePhoneLayout();
-  const [phoneStep, setPhoneStep] = useState<"type" | "details">("type");
-  const [search, setSearch] = useState("");
   const [parentSearch, setParentSearch] = useState("");
   const [definitionPickerOpen, setDefinitionPickerOpen] = useState(false);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
-  const bodyRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
@@ -175,36 +192,10 @@ export function ContentBrowserNewAssetDialog({
   const nameInvalid = Boolean(takenNameError) || Boolean(nameError);
 
   useEffect(() => {
-    if (open) {
-      setSearch("");
-      setParentSearch("");
-      setPhoneStep("type");
-    }
+    if (open) setParentSearch("");
   }, [open]);
 
-  useEffect(() => {
-    if (!open || !phone) return;
-    const target = phoneStep === "details" ? detailsRef.current : bodyRef.current;
-    target?.focus({ preventScroll: true });
-  }, [open, phone, phoneStep]);
-
-  const visibleGroups = useMemo(() => {
-    const allowed = new Set(filterCreatableAssetTypes(search));
-    return CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) => {
-      const types = group.types.filter((item) => allowed.has(item));
-      return types.length > 0 ? [{ ...group, types }] : [];
-    });
-  }, [search]);
-
-  useEffect(() => {
-    const visible = visibleGroups.flatMap((group) => group.types);
-    if (visible.length === 0) return;
-    if (visible.includes(type)) return;
-    onTypeChange(visible[0]!);
-  }, [onTypeChange, type, visibleGroups]);
-  // A search that matches no type leaves nothing to create.
-  const typeListed = visibleGroups.some((group) => group.types.includes(type));
-  const canCreate = !busy && !nameInvalid && Boolean(name.trim()) && typeListed;
+  const canCreate = !busy && !nameInvalid && Boolean(name.trim());
 
   const parentOf = useMemo(() => classParentLookup(classAssets), [classAssets]);
   const parentRows = useMemo(
@@ -222,238 +213,157 @@ export function ContentBrowserNewAssetDialog({
         data-testid="content-browser-new-asset-dialog"
         // Desktop starts in Name; touch skips the text field so the keyboard
         // does not cover the dialog.
-        initialFocus={() => (phone || hasTouchInput() ? bodyRef.current : nameRef.current)}
-        className="editor-dialog-large max-w-none sm:max-w-none"
+        initialFocus={() => (phone || hasTouchInput() ? detailsRef.current : nameRef.current)}
+        className={cn(
+          "max-w-none sm:max-w-none",
+          phone
+            ? "editor-dialog-large"
+            : "h-[80dvh] w-[max(50vw,min(36rem,calc(100vw-2rem)))]",
+        )}
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-12">
           <DialogTitle>New Asset</DialogTitle>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1">
-          {!phone || phoneStep === "type" ? (
+        <aside
+          ref={detailsRef}
+          tabIndex={-1}
+          data-testid="new-asset-details"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain outline-none"
+        >
+          <div
+            className={cn(
+              "flex shrink-0 flex-col gap-4 p-4",
+              type === "Class" && "border-b",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                <TypeVisualIcon visual={selectedVisual} />
+              </span>
+              <div className="min-w-0 flex flex-col gap-1">
+                <p className="truncate font-medium">
+                  {creatableAssetTypeLabel(type)}
+                </p>
+                <p
+                  className="text-sm text-muted-foreground"
+                  data-testid="new-asset-type-description"
+                >
+                  {creatableAssetTypeDescription(type)}
+                </p>
+              </div>
+            </div>
+            <FieldGroup>
+              <Field data-invalid={nameInvalid || undefined}>
+                <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
+                <Input
+                  ref={nameRef}
+                  id="new-asset-name"
+                  data-testid="new-asset-name"
+                  className="min-h-[var(--chrome-row,28px)]"
+                  value={name}
+                  aria-invalid={nameInvalid || undefined}
+                  aria-describedby={nameInvalid ? "new-asset-name-error" : undefined}
+                  onChange={(event) => onNameChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      if (canCreate) onCreate();
+                    }
+                  }}
+                />
+                {nameError ? (
+                  <FieldError id="new-asset-name-error" data-testid="new-asset-name-invalid">
+                    {nameError}
+                  </FieldError>
+                ) : takenNameError ? (
+                  <FieldError id="new-asset-name-error" data-testid="new-asset-name-taken">
+                    {takenNameError}
+                  </FieldError>
+                ) : null}
+              </Field>
+            </FieldGroup>
+            {type === "Water" ? (
+              <FieldGroup>
+                <Field><FieldLabel>Water Style</FieldLabel>
+                  <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
+                    <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
+                    <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+                {waterStyle === "stylized" ? (
+                  <Field><FieldLabel>Stylized Look</FieldLabel>
+                    <ToggleGroup value={[waterStylizedLook]} onValueChange={(values) => { const value = values[0]; if (value === "painted" || value === "toon") onWaterStylizedLookChange?.(value); }} variant="outline" size="sm" aria-label="Stylized Look">
+                      <ToggleGroupItem value="painted">Painted</ToggleGroupItem>
+                      <ToggleGroupItem value="toon">Toon</ToggleGroupItem>
+                    </ToggleGroup>
+                  </Field>
+                ) : null}
+              </FieldGroup>
+            ) : null}
+            {isData ? (
+              <FieldGroup><Field><FieldLabel>Default Definition</FieldLabel>
+                <AssetPickerControl value={definitionGuid}>
+                  <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setDefinitionPickerOpen(true)} data-testid="new-asset-definition" disabled={busy}>
+                    {definitionAssets.find(asset => asset.guid === definitionGuid)?.name ?? "None"}
+                  </Button>
+                </AssetPickerControl>
+                <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone title="Choose Default Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
+              </Field></FieldGroup>
+            ) : null}
+            <NewAssetSummary
+              type={type}
+              name={name}
+              destinationFolder={destinationFolder}
+            />
+          </div>
+          {type === "Class" ? (
             <div
               className={cn(
-                "flex min-h-0 min-w-0 flex-col",
-                phone ? "flex-1" : "w-64 shrink-0",
+                "flex flex-col",
+                phone ? "shrink-0" : "min-h-0 flex-1",
               )}
             >
-              <div className="shrink-0 border-b px-4 py-3">
+              <div className="flex shrink-0 flex-col gap-2 border-b px-4 py-3">
+                <FieldLabel>Parent Class</FieldLabel>
                 <SearchInput
-                  value={search}
-                  onChange={setSearch}
-                  placeholder="Search Types"
-                  aria-label="Search Asset Types"
+                  value={parentSearch}
+                  onChange={setParentSearch}
+                  placeholder="Search Classes"
+                  aria-label="Search Parent Classes"
                   className={cn(
                     "min-h-[var(--chrome-row,28px)]",
                     phone && "h-11",
                   )}
-                  data-testid="new-asset-type-search"
+                  data-testid="new-asset-parent-search"
                 />
               </div>
-              <div
-                ref={bodyRef}
-                tabIndex={-1}
-                className="min-h-0 flex-1 overflow-y-auto p-4 outline-none"
-                data-testid="new-asset-type"
-                role="radiogroup"
-                aria-label="Asset Type"
-                onKeyDown={navigateChoice}
-              >
-                {visibleGroups.length === 0 ? (
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyTitle>No Types</EmptyTitle>
-                      <EmptyDescription>
-                        No asset types match the search.
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {visibleGroups.map((group) => (
-                      <FieldSet key={group.id} className="gap-2">
-                        <FieldLegend variant="label">{group.label}</FieldLegend>
-                        <div className="flex flex-col gap-1">
-                          {group.types.map((item) => {
-                            const selected = item === type;
-                            const visual = resolveTypeVisual({
-                              assetType: item,
-                            });
-                            return (
-                              <Button
-                                key={item}
-                                type="button"
-                                size="sm"
-                                variant={selected ? "secondary" : "ghost"}
-                                role="radio"
-                                tabIndex={selected ? 0 : -1}
-                                  aria-checked={selected}
-                                  data-selected={selected ? "true" : "false"}
-                                  data-testid={`new-asset-type-${item}`}
-                                className="h-auto w-full justify-start py-2"
-                                  onClick={() => onTypeChange(item)}
-                                >
-                                <TypeVisualIcon visual={visual} />
-                                <span className="whitespace-normal text-left">
-                                      {creatableAssetTypeLabel(item)}
-                                </span>
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </FieldSet>
-                    ))}
-                  </div>
-                )}
+              <div className={cn("min-h-40 flex-1", phone && "h-72 shrink-0")}>
+                <TreeView
+                  data-testid="new-asset-parent"
+                  aria-label="Parent Class"
+                  selectedId={parentClass}
+                  emptyLabel="No parent classes match the search."
+                  nodes={parentRows.filter((row) => parentSearch || !walkAncestry(row.id, parentOf).slice(1).some((id) => collapsedParents.has(id))).map((row) => ({
+                    id: row.id,
+                    label: row.id,
+                    depth: row.depth,
+                    hasChildren: parentRows.some((child) => child.parentClassId === row.id),
+                    expanded: Boolean(parentSearch) || !collapsedParents.has(row.id),
+                    muted: !row.selectable,
+                    icon: <TypeVisualIcon visual={resolveTypeVisual({ classId: row.id, parentClass: row.parentClassId, ancestry: walkAncestry(row.id, parentOf), family: "class" })} />,
+                  }))}
+                  onSelect={(id) => { if (parentRows.find((row) => row.id === id)?.selectable) onParentClassChange(id); }}
+                  onToggleExpanded={(id) => setCollapsedParents((previous) => {
+                    const next = new Set(previous);
+                    if (next.has(id)) next.delete(id); else next.add(id);
+                    return next;
+                  })}
+                />
               </div>
             </div>
           ) : null}
-          {!phone || phoneStep === "details" ? (
-            <aside
-              ref={detailsRef}
-              tabIndex={-1}
-              className={cn(
-                "flex flex-col outline-none",
-                phone
-                  ? "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
-                  : "min-h-0 min-w-0 flex-1 border-l",
-              )}
-            >
-              <div
-                className={cn(
-                  "flex shrink-0 flex-col gap-4 p-4",
-                  type === "Class" && "border-b",
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
-                    <TypeVisualIcon visual={selectedVisual} />
-                  </span>
-                  <div className="min-w-0 flex flex-col gap-1">
-                    <p className="truncate font-medium">
-                      {creatableAssetTypeLabel(type)}
-                    </p>
-                    <p
-                      className="text-sm text-muted-foreground"
-                      data-testid="new-asset-type-description"
-                    >
-                      {creatableAssetTypeDescription(type)}
-                    </p>
-                  </div>
-                </div>
-                <FieldGroup>
-                  <Field data-invalid={nameInvalid || undefined}>
-                    <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
-                    <Input
-                      ref={nameRef}
-                      id="new-asset-name"
-                      data-testid="new-asset-name"
-                      className="min-h-[var(--chrome-row,28px)]"
-                      value={name}
-                      aria-invalid={nameInvalid || undefined}
-                      aria-describedby={nameInvalid ? "new-asset-name-error" : undefined}
-                      onChange={(event) => onNameChange(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                          event.preventDefault();
-                          if (canCreate) onCreate();
-                        }
-                      }}
-                    />
-                    {nameError ? (
-                      <FieldError id="new-asset-name-error" data-testid="new-asset-name-invalid">
-                        {nameError}
-                      </FieldError>
-                    ) : takenNameError ? (
-                      <FieldError id="new-asset-name-error" data-testid="new-asset-name-taken">
-                        {takenNameError}
-                      </FieldError>
-                    ) : null}
-                  </Field>
-                </FieldGroup>
-                {type === "Water" ? (
-                  <FieldGroup>
-                    <Field><FieldLabel>Water Style</FieldLabel>
-                      <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
-                        <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
-                        <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
-                      </ToggleGroup>
-                    </Field>
-                    {waterStyle === "stylized" ? (
-                      <Field><FieldLabel>Stylized Look</FieldLabel>
-                        <ToggleGroup value={[waterStylizedLook]} onValueChange={(values) => { const value = values[0]; if (value === "painted" || value === "toon") onWaterStylizedLookChange?.(value); }} variant="outline" size="sm" aria-label="Stylized Look">
-                          <ToggleGroupItem value="painted">Painted</ToggleGroupItem>
-                          <ToggleGroupItem value="toon">Toon</ToggleGroupItem>
-                        </ToggleGroup>
-                      </Field>
-                    ) : null}
-                  </FieldGroup>
-                ) : null}
-                {isData ? (
-                  <FieldGroup><Field><FieldLabel>Default Definition</FieldLabel>
-                    <AssetPickerControl value={definitionGuid}>
-                      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setDefinitionPickerOpen(true)} data-testid="new-asset-definition" disabled={busy}>
-                        {definitionAssets.find(asset => asset.guid === definitionGuid)?.name ?? "None"}
-                      </Button>
-                    </AssetPickerControl>
-                    <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone title="Choose Default Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
-                  </Field></FieldGroup>
-                ) : null}
-                <NewAssetSummary
-                  type={type}
-                  name={name}
-                  destinationFolder={destinationFolder}
-                />
-              </div>
-              {type === "Class" ? (
-                <div
-                  className={cn(
-                    "flex flex-col",
-                    phone ? "shrink-0" : "min-h-0 flex-1",
-                  )}
-                >
-                  <div className="flex shrink-0 flex-col gap-2 border-b px-4 py-3">
-                    <FieldLabel>Parent Class</FieldLabel>
-                    <SearchInput
-                      value={parentSearch}
-                      onChange={setParentSearch}
-                      placeholder="Search Classes"
-                      aria-label="Search Parent Classes"
-                      className={cn(
-                        "min-h-[var(--chrome-row,28px)]",
-                        phone && "h-11",
-                      )}
-                      data-testid="new-asset-parent-search"
-                    />
-                  </div>
-                  <div className={cn("min-h-40 flex-1", phone && "h-72 shrink-0")}>
-                    <TreeView
-                      data-testid="new-asset-parent"
-                      aria-label="Parent Class"
-                      selectedId={parentClass}
-                      emptyLabel="No parent classes match the search."
-                      nodes={parentRows.filter((row) => parentSearch || !walkAncestry(row.id, parentOf).slice(1).some((id) => collapsedParents.has(id))).map((row) => ({
-                        id: row.id,
-                        label: row.id,
-                        depth: row.depth,
-                        hasChildren: parentRows.some((child) => child.parentClassId === row.id),
-                        expanded: Boolean(parentSearch) || !collapsedParents.has(row.id),
-                        muted: !row.selectable,
-                        icon: <TypeVisualIcon visual={resolveTypeVisual({ classId: row.id, parentClass: row.parentClassId, ancestry: walkAncestry(row.id, parentOf), family: "class" })} />,
-                      }))}
-                      onSelect={(id) => { if (parentRows.find((row) => row.id === id)?.selectable) onParentClassChange(id); }}
-                      onToggleExpanded={(id) => setCollapsedParents((previous) => {
-                        const next = new Set(previous);
-                        if (next.has(id)) next.delete(id); else next.add(id);
-                        return next;
-                      })}
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </aside>
-          ) : null}
-        </div>
+        </aside>
         {error ? <Alert variant="destructive"><AlertTitle>Could Not Create Asset</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
         <div className="flex shrink-0 justify-end gap-2 border-t bg-muted/40 px-4 py-3">
           <Button
@@ -461,40 +371,19 @@ export function ContentBrowserNewAssetDialog({
             variant="outline"
             size={phone ? "touch" : "default"}
             disabled={busy}
-            aria-label={
-              phone && phoneStep === "details" ? "Back To Types" : "Cancel"
-            }
-            onClick={() => {
-              if (phone && phoneStep === "details") setPhoneStep("type");
-              else onOpenChange(false);
-            }}
+            onClick={() => onOpenChange(false)}
           >
-            {phone && phoneStep === "details" ? (
-              <ArrowLeftIcon data-icon="inline-start" />
-            ) : null}
-            {phone && phoneStep === "details" ? "Back" : "Cancel"}
+            Cancel
           </Button>
-          {phone && phoneStep === "type" ? (
-            <Button
-              type="button"
-              size="touch"
-              disabled={busy || visibleGroups.length === 0}
-              onClick={() => setPhoneStep("details")}
-            >
-              Next
-              <ArrowRightIcon data-icon="inline-end" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size={phone ? "touch" : "default"}
-              disabled={!canCreate}
-              data-testid="content-browser-new-asset-create"
-              onClick={() => onCreate()}
-            >
-              {busy ? "Creating…" : "Create"}
-            </Button>
-          )}
+          <Button
+            type="button"
+            size={phone ? "touch" : "default"}
+            disabled={!canCreate}
+            data-testid="content-browser-new-asset-create"
+            onClick={() => onCreate()}
+          >
+            {busy ? "Creating…" : "Create"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

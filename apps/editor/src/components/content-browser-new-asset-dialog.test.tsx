@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
+import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import type { CreatableAssetType } from "../lib/content-browser-helpers";
 
 const layout = vi.hoisted(() => ({ phone: false }));
@@ -12,7 +12,6 @@ function renderDialog(
   overrides: Partial<Parameters<typeof ContentBrowserNewAssetDialog>[0]> = {},
 ) {
   const onOpenChange = vi.fn();
-  const onTypeChange = vi.fn();
   const onNameChange = vi.fn();
   const onParentClassChange = vi.fn();
   const onCreate = vi.fn();
@@ -21,7 +20,6 @@ function renderDialog(
       open
       onOpenChange={onOpenChange}
       type={"Scene" as CreatableAssetType}
-      onTypeChange={onTypeChange}
       name=""
       onNameChange={onNameChange}
       parentClass="BObject"
@@ -33,7 +31,6 @@ function renderDialog(
   return {
     ...utils,
     onOpenChange,
-    onTypeChange,
     onNameChange,
     onParentClassChange,
     onCreate,
@@ -75,7 +72,6 @@ describe("ContentBrowserNewAssetDialog", () => {
         open
         onOpenChange={() => {}}
         type={"Class" as CreatableAssetType}
-        onTypeChange={() => {}}
         name="My Hero"
         onNameChange={() => {}}
         parentClass="BObject"
@@ -88,47 +84,20 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(screen.getByTestId("new-asset-summary").textContent).toContain("Appears in this folder");
   });
 
-  it("shows type selection and asset details one at a time on phones", () => {
+  it("opens straight to the details of the chosen type on phones", () => {
     layout.phone = true;
     const { onCreate } = renderDialog({ type: "Class", name: "Hero" });
-    expect(screen.getByRole("radiogroup", { name: "Asset Type" })).toBeTruthy();
-    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.queryByRole("radiogroup", { name: "Asset Type" })).toBeNull();
-    expect(
-      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-    ).toBe("Hero");
-    expect(
-      screen.getByRole("tree", { name: "Parent Class" }),
-    ).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Back To Types" }));
-    expect(screen.getByRole("radiogroup", { name: "Asset Type" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(
-      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-    ).toBe("Hero");
+    expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Hero");
+    expect(screen.getByRole("tree", { name: "Parent Class" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledOnce();
-  });
-
-  it("selects one type at a time", () => {
-    const { onTypeChange } = renderDialog();
-    const scene = screen.getByTestId("new-asset-type-Scene");
-    const klass = screen.getByTestId("new-asset-type-Class");
-    expect(scene.getAttribute("data-selected")).toBe("true");
-    expect(klass.getAttribute("data-selected")).toBe("false");
-    fireEvent.click(klass);
-    expect(onTypeChange).toHaveBeenCalledWith("Class");
   });
 
   it("shows the parent class picker only for Class", () => {
     const {
       rerender,
       onOpenChange,
-      onTypeChange,
       onNameChange,
       onParentClassChange,
       onCreate,
@@ -139,7 +108,6 @@ describe("ContentBrowserNewAssetDialog", () => {
         open
         onOpenChange={onOpenChange}
         type="Class"
-        onTypeChange={onTypeChange}
         name=""
         onNameChange={onNameChange}
         parentClass="BObject"
@@ -179,19 +147,10 @@ describe("ContentBrowserNewAssetDialog", () => {
     vi.stubGlobal("matchMedia", matchMedia);
     try {
       renderDialog();
-      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("new-asset-type")));
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("new-asset-details")));
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it("navigates type choices with arrow keys", () => {
-    const { onTypeChange } = renderDialog();
-    const scene = screen.getByTestId("new-asset-type-Scene");
-    scene.focus();
-    fireEvent.keyDown(scene, { key: "ArrowDown" });
-    expect(onTypeChange).toHaveBeenCalledWith("SceneLayer");
-    expect(document.activeElement).toBe(screen.getByTestId("new-asset-type-SceneLayer"));
   });
 
   it("lists project Classes in the Parent Class tree and filters by search", () => {
@@ -219,7 +178,6 @@ describe("ContentBrowserNewAssetDialog", () => {
     const {
       rerender,
       onOpenChange,
-      onTypeChange,
       onNameChange,
       onParentClassChange,
       onCreate,
@@ -234,7 +192,6 @@ describe("ContentBrowserNewAssetDialog", () => {
         open
         onOpenChange={onOpenChange}
         type="Scene"
-        onTypeChange={onTypeChange}
         name="main"
         onNameChange={onNameChange}
         parentClass="BObject"
@@ -260,15 +217,6 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onCreate).not.toHaveBeenCalled();
   });
 
-  it("disables Create when the type search matches no type", () => {
-    const { onCreate } = renderDialog({ name: "Arena" });
-    fireEvent.change(screen.getByTestId("new-asset-type-search"), { target: { value: "no such type" } });
-    expect(screen.getByText("No Types")).toBeTruthy();
-    expect(screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled")).toBe(true);
-    fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
-    expect(onCreate).not.toHaveBeenCalled();
-  });
-
   it("creates with the selected type after a name is typed", () => {
     const { onCreate, onNameChange } = renderDialog({ name: "Arena" });
     fireEvent.change(screen.getByTestId("new-asset-name"), {
@@ -277,5 +225,32 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onNameChange).toHaveBeenCalledWith("Arena2");
     fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ContentBrowserNewAssetMenu", () => {
+  afterEach(() => cleanup());
+
+  it("lists types under their categories and finds one by its id or its label", () => {
+    const onSelect = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      <ContentBrowserNewAssetMenu open onOpenChange={onOpenChange} anchor={{ x: 40, y: 60 }} onSelect={onSelect}>
+        <button type="button">New Asset</button>
+      </ContentBrowserNewAssetMenu>,
+    );
+    const menu = screen.getByTestId("new-asset-type-menu");
+    const labels = [...menu.querySelectorAll("[data-slot='dropdown-menu-label']")].map((node) => node.textContent);
+    expect(labels).toEqual(expect.arrayContaining(["New Asset", "World", "Scripting", "Rendering", "AI"]));
+
+    const query = screen.getByTestId("new-asset-type-menu-query");
+    fireEvent.change(query, { target: { value: "InputAction" } });
+    expect(screen.getByTestId("search-item-InputAction").textContent).toContain("Input Action");
+    expect(screen.queryByTestId("search-item-InputAxis")).toBeNull();
+
+    fireEvent.change(query, { target: { value: "basic particle" } });
+    fireEvent.click(screen.getByTestId("search-item-ParticleEmitter"));
+    expect(onSelect).toHaveBeenCalledWith("ParticleEmitter");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

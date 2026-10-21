@@ -17,8 +17,8 @@ async function createDataAsset(page: Page, type: "DataDefinition" | "DataTree", 
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page.getByTestId("content-browser-new-asset").click();
-  await page.getByTestId("new-asset-type-search").fill(type === "DataDefinition" ? "Data Definition" : "Data Tree");
-  await page.getByTestId(`new-asset-type-${type}`).click();
+  await page.getByTestId("new-asset-type-menu-query").fill(type === "DataDefinition" ? "Data Definition" : "Data Tree");
+  await page.getByTestId(`search-item-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   if (definitionGuid) {
     await page.getByTestId("new-asset-definition").click();

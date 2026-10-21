@@ -47,10 +47,8 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
     page.getByTestId("document-workspace-content-browser"),
   ).toBeVisible();
   await page.getByTestId("content-browser-new-asset").click();
-  await expect(
-    page.getByTestId("content-browser-new-asset-dialog"),
-  ).toBeVisible();
-  await page.getByTestId("new-asset-type-Material").click();
+  await expect(page.getByTestId("new-asset-type-menu")).toBeVisible();
+  await page.getByTestId("search-item-Material").click();
   await page.getByTestId("new-asset-name").fill("Bloom");
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(
