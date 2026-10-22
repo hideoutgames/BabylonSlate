@@ -65,6 +65,7 @@ import {
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
 import { actorLabel } from "./actor-world-transform";
+import { splineComponentFunction } from "./spline-script";
 import { isInfiniteLoopError, type ScriptLoopLocation } from "@babylonslate/debugger";
 import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
@@ -2514,6 +2515,10 @@ export class ScriptHost {
       component.setVariable("offsets", properties.offsets);
       this.applyComponentVariable(component, "offsets", properties.offsets);
       return { success: true };
+    }
+    if (component.classId === "SplineComponent") {
+      const result = splineComponentFunction(component, name, args);
+      if (result) return result;
     }
     if (component.classId === "MovementComponent") {
       if (!this.canInvokeOwner(component)) return {};
