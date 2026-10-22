@@ -34,7 +34,7 @@ function touchEventPins(extra: ReturnType<typeof pin>[] = []) {
 }
 
 /** What Get Touch and Find Touch report when no touch matches. */
-const NO_TOUCH = `{ Finger: -1, Position: { x: 0, y: 0 }, Delta: { x: 0, y: 0 }, StartPosition: { x: 0, y: 0 }, Pressure: 0, Phase: "Ended", Type: "Finger" }`;
+const NO_TOUCH = `{ Finger: -1, Position: { x: 0, y: 0 }, Delta: { x: 0, y: 0 }, Velocity: { x: 0, y: 0 }, StartPosition: { x: 0, y: 0 }, Pressure: 0, Phase: "Ended", Type: "Finger" }`;
 
 /**
  * Outputs of a touch lookup: `lookup` yields the matching touch or undefined

@@ -1377,6 +1377,8 @@ class InProcessRuntime implements RuntimeDriver {
     safeAreaInsets?: Partial<OverlaySafeAreaInsets>,
   ): void {
     this.overlay.resize(frustumWidth, frustumHeight, canvasWidth, canvasHeight, safeAreaInsets);
+    // Two-finger drags are measured in the view's shorter side.
+    if (canvasWidth !== undefined && canvasHeight !== undefined) this.resolver.setViewSize(canvasWidth, canvasHeight);
   }
 
   applySceneLayerFocusNavigate(reverse: boolean): void {
