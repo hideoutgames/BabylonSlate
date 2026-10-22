@@ -12,6 +12,7 @@ import {
 import type { IndexedAsset } from "@babylonslate/assets";
 import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { TREE_ROW_HEIGHT } from "@babylonslate/editor-kit";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { KeybindProvider } from "../context/keybind-context";
 import { subscribeModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
@@ -381,6 +382,105 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
     expect(screen.queryByTestId("content-browser-delete-references-confirmation")).toBeNull();
     await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith(scene.header.guid));
+  });
+});
+
+describe("ContentBrowserWorkspace moves into plugins", () => {
+  const plugin = {
+    pluginGuid: "tools", source: "project", folderName: "tools", readOnly: false,
+    folderPath: "plugins/tools", contentPath: "plugins/tools/assets",
+    settingsPath: "plugins/tools/tools.plugin.babasset",
+    settings: { ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }), enabledByDefault: true },
+  };
+
+  /** Project assets beside a Characters folder, and the Tool Pack plugin with a Props folder. */
+  function installPluginRegistry(assets: IndexedAsset[], references: Record<string, string[]> = {}) {
+    docs.thumbnailsEnabled = false;
+    docs.showPluginContent = true;
+    docs.pluginDescriptors = [plugin];
+    const root = projectContentRoot();
+    const moveAsset = vi.fn(async (guid: string, rootId: string, relative: string) =>
+      ({ ...assets.find((asset) => asset.header.guid === guid)!, rootId, path: `${plugin.contentPath}/${relative}` }));
+    const moveFolder = vi.fn(async () => {});
+    docs.assetRegistry = {
+      getRoot: (id: string) => id === "project" ? root : { ...root, id, kind: "plugin", pathPrefix: plugin.contentPath },
+      list: (filter?: { rootId?: string }) => assets.filter((asset) => !filter?.rootId || asset.rootId === filter.rootId),
+      folderTree: (id: string) => id === "project"
+        ? { name: "assets", path: "assets", assets: assets.map((asset) => asset.header.guid),
+          children: [{ name: "Characters", path: "assets/Characters", children: [], assets: [] }] }
+        : { name: "assets", path: plugin.contentPath, assets: [],
+          children: [{ name: "Props", path: `${plugin.contentPath}/Props`, children: [], assets: [] }] },
+      getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid),
+      showReferences: (guid: string) => ({
+        outbound: references[guid] ?? [],
+        inbound: Object.keys(references).filter((referrer) => references[referrer]!.includes(guid)),
+      }),
+      moveAsset,
+      moveFolder,
+    };
+    return { moveAsset, moveFolder };
+  }
+
+  /** Mouse-drag one folder tree row onto the middle of another. */
+  function dragTreeRow(fromId: string, toId: string) {
+    const tree = screen.getByTestId("content-browser-folder-tree");
+    const ids = within(tree).getAllByTestId(/^tree-row-/).map((row) => row.dataset.testid!.slice("tree-row-".length));
+    tree.getBoundingClientRect = () => ({ top: 0, left: 0, right: 240, bottom: ids.length * TREE_ROW_HEIGHT }) as DOMRect;
+    const middle = (id: string) => ids.indexOf(id) * TREE_ROW_HEIGHT + TREE_ROW_HEIGHT / 2;
+    const row = within(tree).getByTestId(`tree-row-${fromId}`);
+    for (const [type, clientX, clientY] of [
+      ["pointerdown", 10, middle(fromId)], ["pointermove", 60, middle(toId)], ["pointerup", 60, middle(toId)],
+    ] as const) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, clientY });
+      Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: "mouse" }, isPrimary: { value: true } });
+      fireEvent(row, event);
+    }
+  }
+
+  it("moves an asset into a plugin folder from Move… after showing what the move changes", async () => {
+    const { moveAsset } = installPluginRegistry([texture(0), texture(1)], { "tex-0": ["tex-1"] });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
+    const dialog = screen.getByTestId("content-browser-move-dialog");
+    tapTreeRow(within(dialog).getByTestId("tree-row-plugins/tools/assets/Props"));
+    expect(within(dialog).getByTestId("content-browser-move-warnings").textContent).toContain("Tool Pack will use tex-1 from outside the plugin.");
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
+    expect(moveAsset).toHaveBeenCalledWith("tex-0", "plugin:tools", "Props/tex-0.babasset");
+    expect(docs.repathDocument).toHaveBeenCalledWith("texture", "assets/tex-0.babasset", "plugins/tools/assets/Props/tex-0.babasset");
+    expect(docs.refreshAssetRegistry).toHaveBeenCalled();
+  });
+
+  it("moves a project folder into a plugin's root folder", async () => {
+    const { moveFolder } = installPluginRegistry([]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
+    tapTreeRow(within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-plugins/tools/assets"));
+    expect(screen.queryByTestId("content-browser-move-warnings")).toBeNull();
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
+    expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "", undefined, "plugin:tools");
+    expect(docs.repathProjectFolder).toHaveBeenCalledWith("assets/Characters", "plugins/tools/assets/Characters");
+  });
+
+  it("moves a tree drop into a plugin at once, but opens Move first when the drop changes plugin behaviour", async () => {
+    const { moveAsset } = installPluginRegistry([texture(0), texture(1)], { "tex-0": ["tex-1"] });
+    render(<ContentBrowserWorkspace />);
+
+    dragTreeRow("assets/tex-0.babasset", "plugins/tools/assets/Props");
+    const dialog = await screen.findByTestId("content-browser-move-dialog");
+    expect(within(dialog).getByTestId("content-browser-move-destination").textContent).toContain("plugins/tools/assets/Props");
+    expect(within(dialog).getByTestId("content-browser-move-warnings")).toBeTruthy();
+    expect(moveAsset).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    await waitFor(() => expect(moveAsset).toHaveBeenCalledWith("tex-0", "plugin:tools", "Props/tex-0.babasset"));
+
+    // Project content may use a plugin's content, so this drop needs no confirmation.
+    dragTreeRow("assets/tex-1.babasset", "plugins/tools/assets/Props");
+    await waitFor(() => expect(moveAsset).toHaveBeenCalledWith("tex-1", "plugin:tools", "Props/tex-1.babasset"));
+    expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull();
   });
 });
 
