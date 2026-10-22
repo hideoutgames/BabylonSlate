@@ -289,6 +289,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 - A plugin is a folder with one `PluginSettings` asset and its own `assets/`; it extends the engine only through things a project can already author (classes, graphs, editor utilities, interfaces, content). No dynamic code loading beyond compiled scripts.
 - The registry is multi-root: the project plus one root per enabled plugin; references across roots are ordinary guid references.
+- Assets and folders move between the project and writable plugins with their guids; the move copies their blob chunks into the target root's store. A move that leaves a plugin referencing outside content, or puts content in a plugin an export preset turns off, warns but does not block.
 - The plugin guid, not the folder name, is identity. Disabling a plugin that content depends on warns first; a missing plugin resolves to guid-keeping placeholders, never data loss.
 - Enable precedence: plugin default < project override (by guid in `project.json`) < export-preset override.
 - Version differences are nonblocking warnings; missing dependencies and cycles block.
@@ -375,7 +376,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Tilemap chunk rebuild cost per stroke; Recast crowd determinism across builds; the 2D axis remap sign.
 - ExecuteJavaScript runs with full worker privileges; disclosure on import is the mitigation.
 - CPU-only Particle Graphs on A16; untested device cost.
-- Cross-root asset moves need an explicit fix-up pass; class re-parenting invalidates inherited members.
+- File moves, including cross-root moves, copy then remove and are not crash-atomic: an interrupted move can leave a same-guid copy that scans keep unindexed. Class re-parenting invalidates inherited members.
 
 ## Intended behaviour
 
