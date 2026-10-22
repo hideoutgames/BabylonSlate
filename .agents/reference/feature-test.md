@@ -83,7 +83,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 | `FT_2D` | Orthographic camera over a 16x9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks), decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump, Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area, form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
-| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. `FT_UIPitCounter` counts them each tick with Sphere Overlap Actors (Dynamic) from a layer actor's script, which reads the layer's world rather than main-Scene bodies at the same coordinates; its label updates only on change. `showcollision` draws the pit and boxes in the layer. |
+| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. `FT_UIPitCounter` counts them each tick with Sphere Overlap Actors (Dynamic) from a layer actor's script, which reads the layer's world rather than main-Scene bodies at the same coordinates; its label updates only on change. `showcollision` draws the pit and boxes in the layer. `FT_UICameraRig` runs every Scene Layer camera node on Begin Play: Get Owning Scene Layer, then tweens the layer camera's location, zoom and rotation from their Get values and sets them back to the default, so the pit ends where it was authored. |
 
 ## Scripting, data and settings
 
@@ -118,7 +118,7 @@ Counts are constants in the area modules; changing one changes performance basel
 | `STRESS_FOLIAGE_GRID` | 72x72 | `world.ts` |
 | `LAKE_CAPTURES` | 1 Full Quality capture, 256², every frame (plus its own sun shadow maps each frame) | `world.ts` |
 | `GUARD_COUNT` | 4 (crowd cap 32) | `ai.ts` |
-| `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400 | `scene-layers.ts` |
+| `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400, camera tweens 1.5 s | `scene-layers.ts` |
 | `CLUSTER_*`, `CAPTURES`, `LOD_DISTANCES` | 48 lights, 3 captures, 5 menorahs | `rendering.ts` |
 
 ## On-device check and benchmark
