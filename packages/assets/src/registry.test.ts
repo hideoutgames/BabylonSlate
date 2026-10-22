@@ -1923,6 +1923,29 @@ describe("AssetRegistry moves between content roots", () => {
     expect(subfolders(rescanned)).toEqual(["Armor", "Empty"]);
   });
 
+  it("moves an asset and a folder into a writable root that keeps its own storage", async () => {
+    const storage = await createStorage();
+    const blob = await writeBlobAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
+    await writeAsset(storage, "assets/Props/Crate.babasset", { guid: "crate", type: "Material", name: "Crate" });
+    const other = new MemoryStorageAdapter("opfs");
+    await other.openDocumentsProject("other");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot({ id: "extra", kind: "synthetic", pathPrefix: "extra/assets", storage: other });
+    await registry.createFolder("project", "Props/Empty");
+
+    await registry.moveAsset("rock", "extra", "Rock.babasset");
+    await registry.moveFolder("project", "Props", "", undefined, "extra");
+
+    expect(await other.exists(`extra/assets/.blobs/${blob}`)).toBe(true);
+    expect(await other.exists("extra/assets/Props/Crate.babasset")).toBe(true);
+    expect(await other.exists("extra/assets/Props/Empty")).toBe(true);
+    expect(await storage.exists("assets/Rock.babasset")).toBe(false);
+    expect(await storage.exists("assets/Props")).toBe(false);
+    expect(registry.getByGuid("crate")).toMatchObject({ rootId: "extra", path: "extra/assets/Props/Crate.babasset" });
+    expect(await registry.readChunk("rock", "payload")).toEqual(bigPayload);
+  });
+
   it("will not carry a folder's unlisted copy of another file's guid to another root, and follows the listed file when it moves", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/a/hero.babasset", { guid: "hero", type: "Material", name: "Hero" });
