@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  enableTouchLayout,
   openTestProject,
   waitForSceneViewportReady,
 } from "./open-test-project";
@@ -24,6 +25,7 @@ async function expectWithinViewport(page: Page, testId: string) {
 
 test.describe("Phone Editor", () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  test.beforeEach(({ page }) => enableTouchLayout(page));
 
   test("shows one scene window, switches windows, and restores the tablet arrangement", async ({
     page,

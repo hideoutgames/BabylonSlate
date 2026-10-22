@@ -7,7 +7,7 @@ import {
   type SerializedGraph,
 } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene } from "./open-test-project";
+import { enableTouchLayout, openMainScene } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
 
 type TestHost = typeof globalThis & {
@@ -96,6 +96,7 @@ test.describe("Global toolbar overflow", () => {
 
   test("at 390 px nothing overlaps while a Simulation runs and the rest moves into More Actions", async ({ page }) => {
     test.setTimeout(240_000);
+    await enableTouchLayout(page);
     await openProject(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await expectNoOverlap(page);

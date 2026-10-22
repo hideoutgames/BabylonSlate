@@ -12,11 +12,12 @@ import { clampOverlayMenuPosition } from "./clamp-overlay-menu";
 import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { isCoarsePointerEnvironment } from "./prevent-document-overscroll";
+import { useTouchUi } from "./touch-ui";
 import { SearchInput } from "./search-input";
 import { WindowedList } from "./windowed-list";
 import "./styles/catalog-menu.css";
 
-/** Desktop rows match `--chrome-row`; coarse pointers use `--touch-target`. */
+/** Compact rows match `--chrome-row`; the touch layout uses `--touch-target`. */
 export const CATALOG_MENU_ROW_HEIGHT = 28;
 export const CATALOG_MENU_TOUCH_ROW_HEIGHT = 44;
 
@@ -162,7 +163,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const coarse = isCoarsePointerEnvironment();
-  const rowHeight = coarse ? CATALOG_MENU_TOUCH_ROW_HEIGHT : CATALOG_MENU_ROW_HEIGHT;
+  const rowHeight = useTouchUi() ? CATALOG_MENU_TOUCH_ROW_HEIGHT : CATALOG_MENU_ROW_HEIGHT;
 
   // Reset the menu while rendering each time it opens.
   const [wasOpen, setWasOpen] = useState<boolean | null>(null);

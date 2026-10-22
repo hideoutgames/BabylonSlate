@@ -128,7 +128,7 @@ Budgets and defaults live in [engine-plan.md](engine-plan.md#baseline-device-and
 
 Touch is primary; never assume hover or right-click. Hooks live in [editor-kit](../../packages/editor-kit/src/).
 
-- Coarse pointers get 44pt hit areas or a touch-specific layout, never larger desktop controls. Expanded hit areas must not overlap neighbouring controls; switch to a touch layout when dense controls leave no room.
+- The touch layout (Compact Mode off; [theming](architecture/theming.md#density-and-touch)) gets 44pt hit areas or a touch-specific layout, never larger desktop controls; Compact Mode keeps every surface compact, phones included. Gestures below follow the real pointer whatever the density. Expanded hit areas must not overlap neighbouring controls; switch to a touch layout when dense controls leave no room.
 
 - Long-press (500 ms, cancelled by 8px movement or scroll, matching Dockview) opens context menus; `contextmenu` is the mouse path. The native menu is suppressed app-wide (`useSuppressNativeContextMenu`); inputs, `contenteditable` and `SelectableText` keep the platform menu.
 - iOS three-finger undo/redo is suppressed outside text editing (`useSuppressIosEditingGestures`); editor canvases `preventDefault` touch with non-passive listeners and use `touch-none`.

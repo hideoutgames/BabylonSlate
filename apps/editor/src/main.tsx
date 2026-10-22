@@ -3,10 +3,12 @@ import { createRoot } from "react-dom/client";
 import "@haptic/ui/styles/globals.css";
 import "@haptic/editor-kit/styles/context-menu.css";
 import {
+  defaultCompactMode,
   initializeCapacitorAudioLifecycle,
   initializeCapacitorLifecycle,
   isTestModeEnabled,
 } from "@haptic/vfs";
+import { setTouchUi } from "@haptic/editor-kit";
 import { installDirectViewReadSync } from "@haptic/render";
 import App from "./App";
 import { installPreloadErrorReload } from "./lib/preload-error-reload";
@@ -14,6 +16,8 @@ import { installPreloadErrorReload } from "./lib/preload-error-reload";
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 installPreloadErrorReload();
+// First paint uses the platform's Compact Mode; settings may change it once loaded.
+setTouchUi(!defaultCompactMode());
 
 if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("latticeDeformerCost")) {
   void import("./testing/lattice-deformer-cost").then(({ runLatticeDeformerCost }) => Object.assign(window, { __latticeDeformerCost: runLatticeDeformerCost }));

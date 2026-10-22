@@ -1,3 +1,4 @@
+import { useTouchUi } from "@haptic/editor-kit";
 import { isMobilePlatform } from "@haptic/vfs";
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -28,6 +29,16 @@ export function usePhoneLayout(): boolean {
   return useMediaQuery(PHONE_LAYOUT_QUERY);
 }
 
+/**
+ * Phone layout sizing (44px bars, rows and controls). The phone layout itself
+ * is structural; its sizes follow Compact Mode like every other touch target.
+ */
+export function usePhoneTouchSizing(): boolean {
+  const phone = usePhoneLayout();
+  return useTouchUi() && phone;
+}
+
+/** The real pointer, for gestures and drag strategy; sizing reads `useTouchUi`. */
 export function useCoarsePointer(): boolean {
   return useMediaQuery("(pointer: coarse)");
 }

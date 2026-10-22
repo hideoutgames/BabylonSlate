@@ -115,6 +115,14 @@ function itemTestId(item: { id: string; testId?: string }): string {
   return item.testId ?? `context-menu-item-${item.id}`;
 }
 
+/** A submenu with nothing to choose shows disabled instead of opening empty. */
+function itemDisabled(item: NestedMenuItem): boolean | undefined {
+  if (item.type === "separator") return undefined;
+  if (item.type === "submenu")
+    return item.disabled || !item.items.some((child) => child.type !== "separator");
+  return item.disabled;
+}
+
 function NestedMenuItems({
   items,
   size,
@@ -199,9 +207,9 @@ function NestedMenuItems({
         }
         if (item.type === "submenu") {
           return (
-            <DropdownMenuSub key={item.id} disabled={item.disabled}>
+            <DropdownMenuSub key={item.id} disabled={itemDisabled(item)}>
               <DropdownMenuSubTrigger
-                disabled={item.disabled}
+                disabled={itemDisabled(item)}
                 openOnHover={false}
                 className={itemClass}
                 data-testid={itemTestId(item)}
@@ -379,13 +387,13 @@ function OverlayMenuItems({
               key={item.id}
               type="button"
               role="menuitem"
-              disabled={item.disabled}
+              disabled={itemDisabled(item)}
               aria-haspopup="menu"
               aria-expanded={openSubmenuId === item.id}
               className="context-menu-item"
               data-testid={itemTestId(item)}
               onClick={() => {
-                if (item.disabled) return;
+                if (itemDisabled(item)) return;
                 onOpenSubmenu(openSubmenuId === item.id ? null : item.id);
               }}
             >

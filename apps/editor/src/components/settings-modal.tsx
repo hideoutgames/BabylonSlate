@@ -215,6 +215,11 @@ const ENGINE_CATEGORIES: Array<
     keywords: "version channel build commit source release test automatic updates GitHub",
   },
   {
+    id: "interface",
+    label: "Interface",
+    keywords: "interface compact mode density touch targets rows size",
+  },
+  {
     id: "undo",
     label: "Undo",
     keywords: "undo history length stack memory limit budget",
@@ -297,6 +302,7 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "thumbnails",
       "focus",
       "keybinds",
+      "interface",
       "about",
     ],
   },

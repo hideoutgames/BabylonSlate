@@ -461,10 +461,9 @@ export function ProjectPluginsSettings() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel size="touch">Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              size="touch"
               data-testid="settings-plugin-delete-confirm"
               onClick={() => {
                 if (!confirmDelete) return;

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import { pickImportFiles } from "@haptic/vfs";
 import {
   ColorField,
@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@haptic/ui/components/select";
 import { useAppSettings } from "../context/app-settings-context";
+import { ThemePreview } from "./editor-theme-preview";
 import { downloadBlob } from "../lib/download";
 import {
   editorThemeFileName,
@@ -47,125 +48,12 @@ import {
   serializeEditorTheme,
   setActiveThemeColor,
   themeColorOverrides,
-  themeCssVariables,
   THEME_COLOR_GROUPS,
   uniqueThemeName,
   type ThemeColorKey,
-  type ThemeColors,
 } from "../lib/editor-themes";
 
 type Notice = { tone: "info" | "error"; text: string };
-
-/** Non-interactive miniature of the editor drawn with a theme's colors. */
-export function ThemePreview({ colors }: { colors: ThemeColors }) {
-  return (
-    <div
-      aria-hidden="true"
-      inert
-      data-testid="application-theme-preview"
-      className="pointer-events-none flex h-40 select-none flex-col overflow-hidden rounded-lg border border-border bg-background text-[10px] leading-none text-foreground"
-      style={themeCssVariables(colors) as CSSProperties}
-    >
-      <div className="flex h-6 shrink-0 items-center gap-1.5 border-b border-border px-2">
-        <span className="font-medium">Level</span>
-        <span className="relative ml-1 flex h-full items-center px-1.5 text-foreground">
-          Begin Play
-          <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-brand-red" />
-        </span>
-        <span className="text-muted-foreground">Hero</span>
-        <span className="ml-auto flex h-4 items-center rounded-sm bg-(--play) px-1.5 text-(--play-foreground)">
-          Play
-        </span>
-        <span className="flex h-4 items-center rounded-sm bg-primary px-1.5 text-primary-foreground">
-          Save
-        </span>
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <div className="flex w-1/4 flex-col border-r border-border bg-sidebar">
-          <div className="border-b border-border bg-panel-header px-1.5 py-1 text-muted-foreground">
-            Outliner
-          </div>
-          {[
-            { label: "Main Scene", dot: "var(--asset-scene)" },
-            { label: "Hero", dot: "var(--asset-class)", selected: true },
-            { label: "Rock", dot: "var(--asset-model)" },
-            { label: "Grass", dot: "var(--asset-material)" },
-          ].map((row) => (
-            <div
-              key={row.label}
-              className={`flex items-center gap-1 px-1.5 py-1 ${row.selected ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-            >
-              <span className="size-1.5 shrink-0 rounded-full" style={{ background: row.dot }} />
-              {row.label}
-            </div>
-          ))}
-        </div>
-        <div className="relative min-w-0 flex-1 bg-(--graph-canvas)">
-          <PreviewNode
-            className="left-[8%] top-[18%]"
-            title="Event Begin Play"
-            titleColor="var(--node-event)"
-            pin="var(--pin-exec)"
-          />
-          <PreviewNode
-            className="left-[46%] top-[42%] outline outline-1 outline-selection"
-            title="Print String"
-            titleColor="var(--node-function)"
-            pin="var(--pin-string)"
-          />
-          <span className="absolute bottom-1 left-1.5 flex gap-1">
-            {["var(--pin-bool)", "var(--pin-float)", "var(--pin-vector)", "var(--pin-object)"].map(
-              (pin) => (
-                <span key={pin} className="size-1.5 rounded-full" style={{ background: pin }} />
-              ),
-            )}
-          </span>
-        </div>
-        <div className="flex w-1/3 flex-col gap-1 border-l border-border bg-card">
-          <div className="border-b border-border bg-panel-header px-1.5 py-1 text-muted-foreground">
-            Inspector
-          </div>
-          <div className="flex flex-col gap-1 px-1.5">
-            <span className="text-muted-foreground">Name</span>
-            <span className="rounded-sm border border-input bg-control px-1 py-0.5">Hero</span>
-            <span className="text-muted-foreground">Speed</span>
-            <span className="rounded-sm border border-ring bg-control px-1 py-0.5 outline outline-1 outline-ring/40">
-              4.00
-            </span>
-            <span className="flex gap-1">
-              <span className="rounded-sm bg-secondary px-1 py-0.5">Reset</span>
-              <span className="rounded-sm bg-destructive px-1 py-0.5 text-destructive-foreground">Delete</span>
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewNode({
-  className,
-  title,
-  titleColor,
-  pin,
-}: {
-  className: string;
-  title: string;
-  titleColor: string;
-  pin: string;
-}) {
-  return (
-    <div className={`absolute w-[44%] overflow-hidden rounded-sm bg-(--graph-node) ${className}`}>
-      <div className="truncate px-1 py-0.5 text-(--node-title-foreground)" style={{ background: titleColor }}>
-        {title}
-      </div>
-      <div className="flex items-center justify-between px-1 py-1">
-        <span className="size-1.5 rounded-full" style={{ background: "var(--pin-exec)" }} />
-        <span className="size-1.5 rounded-full" style={{ background: pin }} />
-      </div>
-    </div>
-  );
-}
 
 /** Theme picker, read-only built-ins, custom theme Style editing, import and export. */
 export function ThemeSettingsFields() {

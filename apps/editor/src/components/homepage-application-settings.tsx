@@ -1,4 +1,4 @@
-import { getHostPlatform } from "@haptic/vfs";
+import { getHostPlatform, resolveCompactMode } from "@haptic/vfs";
 import {
   Field,
   FieldContent,
@@ -10,6 +10,7 @@ import {
 } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
 import { useAppSettings } from "../context/app-settings-context";
+import { CompactModeField } from "./compact-mode-field";
 import { ThemeSettingsFields } from "./homepage-theme-settings";
 
 /** Application-wide preferences for the Account dialog's Application section. */
@@ -19,6 +20,19 @@ export function ApplicationSettingsFields() {
   return (
     <FieldGroup>
       <ThemeSettingsFields />
+      <FieldSet>
+        <FieldLegend>Interface</FieldLegend>
+        <CompactModeField
+          id="application-compact-mode"
+          checked={resolveCompactMode(settings)}
+          disabled={!hydrated}
+          onCheckedChange={(checked) =>
+            void updateSettings(settings => {
+              settings.compactMode = checked;
+            })
+          }
+        />
+      </FieldSet>
       <FieldSet>
         <FieldLegend>Updates</FieldLegend>
         <Field orientation="horizontal" className="settings-field">

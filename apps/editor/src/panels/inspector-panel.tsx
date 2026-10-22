@@ -1986,7 +1986,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
                 <FieldLabel htmlFor="command-name">Command Name</FieldLabel>
                 <Input
                   id="command-name"
-                  className="min-h-11"
+                  className="pointer-coarse:min-h-11"
                   value={String(selectedNode.data.commandName ?? "")}
                   data-testid="command-name"
                   onChange={(event) =>
@@ -2009,7 +2009,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
                 </FieldLabel>
                 <Input
                   id="command-description"
-                  className="min-h-11"
+                  className="pointer-coarse:min-h-11"
                   value={String(selectedNode.data.description ?? "")}
                   data-testid="command-description"
                   onChange={(event) =>
@@ -2021,7 +2021,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
                 <FieldLabel htmlFor="command-category">Category</FieldLabel>
                 <Input
                   id="command-category"
-                  className="min-h-11"
+                  className="pointer-coarse:min-h-11"
                   value={String(selectedNode.data.category ?? "game")}
                   data-testid="command-category"
                   onChange={(event) =>

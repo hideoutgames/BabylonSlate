@@ -34,6 +34,7 @@ const applyGraphChange = vi.hoisted(() => vi.fn<(id: string, graph: SerializedGr
 const device = vi.hoisted(() => ({ phone: false }));
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => device.phone,
+  usePhoneTouchSizing: () => device.phone,
 }));
 
 vi.mock("../context/document-workspace-context", () => ({

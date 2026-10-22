@@ -8,19 +8,20 @@ import { cn } from "@haptic/ui/lib/utils";
 import {
   PanelFrame,
   SelectableText,
+  TOUCH_ROW_HEIGHT,
   TREE_ROW_HEIGHT,
   WindowedList,
+  useTouchUi,
 } from "@haptic/editor-kit";
 import { useOutputLog, useOutputLogWindow } from "../context/play-context";
 import { MessageDetails } from "../components/message-details";
 import { parseOutputLogLine } from "../lib/output-log-line";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
-import { useCoarsePointer } from "../shell/use-platform-layout";
 
 export function OutputLogPanel({ api }: IDockviewPanelProps) {
   useOutputLogWindow(useDockPanelShown(api));
   const { lines } = useOutputLog();
-  const coarsePointer = useCoarsePointer();
+  const touch = useTouchUi();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
   const selected = selectedMessage && lines.includes(selectedMessage) ? selectedMessage : null;
@@ -33,7 +34,7 @@ export function OutputLogPanel({ api }: IDockviewPanelProps) {
         </Empty>
       ) : (
         <ScrollArea className="min-h-0 flex-1 py-1">
-          <WindowedList itemCount={lines.length} rowHeight={coarsePointer ? 44 : TREE_ROW_HEIGHT}>
+          <WindowedList itemCount={lines.length} rowHeight={touch ? TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT}>
             {(index) => {
               const line = lines[index] ?? "";
               const entry = parseOutputLogLine(line);

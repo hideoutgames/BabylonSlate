@@ -3,7 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@haptic/core";
 import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@haptic/scripting";
 import { normalizeTag, type TagContainer } from "@haptic/core";
-import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, type NestedMenuItem, type TreeViewNode } from "@haptic/editor-kit";
+import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type NestedMenuItem, type TreeViewNode } from "@haptic/editor-kit";
 import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
@@ -17,16 +17,18 @@ import { DataValueEditor } from "../components/data-value-editor";
 import { DataTreeEntryField, DataTreeEntryPicker } from "../components/data-tree-entry-picker";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 import { IconActionButton } from "../components/icon-action-button";
+import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
+import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 const TOUCH_ACTION = "pointer-coarse:min-h-11";
 const TOUCH_ICON_ACTION = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const DEFINITION_VISUAL = resolveTypeVisual({ assetType: "DataDefinition" });
 const GRID_CONTROL = "h-6 min-h-6 w-full rounded-sm border-transparent bg-transparent px-1 text-xs shadow-none hover:border-input focus-visible:border-ring focus-visible:bg-control focus-visible:ring-1 dark:bg-transparent pointer-coarse:h-11";
 
-function DefinitionButton({ label, name, assigned, disabled, onClick, testId }: {
-  label: string; name: string; assigned: boolean; disabled: boolean; onClick: () => void; testId?: string;
+function DefinitionButton({ label, name, assigned, disabled, onClick, testId, touchClassName = TOUCH_ACTION }: {
+  label: string; name: string; assigned: boolean; disabled: boolean; onClick: () => void; testId?: string; touchClassName?: string;
 }) {
-  return <Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start", TOUCH_ACTION)} aria-label={label} title={name} data-testid={testId} disabled={disabled} onClick={onClick}>
+  return <Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start", touchClassName)} aria-label={label} title={name} data-testid={testId} disabled={disabled} onClick={onClick}>
     <TypeVisualIcon visual={DEFINITION_VISUAL} className={assigned ? undefined : "opacity-50"} />
     <span className={cn("min-w-0 flex-1 truncate text-left", !assigned && "text-muted-foreground")}>{name}</span>
     <ChevronDownIcon data-icon="inline-end" />
@@ -203,6 +205,9 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
   const [query, setQuery] = useState("");
   const [definitionPicker, setDefinitionPicker] = useState(false);
   const context = useContextMenu({ items: [] });
+  // Sized like the Outliner: compact rows and controls, 44px only on touch phones.
+  const touchSizing = usePhoneTouchSizing();
+  const actionSize = touchSizing ? "touch-icon" : "icon-sm";
   useEffect(() => { if (state.focusRequest) setQuery(""); }, [state.focusRequest]);
   const visible = useMemo(() => {
     if (!index) return [];
@@ -228,23 +233,28 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
     return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
       icon: <BetweenHorizontalStartIcon className="size-3.5" />, renamable: !readOnly,
       preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
-      trailing: <NestedMenu size="chrome" items={menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
+      trailing: <NestedMenu size="chrome" items={menuItems(entry.id)} trigger={<Button variant="ghost" size={actionSize} className={QUIET_ROW_ACTION} aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
     };
-  }), [visible, index, collapsedIds, query, readOnly, menuItems]);
+  }), [visible, index, collapsedIds, query, readOnly, menuItems, actionSize]);
   if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
   const definition = tree.defaultDefinitionGuid ? state.definitions.get(tree.defaultDefinitionGuid) : null;
+  // The header and Tree Root stay put; only the tree scrolls, inside the panel.
   return <PanelFrame data-testid="data-tree-hierarchy-panel">
-    <div className="sticky top-0 z-10 flex flex-col gap-1.5 border-b border-border bg-panel-header p-2">
-      <div className="flex items-center gap-2"><span className="shrink-0 text-xs text-muted-foreground">Default Definition</span><DefinitionButton label="Tree Default Definition" testId="data-tree-default-definition" assigned={Boolean(definition)} name={definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "None")} disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)} /></div>
-      <div className="flex items-center gap-1">
-        <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 min-w-0 flex-1 pointer-coarse:min-h-11" />
-        <IconActionButton label="Add Root" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy} onClick={() => actions.addAndRename(null)}><PlusIcon /></IconActionButton>
-        <IconActionButton label="Add Child" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) actions.addAndRename(selectedEntryId); }}><ListPlusIcon /></IconActionButton>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-col gap-1 border-b border-border/60 bg-panel-header p-1">
+        <div className="flex items-center gap-2 pl-1"><span className="shrink-0 text-xs text-muted-foreground">Default Definition</span><DefinitionButton label="Tree Default Definition" testId="data-tree-default-definition" assigned={Boolean(definition)} name={definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "None")} disabled={readOnly || actions.busy} touchClassName={touchSizing ? "h-11" : undefined} onClick={() => setDefinitionPicker(true)} /></div>
+        <div className="flex items-center gap-1">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className={cn("min-w-0 flex-1", touchSizing ? "h-11" : "h-7")} />
+          <IconActionButton label="Add Root" variant="ghost" size={actionSize} disabled={readOnly || actions.busy} onClick={() => actions.addAndRename(null)}><PlusIcon /></IconActionButton>
+          <IconActionButton label="Add Child" variant="ghost" size={actionSize} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) actions.addAndRename(selectedEntryId); }}><ListPlusIcon /></IconActionButton>
+        </div>
+      </div>
+      {actions.error ? <div className="shrink-0 p-1"><OperationError message={actions.error} /></div> : null}
+      <div className="shrink-0 px-1 pt-1"><Button variant="ghost" size="sm" className={cn("w-full justify-start gap-1 rounded-sm px-1 text-[13px] font-normal", touchSizing ? "h-11" : "h-7", !state.browseBranchId && !selectedEntryId ? "bg-accent font-medium" : "hover:bg-accent/50")} onClick={() => state.browse(null)}><span className="flex size-5 items-center justify-center text-muted-foreground"><DatabaseIcon className="size-3.5" /></span>Tree Root<span className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">{tree.entries.length}</span></Button></div>
+      <div className="min-h-0 flex-1">
+        {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={touchSizing ? TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} renamingId={actions.renamingId} onRenameRequest={readOnly ? undefined : actions.setRenamingId} onRenameDone={actions.finishRename} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
       </div>
     </div>
-    <OperationError message={actions.error} />
-    <div className="px-1 pt-1"><Button variant="ghost" size="sm" className={cn("h-7 w-full justify-start gap-1 rounded-sm px-1 text-[13px] font-normal", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId ? "bg-accent font-medium" : "hover:bg-accent/50")} onClick={() => state.browse(null)}><span className="flex size-5 items-center justify-center text-muted-foreground"><DatabaseIcon className="size-3.5" /></span>Tree Root<span className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">{tree.entries.length}</span></Button></div>
-    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} renamingId={actions.renamingId} onRenameRequest={readOnly ? undefined : actions.setRenamingId} onRenameDone={actions.finishRename} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
     <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />
     <ContextMenuOverlay menu={context.menu} onClose={context.closeMenu} />
     {actions.dialogs}
@@ -306,7 +316,7 @@ export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
   }, [entries, definitionFilter, index, guid, filter, state.entryInfo, query, sort, descendants, searchCache]);
   const selected = selectedEntryId ? index?.byId.get(selectedEntryId) : undefined;
   const selectedIndex = filtered.findIndex((entry) => entry.id === selectedEntryId);
-  const rowHeight = isCoarsePointerEnvironment() ? 44 : 28;
+  const rowHeight = useTouchUi() ? TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT;
   const gridColumns = `minmax(160px, 1.5fr) ${definition ? visibleFields.map(() => "minmax(120px, 1fr)").join(" ") : "minmax(130px, 1fr) minmax(60px, .4fr)"} minmax(105px, 1fr)`;
   useEffect(() => { setDefinitionFilter("auto"); setQuery(""); setFilter("all"); }, [browseBranchId]);
   useEffect(() => {
@@ -388,7 +398,7 @@ export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
         const status = needsApply ? "Definition Changed" : errors ? `${errors} Error${errors === 1 ? "" : "s"}` : warnings ? `${warnings} Warning${warnings === 1 ? "" : "s"}` : "";
         const values = migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values;
         const effective = index.effectiveDefinitionById.get(entry.id);
-        return <div id={`${gridId}-${entry.id}`} role="row" aria-rowindex={entryIndex + 2} aria-selected={selectedEntryId === entry.id} data-testid={`data-tree-entry-${entry.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/40 text-xs", selectedEntryId === entry.id ? "bg-accent" : "hover:bg-accent/40")} style={{ gridTemplateColumns: gridColumns }} onClick={() => state.selectEntry(entry.id, false)} onDoubleClick={() => state.browse(entry.id)}>
+        return <div id={`${gridId}-${entry.id}`} role="row" aria-rowindex={entryIndex + 2} aria-selected={selectedEntryId === entry.id} data-testid={`data-tree-entry-${entry.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/40 text-xs", selectedEntryId === entry.id ? "bg-accent" : cn(entryIndex % 2 === 1 && "bg-list-stripe", "hover:bg-accent/40"))} style={{ gridTemplateColumns: gridColumns }} onClick={() => state.selectEntry(entry.id, false)} onDoubleClick={() => state.browse(entry.id)}>
           <span role="gridcell" className="truncate px-2 font-medium" title={index.pathById.get(entry.id)}>{descendants ? index.pathById.get(entry.id) : entry.name}</span>
           {definition ? visibleFields.map((field, columnIndex) => <div key={field.id ?? field.name} role="gridcell" className="min-w-0 px-1" onDoubleClick={(event) => event.stopPropagation()} onPaste={(event) => {
             const text = event.clipboardData.getData("text/plain");
@@ -486,7 +496,7 @@ export function DataTreeValidationPanel(_props: IDockviewPanelProps) {
     <div className="sticky top-0 z-10 flex h-7 items-center border-b border-border bg-panel-header px-2 text-xs text-muted-foreground">{errors} Errors · {validation.length - errors} Warnings</div>
     {validation.length === 0 ? <DataEmpty title="No Issues">The hierarchy and typed entries are valid.</DataEmpty> : <WindowedList itemCount={validation.length} rowHeight={44}>{(position) => {
       const issue = validation[position]!;
-      return <DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.entryId ? index?.pathById.get(issue.entryId) ?? issue.entryId : "Tree"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.entryId === issue.entryId && focusRequest?.path === issue.path} onSelect={() => { if (issue.entryId) state.focusField(issue.entryId, issue.path); else state.documents.activateDockPanel("data-tree-hierarchy"); }} testId="data-validation-issue" />;
+      return <div className={cn("h-full", position % 2 === 1 && "bg-list-stripe")}><DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.entryId ? index?.pathById.get(issue.entryId) ?? issue.entryId : "Tree"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.entryId === issue.entryId && focusRequest?.path === issue.path} onSelect={() => { if (issue.entryId) state.focusField(issue.entryId, issue.path); else state.documents.activateDockPanel("data-tree-hierarchy"); }} testId="data-validation-issue" /></div>;
     }}</WindowedList>}
   </PanelFrame>;
 }

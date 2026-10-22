@@ -55,7 +55,7 @@ const harness = vi.hoisted(() => ({
   assets: [] as Array<{ path: string; header: { type: string; name: string; guid: string; parentClass?: string } }>,
 }));
 
-vi.mock("../shell/use-platform-layout", () => ({ usePhoneLayout: () => false }));
+vi.mock("../shell/use-platform-layout", () => ({ usePhoneLayout: () => false, usePhoneTouchSizing: () => false }));
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: `graph:${harness.path}` }),
 }));

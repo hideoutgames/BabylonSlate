@@ -13,6 +13,7 @@ import {
   createAppSettingsStore,
   defaultEngineSettings,
   ENGINE_SETTINGS_CHANGED_EVENT,
+  resolveCompactMode,
   type AppSettingsStore,
   type EngineSettings,
 } from "@haptic/vfs";
@@ -211,6 +212,11 @@ export function AppSettingsProvider({
 /** Trace Graphics Errors, effective only in Debug Mode; re-renders only when it changes. */
 export function useGraphicsErrorTrace(): boolean {
   return useSettingSelector((settings) => settings.debugMode && settings.traceGraphicsErrors);
+}
+
+/** Effective Compact Mode application setting; re-renders only when it changes. */
+export function useCompactMode(): boolean {
+  return useSettingSelector(resolveCompactMode);
 }
 
 /** Debug Mode Engine Setting; re-renders only when it changes. */

@@ -1,5 +1,6 @@
-import { usePlatformLayoutOptions } from "../shell/use-platform-layout";
+import { useTouchUi } from "@haptic/editor-kit";
 
+/** Trace controls and rows use touch sizes while Compact Mode is off. */
 export function useTraceTouch(): boolean {
-  return usePlatformLayoutOptions().dndStrategy === "pointer";
+  return useTouchUi();
 }

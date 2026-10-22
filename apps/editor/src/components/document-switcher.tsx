@@ -7,7 +7,7 @@ import {
 import {
   CONTENT_BROWSER_ID,
 } from "@haptic/core";
-import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts } from "@haptic/editor-kit";
+import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts, useTouchUi } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
@@ -53,6 +53,7 @@ export function DocumentSwitcher({
   compact?: boolean;
 }) {
   const active = documents.find((doc) => doc.id === activeDocumentId);
+  const touch = useTouchUi();
   const closeChord = useKeybindChord("document.close");
   const closeAllChord = useKeybindChord("document.closeAll");
   const browserChord = useKeybindChord("editor.contentBrowser");
@@ -83,7 +84,7 @@ export function DocumentSwitcher({
         render={
           <Button
             variant="ghost"
-            size={compact ? "touch" : "icon-sm"}
+            size={compact ? touch ? "touch" : "sm" : "icon-sm"}
             aria-label="Open Documents"
             title="Open Documents"
             data-testid="document-switcher"
@@ -121,7 +122,7 @@ export function DocumentSwitcher({
                 key={doc.id}
                 value={doc.id}
                 closeOnClick
-                className="min-h-11"
+                className="pointer-coarse:min-h-11"
                 data-document-id={doc.id}
                 aria-keyshortcuts={doc.id === CONTENT_BROWSER_ID && browserChord ? ariaKeyShortcuts(browserChord) : undefined}
               >
@@ -155,7 +156,7 @@ export function DocumentSwitcher({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem
-                className="min-h-11"
+                className="pointer-coarse:min-h-11"
                 onClick={() => onClose(active.id)}
                 aria-keyshortcuts={closeChord ? ariaKeyShortcuts(closeChord) : undefined}
               >
@@ -173,7 +174,7 @@ export function DocumentSwitcher({
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem
-            className="min-h-11"
+            className="pointer-coarse:min-h-11"
             disabled={
               !onCloseAll ||
               !hasClosableDocuments

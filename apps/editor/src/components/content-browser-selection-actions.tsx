@@ -1,4 +1,5 @@
 import { ArrowUpRightIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useTouchUi } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 
 export function ContentBrowserSelectionActions({
@@ -17,6 +18,7 @@ export function ContentBrowserSelectionActions({
   onRequestDelete: () => void;
   compact?: boolean;
 }) {
+  const touch = useTouchUi() && compact;
   if (selectionCount <= 0) return null;
   return (
     <>
@@ -24,7 +26,7 @@ export function ContentBrowserSelectionActions({
         <Button
           type="button"
           variant="outline"
-          size={compact ? "touch" : "sm"}
+          size={touch ? "touch" : "sm"}
           data-testid="content-browser-open-selected"
           disabled={busy}
           onClick={onOpen}
@@ -36,7 +38,7 @@ export function ContentBrowserSelectionActions({
       <Button
         type="button"
         variant="outline"
-        size={compact ? "touch-icon" : "sm"}
+        size={compact ? touch ? "touch-icon" : "icon-sm" : "sm"}
         aria-label="Deselect"
         data-testid="content-browser-deselect-all"
         disabled={busy}
@@ -48,7 +50,7 @@ export function ContentBrowserSelectionActions({
       <Button
         type="button"
         variant="outline"
-        size={compact ? "touch" : "sm"}
+        size={touch ? "touch" : "sm"}
         data-testid="content-browser-delete-selected"
         disabled={busy}
         onClick={onRequestDelete}

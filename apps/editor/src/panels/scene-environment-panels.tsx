@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
-import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, type PropertyRow } from "@haptic/editor-kit";
+import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, useTouchUi, type PropertyRow } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
@@ -23,7 +23,6 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
-import { useCoarsePointer } from "../shell/use-platform-layout";
 
 const NEW_LANDSCAPE_SIZE = 64;
 const NEW_LANDSCAPE_CELLS = 64;
@@ -72,7 +71,7 @@ export function LandscapeOutlinerPanel(_props: IDockviewPanelProps) { void _prop
 export function FoliageOutlinerPanel(_props: IDockviewPanelProps) { void _props; return <EnvironmentOutliner classId="FoliageComponent" />; }
 
 function EnvironmentOutliner({ classId }: { classId: string }) {
-  const coarsePointer = useCoarsePointer();
+  const touchRows = useTouchUi();
   const { scene, commit } = useEnvironmentScene();
   const { selectedActorIds, selectActor, frameActor } = useSceneEditing();
   const { landscapeSelection, setLandscapeSelection } = useSceneTools();
@@ -108,7 +107,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
       </ToolbarStrip>
       {entries.length ? <div className="min-h-0 flex-1 py-1">
         <TreeView aria-label={landscape ? "Landscape Components" : "Foliage Components"}
-          rowHeight={coarsePointer ? 44 : undefined}
+          rowHeight={touchRows ? 44 : undefined}
           nodes={entries.map(({ actor, component, id }) => ({
             id, depth: 0, hasChildren: false, expanded: false, muted: actor.locked || !actor.visible, icon: <Icon />,
             label: `${actor.name}${actor.components.filter((c) => c.classId === classId).length > 1 ? ` · ${component.id}` : ""}`,

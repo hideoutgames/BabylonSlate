@@ -249,38 +249,37 @@
   }
 }
 
-/* Coarse pointers get a taller strip, wider tabs, and always-visible close. */
-@media (pointer: coarse) {
-  .dockview-theme-haptic {
-    --dv-tabs-and-actions-container-height: 30px;
-  }
+/* The touch layout (Compact Mode off) gets a taller strip, wider tabs, and
+ * always-visible close. */
+:where(.touch-ui) .dockview-theme-haptic {
+  --dv-tabs-and-actions-container-height: 30px;
+}
 
-  .dockview-theme-haptic .dv-tab {
-    height: 26px;
-    min-width: 128px;
-    padding-inline: 10px 4px;
-  }
+:where(.touch-ui) .dockview-theme-haptic .dv-tab {
+  height: 26px;
+  min-width: 128px;
+  padding-inline: 10px 4px;
+}
 
-  .dockview-theme-haptic .dv-tab .dv-default-tab-action {
-    width: 22px;
-    height: 22px;
-    opacity: 1;
-  }
+:where(.touch-ui) .dockview-theme-haptic .dv-tab .dv-default-tab-action {
+  width: 22px;
+  height: 22px;
+  opacity: 1;
+}
 
-  .dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
-    height: 26px;
-    padding-inline: 8px;
-  }
+:where(.touch-ui) .dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
+  height: 26px;
+  padding-inline: 8px;
+}
 
-  .dv-popover-anchor .dv-tabs-overflow-container .dv-tab {
-    min-height: var(--touch-target, 44px);
-  }
+:where(.touch-ui) .dv-popover-anchor .dv-tabs-overflow-container .dv-tab {
+  min-height: var(--touch-target, 44px);
+}
 
-  .dv-popover-anchor .dv-tabs-overflow-container .dv-default-tab-action {
-    width: 32px;
-    height: 32px;
-    opacity: 1;
-  }
+:where(.touch-ui) .dv-popover-anchor .dv-tabs-overflow-container .dv-default-tab-action {
+  width: 32px;
+  height: 32px;
+  opacity: 1;
 }
 
 /*

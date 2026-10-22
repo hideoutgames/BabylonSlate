@@ -11,6 +11,7 @@ import { Separator } from "@haptic/ui/components/separator";
 import { cn } from "@haptic/ui/lib/utils";
 import { popupMenuFrame } from "./catalog-menu";
 import { isCoarsePointerEnvironment } from "./prevent-document-overscroll";
+import { TOUCH_ROW_HEIGHT, useTouchUi } from "./touch-ui";
 import { SearchInput } from "./search-input";
 import { TreeView, type TreeViewNode } from "./tree-view";
 
@@ -72,6 +73,7 @@ export function TagPicker(props: TagPickerProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const createId = useId();
   const coarse = isCoarsePointerEnvironment();
+  const touch = useTouchUi();
   // A create resolves later; it applies to the value and handler current then.
   const latest = useRef(props);
   useLayoutEffect(() => {
@@ -275,7 +277,7 @@ export function TagPicker(props: TagPickerProps) {
               const next = new Set(previous); const tag = Number(id);
               if (next.has(tag)) next.delete(tag); else next.add(tag);
               return next;
-            })} rowHeight={coarse ? 44 : 28} emptyLabel={query ? "No Matching Tags" : "Create Your First Tag"}
+            })} rowHeight={touch ? TOUCH_ROW_HEIGHT : 28} emptyLabel={query ? "No Matching Tags" : "Create Your First Tag"}
             aria-label="Tags" data-testid={`${testId}-tree`} />
         </div>
         <Separator />
