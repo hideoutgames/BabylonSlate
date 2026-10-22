@@ -37,6 +37,7 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | Control | Does |
 | --- | --- |
 | **Pause** / **Resume** | Freezes gameplay so you can inspect values that would otherwise keep changing. |
+| **Step** | While paused, advances the Simulation by one tick and pauses again. The view shows the new tick. |
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
 | **Game** / **Edit** | One button showing the current input; tap it to switch. **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |

@@ -16,7 +16,8 @@ export type SessionBoundaryRequest = {
   sessionGeneration: number;
   /** Strictly increasing within this session; acknowledgments never use FIFO correlation. */
   requestId: number;
-  action: { kind: "pause"; reason: SessionPauseReason; paused: boolean } | { kind: "resetInput" };
+  /** `step` runs one tick of a session paused only by the user, which stays paused after it. */
+  action: { kind: "pause"; reason: SessionPauseReason; paused: boolean } | { kind: "resetInput" } | { kind: "step" };
 };
 export type SessionBoundaryResult = {
   sessionGeneration: number;
