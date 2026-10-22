@@ -9,9 +9,9 @@ async function commitGizmoNudge(page: Page): Promise<boolean> {
   return page.evaluate(() =>
     (
       globalThis as {
-        __babylonslateViewportTest: { commitGizmoNudge: () => Promise<boolean> };
+        __hapticViewportTest: { commitGizmoNudge: () => Promise<boolean> };
       }
-    ).__babylonslateViewportTest.commitGizmoNudge(),
+    ).__hapticViewportTest.commitGizmoNudge(),
   );
 }
 
@@ -19,11 +19,11 @@ async function sceneDocumentX(page: Page): Promise<number | null> {
   return page.evaluate(() => {
     const position = (
       globalThis as {
-        __babylonslateTest: {
+        __hapticTest: {
           activeSceneActorPosition: () => [number, number, number] | null;
         };
       }
-    ).__babylonslateTest.activeSceneActorPosition();
+    ).__hapticTest.activeSceneActorPosition();
     return position?.[0] ?? null;
   });
 }
@@ -32,11 +32,11 @@ async function sceneMeshX(page: Page): Promise<number | null> {
   return page.evaluate(() => {
     const position = (
       globalThis as {
-        __babylonslateViewportTest: {
+        __hapticViewportTest: {
           activeSceneMeshPosition: () => [number, number, number] | null;
         };
       }
-    ).__babylonslateViewportTest.activeSceneMeshPosition();
+    ).__hapticViewportTest.activeSceneMeshPosition();
     return position?.[0] ?? null;
   });
 }
@@ -48,7 +48,7 @@ async function injectGamepad(
   await page.evaluate((next) => {
     (
       globalThis as {
-        __babylonslateTest: {
+        __hapticTest: {
           injectTestGamepad: (
             pad: {
               index?: number;
@@ -58,7 +58,7 @@ async function injectGamepad(
           ) => void;
         };
       }
-    ).__babylonslateTest.injectTestGamepad(
+    ).__hapticTest.injectTestGamepad(
       next
         ? { index: 0, axes: next.axes, buttons: next.buttons ?? [0, 0, 0, 0] }
         : null,

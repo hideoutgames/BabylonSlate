@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
-import { buttonVariants } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { buttonVariants } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface CatalogResultRowProps
   extends Omit<ComponentProps<"div">, "children" | "onClick" | "onSelect" | "title"> {

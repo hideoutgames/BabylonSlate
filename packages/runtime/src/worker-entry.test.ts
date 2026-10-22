@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
-import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGameStorage } from "@babylonslate/core";
+import { createDefaultBehaviourTree } from "@haptic/behaviour-tree";
+import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGameStorage } from "@haptic/core";
 import {
   readSnapshotHeader,
   snapshotFloatCount,
@@ -9,7 +9,7 @@ import {
   type CommandMessage,
   type ControlMessage,
   type RuntimeInspectorAction,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { createRuntimeFromLoad, runtimeOptionsFromLoadControl } from "./play-load";
 import {
@@ -463,7 +463,7 @@ describe("worker entry snapshot transport", () => {
       const { posts, emitted, runFrames, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main",
         scene: { ...createDefaultScene(), actors: Array.from({ length: 300 }, (_, index) => createActor(`prop-${index}`, "Prop")) } }, [], async () => {
         // The worker module's own bridge instance, loaded after the module reset.
-        const { TransferablePingPong } = await import("@babylonslate/bridge");
+        const { TransferablePingPong } = await import("@haptic/bridge");
         const grow = TransferablePingPong.prototype.grow;
         const spy = vi.spyOn(TransferablePingPong.prototype, "grow").mockImplementation(function (this: InstanceType<typeof TransferablePingPong>, capacity: number) {
           if (capacity > this.maxActors && failures++ < 2) throw new RangeError("Array buffer allocation failed");

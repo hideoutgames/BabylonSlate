@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, ANIM_OBJECT_DEBUG_GRAPH_ID, type DebugObserveTarget } from "@babylonslate/bridge";
-import type { GraphRunTrace } from "@babylonslate/graph-ui";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, ANIM_OBJECT_DEBUG_GRAPH_ID, type DebugObserveTarget } from "@haptic/bridge";
+import type { GraphRunTrace } from "@haptic/graph-ui";
 import { createBehaviourTreeRunTrace, createGraphRunTrace } from "../lib/graph-run-trace";
 import { GraphDebugStore, type GraphDebugSnapshot } from "../services/graph-debug-store";
 

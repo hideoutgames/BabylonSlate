@@ -1,12 +1,12 @@
-import { allNodeDefinitions } from "@babylonslate/scripting-nodes";
-import { MATERIAL_CATALOG } from "@babylonslate/shader-graph";
-import { PARTICLE_CATALOG } from "@babylonslate/particle-graph";
+import { allNodeDefinitions } from "@haptic/scripting-nodes";
+import { MATERIAL_CATALOG } from "@haptic/shader-graph";
+import { PARTICLE_CATALOG } from "@haptic/particle-graph";
 import {
   BT_COMPOSITE_CATALOG,
   BT_DECORATOR_CATALOG,
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 
 /** Class graph nodes that only exist in Animation Graph event and rule graphs. */
 export function scriptGraphFolder(id: string): "animation" | "class" {

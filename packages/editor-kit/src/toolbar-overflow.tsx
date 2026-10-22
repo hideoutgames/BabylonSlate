@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { EllipsisVerticalIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import { NestedMenu, type NestedMenuItem } from "./nested-menu";
 import {
   RegistryContext,

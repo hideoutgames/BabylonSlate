@@ -20,34 +20,34 @@ function invalid(path, reason) {
 
 export function localResourceConfigPath(env = process.env) {
   if (hostedExecution(env)) return null;
-  if (env.BL_LOCAL_RESOURCE_CONFIG === "")
+  if (env.HAPTIC_LOCAL_RESOURCE_CONFIG === "")
     throw invalid(
-      "BL_LOCAL_RESOURCE_CONFIG",
+      "HAPTIC_LOCAL_RESOURCE_CONFIG",
       "an empty override cannot disable the host policy; use an absolute path or unset the variable",
     );
-  if (env.BL_LOCAL_RESOURCE_CONFIG !== undefined) {
-    if (!isAbsolute(env.BL_LOCAL_RESOURCE_CONFIG))
+  if (env.HAPTIC_LOCAL_RESOURCE_CONFIG !== undefined) {
+    if (!isAbsolute(env.HAPTIC_LOCAL_RESOURCE_CONFIG))
       throw invalid(
-        env.BL_LOCAL_RESOURCE_CONFIG,
+        env.HAPTIC_LOCAL_RESOURCE_CONFIG,
         "the configuration path must be absolute",
       );
-    return resolve(env.BL_LOCAL_RESOURCE_CONFIG);
+    return resolve(env.HAPTIC_LOCAL_RESOURCE_CONFIG);
   }
   return env.LOCALAPPDATA
-    ? join(env.LOCALAPPDATA, "BabylonSlate", "local-resources.json")
+    ? join(env.LOCALAPPDATA, "Haptic", "local-resources.json")
     : join(
         env.XDG_CONFIG_HOME || join(homedir(), ".config"),
-        "babylonslate",
+        "haptic",
         "local-resources.json",
       );
 }
 
 function defaultCacheDirectory(env) {
   return env.LOCALAPPDATA
-    ? join(env.LOCALAPPDATA, "BabylonSlate", "build-cache")
+    ? join(env.LOCALAPPDATA, "Haptic", "build-cache")
     : join(
         env.XDG_CACHE_HOME || join(homedir(), ".cache"),
-        "babylonslate",
+        "haptic",
         "build-cache",
       );
 }
@@ -144,9 +144,9 @@ export async function readLocalResourceConfig(env = process.env) {
 }
 
 async function constrainByHost(result, env) {
-  if (env.BL_LOCAL_RESOURCE_CONFIG !== undefined) {
+  if (env.HAPTIC_LOCAL_RESOURCE_CONFIG !== undefined) {
     const hostEnv = { ...env };
-    delete hostEnv.BL_LOCAL_RESOURCE_CONFIG;
+    delete hostEnv.HAPTIC_LOCAL_RESOURCE_CONFIG;
     const hostPath = localResourceConfigPath(hostEnv);
     if (
       hostPath &&

@@ -1,4 +1,4 @@
-import type { SaveGameStorage } from "@babylonslate/core";
+import type { SaveGameStorage } from "@haptic/core";
 import { getElectronSaveGameBridge, getHostPlatform } from "./platform";
 import { ElectronSaveGameStorage } from "./save-game-electron";
 import { MobileSaveGameStorage } from "./save-game-mobile";

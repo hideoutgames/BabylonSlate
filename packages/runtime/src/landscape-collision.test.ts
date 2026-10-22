@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { identityTransform } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
+import { identityTransform } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 function worldWithLandscape() {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
-import type { TypeSchemas } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import type { SerializedGraph } from "@haptic/core";
+import type { TypeSchemas } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { hydrateSerializedGraphForEditor, materializeLogicGraph, scriptPaletteNodes, validateSerializedGraph } from "./graph-validation";
 import type { DataGraphAssetEntry } from "../lib/data-graph";
 

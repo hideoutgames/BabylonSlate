@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldDescription, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
+import { SelectableText } from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
+import { FieldDescription, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 
 /** Shape of `lib/third-party-notices.json`, written by `scripts/third-party-notices.mjs`. */
 export interface ThirdPartyNotices {

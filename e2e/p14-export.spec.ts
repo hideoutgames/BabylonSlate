@@ -54,7 +54,7 @@ async function packTinyGame(playerBaseURL: string) {
   expect(packed.value.fileCount).toBeLessThan(800);
   expect(
     [...packed.value.files.keys()].some((path) =>
-      path.includes("main.scene.babasset"),
+      path.includes("main.scene.hasset"),
     ),
   ).toBe(false);
   return packed.value;
@@ -112,14 +112,14 @@ test.describe("P14 export smoke", () => {
             () =>
               page.getByTestId("player-root").evaluate(() => {
                 const host = globalThis as unknown as {
-                  __babylonslatePlayerTest?: {
+                  __hapticPlayerTest?: {
                     visuals: () => Array<{
                       visible: boolean;
                       position: [number, number, number];
                     }>;
                   };
                 };
-                return (host.__babylonslatePlayerTest?.visuals() ?? [])
+                return (host.__hapticPlayerTest?.visuals() ?? [])
                   .filter((visual) => visual.visible)
                   .map((visual) => visual.position)
                   .sort((a, b) => a[0] - b[0]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter } from "./project-write-admission";
 
 describe("project write admission", () => {

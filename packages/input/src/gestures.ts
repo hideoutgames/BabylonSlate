@@ -1,4 +1,4 @@
-import type { TouchInput } from "@babylonslate/core";
+import type { TouchInput } from "@haptic/core";
 
 /**
  * Touch gestures as `touch` binding codes. Pulses are 1 for the tick that

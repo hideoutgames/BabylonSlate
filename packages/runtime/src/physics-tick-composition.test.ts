@@ -5,9 +5,9 @@ import {
   createDefaultWaterDefinition,
   identityTransform,
   type SerializedActor,
-} from "@babylonslate/core";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
-import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
+} from "@haptic/core";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
+import { createSoftwarePhysicsBackend } from "@haptic/physics";
 import { createInProcessRuntime } from "./driver";
 import { PhysicsWorldSync } from "./physics-sync";
 import type { CompiledScript } from "./script-host";

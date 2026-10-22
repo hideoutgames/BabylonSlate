@@ -6,7 +6,7 @@ import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseFogVolumeProperties, type FogVolumeBinding, type FogVolumeProperties } from "@babylonslate/core";
+import { parseFogVolumeProperties, type FogVolumeBinding, type FogVolumeProperties } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
 import { volumeFillMaterial } from "./editor-volume";
 

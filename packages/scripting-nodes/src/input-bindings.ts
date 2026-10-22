@@ -7,7 +7,7 @@ import {
   STRING,
   pin,
   type NodeDefinition,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const execPins = () => [
   pin("execIn", "Exec", "in", EXEC),

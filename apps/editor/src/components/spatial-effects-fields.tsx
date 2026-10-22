@@ -1,8 +1,8 @@
-import { NumberField } from "@babylonslate/editor-kit";
+import { NumberField } from "@haptic/editor-kit";
 import {
   RENDER_EFFECTS_LIMITS,
   type RenderEffectsSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   Field,
   FieldContent,
@@ -11,8 +11,8 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/field";
+import { Switch } from "@haptic/ui/components/switch";
 
 type Props = {
   value: RenderEffectsSettings;

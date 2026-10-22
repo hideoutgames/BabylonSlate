@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { GameInstance } from "@babylonslate/object-model";
-import { interfaceHandlerKey } from "@babylonslate/object-model";
-import { createActor, createDefaultSceneSettings, createMeshComponent } from "@babylonslate/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { GameInstance } from "@haptic/object-model";
+import { interfaceHandlerKey } from "@haptic/object-model";
+import { createActor, createDefaultSceneSettings, createMeshComponent } from "@haptic/core";
 import {
   compileGraph,
   FLOAT,
@@ -11,8 +11,8 @@ import {
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import { createRuntimeFromLoad } from "./play-load";
 import type { CompiledScript } from "./script-host";
@@ -287,7 +287,7 @@ describe("script host runs compiled graphs", () => {
       registry,
     }).anchors[0]!;
     const err = new Error("boom");
-    err.stack = `Error: boom\n    at onBeginPlay (babylonslate:///greeter-asset.js:${anchorLine.line}:1)`;
+    err.stack = `Error: boom\n    at onBeginPlay (haptic:///greeter-asset.js:${anchorLine.line}:1)`;
     const diagnostic = runtime.reportError(err);
     expect(diagnostic?.nodeId).toBe("print");
     expect(diagnostic?.graphId).toBe("event-graph");
@@ -505,7 +505,7 @@ describe("script host runs compiled graphs", () => {
       toScript(graph, registry, "Thrower", "js-asset"),
     ]);
     const err = new Error("from body");
-    err.stack = `Error: from body\n    at execJs_js (babylonslate:///js-asset.js:${throwAnchor!.line}:1)`;
+    err.stack = `Error: from body\n    at execJs_js (haptic:///js-asset.js:${throwAnchor!.line}:1)`;
     const diagnostic = runtime.reportError(err);
     expect(diagnostic?.nodeId).toBe("js");
     expect(diagnostic?.bodyLine).toBe(2);
@@ -956,7 +956,7 @@ describe("script host runs compiled graphs", () => {
         {
           assetGuid: "guard-asset",
           classId: "Guard",
-          source: "//# sourceURL=babylonslate:///guard-asset.js\n",
+          source: "//# sourceURL=haptic:///guard-asset.js\n",
           anchors: [],
           entryPoints: [],
         },
@@ -1028,7 +1028,7 @@ describe("script host runs compiled graphs", () => {
         {
           assetGuid: "math-asset",
           classId: "MathLib",
-          source: "//# sourceURL=babylonslate:///math-asset.js\n",
+          source: "//# sourceURL=haptic:///math-asset.js\n",
           anchors: [],
           entryPoints: [],
         },
@@ -2692,7 +2692,7 @@ describe("script host runs compiled graphs", () => {
         assetGuid: "guard-asset",
         classId: "Guard",
         source:
-          "//# sourceURL=babylonslate:///guard-asset.js\nexport function onBeginPlay(ctx) {}\n",
+          "//# sourceURL=haptic:///guard-asset.js\nexport function onBeginPlay(ctx) {}\n",
         anchors: [],
         entryPoints: [
           { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },

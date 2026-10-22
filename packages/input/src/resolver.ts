@@ -5,7 +5,7 @@ import {
   type InputValueState,
   type TouchInput,
   type TouchType,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { inputMappingKey } from "./input-assets";
 import type { PointerKind, RawInputEvent } from "./ring-buffer";
 import { GestureRecognizer, TOUCH_PULSE_GESTURES } from "./gestures";

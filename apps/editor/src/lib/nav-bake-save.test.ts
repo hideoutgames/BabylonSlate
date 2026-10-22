@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene } from "@haptic/core";
 import {
   flushNavBakeForSave,
   lastNavBakeSaveResult,
@@ -71,13 +71,13 @@ describe("nav bake save flush", () => {
   it("records the last bake result for the Save / Playwright hatch", () => {
     recordNavBakeSaveResult({
       ok: true,
-      path: "assets/main.scene.babasset",
+      path: "assets/main.scene.hasset",
       byteLength: 12,
       error: null,
     });
     expect(lastNavBakeSaveResult()).toEqual({
       ok: true,
-      path: "assets/main.scene.babasset",
+      path: "assets/main.scene.hasset",
       byteLength: 12,
       error: null,
     });

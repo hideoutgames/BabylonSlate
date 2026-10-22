@@ -5,8 +5,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@babylonslate/ui/components/card";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/card";
+import { cn } from "@haptic/ui/lib/utils";
 import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
 export function TemplateCardWell({

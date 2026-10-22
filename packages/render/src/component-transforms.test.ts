@@ -1,6 +1,6 @@
 import { Mesh, Quaternion, Vector3 } from "@babylonjs/core";
-import { SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
-import { identitySerializedTransform, identityTransform } from "@babylonslate/core";
+import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
+import { identitySerializedTransform, identityTransform } from "@haptic/core";
 import { afterEach, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { applyAssignMesh, applyComponentTransformsCommand, applySnapshotToScene, createSnapshotSceneBinding } from "./snapshot-apply";

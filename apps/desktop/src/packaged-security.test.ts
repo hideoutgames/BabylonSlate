@@ -18,7 +18,7 @@ describe("packaged renderer boundary", () => {
   });
   it("only accepts the main editor frame as a privileged IPC sender", () => {
     expect(isEditorSender("app://babylonslate/index.html", true)).toBe(true);
-    for (const url of ["https://babylonslate/index.html", "app://babylonslate/player/index.html", "app://other/index.html", "app://babylonslate/index.html.evil"]) {
+    for (const url of ["https://haptic/index.html", "app://babylonslate/player/index.html", "app://other/index.html", "app://babylonslate/index.html.evil"]) {
       expect(isEditorSender(url, true)).toBe(false);
     }
     expect(isEditorSender("app://babylonslate/index.html", false)).toBe(false);
@@ -112,19 +112,19 @@ describe("packaged renderer boundary", () => {
     ]) expect(() => validateIpcArguments("lfs:fetch", [bad])).toThrow();
   });
   it("validates positioned reads before native allocation", () => {
-    expect(() => validateIpcArguments("project:readBinaryRange", ["asset.babasset", 12, 24, "revision"])).not.toThrow();
+    expect(() => validateIpcArguments("project:readBinaryRange", ["asset.hasset", 12, 24, "revision"])).not.toThrow();
     for (const args of [
-      ["../asset.babasset", 0, 1, undefined], ["asset.babasset", -1, 1, undefined],
-      ["asset.babasset", 0.5, 1, undefined], ["asset.babasset", 0, Infinity, undefined],
-      ["asset.babasset", 0, 1024 * 1024 * 1024, undefined], ["asset.babasset", Number.MAX_SAFE_INTEGER, 1, undefined],
-      ["asset.babasset", 0, 1, {}],
+      ["../asset.hasset", 0, 1, undefined], ["asset.hasset", -1, 1, undefined],
+      ["asset.hasset", 0.5, 1, undefined], ["asset.hasset", 0, Infinity, undefined],
+      ["asset.hasset", 0, 1024 * 1024 * 1024, undefined], ["asset.hasset", Number.MAX_SAFE_INTEGER, 1, undefined],
+      ["asset.hasset", 0, 1, {}],
     ]) expect(() => validateIpcArguments("project:readBinaryRange", args)).toThrow();
   });
 });
 
 describe("known project folders", () => {
   it("reopens projects-home folders and picker grants by the canonical path it opens", async () => {
-    const base = await realpath(await mkdtemp(join(tmpdir(), "babylonslate-known-")));
+    const base = await realpath(await mkdtemp(join(tmpdir(), "haptic-known-")));
     try {
       const projects = join(base, "projects");
       const game = join(projects, "Game");

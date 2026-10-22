@@ -1,5 +1,5 @@
-import type { SerializedActor } from "@babylonslate/core";
-import type { EditorCameraSessionState } from "@babylonslate/render";
+import type { SerializedActor } from "@haptic/core";
+import type { EditorCameraSessionState } from "@haptic/render";
 import type { ClassMemberClipboard } from "./class-member-clipboard";
 import { moveKeyedEntry } from "./move-keyed-entry";
 import type { ParticleModuleId } from "./particle-value-modes";

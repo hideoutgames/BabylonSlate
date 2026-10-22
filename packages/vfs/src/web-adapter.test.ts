@@ -5,7 +5,7 @@ import { webcrypto } from "node:crypto";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
 import { OpfsStorageAdapter } from "./web-adapter";
-import { isProjectOpenElsewhere, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
+import { isProjectOpenElsewhere, isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
 import { createMountedProjectStorage } from "./mounted-storage";
 
 vi.mock("./test-mode", async (importOriginal) => {
@@ -20,7 +20,7 @@ import { isTestModeEnabled } from "./test-mode";
 
 async function openedAdapter() {
   const storage = new OpfsStorageAdapter();
-  await storage.openDocumentsProject("Test.babproject");
+  await storage.openDocumentsProject("Test.hproject");
   return storage;
 }
 
@@ -46,8 +46,8 @@ describe("OPFS / web storage adapter", () => {
     const digest = vi.spyOn(webcrypto.subtle, "digest").mockRejectedValueOnce(new Error("digest unavailable"));
     try {
       const storage = new OpfsStorageAdapter();
-      await expect(storage.openDocumentsProject("Digest.babproject")).rejects.toThrow("digest unavailable");
-      await expect(storage.openDocumentsProject("Digest.babproject")).resolves.toMatchObject({ name: "Digest.babproject" });
+      await expect(storage.openDocumentsProject("Digest.hproject")).rejects.toThrow("digest unavailable");
+      await expect(storage.openDocumentsProject("Digest.hproject")).resolves.toMatchObject({ name: "Digest.hproject" });
       await storage.writeText("project.json", "{}");
       expect(await storage.readText("project.json")).toBe("{}");
     } finally {
@@ -66,61 +66,61 @@ describe("OPFS / web storage adapter", () => {
     const storage = await openedAdapter();
     const bytes = new Uint8Array(1024 * 1024);
     bytes.set([7, 8, 9], 64);
-    await storage.writeBinary("large.babasset", bytes);
+    await storage.writeBinary("large.hasset", bytes);
     const root = await navigator.storage.getDirectory();
-    const file = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("large.babasset");
+    const file = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("large.hasset");
     const getFile = file.getFile.bind(file);
     vi.spyOn(file, "getFile").mockImplementation(async () => {
       const snapshot = await getFile();
       snapshot.arrayBuffer = async () => { throw new Error("Whole file read forbidden"); };
       return snapshot;
     });
-    const selected = await storage.readBinaryRange("large.babasset", 64, 3);
+    const selected = await storage.readBinaryRange("large.hasset", 64, 3);
     expect(selected.bytes).toEqual(new Uint8Array([7, 8, 9]));
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 3, fullReads: 0 });
-    await storage.writeBinary("large.babasset", bytes);
-    await expect(storage.readBinaryRange("large.babasset", 64, 3, selected.revision)).rejects.toThrow(/revision/i);
-    await expect(storage.readBinaryRange("large.babasset", bytes.length, 1)).rejects.toThrow(/range/i);
+    await storage.writeBinary("large.hasset", bytes);
+    await expect(storage.readBinaryRange("large.hasset", 64, 3, selected.revision)).rejects.toThrow(/revision/i);
+    await expect(storage.readBinaryRange("large.hasset", bytes.length, 1)).rejects.toThrow(/range/i);
   });
 
   it.each(["NotReadableError", "NotFoundError"])("classifies %s from an invalidated Blob slice only after confirming a replacement", async errorName => {
     const storage = await openedAdapter();
-    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    await storage.writeBinary("asset.hasset", new Uint8Array([1, 2, 3, 4]));
     const root = await navigator.storage.getDirectory();
-    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
+    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.hasset");
     const snapshot = await handle.getFile();
     const failure = new DOMException("Snapshot cannot be read", errorName);
     const slice = snapshot.slice.bind(snapshot);
     snapshot.slice = (...args) => Object.assign(slice(...args), { arrayBuffer: async () => {
-      await storage.writeBinary("asset.babasset", new Uint8Array([4, 3, 2, 1]));
+      await storage.writeBinary("asset.hasset", new Uint8Array([4, 3, 2, 1]));
       throw failure;
     } });
     vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
-    await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    await expect(storage.readBinaryRange("asset.hasset", 0, 2)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
-    expect((await storage.readBinaryRange("asset.babasset", 0, 2)).bytes).toEqual(new Uint8Array([4, 3]));
+    expect((await storage.readBinaryRange("asset.hasset", 0, 2)).bytes).toEqual(new Uint8Array([4, 3]));
   });
 
   it.each(["NotReadableError", "NotFoundError", "SecurityError"])("preserves genuine %s failures when the source revision is unchanged", async errorName => {
     const storage = await openedAdapter();
-    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    await storage.writeBinary("asset.hasset", new Uint8Array([1, 2, 3, 4]));
     const root = await navigator.storage.getDirectory();
-    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
+    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.hasset");
     const snapshot = await handle.getFile();
     const failure = new DOMException("Source revision changed", errorName);
     const slice = snapshot.slice.bind(snapshot);
     snapshot.slice = (...args) => Object.assign(slice(...args), { arrayBuffer: async () => { throw failure; } });
     vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
-    await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBe(failure);
+    await expect(storage.readBinaryRange("asset.hasset", 0, 2)).rejects.toBe(failure);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
   });
 
   it.each(["replaced", "unreadable"])("counts bytes in mounted views when the post-read source is %s", async state => {
     const storage = await openedAdapter();
-    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    await storage.writeBinary("asset.hasset", new Uint8Array([1, 2, 3, 4]));
     const mounted = createMountedProjectStorage([{ path: "plugin", storage, sourcePath: "" }]);
     const root = await navigator.storage.getDirectory();
-    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
+    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.hasset");
     const snapshot = await handle.getFile();
     const slice = snapshot.slice.bind(snapshot);
     snapshot.slice = (...args) => {
@@ -128,14 +128,14 @@ describe("OPFS / web storage adapter", () => {
       const read = selected.arrayBuffer.bind(selected);
       return Object.assign(selected, { arrayBuffer: async () => {
         const bytes = await read();
-        if (state === "replaced") await storage.writeBinary("asset.babasset", new Uint8Array([4, 3, 2, 1]));
+        if (state === "replaced") await storage.writeBinary("asset.hasset", new Uint8Array([4, 3, 2, 1]));
         return bytes;
       } });
     };
     const getFile = vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
     const original = new Error("Provider is unavailable", { cause: new Error("Disconnected") });
     if (state === "unreadable") getFile.mockRejectedValueOnce(original);
-    const failure = mounted.readBinaryRange("plugin/asset.babasset", 0, 2);
+    const failure = mounted.readBinaryRange("plugin/asset.hasset", 0, 2);
     if (state === "replaced") await expect(failure).rejects.toBeInstanceOf(SourceRevisionChangedError);
     else await expect(failure).rejects.toBe(original);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 2, fullReads: 0 });
@@ -153,10 +153,10 @@ describe("OPFS / web storage adapter", () => {
   });
 
   it("prompts for a folder name outside test mode", async () => {
-    vi.stubGlobal("prompt", vi.fn(() => "Named.babproject"));
+    vi.stubGlobal("prompt", vi.fn(() => "Named.hproject"));
     const storage = new OpfsStorageAdapter();
     const folder = await storage.pickProjectFolder();
-    expect(folder.name).toBe("Named.babproject");
+    expect(folder.name).toBe("Named.hproject");
     expect(folder.tier).toBe("opfs");
   });
 
@@ -255,9 +255,9 @@ describe("OPFS / web storage adapter", () => {
     // Chromium lists `<name>.crswap` while a writable is open (readable until it
     // closes); an entry removed after listing rejects getFile().
     const entries: Array<[string, unknown]> = [
-      ["main.scene.babasset.crswap", file(5)],
-      ["main.scene.babasset", file(3)],
-      ["removed.babasset", { kind: "file", getFile: notFound }],
+      ["main.scene.hasset.crswap", file(5)],
+      ["main.scene.hasset", file(3)],
+      ["removed.hasset", { kind: "file", getFile: notFound }],
       ["Input", { kind: "directory" }],
       ["Backup.crswap", { kind: "directory" }],
     ];
@@ -269,16 +269,16 @@ describe("OPFS / web storage adapter", () => {
     const root = { getDirectoryHandle: async () => project };
     vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
     const storage = new OpfsStorageAdapter();
-    await storage.openDocumentsProject("Test.babproject");
+    await storage.openDocumentsProject("Test.hproject");
 
     expect(await storage.readdir("")).toEqual([
-      { name: "main.scene.babasset", isDir: false, size: 3, mtime: 7 },
+      { name: "main.scene.hasset", isDir: false, size: 3, mtime: 7 },
       { name: "Input", isDir: true, size: null, mtime: null },
       { name: "Backup.crswap", isDir: true, size: null, mtime: null },
     ]);
   });
 
-  /** A stubbed OPFS project whose `file.babasset` hands out each snapshot in turn. */
+  /** A stubbed OPFS project whose `file.hasset` hands out each snapshot in turn. */
   async function adapterOverSnapshots(snapshots: Array<() => Promise<ArrayBuffer>>) {
     let reads = 0;
     const handle = {
@@ -290,14 +290,14 @@ describe("OPFS / web storage adapter", () => {
     };
     const project = {
       getFileHandle: async (name: string) => {
-        if (name !== "file.babasset") throw new DOMException("missing", "NotFoundError");
+        if (name !== "file.hasset") throw new DOMException("missing", "NotFoundError");
         return handle;
       },
     };
     const root = { getDirectoryHandle: async () => project };
     vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
     const storage = new OpfsStorageAdapter();
-    await storage.openDocumentsProject("Test.babproject");
+    await storage.openDocumentsProject("Test.hproject");
     return { storage, reads: () => reads };
   }
 
@@ -309,7 +309,7 @@ describe("OPFS / web storage adapter", () => {
         () => Promise.reject(new DOMException("stale snapshot", name)),
         async () => new Uint8Array([4, 5, 6]).buffer,
       ]);
-      expect(await storage.readBinary("file.babasset")).toEqual(new Uint8Array([4, 5, 6]));
+      expect(await storage.readBinary("file.hasset")).toEqual(new Uint8Array([4, 5, 6]));
     }
   });
 
@@ -317,13 +317,13 @@ describe("OPFS / web storage adapter", () => {
     const { storage, reads } = await adapterOverSnapshots([
       () => Promise.reject(new DOMException("stale snapshot", "NotReadableError")),
     ]);
-    const unreadable = storage.readBinary("file.babasset");
+    const unreadable = storage.readBinary("file.hasset");
     await expect(unreadable).rejects.toThrow(/NotReadableError/);
     await expect(unreadable).rejects.not.toThrow(/File not found/);
     // Retried with fresh snapshots before giving up.
     expect(reads()).toBeGreaterThan(1);
-    await expect(storage.readBinary("missing.babasset")).rejects.toThrow(
-      "File not found: missing.babasset",
+    await expect(storage.readBinary("missing.hasset")).rejects.toThrow(
+      "File not found: missing.hasset",
     );
   });
 
@@ -443,17 +443,17 @@ describe("OPFS / web storage adapter", () => {
 
   it("keeps the committed revision when a write fails", async () => {
     const storage = await openedAdapter();
-    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
-    const before = await storage.readBinaryRange("asset.babasset", 0, 2);
+    await storage.writeBinary("asset.hasset", new Uint8Array([1, 2, 3, 4]));
+    const before = await storage.readBinaryRange("asset.hasset", 0, 2);
     const root = await navigator.storage.getDirectory();
-    const file = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
+    const file = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.hasset");
     vi.spyOn(file, "createWritable").mockResolvedValueOnce({
       write: async () => { throw new DOMException("Storage is full", "QuotaExceededError"); },
       close: async () => {},
       abort: async () => {},
     } as unknown as FileSystemWritableFileStream);
-    await expect(storage.writeBinary("asset.babasset", new Uint8Array([9, 9, 9, 9]))).rejects.toThrow("Storage is full");
-    expect((await storage.readBinaryRange("asset.babasset", 2, 2, before.revision)).bytes).toEqual(new Uint8Array([3, 4]));
+    await expect(storage.writeBinary("asset.hasset", new Uint8Array([9, 9, 9, 9]))).rejects.toThrow("Storage is full");
+    expect((await storage.readBinaryRange("asset.hasset", 2, 2, before.revision)).bytes).toEqual(new Uint8Array([3, 4]));
   });
 
   it("rejects parent segments and directories it cannot list", async () => {
@@ -464,7 +464,7 @@ describe("OPFS / web storage adapter", () => {
     const root = { getDirectoryHandle: async () => ({}) };
     vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
     const unlistable = new OpfsStorageAdapter();
-    await unlistable.openDocumentsProject("Test.babproject");
+    await unlistable.openDocumentsProject("Test.hproject");
     await expect(unlistable.readdir("")).rejects.toThrow(/iteration is unavailable/);
   });
 
@@ -569,9 +569,9 @@ describe("OPFS project session lock", () => {
 
   it("leaves app libraries shared between tabs", async () => {
     const first = new OpfsStorageAdapter({ library: true });
-    await first.openDocumentsProject("__babylonslate_derived__");
+    await first.openDocumentsProject("__haptic_derived__");
     const second = new OpfsStorageAdapter({ library: true });
-    await second.openDocumentsProject("__babylonslate_derived__");
+    await second.openDocumentsProject("__haptic_derived__");
     await second.writeText("cache.json", "{}");
     expect(await first.readText("cache.json")).toBe("{}");
   });

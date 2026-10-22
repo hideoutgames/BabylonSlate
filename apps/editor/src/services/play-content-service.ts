@@ -12,7 +12,7 @@ import {
   type SerializedGraph,
   type SerializedScene,
   type WaterDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   decodeSourceToRgba,
   normalizeModelPayload,
@@ -22,12 +22,12 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import { sceneAssetClassId } from "@babylonslate/object-model";
-import { encodeRgbaPng } from "@babylonslate/render/png-encode";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/assets";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
+import type { ScriptBundleEntry } from "@haptic/bridge";
+import { sceneAssetClassId } from "@haptic/object-model";
+import { encodeRgbaPng } from "@haptic/render/png-encode";
+import type { Diagnostic } from "@haptic/scripting";
 import {
   materializeMaterialInstances,
   normalizeMaterialDocument,
@@ -35,8 +35,8 @@ import {
   normalizeMaterialInstanceDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
-import { createAppSettingsStore } from "@babylonslate/vfs";
+} from "@haptic/shader-graph";
+import { createAppSettingsStore } from "@haptic/vfs";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import { materialDomainsFromAssets, registryClassParentLookup } from "../lib/content-browser-helpers";

@@ -1,4 +1,4 @@
-import { validateSaveGameDefinition, type SaveGameDefinition } from "@babylonslate/core";
+import { validateSaveGameDefinition, type SaveGameDefinition } from "@haptic/core";
 
 type SaveAsset = { path: string; header: { guid?: string; type: string; payload?: Record<string, unknown> } };
 type SaveDocument = { ref: { path?: string; kind: string }; content: unknown };

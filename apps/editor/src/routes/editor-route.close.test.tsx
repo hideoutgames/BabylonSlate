@@ -12,7 +12,7 @@ import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { CloseProjectResult } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
 import EditorRoute from "./editor-route";
@@ -140,21 +140,21 @@ beforeEach(() => {
     },
     {
       id: "scene",
-      ref: createDocumentRef("scene", "assets/Main.scene.babasset"),
+      ref: createDocumentRef("scene", "assets/Main.scene.hasset"),
       content: null,
       layout: null,
       dirty: true,
     },
     {
       id: "graph",
-      ref: createDocumentRef("graph", "assets/Hero.class.babasset"),
+      ref: createDocumentRef("graph", "assets/Hero.class.hasset"),
       content: null,
       layout: null,
       dirty: true,
     },
     {
       id: "other",
-      ref: createDocumentRef("graph", "assets/Other.class.babasset"),
+      ref: createDocumentRef("graph", "assets/Other.class.hasset"),
       content: null,
       layout: null,
       dirty: false,

@@ -3,7 +3,7 @@ import {
   chordFromEvent,
   type KeybindEvent,
   type KeyChord,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 
 export type GraphCommand = "copy" | "paste" | "duplicate" | "delete";
 

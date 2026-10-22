@@ -10,9 +10,9 @@ import { clickPlayAndWaitForOverlay } from "./play";
 test.afterEach(async ({ page }, info) => {
   if (info.status === info.expectedStatus) return;
   await info.attach("scene-texture-pixels", { body: JSON.stringify(await page.evaluate(() =>
-    (window as unknown as { __babylonslateViewportTest?: { sceneTexturePixels(): Promise<unknown> } }).__babylonslateViewportTest?.sceneTexturePixels() ?? [])), contentType: "application/json" });
+    (window as unknown as { __hapticViewportTest?: { sceneTexturePixels(): Promise<unknown> } }).__hapticViewportTest?.sceneTexturePixels() ?? [])), contentType: "application/json" });
   await info.attach("scene-materials", { body: JSON.stringify(await page.evaluate(() =>
-    (window as unknown as { __babylonslateViewportTest?: { sceneVisuals(): unknown } }).__babylonslateViewportTest?.sceneVisuals() ?? [])), contentType: "application/json" });
+    (window as unknown as { __hapticViewportTest?: { sceneVisuals(): unknown } }).__hapticViewportTest?.sceneVisuals() ?? [])), contentType: "application/json" });
 });
 
 async function pixelsNear(
@@ -88,7 +88,7 @@ async function setupCelColorFixture(page: Page, saveTimeout?: number) {
   });
   await openMinimalTestProject(page);
   await createContentBrowserAsset(page, "Material", "CelColor");
-  const materialPath = "assets/CelColor.material.babasset";
+  const materialPath = "assets/CelColor.material.hasset";
   await openAssetFromBrowser(page, materialPath);
   await page
     .getByTestId("material-graph-editor")

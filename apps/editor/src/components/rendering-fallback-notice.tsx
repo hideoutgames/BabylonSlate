@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import type { ProjectEngineSession, ProjectEngineState } from "../lib/project-engine";
 
 /** Long enough to read; the notice never blocks editing meanwhile. */

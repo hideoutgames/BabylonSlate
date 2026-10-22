@@ -1,11 +1,11 @@
-import type { CommandMessage, GameSessionMode } from "@babylonslate/bridge";
+import type { CommandMessage, GameSessionMode } from "@haptic/bridge";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   type RenderPath,
   type RenderPathStatus,
   type ScalabilityRequest,
   type ScalabilitySession,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createCommandRegistry,
   createUserCommand,
@@ -20,8 +20,8 @@ import {
   type FixedShapeLightingRequest,
   type RegisteredCommand,
   type UserCommandDef,
-} from "@babylonslate/debugger";
-import { Actor, type DebugInspectSnapshot, type World } from "@babylonslate/object-model";
+} from "@haptic/debugger";
+import { Actor, type DebugInspectSnapshot, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -86,7 +86,7 @@ interface RuntimeConsoleHost {
  * preparation and the session-lifetime abort signal, the `ConsoleCommandHost`
  * adapter that runs builtins against driver subsystems, console actor lookup
  * and the console volume. Parsing, dispatch and builtin handlers live in
- * `@babylonslate/debugger`. The driver keeps the log ring and time dilation,
+ * `@haptic/debugger`. The driver keeps the log ring and time dilation,
  * and calls `stop()` explicitly in Stop. It is not a registered subsystem.
  */
 export class RuntimeConsole {

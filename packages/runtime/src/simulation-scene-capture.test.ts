@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, createMeshComponent, normalizeScene, type SerializedScene } from "@babylonslate/core";
-import { ClassRegistry, createActorFromSerialized, hydrateScenePropertyReferences, MaterialObject, World, type Actor } from "@babylonslate/object-model";
+import { createActor, createDefaultSceneSettings, createMeshComponent, normalizeScene, type SerializedScene } from "@haptic/core";
+import { ClassRegistry, createActorFromSerialized, hydrateScenePropertyReferences, MaterialObject, World, type Actor } from "@haptic/object-model";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { captureSimulationScene, type SimulationSceneCaptureInput, type SimulationSceneCaptureResult } from "./simulation-scene-capture";
 

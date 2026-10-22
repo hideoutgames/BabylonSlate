@@ -16,25 +16,25 @@ import {
 } from "./play-performance-fixture";
 
 /**
- * Local Play performance route. Opt-in: set BL_PERF_ROUTE=1. It measures the
+ * Local Play performance route. Opt-in: set HAPTIC_PERF_ROUTE=1. It measures the
  * page's requestAnimationFrame cadence while overlay Play runs a deterministic
  * primitive room, so results are comparable across repository revisions that
  * share the Play chrome and test-project helpers. It asserts only that the
  * route ran; it never asserts a frame rate.
  *
- * Env: BL_PERF_QUALITY (low|medium|high|ultra, default low),
- *      BL_PERF_WARMUP_MS (default 10000), BL_PERF_SAMPLE_MS (default 30000),
- *      BL_PERF_SAMPLES (default 2), BL_PERF_LABEL (free text recorded in output),
- *      BL_PERF_RENDER_MODE (cel) sets project.settings.render.mode for a CEL run,
- *      BL_PERF_BACKEND (webgl2|webgpu) sets project.settings.render.gpuBackend.
+ * Env: HAPTIC_PERF_QUALITY (low|medium|high|ultra, default low),
+ *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SAMPLE_MS (default 30000),
+ *      HAPTIC_PERF_SAMPLES (default 2), HAPTIC_PERF_LABEL (free text recorded in output),
+ *      HAPTIC_PERF_RENDER_MODE (cel) sets project.settings.render.mode for a CEL run,
+ *      HAPTIC_PERF_BACKEND (webgl2|webgpu) sets project.settings.render.gpuBackend.
  */
-const ROUTE_ENABLED = process.env.BL_PERF_ROUTE === "1";
-const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.BL_PERF_QUALITY ?? "")
-  ? (process.env.BL_PERF_QUALITY as QualityLevel)
+const ROUTE_ENABLED = process.env.HAPTIC_PERF_ROUTE === "1";
+const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.HAPTIC_PERF_QUALITY ?? "")
+  ? (process.env.HAPTIC_PERF_QUALITY as QualityLevel)
   : "low";
-const WARMUP_MS = Number(process.env.BL_PERF_WARMUP_MS ?? 10_000);
-const SAMPLE_MS = Number(process.env.BL_PERF_SAMPLE_MS ?? 30_000);
-const SAMPLES = Number(process.env.BL_PERF_SAMPLES ?? 2);
+const WARMUP_MS = Number(process.env.HAPTIC_PERF_WARMUP_MS ?? 10_000);
+const SAMPLE_MS = Number(process.env.HAPTIC_PERF_SAMPLE_MS ?? 30_000);
+const SAMPLES = Number(process.env.HAPTIC_PERF_SAMPLES ?? 2);
 
 type Sample = {
   elapsedMs: number;
@@ -50,7 +50,7 @@ type Sample = {
 async function samplePlay(page: Page, durationMs: number): Promise<Sample> {
   return page.evaluate(async (durationMs) => {
     const host = globalThis as unknown as {
-      __babylonslatePlayTest?: { tickIndex: () => number | null };
+      __hapticPlayTest?: { tickIndex: () => number | null };
     };
     const heap = () =>
       (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? null;
@@ -65,7 +65,7 @@ async function samplePlay(page: Page, durationMs: number): Promise<Sample> {
       observer = null;
     }
     const heapStart = heap();
-    const tickStart = host.__babylonslatePlayTest?.tickIndex() ?? null;
+    const tickStart = host.__hapticPlayTest?.tickIndex() ?? null;
     const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
     const first = await frame();
     let previous = first;
@@ -77,7 +77,7 @@ async function samplePlay(page: Page, durationMs: number): Promise<Sample> {
       if (now - first >= durationMs) break;
     }
     observer?.disconnect();
-    const tickEnd = host.__babylonslatePlayTest?.tickIndex() ?? null;
+    const tickEnd = host.__hapticPlayTest?.tickIndex() ?? null;
     const canvas = document.querySelector('[data-testid="play-canvas"]') as HTMLCanvasElement | null;
     return {
       elapsedMs: previous - first,
@@ -114,7 +114,7 @@ function summarize(sample: Sample) {
   };
 }
 
-test.skip(!ROUTE_ENABLED, "Local Play performance route; set BL_PERF_ROUTE=1 to run it.");
+test.skip(!ROUTE_ENABLED, "Local Play performance route; set HAPTIC_PERF_ROUTE=1 to run it.");
 
 test(`Play performance route (${QUALITY})`, async ({ page }, testInfo) => {
   test.setTimeout(WARMUP_MS + SAMPLE_MS * SAMPLES + 300_000);
@@ -138,8 +138,8 @@ test(`Play performance route (${QUALITY})`, async ({ page }, testInfo) => {
       () =>
         page.evaluate(
           () =>
-            (globalThis as unknown as { __babylonslatePlayTest?: { tickIndex: () => number | null } })
-              .__babylonslatePlayTest?.tickIndex() ?? -1,
+            (globalThis as unknown as { __hapticPlayTest?: { tickIndex: () => number | null } })
+              .__hapticPlayTest?.tickIndex() ?? -1,
         ),
       { timeout: 120_000 },
     )
@@ -147,14 +147,14 @@ test(`Play performance route (${QUALITY})`, async ({ page }, testInfo) => {
   const playBootMs = Date.now() - playStarted;
   await page.waitForTimeout(WARMUP_MS);
 
-  // Optional main-thread CPU profile of steady-state Play (BL_PERF_PROFILE=1, BL_PERF_PROFILE_MS default 10000).
+  // Optional main-thread CPU profile of steady-state Play (HAPTIC_PERF_PROFILE=1, HAPTIC_PERF_PROFILE_MS default 10000).
   let profilePath: string | null = null;
-  if (process.env.BL_PERF_PROFILE === "1") {
+  if (process.env.HAPTIC_PERF_PROFILE === "1") {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Profiler.enable");
     await cdp.send("Profiler.setSamplingInterval", { interval: 250 });
     await cdp.send("Profiler.start");
-    await page.waitForTimeout(Number(process.env.BL_PERF_PROFILE_MS ?? 10_000));
+    await page.waitForTimeout(Number(process.env.HAPTIC_PERF_PROFILE_MS ?? 10_000));
     const { profile } = await cdp.send("Profiler.stop");
     await cdp.detach();
     profilePath = testInfo.outputPath("play.cpuprofile");
@@ -178,7 +178,7 @@ test(`Play performance route (${QUALITY})`, async ({ page }, testInfo) => {
   const report = {
     qualification:
       "Local browser observation of requestAnimationFrame cadence during overlay Play; a presentation proxy on this machine's adapter, not device, Safari, thermal, or A16 qualification. No frame-rate assertion.",
-    label: process.env.BL_PERF_LABEL ?? null,
+    label: process.env.HAPTIC_PERF_LABEL ?? null,
     quality: QUALITY,
     qualityProfile: RENDER_QUALITY_PROFILES[QUALITY],
     warmupMs: WARMUP_MS,

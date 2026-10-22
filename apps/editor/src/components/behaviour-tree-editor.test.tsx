@@ -7,7 +7,7 @@ import {
   createDefaultBehaviourTree,
   validateBehaviourTree,
   type BehaviourTreeDocument,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
@@ -38,8 +38,8 @@ const graphContext = vi.hoisted(() => ({
   last: undefined as unknown,
 }));
 
-vi.mock("@babylonslate/graph-ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/graph-ui")>();
+vi.mock("@haptic/graph-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/graph-ui")>();
   const { createElement } = await import("react");
   const ProbedTreeNode = (props: ComponentProps<typeof actual.TreeNode>) => {
     const value = actual.useGraphEditorContext();
@@ -50,14 +50,14 @@ vi.mock("@babylonslate/graph-ui", async (importOriginal) => {
   return { ...actual, treeNodeTypes: { ...actual.treeNodeTypes, "bt.node": ProbedTreeNode } };
 });
 
-vi.mock("@babylonslate/behaviour-tree", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/behaviour-tree")>();
+vi.mock("@haptic/behaviour-tree", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/behaviour-tree")>();
   return { ...actual, validateBehaviourTree: vi.fn(actual.validateBehaviourTree) };
 });
 
-const DOC_ID = "behaviour-tree:assets/Patrol.bt.babasset";
-const BB_ID = "blackboard:assets/Guard.blackboard.babasset";
-const BB_PATH = "assets/Guard.blackboard.babasset";
+const DOC_ID = "behaviour-tree:assets/Patrol.bt.hasset";
+const BB_ID = "blackboard:assets/Guard.blackboard.hasset";
+const BB_PATH = "assets/Guard.blackboard.hasset";
 const openDocument = vi.hoisted(() => vi.fn());
 const loadAssetDocument = vi.hoisted(() => vi.fn());
 
@@ -109,7 +109,7 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [
         {
           id: DOC_ID,
-          ref: { kind: "behaviour-tree", path: "assets/Patrol.bt.babasset" },
+          ref: { kind: "behaviour-tree", path: "assets/Patrol.bt.hasset" },
           content,
         },
         {
@@ -130,7 +130,7 @@ vi.mock("../context/document-context", async () => {
               type: "Class",
               parentClass: "BTTask",
             },
-            path: "assets/BTTask_Custom.class.babasset",
+            path: "assets/BTTask_Custom.class.hasset",
           },
           {
             header: {
@@ -139,7 +139,7 @@ vi.mock("../context/document-context", async () => {
               type: "Class",
               parentClass: "BTDecorator",
             },
-            path: "assets/BTDecorator_Alert.class.babasset",
+            path: "assets/BTDecorator_Alert.class.hasset",
           },
           {
             header: {
@@ -148,7 +148,7 @@ vi.mock("../context/document-context", async () => {
               type: "Class",
               parentClass: "BTComposite",
             },
-            path: "assets/MyBrain.class.babasset",
+            path: "assets/MyBrain.class.hasset",
           },
           {
             header: {
@@ -166,7 +166,7 @@ vi.mock("../context/document-context", async () => {
               type: "Audio",
               parentClass: null,
             },
-            path: "assets/jump.babasset",
+            path: "assets/jump.hasset",
           },
           {
             header: {
@@ -176,7 +176,7 @@ vi.mock("../context/document-context", async () => {
               parentClass: null,
               payload: { clipName: "Walk", durationMs: 200 },
             },
-            path: "assets/walk.anim.babasset",
+            path: "assets/walk.anim.hasset",
           },
           {
             header: {
@@ -185,11 +185,11 @@ vi.mock("../context/document-context", async () => {
               type: "SpriteAnimation",
               parentClass: null,
             },
-            path: "assets/run.spriteanim.babasset",
+            path: "assets/run.spriteanim.hasset",
           },
         ],
         getByPath: (path: string) =>
-          path === "assets/Patrol.bt.babasset"
+          path === "assets/Patrol.bt.hasset"
             ? { header: { guid: "tree-1", name: "Patrol", type: "BehaviourTree" }, path }
             : undefined,
         getByGuid: (guid: string) =>
@@ -201,12 +201,12 @@ vi.mock("../context/document-context", async () => {
             : guid === "bb-scout" || guid === "bb-missing"
               ? {
                   header: { guid, name: guid, type: "Blackboard" },
-                  path: `assets/${guid}.blackboard.babasset`,
+                  path: `assets/${guid}.blackboard.hasset`,
                 }
             : guid === "audio-1"
               ? {
                   header: { guid: "audio-1", name: "Jump", type: "Audio" },
-                  path: "assets/jump.babasset",
+                  path: "assets/jump.hasset",
                 }
               : guid === "anim-walk"
                 ? {
@@ -216,7 +216,7 @@ vi.mock("../context/document-context", async () => {
                       type: "Animation",
                       payload: { clipName: "Walk", durationMs: 200 },
                     },
-                    path: "assets/walk.anim.babasset",
+                    path: "assets/walk.anim.hasset",
                   }
                 : guid === "sprite-run"
                   ? {
@@ -225,7 +225,7 @@ vi.mock("../context/document-context", async () => {
                         name: "Run",
                         type: "SpriteAnimation",
                       },
-                      path: "assets/run.spriteanim.babasset",
+                      path: "assets/run.spriteanim.hasset",
                     }
               : guid === "class-1"
               ? {
@@ -235,7 +235,7 @@ vi.mock("../context/document-context", async () => {
                     type: "Class",
                     parentClass: "BTTask",
                   },
-                  path: "assets/BTTask_Custom.class.babasset",
+                  path: "assets/BTTask_Custom.class.hasset",
                 }
               : undefined,
       },
@@ -553,7 +553,7 @@ describe("BehaviourTreeEditor", () => {
 
   it("drops the previous closed Blackboard's keys when the relinked one cannot load", async () => {
     loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
-      path === "assets/bb-scout.blackboard.babasset"
+      path === "assets/bb-scout.blackboard.hasset"
         ? { name: "Scout", keys: [{ name: "target", type: { kind: "vector3" } }] }
         : null,
     );
@@ -562,7 +562,7 @@ describe("BehaviourTreeEditor", () => {
     renderTree(doc);
     expect(await screen.findByTestId("bt-blackboard-key-target")).toBeTruthy();
     act(() => store.reset({ ...doc, blackboardGuid: "bb-missing" } as unknown as Record<string, unknown>));
-    await waitFor(() => expect(loadAssetDocument).toHaveBeenCalledWith("blackboard", "assets/bb-missing.blackboard.babasset"));
+    await waitFor(() => expect(loadAssetDocument).toHaveBeenCalledWith("blackboard", "assets/bb-missing.blackboard.hasset"));
     await waitFor(() => expect(screen.queryByTestId("bt-blackboard-key-target")).toBeNull());
   });
 

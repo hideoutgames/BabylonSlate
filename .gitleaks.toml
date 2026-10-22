@@ -9,7 +9,7 @@
 # wider than necessary is the one way this file can cause a leak, so every entry
 # below is scoped to a path, not to a rule-wide regex.
 
-title = "BabylonSlate"
+title = "Haptic"
 
 [extend]
 useDefault = true

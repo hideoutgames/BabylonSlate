@@ -1,4 +1,4 @@
-import { pinColorVar } from "@babylonslate/ui/lib/data-types";
+import { pinColorVar } from "@haptic/ui/lib/data-types";
 
 export const PIN_PICKER_TYPES = [
   "bool",

@@ -1,4 +1,4 @@
-import type { BabassetHeader } from "./babasset";
+import type { HassetHeader } from "./hasset";
 import type { TextureEncodeSettings } from "./texture-compression";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
@@ -18,7 +18,7 @@ export interface EncodeJobGuard {
    * read from disk: an external change (a git revert or pull) may have
    * replaced the file the index still describes.
    */
-  canWrite(assetGuid: string, current?: BabassetHeader): boolean;
+  canWrite(assetGuid: string, current?: HassetHeader): boolean;
 }
 
 export interface EncodeJob {
@@ -73,7 +73,7 @@ export type EncodeEnqueueOutcome = "queued" | "replaced" | "duplicate" | "yielde
  */
 export function encodeJobMayWrite(
   job: Pick<EncodeJob, "assetGuid" | "guard" | "sourceSha256" | "superseded">,
-  current: BabassetHeader,
+  current: HassetHeader,
 ): boolean {
   if (job.superseded?.()) return false;
   if (job.guard && !job.guard.canWrite(job.assetGuid, current)) return false;

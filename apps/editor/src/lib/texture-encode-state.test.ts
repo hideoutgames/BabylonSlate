@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import { compressionBadgeLabel, textureCompressionState } from "./content-browser-helpers";
 import { shownCompressionState, unfinishedTextureEncodePaths } from "./texture-encode-state";
 
 function indexed(guid: string, type: string, payload: Record<string, unknown>): IndexedAsset {
   return {
     rootId: "project",
-    path: `assets/${guid}.babasset`,
+    path: `assets/${guid}.hasset`,
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type, name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -47,9 +47,9 @@ describe("unfinishedTextureEncodePaths", () => {
       indexed("model", "Model", { compressionState: "pending" }),
     ];
     expect(unfinishedTextureEncodePaths(assets, new Set(["reencoding"]))).toEqual([
-      "assets/queued.babasset",
-      "assets/interrupted.babasset",
-      "assets/reencoding.babasset",
+      "assets/queued.hasset",
+      "assets/interrupted.hasset",
+      "assets/reencoding.hasset",
     ]);
   });
 });

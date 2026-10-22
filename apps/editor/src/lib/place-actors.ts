@@ -1,4 +1,4 @@
-import { remapScenePropertyReferences } from "@babylonslate/core";
+import { remapScenePropertyReferences } from "@haptic/core";
 import {
   createActor,
   UI_CONTROL_2D_CLASS_IDS,
@@ -15,14 +15,14 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   humanizePropertyLabel,
   resolveActorTypeVisual,
   resolveTypeVisual,
   walkAncestry,
   type TypeVisual,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import {
   authoredPrefabComponents,

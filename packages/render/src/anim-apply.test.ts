@@ -20,7 +20,7 @@ import {
   spriteFrameUvs,
   type SpriteAnimationPayload,
   type SpritePayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 describe("seekGameplayAnimation", () => {
   it("pauses the group and seeks a normalised frame instead of auto-advancing", () => {

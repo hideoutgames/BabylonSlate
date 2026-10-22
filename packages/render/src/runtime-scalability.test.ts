@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ScalabilitySession, type ScalabilityAcknowledgement, type ScalabilityTransaction } from "@babylonslate/core";
+import { ScalabilitySession, type ScalabilityAcknowledgement, type ScalabilityTransaction } from "@haptic/core";
 import { RuntimeScalability } from "./runtime-scalability";
 
 function fixture() {

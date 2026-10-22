@@ -1,5 +1,5 @@
-import type { SessionBoundaryRequest, SessionBoundaryResult, SessionPauseReason } from "@babylonslate/bridge";
-import { SaveGameError, SaveGameService, type SaveGameServiceOptions, type SerializedScene } from "@babylonslate/core";
+import type { SessionBoundaryRequest, SessionBoundaryResult, SessionPauseReason } from "@haptic/bridge";
+import { SaveGameError, SaveGameService, type SaveGameServiceOptions, type SerializedScene } from "@haptic/core";
 import {
   Actor,
   attachSerializedComponents,
@@ -7,7 +7,7 @@ import {
   type BObject,
   type SceneActorHooks,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { SaveGameWorld } from "./save-game-world";
@@ -42,6 +42,8 @@ interface SessionBoundariesHost {
   takeDeferredOverlayLayout(): boolean;
   pauseReasons(): ReadonlySet<SessionPauseReason>;
   setPauseReason(reason: SessionPauseReason, paused: boolean): void;
+  /** One tick of a session paused only by the user, paused again after it. */
+  stepPausedTick(): void;
   resetInputState(): void;
   commandRevision(): number;
   reportError(error: unknown): void;
@@ -204,7 +206,7 @@ export class SessionBoundaries {
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult> {
     const invalid = request.sessionGeneration !== this.host.sessionGeneration() ? "Stale session generation." :
       !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastBoundaryRequestId ? "Invalid or superseded request ID." :
-      request.action?.kind !== "resetInput" && (request.action?.kind !== "pause" ||
+      request.action?.kind !== "resetInput" && request.action?.kind !== "step" && (request.action?.kind !== "pause" ||
         !["user", "lifecycle", "loading", "rendering"].includes(request.action.reason) || typeof request.action.paused !== "boolean") ? "Unsupported session boundary operation." :
       this.host.stopped() ? "The game session has stopped." :
       this.boundaryRequests.length >= 64 ? "Session boundary queue is full." : null;
@@ -232,12 +234,22 @@ export class SessionBoundaries {
       sceneLoadId: this.host.sceneRealizer().loadId, commandRevision: this.host.commandRevision() };
   }
 
+  /** Step only from a user pause: another hold (a load, a lifecycle or render wait) keeps the session where it is. */
+  private step(request: SessionBoundaryRequest): SessionBoundaryResult {
+    const reasons = this.host.pauseReasons();
+    if (!reasons.has("user")) return this.result(request, "Pause the game before stepping.");
+    if (reasons.size > 1 || this.host.blocks().active) return this.result(request, "The game is waiting to load or render, so it cannot step yet.");
+    this.host.stepPausedTick();
+    return this.result(request);
+  }
+
   /** Apply queued requests in order; after Stop each resolves as stopped. */
   flush(): void {
     this.boundaryScheduled = false;
     for (const { request, resolve } of this.boundaryRequests.splice(0)) {
       if (this.host.stopped()) { resolve(this.result(request, "The game session has stopped.")); continue; }
       try {
+        if (request.action.kind === "step") { resolve(this.step(request)); continue; }
         if (request.action.kind === "pause") this.host.setPauseReason(request.action.reason, request.action.paused);
         else this.host.resetInputState();
         resolve(this.result(request));

@@ -40,8 +40,8 @@ const challenge = {
   email: "ada@example.test",
 };
 
-vi.mock("@babylonslate/vfs", async (original) => ({
-  ...(await original<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (original) => ({
+  ...(await original<typeof import("@haptic/vfs")>()),
   getHostPlatform: () => auth.host,
 }));
 // The native auth adapter owns FAPI and secure storage; its protocol has separate tests.

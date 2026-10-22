@@ -1,9 +1,9 @@
-import { formatValue, normalizeTag, normalizeTagContainer, parseMapDefaultEntries } from "@babylonslate/core";
+import { formatValue, normalizeTag, normalizeTagContainer, parseMapDefaultEntries } from "@haptic/core";
 import type {
   ColorValue,
   PropertyRow,
   Vector3Value,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 
 export type PlayInspectRowSource = {
   id: string;

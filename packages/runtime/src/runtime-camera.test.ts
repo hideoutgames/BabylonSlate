@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
+import { createDefaultScene } from "@haptic/core";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { RenderSlots } from "./render-slots";
 import { RuntimeCamera } from "./runtime-camera";
 import { RuntimeSubsystems } from "./runtime-subsystems";

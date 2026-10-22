@@ -1,5 +1,5 @@
 import { DOCUMENT_CHUNK_ID, type AssetDocument } from "./asset-document";
-import { SourceRevisionChangedError, type StorageReadOptions } from "@babylonslate/core";
+import { SourceRevisionChangedError, type StorageReadOptions } from "@haptic/core";
 import {
   AssetLoadingService,
   type AssetCatalogRecord,

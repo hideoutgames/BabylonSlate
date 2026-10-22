@@ -1,6 +1,6 @@
 import { NullEngine, Scene, MeshBuilder, StandardMaterial, RawTexture } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeWaterBody } from "@babylonslate/core";
+import { normalizeWaterBody } from "@haptic/core";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createWaterMesh } from "./water-mesh";

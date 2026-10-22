@@ -6,9 +6,9 @@ import {
 } from "lucide-react";
 import {
   CONTENT_BROWSER_ID,
-} from "@babylonslate/core";
-import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts, useTouchUi } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/core";
+import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts, useTouchUi } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,8 +20,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/dropdown-menu";
+import { cn } from "@haptic/ui/lib/utils";
 import type { OpenDocument } from "../services/document-service";
 import {
   createDocumentTypeVisualResolver,

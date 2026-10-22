@@ -1,4 +1,4 @@
-import { assetBytesDigest, installedAssetIdentity } from "@babylonslate/assets";
+import { assetBytesDigest, installedAssetIdentity } from "@haptic/assets";
 
 /** Installed texture Blobs carry immutable content and an ingestion-time identity. */
 export function assetByteFingerprint(bytes: Uint8Array | Blob): string {

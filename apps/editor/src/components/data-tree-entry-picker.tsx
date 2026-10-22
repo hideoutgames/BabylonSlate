@@ -1,8 +1,8 @@
 import { useId, useMemo, useState } from "react";
 import { ChevronDownIcon, FolderTreeIcon } from "lucide-react";
-import { SearchDialog } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { SearchDialog } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import type { DataGraphTreeEntry } from "../lib/data-graph";
 
 type Entry = Pick<DataGraphTreeEntry, "id" | "path" | "effectiveDefinitionGuid">;

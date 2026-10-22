@@ -1,4 +1,4 @@
-import { formatValue, serializeTransform } from "@babylonslate/core";
+import { formatValue, serializeTransform } from "@haptic/core";
 import { BObject } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";

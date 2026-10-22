@@ -3,8 +3,8 @@ import {
   inputKeyFromControl,
   normalizeInputAssetPayload,
   type InputKey,
-} from "@babylonslate/core";
-import type { InputTypeValue, InputBindingValue } from "@babylonslate/core";
+} from "@haptic/core";
+import type { InputTypeValue, InputBindingValue } from "@haptic/core";
 import { bindingCodeLabel } from "./binding-catalog";
 import {
   normalizeInputMappings,

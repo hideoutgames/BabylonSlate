@@ -10,9 +10,9 @@ import { saveAllIfEnabled } from "./save-all";
 const PARTS = ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"];
 type Pose = Record<string, number[]>;
 type TestHost = {
-  __babylonslateTest: { activeSceneContent(): SerializedScene };
-  __babylonslateViewportTest: { shadowDiagnostics(): ShadowDiagnostics | null };
-  __babylonslatePlayTest?: {
+  __hapticTest: { activeSceneContent(): SerializedScene };
+  __hapticViewportTest: { shadowDiagnostics(): ShadowDiagnostics | null };
+  __hapticPlayTest?: {
     shadowDiagnostics(): ShadowDiagnostics | null;
     whenModelsReady(): Promise<void>;
     runtimeMode(): "worker" | "in-process" | null;
@@ -24,7 +24,7 @@ type TestHost = {
 async function pose(page: Page, playing: boolean): Promise<Pose> {
   return page.evaluate(({ parts, playing }) => {
     const host = globalThis as unknown as TestHost;
-    const api = playing ? host.__babylonslatePlayTest : host.__babylonslateViewportTest;
+    const api = playing ? host.__hapticPlayTest : host.__hapticViewportTest;
     return Object.fromEntries((api?.shadowDiagnostics()?.models ?? [])
       .filter(mesh => parts.includes(mesh.name ?? ""))
       .map(mesh => {
@@ -57,7 +57,7 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   page.on("pageerror", error => errors.push(error.message));
   await openTestProject(page);
   await openMainScene(page);
-  const scene = await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.activeSceneContent());
+  const scene = await page.evaluate(() => (globalThis as unknown as TestHost).__hapticTest.activeSceneContent());
   const actor = scene.actors.find(entry => entry.id === "actor-1")!;
   expect(actor.components.some(component => component.classId === "AnimationGraphComponent")).toBe(true);
   expect(actor.components.find(component => component.classId === "MeshComponent")?.properties.assetGuid).toBeTruthy();
@@ -80,22 +80,22 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   await page.getByTestId("tree-row-actor:actor-1").click();
   await page.getByTestId("details-add-component").click();
   await pickCatalogItem(page, "add-component-catalog", "RagdollComponent", "Ragdoll");
-  const ragdoll = await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.activeSceneContent()
+  const ragdoll = await page.evaluate(() => (globalThis as unknown as TestHost).__hapticTest.activeSceneContent()
     .actors.find(entry => entry.id === "actor-1")!.components.find(component => component.classId === "RagdollComponent")!);
   expect(ragdoll.properties.enabled).toBe(false);
   expect(ragdoll.properties.boneNames).toEqual([]);
   await page.getByTestId(`property-actor-1-${ragdoll.id}-enabled`).click();
-  await expect.poll(() => page.evaluate((id) => (globalThis as unknown as TestHost).__babylonslateTest.activeSceneContent()
+  await expect.poll(() => page.evaluate((id) => (globalThis as unknown as TestHost).__hapticTest.activeSceneContent()
     .actors.find(entry => entry.id === "actor-1")!.components.find(component => component.id === id)!.properties.enabled, ragdoll.id)).toBe(true);
   await saveAllIfEnabled(page);
   await expect.poll(async () => Object.keys(await pose(page, false)).length, { timeout: 30_000 }).toBe(6);
   const before = await pose(page, false);
 
   await clickPlayAndWaitForOverlay(page);
-  await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslatePlayTest!.whenModelsReady());
-  expect(await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslatePlayTest!.runtimeMode())).toBe("worker");
+  await page.evaluate(() => (globalThis as unknown as TestHost).__hapticPlayTest!.whenModelsReady());
+  expect(await page.evaluate(() => (globalThis as unknown as TestHost).__hapticPlayTest!.runtimeMode())).toBe("worker");
   await expect.poll(async () => page.evaluate(async () => {
-    const snapshot = await (globalThis as unknown as TestHost).__babylonslatePlayTest!.inspectWorld();
+    const snapshot = await (globalThis as unknown as TestHost).__hapticPlayTest!.inspectWorld();
     return snapshot.nodes.find(node => node.classId === "RagdollComponent" && node.parentId === "actor-1")?.variables.status;
   }), { timeout: 30_000 }).toBe("active");
   await expect.poll(async () => {
@@ -125,7 +125,7 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   await testInfo.attach("mannequin-ragdoll-poses", { body: JSON.stringify({ before, after }), contentType: "application/json" });
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => (globalThis as unknown as TestHost).__babylonslatePlayTest === undefined)).toBe(true);
+  await expect.poll(() => page.evaluate(() => (globalThis as unknown as TestHost).__hapticPlayTest === undefined)).toBe(true);
   await expect(page.getByTestId("viewport-panel")).toHaveAttribute("aria-busy", "false");
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
   await expect.poll(async () => Object.keys(await pose(page, false)).length).toBe(6);

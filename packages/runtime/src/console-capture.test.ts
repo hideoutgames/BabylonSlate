@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { compileGraph, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import * as runtime from "./index";
 
 describe("captureConsoleLogs", () => {

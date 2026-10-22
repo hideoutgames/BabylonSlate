@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { createSeededRng } from "@babylonslate/core";
-import { Actor, type TickContext } from "@babylonslate/object-model";
+import { createSeededRng } from "@haptic/core";
+import { Actor, type TickContext } from "@haptic/object-model";
 import {
   ScriptHost,
   type CompiledScript,

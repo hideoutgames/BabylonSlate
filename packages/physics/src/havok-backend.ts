@@ -179,7 +179,7 @@ function isShape3D(shape: ColliderShape): boolean {
 /**
  * 3D backend: explicitly owned Babylon Physics V2 bodies and shapes on a
  * worker-local `NullEngine` Scene. This Scene is not the editor/render Scene;
- * `@babylonslate/runtime` still does not import Babylon.
+ * `@haptic/runtime` still does not import Babylon.
  */
 export class HavokPhysicsBackend implements PhysicsBackend {
   readonly kind = "3d" as const;

@@ -1,4 +1,4 @@
-import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
+import type { SerializedActor, SerializedComponent, SerializedScene } from "@haptic/core";
 
 type SceneNameLookup = (guid: string) => string | undefined;
 const componentCache = new WeakMap<SerializedComponent[], { key: string; result: SerializedComponent[] }>();

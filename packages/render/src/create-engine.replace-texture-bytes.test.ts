@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, type NodeMaterial } from "@babylonjs/core";
-import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
 import { createEngine } from "./create-engine";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { sampledTextureDocument } from "./sampled-texture-material-fixture";

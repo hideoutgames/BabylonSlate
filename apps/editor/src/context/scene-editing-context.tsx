@@ -8,13 +8,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { ViewportMode } from "@babylonslate/core";
+import type { ViewportMode } from "@haptic/core";
 import type {
   EditorCameraSessionState,
   GizmoSpace,
   GizmoTool,
   ViewportShadingMode,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { useEditorSessionState } from "./editor-session-state-context";
 
 export type ViewportDropApi = {

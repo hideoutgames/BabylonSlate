@@ -67,11 +67,11 @@ test("M5: shared Details edits preserve other axes and survive group Undo and re
   await page.evaluate(async (next) => {
     await (
       globalThis as unknown as {
-        __babylonslateTest: {
+        __hapticTest: {
           setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
         };
       }
-    ).__babylonslateTest.setActiveSceneContent(next);
+    ).__hapticTest.setActiveSceneContent(next);
   }, scene);
   await saveAllIfEnabled(page);
   const a = page.getByTestId("tree-row-actor:a");

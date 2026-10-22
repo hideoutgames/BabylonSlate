@@ -6,8 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
-import { Button } from "@babylonslate/ui/components/button";
+import { getHostPlatform, isTestModeEnabled } from "@haptic/vfs";
+import { Button } from "@haptic/ui/components/button";
 import { brandIconSrc } from "../lib/branding";
 import { useLauncherTransition } from "./launcher-transition";
 import { useMobileDemoSession } from "../context/mobile-demo-context";

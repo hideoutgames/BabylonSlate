@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "@babylonslate/editor-kit";
+import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "@haptic/editor-kit";
 import { useContentBrowserPaintSelect } from "./use-content-browser-paint-select";
 import type { ContentBrowserSelection } from "./content-browser-helpers";
 

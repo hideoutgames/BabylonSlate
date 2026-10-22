@@ -8,12 +8,12 @@ import {
   type ParticleSystem,
   type Scene,
 } from "@babylonjs/core";
-import type { ParticleSpace } from "@babylonslate/core";
+import type { ParticleSpace } from "@haptic/core";
 import {
   particleNodeDefinitionFor,
   type ParticleBuildPlan,
   type ParticleOperation,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import {
   configureParticleSystemBlock,
   particleBlockAdapterFor,

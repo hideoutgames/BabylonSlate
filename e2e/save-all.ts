@@ -17,14 +17,14 @@ type SaveAllDiagnostics = {
 export async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
   return page.evaluate(() => {
     const host = globalThis as {
-      __babylonslateTest?: {
+      __hapticTest?: {
         documentDirtyTrace?: () => { kind: string; id: string; via?: string }[];
         saveAllTrace?: () => SaveAllDiagnostics["save"];
         saveAllProgress?: () => SaveAllProgress | null;
         dirtyDocuments?: () => { kind: string; id: string }[];
       };
     };
-    const test = host.__babylonslateTest;
+    const test = host.__hapticTest;
     return {
       dirty: test?.dirtyDocuments?.() ?? [],
       trace: test?.documentDirtyTrace?.() ?? [],
@@ -49,12 +49,12 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
   const invocationBeforeClick = await page.evaluate(() => {
     const test = (
       globalThis as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           clearDocumentDirtyTrace?: () => void;
           saveAllProgress?: () => SaveAllProgress | null;
         };
       }
-    ).__babylonslateTest;
+    ).__hapticTest;
     test?.clearDocumentDirtyTrace?.();
     return test?.saveAllProgress?.()?.invocation ?? 0;
   });

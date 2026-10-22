@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { encodeBabasset, MAX_BABASSET_HEADER_BYTES } from "./babasset";
+import { encodeHasset, MAX_HASSET_HEADER_BYTES } from "./hasset";
 import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot } from "./content-root";
 import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
 import { AssetRegistry } from "./registry";
-import type { StorageReadOptions } from "@babylonslate/core";
+import type { StorageReadOptions } from "@haptic/core";
 
 async function fixture() {
   const storage = new MemoryStorageAdapter("documents");
@@ -39,7 +39,7 @@ describe("bounded catalog and payload loading", () => {
     const storage = await fixture();
     const blobs = createVfsBlobStore(storage);
     const data = new Uint8Array([1, 2, 3]);
-    await storage.writeBinary("assets/source.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/source.hasset", await encodeHasset({
       header, chunks: [chunk("source", data)],
       ...(kind === "blob" ? { blobThreshold: 1, writeBlob: blobs.writeBlob } : {}),
     }));
@@ -78,7 +78,7 @@ describe("bounded catalog and payload loading", () => {
   it("isolates a canceled scoped catalog refresh from an unsignaled shared refresh", async () => {
     const storage = new WeakRevisionStorage("documents");
     await storage.openDocumentsProject("catalog-cancellation");
-    await storage.writeBinary("assets/source.babasset", await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1]))] }));
+    await storage.writeBinary("assets/source.hasset", await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([1]))] }));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const original = registry.getByGuid("asset")!.locator;
@@ -109,8 +109,8 @@ describe("bounded catalog and payload loading", () => {
 
   it("keeps canceled noninterruptible I/O pending until the storage operation settles", async () => {
     const storage = await fixture();
-    await storage.writeBinary("assets/source.babasset", await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1, 2, 3]))] }));
-    const { locator, header: catalog } = await readAssetCatalog(storage, "assets/source.babasset");
+    await storage.writeBinary("assets/source.hasset", await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([1, 2, 3]))] }));
+    const { locator, header: catalog } = await readAssetCatalog(storage, "assets/source.hasset");
     const loader = new AccountedPayloadLoader(storage);
     const read = storage.readBinaryRange.bind(storage);
     let release!: () => void;
@@ -136,8 +136,8 @@ describe("bounded catalog and payload loading", () => {
     const storage = await fixture();
     const blobs = createVfsBlobStore(storage);
     const inline = new Uint8Array(2 * 1024 * 1024);
-    const inlineFile = await encodeBabasset({ header, chunks: [chunk("source", inline)] });
-    const blobFile = await encodeBabasset({
+    const inlineFile = await encodeHasset({ header, chunks: [chunk("source", inline)] });
+    const blobFile = await encodeHasset({
       header: { ...header, guid: "blob" }, chunks: [chunk("source", new Uint8Array(1024 * 1024))],
       writeBlob: (hash, data) => blobs.writeBlob(hash, data),
     });
@@ -145,9 +145,9 @@ describe("bounded catalog and payload loading", () => {
       guid: "legacy", name: "Legacy atlas", type: "Sprite", version: 1,
       payload: { textureAsset: "unused", frames: [] },
     });
-    await storage.writeBinary("assets/inline.babasset", inlineFile);
-    await storage.writeBinary("assets/blob.babasset", blobFile);
-    await storage.writeBinary("assets/legacy.babasset", legacyFile);
+    await storage.writeBinary("assets/inline.hasset", inlineFile);
+    await storage.writeBinary("assets/blob.hasset", blobFile);
+    await storage.writeBinary("assets/legacy.hasset", legacyFile);
     const fullReads = vi.spyOn(storage, "readBinary");
     const boundedRead = storage.readBinaryRange.bind(storage);
     let bytesRead = 0;
@@ -177,7 +177,7 @@ describe("bounded catalog and payload loading", () => {
     const bytes = await encodeAssetDocument({
       guid: "doc", name: "Doc", type: "Model", version: 1, payload: { meshes: [] },
     }, { extraChunks: [chunk("source", new Uint8Array(1024 * 1024))] });
-    await storage.writeBinary("assets/document.babasset", bytes);
+    await storage.writeBinary("assets/document.hasset", bytes);
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const read = storage.readBinaryRange.bind(storage);
@@ -194,27 +194,27 @@ describe("bounded catalog and payload loading", () => {
   it("rejects invalid header lengths before allocating or requesting the header", async () => {
     const storage = await fixture();
     const bytes = new Uint8Array(12);
-    bytes.set(new TextEncoder().encode("BABA"));
+    bytes.set(new TextEncoder().encode("HAPT"));
     const view = new DataView(bytes.buffer);
     view.setUint32(4, 1, true);
-    view.setUint32(8, MAX_BABASSET_HEADER_BYTES + 1, true);
-    await storage.writeBinary("assets/bad.babasset", bytes);
+    view.setUint32(8, MAX_HASSET_HEADER_BYTES + 1, true);
+    await storage.writeBinary("assets/bad.hasset", bytes);
     const reads = vi.spyOn(storage, "readBinaryRange");
-    await expect(readAssetCatalog(storage, "assets/bad.babasset")).rejects.toThrow("header length");
+    await expect(readAssetCatalog(storage, "assets/bad.hasset")).rejects.toThrow("header length");
     expect(reads).toHaveBeenCalledTimes(1);
     view.setUint32(8, 100, true);
-    await storage.writeBinary("assets/bad.babasset", bytes);
-    await expect(readAssetCatalog(storage, "assets/bad.babasset")).rejects.toThrow("Truncated");
+    await storage.writeBinary("assets/bad.hasset", bytes);
+    await expect(readAssetCatalog(storage, "assets/bad.hasset")).rejects.toThrow("Truncated");
   });
 
   it("rejects an old snapshot after a same-size save and resolves a fresh snapshot for retry", async () => {
     const storage = await fixture();
-    const path = "assets/source.babasset";
-    await storage.writeBinary(path, await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1, 2, 3]))] }));
+    const path = "assets/source.hasset";
+    await storage.writeBinary(path, await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([1, 2, 3]))] }));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const stale = registry.getByGuid("asset")!;
-    await storage.writeBinary(path, await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([4, 5, 6]))] }));
+    await storage.writeBinary(path, await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([4, 5, 6]))] }));
     await expect(registry.payloadLoader.loadChunk(stale.locator!, stale.header.chunks[0]!)).rejects.toThrow(/chang|revision/i);
     expect(await registry.readChunk("asset", "source")).toEqual(new Uint8Array([4, 5, 6]));
   });
@@ -222,11 +222,11 @@ describe("bounded catalog and payload loading", () => {
   it("reads only the selected blob and rejects corrupt bytes without accounting them as valid payload", async () => {
     const storage = await fixture();
     const blobs = createVfsBlobStore(storage);
-    await storage.writeBinary("assets/blob.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/blob.hasset", await encodeHasset({
       header, chunks: [chunk("selected", new Uint8Array([1, 2])), chunk("unused", new Uint8Array([3, 4, 5]))],
       blobThreshold: 1, writeBlob: (hash, data) => blobs.writeBlob(hash, data),
     }));
-    const { header: catalog, locator } = await readAssetCatalog(storage, "assets/blob.babasset");
+    const { header: catalog, locator } = await readAssetCatalog(storage, "assets/blob.hasset");
     const selected = catalog.chunks[0]!;
     const fullReads = vi.spyOn(storage, "readBinary");
     const loader = new AccountedPayloadLoader(storage);
@@ -251,8 +251,8 @@ describe("bounded catalog and payload loading", () => {
 
   it("bounds request history while preserving aggregate failure counts", async () => {
     const storage = await fixture();
-    await storage.writeBinary("assets/inline.babasset", await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1]))] }));
-    const { locator, header: catalog } = await readAssetCatalog(storage, "assets/inline.babasset");
+    await storage.writeBinary("assets/inline.hasset", await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([1]))] }));
+    const { locator, header: catalog } = await readAssetCatalog(storage, "assets/inline.hasset");
     const loader = new AccountedPayloadLoader(storage);
     const invalid = { ...catalog.chunks[0]!, locator: { inline: { offset: locator.totalSize, length: 1 } } };
     for (let index = 0; index < 130; index += 1) {
@@ -267,8 +267,8 @@ describe("bounded catalog and payload loading", () => {
 
   it("rejects a revision change between reading a prefix and its header", async () => {
     const storage = await fixture();
-    const path = "assets/changing.babasset";
-    const original = await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1]))] });
+    const path = "assets/changing.hasset";
+    const original = await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([1]))] });
     await storage.writeBinary(path, original);
     const read = storage.readBinaryRange.bind(storage);
     vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
@@ -281,12 +281,12 @@ describe("bounded catalog and payload loading", () => {
 
   it("refreshes header-only documents before a cache lookup can publish a stale revision", async () => {
     const storage = await fixture();
-    const path = "assets/material.babasset";
-    await storage.writeBinary(path, await encodeBabasset({ header: { ...header, type: "Material", payload: { roughness: 1 } }, chunks: [] }));
+    const path = "assets/material.hasset";
+    await storage.writeBinary(path, await encodeHasset({ header: { ...header, type: "Material", payload: { roughness: 1 } }, chunks: [] }));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const original = await registry.getAssetLocator("asset");
-    await storage.writeBinary(path, await encodeBabasset({ header: { ...header, type: "Material", payload: { roughness: 2 } }, chunks: [] }));
+    await storage.writeBinary(path, await encodeHasset({ header: { ...header, type: "Material", payload: { roughness: 2 } }, chunks: [] }));
     expect((await registry.getAssetLocator("asset")).revision).not.toBe(original.revision);
     expect((await registry.readAssetDocument("asset")).payload).toEqual({ roughness: 2 });
   });
@@ -294,8 +294,8 @@ describe("bounded catalog and payload loading", () => {
   it("refreshes same-size header-only documents even when storage timestamps do not change", async () => {
     const storage = new WeakRevisionStorage("documents");
     await storage.openDocumentsProject("weak-revision");
-    const path = "assets/material.babasset";
-    const bytes = (roughness: number) => encodeBabasset({
+    const path = "assets/material.hasset";
+    const bytes = (roughness: number) => encodeHasset({
       header: { ...header, type: "Material", payload: { roughness } }, chunks: [],
     });
     await storage.writeBinary(path, await bytes(1));
@@ -313,8 +313,8 @@ describe("bounded catalog and payload loading", () => {
   it("rejects a changed header on weak storage even when its selected payload still matches", async () => {
     const storage = new WeakRevisionStorage("documents");
     await storage.openDocumentsProject("weak-revision");
-    const path = "assets/source.babasset";
-    const bytes = (value: number) => encodeBabasset({
+    const path = "assets/source.hasset";
+    const bytes = (value: number) => encodeHasset({
       header: { ...header, payload: { value } }, chunks: [chunk("source", new Uint8Array([1, 2, 3]))],
     });
     await storage.writeBinary(path, await bytes(1));

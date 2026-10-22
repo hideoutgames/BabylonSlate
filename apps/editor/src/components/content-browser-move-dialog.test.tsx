@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { FolderNode } from "@babylonslate/assets";
-import { resolveTypeVisual } from "@babylonslate/editor-kit";
+import type { FolderNode } from "@haptic/assets";
+import { resolveTypeVisual } from "@haptic/editor-kit";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 
 const tree: FolderNode = {
@@ -44,7 +44,7 @@ function renderDialog(
       kind="asset"
       name="hero"
       currentFolderPath="assets"
-      assetPaths={["assets/hero.babasset"]}
+      assetPaths={["assets/hero.hasset"]}
       folderPaths={[]}
       folderTree={tree}
       destinationPath="assets"
@@ -122,7 +122,7 @@ describe("ContentBrowserMoveDialog", () => {
       itemCount: 3,
       currentFolderPath: "assets",
       folderPaths: ["assets/textures", "assets/audio"],
-      assetPaths: ["assets/hero.babasset"],
+      assetPaths: ["assets/hero.hasset"],
       destinationPath: "assets/fx",
     });
     expect(screen.getByText("Move 3 items")).toBeTruthy();
@@ -146,10 +146,10 @@ describe("ContentBrowserMoveDialog", () => {
   it("blocks a Move into a folder that already has a file of the same name", () => {
     const { onDestinationChange } = renderDialog({
       destinationPath: "assets/fx",
-      existingPaths: new Set(["assets/fx/hero.babasset", "assets/textures/hero.babasset"]),
+      existingPaths: new Set(["assets/fx/hero.hasset", "assets/textures/hero.hasset"]),
     });
     expect(screen.getByTestId("content-browser-move-problem").textContent)
-      .toBe('Choose a different folder. "hero.babasset" already exists in assets/fx.');
+      .toBe('Choose a different folder. "hero.hasset" already exists in assets/fx.');
     expect(screen.getByTestId("content-browser-move-confirm").hasAttribute("disabled")).toBe(true);
     selectRow("assets/textures");
     expect(onDestinationChange).not.toHaveBeenCalled();

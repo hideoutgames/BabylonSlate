@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 import { TypeColorMark } from "./type-color-mark";
 import { SearchDropdown } from "./search-dropdown";
 import {

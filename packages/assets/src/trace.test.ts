@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   decodeTraceDocument,
   encodeTraceDocument,
@@ -14,7 +14,7 @@ import {
 import { readAssetDocumentHeader } from "./asset-document";
 
 describe("trace documents", () => {
-  it("round-trips a TracePayload through the .babasset container", async () => {
+  it("round-trips a TracePayload through the .hasset container", async () => {
     const payload = {
       seed: 9,
       dt: 1 / 60,
@@ -38,11 +38,11 @@ describe("trace documents", () => {
     expect(readAssetDocumentHeader(bytes).type).toBe(TRACE_ASSET_TYPE);
     const decoded = await decodeTraceDocument(bytes);
     expect(decoded.payload).toEqual(payload);
-    expect(isTracePath("derived/session.babtrace")).toBe(true);
-    expect(isTracePath("assets/main.scene.babasset")).toBe(false);
+    expect(isTracePath("derived/session.htrace")).toBe(true);
+    expect(isTracePath("assets/main.scene.hasset")).toBe(false);
   });
 
-  it("writes and reads a derived-data .babtrace", async () => {
+  it("writes and reads a derived-data .htrace", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("traces-root");
     const payload = {
@@ -74,6 +74,6 @@ describe("trace documents", () => {
     expect(loaded).not.toBeNull();
     expect(loaded?.guid).toBe("trace-guid");
     expect(loaded?.payload).toEqual(payload);
-    await expect(readTraceDocument(storage, "missing.babtrace")).resolves.toBeNull();
+    await expect(readTraceDocument(storage, "missing.htrace")).resolves.toBeNull();
   });
 });

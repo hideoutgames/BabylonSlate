@@ -21,7 +21,7 @@ test.describe("Class function graphs", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });

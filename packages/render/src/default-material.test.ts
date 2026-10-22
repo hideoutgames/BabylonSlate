@@ -15,7 +15,7 @@ import {
 } from "./default-material";
 import { createPrimitiveMesh } from "./scene-loader";
 import { applySceneEnvironment } from "./scene-illumination";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene } from "@haptic/core";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];

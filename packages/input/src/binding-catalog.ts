@@ -7,7 +7,7 @@ import {
   INPUT_KEYS,
   INPUT_GAMEPAD_BUTTON_NAMES as GAMEPAD_BUTTON_NAMES,
   INPUT_GAMEPAD_AXIS_NAMES as GAMEPAD_AXIS_NAMES,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { TOUCH_GESTURE_CODES as GESTURE } from "./gestures";
 import type { InputDevice } from "./mappings";
 

@@ -6,7 +6,7 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 
 describe("resource cache", () => {
   it("reuses stable blob URLs per asset guid", () => {

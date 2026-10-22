@@ -57,7 +57,7 @@ export type PerformanceStream = {
   chunks: Float64Array[];
 };
 export type PerformanceProfile = {
-  kind: "babylonslate-performance"; version: 1;
+  kind: "haptic-performance"; version: 1;
   identity: PerformanceIdentity;
   requestedDurationMs: number; durationMs: number;
   byteBudget: number;
@@ -160,7 +160,7 @@ export class PerformanceRecorder {
     this.active = undefined;
     const finish = (stream: BufferStream): PerformanceStream => ({ columns: stream.columns, count: stream.count,
       chunks: stream.chunks.map((chunk, index) => index === stream.chunks.length - 1 ? chunk.subarray(0, stream.tailUsed) : chunk) });
-    this.result = { kind: "babylonslate-performance", version: 1, identity: state.identity,
+    this.result = { kind: "haptic-performance", version: 1, identity: state.identity,
       requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
       byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: state.droppedRecords,
       stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu) };
@@ -218,7 +218,7 @@ export function serializePerformanceProfile(profile: PerformanceProfile): string
 export function parsePerformanceProfile(value: unknown): PerformanceProfile | null {
   if (!value || typeof value !== "object") return null;
   const data = value as PerformanceProfile;
-  if (data.kind !== "babylonslate-performance" || data.version !== 1 || !validIdentity(data.identity) ||
+  if (data.kind !== "haptic-performance" || data.version !== 1 || !validIdentity(data.identity) ||
     data.identity.mode === "simulate" || !finite(data.durationMs) || !finite(data.requestedDurationMs) ||
     data.requestedDurationMs < 1000 || data.requestedDurationMs > 60_000 ||
     !safeId(data.byteBudget) || data.byteBudget > MAX_PROFILE_BYTE_BUDGET || !safeId(data.retainedBytes) ||
@@ -245,7 +245,7 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
   const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);
   const gpu = ticks && parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS);
   if (!frames || !ticks || !gpu || bytes > data.retainedBytes || (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
-  return { kind: "babylonslate-performance", version: 1, identity: copyIdentity(data.identity),
+  return { kind: "haptic-performance", version: 1, identity: copyIdentity(data.identity),
     requestedDurationMs: data.requestedDurationMs, durationMs: data.durationMs,
     byteBudget: data.byteBudget, retainedBytes: data.retainedBytes,
     droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu };

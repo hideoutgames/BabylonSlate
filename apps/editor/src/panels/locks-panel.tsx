@@ -1,9 +1,9 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useState } from "react";
-import { PanelFrame, SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { PanelFrame, SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +13,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import { useSourceControl } from "../context/document-context";
 import {
   formatLockAge,

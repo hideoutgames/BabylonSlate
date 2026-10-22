@@ -7,7 +7,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 
 export type PlayUnsavedChoice = "save" | "skip";
 

@@ -3,7 +3,7 @@ import type {
   GraphClassMemberPin,
   SerializedComponent,
   SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /**
  * Deterministic SerializedGraph builders for FeatureTest Classes. Edge handles

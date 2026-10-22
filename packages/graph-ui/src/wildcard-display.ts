@@ -3,7 +3,7 @@ import {
   pinTypeKey,
   resolveWildcardPinTypes,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { hasSerializedPins } from "./graph-types";
 
 export type PinDisplayLookup = Map<string, PinType>;

@@ -1,5 +1,5 @@
 import { type ComponentProps } from "react";
-import { Input } from "@babylonslate/ui/components/input";
+import { Input } from "@haptic/ui/components/input";
 import { useSelectAllOnActivate } from "./select-all-on-activate";
 
 /** Text `Input` that selects all on first click, tap, or Tab. */

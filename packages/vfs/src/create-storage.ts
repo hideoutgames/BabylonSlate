@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import { isElectronHost, isMobilePlatform } from "./platform";
 import { MobileStorageAdapter } from "./mobile-storage-adapter";
 import { ElectronStorageAdapter } from "./electron-storage-adapter";

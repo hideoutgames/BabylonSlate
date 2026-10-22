@@ -7,9 +7,11 @@ import {
   COLOR,
   BOXED_WILDCARD,
   BOOL,
+  RESOLVING_WILDCARD,
   defaultValueLiteral,
+  objectRef,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const RESERVED = new Set([
   "break",
@@ -123,6 +125,52 @@ function printHudPins(
 }
 
 export const debugNodes: NodeDefinition[] = [
+  {
+    id: "debug.assert",
+    title: "Assert",
+    category: "debug",
+    developmentOnlyByDefault: true,
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("condition", "Condition", "in", BOOL),
+      pin("message", "Message", "in", STRING, "data", true, ""),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`if (!(${ctx.input("condition")})) ctx.assertFailed(${ctx.input("message")});`);
+    },
+  },
+  {
+    id: "debug.assertEqual",
+    title: "Assert Equal",
+    category: "debug",
+    developmentOnlyByDefault: true,
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("actual", "Actual", "in", RESOLVING_WILDCARD),
+      pin("expected", "Expected", "in", RESOLVING_WILDCARD),
+      pin("message", "Message", "in", STRING, "data", true, ""),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.assertEqual(${ctx.input("actual")}, ${ctx.input("expected")}, ${ctx.input("message")});`);
+    },
+  },
+  {
+    id: "debug.assertIsValid",
+    title: "Assert Is Valid",
+    category: "debug",
+    developmentOnlyByDefault: true,
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("object", "Object", "in", objectRef("BObject")),
+      pin("message", "Message", "in", STRING, "data", true, ""),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`if ((${ctx.input("object")}) == null) ctx.assertFailed(${ctx.input("message")}, "the object is not valid");`);
+    },
+  },
   {
     id: "debug.log",
     title: "Log",

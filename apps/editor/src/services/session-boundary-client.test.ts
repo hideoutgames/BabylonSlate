@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SessionBoundaryResult } from "@babylonslate/bridge";
+import type { SessionBoundaryResult } from "@haptic/bridge";
 import { createSessionBoundaryClient } from "./session-boundary-client";
 
 function response(requestId: number, sessionGeneration = 4): SessionBoundaryResult {

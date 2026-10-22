@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { DocumentKind } from "@babylonslate/core";
+import type { DocumentKind } from "@haptic/core";
 import {
   useDocumentActions,
   useDocumentKindsRevision,

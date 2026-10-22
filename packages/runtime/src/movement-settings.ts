@@ -1,4 +1,4 @@
-import { parseMovementProperties } from "@babylonslate/core";
+import { parseMovementProperties } from "@haptic/core";
 import { ParsedComponentProperties } from "./parsed-component-properties";
 
 /**

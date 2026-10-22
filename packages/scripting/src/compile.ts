@@ -11,12 +11,12 @@ import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
-import { instrumentJsLoops } from "@babylonslate/debugger";
+import { instrumentJsLoops } from "@haptic/debugger";
 import { entryNodes } from "./compiled-nodes";
 import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
-import { humanizePropertyLabel, normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
+import { humanizePropertyLabel, normalizeTag, normalizeTagContainer, type TagRegistry } from "@haptic/core";
 import { tagCasesConstant, tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
 import {
   isFlowSwitchMeta,
@@ -497,7 +497,7 @@ export function compileGraph(
   graph = withResolvedPinTypes(graph);
   const index = indexGraph(graph);
   const exportName = options.exportName ?? "run";
-  const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
+  const preamble = [`//# sourceURL=haptic:///${options.assetGuid}.js`];
   // `var` stays valid when a document concatenates its graphs' modules.
   if (options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true) {
     preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
@@ -1867,7 +1867,7 @@ export function compileTransitionRuleGraph(
     ? tagRuntimeSource(options.tagRegistry).split("\n") : [];
   const hoistedLines = hoisted.flatMap((chunk) => chunk.split("\n"));
   const source = [
-    `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
+    `//# sourceURL=haptic:///${options.assetGuid}.js`,
     ...tagPreamble,
     ...hoistedLines,
     `export function evaluate(ctx) {`,

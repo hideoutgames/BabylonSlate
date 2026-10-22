@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDefaultSkyboxCreatorPayload } from "@babylonslate/assets";
+import { createDefaultSkyboxCreatorPayload } from "@haptic/assets";
 import {
   SkyboxCreatorCubemap,
   SkyboxCreatorEditor,
@@ -25,12 +25,12 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     list: () => [
       {
         header: { guid: "tex-1", name: "Sky", type: "Texture" },
-        path: "assets/Sky.babasset",
+        path: "assets/Sky.hasset",
         rootId: "project",
       },
       {
         header: { guid: "face-px", name: "Day_px", type: "Texture" },
-        path: "assets/Old_px.babasset",
+        path: "assets/Old_px.hasset",
         rootId: "project",
       },
     ],
@@ -43,8 +43,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   refreshAssetRegistry,
 })));
 
-vi.mock("@babylonslate/assets", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/assets")>();
+vi.mock("@haptic/assets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/assets")>();
   return {
     ...actual,
     decodeSourceToRgba,
@@ -53,7 +53,7 @@ vi.mock("@babylonslate/assets", async (importOriginal) => {
 
 const encodePngRgba = vi.hoisted(() => vi.fn(() => Uint8Array.of(9)));
 
-vi.mock("@babylonslate/render", () => ({
+vi.mock("@haptic/render", () => ({
   encodePngRgba,
   createMaterialPreviewScene: () => null,
   createMaterialPreviewPresenter: () => null,
@@ -78,7 +78,7 @@ describe("SkyboxCreatorEditor", () => {
     render(
       <SkyboxCreatorEditor
         payload={payload as unknown as Record<string, unknown>}
-        helperPath="assets/Day.skyboxcreator.babasset"
+        helperPath="assets/Day.skyboxcreator.hasset"
         onChange={onChange}
       />,
     );
@@ -100,7 +100,7 @@ describe("SkyboxCreatorEditor", () => {
     render(
       <SkyboxCreatorEditor
         payload={createDefaultSkyboxCreatorPayload() as unknown as Record<string, unknown>}
-        helperPath="assets/Day.skyboxcreator.babasset"
+        helperPath="assets/Day.skyboxcreator.hasset"
         onChange={vi.fn()}
       />,
     );
@@ -118,7 +118,7 @@ describe("SkyboxCreatorEditor", () => {
     render(
       <SkyboxCreatorEditor
         payload={payload as unknown as Record<string, unknown>}
-        helperPath="assets/Day.skyboxcreator.babasset"
+        helperPath="assets/Day.skyboxcreator.hasset"
         onChange={onChange}
       />,
     );
@@ -127,12 +127,12 @@ describe("SkyboxCreatorEditor", () => {
       expect(createAsset).toHaveBeenCalledTimes(6);
     });
     expect(createAsset.mock.calls.map((call) => call[1])).toEqual([
-      "Day_px.babasset",
-      "Day_py.babasset",
-      "Day_pz.babasset",
-      "Day_nx.babasset",
-      "Day_ny.babasset",
-      "Day_nz.babasset",
+      "Day_px.hasset",
+      "Day_py.hasset",
+      "Day_pz.hasset",
+      "Day_nx.hasset",
+      "Day_ny.hasset",
+      "Day_nz.hasset",
     ]);
     expect(refreshAssetRegistry).toHaveBeenCalled();
     expect(onChange).toHaveBeenCalledWith(
@@ -160,7 +160,7 @@ describe("SkyboxCreatorEditor", () => {
     }) as unknown as Record<string, unknown>;
     const onChange = vi.fn();
     const editor = (x: number) => (
-      <SkyboxCreatorEditor payload={payload(x)} helperPath="assets/Day.skyboxcreator.babasset" onChange={onChange} />
+      <SkyboxCreatorEditor payload={payload(x)} helperPath="assets/Day.skyboxcreator.hasset" onChange={onChange} />
     );
     const { rerender } = render(editor(0));
     fireEvent.click(screen.getByTestId("skybox-creator-create"));
@@ -176,7 +176,7 @@ describe("SkyboxCreatorEditor", () => {
 
   it("shows the createAsset failure instead of a decode error", async () => {
     createAsset.mockRejectedValueOnce(
-      new Error("Asset already exists: assets/Day_px.babasset"),
+      new Error("Asset already exists: assets/Day_px.hasset"),
     );
     render(
       <SkyboxCreatorEditor
@@ -186,14 +186,14 @@ describe("SkyboxCreatorEditor", () => {
             sourceTextureGuid: "tex-1",
           } as unknown as Record<string, unknown>
         }
-        helperPath="assets/Day.skyboxcreator.babasset"
+        helperPath="assets/Day.skyboxcreator.hasset"
         onChange={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByTestId("skybox-creator-create"));
     await waitFor(() => {
       expect(screen.getByTestId("skybox-creator-alert").textContent).toContain(
-        "Asset already exists: assets/Day_px.babasset",
+        "Asset already exists: assets/Day_px.hasset",
       );
     });
     expect(screen.getByTestId("skybox-creator-alert").textContent).not.toContain(
@@ -458,13 +458,13 @@ describe("SkyboxCreatorCubemap", () => {
   });
 
   it("explains a source Texture that could not be read instead of waiting on the decode", async () => {
-    readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/Sky.babasset#pixels could not be read."));
+    readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/Sky.hasset#pixels could not be read."));
     render(
       <SkyboxCreatorCubemap
         payload={{ ...createDefaultSkyboxCreatorPayload(), sourceTextureGuid: "tex-1" } as unknown as Record<string, unknown>}
       />,
     );
-    expect(await screen.findByText("Asset chunk assets/Sky.babasset#pixels could not be read.")).toBeTruthy();
+    expect(await screen.findByText("Asset chunk assets/Sky.hasset#pixels could not be read.")).toBeTruthy();
     expect(screen.queryByText("Decoding the Texture…")).toBeNull();
     expect(decodeSourceToRgba).not.toHaveBeenCalled();
   });

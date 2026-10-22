@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assetRef, arrayOf, compileGraph, pin, validateGraphs,
   type GraphNode, type LogicGraph, type NodeRegistry, type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 const STRING_TYPE: PinType = { kind: "string" };

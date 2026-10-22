@@ -1,4 +1,4 @@
-import type { Guid } from "@babylonslate/core";
+import type { Guid } from "@haptic/core";
 
 export type PinDefault = unknown;
 

@@ -6,7 +6,7 @@ import {
   TRANSFORM,
   ROTATOR,
   actorRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 export const transformNodes: NodeDefinition[] = [

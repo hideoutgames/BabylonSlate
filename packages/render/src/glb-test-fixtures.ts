@@ -1,5 +1,5 @@
 /** Synthetic GLB fixtures for NullEngine tests and test-mode proofs; kept out of the render barrel. */
-import { encodeGlbJsonBin } from "@babylonslate/assets";
+import { encodeGlbJsonBin } from "@haptic/assets";
 
 const FLOAT = 5126;
 const UNSIGNED_SHORT = 5123;

@@ -3,7 +3,7 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@babylonslate/ui/components/alert";
+} from "@haptic/ui/components/alert";
 import {
   PickerCreateGlyph,
   SearchDialog,

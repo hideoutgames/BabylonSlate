@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent, ClassRegistry } from "@babylonslate/object-model";
+import { Actor, ActorComponent, ClassRegistry } from "@haptic/object-model";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import {
   ScriptHost,
   type CompiledScript,

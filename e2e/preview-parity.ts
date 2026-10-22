@@ -6,11 +6,11 @@ export async function setPreviewScene(page: Page, scene: SerializedScene, saveTi
   expect(
     await page.evaluate(async (nextScene) => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
         };
       };
-      return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
+      return host.__hapticTest?.setActiveSceneContent(nextScene) ?? false;
     }, scene),
   ).toBe(true);
   // Committed rendering changes coalesce before the scene-loading dialog opens.
@@ -27,11 +27,11 @@ export async function expectSpheresRollDownhill(root: Locator) {
         root.evaluate(() => {
           type Visual = { visible: boolean; position: number[] };
           const host = globalThis as unknown as {
-            __babylonslatePlayTest?: { visuals: () => Visual[] };
-            __babylonslatePlayerTest?: { visuals: () => Visual[] };
+            __hapticPlayTest?: { visuals: () => Visual[] };
+            __hapticPlayerTest?: { visuals: () => Visual[] };
           };
           const api =
-            host.__babylonslatePlayTest ?? host.__babylonslatePlayerTest;
+            host.__hapticPlayTest ?? host.__hapticPlayerTest;
           const visuals = api?.visuals() ?? [];
           // Each sphere has its own lane; sky, light, and ramp stay at z=0.
           return [-10.5, -7.5, -4.5, -1.5, 1.5, 4.5, 7.5, 10.5].filter((z) =>

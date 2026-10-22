@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 import { INSPECT_REQUEST_TIMEOUT_MS, useInspectWorldPoll } from "./use-inspect-world-poll";
 
 function Probe({

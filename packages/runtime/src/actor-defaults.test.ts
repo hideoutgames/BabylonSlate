@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActorDefaults } from "@babylonslate/core";
+import type { ActorDefaults } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

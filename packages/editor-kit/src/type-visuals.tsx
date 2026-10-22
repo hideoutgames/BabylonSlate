@@ -61,9 +61,9 @@ import {
   EraserIcon,
   WorkflowIcon,
 } from "lucide-react";
-import { ENGINE_COMPONENT_CLASS_IDS } from "@babylonslate/core";
-import { cn } from "@babylonslate/ui/lib/utils";
-import { assetColorVar } from "@babylonslate/ui/lib/data-types";
+import { ENGINE_COMPONENT_CLASS_IDS } from "@haptic/core";
+import { cn } from "@haptic/ui/lib/utils";
+import { assetColorVar } from "@haptic/ui/lib/data-types";
 
 export type AssetVisualFamily =
   | "scene"

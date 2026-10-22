@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import type { ScriptHostServices } from "./script-host";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
@@ -14,11 +14,52 @@ interface OutputHostDeps {
   emit(command: CommandMessage): void;
 }
 
-/** Script output: logs (errors also become diagnostics), prints, debug draws and the cursor. */
+/** Script output: logs (errors also become diagnostics), failed asserts, prints, debug draws and the cursor. */
 export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostServices,
-  "log" | "print" | "drawDebug" | "setCursorVisible"> {
+  "log" | "assertFailed" | "print" | "drawDebug" | "setCursorVisible"> {
+  /** An error line in the Output Log plus a diagnostic attributed to the script node on the stack. */
+  const reportError = (code: string, category: string, message: string) => {
+    deps.emit({
+      type: "log",
+      severity: "error",
+      category,
+      message,
+      frameId: deps.frameId(),
+    });
+    const stack = new Error().stack ?? "";
+    const anchor = mapStackToAnchor(stack, deps.anchors);
+    const diag: RuntimeDiagnostic = {
+      code,
+      message,
+      severity: "error",
+      assetGuid: anchor?.assetGuid,
+      graphId: anchor?.graphId,
+      nodeId: anchor?.nodeId,
+      bodyLine: anchor?.bodyLine,
+      stack,
+      frameId: deps.frameId(),
+      tickIndex: deps.tickIndex(),
+    };
+    deps.recordDiagnostic(diag);
+    deps.emit({
+      type: "diagnostic",
+      code: diag.code,
+      message: diag.message,
+      assetGuid: diag.assetGuid,
+      graphId: diag.graphId,
+      nodeId: diag.nodeId,
+      bodyLine: diag.bodyLine,
+      stack: diag.stack,
+      frameId: deps.frameId(),
+      severity: "error",
+    });
+  };
   return {
     log: (severity, category, message) => {
+      if (severity === "error") {
+        reportError("runtime.log", category, message);
+        return;
+      }
       deps.emit({
         type: "log",
         severity,
@@ -26,36 +67,8 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
         message,
         frameId: deps.frameId(),
       });
-      if (severity === "error") {
-        const stack = new Error().stack ?? "";
-        const anchor = mapStackToAnchor(stack, deps.anchors);
-        const diag: RuntimeDiagnostic = {
-          code: "runtime.log",
-          message,
-          severity: "error",
-          assetGuid: anchor?.assetGuid,
-          graphId: anchor?.graphId,
-          nodeId: anchor?.nodeId,
-          bodyLine: anchor?.bodyLine,
-          stack,
-          frameId: deps.frameId(),
-          tickIndex: deps.tickIndex(),
-        };
-        deps.recordDiagnostic(diag);
-        deps.emit({
-          type: "diagnostic",
-          code: diag.code,
-          message: diag.message,
-          assetGuid: diag.assetGuid,
-          graphId: diag.graphId,
-          nodeId: diag.nodeId,
-          bodyLine: diag.bodyLine,
-          stack: diag.stack,
-          frameId: deps.frameId(),
-          severity: "error",
-        });
-      }
     },
+    assertFailed: (message) => reportError("runtime.assert", "Assert", message),
     print: (message, key, duration, color) => {
       deps.recordPrint({ message, key });
       deps.emit({

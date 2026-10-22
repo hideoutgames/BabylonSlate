@@ -1,4 +1,4 @@
-import { sortingLayerSortKey } from "@babylonslate/core";
+import { sortingLayerSortKey } from "@haptic/core";
 /** Tilemap asset payload: ordered layers of chunked tile ids (engineplan §13.3). */
 
 import {

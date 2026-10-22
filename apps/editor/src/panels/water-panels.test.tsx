@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
-import { createDefaultWaterDefinition, normalizeWaterDefinition } from "@babylonslate/core";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
+import { createDefaultWaterDefinition, normalizeWaterDefinition } from "@haptic/core";
 import { WaterDetailsPanel } from "./water-panels";
 
 if (typeof window !== "undefined") {
@@ -30,10 +30,10 @@ const harness = vi.hoisted(() => ({
 
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "water:assets/Lake.water.babasset" }),
+  useDocumentWorkspace: () => ({ documentId: "water:assets/Lake.water.hasset" }),
 }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
-  openDocuments: [{ id: "water:assets/Lake.water.babasset", content: harness.content }],
+  openDocuments: [{ id: "water:assets/Lake.water.hasset", content: harness.content }],
   assetRegistry: { list: () => [] },
   applyAssetDocumentChange: async (
     _id: string,

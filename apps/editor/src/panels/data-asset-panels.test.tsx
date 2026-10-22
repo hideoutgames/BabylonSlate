@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { IndexedAsset } from "@babylonslate/assets";
-import { documentId, isDataTreeAsset, type DataDefinitionField, type DocumentRef } from "@babylonslate/core";
-import { createDataEntryForDefinition } from "@babylonslate/scripting";
-import { TagProvider } from "@babylonslate/editor-kit";
+import type { IndexedAsset } from "@haptic/assets";
+import { documentId, isDataTreeAsset, type DataDefinitionField, type DocumentRef } from "@haptic/core";
+import { createDataEntryForDefinition } from "@haptic/scripting";
+import { TagProvider } from "@haptic/editor-kit";
 import type { OpenDocument } from "../services/document-service";
 import { DataAssetEditingProvider, useDataAssetEditing } from "../context/data-asset-editing-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -25,9 +25,9 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 })));
 const props = {} as IDockviewPanelProps;
 const fields: DataDefinitionField[] = [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 10 }];
-const treePath = "assets/Weapons.datatree.babasset";
+const treePath = "assets/Weapons.datatree.hasset";
 const treeId = `data-tree:${treePath}`;
-function indexed(guid: string, name: string, type: string, payload: Record<string, unknown>, path = `assets/${name}.babasset`): IndexedAsset {
+function indexed(guid: string, name: string, type: string, payload: Record<string, unknown>, path = `assets/${name}.hasset`): IndexedAsset {
   return { rootId: "project", path, header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid, name, type, version: 1, engineVersion: "0.0.0", mode: "thin", dependencies: [], payload, chunks: [] } };
 }
 function opened(kind: DocumentRef["kind"], path: string, content: Record<string, unknown>): OpenDocument {

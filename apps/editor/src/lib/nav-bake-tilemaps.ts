@@ -3,8 +3,8 @@ import {
   tilemapTilesetGuids,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
-import type { XyChain } from "@babylonslate/navigation";
+} from "@haptic/assets";
+import type { XyChain } from "@haptic/navigation";
 
 /** 2D bake walls from loaded tilemap collision layers. */
 export function navBakeTilemapChains(

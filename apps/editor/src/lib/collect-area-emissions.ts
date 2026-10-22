@@ -1,5 +1,5 @@
-import { areaEmissionTextureGuids, materialParameterTextureGuidsFromGraph, type SerializedGraph, type SerializedScene } from "@babylonslate/core";
-import { currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionPixels, type IndexedAsset } from "@babylonslate/assets";
+import { areaEmissionTextureGuids, materialParameterTextureGuidsFromGraph, type SerializedGraph, type SerializedScene } from "@haptic/core";
+import { currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionPixels, type IndexedAsset } from "@haptic/assets";
 
 /** Observe only referenced prepared content, not unrelated registry activity. */
 export function savedAreaEmissionKey(guids: readonly string[], lookup: (guid: string) => IndexedAsset | undefined): string {

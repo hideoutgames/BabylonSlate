@@ -2,20 +2,20 @@ import {
   discoverEnginePlugins,
   encodePluginSettingsDocument,
   exportPluginZip,
-  inspectBabplugin,
+  inspectHplugin,
   uniquePluginFolderName,
   normalizePluginSettings,
   type PluginSettingsPayload,
   type PluginDescriptor,
-} from "@babylonslate/assets";
-import { newGuid, type ProjectStorage } from "@babylonslate/core";
+} from "@haptic/assets";
+import { newGuid, type ProjectStorage } from "@haptic/core";
 import {
   createMountedProjectStorage,
   type ProjectStorageMount,
   createTemplateStorage,
   ENGINE_PLUGIN_LIBRARY_FOLDER,
   MemoryStorageAdapter,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import { ensureEnginePluginStorage } from "./engine-plugins";
 
 export const ENGINE_PLUGIN_LIBRARY_ROOT = ENGINE_PLUGIN_LIBRARY_FOLDER;
@@ -104,7 +104,7 @@ export class EnginePluginLibrary {
     return this.libraryStorage.writeText(CATALOG_FILE, JSON.stringify({ version: CATALOG_VERSION, plugins: records }));
   }
 
-  private async storeGeneration(incoming: Awaited<ReturnType<typeof inspectBabplugin>>): Promise<StoredPlugin> {
+  private async storeGeneration(incoming: Awaited<ReturnType<typeof inspectHplugin>>): Promise<StoredPlugin> {
     const generationPath = `content/${newGuid()}`;
     for (const file of incoming.files) {
       const path = `${generationPath}/${file.path}`;
@@ -168,7 +168,7 @@ export class EnginePluginLibrary {
       if (!entry.bundled && !record) throw new Error(`Missing storage generation for Engine Plugin ${entry.pluginGuid}`);
       mounts.push({ path: entry.folderPath, storage: entry.bundled ? this.bundledStorage : this.libraryStorage,
         sourcePath: entry.bundled ? entry.folderPath : record!.generationPath });
-      const settingsPath = `settings-${mounts.length}.babasset`;
+      const settingsPath = `settings-${mounts.length}.hasset`;
       await settings.writeBinary(settingsPath, await encodePluginSettingsDocument(entry.settings));
       mounts.push({ path: entry.settingsPath, storage: settings, sourcePath: settingsPath });
     }
@@ -223,7 +223,7 @@ export class EnginePluginLibrary {
     options: { replaceGuid?: string } = {},
   ): Promise<EnginePluginImportResult> {
     return this.serialize(async () => {
-      const incoming = await inspectBabplugin(bytes);
+      const incoming = await inspectHplugin(bytes);
       const { entries, records, defaults } = await this.readState();
       const conflicts = entries.filter((entry) =>
         entry.pluginGuid === incoming.settings.pluginGuid ||

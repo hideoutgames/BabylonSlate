@@ -21,7 +21,7 @@ import {
   type WaterRiverSample,
   type WaterStyle,
   type WaterStylizedLook,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
   actor,

@@ -1,19 +1,19 @@
 # Container Formats
 
-Locked on-disk formats: `.babasset`, `.babtrace`, the project / `.babplugin` tree, derived data and schema-version policy.
+Locked on-disk formats: `.hasset`, `.htrace`, the project / `.hplugin` tree, derived data and schema-version policy.
 
 ## Ownership
 
-- Codec: [`packages/assets/src/babasset.ts`](../../../packages/assets/src/babasset.ts), documents [`asset-document.ts`](../../../packages/assets/src/asset-document.ts), project tree [`babproject.ts`](../../../packages/assets/src/babproject.ts), traces [`trace.ts`](../../../packages/assets/src/trace.ts), migrations [`migration.ts`](../../../packages/assets/src/migration.ts), derived paths [`derived-data.ts`](../../../packages/assets/src/derived-data.ts).
+- Codec: [`packages/assets/src/hasset.ts`](../../../packages/assets/src/hasset.ts), documents [`asset-document.ts`](../../../packages/assets/src/asset-document.ts), project tree [`hproject.ts`](../../../packages/assets/src/hproject.ts), traces [`trace.ts`](../../../packages/assets/src/trace.ts), migrations [`migration.ts`](../../../packages/assets/src/migration.ts), derived paths [`derived-data.ts`](../../../packages/assets/src/derived-data.ts).
 - Editor reads go through `ProjectService` ([`apps/editor/src/services/project-service.ts`](../../../apps/editor/src/services/project-service.ts)).
 
-## .babasset
+## .hasset
 
 ```
-"BABA" (4) | format version u32 LE (= 1) | headerLen u32 LE | header JSON (UTF-8, sorted keys) | chunk bytes…
+"HAPT" (4) | format version u32 LE (= 1) | headerLen u32 LE | header JSON (UTF-8, sorted keys) | chunk bytes…
 ```
 
-- `BABASSET_MAGIC` "BABA", `BABASSET_FORMAT_VERSION` = 1, `BABASSET_PREFIX_BYTES` = 12, `MAX_BABASSET_HEADER_BYTES` = 16 MiB. Sorted keys make headers byte-stable for hashing and goldens.
+- `HASSET_MAGIC` "HAPT", `HASSET_FORMAT_VERSION` = 1, `HASSET_PREFIX_BYTES` = 12, `MAX_HASSET_HEADER_BYTES` = 16 MiB. Sorted keys make headers byte-stable for hashing and goldens.
 
 | Header field | Meaning |
 | --- | --- |
@@ -40,10 +40,10 @@ Locked on-disk formats: `.babasset`, `.babtrace`, the project / `.babplugin` tre
 | `byteLength` | Chunk size for both locator kinds |
 | `locator` | `{ "inline": { offset, length } }` (after the header) or `{ "blob": "<sha256>" }` |
 
-- Blob locators resolve to `{pathPrefix}/.blobs/<sha256>` inside the asset's content root (`assets/.blobs` for the project, `plugins/<folder>/assets/.blobs` per plugin, so a `.babplugin` is self-contained). An existing blob is never rewritten.
+- Blob locators resolve to `{pathPrefix}/.blobs/<sha256>` inside the asset's content root (`assets/.blobs` for the project, `plugins/<folder>/assets/.blobs` per plugin, so a `.hplugin` is self-contained). An existing blob is never rewritten.
 - Thin saves externalise chunks ≥ `DEFAULT_BLOB_THRESHOLD` (64 KiB); bundled mode always inlines and embeds dependencies as nested `asset` chunks. Anything leaving the project is self-contained.
-- **Current layout only.** `readBabassetHeader` (so every decode, catalog scan and project open) refuses headers missing chunk `byteLength`, `dependencies`, `requiredDependencies`, `dependencyMetadataVersion: 1` or, for a Class, `requiredVariableNames`, with `AssetFormatVersionError`. `encodeBabasset` applies the same check. The engine is unreleased, so old files are refused, not upgraded.
-- `readBabassetHeader` never allocates chunk payloads; the registry indexes headers only.
+- **Current layout only.** `readHassetHeader` (so every decode, catalog scan and project open) refuses headers missing chunk `byteLength`, `dependencies`, `requiredDependencies`, `dependencyMetadataVersion: 1` or, for a Class, `requiredVariableNames`, with `AssetFormatVersionError`. `encodeHasset` applies the same check. These are the released layout; a later layout change raises `HASSET_FORMAT_VERSION` or `ASSET_DEPENDENCY_METADATA_VERSION` and keeps reading the released layout (the `class-v1` and `audio-v1` goldens pin it byte for byte).
+- `readHassetHeader` never allocates chunk payloads; the registry indexes headers only.
 
 ## Documents
 
@@ -51,13 +51,13 @@ Locked on-disk formats: `.babasset`, `.babtrace`, the project / `.babplugin` tre
 - Import types (Font, Texture, Model, …) store settings on `header.payload` with binary chunks and no `document` chunk; `decodeAssetDocument` falls back to the header payload. Saves for those types write `headerPayload` so binary chunks survive, and document saves carry extra chunks.
 - A re-save keeps the guid read from the existing header.
 - Readers that pair a document with chunks (export, Texture variants) use `ProjectService.loadDocumentWithChunks`: one file revision, retried if a save lands in between.
-- Scene payloads are `SCENE_SCHEMA_VERSION` = 4; additive fields are filled by `normalizeScene`. Documents are `.babasset` only; `.json` scenes/classes are never read or discovered.
+- Scene payloads are `SCENE_SCHEMA_VERSION` = 4; additive fields are filled by `normalizeScene`. Documents are `.hasset` only; `.json` scenes/classes are never read or discovered.
 
-## .babtrace
+## .htrace
 
-Recorded Play sessions reuse the container with `type: "Trace"` (`TracePayload`: seed, dt, frames). Written only under `derived/{projectGuid}/traces/`, never `assets/`. Read-only (`ProjectService.saveDocument` throws). `@babylonslate/debugger` does not depend on `@babylonslate/assets`.
+Recorded Play sessions reuse the container with `type: "Trace"` (`TracePayload`: seed, dt, frames). Written only under `derived/{projectGuid}/traces/`, never `assets/`. Read-only (`ProjectService.saveDocument` throws). `@haptic/debugger` does not depend on `@haptic/assets`.
 
-## Project folder and .babplugin
+## Project folder and .hplugin
 
 One codec, manifest kind `project` | `plugin`:
 
@@ -65,17 +65,17 @@ One codec, manifest kind `project` | `plugin`:
 MyGame/                      (directory) or MyGame.zip
   project.json               # kind=project
   layout.json                # editor dock layout (projects only)
-  assets/                    # .babasset tree = Content Browser tree
+  assets/                    # .hasset tree = Content Browser tree
     .blobs/
   plugins/<folder>/          # project plugins
-    <name>.plugin.babasset   # PluginSettings (identity = asset guid)
+    <name>.plugin.hasset   # PluginSettings (identity = asset guid)
     assets/  (+ .blobs/)
 ```
 
-- `.babplugin` zip (kind `plugin`): `plugin.json` + PluginSettings + `assets/`, no `layout.json`. `plugin.json` is the zip manifest only; in-project discovery scans for `type: "PluginSettings"` ([plugins](plugins.md)).
+- `.hplugin` zip (kind `plugin`): `plugin.json` + PluginSettings + `assets/`, no `layout.json`. `plugin.json` is the zip manifest only; in-project discovery scans for `type: "PluginSettings"` ([plugins](plugins.md)).
 - Directory backend writes incrementally (OPFS, Documents, external folders, desktop); the folder name is the display name. Zip backend (`fflate`) is for Export Project and interchange.
 - `project.json` without a project `guid` does not open (the guid namespaces saves and derived data).
-- Export Game output (`assets/data-<n>.bin` + `game.json`) is export-only; the editor project stays one `.babasset` per asset ([exporter](exporter.md)).
+- Export Game output (`assets/data-<n>.bin` + `game.json`) is export-only; the editor project stays one `.hasset` per asset ([exporter](exporter.md)).
 
 ## Derived data
 

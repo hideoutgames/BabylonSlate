@@ -2,4 +2,4 @@ export {
   formatEventMemberName,
   formatEventTitle,
   humanizePropertyLabel,
-} from "@babylonslate/core";
+} from "@haptic/core";

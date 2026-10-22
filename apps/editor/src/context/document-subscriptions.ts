@@ -1,4 +1,4 @@
-import type { DocumentKind, DocumentRef } from "@babylonslate/core";
+import type { DocumentKind, DocumentRef } from "@haptic/core";
 import {
   documentKindsRevision,
   type DocumentService,

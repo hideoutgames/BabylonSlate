@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import { buildAssetReferenceGraph } from "./asset-reference-graph";
 
 function asset(
@@ -9,7 +9,7 @@ function asset(
 ): IndexedAsset {
   return {
     rootId: "project",
-    path: `assets/${guid}.babasset`,
+    path: `assets/${guid}.hasset`,
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid,
@@ -120,7 +120,7 @@ describe("buildAssetReferenceGraph", () => {
   it("includes unsaved typed references alongside saved references without mutating documents", () => {
     const docs = [
       {
-        ref: { path: "assets/model.babasset" },
+        ref: { path: "assets/model.hasset" },
         content: {
           materials: [],
           materialSlots: [{ name: "Surface", materialGuid: "live" }],

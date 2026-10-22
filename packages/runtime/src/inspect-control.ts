@@ -1,5 +1,5 @@
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 
 export type InspectControlRuntime = {
   inspectWorld(): DebugInspectSnapshot;

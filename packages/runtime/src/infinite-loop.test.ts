@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
-import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
-import { animGraphScriptClassId, createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@babylonslate/debugger";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { createActor, createDefaultSceneSettings } from "@haptic/core";
+import { animGraphScriptClassId, createDefaultAnimGraph } from "@haptic/anim-graph";
+import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@haptic/debugger";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

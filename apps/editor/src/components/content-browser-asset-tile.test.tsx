@@ -6,12 +6,12 @@ import {
   render,
   screen,
 } from "@testing-library/react";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   resolveTypeVisual,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 
 function dispatchPointerEvent(
@@ -44,7 +44,7 @@ function dispatchPointerEvent(
 function asset(): IndexedAsset {
   return {
     rootId: "project",
-    path: "assets/hero.babasset",
+    path: "assets/hero.hasset",
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "hero-1",
@@ -85,7 +85,7 @@ function renderTile(
     onOpen,
     onSelect,
     onLongPressMenu,
-    tile: screen.getByTestId("content-item-assets/hero.babasset"),
+    tile: screen.getByTestId("content-item-assets/hero.hasset"),
   };
 }
 

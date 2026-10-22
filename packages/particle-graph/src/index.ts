@@ -1,7 +1,7 @@
 /**
  * Particle Graph IR: the saved document, node catalog, type rules, validation,
  * lowering to a Babylon-free build plan and the canvas adapter. React-free and
- * Babylon-free; `@babylonslate/render` realizes the plan on Node Particle blocks.
+ * Babylon-free; `@haptic/render` realizes the plan on Node Particle blocks.
  */
 export {
   PARTICLE_CATALOG,

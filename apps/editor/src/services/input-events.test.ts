@@ -1,6 +1,6 @@
 import { graphCompileSignature } from "./script-compiler";
 import { describe, expect, it } from "vitest";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import {
   scriptPaletteNodes,
   hydrateSerializedGraphForEditor,

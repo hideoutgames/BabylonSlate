@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { embedGlbExternalImages } from "@babylonslate/assets";
+import { embedGlbExternalImages } from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
   createMeshComponent,
   identitySerializedTransform,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createEditorCamera } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { encodeTranslatedTetrahedronGlb } from "./glb-test-fixtures";

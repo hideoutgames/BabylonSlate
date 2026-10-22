@@ -1,5 +1,5 @@
-import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@babylonslate/debugger";
-import type { GameManifest } from "@babylonslate/exporter";
+import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@haptic/debugger";
+import type { GameManifest } from "@haptic/exporter";
 
 export function loopGuardLoadFields(manifest: GameManifest): {
   includeDebugCommands: boolean;

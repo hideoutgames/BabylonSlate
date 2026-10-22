@@ -1,4 +1,4 @@
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { DocumentProvider } from "./context/document-context";
 import { AppSettingsProvider } from "./context/app-settings-context";
 import { EditorThemeProvider } from "./context/theme-context";

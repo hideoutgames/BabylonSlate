@@ -1,11 +1,11 @@
-import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   parseSpriteAnimationPayload,
   retargetAnimationLoadsFromAnimations,
   spriteAnimationDurationMs,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -102,7 +102,7 @@ export function modelClipAnimationGuidsFromAssets(
 /** Retargeted Animation loads keyed by the actor (target) Model guid. */
 export function retargetAnimationLoadsFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
-): Map<string, import("@babylonslate/assets").RetargetAnimationLoad[]> {
+): Map<string, import("@haptic/assets").RetargetAnimationLoad[]> {
   return retargetAnimationLoadsFromAnimations(
     assets
       .filter((asset) => asset.header.type === "Animation")

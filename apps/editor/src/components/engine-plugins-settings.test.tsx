@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { createDefaultPluginSettings } from "@babylonslate/assets";
+import { createDefaultPluginSettings } from "@haptic/assets";
 import { EnginePluginsSettings } from "./engine-plugins-settings";
 import type { EnginePluginEntry } from "../lib/engine-plugin-library";
 
@@ -37,7 +37,7 @@ function entry(guid: string, bundled: boolean): EnginePluginEntry {
     folderName: guid,
     folderPath: `engine-plugins/${guid}`,
     contentPath: `engine-plugins/${guid}/assets`,
-    settingsPath: `engine-plugins/${guid}/plugin.plugin.babasset`,
+    settingsPath: `engine-plugins/${guid}/plugin.plugin.hasset`,
     settings: createDefaultPluginSettings({
       pluginGuid: guid,
       displayName: bundled ? "Starter Content" : "User Plugin",

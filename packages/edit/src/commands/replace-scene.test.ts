@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
 import { EditSession } from "../session";
 import { commandToJournalPayload, serializeJournalLine } from "../journal";
 import { replayJournalLines } from "../journal-replay";

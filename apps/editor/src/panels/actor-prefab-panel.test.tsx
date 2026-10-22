@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createMeshComponent } from "@babylonslate/core";
+import { createMeshComponent } from "@haptic/core";
 import {
   ActorPrefabPanel,
   flattenPrefabComponents,
@@ -58,7 +58,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 })));
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "graph:assets/Hero.class.babasset" }),
+  useDocumentWorkspace: () => ({ documentId: "graph:assets/Hero.class.hasset" }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
@@ -173,7 +173,7 @@ describe("ActorPrefabPanel", () => {
 
   it("renames a component from a label double-tap without its asset detail", async () => {
     harness.components = [{ id: "mesh-1", classId: "MeshComponent", parentId: null, properties: { assetGuid: "model-1" } }];
-    harness.assets = [{ path: "assets/mannequin.model.babasset", header: { guid: "model-1", name: "mannequin", type: "Model" } } as unknown as ProjectAddComponentAsset];
+    harness.assets = [{ path: "assets/mannequin.model.hasset", header: { guid: "model-1", name: "mannequin", type: "Model" } } as unknown as ProjectAddComponentAsset];
     harness.selectedId = "mesh-1";
     harness.selectedIds = ["mesh-1"];
     render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);

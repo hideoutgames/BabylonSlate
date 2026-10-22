@@ -34,13 +34,13 @@ import {
   pinPickerColorVar,
   resolveTypeVisual,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
-import { GraphEditor, type GraphDocument } from "@babylonslate/graph-ui";
-import { Button } from "@babylonslate/ui/components/button";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { GraphEditor, type GraphDocument } from "@haptic/graph-ui";
+import { Button } from "@haptic/ui/components/button";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { Field, FieldGroup, FieldLabel } from "@haptic/ui/components/field";
+import { Toggle } from "@haptic/ui/components/toggle";
+import { cn } from "@haptic/ui/lib/utils";
 import { themeCssVariables, type ThemeColors } from "../lib/editor-themes";
 import { IconActionButton } from "./icon-action-button";
 import { ProjectIdentityMark } from "./project-identity-mark";
@@ -128,7 +128,7 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
         <PreviewChrome />
         <div className="dockview-frame min-h-0 flex-1">
           <DockviewReact
-            className="dockview-theme-babylonslate h-full w-full"
+            className="dockview-theme-haptic h-full w-full"
             theme={PREVIEW_DOCK_THEME}
             disableDnd
             disableFloatingGroups

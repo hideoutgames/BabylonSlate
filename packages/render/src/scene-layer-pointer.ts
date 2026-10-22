@@ -1,4 +1,4 @@
-import type { OverlayPointerHit } from "@babylonslate/core";
+import type { OverlayPointerHit } from "@haptic/core";
 
 export type OverlayPointerPhase = "move" | "down" | "up" | "cancel";
 

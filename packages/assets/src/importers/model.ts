@@ -1,4 +1,4 @@
-import { createDefaultMaterialDocument, migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, migrateLegacyShaderPayload } from "@haptic/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { sniffSourceImageSize } from "../image-size";

@@ -4,7 +4,7 @@ import type { runLatticeDeformerCost } from "../apps/editor/src/testing/lattice-
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { renderingEvidence } from "./rendering-evidence";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2"] as const) {
@@ -36,7 +36,7 @@ for (const backend of ["webgl2"] as const) {
 }
 
 test("measure stock and post-WPO lattice vertex costs", async ({ page }, testInfo) => {
-  test.skip(process.env.BL_PERF_LATTICE !== "1", "Explicit sustained lattice measurement only");
+  test.skip(process.env.HAPTIC_PERF_LATTICE !== "1", "Explicit sustained lattice measurement only");
   test.setTimeout(3_600_000);
   await page.goto("/?test=1&latticeDeformerCost=1");
   await page.waitForFunction(() => "__latticeDeformerCost" in window);

@@ -12,7 +12,7 @@ import {
   type Scene,
   type TransformNode,
 } from "@babylonjs/core";
-import type { FogVolumeBinding, FogVolumeProperties } from "@babylonslate/core";
+import type { FogVolumeBinding, FogVolumeProperties } from "@haptic/core";
 import { setSceneFogVolumesPresent } from "./render-settings";
 
 /** One shared ray march admits at most eight nearby visible local media. */

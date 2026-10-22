@@ -10,12 +10,12 @@ import {
   assetRowIdentity,
   resolveTypeVisual,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Label } from "@babylonslate/ui/components/label";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Toggle } from "@haptic/ui/components/toggle";
+import { Separator } from "@haptic/ui/components/separator";
+import { Label } from "@haptic/ui/components/label";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_MAX_CLIPS,
@@ -27,10 +27,10 @@ import {
   normalizeAudioPayload,
   type AudioPayload,
   type AudioWaveformPeak,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { AudioLinesIcon, PlayIcon, PlusIcon, RepeatIcon, SquareIcon, Trash2Icon } from "lucide-react";
-import { BabylonAudioPlaybackBackend } from "@babylonslate/render";
-import { pickImportFiles } from "@babylonslate/vfs";
+import { BabylonAudioPlaybackBackend } from "@haptic/render";
+import { pickImportFiles } from "@haptic/vfs";
 import { IconActionButton } from "./icon-action-button";
 import { AudioPreviewWaveform } from "./audio-preview-waveform";
 import {

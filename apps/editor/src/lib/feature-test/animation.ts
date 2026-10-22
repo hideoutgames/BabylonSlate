@@ -11,9 +11,9 @@ import {
   type AnimGraphVariable,
   type AnimState,
   type AnimTransition,
-} from "@babylonslate/anim-graph";
-import { normalizeAnimationPayload } from "@babylonslate/assets";
-import type { SerializedActor, SerializedComponent, SerializedGraph } from "@babylonslate/core";
+} from "@haptic/anim-graph";
+import { normalizeAnimationPayload } from "@haptic/assets";
+import type { SerializedActor, SerializedComponent, SerializedGraph } from "@haptic/core";
 import { animClipCatalogFromAssets } from "../anim-clip-catalog";
 import {
   actor,

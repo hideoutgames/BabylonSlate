@@ -1,7 +1,7 @@
-import { parseRagdollProperties, type RagdollProperties, type Transform } from "@babylonslate/core";
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import { RagdollPhysics, type Vec3 } from "@babylonslate/physics";
+import { parseRagdollProperties, type RagdollProperties, type Transform } from "@haptic/core";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import { RagdollPhysics, type Vec3 } from "@haptic/physics";
 import { composeActorWorldTransforms } from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import { sameDescriptor } from "./physics-preparation";

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import {
   bakeAudioReverb,
   type AudioReverbGeometry,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   useDocumentActions,
   useProjectState,

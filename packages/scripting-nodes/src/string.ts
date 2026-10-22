@@ -8,7 +8,7 @@ import {
   arrayOf,
   BOXED_WILDCARD,
   readPinDefault,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 /**
  * Parse Float input grammar: an optional minus, decimal digits with an

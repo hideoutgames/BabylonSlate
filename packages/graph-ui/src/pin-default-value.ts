@@ -1,4 +1,4 @@
-import { normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
@@ -7,7 +7,7 @@ import {
   pinDefaultAsVec4Tuple,
   vec3TupleToObject,
   vec4TupleToObject,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import type { SerializedPin } from "./graph-types";
 import { literalPinType } from "./pin-default-preview";
 

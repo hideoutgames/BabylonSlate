@@ -11,8 +11,8 @@ import {
   DeleteIcon,
   OptionIcon,
 } from "lucide-react";
-import { Kbd, KbdGroup } from "@babylonslate/ui/components/kbd";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Kbd, KbdGroup } from "@haptic/ui/components/kbd";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   describeChord,
   isApplePlatform,

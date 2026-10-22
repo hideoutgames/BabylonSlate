@@ -22,7 +22,7 @@ export type ConsoleCommandGraph = {
 
 /**
  * Stored literal of the Command pin. Same key as `pinDefaultPropertyKey("command")`
- * in `@babylonslate/scripting`, which depends on this package.
+ * in `@haptic/scripting`, which depends on this package.
  */
 const COMMAND_PIN_DEFAULT_KEY = "default:command";
 

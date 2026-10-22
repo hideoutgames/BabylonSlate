@@ -1,5 +1,5 @@
-import { FOCUS_DIRECTIONS, parseFocusTargetProperties, type SerializedComponent } from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import { FOCUS_DIRECTIONS, parseFocusTargetProperties, type SerializedComponent } from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
 
 export function focusPropertyRows(actorId: string, component: SerializedComponent,
   update: (property: string, value: unknown) => void,

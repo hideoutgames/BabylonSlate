@@ -27,7 +27,7 @@ const tilemapGuid = "00000000-0000-4000-8000-000000000012";
 test.afterEach(async ({ page }, info) => {
   if (info.status === info.expectedStatus) return;
   await info.attach("scene-texture-pixels", { body: JSON.stringify(await page.evaluate(() =>
-    (window as unknown as { __babylonslateViewportTest?: { sceneTexturePixels(): Promise<unknown> } }).__babylonslateViewportTest?.sceneTexturePixels() ?? [])), contentType: "application/json" });
+    (window as unknown as { __hapticViewportTest?: { sceneTexturePixels(): Promise<unknown> } }).__hapticViewportTest?.sceneTexturePixels() ?? [])), contentType: "application/json" });
 });
 
 // Numeric solid-color fixtures, with no pictorial assets or generated artwork.
@@ -84,7 +84,7 @@ async function atlasFiles(page: Page, width: number, height: number) {
     ktx2ChunkId: encodedChunkId,
   };
   files.set(
-    "assets/atlas.babasset",
+    "assets/atlas.hasset",
     await encodeAssetDocument(
       {
         guid: textureGuid,
@@ -97,7 +97,7 @@ async function atlasFiles(page: Page, width: number, height: number) {
     ),
   );
   files.set(
-    "assets/ground.tileset.babasset",
+    "assets/ground.tileset.hasset",
     await encodeAssetDocument(
       {
         guid: tilesetGuid,
@@ -129,7 +129,7 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
     { cx: 0, cy: 0, tiles: Array<number>(32 * 32).fill(1) },
   ];
   files.set(
-    "assets/ground.tilemap.babasset",
+    "assets/ground.tilemap.hasset",
     await encodeAssetDocument(
       {
         guid: tilemapGuid,
@@ -174,14 +174,14 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
   await openMinimalTestProject(page, files);
   await openMainScene(page);
   await testInfo.attach("tilemap-native-diagnostic", { body: JSON.stringify(await page.evaluate(() => {
-    const host = window as unknown as { __babylonslateViewportTest: { sceneVisuals(): unknown; renderingBaseline(): unknown } };
-    return { visuals: host.__babylonslateViewportTest.sceneVisuals(), rendering: host.__babylonslateViewportTest.renderingBaseline() };
+    const host = window as unknown as { __hapticViewportTest: { sceneVisuals(): unknown; renderingBaseline(): unknown } };
+    return { visuals: host.__hapticViewportTest.sceneVisuals(), rendering: host.__hapticViewportTest.renderingBaseline() };
   })), contentType: "application/json" });
   await expectGreenIllumination(page.getByTestId("viewport-canvas"));
   const upload = await page.evaluate(() =>
     (
       window as unknown as {
-        __babylonslateViewportTest: {
+        __hapticViewportTest: {
           renderingBaseline(): {
             estimatedTextureBytes: number;
             glInfo: { renderer: string };
@@ -189,7 +189,7 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
           };
         };
       }
-    ).__babylonslateViewportTest.renderingBaseline(),
+    ).__hapticViewportTest.renderingBaseline(),
   );
   expect(upload.ktx2Uploads.length).toBeGreaterThan(0);
   if (

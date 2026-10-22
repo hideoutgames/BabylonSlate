@@ -14,7 +14,7 @@
  * (√peakK · Wave Speed). Editing those fields therefore reuses the stored spectrum; only Wave Direction, Wave Spread,
  * Peak Sharpness, Wave Seed and the Water quality's FFT Size / FFT Cascades draw a new one (`spectrumKey`).
  */
-import { createSeededRng, waterOceanSpectrumDensity, type Rng, type WaterWaveSet } from "@babylonslate/core";
+import { createSeededRng, waterOceanSpectrumDensity, type Rng, type WaterWaveSet } from "@haptic/core";
 
 const TAU = 2 * Math.PI;
 const GRAVITY = 9.81;

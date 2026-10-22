@@ -4,7 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   type SerializedComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ENGINE_PLACE_ACTORS,
   featuredPlaceActors,
@@ -109,7 +109,7 @@ it("places a Water Removal Volume that cuts a 4 m box by default", () => {
 });
 
 it("places a Water asset as a lake that already references the selected asset", () => {
-  const [water] = projectPlaceActors([{ path: "assets/Lagoon.water.babasset", header: { guid: "lagoon", name: "Lagoon", type: "Water" } }]);
+  const [water] = projectPlaceActors([{ path: "assets/Lagoon.water.hasset", header: { guid: "lagoon", name: "Lagoon", type: "Water" } }]);
   expect(water).toBeDefined();
   const actor = spawnPlacedActor(createDefaultScene(), water!, "lake", ORIGIN);
   expect(actor.components).toEqual([expect.objectContaining({ classId: "WaterLakeComponent", properties: expect.objectContaining({ assetGuid: "lagoon", depth: 5 }) })]);
@@ -473,7 +473,7 @@ describe("spawnPlacedActor", () => {
     { host: "Scene Layer", scene: createDefaultScene("3d"), overlay: true, meshKinds: [] },
   ])("gives a Class with no authored components the starter box only in a $host", ({ scene: target, overlay, meshKinds }) => {
     const assets = [{
-      path: "assets/Empty.class.babasset",
+      path: "assets/Empty.class.hasset",
       header: { guid: "empty-guid", name: "Empty", type: "Class", parentClass: overlay ? "SceneLayerActor" : "Actor" },
     }];
     const [item] = projectPlaceActors(
@@ -488,7 +488,7 @@ describe("spawnPlacedActor", () => {
   });
 
   it("keeps an authored empty component list empty in a 3D scene", () => {
-    const assets = [{ path: "assets/Marker.class.babasset", header: { guid: "marker-guid", name: "Marker", type: "Class" } }];
+    const assets = [{ path: "assets/Marker.class.hasset", header: { guid: "marker-guid", name: "Marker", type: "Class" } }];
     const [item] = projectPlaceActors(
       assets,
       (guid) => prefabComponentsForGuid(guid, { assets, graphForPath: () => ({ components: [] }) }),
@@ -703,7 +703,7 @@ describe("projectPlaceActors", () => {
   it("keeps SceneLayerActor classes on overlay Place Actors and world Classes off overlay", () => {
     const assets = [
       {
-        path: "assets/Hud.class.babasset",
+        path: "assets/Hud.class.hasset",
         header: {
           guid: "hud",
           name: "Hud",
@@ -712,7 +712,7 @@ describe("projectPlaceActors", () => {
         },
       },
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         header: {
           guid: "hero",
           name: "Hero",
@@ -779,7 +779,7 @@ describe("projectPlaceActors", () => {
   it("copies prefab components from a closed class graph payload", () => {
     const assets = [
       {
-        path: "assets/hero.class.babasset",
+        path: "assets/hero.class.hasset",
         header: { guid: "hero-guid", name: "Hero", type: "Class" },
       },
     ];
@@ -787,7 +787,7 @@ describe("projectPlaceActors", () => {
       prefabComponentsForGuid(guid, {
         assets,
         graphForPath: (path) =>
-          path === "assets/hero.class.babasset"
+          path === "assets/hero.class.hasset"
             ? {
                 nodes: [],
                 edges: [],
@@ -817,7 +817,7 @@ describe("projectPlaceActors", () => {
   it("places a subclass with ancestor-merged prefab components", () => {
     const assets = [
       {
-        path: "assets/pawn.class.babasset",
+        path: "assets/pawn.class.hasset",
         header: {
           guid: "pawn-guid",
           name: "Pawn",
@@ -826,7 +826,7 @@ describe("projectPlaceActors", () => {
         },
       },
       {
-        path: "assets/hero.class.babasset",
+        path: "assets/hero.class.hasset",
         header: {
           guid: "hero-guid",
           name: "Hero",
@@ -836,10 +836,10 @@ describe("projectPlaceActors", () => {
       },
     ];
     const graphs: Record<string, { components?: SerializedComponent[] }> = {
-      "assets/pawn.class.babasset": {
+      "assets/pawn.class.hasset": {
         components: [createMeshComponent("prefab-mesh", "box")],
       },
-      "assets/hero.class.babasset": { components: [] },
+      "assets/hero.class.hasset": { components: [] },
     };
     const items = projectPlaceActors(assets, (guid) =>
       prefabComponentsForGuid(guid, {
@@ -861,19 +861,19 @@ describe("projectPlaceActors", () => {
 
   it("resolves every Class's prefab from one read of each graph", () => {
     const classAsset = (name: string, guid: string, parentClass: string) => ({
-      path: `assets/${name}.class.babasset`,
+      path: `assets/${name}.class.hasset`,
       header: { guid, name, type: "Class", parentClass },
     });
     const assets = [
       classAsset("pawn", "pawn-guid", "Actor"),
       classAsset("hero", "hero-guid", "pawn"),
       classAsset("villain", "villain-guid", "pawn"),
-      { path: "assets/hero.sprite.babasset", header: { guid: "sprite-guid", name: "Hero", type: "Sprite" } },
+      { path: "assets/hero.sprite.hasset", header: { guid: "sprite-guid", name: "Hero", type: "Sprite" } },
     ];
     const graphs: Record<string, { components?: SerializedComponent[] }> = {
-      "assets/pawn.class.babasset": { components: [createMeshComponent("prefab-mesh", "box")] },
-      "assets/hero.class.babasset": { components: [] },
-      "assets/villain.class.babasset": { components: [] },
+      "assets/pawn.class.hasset": { components: [createMeshComponent("prefab-mesh", "box")] },
+      "assets/hero.class.hasset": { components: [] },
+      "assets/villain.class.hasset": { components: [] },
     };
     const reads: string[] = [];
     const resolve = prefabComponentsResolver({
@@ -897,7 +897,7 @@ describe("projectPlaceActors", () => {
   it("uses the compile class id for a Class asset named main.class", () => {
     const items = projectPlaceActors([
       {
-        path: "assets/main.class.babasset",
+        path: "assets/main.class.hasset",
         header: { guid: "main-guid", name: "main.class", type: "Class" },
       },
     ]);

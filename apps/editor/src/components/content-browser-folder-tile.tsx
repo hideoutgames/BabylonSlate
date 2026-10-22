@@ -3,14 +3,14 @@ import {
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   Card,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@babylonslate/ui/components/card";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/card";
+import { cn } from "@haptic/ui/lib/utils";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 
 export interface ContentBrowserFolderTileProps {

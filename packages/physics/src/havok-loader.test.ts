@@ -26,11 +26,11 @@ describe("explicit Havok WASM locations", () => {
 
     await expect(
       loadHavokModule(
-        "https://editor.test/BabylonSlate/havok/HavokPhysics.wasm",
+        "https://editor.test/Haptic/havok/HavokPhysics.wasm",
       ),
     ).rejects.toThrow("404");
     const havok = await loadHavokModule(
-      "https://editor.test/BabylonSlate/havok/HavokPhysics.wasm",
+      "https://editor.test/Haptic/havok/HavokPhysics.wasm",
     );
     expect(havok.HP_World_Create).toBeTypeOf("function");
   });
@@ -43,7 +43,7 @@ describe("explicit Havok WASM locations", () => {
     );
     await expect(
       loadHavokModule(
-        "https://editor.test/BabylonSlate/havok/HavokPhysics.wasm",
+        "https://editor.test/Haptic/havok/HavokPhysics.wasm",
       ),
     ).rejects.toThrow("Network unavailable");
   });

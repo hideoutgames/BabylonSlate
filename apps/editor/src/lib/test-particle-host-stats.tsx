@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import { isTestModeEnabled } from "@babylonslate/vfs";
-import { particleStats } from "@babylonslate/render";
+import { isTestModeEnabled } from "@haptic/vfs";
+import { particleStats } from "@haptic/render";
 
 declare global {
   interface Window {
-    __babylonslateParticleStats?: typeof particleStats;
+    __hapticParticleStats?: typeof particleStats;
   }
 }
 
@@ -12,9 +12,9 @@ declare global {
 export function TestParticleHostStats() {
   useEffect(() => {
     if (!isTestModeEnabled()) return;
-    window.__babylonslateParticleStats = particleStats;
+    window.__hapticParticleStats = particleStats;
     return () => {
-      delete window.__babylonslateParticleStats;
+      delete window.__hapticParticleStats;
     };
   }, []);
   return null;

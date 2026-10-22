@@ -14,7 +14,7 @@ import { acquireResources, workloadFor } from "./resource-admission.mjs";
 import { runStage } from "./test-runner.mjs";
 import { readLocalResourceConfig } from "./local-resource-config.mjs";
 const hosted = {
-  BL_EXECUTION_POLICY: "hosted-ci",
+  HAPTIC_EXECUTION_POLICY: "hosted-ci",
   GITHUB_ACTIONS: "true",
   RUNNER_ENVIRONMENT: "github-hosted",
   GITHUB_RUN_ID: "123",
@@ -31,7 +31,7 @@ async function fixture(t, config) {
     path,
     options: {
       directory: join(directory, "admission"),
-      env: { LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: path },
+      env: { LOCALAPPDATA: directory, HAPTIC_LOCAL_RESOURCE_CONFIG: path },
       freeMemory: () => 5 * 1024 ** 3,
       pollMs: 5,
       timeoutMs: 500,
@@ -118,13 +118,13 @@ test("missing settings serialize locally and CI=true cannot ignore machine setti
   await assert.rejects(
     acquireResources(workloadFor("build", {}), {
       ...options,
-      env: { CI: "true", BL_LOCAL_RESOURCE_CONFIG: path },
+      env: { CI: "true", HAPTIC_LOCAL_RESOURCE_CONFIG: path },
     }),
     /configuration/i,
   );
   const lease = await acquireResources(workloadFor("build", {}), {
     ...options,
-    env: { ...hosted, CI: "true", BL_LOCAL_RESOURCE_CONFIG: path },
+    env: { ...hosted, CI: "true", HAPTIC_LOCAL_RESOURCE_CONFIG: path },
     freeMemory: () => 6 * 1024 ** 3,
   });
   await lease.release();
@@ -136,9 +136,9 @@ test("all worktrees discover the same per-user config independent of their direc
     profile: "low-memory",
   });
   const userDirectory = join(options.directory, "user-data");
-  await mkdir(join(userDirectory, "BabylonSlate"), { recursive: true });
+  await mkdir(join(userDirectory, "Haptic"), { recursive: true });
   await writeFile(
-    join(userDirectory, "BabylonSlate", "local-resources.json"),
+    join(userDirectory, "Haptic", "local-resources.json"),
     await readFile(path),
   );
   const lease = await acquireResources(workloadFor("build", {}), {
@@ -155,10 +155,10 @@ test("stage-specific config is validated before launching a child; CI remains in
     signal: AbortSignal.timeout(5000),
     env: {
       CI: "",
-      BL_EXECUTION_POLICY: "local",
-      BL_TEST_LEASE: "",
-      BL_TEST_PROFILE: "shared",
-      BL_LOCAL_RESOURCE_CONFIG: path,
+      HAPTIC_EXECUTION_POLICY: "local",
+      HAPTIC_TEST_LEASE: "",
+      HAPTIC_TEST_PROFILE: "shared",
+      HAPTIC_LOCAL_RESOURCE_CONFIG: path,
     },
   };
   await assert.rejects(

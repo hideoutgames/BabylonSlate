@@ -5,7 +5,7 @@ import {
   QUAT,
   ROTATOR,
   VEC3,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export const quatNodes: NodeDefinition[] = [
   {

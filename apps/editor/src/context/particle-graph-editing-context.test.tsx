@@ -3,14 +3,14 @@ import { act, cleanup, render } from "@testing-library/react";
 import {
   createDefaultParticleGraphDocument,
   type ParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import {
   ParticleGraphEditingProvider,
   useParticleGraphEditing,
   type ParticleGraphEditingValue,
 } from "./particle-graph-editing-context";
 
-const DOC_ID = "particle-graph:assets/Embers.particlegraph.babasset";
+const DOC_ID = "particle-graph:assets/Embers.particlegraph.hasset";
 
 const harness = vi.hoisted(() => ({ content: null as unknown }));
 
@@ -18,14 +18,14 @@ vi.mock("./document-context", async () => (await import("../testing/document-con
   openDocuments: [
     {
       id: DOC_ID,
-      ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.babasset" },
+      ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.hasset" },
       content: harness.content,
     },
   ],
   assetRegistry: {
     list: () => [
       {
-        path: "assets/Sparks.material.babasset",
+        path: "assets/Sparks.material.hasset",
         header: {
           guid: "mat-sparks",
           name: "Sparks",
@@ -34,7 +34,7 @@ vi.mock("./document-context", async () => (await import("../testing/document-con
         },
       },
       {
-        path: "assets/Rock.material.babasset",
+        path: "assets/Rock.material.hasset",
         header: {
           guid: "mat-rock",
           name: "Rock",

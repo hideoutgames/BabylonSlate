@@ -1,9 +1,9 @@
-import { pluginFolderSlug, uniquePluginFolderName } from "@babylonslate/assets";
+import { pluginFolderSlug, uniquePluginFolderName } from "@haptic/assets";
 
 export { pluginFolderSlug, uniquePluginFolderName };
 
 export function pluginDownloadFileName(displayName: string): string {
-  return `${pluginFolderSlug(displayName)}.babplugin`;
+  return `${pluginFolderSlug(displayName)}.hplugin`;
 }
 
 /** New Plugin always reveals plugin roots in the Content Browser. */
@@ -23,14 +23,14 @@ export function pluginRootId(pluginGuid: string): string {
   return `plugin:${pluginGuid}`;
 }
 
-export function isBabpluginFile(name: string): boolean {
-  return name.toLowerCase().endsWith(".babplugin");
+export function isHpluginFile(name: string): boolean {
+  return name.toLowerCase().endsWith(".hplugin");
 }
 
-export function filterBabpluginFiles<T extends { name: string }>(
+export function filterHpluginFiles<T extends { name: string }>(
   files: readonly T[],
 ): T[] {
-  return files.filter((file) => !isBabpluginFile(file.name));
+  return files.filter((file) => !isHpluginFile(file.name));
 }
 
 export interface ContentBrowserRoot {

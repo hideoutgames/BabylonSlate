@@ -1,8 +1,8 @@
 /* eslint-disable react-refresh/only-export-components -- context module */
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { carriesLoadingPolicy, normalizeDataDefinitionAsset, type AssetLoadingPolicy, type DataDefinitionField } from "@babylonslate/core";
-import { reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@babylonslate/scripting";
-import type { PinListRow } from "@babylonslate/editor-kit";
+import { carriesLoadingPolicy, normalizeDataDefinitionAsset, type AssetLoadingPolicy, type DataDefinitionField } from "@haptic/core";
+import { reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@haptic/scripting";
+import type { PinListRow } from "@haptic/editor-kit";
 import {
   useDocumentActions,
   useRegistryState,

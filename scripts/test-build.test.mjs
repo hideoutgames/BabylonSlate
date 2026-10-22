@@ -133,7 +133,7 @@ try {
         env: {
           ...process.env,
           CI: "false",
-          BL_EXECUTION_POLICY: "local",
+          HAPTIC_EXECUTION_POLICY: "local",
           FIXTURE_CACHE: cache,
           ...env,
           FIXTURE_OPTIONS: JSON.stringify(options),
@@ -555,7 +555,7 @@ test("hosted CI and explicitly disabled shared caches retain worktree-local arti
       "ci",
       {
         CI: "true",
-        BL_EXECUTION_POLICY: "hosted-ci",
+        HAPTIC_EXECUTION_POLICY: "hosted-ci",
         GITHUB_ACTIONS: "true",
         RUNNER_ENVIRONMENT: "github-hosted",
         GITHUB_RUN_ID: "123",
@@ -578,7 +578,7 @@ test("hosted CI and explicitly disabled shared caches retain worktree-local arti
 test("local CI assertions cannot opt into unchecked hosted bundle commands", async (t) => {
   const f = await fixture(t);
   const local = await f.worktree("local-ci");
-  const result = await f.run(local, { CI: "true", BL_TEST_TYPECHECKED: "1" });
+  const result = await f.run(local, { CI: "true", HAPTIC_TEST_TYPECHECKED: "1" });
   assert.equal(result.error, undefined);
   const commands = (
     await readFile(join(local, ".cache/build-commands.jsonl"), "utf8")
@@ -590,13 +590,13 @@ test("local CI assertions cannot opt into unchecked hosted bundle commands", asy
 });
 
 const hostedBundle = {
-  BL_EXECUTION_POLICY: "hosted-ci",
+  HAPTIC_EXECUTION_POLICY: "hosted-ci",
   GITHUB_ACTIONS: "true",
   RUNNER_ENVIRONMENT: "github-hosted",
   GITHUB_RUN_ID: "123",
   GITHUB_REPOSITORY: "fixture/repo",
   RUNNER_OS: "Linux",
-  BL_TEST_BUILD_MODE: "ci-bundle",
+  HAPTIC_TEST_BUILD_MODE: "ci-bundle",
 };
 
 test("independent hosted bundles preserve player/editor order and cannot substitute for standalone typechecking", async (t) => {
@@ -629,7 +629,7 @@ test("independent hosted bundles preserve player/editor order and cannot substit
   ]);
   const local = await f.run(directory, {
     CI: "true",
-    BL_TEST_BUILD_MODE: "ci-bundle",
+    HAPTIC_TEST_BUILD_MODE: "ci-bundle",
   });
   assert.match(local.error ?? "", /require the explicit GitHub-hosted/);
   assert.equal(await compilations(directory), 3);

@@ -1,25 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import type { CommandMessage, ScriptBundleEntry } from "@babylonslate/bridge";
+import { createActor, createDefaultScene } from "@haptic/core";
+import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
   createInProcessRuntime,
   createPlayBootCoordinator,
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,
   type RuntimeDriver,
-} from "@babylonslate/runtime";
-import { createEngine } from "@babylonslate/render";
+} from "@haptic/runtime";
+import { createEngine } from "@haptic/render";
 import { createGameWorkerHost } from "./game-worker-host";
 import { startPlaySession, type PlaySceneSourceLoader, type PlaySession } from "./play-session";
 
-vi.mock("@babylonslate/render", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/render")>()),
+vi.mock("@haptic/render", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/render")>()),
   createEngine: vi.fn(),
   // Actor tests drive ticks explicitly; browser paint is covered by the host tests.
   waitForSceneLoadingPaint: () => Promise.resolve(),
 }));
-vi.mock("@babylonslate/runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/runtime")>()),
+vi.mock("@haptic/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/runtime")>()),
   createRuntimeFromLoad: vi.fn(),
 }));
 vi.mock("./game-worker-host", () => ({ createGameWorkerHost: vi.fn() }));

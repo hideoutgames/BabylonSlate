@@ -11,7 +11,7 @@ import {
   StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { normalizeShadowSettings } from "@haptic/core";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";

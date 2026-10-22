@@ -1,4 +1,4 @@
-import type { CodegenContext } from "@babylonslate/scripting";
+import type { CodegenContext } from "@haptic/scripting";
 
 /**
  * Declares an arithmetic helper once at module scope and returns the call

@@ -1,5 +1,5 @@
-import type { ProjectStorage } from "@babylonslate/core";
-import { PROJECT_FILE } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
+import { PROJECT_FILE } from "@haptic/core";
 
 export async function readProjectJsonMtime(
   storage: ProjectStorage,
