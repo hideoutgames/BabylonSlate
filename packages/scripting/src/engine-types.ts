@@ -180,6 +180,7 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Finger", typeId: "int", defaultValue: 0 },
       { name: "Position", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
       { name: "Delta", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
+      { name: "Velocity", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
       { name: "StartPosition", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
       { name: "Pressure", typeId: "float", defaultValue: 0 },
       { name: "Phase", typeId: "enum", typeClassId: ENGINE_TOUCH_PHASE_ENUM_ID, defaultValue: "Began" },

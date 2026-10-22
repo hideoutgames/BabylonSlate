@@ -303,9 +303,10 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Mappings live in InputAction / InputAxis assets with stable binding ids so player overrides survive renames. Only the Basic 3D template ships starter Input assets.
 - Touch axes come from SceneLayer `2DJoystickComponent` controls (test hook: `injectTestTouchAxis`). There is no Set Input Mode.
 - Every finger, pen tip and left mouse button is a touch with a stable finger slot, read by the touch nodes; the first one is still Mouse Left and the cursor. Pointers that SceneLayer joysticks, 2D controls or scroll drags own never reach game input.
+- Gestures (tap, double tap, long press, swipes, pinch, two-finger rotate and drag) are `touch` binding codes recognized in the resolver with fixed thresholds; there are no gesture nodes or settings.
 - Every event is stamped with the tick it applies to; input is tested by feeding synthetic streams to the deterministic harness.
 - The game canvas uses pointer capture and `touch-action: none`. Focused UI (text fields, buttons, modals) owns keys before gameplay.
-- Text: 3D Text is a flat TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + `earcut`); 2D text uses Bitmap FontFace quads with optional MSDF; CSS FontFace registration from bytes is the only way custom fonts reach rendering. Fonts load before first paint and fail loudly. Font metrics are main-thread only.
+- Text: 3D Text is a flat TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + `earcut`); 2D text uses Bitmap FontFace quads with optional MSDF; CSS FontFace registration from bytes is the only way custom fonts reach rendering. Fonts load before the text that uses them is built, and a face that cannot load fails its Scene or Scene Layer load instead of drawing a fallback. Font metrics are main-thread only.
 
 ## Source control
 
@@ -324,7 +325,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - **Sprites are quad meshes, not Babylon Sprites**: a Babylon `Sprite` cannot parent, take custom materials, carry physics shapes or join normal picking. One quad per sprite with the frame baked into UVs; batching and thin instances are measured escape hatches only.
 - Sprites alpha-test by default (opaque pass, no sort); blending is opt-in. Pixel art uses nearest sampling, no mips, anisotropy 1, set at creation.
 - Sprite holds atlas frames, look, pivot and collision AABB; SpriteAnimation is the separate pickable clip for Animation Graph.
-- Tilemaps render as chunked `VertexData` from a pure golden-tested function (one draw per chunk per atlas, only affected chunks rebuilt), not `SpriteMap`. Painting is one undo entry per stroke. Autotile is deferred.
+- Tilemaps render as chunked `VertexData` from a pure golden-tested function (one draw per chunk per atlas, only affected chunks rebuilt), not `SpriteMap`. Painting is one undo entry per stroke. Autotile terrains live on the Tileset with a per-terrain style (4-side, 16 variants, or 8-neighbour blob, 47) and resolve at paint time into plain GIDs through a pure resolver with a deterministic closest match, so incomplete sheets still paint and nothing downstream reads terrain data ([tilemaps](architecture/tilemaps.md#terrains-autotile)).
 - 2D physics is a dedicated Rapier backend (`@dimforge/rapier2d-deterministic-compat`), loaded only for 2D worlds, because constraining Havok to a plane needs an anchor body and 6DOF constraint per body and distorts impulses. A scene never mixes worlds; each physics-enabled SceneLayer gets its own 2D world. Tilemap collision uses merged chain colliders per chunk. Never substitute the software backend for a failed wasm load; never add `planck.js`.
 - `pixelsPerUnit` (default 100) is the single pixel ↔ world conversion. Sorting is an explicit named layer list plus order, compiled to one key on `alphaIndex`; rendering groups are reserved for coarse separation.
 
@@ -371,7 +372,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - SAB unavailable on the primary host; transferable fallback must stay exercised.
 - Blob-URL module import and `Error.stack` parsing inside WKWebView underpin scripting and the session report.
 - Scoped storage through external file providers (stale bookmarks, coordination) and many small writes across the Capacitor bridge; mitigated by dirty-only saves, the blob store and debounced writes (one file per asset, no pack format).
-- Fonts fail silently (unloaded faces render as a fallback); assert real rendering on cold load.
+- Fonts can fail silently: Bitmap 2D Text rasterizes once, so a face that loads late, or a CSS stack that leaves out the Font, draws a fallback with no error. Play and the player hold text until its faces load, and a cold-load browser test checks laid-out advances in Play and Preview Build ([fonts.md](architecture/fonts.md#cold-load)).
 - Two physics backends can drift; run shared scenario shapes against both.
 - Tilemap chunk rebuild cost per stroke; Recast crowd determinism across builds; the 2D axis remap sign.
 - ExecuteJavaScript runs with full worker privileges; disclosure on import is the mitigation.

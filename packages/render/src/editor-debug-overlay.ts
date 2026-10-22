@@ -381,6 +381,7 @@ export class EditorDebugOverlay {
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
+  private paused = false;
   private disposed = false;
   private readonly poseObserver: Observer<Scene> | null;
   private readonly meshAddedObserver: Observer<AbstractMesh> | null;
@@ -504,7 +505,7 @@ export class EditorDebugOverlay {
 
   tick(nowMs?: number): void {
     const preview = this.preview;
-    if (!this.lensActive || !preview) return;
+    if (!this.lensActive || !preview || this.paused) return;
     this.followLivePose();
     const now = nowMs ?? this.now();
     if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
@@ -536,6 +537,17 @@ export class EditorDebugOverlay {
   }
 
   /**
+   * While the Engine is paused (a game owns it), the lens preview takes no timed
+   * passes; resuming restarts its timer for a lens that is still selected.
+   */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (paused) this.clearTimer();
+    else this.ensureTimer();
+  }
+
+  /**
    * Stop host-side work (the preview timer, pose follow and canvas writes)
    * while a shared Engine may still borrow the preview RTT and meshes.
    */
@@ -563,7 +575,7 @@ export class EditorDebugOverlay {
   }
 
   private ensureTimer(): void {
-    if (this.stopped || this.useExternalClock || this.timer || !this.lensActive) return;
+    if (this.stopped || this.paused || this.useExternalClock || this.timer || !this.lensActive) return;
     this.timer = setInterval(() => this.tick(), CAMERA_PREVIEW_INTERVAL_MS);
   }
 

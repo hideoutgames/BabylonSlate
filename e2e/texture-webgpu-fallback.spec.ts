@@ -358,6 +358,8 @@ async function textureQuadScene(page: Page, backend: Backend, source: "png" | "k
   const { files, startupSceneGuid } = await projectFiles(backend);
   await addTwoToneTexture(page, files, 12, 24, source);
   const scene = createDefaultScene("2d");
+  // The grid's red X axis runs along the centre sample row, outside the picture.
+  scene.settings.grid.showGrid = false;
   scene.actors.push(createActor("picture", "Picture", {
     // 0.12×0.24 world units at 100 pixels per unit, scaled to 6×6 and centred on the origin.
     transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [50, 25, 1] },

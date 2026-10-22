@@ -22,6 +22,7 @@ type TestHost = typeof globalThis & {
     activeSceneContent(): SerializedScene | null;
     readAssetChunk(path: string, chunkId: string): Promise<Uint8Array | null>;
     injectTestGamepad(pad: { index: number; axes: number[]; buttons: number[] } | null): void;
+    editorQuiet(): boolean;
   };
   __hapticViewportTest: { engineSceneDiagnostics(): Promise<EngineSceneDiagnostics | null> };
   __hapticParticleStats?: { systems: number; playing: number; gpuSystems: number };
@@ -66,6 +67,8 @@ async function startSimulation(page: Page) {
   await expect(page.getByTestId("simulation-session-stop")).toHaveAccessibleName("Stop Simulation and Discard Changes");
   await expect.poll(() => state(page)).toMatchObject({ generation: previous.generation + 1, mode: "simulate", lifecycle: "running", quarantined: false });
   await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(2);
+  // A Simulation runs inside the editor, which keeps working.
+  expect(await page.evaluate(() => (globalThis as TestHost).__hapticTest.editorQuiet())).toBe(false);
 }
 async function enterEdit(page: Page) {
   const input = page.getByTestId("simulation-input-mode");

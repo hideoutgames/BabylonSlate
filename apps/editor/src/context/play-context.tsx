@@ -128,6 +128,7 @@ import {
 } from "@haptic/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
+import { setEditorQuiet } from "../lib/editor-quiet";
 import {
   EditorSchedulerRegistry,
   type EditorLoopHandle,
@@ -858,6 +859,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setEncodeQueuePauseReason("visibility", paused);
     });
   }, []);
+
+  // Play and Preview Build cover the editor, so its background work waits; a Simulation runs inside it.
+  const gameCoversEditor = playOpen && sessionState.mode !== null && sessionState.mode !== "simulate";
+  useEffect(() => {
+    setEditorQuiet(gameCoversEditor);
+  }, [gameCoversEditor]);
+  useEffect(() => () => setEditorQuiet(false), []);
 
   useEffect(() => {
     if (projectDocument) return;
