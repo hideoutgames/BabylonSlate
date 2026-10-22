@@ -1,7 +1,7 @@
 import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@babylonslate/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, mapBounded,
+  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, mapBounded,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
@@ -549,8 +549,7 @@ async function acquirePlayAssetSourcesAttempt(
         tilemaps: content.tilemapPayloads, tilesets: content.tilesetPayloads, waters: content.waterPayloads,
         renderTargets: content.renderTargets, renderTargetTextures: content.renderTargetTextures,
         fontFacetypeBytes: game.fontFacetypeBytes, fontMsdfJson: game.fontMsdfJson, fontMsdfPng: game.fontMsdfPng,
-        fontCssStackByGuid: new Map([...game.fontFamilies].map(([id, family]) => [id, `"${family}", ${project.settings.fonts.globalFallback}`])),
-        fontCssStack: project.settings.fonts.globalFallback,
+        ...playText2DFontStacks(host, game.fontFamilies),
         pixelsPerUnit: content.pixelsPerUnit, sortingLayers: content.sortingLayers,
       },
       materialDocuments: content.materialDocuments, materialFunctions: content.materialFunctions,
@@ -570,6 +569,24 @@ async function acquirePlayAssetSourcesAttempt(
     release();
     throw new Error(`Asset preparation for ${options.consumer} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+}
+
+/**
+ * Bitmap 2D Text stacks for every project Font, as the Scene Viewport and the exported player compile them:
+ * the Font, its fallbacks, the project default Font, then the global fallback. Engine source unions keep the
+ * last acquisition's default stack, so each acquisition publishes the whole project's stacks. A prepared
+ * Font's family is the one its FontFace registers under.
+ */
+function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: ReadonlyMap<string, string>) {
+  const fonts = host.registry.list({ type: "Font" }).map((asset) => {
+    const guid = asset.header.guid;
+    const payload = normalizeFontPayload(host.documentOverrides?.get(guid)?.payload ?? asset.header.payload, asset.header.name);
+    return { guid, family: preparedFamilies.get(guid) ?? payload.family, fallbackGuids: payload.fallbackGuids };
+  });
+  const compiled = compileText2DFontStacks({
+    fonts, defaultFontGuid: host.project.settings.fonts.defaultFontGuid, globalFallback: host.project.settings.fonts.globalFallback,
+  });
+  return { fontCssStack: compiled.defaultStack, fontCssStackByGuid: compiled.byGuid };
 }
 
 const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);
