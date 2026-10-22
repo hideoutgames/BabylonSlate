@@ -50,6 +50,7 @@ export {
   canReparentNode,
   deleteSubtree,
   duplicateSubtree,
+  duplicateSubtrees,
   moveAttachment,
   removeAttachment,
   wrapInSequence,

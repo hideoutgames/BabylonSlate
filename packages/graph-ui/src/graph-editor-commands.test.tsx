@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphEditor, type GraphPasteElements, type GraphPasteResult } from "./graph-editor";
 import { useGraphEditorContext, type GraphEditorContextValue } from "./graph-editor-context";
@@ -147,6 +147,31 @@ describe("graph keyboard shortcuts", () => {
     expect(selectedIds(container).every((id) => id.includes("-copy-"))).toBe(true);
     expect(browserKeepsKey(ctrl("V"))).toBe(true);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a multi-selection a host echoes back as its selected node", () => {
+    const onChange = vi.fn();
+    const graph = wiredGraph();
+    function EchoHost() {
+      const [selected, setSelected] = useState<string | undefined>();
+      return (
+        <GraphEditor
+          initialGraph={graph}
+          selectedNodeId={selected}
+          onSelectionChange={(ids) => setSelected(ids[0])}
+          onChange={onChange}
+        />
+      );
+    }
+    const { container } = render(<EchoHost />);
+    engage();
+    selectNodes(container, "log-c", "log-b");
+    expect(selectedIds(container).sort()).toEqual(["log-b", "log-c"]);
+    expect(browserKeepsKey(ctrl("D"))).toBe(false);
+    expect(lastGraph(onChange).nodes).toHaveLength(6);
+    expect(selectedIds(container)).toHaveLength(2);
+    expect(browserKeepsKey(ctrl("D"))).toBe(false);
+    expect(lastGraph(onChange).nodes).toHaveLength(8);
   });
 
   it("gives each copy its own nested data", () => {

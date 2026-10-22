@@ -27,7 +27,7 @@ import {
   createDefaultBehaviourTree,
   defaultPropertiesForClassId,
   deleteSubtree,
-  duplicateSubtree,
+  duplicateSubtrees,
   hydrateBehaviourTreeForEditor,
   kindForCatalogClassId,
   moveAttachment,
@@ -378,6 +378,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   const knownNodeIds = useRef<Set<string> | null>(null);
   /** The node the canvas last reported as selected, if any. */
   const canvasSelectedId = useRef<string | null>(null);
+  /** Every node the canvas last reported as selected. */
+  const canvasSelection = useRef<string[]>([]);
   const nodeIdKey = doc.nodes.map((node) => node.id).join("\0");
   useEffect(() => {
     const current = new Set(doc.nodes.map((node) => node.id));
@@ -427,7 +429,9 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
         disabled: nodeId === rootId,
         onSelect: () => {
           const { doc, commit } = latest.current;
-          commit(duplicateSubtree(doc, nodeId));
+          // On a node of the canvas selection it copies the whole group.
+          const selection = canvasSelection.current;
+          commit(duplicateSubtrees(doc, selection.includes(nodeId) ? selection : [nodeId]));
         },
       },
       {
@@ -529,6 +533,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   const onSelectionChange = useCallback(
     (nodeIds: string[]) => {
       const { doc } = latest.current;
+      canvasSelection.current = nodeIds;
       const nextId = nodeIds[0];
       if (!nextId) {
         // Deselecting a node on the canvas clears Details. The empty

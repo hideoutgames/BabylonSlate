@@ -6,6 +6,7 @@ import {
   canReparentNode,
   deleteSubtree,
   duplicateSubtree,
+  duplicateSubtrees,
   moveAttachment,
   removeAttachment,
   wrapInSequence,
@@ -68,6 +69,27 @@ describe("duplicateSubtree", () => {
     expect(clone.children).not.toEqual(["task"]);
     expect(clone.children.length).toBe(1);
     expect(next.nodes.some((entry) => entry.id === clone.children[0])).toBe(true);
+  });
+});
+
+describe("duplicateSubtrees", () => {
+  it("copies each selected subtree once, with a selected descendant going along with its ancestor", () => {
+    const doc = tree(
+      [
+        node("root", "selector", "bt.selector", ["seq", "wait"]),
+        node("seq", "sequence", "bt.sequence", ["task"]),
+        node("task", "task", "bt.task.wait"),
+        node("wait", "task", "bt.task.wait"),
+      ],
+      "root",
+    );
+    const next = duplicateSubtrees(doc, ["root", "task", "seq", "wait"]);
+    expect(next.nodes).toHaveLength(7);
+    const root = next.nodes.find((entry) => entry.id === "root")!;
+    expect(root.children).toHaveLength(4);
+    expect(root.children[0]).toBe("seq");
+    expect(root.children[2]).toBe("wait");
+    expect(next.nodes.find((entry) => entry.id === "seq")!.children).toEqual(["task"]);
   });
 });
 
