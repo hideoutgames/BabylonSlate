@@ -31,6 +31,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 - Empty folders persist through a `.haptic-folder` marker.
 - A scanned file whose guid is already indexed stays unindexed (`listGuidConflicts()`), and deleting a folder holding one is refused.
 - Folder copy/duplicate is a deep copy: references inside the copied folder point at the copies (`applyImportGuidRemap`), copied Classes get class ids from their new stems.
+- Copies take `AssetCopyOptions`: `signal` is checked before a copy's write and between a folder's files (not during the reference remap); an aborted folder copy deletes its partial destination. The Content Browser removes earlier completed copies itself, so Cancel leaves no copies.
 - Delete repairs remaining writable referrers (guid fields → None, `header.dependencies` pruned, project settings cleared, child Classes fall back to `BObject`). Class deletion offers Replace Class first. Usages come from saved headers plus open tabs; closed documents are never read to decide.
 - There is no UserInterface asset type (`documentKindForAssetType("UserInterface")` is `null`); do not re-add it.
 

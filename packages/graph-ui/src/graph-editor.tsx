@@ -619,25 +619,22 @@ function withoutEdgeSelection(edges: Edge[]): Edge[] {
 }
 
 function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
-  const { setNodes, setEdges } = useReactFlow();
+  const { getNode, setNodes, setEdges } = useReactFlow();
   const nodeExists = useStore((state) => !!selectedNodeId && state.nodeLookup.has(selectedNodeId));
 
   useEffect(() => {
     if (!selectedNodeId || !nodeExists) return;
-    setNodes((current) => {
-      const already =
-        current.some((entry) => entry.id === selectedNodeId && entry.selected) &&
-        current.every(
-          (entry) => entry.id === selectedNodeId || !entry.selected,
-        );
-      if (already) return current;
-      return current.map((entry) => ({
+    // A host that echoes one node of the canvas's own selection back keeps the
+    // group, so Copy, Paste and Duplicate still act on all of it.
+    if (getNode(selectedNodeId)?.selected) return;
+    setNodes((current) =>
+      current.map((entry) => ({
         ...entry,
         selected: entry.id === selectedNodeId,
-      }));
-    });
+      })),
+    );
     setEdges(withoutEdgeSelection);
-  }, [nodeExists, selectedNodeId, setEdges, setNodes]);
+  }, [getNode, nodeExists, selectedNodeId, setEdges, setNodes]);
 
   return null;
 }
