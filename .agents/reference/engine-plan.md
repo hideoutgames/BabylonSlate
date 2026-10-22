@@ -306,7 +306,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Gestures (tap, double tap, long press, swipes, pinch, two-finger rotate and drag) are `touch` binding codes recognized in the resolver with fixed thresholds; there are no gesture nodes or settings.
 - Every event is stamped with the tick it applies to; input is tested by feeding synthetic streams to the deterministic harness.
 - The game canvas uses pointer capture and `touch-action: none`. Focused UI (text fields, buttons, modals) owns keys before gameplay.
-- Text: 3D Text is a flat TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + `earcut`); 2D text uses Bitmap FontFace quads with optional MSDF; CSS FontFace registration from bytes is the only way custom fonts reach rendering. Fonts load before first paint and fail loudly. Font metrics are main-thread only.
+- Text: 3D Text is a flat TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + `earcut`); 2D text uses Bitmap FontFace quads with optional MSDF; CSS FontFace registration from bytes is the only way custom fonts reach rendering. Fonts load before the text that uses them is built, and a face that cannot load fails its Scene or Scene Layer load instead of drawing a fallback. Font metrics are main-thread only.
 
 ## Source control
 
@@ -372,7 +372,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - SAB unavailable on the primary host; transferable fallback must stay exercised.
 - Blob-URL module import and `Error.stack` parsing inside WKWebView underpin scripting and the session report.
 - Scoped storage through external file providers (stale bookmarks, coordination) and many small writes across the Capacitor bridge; mitigated by dirty-only saves, the blob store and debounced writes (one file per asset, no pack format).
-- Fonts fail silently (unloaded faces render as a fallback); assert real rendering on cold load.
+- Fonts can fail silently: Bitmap 2D Text rasterizes once, so a face that loads late, or a CSS stack that leaves out the Font, draws a fallback with no error. Play and the player hold text until its faces load, and a cold-load browser test checks laid-out advances in Play and Preview Build ([fonts.md](architecture/fonts.md#cold-load)).
 - Two physics backends can drift; run shared scenario shapes against both.
 - Tilemap chunk rebuild cost per stroke; Recast crowd determinism across builds; the 2D axis remap sign.
 - ExecuteJavaScript runs with full worker privileges; disclosure on import is the mitigation.

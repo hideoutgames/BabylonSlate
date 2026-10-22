@@ -384,6 +384,8 @@ export interface EngineHandle {
   }>;
   /** Material names on Play meshes and GLB descendants (Preview e2e). */
   playMeshMaterialNames: () => string[];
+  /** Laid-out width in pixels and CSS stack of each Play 2D Text mesh (cold-load font e2e). */
+  playText2DLayouts: () => Array<{ slotId: number; name: string; fontStack: string; width: number }>;
   /** Compiled effect defines per Play mesh (e2e shader-state readout). */
   playMeshMaterialDefines: () => Array<{
     mesh: string;
@@ -3306,7 +3308,10 @@ function initializeEngine(
   onRollback(unsubscribeEditorDrop);
   // FontFace registration publishes to the document, so start it only after
   // the synchronous construction steps that can still roll back have succeeded.
-  // World readiness awaits it; a late face redraws like `registerFonts`.
+  // World readiness awaits it. Bitmap 2D Text rasterizes once when its mesh is
+  // built and a late face does not re-rasterize it, so Play and the player gate
+  // each text assignment on `acquireSceneSources`, which awaits its faces and
+  // fails the slot when one cannot load.
   const initialFonts = options.fontFaceEntries && options.fontFaceEntries.length > 0
     ? fontRegistry.registerAll(options.fontFaceEntries).then(() => {
       if (!disposed && fontRegistry.consumeDirty()) scheduler.invalidate("asset");
@@ -4168,6 +4173,17 @@ function initializeEngine(
       }
       return [...names].sort();
     },
+    playText2DLayouts: () => {
+      const rows: Array<{ slotId: number; name: string; fontStack: string; width: number }> = [];
+      for (const [slotId, root] of binding.meshes) {
+        for (const mesh of [root, ...root.getChildMeshes()]) {
+          const metadata = mesh.metadata as { text2d?: boolean; text2dFontStack?: string; text2dLayoutWidth?: number } | null;
+          if (metadata?.text2d !== true) continue;
+          rows.push({ slotId, name: mesh.name, fontStack: metadata.text2dFontStack ?? "", width: metadata.text2dLayoutWidth ?? 0 });
+        }
+      }
+      return rows.sort((a, b) => a.slotId - b.slotId || a.name.localeCompare(b.name));
+    },
     playMeshMaterialDefines: () => {
       const rows: Array<{
         mesh: string;
@@ -4248,7 +4264,10 @@ function initializeEngine(
           const registered = await nativePreparation.schedule({ label: `Font ${font.guid}`,
             temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal: preparation?.signal,
             priority: preparation?.priority }, () => fontRegistry.registerAll([font]));
-          if (!registered) throw new Error(`Font ${font.guid} failed to load. Inspect its source and family.`);
+          if (!registered) {
+            const reason = [...fontRegistry.getWarnings()].reverse().find((warning) => warning.guid === font.guid)?.message;
+            throw new Error(`${(reason ?? `Font "${font.family}" failed to load`).replace(/\.?$/, ".")} Inspect the source and family of Font ${font.guid}.`);
+          }
         }
         if (preparation?.prepare) {
           preparation.signal?.throwIfAborted();

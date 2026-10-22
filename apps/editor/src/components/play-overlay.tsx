@@ -1090,6 +1090,7 @@ function PlayOverlayView({
           z: number;
         }[];
         visuals: () => ReturnType<PlaySession["handle"]["playVisualStates"]>;
+        text2dLayouts: () => ReturnType<PlaySession["handle"]["playText2DLayouts"]>;
         liveObjectCounts: () => { meshes: number; textures: number } | null;
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
@@ -1120,6 +1121,7 @@ function PlayOverlayView({
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
+      text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
       whenModelsReady: () =>
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
