@@ -87,6 +87,26 @@ const focusKeepPanelsShape = Object.fromEntries(
   ]),
 ) as Record<FocusKeepPanelKey, z.ZodDefault<z.ZodArray<z.ZodString>>>;
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** A user-made editor theme; colors map token names (no `--`) to `#rrggbb`. */
+export const customEditorThemeSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1),
+  colors: z
+    .record(z.string(), z.unknown())
+    .transform((colors) =>
+      Object.fromEntries(
+        Object.entries(colors).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[1] === "string" && HEX_COLOR.test(entry[1]),
+        ).map(([key, value]) => [key, value.toLowerCase()]),
+      ),
+    ),
+});
+
+export type CustomEditorTheme = z.infer<typeof customEditorThemeSchema>;
+
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
   seenReleaseVersions: z.array(z.string()).catch([]).default([]),
@@ -111,6 +131,19 @@ export const engineSettingsSchema = z.object({
       coarsePointerTargetScale: z.number().default(1),
     })
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
+  /** Active editor theme: a built-in theme id or a `customEditorThemes` id. */
+  editorTheme: z.string().min(1).catch("default").default("default"),
+  /** Invalid entries are dropped one by one so one bad theme keeps the rest. */
+  customEditorThemes: z
+    .array(z.unknown())
+    .catch([])
+    .default([])
+    .transform((themes) =>
+      themes.flatMap((theme) => {
+        const parsed = customEditorThemeSchema.safeParse(theme);
+        return parsed.success ? [parsed.data] : [];
+      }),
+    ),
   undoHistoryLength: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_UNDO_HISTORY_LENGTH, Math.max(1, Math.round(value)));

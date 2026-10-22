@@ -35,7 +35,16 @@ Use **Search settings** in either window to find a setting by name. Choosing a r
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Editor Extensions](../projects/extensions.md).
 
-Haptic always uses its dark theme.
+## Theme
+
+Choose the editor's colors in **Manage Account > Application** on the Homepage, under **Theme**. Themes belong to this device, like Engine Settings.
+
+- The preview at the top shows how the editor looks with the selected theme. It is a picture only; you can't click it.
+- Pick a theme from the list below the preview. **Default** is the built-in dark theme.
+- Open **Style** to see the color of every part of the editor, grouped into surfaces, text, accents, status, graph, pin and asset type colors.
+- Built-in themes can't be changed. Changing a color while a built-in theme is selected creates a custom theme from it, such as **Default Copy**, and selects it. Later changes edit that custom theme.
+- Custom themes have **Rename** and **Delete**. Deleting the selected theme switches the editor back to **Default**.
+- **Export Theme** saves the selected theme as a `.haptic-theme.json` file. **Import Theme** adds a theme file as a new custom theme and selects it. Colors the file leaves out use **Default**'s colors.
 
 ## Project Settings pages
 
