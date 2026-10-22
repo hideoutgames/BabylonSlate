@@ -36,18 +36,23 @@ function touchEventPins(extra: ReturnType<typeof pin>[] = []) {
 /** What Get Touch and Find Touch report when no touch matches. */
 const NO_TOUCH = `{ Finger: -1, Position: { x: 0, y: 0 }, Delta: { x: 0, y: 0 }, StartPosition: { x: 0, y: 0 }, Pressure: 0, Phase: "Ended", Type: "Finger" }`;
 
-/** Outputs of a touch lookup; `found` is the matching touch or undefined, read once per statement. */
+/**
+ * Outputs of a touch lookup: `lookup` yields the matching touch or undefined
+ * and is read once per statement. Find Touch takes Finger as its input, so
+ * only Get Touch outputs it.
+ */
 function touchLookupOutputs(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
   lookup: string,
   foundPin: string,
+  withFinger: boolean,
 ): Record<string, string> {
   const found = ctx.shared?.(lookup) ?? lookup;
   const touch = `(${found} ?? ${NO_TOUCH})`;
   return {
     [foundPin]: `(${found} !== undefined)`,
     touch,
-    finger: `${touch}.Finger`,
+    ...(withFinger ? { finger: `${touch}.Finger` } : {}),
     position: `${touch}.Position`,
     delta: `${touch}.Delta`,
     pressure: `${touch}.Pressure`,
@@ -215,7 +220,7 @@ export const inputNodes: NodeDefinition[] = [
       pin("phase", "Phase", "out", TOUCH_PHASE),
     ],
     codegen: (ctx) =>
-      touchLookupOutputs(ctx, `(ctx.getTouches?.() ?? [])[${ctx.input("index")}]`, "valid"),
+      touchLookupOutputs(ctx, `(ctx.getTouches?.() ?? [])[${ctx.input("index")}]`, "valid", true),
   },
   {
     id: "input.findTouch",
@@ -231,16 +236,13 @@ export const inputNodes: NodeDefinition[] = [
       pin("pressure", "Pressure", "out", FLOAT),
       pin("phase", "Phase", "out", TOUCH_PHASE),
     ],
-    codegen: (ctx) => {
-      const outputs = touchLookupOutputs(
+    codegen: (ctx) =>
+      touchLookupOutputs(
         ctx,
         `((f) => (ctx.getTouches?.() ?? []).find((t) => t.Finger === f))(${ctx.input("finger")})`,
         "found",
-      );
-      // Finger is this node's input, not an output.
-      delete outputs.finger;
-      return outputs;
-    },
+        false,
+      ),
   },
   {
     id: "input.projectTouchToScene",
