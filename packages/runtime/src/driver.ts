@@ -236,6 +236,8 @@ class InProcessRuntime implements RuntimeDriver {
     gamepadConnections: [],
     pressedKeys: [],
     cursor: { x: 0, y: 0, pressed: false },
+    touches: [],
+    touchEvents: [],
   };
   /** Mutable box so TickContext can read connections without aliasing `this`. */
   private readonly connectionBox: {
@@ -670,6 +672,11 @@ class InProcessRuntime implements RuntimeDriver {
       takeDeferredOverlayLayout: () => this.overlay.takeDeferredLayout(),
       pauseReasons: () => this.pauseReasons,
       setPauseReason: (reason, paused) => this.setPauseReason(reason, paused),
+      stepPausedTick: () => {
+        this.resume();
+        // A throwing tick still returns to pause; Step never leaves the game running.
+        try { this.tick(); } finally { this.pause(); }
+      },
       resetInputState: () => this.resetInputState(),
       commandRevision: () => this.commandRevision,
       reportError: (error) => { this.reportError(error); },
@@ -745,6 +752,7 @@ class InProcessRuntime implements RuntimeDriver {
       guidSlot: (guid) => this.guidSlot(guid),
       streams: () => this.streams,
       cursor: () => this.resolvedInput.cursor,
+      touches: () => this.resolvedInput.touches,
       overlay: () => this.overlay,
       physics: () => this.physics,
       emit: (command) => this.emit(command),
@@ -1163,6 +1171,9 @@ class InProcessRuntime implements RuntimeDriver {
         projectCursorToScene: (channel, options, sceneLayerId) => sceneLayerId
           ? this.camera.projectCursorToSceneLayer(sceneLayerId, channel)
           : this.camera.projectCursorToScene(channel, options),
+        projectTouchToScene: (finger, channel, options, sceneLayerId) => sceneLayerId
+          ? this.camera.projectTouchToSceneLayer(sceneLayerId, finger, channel)
+          : this.camera.projectTouchToScene(finger, channel, options),
       }),
       ...createScalabilityHostBindings({
         getScalability: () => this.getScalability(),

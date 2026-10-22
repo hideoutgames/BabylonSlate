@@ -2121,6 +2121,84 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("runs touch events once per finger record and projects a finger, including on the tick it lifts", async () => {
+    const registry = createDefaultNodeRegistry();
+    const print = (id: string, key: string) => node(registry, id, "debug.print", { "default:key": key, "default:duration": 1 });
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "began", "input.onTouchBegan"), print("print-began", "began"),
+        node(registry, "moved", "input.onTouchMoved"), print("print-moved", "moved"),
+        node(registry, "ended", "input.onTouchEnded"), print("print-ended", "ended"),
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "project", "input.projectTouchToScene", { "default:finger": 1, "default:drawDebug": false }),
+        print("print-hit", "hit"),
+        node(registry, "count", "input.getTouchCount"), print("print-count", "count"),
+        node(registry, "second", "input.getTouch", { "default:index": 1 }), print("print-second", "second"),
+        node(registry, "find", "input.findTouch", { "default:finger": 0 }), print("print-found", "found"),
+      ],
+      edges: [
+        edge("e1", "began", "execOut", "print-began", "execIn"),
+        edge("e2", "began", "finger", "print-began", "value"),
+        edge("e3", "moved", "execOut", "print-moved", "execIn"),
+        edge("e4", "moved", "finger", "print-moved", "value"),
+        edge("e5", "ended", "execOut", "print-ended", "execIn"),
+        edge("e6", "ended", "cancelled", "print-ended", "value"),
+        edge("e7", "tick", "execOut", "project", "execIn"),
+        edge("e8", "project", "execOut", "print-hit", "execIn"),
+        edge("e9", "project", "hit", "print-hit", "value"),
+        edge("e10", "print-hit", "execOut", "print-count", "execIn"),
+        edge("e11", "count", "count", "print-count", "value"),
+        edge("e12", "print-count", "execOut", "print-second", "execIn"),
+        edge("e13", "second", "finger", "print-second", "value"),
+        edge("e14", "print-second", "execOut", "print-found", "execIn"),
+        edge("e15", "find", "found", "print-found", "value"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 11, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "3d", seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    const world = runtime.getWorld();
+    const camera = world.createActor({ classId: "Actor", transform: {
+      position: { x: 0, y: 0, z: -10 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } } });
+    camera.attachComponent(world.createComponent({ classId: "CameraComponent", variables: { projectionMode: "perspective", fieldOfView: 60 } }));
+    world.spawnActorNow(camera);
+    const box = world.createActor({ classId: "Actor" });
+    box.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static", mass: 0, gravityScale: 0 } }));
+    box.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { shape: { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } } } }));
+    world.spawnActorNow(box);
+    await runtime.loadScripts([toScript(graph, registry, "Toucher", "toucher-asset")]);
+    runtime.spawnScriptedActor({ classId: "Toucher" });
+    runtime.applySceneLayerResize(16, 9, 800, 600);
+    runtime.start();
+    // Queries see bodies as of the last physics step.
+    runtime.tick();
+    const finger = (pointerId: number, phase: "down" | "move" | "up" | "cancel", x: number, y: number) =>
+      ({ kind: "pointer", tick: 0, pointerId, phase, x, y, button: phase === "move" ? -1 : 0, pointerType: "touch" }) as const;
+    const tick = (events: Parameters<typeof runtime.pushInput>[0]) => {
+      const start = commands.length;
+      runtime.pushInput(events);
+      runtime.tick();
+      return commands.slice(start).flatMap((c) => c.type === "print" ? [`${c.key}=${c.message}`] : []);
+    };
+    try {
+      // Finger 1 is over the box at the view's centre; finger 0 is in a corner.
+      expect(tick([finger(7, "down", 10, 10), finger(8, "down", 400, 300)]))
+        .toEqual(["began=0", "began=1", "hit=true", "count=2", "second=1", "found=true"]);
+      expect(tick([finger(8, "move", 402, 300)])).toEqual(["moved=1", "hit=true", "count=2", "second=1", "found=true"]);
+      // Lifted fingers stay listed, and projectable, for the tick they lift on.
+      expect(tick([finger(7, "cancel", 10, 10), finger(8, "up", 402, 300)]))
+        .toEqual(["ended=true", "ended=false", "hit=true", "count=2", "second=1", "found=true"]);
+      // No touch matches: Get Touch reports Finger -1 and Find Touch nothing found.
+      expect(tick([])).toEqual(["hit=false", "count=0", "second=-1", "found=false"]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it.each([
     { name: "a release player draws no unset trace", traceDebugDraw: false, options: "undefined", drawn: false },
     { name: "a release player draws no explicit trace", traceDebugDraw: false, options: "{ drawDebug: true }", drawn: false },

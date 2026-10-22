@@ -1,3 +1,4 @@
+import { isTouchEventNodeType } from "@haptic/scripting";
 import {
   PARTICLE_STAGE_ROLE,
   pinColorVar,
@@ -106,6 +107,7 @@ export function nodeVisualRole(input: {
     nodeType === "input.actionEvent" ||
     nodeType === "input.axisEvent" ||
     nodeType === "input.onAnyKeyPressed" ||
+    isTouchEventNodeType(nodeType) ||
     nodeType.startsWith("flow.event") ||
     nodeType.startsWith("anim.event") ||
     nodeType.startsWith("anim.rule") ||

@@ -26,6 +26,7 @@ import {
   type SerializedGraph,
 } from "@haptic/core";
 import { isLockedEngineClassId } from "@haptic/object-model";
+import { isTouchEventNodeType } from "@haptic/scripting";
 import { nextCopyName } from "@haptic/assets";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
@@ -293,7 +294,8 @@ function inheritedMembers(
 
 function isClassTreeEventNode(type: string): boolean {
   if (isFlowEventCallNode(type)) return false;
-  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || type.startsWith("flow.event.") || type.startsWith("bt.event.");
+  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || isTouchEventNodeType(type)
+    || type.startsWith("flow.event.") || type.startsWith("bt.event.");
 }
 
 /**

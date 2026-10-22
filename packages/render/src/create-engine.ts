@@ -322,6 +322,12 @@ export interface EngineHandle {
   setGameTimePaused: (paused: boolean) => void;
   /** SceneLayer input gate, independent of Simulation Edit and pause ownership. */
   setGameInputEnabled: (enabled: boolean) => void;
+  /**
+   * True while a SceneLayer joystick, 2D control or active scroll drag owns
+   * the pointer, so game input capture must not report it. Settled by the
+   * engine's own canvas listeners, which run before a later-attached capture.
+   */
+  ownsGamePointer: (pointerId: number) => boolean;
   /** Use the existing debug camera while preserving the possessed game camera/listener. */
   setSimulationEditMode: (enabled: boolean) => void;
   /** Request one supported render-only frame; unsupported owners retain the last image. */
@@ -3131,6 +3137,8 @@ function initializeEngine(
   let scrollDrag: { pointerId: number; startX: number; startY: number; x: number; y: number; active: boolean; target: NonNullable<ReturnType<typeof scrollTargetAt>> } | null = null;
   const activeGamePointers = new Set<number>();
   const activeControlKeys = new Set<string>();
+  const ownsGamePointer = (pointerId: number) =>
+    joysticks.owns(pointerId) || uiControls.owns(pointerId) || (scrollDrag?.pointerId === pointerId && scrollDrag.active);
   const onOverlayWheel = (event: WheelEvent) => {
     if (!acceptsGameInput()) return;
     const rect = canvas.getBoundingClientRect();
@@ -3961,6 +3969,7 @@ function initializeEngine(
       resetJoysticks();
       gameInputEnabled = enabled;
     },
+    ownsGamePointer: (pointerId: number) => !disposed && ownsGamePointer(pointerId),
     setSimulationEditMode: (enabled: boolean) => {
       if (disposed || !playFreeCam || simulationEditMode === enabled) return;
       resetJoysticks();

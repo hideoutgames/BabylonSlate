@@ -467,21 +467,40 @@ function PlayOverlayView({
     }).finally(() => { if (sessionRef.current === session && reason === "user") setPausePending(false); });
   };
 
-  // The global toolbar presents Simulation's Pause, Stop and input mode.
+  const [stepPending, setStepPending] = useState(false);
+  const stepRef = useRef<() => void>(() => {});
+  stepRef.current = () => {
+    const session = sessionRef.current;
+    if (!session || closedRef.current || !userPausedRef.current) return;
+    setStepPending(true);
+    setControlError(null);
+    void session.stepPaused().then((result) => {
+      if (sessionRef.current !== session) return;
+      if (!result.success) { setControlError(result.reason ?? "Step could not reach a completed runtime boundary."); return; }
+      // The view stays frozen while paused; draw the stepped tick.
+      session.requestPausedRedraw();
+    }, (error: unknown) => {
+      if (sessionRef.current === session) setControlError(String(error));
+    }).finally(() => { if (sessionRef.current === session) setStepPending(false); });
+  };
+
+  // The global toolbar presents Simulation's Pause, Step, Stop and input mode.
   const simulationKeepChanges = simulationSession?.keepChanges ?? false;
   const simulationControls = useMemo(
     () => simulating
       ? {
           paused,
           pausePending,
+          stepPending,
           inputMode,
           inputPending,
           keepChanges: simulationKeepChanges,
           togglePause: () => pauseRef.current("user", !userPausedRef.current),
+          step: () => stepRef.current(),
           setInputMode: (mode: "game" | "edit") => changeInputModeRef.current(mode),
         }
       : null,
-    [simulating, paused, pausePending, inputMode, inputPending, simulationKeepChanges],
+    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges],
   );
   usePublishSimulationControls(simulationControls);
 

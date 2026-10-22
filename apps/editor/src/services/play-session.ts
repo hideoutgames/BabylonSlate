@@ -429,6 +429,11 @@ export interface PlaySession {
   captureSimulationScene: (maxBytes?: number) => Promise<import("@haptic/runtime").SimulationSceneCaptureResult>;
   /** Advance one simulation tick while paused. */
   step: () => void;
+  /**
+   * Simulation's Step: one tick of a session paused only by the user, acknowledged through the
+   * session boundary after the tick's commands, so the paused view can redraw the result.
+   */
+  stepPaused: () => Promise<import("@haptic/bridge").SessionBoundaryResult>;
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
@@ -1729,6 +1734,8 @@ export function startPlaySession(options: {
 
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+    // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
+    ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
   if (options.mode === "simulate") input.setSuppressed(false);
 
@@ -1960,6 +1967,9 @@ export function startPlaySession(options: {
       if (captureRequested) return;
       applyPlaySessionStep({ worker, runtime });
     },
+    stepPaused: () => captureRequested
+      ? Promise.reject(new Error("The Simulation is stopping."))
+      : synchronizePauseBoundary({ kind: "step" }),
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
     liveObjectCounts: () => handle.liveObjectCounts(),

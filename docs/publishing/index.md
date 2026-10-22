@@ -39,6 +39,8 @@ Export includes only what the game can reach:
 - Input assets and your console command classes;
 - everything in **Always Package Folders**.
 
+Every export also includes `legal/THIRD-PARTY-NOTICES.txt`, the licences of the open-source software the game runs on. Keep it when you upload or repackage the game.
+
 Editor-only assets, such as Editor Utility Objects, Plugin Settings and Skybox Creator, never ship. Neither does content from disabled plugins.
 
 ::: tip

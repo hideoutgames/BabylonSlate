@@ -39,6 +39,7 @@ import {
   isLatentFunctionKey,
   latentSourcesFromSerializedGraph,
   diagnostic,
+  isTouchEventNodeType,
 } from "@haptic/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
@@ -2097,7 +2098,7 @@ function scriptPaletteCatalogNodes(
       if ((def.id.startsWith("saveGame.") || def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && isEditorGraphHost(options ?? {})) return false;
       if ((def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && options?.activeFunctionId) return false;
       if (def.id === "flow.event.scalabilityChanged" && options?.activeFunctionId) return false;
-      if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed") &&
+      if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed" || isTouchEventNodeType(def.id)) &&
         (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
         return false;

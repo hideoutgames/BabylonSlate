@@ -3,22 +3,24 @@ import {
   eulerDegreesToQuaternion,
   quaternionToEulerDegrees,
   type SerializedActor,
-  type ViewportMode,
 } from "@haptic/core";
-import { depthFromZOrder, zOrderFromDepth } from "./transform-property-rows";
+import { depthFromZOrder, zOrderFromDepth, type TransformRowsMode } from "./transform-property-rows";
 
 /** Shared axis edits are absolute values; other axes retain each actor's values. */
 export function selectionTransformPropertyRows(
   actors: readonly SerializedActor[],
-  viewportMode: ViewportMode,
+  mode: TransformRowsMode,
   updateSelected: (update: (actor: SerializedActor) => SerializedActor) => void,
 ): PropertyRow[] {
   const primary = actors[0];
   if (!primary) return [];
-  const twoD = viewportMode === "2d";
+  const planar = mode !== "3d";
+  const twoD = mode === "2d";
   const rows: PropertyRow[] = [];
   for (const property of ["position", "rotation", "scale"] as const) {
-    const axes = twoD ? (property === "rotation" ? [2] : [0, 1]) : [0, 1, 2];
+    const axes = property === "position"
+      ? planar ? [0, 1] : [0, 1, 2]
+      : twoD ? (property === "rotation" ? [2] : [0, 1]) : [0, 1, 2];
     const valuesFor = (actor: SerializedActor): [number, number, number] =>
       property === "rotation"
         ? quaternionToEulerDegrees(actor.transform.rotation)
@@ -69,7 +71,7 @@ export function selectionTransformPropertyRows(
         apply(values, axis);
       },
     });
-    if (twoD && property === "position") {
+    if (planar && property === "position") {
       rows.push({
         kind: "number",
         id: "actor-z-order",
