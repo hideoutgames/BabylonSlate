@@ -46,6 +46,14 @@ Choose the editor's colors in **Manage Account > Application** on the Homepage, 
 - Custom themes have **Rename** and **Delete**. Deleting the selected theme switches the editor back to **Default**.
 - **Export Theme** saves the selected theme as a `.haptic-theme.json` file. **Import Theme** adds a theme file as a new custom theme and selects it. Colors the file leaves out use **Default**'s colors.
 
+## Third-party notices
+
+Haptic is built with open-source software. To read the licences, open **Manage Account > Application** on the Homepage and choose **Third-Party Notices** at the bottom of the page.
+
+- Each row names a package, its version and its licence. Tap a row to read the licence text.
+- Rows marked **In Games** also ship in the games you export. Every exported game includes their notices in `legal/THIRD-PARTY-NOTICES.txt`.
+- **Application** at the top returns to the Application page.
+
 ## Project Settings pages
 
 | Page | Covers |
