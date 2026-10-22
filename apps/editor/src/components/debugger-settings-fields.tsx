@@ -49,7 +49,7 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-pause-simulation-on-errors">Pause On Errors</FieldLabel>
-          <FieldDescription>Applies to the next Simulation session. The first time a node throws or logs an Error, the Simulation pauses at the end of that tick and opens the graph at the node. Later errors from the same node only add to its count in the session report.</FieldDescription>
+          <FieldDescription>Applies to the next Simulation session. The first time a node throws, logs an Error or fails an Assert, the Simulation pauses at the end of that tick and opens the graph at the node. Later errors from the same node only add to its count in the session report.</FieldDescription>
         </FieldContent>
         <Switch id="setting-pause-simulation-on-errors" checked={defaults.pauseSimulationOnErrors}
           onCheckedChange={(pauseSimulationOnErrors) => update({ pauseSimulationOnErrors })} />
