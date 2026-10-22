@@ -1,11 +1,16 @@
 import {
   InputRingBuffer,
   isInputReleaseEvent,
+  type PointerKind,
   type RawInputEvent,
 } from "./ring-buffer";
 
 /** `PointerEvent.buttons` bit for each `PointerEvent.button` (middle and right swap). */
 const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16, 32];
+
+function pointerKind(type: string | undefined): PointerKind {
+  return type === "touch" || type === "pen" ? type : "mouse";
+}
 
 export interface InputCaptureHandle {
   ring: InputRingBuffer;
@@ -37,6 +42,14 @@ export function attachInputCapture(
     skipPointerAndKeyboard?: () => boolean;
     syntheticGamepad?: () => { index: number; axes: number[]; buttons: number[] } | undefined;
     syntheticTouchAxes?: () => Record<string, number> | undefined;
+    /**
+     * True while engine UI owns the pointer: a SceneLayer joystick, 2D
+     * control or scroll drag. Asked during each pointer event, so attach
+     * capture after `createEngine` and its canvas listeners have run.
+     * A pointer it owns at the press never reaches the game; one it takes
+     * over later is cancelled for the game. Either stays away until it lifts.
+     */
+    ownsPointer?: (pointerId: number) => boolean;
   } = {},
 ): InputCaptureHandle {
   const ring = options.ring ?? new InputRingBuffer(512);
@@ -55,6 +68,8 @@ export function attachInputCapture(
   /** Buttons already reported down for each tracked pointer, as a `buttons` mask. */
   const pointerMasks = new Map<number, number>();
   const blockedPointers = new Set<number>();
+  /** Pointers engine UI owns, kept away from the game until they lift. */
+  const uiPointers = new Set<number>();
   const touchAxes = new Map<string, number>();
   const blockedTouchAxes = new Set<string>();
   const pads = new Map<number, { axes: number[]; buttons: number[] }>();
@@ -121,6 +136,21 @@ export function attachInputCapture(
       }
       if (options.skipPointerAndKeyboard?.()) return;
       const id = event.pointerId;
+      // The engine's listener has already released UI ownership on up, so the
+      // verdict taken earlier decides, not a fresh query.
+      if (uiPointers.has(id)) {
+        if (phase === "up" || phase === "cancel") uiPointers.delete(id);
+        return;
+      }
+      if (options.ownsPointer?.(id)) {
+        const reported = pointers.get(id);
+        if (reported) {
+          forgetPointer(id);
+          push({ ...reported, tick, phase: "cancel" });
+        }
+        if (phase !== "up" && phase !== "cancel") uiPointers.add(id);
+        return;
+      }
       const bit = BUTTON_BITS[event.button] ?? 0;
       const mask = pointerMasks.get(id) ?? 0;
       let reported: typeof phase = phase;
@@ -142,6 +172,8 @@ export function attachInputCapture(
         x: event.offsetX,
         y: event.offsetY,
         button: event.button,
+        pointerType: pointerKind(event.pointerType),
+        ...(typeof event.pressure === "number" && Number.isFinite(event.pressure) ? { pressure: event.pressure } : {}),
       };
       if (phase === "up") {
         // pointerup means no buttons remain; release any chorded button first.
@@ -195,6 +227,7 @@ export function attachInputCapture(
   };
   const onPointerEnd = (event: PointerEvent) => {
     blockedPointers.delete(event.pointerId);
+    uiPointers.delete(event.pointerId);
     const pointer = pointers.get(event.pointerId);
     if (!pointer || !exclusive) return;
     forgetPointer(event.pointerId);
@@ -202,6 +235,8 @@ export function attachInputCapture(
     releasePointer(event.pointerId);
   };
   const onLostPointerCapture = (event: PointerEvent) => {
+    // Its lift may now land elsewhere; a stale entry would swallow the id's next press.
+    uiPointers.delete(event.pointerId);
     const pointer = pointers.get(event.pointerId);
     if (!exclusive || !pointer) return;
     forgetPointer(event.pointerId);
@@ -347,6 +382,7 @@ export function attachInputCapture(
       pointers.clear();
       pointerMasks.clear();
       blockedPointers.clear();
+      uiPointers.clear();
       touchAxes.clear();
       blockedTouchAxes.clear();
       pads.clear();

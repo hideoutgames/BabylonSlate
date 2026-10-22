@@ -24,6 +24,8 @@ export function createWorldInputProvider(deps: WorldInputDeps): WorldInputProvid
     getAxis: (axis) => resolved().axes[axis] ?? 0,
     getAxis2D: (axis) => resolved().axes2D[axis] ?? { x: 0, y: 0 },
     getCursorPosition: () => resolved().cursor,
+    getTouches: () => resolved().touches,
+    getTouchEvents: () => resolved().touchEvents,
     setCursorVisible: (visible) => {
       deps.emit({
         type: "setCursorVisible",
