@@ -111,6 +111,11 @@ export const engineSettingsSchema = z.object({
       coarsePointerTargetScale: z.number().default(1),
     })
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
+  /**
+   * Compact desktop density instead of the touch layout. Unset follows the
+   * platform: on except on iOS and Android (`resolveCompactMode`).
+   */
+  compactMode: z.boolean().optional().catch(undefined),
   undoHistoryLength: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_UNDO_HISTORY_LENGTH, Math.max(1, Math.round(value)));

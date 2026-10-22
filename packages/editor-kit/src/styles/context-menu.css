@@ -55,11 +55,9 @@
   cursor: default;
 }
 
-@media (pointer: coarse) {
-  .context-menu-item {
-    min-height: var(--touch-target, 44px);
-    padding-inline: 10px;
-  }
+:where(.touch-ui) .context-menu-item {
+  min-height: var(--touch-target, 44px);
+  padding-inline: 10px;
 }
 
 .context-menu-item:disabled {

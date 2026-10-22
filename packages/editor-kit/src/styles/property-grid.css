@@ -81,10 +81,8 @@
   visibility: hidden;
 }
 
-@media (pointer: fine) and (min-width: 768px) {
-  [data-slot="property-grid"][data-readonly="true"] :is([data-slot="input"], [data-slot="select-trigger"]) {
-    height: var(--chrome-row, 28px);
-    min-height: var(--chrome-row, 28px);
-    font-size: 0.75rem;
-  }
+:where(:root:not(.touch-ui)) [data-slot="property-grid"][data-readonly="true"] :is([data-slot="input"], [data-slot="select-trigger"]) {
+  height: var(--chrome-row, 28px);
+  min-height: var(--chrome-row, 28px);
+  font-size: 0.75rem;
 }

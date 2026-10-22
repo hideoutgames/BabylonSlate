@@ -1715,125 +1715,133 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
 }
 
 /* ---------------------------------------------------------------- Touch */
+/* The touch layout (Compact Mode off, `html.touch-ui`). Controls stay compact;
+   an invisible ::before extends each hit area to the touch target. Toolbar gaps keep neighboring hit areas from overlapping. */
+:where(.touch-ui) .homepage-theme
+  :is(
+    [data-slot="button"],
+    [data-slot="dropdown-menu-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"],
+    [data-slot="toggle-group-item"]
+  ):not(.homepage-card-open) {
+  min-height: 32px;
+  min-width: 0;
+}
+:where(.touch-ui) .homepage-theme
+  :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):not(
+    .homepage-card-open
+  ):is(:has(> svg:only-child), :has(> img:only-child)) {
+  min-width: 32px;
+}
+:where(.touch-ui) .homepage-theme
+  :is(
+    [data-slot="button"],
+    [data-slot="dropdown-menu-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"],
+    [data-slot="toggle-group-item"]
+  ):not(.homepage-card-open, .homepage-project-actions, .absolute) {
+  position: relative;
+}
+:where(.touch-ui) .homepage-theme
+  :is(
+    [data-slot="button"],
+    [data-slot="dropdown-menu-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"],
+    [data-slot="toggle-group-item"]
+  ):not(.homepage-card-open)::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--touch-target, 44px));
+  height: max(100%, var(--touch-target, 44px));
+  transform: translate(-50%, -50%);
+}
+:where(.touch-ui) .homepage-header-actions,
+:where(.touch-ui) .homepage-panel-toolbar,
+:where(.touch-ui) .homepage-template-toolbar,
+:where(.touch-ui) .homepage-composer-upload {
+  gap: 8px;
+}
+:where(.touch-ui) .homepage-theme [data-slot="dialog-close"] {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+:where(.touch-ui) .homepage-theme
+  :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):not(
+    .homepage-card-open
+  ):not(:disabled):active,
+:where(.touch-ui) .homepage-theme [data-slot="toggle-group-item"]:not(:disabled):active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  transition-duration: 0ms;
+}
+:where(.touch-ui) .homepage-theme [role^="menuitem"] {
+  min-height: var(--touch-target, 44px);
+}
+:where(.touch-ui) .homepage-navigation [data-slot="toggle-group-item"] {
+  height: var(--touch-target, 44px);
+}
+:where(.touch-ui) .homepage-panel-toolbar [data-slot="input"],
+:where(.touch-ui) .homepage-template-toolbar [data-slot="input"],
+:where(.touch-ui) .homepage-template-sidebar [data-slot="input"],
+:where(.touch-ui) .homepage-composer-form [data-slot="input"],
+:where(.touch-ui) .homepage-account-center [data-slot="input"] {
+  min-height: 32px;
+}
+/* Text size follows the device, not Compact Mode: iOS zooms into focused
+   fields below 16px. */
 @media (pointer: coarse) {
-  /* Controls stay compact; an invisible ::before extends each hit area to the
-     touch target. Toolbar gaps keep neighboring hit areas from overlapping. */
-  .homepage-theme
-    :is(
-      [data-slot="button"],
-      [data-slot="dropdown-menu-trigger"],
-      [data-slot="dialog-close"],
-      [data-slot="alert-dialog-action"],
-      [data-slot="alert-dialog-cancel"],
-      [data-slot="toggle-group-item"]
-    ):not(.homepage-card-open) {
-    min-height: 32px;
-    min-width: 0;
-  }
-  .homepage-theme
-    :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):not(
-      .homepage-card-open
-    ):is(:has(> svg:only-child), :has(> img:only-child)) {
-    min-width: 32px;
-  }
-  .homepage-theme
-    :is(
-      [data-slot="button"],
-      [data-slot="dropdown-menu-trigger"],
-      [data-slot="dialog-close"],
-      [data-slot="alert-dialog-action"],
-      [data-slot="alert-dialog-cancel"],
-      [data-slot="toggle-group-item"]
-    ):not(.homepage-card-open, .homepage-project-actions, .absolute) {
-    position: relative;
-  }
-  .homepage-theme
-    :is(
-      [data-slot="button"],
-      [data-slot="dropdown-menu-trigger"],
-      [data-slot="dialog-close"],
-      [data-slot="alert-dialog-action"],
-      [data-slot="alert-dialog-cancel"],
-      [data-slot="toggle-group-item"]
-    ):not(.homepage-card-open)::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: max(100%, var(--touch-target, 44px));
-    height: max(100%, var(--touch-target, 44px));
-    transform: translate(-50%, -50%);
-  }
-  .homepage-header-actions,
-  .homepage-panel-toolbar,
-  .homepage-template-toolbar,
-  .homepage-composer-upload {
-    gap: 8px;
-  }
-  .homepage-theme [data-slot="dialog-close"] {
-    width: 32px;
-    min-width: 32px;
-    height: 32px;
-    min-height: 32px;
-  }
-  .homepage-theme
-    :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):not(
-      .homepage-card-open
-    ):not(:disabled):active,
-  .homepage-theme [data-slot="toggle-group-item"]:not(:disabled):active {
-    background: var(--accent);
-    color: var(--accent-foreground);
-    transition-duration: 0ms;
-  }
-  .homepage-theme [role^="menuitem"] {
-    min-height: var(--touch-target, 44px);
-  }
-  .homepage-navigation [data-slot="toggle-group-item"] {
-    height: var(--touch-target, 44px);
-  }
   .homepage-panel-toolbar [data-slot="input"],
   .homepage-template-toolbar [data-slot="input"],
   .homepage-template-sidebar [data-slot="input"],
   .homepage-composer-form [data-slot="input"],
   .homepage-account-center [data-slot="input"] {
-    min-height: 32px;
     font-size: 16px;
   }
-  .homepage-template-categories {
-    gap: 12px;
-  }
-  .homepage-project-card[data-layout="list"] .homepage-project-badges {
-    margin-right: 48px;
-  }
-  .homepage-composer-header {
-    min-height: var(--touch-target, 44px);
-    padding-right: 48px;
-  }
-  .homepage-composer [data-slot="dialog-close"] {
-    top: 6px;
-    right: 6px;
-  }
-  .homepage-composer-color-row {
-    row-gap: 12px;
-  }
-  .homepage-composer-color-grid {
-    flex-basis: 100%;
-    gap: 12px;
-  }
-  .homepage-composer-upload {
-    margin-left: 0;
-  }
-  .homepage-color-choice {
-    width: 32px;
-    height: 32px;
-  }
-  .homepage-color-blob {
-    width: 22px;
-    height: 22px;
-  }
-  .homepage-project-options summary {
-    min-height: var(--touch-target, 44px);
-  }
+}
+:where(.touch-ui) .homepage-template-categories {
+  gap: 12px;
+}
+:where(.touch-ui) .homepage-project-card[data-layout="list"] .homepage-project-badges {
+  margin-right: 48px;
+}
+:where(.touch-ui) .homepage-composer-header {
+  min-height: var(--touch-target, 44px);
+  padding-right: 48px;
+}
+:where(.touch-ui) .homepage-composer [data-slot="dialog-close"] {
+  top: 6px;
+  right: 6px;
+}
+:where(.touch-ui) .homepage-composer-color-row {
+  row-gap: 12px;
+}
+:where(.touch-ui) .homepage-composer-color-grid {
+  flex-basis: 100%;
+  gap: 12px;
+}
+:where(.touch-ui) .homepage-composer-upload {
+  margin-left: 0;
+}
+:where(.touch-ui) .homepage-color-choice {
+  width: 32px;
+  height: 32px;
+}
+:where(.touch-ui) .homepage-color-blob {
+  width: 22px;
+  height: 22px;
+}
+:where(.touch-ui) .homepage-project-options summary {
+  min-height: var(--touch-target, 44px);
 }
 
 /* ---------------------------------------------------------------- Phone */
