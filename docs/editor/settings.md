@@ -58,6 +58,14 @@ It is on by default everywhere except on iPhone, iPad and Android. Change it und
 
 Compact Mode changes only sizes. Touch gestures, such as holding to open a menu or to drag, work in both modes.
 
+## Third-party notices
+
+Haptic is built with open-source software. To read the licences, open **Manage Account > Application** on the Homepage and choose **Third-Party Notices** at the bottom of the page.
+
+- Each row names a package, its version and its licence. Tap a row to read the licence text.
+- Rows marked **In Games** also ship in the games you export. Every exported game includes their notices in `legal/THIRD-PARTY-NOTICES.txt`.
+- **Application** at the top returns to the Application page.
+
 ## Project Settings pages
 
 | Page | Covers |
