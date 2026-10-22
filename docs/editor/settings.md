@@ -21,7 +21,7 @@ Use **Search settings** in either window to find a setting by name. Choosing a r
 
 | Group | Pages |
 | --- | --- |
-| Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, About |
+| Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, Interface, About |
 | Projects | Templates, Engine Plugins, Engine Extensions |
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
@@ -32,10 +32,22 @@ Use **Search settings** in either window to find a setting by name. Choosing a r
 - **Thumbnails**: turn Content Browser thumbnails on or off.
 - **Focus**: which windows stay visible in Focus. See [Windows and Layout](index.md).
 - **Keybinds**: change shortcuts. See [Keyboard Shortcuts](../start/shortcuts.md).
+- **Interface**: **Compact Mode**. See [Compact Mode](#compact-mode).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Editor Extensions](../projects/extensions.md).
 
 Haptic always uses its dark theme.
+
+## Compact Mode
+
+**Compact Mode** sets how large the editor's controls are on this device.
+
+- **On**: small buttons, menus and list rows for a mouse, trackpad or keyboard.
+- **Off**: the touch layout, with larger buttons, menu items and rows that are easy to tap.
+
+It is on by default everywhere except on iPhone, iPad and Android. Change it under **Engine Settings > Interface**, or from the Homepage account menu under **Application**. The editor updates as soon as you switch it.
+
+Compact Mode changes only sizes. Touch gestures, such as holding to open a menu or to drag, work in both modes.
 
 ## Project Settings pages
 
