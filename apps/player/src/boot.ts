@@ -1095,6 +1095,8 @@ function initializePlayer(
   if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+    // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
+    ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
   if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());

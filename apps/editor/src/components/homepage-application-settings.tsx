@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { getHostPlatform, resolveCompactMode } from "@haptic/vfs";
 import {
   Field,
@@ -12,11 +13,14 @@ import { Switch } from "@haptic/ui/components/switch";
 import { useAppSettings } from "../context/app-settings-context";
 import { CompactModeField } from "./compact-mode-field";
 import { ThemeSettingsFields } from "./homepage-theme-settings";
+import { ThirdPartyNoticesEntry, ThirdPartyNoticesPage } from "./homepage-third-party-notices";
 
 /** Application-wide preferences for the Account dialog's Application section. */
 export function ApplicationSettingsFields() {
   const { settings, hydrated, updateSettings } = useAppSettings();
   const desktop = getHostPlatform() === "electron";
+  const [page, setPage] = useState<"main" | "notices">("main");
+  if (page === "notices") return <ThirdPartyNoticesPage onBack={() => setPage("main")} />;
   return (
     <FieldGroup>
       <ThemeSettingsFields />
@@ -59,6 +63,7 @@ export function ApplicationSettingsFields() {
           />
         </Field>
       </FieldSet>
+      <ThirdPartyNoticesEntry onOpen={() => setPage("notices")} />
     </FieldGroup>
   );
 }

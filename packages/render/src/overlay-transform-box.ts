@@ -249,6 +249,7 @@ const OVERLAY_HANDLE_VISUAL_SCALE = 0.25;
 
 const scratchScale = new Vector3();
 const scratchRotation = new Quaternion();
+const scratchWriteEuler = new Vector3();
 const scratchPosition = new Vector3();
 const scratchLocal = new Vector3();
 const scratchWorld = new Vector3();
@@ -441,8 +442,15 @@ export function writeOverlayBoxTransform(
 ): void {
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   mesh.position.set(next.position[0], next.position[1], next.position[2]);
-  mesh.rotationQuaternion ??= new Quaternion();
-  Quaternion.FromEulerAnglesToRef(0, 0, next.rotationZ, mesh.rotationQuaternion);
+  mesh.rotationQuaternion ??= Quaternion.FromEulerVector(mesh.rotation);
+  // The box only turns about Z; a 3D actor keeps its X/Y tilt from the Inspector.
+  mesh.rotationQuaternion.toEulerAnglesToRef(scratchWriteEuler);
+  Quaternion.FromEulerAnglesToRef(
+    scratchWriteEuler.x,
+    scratchWriteEuler.y,
+    next.rotationZ,
+    mesh.rotationQuaternion,
+  );
   const meta = (mesh.metadata ?? {}) as Text2DOverlayMeta;
   if (isText2DOverlayMesh(mesh) && start) {
     const wrapWidthPx =

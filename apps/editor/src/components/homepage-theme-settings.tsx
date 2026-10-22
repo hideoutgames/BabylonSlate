@@ -274,7 +274,7 @@ export function ThemeSettingsFields() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Theme</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete {active.name}? The editor switches to Default. Export the theme first to keep a copy.
+              Delete {active.name}? The editor switches to Haptic Dark. Export the theme first to keep a copy.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

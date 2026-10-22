@@ -3,9 +3,11 @@ import {
   type InputKey,
   type InputTypeValue,
   type InputValueState,
+  type TouchInput,
+  type TouchType,
 } from "@haptic/core";
 import { inputMappingKey } from "./input-assets";
-import type { RawInputEvent } from "./ring-buffer";
+import type { PointerKind, RawInputEvent } from "./ring-buffer";
 import { InputBindingProfile } from "./input-bindings";
 import type {
   ActionBinding,
@@ -42,6 +44,21 @@ export interface ResolvedInputTick {
   gamepadConnections: GamepadConnectionEvent[];
   /** Primary pointer / mouse in canvas CSS pixels. XY sticks after release. */
   cursor: { x: number; y: number; pressed: boolean };
+  /** Every contact down during this tick in Finger order, including those lifted this tick. */
+  touches: TouchInput[];
+  /** Began, Moved (one per contact per tick) and Ended or Cancelled records in input order. */
+  touchEvents: TouchInput[];
+}
+
+/** A pointer holding its primary button: a finger, a pen tip or the left mouse button. */
+interface Contact {
+  /** Live state; copied whenever it leaves the resolver. */
+  touch: TouchInput;
+  /** Position at the start of this tick, or at the press. */
+  baseX: number;
+  baseY: number;
+  /** This tick's Moved record, updated in place by later moves in the tick. */
+  moved: TouchInput | null;
 }
 
 interface ModifierState {
@@ -63,6 +80,10 @@ interface ResolverInternals {
   previousHeldActions: Set<string>;
   cursor: { x: number; y: number; pressed: boolean };
   primaryPointerId: number | null;
+  /** Live contacts by pointer id. */
+  contacts: Map<number, Contact>;
+  /** Contacts lifted this tick; their fingers stay taken until the next tick. */
+  liftedContacts: Contact[];
 }
 
 function modifiersMatch(
@@ -150,6 +171,24 @@ function axisBindingValue(
   }
 }
 
+const TOUCH_TYPE: Record<PointerKind, TouchType> = { mouse: "Mouse", touch: "Finger", pen: "Pen" };
+
+function copyTouch(touch: TouchInput): TouchInput {
+  return {
+    ...touch,
+    Position: { ...touch.Position },
+    Delta: { ...touch.Delta },
+    StartPosition: { ...touch.StartPosition },
+  };
+}
+
+/** Browsers report 0.5 while pressed on hardware without pressure; a missing value reads the same. */
+function contactPressure(pressure: number | undefined, fallback: number): number {
+  return typeof pressure === "number" && Number.isFinite(pressure)
+    ? Math.min(1, Math.max(0, pressure))
+    : fallback;
+}
+
 function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
   if (a.size !== b.size) return false;
   for (const value of a) if (!b.has(value)) return false;
@@ -182,6 +221,8 @@ export class InputResolver {
     previousHeldActions: new Set(),
     cursor: { x: 0, y: 0, pressed: false },
     primaryPointerId: null,
+    contacts: new Map(),
+    liftedContacts: [],
   };
 
   private mappings: InputMappings;
@@ -208,6 +249,8 @@ export class InputResolver {
     this.state.modifiers = { shift: false, ctrl: false, alt: false, meta: false };
     this.state.cursor.pressed = false;
     this.state.primaryPointerId = null;
+    this.state.contacts.clear();
+    this.state.liftedContacts.length = 0;
     this.inputStates = {};
     return this.resolve([]);
   }
@@ -254,6 +297,8 @@ export class InputResolver {
       };
     };
     const connections: GamepadConnectionEvent[] = [];
+    const touchEvents: TouchInput[] = [];
+    this.beginTouchTick();
     // Name lookups (`isActionHeld("Jump")`) cover every asset with that display
     // name; `inputs` keeps each asset's own state.
     const actions: Record<string, ActionState> = {};
@@ -369,6 +414,7 @@ export class InputResolver {
               this.state.primaryPointerId = null;
             }
           }
+          this.trackContact(event, touchEvents);
           break;
         }
         case "gamepad": {
@@ -492,7 +538,88 @@ export class InputResolver {
       axes2D,
       gamepadConnections: connections,
       cursor: { ...this.state.cursor },
+      touches: [...this.state.contacts.values(), ...this.state.liftedContacts]
+        .map((contact) => copyTouch(contact.touch))
+        .sort((a, b) => a.Finger - b.Finger),
+      touchEvents,
     };
+  }
+
+  /** Free last tick's lifted fingers; live contacts start the tick unmoved. */
+  private beginTouchTick(): void {
+    this.state.liftedContacts.length = 0;
+    for (const contact of this.state.contacts.values()) {
+      const touch = contact.touch;
+      contact.baseX = touch.Position.x;
+      contact.baseY = touch.Position.y;
+      contact.moved = null;
+      touch.Delta = { x: 0, y: 0 };
+      touch.Phase = "Stationary";
+    }
+  }
+
+  private freeFinger(): number {
+    const taken = new Set<number>();
+    for (const contact of this.state.contacts.values()) taken.add(contact.touch.Finger);
+    for (const contact of this.state.liftedContacts) taken.add(contact.touch.Finger);
+    let finger = 0;
+    while (taken.has(finger)) finger++;
+    return finger;
+  }
+
+  /**
+   * A contact begins when its pointer starts holding button 0 and ends when
+   * it stops, after `pointerButtons` has taken the event into account.
+   */
+  private trackContact(
+    event: Extract<RawInputEvent, { kind: "pointer" }>,
+    touchEvents: TouchInput[],
+  ): void {
+    const holdsPrimary = this.state.pointerButtons.get(event.pointerId)?.has(0) === true;
+    const contact = this.state.contacts.get(event.pointerId);
+    if (!contact) {
+      if (event.phase !== "down" || !holdsPrimary) return;
+      const touch: TouchInput = {
+        Finger: this.freeFinger(),
+        Position: { x: event.x, y: event.y },
+        Delta: { x: 0, y: 0 },
+        StartPosition: { x: event.x, y: event.y },
+        Pressure: contactPressure(event.pressure, 0.5),
+        Phase: "Began",
+        Type: TOUCH_TYPE[event.pointerType ?? "mouse"],
+      };
+      this.state.contacts.set(event.pointerId, { touch, baseX: event.x, baseY: event.y, moved: null });
+      touchEvents.push(copyTouch(touch));
+      return;
+    }
+    const touch = contact.touch;
+    // A cancel may carry no real position; an up reports where the contact lifted.
+    if (event.phase !== "cancel") {
+      touch.Position = { x: event.x, y: event.y };
+      touch.Delta = { x: event.x - contact.baseX, y: event.y - contact.baseY };
+    }
+    // Pressure drops to 0 once nothing is pressed, so a lift keeps the last sample.
+    if (event.phase === "down" || event.phase === "move") {
+      touch.Pressure = contactPressure(event.pressure, touch.Pressure);
+    }
+    if (!holdsPrimary) {
+      touch.Phase = event.phase === "cancel" ? "Cancelled" : "Ended";
+      this.state.contacts.delete(event.pointerId);
+      this.state.liftedContacts.push(contact);
+      touchEvents.push(copyTouch(touch));
+      return;
+    }
+    if (contact.moved) {
+      // The tick's one Moved record ends where the contact ends the tick.
+      contact.moved.Position = { ...touch.Position };
+      contact.moved.Delta = { ...touch.Delta };
+      contact.moved.Pressure = touch.Pressure;
+      return;
+    }
+    if (touch.Delta.x === 0 && touch.Delta.y === 0) return;
+    if (touch.Phase !== "Began") touch.Phase = "Moved";
+    contact.moved = { ...copyTouch(touch), Phase: "Moved" };
+    touchEvents.push(contact.moved);
   }
 
   /**

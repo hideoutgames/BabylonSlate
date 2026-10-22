@@ -13,6 +13,7 @@ import {
   type SceneLayerCamera,
   type Guid,
   type InputKey,
+  type TouchInput,
   type GuidFactory,
   type Transform,
 } from "@haptic/core";
@@ -30,6 +31,10 @@ export type TickContext = {
   getAxis?: (axis: string) => number;
   getAxis2D?: (axis: string) => { x: number; y: number };
   getCursorPosition?: () => { x: number; y: number; pressed: boolean };
+  /** This tick's contacts in Finger order, including those lifted this tick. */
+  getTouches?: () => readonly TouchInput[];
+  /** This tick's Began, Moved, Ended and Cancelled records in input order. */
+  getTouchEvents?: () => readonly TouchInput[];
   setCursorVisible?: (visible: boolean) => void;
   setGamepadRumble?: (
     gamepadIndex: number,

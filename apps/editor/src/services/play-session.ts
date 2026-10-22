@@ -1729,6 +1729,8 @@ export function startPlaySession(options: {
 
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+    // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
+    ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
   if (options.mode === "simulate") input.setSuppressed(false);
 
