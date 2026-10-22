@@ -64,6 +64,26 @@ export function isSceneLayerDeniedComponent(classId: string): boolean {
   return DENIED.has(classId);
 }
 
+/** Components that draw 3D geometry inside the flat layer. */
+export const SCENE_LAYER_3D_COMPONENT_CLASS_IDS = [
+  "MeshComponent",
+  "Text3DComponent",
+] as const;
+
+/**
+ * A layer actor carrying 3D geometry rotates and scales on all three axes in
+ * the Inspector; it keeps 2D placement and the viewport's 2D box.
+ */
+export function isSceneLayer3DActor(actor: {
+  components: readonly { classId: string; destroyed?: boolean }[];
+}): boolean {
+  return actor.components.some(
+    (component) =>
+      !component.destroyed &&
+      (SCENE_LAYER_3D_COMPONENT_CLASS_IDS as readonly string[]).includes(component.classId),
+  );
+}
+
 export const SCENE_LAYER_DEFAULT_LAYER_BOUNDS: SceneCameraBounds2D = {
   width: 32,
   height: 18,
