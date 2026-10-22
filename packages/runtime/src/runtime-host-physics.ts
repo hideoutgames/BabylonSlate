@@ -26,6 +26,13 @@ interface PhysicsHostDeps {
     options: { drawDebug?: boolean; duration?: number } | undefined,
     sceneLayerId: string | null,
   ): CursorProjection;
+  /** `projectCursorToScene` from a finger that is down this tick; any other finger misses. */
+  projectTouchToScene(
+    finger: number,
+    channel: string | undefined,
+    options: { drawDebug?: boolean; duration?: number } | undefined,
+    sceneLayerId: string | null,
+  ): CursorProjection;
 }
 
 const miss = () => ({ hit: false, location: null, normal: null, distance: 0, actorId: null, bodyId: null });
@@ -49,7 +56,7 @@ export function callerSceneLayerId(caller: BObject | null | undefined): string |
  * main-Scene scripts see only the main world.
  */
 export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHostServices,
-  "sampleWater" | "lineTrace" | "projectCursorToScene" | "sphereOverlap" | "shapeSweep" |
+  "sampleWater" | "lineTrace" | "projectCursorToScene" | "projectTouchToScene" | "sphereOverlap" | "shapeSweep" |
   "addImpulse" | "moveCharacter" | "teleportActor"> {
   const queryWorld = (caller: BObject | null | undefined): PhysicsWorldSync | null => {
     const layerId = callerSceneLayerId(caller);
@@ -67,6 +74,8 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
       queryWorld(caller)?.lineTrace(start, end, options) ?? miss(),
     projectCursorToScene: (channel, options, caller) =>
       deps.projectCursorToScene(channel, options, callerSceneLayerId(caller)),
+    projectTouchToScene: (finger, channel, options, caller) =>
+      deps.projectTouchToScene(finger, channel, options, callerSceneLayerId(caller)),
     sphereOverlap: (center, radius, channel, caller) =>
       queryWorld(caller)?.sphereOverlap(center, radius, { channel }) ?? { actorIds: [], bodyIds: [] },
     shapeSweep: (shape, start, end, channel, caller) =>

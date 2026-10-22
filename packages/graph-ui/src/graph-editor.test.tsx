@@ -4599,6 +4599,28 @@ describe("GraphEditor", () => {
     expect(rename).toHaveBeenCalledWith("event");
   });
 
+  it("shows the event corner marker only on native and inherited events", () => {
+    const { getAllByLabelText } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            { id: "native", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: { title: "Event Begin Play", __pins: [] } },
+            { id: "custom", type: "flow.event.custom", position: { x: 0, y: 200 }, data: { title: "Event On Hit", __pins: [] } },
+            {
+              id: "inherited",
+              type: "flow.event.custom",
+              position: { x: 0, y: 400 },
+              data: { title: "Event On Foo", eventQualifier: "Inherited", __pins: [] },
+            },
+          ],
+          edges: [],
+        }}
+      />,
+    );
+    const owners = getAllByLabelText("Event").map((marker) => marker.closest(".react-flow__node")?.getAttribute("data-id"));
+    expect(owners.sort()).toEqual(["inherited", "native"]);
+  });
+
   it("opens a long-press menu on a behaviour-tree node", async () => {
     const wrap = vi.fn();
     const { getByTestId } = render(
