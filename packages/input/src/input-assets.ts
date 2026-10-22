@@ -1,4 +1,4 @@
-import type { InputAssetDefinition } from "@babylonslate/core";
+import type { InputAssetDefinition } from "@haptic/core";
 import { normalizeInputMappings, type InputMappings } from "./mappings";
 
 /** An explicit empty catalog means no inputs; it must never restore defaults. */

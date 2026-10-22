@@ -3,13 +3,13 @@ import {
   overlayNineSliceSourceFractions,
   type OverlayNineSliceSourceFractions,
   type SceneLayerPanelSource,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { objectContainRect } from "../lib/object-contain";
 

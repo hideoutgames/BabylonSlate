@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   readSnapshotHeader,
   snapshotFloatCount,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("P14 perf smoke", () => {

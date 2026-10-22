@@ -1,9 +1,9 @@
 import {
   isFocusTargetClass, normalizeFocusNavigationSettings, parseFocusTargetProperties,
   type FocusDirection, type FocusNavigationSettings, type FocusTargetProperties, type InputValueState,
-} from "@babylonslate/core";
-import { Actor, ActorComponent, type World } from "@babylonslate/object-model";
-import { InputResolver, type AxisBinding, type RawInputEvent, type ResolvedInputTick } from "@babylonslate/input";
+} from "@haptic/core";
+import { Actor, ActorComponent, type World } from "@haptic/object-model";
+import { InputResolver, type AxisBinding, type RawInputEvent, type ResolvedInputTick } from "@haptic/input";
 import { actorParentGuid, actorWorldTransform, composeParentChildTransform, actorGuidIndex } from "./actor-world-transform";
 
 /** x/y are the rectangle center in the owning layer's design coordinates. */

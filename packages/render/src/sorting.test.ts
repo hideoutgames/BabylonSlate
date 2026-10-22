@@ -1,6 +1,6 @@
 import { NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
-import { computeSortKey } from "@babylonslate/core";
+import { computeSortKey } from "@haptic/core";
 import {
   RENDERING_GROUP,
   applySortingToMesh,

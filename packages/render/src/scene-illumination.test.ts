@@ -1,5 +1,5 @@
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { normalizeShadowSettings } from "@haptic/core";
 import {
   Camera,
   DirectionalLight,
@@ -19,7 +19,7 @@ import {
   createActor,
   createDefaultScene,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { setupDefaultViewport } from "./viewport";
 import {

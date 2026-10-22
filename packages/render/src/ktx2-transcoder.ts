@@ -6,7 +6,7 @@
 import {
   KTX2_TRANSCODER_RELATIVE_FILES,
   playerFilesHaveKtx2Transcoder,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 export {
   KTX2_TRANSCODER_RELATIVE_FILES,

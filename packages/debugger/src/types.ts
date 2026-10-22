@@ -1,4 +1,4 @@
-import type { QualityGroup, RenderPath, RenderPathStatus } from "@babylonslate/core";
+import type { QualityGroup, RenderPath, RenderPathStatus } from "@haptic/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";

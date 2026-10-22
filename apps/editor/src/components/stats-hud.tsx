@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { STAT_GROUP_LABELS, statsHudModel, TICK_BUDGET_MS, type StatGroup, type StatsHudMetric } from "@babylonslate/debugger";
-import type { HostMemoryStats } from "@babylonslate/vfs";
-import { drawCallCeilingWarning, geometryByteCeilingWarning, type RenderDiagnostics } from "@babylonslate/render";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { STAT_GROUP_LABELS, statsHudModel, TICK_BUDGET_MS, type StatGroup, type StatsHudMetric } from "@haptic/debugger";
+import type { HostMemoryStats } from "@haptic/vfs";
+import { drawCallCeilingWarning, geometryByteCeilingWarning, type RenderDiagnostics } from "@haptic/render";
+import { SelectableText } from "@haptic/editor-kit";
+import { cn } from "@haptic/ui/lib/utils";
 
 export type StatsHudProps = {
   fps: number;

@@ -1,6 +1,6 @@
-import { decodeExtensionSettings } from "@babylonslate/assets";
-import { createReadOnlyProjectStorage, MemoryStorageAdapter } from "@babylonslate/vfs";
-import type { ProjectStorage } from "@babylonslate/core";
+import { decodeExtensionSettings } from "@haptic/assets";
+import { createReadOnlyProjectStorage, MemoryStorageAdapter } from "@haptic/vfs";
+import type { ProjectStorage } from "@haptic/core";
 import manifest from "../../../../engine-extensions/glsl-to-material/extension.json?raw";
 import source from "../../../../engine-extensions/glsl-to-material/index.js?raw";
 

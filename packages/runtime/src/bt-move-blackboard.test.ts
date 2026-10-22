@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { BehaviourTreeDocument } from "@babylonslate/behaviour-tree";
-import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
-import { generateNavMesh, initNavigation } from "@babylonslate/navigation";
+import type { CommandMessage } from "@haptic/bridge";
+import type { BehaviourTreeDocument } from "@haptic/behaviour-tree";
+import { createActor, createDefaultSceneSettings } from "@haptic/core";
+import { generateNavMesh, initNavigation } from "@haptic/navigation";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

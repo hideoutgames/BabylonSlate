@@ -14,22 +14,22 @@ import {
   pinVisualShape,
   resolveNodeType,
   type PinTypeRef,
-} from "@babylonslate/graph-ui";
-import { humanizePropertyLabel, PinShapeGlyph } from "@babylonslate/editor-kit";
-import { allNodeDefinitions } from "@babylonslate/scripting-nodes";
+} from "@haptic/graph-ui";
+import { humanizePropertyLabel, PinShapeGlyph } from "@haptic/editor-kit";
+import { allNodeDefinitions } from "@haptic/scripting-nodes";
 import {
   MATERIAL_CATALOG,
   materialPaletteNodes,
   pinsForMaterialNode,
   type MaterialDomain,
-} from "@babylonslate/shader-graph";
-import { PARTICLE_CATALOG } from "@babylonslate/particle-graph";
+} from "@haptic/shader-graph";
+import { PARTICLE_CATALOG } from "@haptic/particle-graph";
 import {
   BT_COMPOSITE_CATALOG,
   BT_DECORATOR_CATALOG,
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import { scriptGraphFolder } from "./catalog";
 import type { DocsPin, NodePreviews } from "./types";
 

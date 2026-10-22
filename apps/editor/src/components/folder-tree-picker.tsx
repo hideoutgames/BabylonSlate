@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { FolderIcon } from "lucide-react";
-import type { FolderNode } from "@babylonslate/assets";
-import { SearchInput, TreeView } from "@babylonslate/editor-kit";
+import type { FolderNode } from "@haptic/assets";
+import { SearchInput, TreeView } from "@haptic/editor-kit";
 import { filterFolderTreeRows, flattenFolderTree } from "../lib/content-browser-helpers";
 
 export interface FolderTreePickerProps {

@@ -1,4 +1,4 @@
-import { packCollisionTriangleMesh, type CollisionTriangleMesh } from "@babylonslate/core";
+import { packCollisionTriangleMesh, type CollisionTriangleMesh } from "@haptic/core";
 import type { ModelPayload } from "./model-payload";
 import { extractGltfCollisionMesh } from "./glb-geometry";
 import {

@@ -1,6 +1,6 @@
 import { useId } from "react";
-import { assetLoadingPolicy, type AssetLoadingPolicy } from "@babylonslate/core";
-import { Field, FieldDescription, FieldLabel } from "@babylonslate/ui/components/field";
+import { assetLoadingPolicy, type AssetLoadingPolicy } from "@haptic/core";
+import { Field, FieldDescription, FieldLabel } from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -8,7 +8,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 
 const ASSET_LOADING_OPTIONS: ReadonlyArray<{ value: AssetLoadingPolicy; label: string }> = [
   { value: "soft", label: "Soft (Load On Demand)" },

@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/render",
+  "name": "@haptic/render",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -36,18 +36,18 @@
     "@babylonjs/core": "9.29.0",
     "@babylonjs/loaders": "9.29.0",
     "@babylonjs/serializers": "9.29.0",
-    "@babylonslate/assets": "workspace:*",
-    "@babylonslate/bridge": "workspace:*",
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/navigation": "workspace:*",
-    "@babylonslate/particle-graph": "workspace:*",
-    "@babylonslate/physics": "workspace:*",
-    "@babylonslate/shader-graph": "workspace:*",
+    "@haptic/assets": "workspace:*",
+    "@haptic/bridge": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/navigation": "workspace:*",
+    "@haptic/particle-graph": "workspace:*",
+    "@haptic/physics": "workspace:*",
+    "@haptic/shader-graph": "workspace:*",
     "meshoptimizer": "1.1.1",
     "earcut": "^3.2.3"
   },
   "devDependencies": {
-    "@babylonslate/test-kit": "workspace:*",
+    "@haptic/test-kit": "workspace:*",
     "typescript": "~6.0.3"
   }
 }

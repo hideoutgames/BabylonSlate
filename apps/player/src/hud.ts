@@ -1,4 +1,4 @@
-import { snapshotTickIndex } from "@babylonslate/bridge";
+import { snapshotTickIndex } from "@haptic/bridge";
 import {
   isStatGroup,
   nextStatGroups,
@@ -8,7 +8,7 @@ import {
   type StatGroup,
   type StatsHudMetric,
   type StatsHudRendering,
-} from "@babylonslate/debugger";
+} from "@haptic/debugger";
 import {
   audioDebugOverlayText,
   audioStats,
@@ -16,7 +16,7 @@ import {
   geometryByteCeilingWarning,
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
-} from "@babylonslate/render";
+} from "@haptic/render";
 
 export type PlayerHudStats = {
   lightsDebugText?: string | null;

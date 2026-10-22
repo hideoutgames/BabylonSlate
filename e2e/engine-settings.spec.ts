@@ -10,11 +10,11 @@ async function viewportPostProcessPassCount(
     () =>
       (
         globalThis as {
-          __babylonslateViewportTest?: {
+          __hapticViewportTest?: {
             postProcessPassCount: () => number | null;
           };
         }
-      ).__babylonslateViewportTest?.postProcessPassCount() ?? null,
+      ).__hapticViewportTest?.postProcessPassCount() ?? null,
   );
 }
 
@@ -25,11 +25,11 @@ async function viewportHardwareScalingLevel(
     () =>
       (
         globalThis as {
-          __babylonslateViewportTest?: {
+          __hapticViewportTest?: {
             hardwareScalingLevel: () => number | null;
           };
         }
-      ).__babylonslateViewportTest?.hardwareScalingLevel() ?? null,
+      ).__hapticViewportTest?.hardwareScalingLevel() ?? null,
   );
 }
 
@@ -55,7 +55,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
     page.getByTestId("content-browser-new-asset-dialog"),
   ).toHaveCount(0);
   await page
-    .locator('[data-asset-path="assets/Bloom.material.babasset"]')
+    .locator('[data-asset-path="assets/Bloom.material.hasset"]')
     .dblclick();
   await expect(page.getByTestId("document-workspace-material")).toBeVisible();
   await page.getByTestId("property-domain").click();
@@ -68,10 +68,10 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
   const bloomGuid = await page.evaluate(() => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
     return (
-      host.__babylonslateTest?.guidForPath("assets/Bloom.material.babasset") ??
+      host.__hapticTest?.guidForPath("assets/Bloom.material.hasset") ??
       ""
     );
   });
@@ -85,7 +85,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
 
   await page.getByRole("textbox", { name: "Filter Properties" }).fill("Enabled");
   await page.getByTestId("scene-layers-stack-add").click();
-  const layerGuid = await guidForPath(page, "assets/Foreground_Layer_With_A_Long_Name.scenelayer.babasset");
+  const layerGuid = await guidForPath(page, "assets/Foreground_Layer_With_A_Long_Name.scenelayer.hasset");
   expect(layerGuid).not.toBe("");
   await page.getByTestId(`search-item-${layerGuid}`).click();
 

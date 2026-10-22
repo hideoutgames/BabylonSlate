@@ -9,11 +9,11 @@ import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import {
   compileMaterialPlan, createAppWebGpuEngine, disposeMeshLatticeDeformer,
   requestRenderPath, setMeshLatticeDeformer, SharedOutlineOwner, SceneDeformerHost,
-} from "@babylonslate/render";
-import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
-import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
-import { deformerBindings } from "@babylonslate/core";
+} from "@haptic/render";
+import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
+import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { deformerBindings } from "@haptic/core";
 
 const WIDTH = 256, HEIGHT = 160;
 type Pixels = Uint8ClampedArray;

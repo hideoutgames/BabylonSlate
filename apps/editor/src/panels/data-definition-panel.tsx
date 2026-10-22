@@ -1,14 +1,14 @@
 import { useId, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { carriesLoadingPolicy } from "@babylonslate/core";
-import { reconcileDataDefinitionDefault } from "@babylonslate/scripting";
+import { carriesLoadingPolicy } from "@haptic/core";
+import { reconcileDataDefinitionDefault } from "@haptic/scripting";
 import {
   ASSET_REF_PICKER_TYPES, AssetLoadingField, AssetPicker, ClassPicker, PanelFrame, PinListEditor,
   PropertyGrid, PropertySectionTitle, TypeColorMark, VariableTypeFields, assetRowIdentity, classRowIdentity,
   humanizePropertyLabel, pinPickerColorVar, pinPickerLabel, type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
+} from "@haptic/editor-kit";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
 import { DATA_DEFINITION_FIELD_TYPES, useDataDefinitionEditing } from "../context/data-definition-editing-context";
 import { DataValueEditor } from "../components/data-value-editor";
 

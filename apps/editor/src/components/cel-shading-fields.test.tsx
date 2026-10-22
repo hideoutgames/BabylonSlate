@@ -5,7 +5,7 @@ import {
   normalizeCelShadingSettings,
   type CelShadingOverrides,
   type CelShadingSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { CelShadingFields } from "./cel-shading-fields";
 
 // Base UI dispatches PointerEvent when activating its native switch input.

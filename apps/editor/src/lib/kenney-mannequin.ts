@@ -1,4 +1,4 @@
-import { embedGlbExternalImages } from "@babylonslate/assets";
+import { embedGlbExternalImages } from "@haptic/assets";
 import { publicAssetUrl } from "./branding";
 import { nodeCwd, tryReadRepoFile } from "./engine-content";
 import { prepareMannequinNormals } from "./kenney-mannequin-normals";

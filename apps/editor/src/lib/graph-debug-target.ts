@@ -1,6 +1,6 @@
-import type { AssetRegistry } from "@babylonslate/assets";
-import type { DebugInstance, DebugObserveTarget } from "@babylonslate/bridge";
-import { walkAncestry } from "@babylonslate/editor-kit";
+import type { AssetRegistry } from "@haptic/assets";
+import type { DebugInstance, DebugObserveTarget } from "@haptic/bridge";
+import { walkAncestry } from "@haptic/editor-kit";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { registryClassParentLookup } from "./class-asset-lookup";
 

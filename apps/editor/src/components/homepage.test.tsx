@@ -9,7 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { BUILT_IN_STARTER_KINDS } from "../lib/create-project";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
@@ -21,8 +21,8 @@ const { getHostPlatform, pickImportFiles } = vi.hoisted(() => ({
   pickImportFiles: vi.fn(async () => []),
 }));
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
+vi.mock("@haptic/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/vfs")>();
   return { ...actual, getHostPlatform, pickImportFiles };
 });
 
@@ -32,7 +32,7 @@ vi.mock("./settings-modal", () => ({
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
+  vi.stubGlobal("__HAPTIC_BUILD_LABEL__", "0.0.1 Development build");
   vi.stubGlobal("matchMedia", (media: string) => ({
     matches: false,
     media,
@@ -225,7 +225,7 @@ describe("Slate project browser", () => {
     "creates a named %s project with the selected appearance",
     async (kind) => {
       // Feature Test is listed only in the Debug Mode Engine Setting.
-      if (kind === "feature-test") localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ debugMode: true }));
+      if (kind === "feature-test") localStorage.setItem("haptic:engine-settings", JSON.stringify({ debugMode: true }));
       const onCreateEmpty = vi.fn(async () => {});
       renderHomepage({ onCreateEmpty });
       fireEvent.click(screen.getByTestId("create-project"));
@@ -461,7 +461,7 @@ describe("Slate project browser", () => {
     expect(autoUpdate.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(autoUpdate);
     await waitFor(() => expect(autoUpdate.getAttribute("aria-checked")).toBe("false"));
-    expect(JSON.parse(localStorage.getItem("babylonslate:engine-settings")!).automaticUpdatesEnabled).toBe(false);
+    expect(JSON.parse(localStorage.getItem("haptic:engine-settings")!).automaticUpdatesEnabled).toBe(false);
     unmount();
 
     renderHomepage();

@@ -11,7 +11,7 @@ export interface RuntimeAssetCatalogEntry {
   name: string;
   /** Header type, for example `Texture`, `Class` or `Scene`. */
   type: string;
-  /** Authored storage path, for example `assets/Weapons/Rifle.class.babasset`. */
+  /** Authored storage path, for example `assets/Weapons/Rifle.class.hasset`. */
   path: string;
   /** Class assets: the class id. */
   classId?: string;
@@ -35,8 +35,8 @@ export const ASSET_TYPES: readonly string[] = [
 export function classIdForAssetPath(path: string): string {
   const file = path.split("/").pop() ?? path;
   const stem = file
-    .replace(/\.class\.babasset$/, "")
-    .replace(/\.babasset$/, "");
+    .replace(/\.class\.hasset$/, "")
+    .replace(/\.hasset$/, "");
   const cleaned = stem.replace(/[^A-Za-z0-9_]+/g, "_");
   return cleaned.length > 0 ? cleaned : "Graph";
 }

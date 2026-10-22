@@ -1,6 +1,6 @@
-import type { CollisionTriangleMesh, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import type { AreaEmissionPixels, AudioPayload, ModelPayload } from "@babylonslate/assets";
+import type { CollisionTriangleMesh, SerializedScene, SerializedSceneLayer } from "@haptic/core";
+import type { ScriptBundleEntry } from "@haptic/bridge";
+import type { AreaEmissionPixels, AudioPayload, ModelPayload } from "@haptic/assets";
 import type { GameManifest } from "./types";
 
 /** Prepared sources shared by Play, Preview Build, and the standalone player. */

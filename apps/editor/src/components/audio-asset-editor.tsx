@@ -6,7 +6,7 @@ import {
   PropertyGrid,
   assetRowIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   attenuationPlotPoints,
   clampAudioGain,
@@ -16,9 +16,9 @@ import {
   setAudioChannelEffect,
   validateAudioMixer,
   type SoundAttenuationPayload,
-} from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldDescription } from "@babylonslate/ui/components/field";
+} from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
+import { FieldDescription } from "@haptic/ui/components/field";
 import {
   useDocumentActions,
   useOpenDocument,

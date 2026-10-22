@@ -1,22 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
   createDefaultSceneSettings,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import {
   createDefaultNodeRegistry,
   SUBSYSTEM_GET_NODE_ID,
   subsystemGetProperties,
-} from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

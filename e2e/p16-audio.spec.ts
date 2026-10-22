@@ -17,9 +17,9 @@ const BEEP_WAV = path.join(process.cwd(), "e2e/fixtures/beep.wav");
 async function guidForPath(page: Page, assetPath: string): Promise<string> {
   return page.evaluate((target) => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath(target) ?? "";
+    return host.__hapticTest?.guidForPath(target) ?? "";
   }, assetPath);
 }
 
@@ -46,20 +46,20 @@ test.describe("P16 audio", () => {
       .getByTestId("content-browser-import-input")
       .setInputFiles([BEEP_WAV]);
     await expect(
-      page.locator('[data-asset-path="assets/beep.babasset"]'),
+      page.locator('[data-asset-path="assets/beep.hasset"]'),
     ).toBeVisible({ timeout: 30_000 });
 
     await createContentBrowserAsset(page, "AudioChannel", "SFX");
     await createContentBrowserAsset(page, "AudioMixer", "Master");
     await createContentBrowserAsset(page, "SoundAttenuation", "Near");
 
-    await openAssetFromBrowser(page, "assets/SFX.channel.babasset");
+    await openAssetFromBrowser(page, "assets/SFX.channel.hasset");
     await expect(
       page.getByTestId("document-workspace-audio-channel"),
     ).toBeVisible();
     await expect(page.getByTestId("audio-channel-details-panel")).toBeVisible();
 
-    await openAssetFromBrowser(page, "assets/Near.atten.babasset");
+    await openAssetFromBrowser(page, "assets/Near.atten.hasset");
     await expect(
       page.getByTestId("document-workspace-sound-attenuation"),
     ).toBeVisible();
@@ -70,18 +70,18 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("property-coneEnabled")).toBeVisible();
     await expect(page.getByTestId("property-dopplerEnabled")).toBeVisible();
 
-    await openAssetFromBrowser(page, "assets/Master.mixer.babasset");
+    await openAssetFromBrowser(page, "assets/Master.mixer.hasset");
     await expect(
       page.getByTestId("document-workspace-audio-mixer"),
     ).toBeVisible();
     await expect(page.getByTestId("audio-mixer-details-panel")).toBeVisible();
     await expect(page.getByTestId("audio-mixer-empty-channels")).toBeVisible();
-    const channelGuid = await guidForPath(page, "assets/SFX.channel.babasset");
+    const channelGuid = await guidForPath(page, "assets/SFX.channel.hasset");
     expect(channelGuid.length).toBeGreaterThan(0);
     await page.getByTestId("audio-mixer-add-channel").click();
     await pickAsset(page, "audio-mixer-channel-picker", channelGuid);
 
-    await openAssetFromBrowser(page, "assets/beep.babasset");
+    await openAssetFromBrowser(page, "assets/beep.hasset");
     await expect(page.getByTestId("document-workspace-audio")).toBeVisible();
     await expect(page.getByTestId("audio-preview")).toBeVisible();
     await expect(page.getByTestId("audio-preview-play")).toBeVisible();
@@ -90,7 +90,7 @@ test.describe("P16 audio", () => {
 
     await page.getByTestId("property-audioChannelGuid").click();
     await pickAsset(page, "audio-channel-picker", channelGuid);
-    const attenGuid = await guidForPath(page, "assets/Near.atten.babasset");
+    const attenGuid = await guidForPath(page, "assets/Near.atten.hasset");
     expect(attenGuid.length).toBeGreaterThan(0);
     await page.getByTestId("property-soundAttenuationGuid").click();
     await pickAsset(page, "audio-attenuation-picker", attenGuid);
@@ -101,7 +101,7 @@ test.describe("P16 audio", () => {
     await page.getByTestId("settings-modal-category-audio").click();
     await expect(page.getByTestId("settings-audio-mixer")).toBeVisible();
     await page.getByTestId("settings-audio-mixer").click();
-    const mixerGuid = await guidForPath(page, "assets/Master.mixer.babasset");
+    const mixerGuid = await guidForPath(page, "assets/Master.mixer.hasset");
     expect(mixerGuid.length).toBeGreaterThan(0);
     await pickAsset(page, "settings-audio-mixer-picker", mixerGuid);
     await page
@@ -119,7 +119,7 @@ test.describe("P16 audio", () => {
     });
     await expect(audioCard).toBeVisible();
     await audioCard.locator('button[data-testid$="-audioAssetGuid"]').click();
-    const beepGuid = await guidForPath(page, "assets/beep.babasset");
+    const beepGuid = await guidForPath(page, "assets/beep.hasset");
     expect(beepGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId("details-asset-picker")).toBeVisible();
     await page.getByTestId(`search-item-${beepGuid}`).click();
@@ -129,7 +129,7 @@ test.describe("P16 audio", () => {
 
     await openContentBrowser(page);
     const sfxTile = page.locator(
-      '[data-asset-path="assets/SFX.channel.babasset"]',
+      '[data-asset-path="assets/SFX.channel.hasset"]',
     );
     await expect(sfxTile).toBeVisible();
     const deselect = page.getByTestId("content-browser-deselect-all");
@@ -156,19 +156,19 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
     await expect(
-      page.locator('[data-asset-path="assets/beep.babasset"]'),
+      page.locator('[data-asset-path="assets/beep.hasset"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/Master.mixer.babasset"]'),
+      page.locator('[data-asset-path="assets/Master.mixer.hasset"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/SFX.channel.babasset"]'),
+      page.locator('[data-asset-path="assets/SFX.channel.hasset"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/Near.atten.babasset"]'),
+      page.locator('[data-asset-path="assets/Near.atten.hasset"]'),
     ).toBeVisible();
 
-    await openAssetFromBrowser(page, "assets/beep.babasset");
+    await openAssetFromBrowser(page, "assets/beep.hasset");
     await expect(page.getByTestId("audio-preview")).toBeVisible();
     await expect(page.getByTestId("property-audioChannelGuid")).toContainText(
       /SFX/i,
@@ -193,7 +193,7 @@ test.describe("P16 audio", () => {
     });
     await expect(audioCard).toBeVisible();
     await audioCard.locator('button[data-testid$="-audioAssetGuid"]').click();
-    const beepGuid = await guidForPath(page, "assets/beep.babasset");
+    const beepGuid = await guidForPath(page, "assets/beep.hasset");
     expect(beepGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId("details-asset-picker")).toBeVisible();
     await page.getByTestId(`search-item-${beepGuid}`).click();
@@ -214,13 +214,13 @@ test.describe("P16 audio", () => {
           return page.evaluate(() => {
             const stats = (
               window as {
-                __babylonslateAudioStats?: {
+                __hapticAudioStats?: {
                   unlocked: boolean;
                   lastDistance: number | null;
                   voices: number;
                 };
               }
-            ).__babylonslateAudioStats;
+            ).__hapticAudioStats;
             return stats ?? null;
           });
         },
@@ -239,9 +239,9 @@ test.describe("P16 audio", () => {
             return (
               (
                 window as {
-                  __babylonslateAudioStats?: { lastDistance: number | null };
+                  __hapticAudioStats?: { lastDistance: number | null };
                 }
-              ).__babylonslateAudioStats?.lastDistance ?? null
+              ).__hapticAudioStats?.lastDistance ?? null
             );
           });
           return nearDistance;
@@ -266,9 +266,9 @@ test.describe("P16 audio", () => {
           return page.evaluate((previous) => {
             const distance = (
               window as {
-                __babylonslateAudioStats?: { lastDistance: number | null };
+                __hapticAudioStats?: { lastDistance: number | null };
               }
-            ).__babylonslateAudioStats?.lastDistance;
+            ).__hapticAudioStats?.lastDistance;
             return (
               typeof distance === "number" &&
               typeof previous === "number" &&
@@ -286,8 +286,8 @@ test.describe("P16 audio", () => {
       .poll(
         async () => {
           return page.evaluate(() => {
-            return (window as { __babylonslateAudioStats?: { voices: number } })
-              .__babylonslateAudioStats?.voices;
+            return (window as { __hapticAudioStats?: { voices: number } })
+              .__hapticAudioStats?.voices;
           });
         },
         { timeout: 10_000 },

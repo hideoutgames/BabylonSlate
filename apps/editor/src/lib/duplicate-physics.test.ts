@@ -4,8 +4,8 @@ import {
   createDefaultScene,
   createMeshComponent,
   type SerializedActor,
-} from "@babylonslate/core";
-import { createInProcessRuntime } from "@babylonslate/runtime";
+} from "@haptic/core";
+import { createInProcessRuntime } from "@haptic/runtime";
 import { duplicateSceneActor } from "./place-actors";
 
 function box(

@@ -5,9 +5,9 @@ import {
   waterSurfaceFrame,
   type LandscapeProperties, type Transform, type Vec3, type WaterBlendQueryInfo, type WaterBodyProperties, type WaterCutters,
   type WaterDefinition, type WaterSample, type WaterSurfaceFrame,
-} from "@babylonslate/core";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import type { PhysicsBackend } from "@babylonslate/physics";
+} from "@haptic/core";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import type { PhysicsBackend } from "@haptic/physics";
 import { actorParentGuid, actorWorldTransforms, composeActorWorldTransformsInto, composeParentChildTransform } from "./actor-world-transform";
 import { worldComponentIndex, type WorldComponentIndex } from "./world-component-index";
 

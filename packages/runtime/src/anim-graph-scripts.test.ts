@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
   type AnimGraphDocument,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   createActor,
   createDefaultSceneSettings,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   compileGraph,
   compileTransitionRuleGraph,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -119,11 +119,11 @@ function toAnimObjectScript(
   registry: NodeRegistry,
 ): CompiledScript {
   const compiled = compileGraph(graph, {
-    assetGuid: "assets/Loco.anim.babasset",
+    assetGuid: "assets/Loco.anim.hasset",
     registry,
   });
   return {
-    assetGuid: "assets/Loco.anim.babasset",
+    assetGuid: "assets/Loco.anim.hasset",
     classId: animGraphScriptClassId("graph-1"),
     source: compiled.source,
     anchors: compiled.anchors,
@@ -138,11 +138,11 @@ function toRuleScript(
   transitionId: string,
 ): CompiledScript {
   const compiled = compileTransitionRuleGraph(graph, {
-    assetGuid: `assets/Loco.anim.babasset#${transitionId}`,
+    assetGuid: `assets/Loco.anim.hasset#${transitionId}`,
     registry,
   });
   return {
-    assetGuid: `assets/Loco.anim.babasset#${transitionId}`,
+    assetGuid: `assets/Loco.anim.hasset#${transitionId}`,
     classId: animRuleScriptClassId("graph-1", transitionId),
     source: compiled.source,
     anchors: compiled.anchors,
@@ -218,7 +218,7 @@ describe("runtime AnimationGraph scripts", () => {
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([{
-      assetGuid: "assets/Loco.anim.babasset",
+      assetGuid: "assets/Loco.anim.hasset",
       classId: animGraphScriptClassId("graph-1"),
       parentClassId: "BObject",
       anchors: [],

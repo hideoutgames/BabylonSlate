@@ -29,7 +29,7 @@ function readTree(dir: string, prefix = ""): TreeFile[] {
   return out;
 }
 
-function readBabassetHeader(bytes: Uint8Array): {
+function readHassetHeader(bytes: Uint8Array): {
   type?: string;
   guid?: string;
   name?: string;
@@ -62,8 +62,8 @@ function readBabassetHeader(bytes: Uint8Array): {
 function emitAddressableFile(file: TreeFile, publicDir: string) {
   const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
   const boundaries = new Set([0, file.data.byteLength]);
-  if (file.path.endsWith(".babasset")) {
-    const header = readBabassetHeader(file.data);
+  if (file.path.endsWith(".hasset")) {
+    const header = readHassetHeader(file.data);
     if (!header.guid || file.data.byteLength < 12) throw new Error(`Invalid engine asset: ${file.path}`);
     const headerEnd = 12 + new DataView(file.data.buffer, file.data.byteOffset, file.data.byteLength).getUint32(8, true);
     if (headerEnd > file.data.byteLength) throw new Error(`Truncated engine asset header: ${file.path}`);
@@ -94,8 +94,8 @@ function emitAddressableFile(file: TreeFile, publicDir: string) {
 
 function packPluginZip(files: TreeFile[]): Uint8Array {
   const settings = files
-    .filter((file) => file.path.endsWith(".babasset"))
-    .map((file) => ({ file, header: readBabassetHeader(file.data) }))
+    .filter((file) => file.path.endsWith(".hasset"))
+    .map((file) => ({ file, header: readHassetHeader(file.data) }))
     .filter((entry) => entry.header.type === "PluginSettings")
     .sort((a, b) => a.file.path.length - b.file.path.length)[0];
   if (!settings?.header.guid) {
@@ -143,7 +143,7 @@ export function enginePluginsVitePlugin(options: {
       const files = readTree(path.join(options.sourceDir, id));
       if (files.length === 0) continue;
       const zip = packPluginZip(files);
-      const file = `${id}.babplugin`;
+      const file = `${id}.hplugin`;
       writeFileSync(path.join(options.publicDir, file), zip);
       index.push({ id, file });
       for (const entry of files) catalogFiles.push(emitAddressableFile({ ...entry, path: `${id}/${entry.path}` }, options.publicDir));
@@ -155,10 +155,10 @@ export function enginePluginsVitePlugin(options: {
   }
 
   return {
-    name: "babylonslate-engine-plugins",
+    name: "haptic-engine-plugins",
     // Pack during config resolution so the dev server's publicDir whitelist
     // snapshot (built before configureServer) includes the generated
-    // index.json and *.babplugin files.
+    // index.json and *.hplugin files.
     async configResolved() {
       await packAll();
     },

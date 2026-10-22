@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import type { OpenDocument } from "../services/document-service";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { DataDefinitionEditingProvider } from "../context/data-definition-editing-context";
@@ -13,7 +13,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   applyAssetDocumentChange: state.apply,
   assetRegistry: { list: () => state.assets, getRoot: () => ({ readOnly: state.readOnly }) },
 })));
-const path = "assets/Weapon.datadefinition.babasset";
+const path = "assets/Weapon.datadefinition.hasset";
 const id = `data-definition:${path}`;
 const props = {} as IDockviewPanelProps;
 function View({ showFields = true }: { showFields?: boolean }) {
@@ -91,7 +91,7 @@ it("saves nested default identities and projects later renames without losing re
   const root = { kind: "dataDefinition", fields: [{ id: "child", name: "Child", typeId: "struct", typeClassId: "child", defaultValue: { Count: 2, Icon: "texture-guid" } }] };
   state.documents[0]!.content = root;
   state.assets[0]!.header.payload = root;
-  state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
+  state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.hasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
   const view = render(<View />);
   fireEvent.change(screen.getByRole("textbox", { name: "Default Value Count" }), { target: { value: "7" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{
@@ -120,7 +120,7 @@ it("keeps recursive definitions editable without expanding their recursive defau
   const child = { kind: "dataDefinition", fields: [{ id: "parent", name: "Parent", typeId: "struct", typeClassId: "weapon" }] };
   state.documents[0]!.content = root;
   state.assets[0]!.header.payload = root;
-  state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
+  state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.hasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
   render(<View />);
   expect(screen.getByRole("alert").textContent).toMatch(/cannot reference themselves/i);
   expect(screen.getByTestId("definition-field-child-name").textContent).toBe("Child");
@@ -150,7 +150,7 @@ it("switches a Tag Container to a nested Definition in Details and initializes i
   const root = { kind: "dataDefinition", fields: [{ id: "child", name: "Child", typeId: "struct", typeClassId: "engine:TagContainer" }] };
   state.documents[0]!.content = root;
   state.assets[0]!.header.payload = root;
-  state.assets.push({ ...state.assets[0]!, path: "assets/Stats.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "stats", name: "Stats", payload: { kind: "dataDefinition", fields: [{ id: "count", name: "Count", typeId: "int", defaultValue: 5 }] } } });
+  state.assets.push({ ...state.assets[0]!, path: "assets/Stats.datadefinition.hasset", header: { ...state.assets[0]!.header, guid: "stats", name: "Stats", payload: { kind: "dataDefinition", fields: [{ id: "count", name: "Count", typeId: "int", defaultValue: 5 }] } } });
   const view = render(<View />);
   const details = within(screen.getByTestId("data-definition-details-panel"));
   expect(details.queryByRole("button", { name: "Data Definition Type" })).toBeNull();

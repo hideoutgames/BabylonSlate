@@ -102,7 +102,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await openTestProject(page);
     await createAsset(page, "Enum", "Palette");
     await page
-      .locator('[data-asset-path="assets/Palette.babasset"]')
+      .locator('[data-asset-path="assets/Palette.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-enum")).toBeVisible();
     await expect(page.getByTestId("tree-row-member:0")).toBeVisible();
@@ -114,7 +114,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -138,7 +138,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -181,7 +181,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -235,7 +235,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -267,7 +267,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
   }) => {
     await openTestProject(page);
     await showContentBrowser(page);
-    const heroTile = page.locator('[data-asset-path="assets/hero.babasset"]');
+    const heroTile = page.locator('[data-asset-path="assets/hero.hasset"]');
     await page.getByTestId("content-browser-search").fill("hero");
     // The grid applies a search at low priority; count only once it has.
     await expect(
@@ -281,7 +281,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       await page.getByTestId("content-browser-search").fill("hero");
       await expect(heroTile).toBeVisible({ timeout: 15_000 });
     }
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -314,7 +314,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       .getByTestId("prefab-tree")
       .locator('[data-testid^="tree-row-prefab-component-"]');
     const openClass = async () => {
-      await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+      await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
       await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
         timeout: 15_000,
       });

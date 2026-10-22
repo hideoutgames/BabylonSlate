@@ -26,7 +26,7 @@ import {
   normalizeWaterBlendDistance,
   type PostProcessingEffectField,
   type PostProcessingQuality,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { ColorGradingSource } from "./color-grading";
 import type { MeshAssetContext } from "./mesh-assets";
 import {

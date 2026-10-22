@@ -4,7 +4,7 @@ import {
   parseSkyboxFaces,
   type SkyboxFaceKey,
   type SkyboxFaces,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { ImportResult } from "./importers/types";
 import { nextCopyName, stripAssetFileSuffix } from "./unique-names";
 
@@ -347,9 +347,9 @@ export function skyboxCreatorFaceRelativePath(
   const dir = slash >= 0 ? helperPath.slice(0, slash + 1) : "";
   const file = slash >= 0 ? helperPath.slice(slash + 1) : helperPath;
   const stem = file
-    .replace(/\.skyboxcreator\.babasset$/i, "")
-    .replace(/\.babasset$/i, "");
-  return `${dir}${stem}_${face}.babasset`;
+    .replace(/\.skyboxcreator\.hasset$/i, "")
+    .replace(/\.hasset$/i, "");
+  return `${dir}${stem}_${face}.hasset`;
 }
 
 export type SkyboxCreatorFaceWrite = {
@@ -397,7 +397,7 @@ export function planSkyboxCreatorFaceWrites(options: {
     const stem = occupied.has(preferred)
       ? nextCopyName(preferredStem, stems)
       : preferredStem;
-    const path = joinFolder(dir, `${stem}.babasset`);
+    const path = joinFolder(dir, `${stem}.hasset`);
     occupied.add(path);
     stems.push(stem);
     writes.push({

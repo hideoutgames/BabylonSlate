@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
-import { exportGame } from "@babylonslate/exporter";
-import { createDefaultMaterialDocument, newCustomGlslProperties } from "@babylonslate/shader-graph";
+import { createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
+import { exportGame } from "@haptic/exporter";
+import { createDefaultMaterialDocument, newCustomGlslProperties } from "@haptic/shader-graph";
 import type { AbstractEngine } from "@babylonjs/core";
-import type { BackendEngineSession } from "@babylonslate/render";
+import type { BackendEngineSession } from "@haptic/render";
 import type { PlayerBootHandle, PlayerBootOptions } from "./boot";
 import { loadGameFromFiles } from "./artifact";
 
 const { createBackend, start } = vi.hoisted(() => ({ createBackend: vi.fn(), start: vi.fn() }));
-vi.mock("@babylonslate/render", async () => ({
+vi.mock("@haptic/render", async () => ({
   createBackendEngineSession: createBackend,
   ...await import("../../../packages/render/src/material-backend-compatibility"),
 }));

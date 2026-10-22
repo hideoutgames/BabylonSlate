@@ -3,13 +3,13 @@ import { SimulationInspector } from "./simulation-inspector";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { parseUIControl2DProperties } from "@babylonslate/core";
+import { parseUIControl2DProperties } from "@haptic/core";
 
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
-import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslate/assets";
+import { isEnvironmentTexturePayload, normalizeModelPayload } from "@haptic/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
-import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { normalizeRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -41,7 +41,7 @@ import {
   walkAncestry,
   type PropertyRow,
   type SearchDialogItem,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
@@ -66,7 +66,7 @@ import {
   newGuid,
   waterKindForClass,
   DEFORMER_COMPONENT_CLASS_ID,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -74,7 +74,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -82,19 +82,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/empty";
+import { Switch } from "@haptic/ui/components/switch";
 import {
   Field,
   FieldGroup,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   useDocumentActions,
   useProjectState,

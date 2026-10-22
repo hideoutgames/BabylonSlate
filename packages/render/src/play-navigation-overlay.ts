@@ -1,5 +1,5 @@
 import { Color3, Mesh, MeshBuilder, Vector3, type LinesMesh, type Scene } from "@babylonjs/core";
-import type { CommandMessage, DebugNavAgent } from "@babylonslate/bridge";
+import type { CommandMessage, DebugNavAgent } from "@haptic/bridge";
 import { createText3DMesh } from "./text3d-mesh";
 import { markPlayDebugOverlay } from "./play-debug-overlay";
 

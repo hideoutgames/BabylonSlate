@@ -7,8 +7,8 @@ import {
   tilesetTileUv,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+} from "@haptic/assets";
+import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
 import { applyComponentSorting } from "./sorting";
 
 type AnimatedChunk = {

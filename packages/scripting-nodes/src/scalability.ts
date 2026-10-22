@@ -1,4 +1,4 @@
-import { pin, enumRef, structRef, BOOL, FLOAT, INT, COLOR, STRING, EXEC, type NodeDefinition, type GraphPin, type CodegenContext } from "@babylonslate/scripting";
+import { pin, enumRef, structRef, BOOL, FLOAT, INT, COLOR, STRING, EXEC, type NodeDefinition, type GraphPin, type CodegenContext } from "@haptic/scripting";
 
 const result = () => pin("result", "Result", "out", structRef("engine:ScalabilityResult"));
 const exec = () => [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC)];

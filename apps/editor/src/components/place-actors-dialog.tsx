@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpDownIcon, FolderIcon, ListFilterIcon } from "lucide-react";
-import { thumbnailMime } from "@babylonslate/assets";
+import { thumbnailMime } from "@haptic/assets";
 import {
   CatalogCard,
   CatalogCardGrid,
@@ -11,8 +11,8 @@ import {
   useCatalogFilter,
   type CatalogCategory,
   type CatalogCategoryGroup,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -23,7 +23,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import {
   featuredPlaceActors,
   visualForPlaceActor,
@@ -59,7 +59,7 @@ function typeLabel(type: string): string {
   return type.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
 }
 
-/** Containing folder of an asset path (`assets/props/Tree.model.babasset` → `assets/props`). */
+/** Containing folder of an asset path (`assets/props/Tree.model.hasset` → `assets/props`). */
 function assetFolder(item: PlaceActorItem): string {
   const path = item.kind.type === "asset" ? item.kind.path : undefined;
   if (!path) return "";

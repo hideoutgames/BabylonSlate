@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createActor } from "@babylonslate/core";
+import { createActor } from "@haptic/core";
 import { RenderTargetCaptureActorsField } from "./render-target-capture-actors-field";
 
 afterEach(cleanup);

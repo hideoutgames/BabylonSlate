@@ -1,6 +1,6 @@
 import { Matrix, Mesh, Quaternion, Vector3, type AbstractMesh, type Camera, type Scene } from "@babylonjs/core";
-import type { RuntimeObjectIdentity } from "@babylonslate/bridge";
-import type { SerializedTransform, ViewportMode } from "@babylonslate/core";
+import type { RuntimeObjectIdentity } from "@haptic/bridge";
+import type { SerializedTransform, ViewportMode } from "@haptic/core";
 import { createGizmoHost, type GizmoSnapSettings, type GizmoTool } from "./gizmo-host";
 import { markEditorHelperMesh } from "./helper-mesh";
 import type { PointerCanvasSize } from "./pick-coords";

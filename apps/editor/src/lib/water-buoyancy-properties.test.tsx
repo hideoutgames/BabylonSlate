@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import { PropertyGrid } from "@babylonslate/editor-kit";
+import { PropertyGrid } from "@haptic/editor-kit";
 import { componentPropertyRows } from "./component-property-rows";
 
 afterEach(cleanup);

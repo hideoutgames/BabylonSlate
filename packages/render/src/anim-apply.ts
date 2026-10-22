@@ -1,10 +1,10 @@
 import type { Mesh } from "@babylonjs/core";
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { SpriteAnimationPayload, SpriteFrame, SpritePayload } from "@babylonslate/assets";
+import type { CommandMessage } from "@haptic/bridge";
+import type { SpriteAnimationPayload, SpriteFrame, SpritePayload } from "@haptic/assets";
 import {
   spriteAnimationFrameAt,
   spriteClipFrameAt,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { applySpriteFrameUvs, setSpriteQuadSize } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";

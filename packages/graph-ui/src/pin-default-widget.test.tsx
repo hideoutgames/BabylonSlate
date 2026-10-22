@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { PinDefaultPreviewWidget } from "./pin-default-widget";
-import { TagProvider } from "@babylonslate/editor-kit";
+import { TagProvider } from "@haptic/editor-kit";
 
 afterEach(() => {
   cleanup();

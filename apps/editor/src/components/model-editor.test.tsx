@@ -2,7 +2,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { encodeTriangleGlb } from "@babylonslate/render/glb-test-fixtures";
+import { encodeTriangleGlb } from "@haptic/render/glb-test-fixtures";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
 import { ModelColliders, ModelEditor, ModelPreview, ModelPreviewPanel } from "./model-editor";
@@ -27,15 +27,15 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     list: () => [
       {
         header: { guid: "mat-1", name: "HeroMat", type: "Material", chunks: [], payload: {} },
-        path: "assets/HeroMat.material.babasset",
+        path: "assets/HeroMat.material.hasset",
       },
       {
         header: { guid: "mat-2", name: "AltMat", type: "Material", chunks: [], payload: {} },
-        path: "assets/AltMat.material.babasset",
+        path: "assets/AltMat.material.hasset",
       },
       {
         header: { guid: "tex-1", name: "Albedo", type: "Texture", chunks: [], payload: {} },
-        path: "assets/Albedo.texture.babasset",
+        path: "assets/Albedo.texture.hasset",
       },
     ],
   },
@@ -265,25 +265,25 @@ describe("ModelPreviewPanel", () => {
   );
 
   it("reports a failed Model source read instead of an empty mesh", async () => {
-    documents.open = [{ id: "model", ref: { path: "assets/hero.babasset" }, content: {} }];
-    documents.readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/hero.babasset#source could not be read."));
+    documents.open = [{ id: "model", ref: { path: "assets/hero.hasset" }, content: {} }];
+    documents.readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/hero.hasset#source could not be read."));
     render(panel());
     expect(await screen.findByText("Failed to Read Mesh")).toBeTruthy();
-    expect(screen.getByText("Asset chunk assets/hero.babasset#source could not be read.")).toBeTruthy();
+    expect(screen.getByText("Asset chunk assets/hero.hasset#source could not be read.")).toBeTruthy();
     expect(screen.queryByText("No Mesh")).toBeNull();
   });
 
   it("stops drawing the previous mesh while the moved Model's source loads", async () => {
-    documents.open = [{ id: "model", ref: { path: "assets/hero.babasset" }, content: {} }];
+    documents.open = [{ id: "model", ref: { path: "assets/hero.hasset" }, content: {} }];
     documents.readAssetChunk.mockResolvedValueOnce(encodeTriangleGlb());
     const { rerender } = render(panel());
     expect(await screen.findByTestId("model-preview-canvas")).toBeTruthy();
     documents.readAssetChunk.mockReturnValueOnce(new Promise(() => {}));
-    documents.open = [{ id: "model", ref: { path: "assets/moved/hero.babasset" }, content: {} }];
+    documents.open = [{ id: "model", ref: { path: "assets/moved/hero.hasset" }, content: {} }];
     rerender(panel());
     expect(screen.getByText("No Mesh")).toBeTruthy();
     expect(screen.queryByTestId("model-preview-canvas")).toBeNull();
-    expect(documents.readAssetChunk).toHaveBeenLastCalledWith("assets/moved/hero.babasset", "source");
+    expect(documents.readAssetChunk).toHaveBeenLastCalledWith("assets/moved/hero.hasset", "source");
   });
 });
 

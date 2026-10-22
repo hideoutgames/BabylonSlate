@@ -1,8 +1,8 @@
-import { ToolbarStrip } from "@babylonslate/editor-kit";
+import { ToolbarStrip } from "@haptic/editor-kit";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import type { AnimEditorMode } from "../shell/anim-document-layout";
 
 export function AnimEditorModeBar({

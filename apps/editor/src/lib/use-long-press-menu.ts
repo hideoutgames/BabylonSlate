@@ -8,7 +8,7 @@ import {
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 
 function distance(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(ax - bx, ay - by);

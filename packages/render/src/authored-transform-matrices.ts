@@ -5,7 +5,7 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export function authoredTransformMatrix(transform: SerializedTransform): Matrix {
   return Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position));

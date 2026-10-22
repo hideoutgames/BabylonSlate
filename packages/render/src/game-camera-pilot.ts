@@ -1,7 +1,7 @@
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { ViewportMode } from "@babylonslate/core";
+import type { ViewportMode } from "@haptic/core";
 
 /** How long input must pause before a pilot gesture becomes one document edit. */
 export const GAME_CAMERA_PILOT_COMMIT_DELAY_MS = 350;

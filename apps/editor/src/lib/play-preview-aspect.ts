@@ -1,10 +1,10 @@
-import { fitContainedRect, playFramebufferSize } from "@babylonslate/core";
+import { fitContainedRect, playFramebufferSize } from "@haptic/core";
 
 export {
   clampRenderResolution,
   fitContainedRect,
   playFramebufferSize,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export function applyPlayPreviewCanvasLayout(options: {
   overlay: HTMLElement;

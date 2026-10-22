@@ -1,7 +1,7 @@
 import { useCallback, useId, useRef, useState, type PointerEvent } from "react";
-import { FieldDescription, FieldError } from "@babylonslate/ui/components/field";
+import { FieldDescription, FieldError } from "@haptic/ui/components/field";
 import { GripVerticalIcon } from "lucide-react";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   evaluateNumericExpression,
   formatNumericDisplay,

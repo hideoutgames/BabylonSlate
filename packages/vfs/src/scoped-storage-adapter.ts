@@ -1,12 +1,12 @@
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
+import { isStorageNotFound, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
   ProjectStorageReader,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { Preferences } from "@capacitor/preferences";
 import { projectRelativePath as scopedStoragePath } from "./project-path";
 import type {
@@ -22,8 +22,8 @@ import {
   ScopedStorageErrorCode,
 } from "./capacitor-scoped-storage";
 
-const FOLDER_PREF_KEY = "babylonslate:scoped-folder";
-const STALE_PREF_KEY = "babylonslate:scoped-stale";
+const FOLDER_PREF_KEY = "haptic:scoped-folder";
+const STALE_PREF_KEY = "haptic:scoped-stale";
 
 interface FolderRef {
   id: string;

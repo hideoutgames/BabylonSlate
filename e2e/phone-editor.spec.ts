@@ -33,7 +33,7 @@ test.describe("Phone Editor", () => {
     await page.setViewportSize({ width: 1194, height: 834 });
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .locator('[data-asset-path="assets/main.scene.hasset"]')
       .dblclick();
     await waitForSceneViewportReady(page);
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();

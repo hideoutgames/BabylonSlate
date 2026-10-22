@@ -1,4 +1,4 @@
-import { createDefaultMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 
 /** A Material whose base color samples `textureGuid` through a block named "sample". */
 export function sampledTextureDocument(textureGuid: string): MaterialDocument {

@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { SaveGameService, type SaveGameStorage } from "@babylonslate/core";
+import { SaveGameService, type SaveGameStorage } from "@haptic/core";
 import { ProjectSaveGamesSettings } from "./project-save-games-settings";
 
 // Base UI forwards native checkbox/switch activation through PointerEvent.
@@ -14,12 +14,12 @@ const harness = vi.hoisted(() => ({
   settings: vi.fn(),
   definition: { id: "progress", schemaVersion: 1, fields: [{ id: "score", name: "Score", type: "int" as const, defaultValue: 0 }] },
 }));
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({ ...await importOriginal<typeof import("@babylonslate/vfs")>(), createSaveGameStorage: () => harness.storage }));
+vi.mock("@haptic/vfs", async (importOriginal) => ({ ...await importOriginal<typeof import("@haptic/vfs")>(), createSaveGameStorage: () => harness.storage }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   projectGuid: "project",
   projectDocument: { settings: { saveGame: { definitionGuid: harness.definitionGuid, defaultProfile: "default", defaultSlot: "default", wipeOnPlay: false } } },
-  assetRegistry: { getByGuid: () => ({ path: "Progress.savegame.babasset", header: { guid: "progress", name: "Progress", type: "SaveGame" } }), list: () => [] },
-  openDocuments: [{ id: "save-game:Progress.savegame.babasset", ref: { kind: "save-game", path: "Progress.savegame.babasset" }, content: harness.definition }],
+  assetRegistry: { getByGuid: () => ({ path: "Progress.savegame.hasset", header: { guid: "progress", name: "Progress", type: "SaveGame" } }), list: () => [] },
+  openDocuments: [{ id: "save-game:Progress.savegame.hasset", ref: { kind: "save-game", path: "Progress.savegame.hasset" }, content: harness.definition }],
   updateProjectSettings: harness.settings,
 })));
 let preview: SaveGameService;

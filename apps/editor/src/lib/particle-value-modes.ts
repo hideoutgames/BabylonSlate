@@ -1,14 +1,14 @@
-import type { ParticleBillboardMode, ParticleBlendMode } from "@babylonslate/core";
+import type { ParticleBillboardMode, ParticleBlendMode } from "@haptic/core";
 import type {
   ParticleEmitterPayload,
   ParticleScalarValue,
   ParticleShapeKind,
   ParticleValueUnit,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 /**
  * Basic Particle Emitter Details helpers: undo merge keys, display units and the
- * collapsed module summaries. Mode conversion lives in `@babylonslate/assets`
+ * collapsed module summaries. Mode conversion lives in `@haptic/assets`
  * (`convertScalarValueMode` / `convertColorValueMode`).
  */
 

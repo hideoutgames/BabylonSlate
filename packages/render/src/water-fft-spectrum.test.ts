@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultWaterDefinition, createSeededRng, normalizeWaterDefinition, waterWaveSet, type WaterDefinition, type WaterWaveSet,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   WATER_FFT_CASCADE_TURNS, WATER_FFT_PERIOD, waterFftBandVariance, waterFftCycle, waterFftInitialSpectrum, waterFftInverse, waterFftLayout,
   waterFftSpectrumBuild, waterFftSynthesize, type WaterFftLayout,

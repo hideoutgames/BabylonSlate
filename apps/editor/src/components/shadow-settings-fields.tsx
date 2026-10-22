@@ -5,10 +5,10 @@ import {
   SHADOW_CAPACITY_PROFILES,
   type ShadowOverrides,
   type ShadowSettings,
-} from "@babylonslate/core";
-import { NumberField } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/core";
+import { NumberField } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Switch } from "@haptic/ui/components/switch";
 import {
   Field,
   FieldDescription,
@@ -16,7 +16,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -24,7 +24,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 
 const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
   localLightMode: { auto: "Auto", manual: "Manual" },

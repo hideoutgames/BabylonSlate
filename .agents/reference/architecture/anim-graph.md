@@ -4,7 +4,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 
 ## Invariants
 
-- `@babylonslate/anim-graph` has no React and no Babylon; the evaluator runs in the game worker.
+- `@haptic/anim-graph` has no React and no Babylon; the evaluator runs in the game worker.
 - Render seeks `AnimationGroup`s and sprite frames from `animState` and never lets Babylon auto-advance gameplay animation. Groups stay paused with live animatables (`play()` then `pause()`); never `stop()`, which empties animatables and makes `goToFrame` a no-op.
 - `animState` is an extra command-channel message ([bridge.md](bridge.md)), not a snapshot stride change. One `animState` per actor slot: the last graph in component order wins playback.
 - Behaviour Tree Play Animation emits the same `animState`; there is no second playback clock.

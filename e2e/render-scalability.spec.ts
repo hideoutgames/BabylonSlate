@@ -115,7 +115,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
     () =>
       (
         globalThis as unknown as {
-          __babylonslateViewportTest: {
+          __hapticViewportTest: {
             renderingBaseline(): {
               render: {
                 shadowPasses: number;
@@ -125,7 +125,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
             };
           };
         }
-      ).__babylonslateViewportTest.renderingBaseline().render,
+      ).__hapticViewportTest.renderingBaseline().render,
   );
   // Settings commit schedules the renderer update after React closes the dialog.
   // The previous scene can already report ready until that update is applied.

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeScene } from "@babylonslate/core";
-import { createRuntimeFromLoad } from "@babylonslate/runtime";
+import { normalizeScene } from "@haptic/core";
+import { createRuntimeFromLoad } from "@haptic/runtime";
 import {
   canonicalPlaySceneGuid,
   playLoadControl,
@@ -89,14 +89,14 @@ describe("playLoadControl", () => {
     durationMs: 200,
   };
   const catalogEntry = {
-    guid: "rifle", name: "Rifle", type: "Class", path: "assets/Rifle.class.babasset", classId: "Rifle",
+    guid: "rifle", name: "Rifle", type: "Class", path: "assets/Rifle.class.hasset", classId: "Rifle",
     dependencies: [], requiredDependencies: [],
   };
   it.each([
     {
       field: "the authored scene document",
-      input: { sceneAssetGuid: "scene:assets/main.scene.babasset", scene: scene as never },
-      expected: { sceneAssetGuid: "scene:assets/main.scene.babasset", scene },
+      input: { sceneAssetGuid: "scene:assets/main.scene.hasset", scene: scene as never },
+      expected: { sceneAssetGuid: "scene:assets/main.scene.hasset", scene },
     },
     {
       field: "gameInstanceClass and extra scenes for changescene",
@@ -151,9 +151,9 @@ describe("playLoadControl", () => {
 describe("playPhysicsFromOpenDocuments", () => {
   it("uses an asset guid for runtime scene changes when the path is indexed", () => {
     const scene = {
-      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      sceneAssetGuid: "scene:assets/main.scene.hasset",
       scene: normalizeScene({ name: "Main" }),
-      path: "assets/main.scene.babasset",
+      path: "assets/main.scene.hasset",
     };
     expect(
       canonicalPlaySceneGuid(scene, (path) =>
@@ -161,7 +161,7 @@ describe("playPhysicsFromOpenDocuments", () => {
       ),
     ).toBe("scene-guid-main");
     expect(canonicalPlaySceneGuid(scene, () => null)).toBe(
-      "scene:assets/main.scene.babasset",
+      "scene:assets/main.scene.hasset",
     );
   });
 
@@ -222,18 +222,18 @@ describe("playSceneRefFromOpenDocuments", () => {
   // A Scene with thousands of actors: naming it, or enabling Play for it, must not walk it.
   const unread = new Proxy({}, { get() { throw new Error("The scene content was read."); } });
   const documents = [
-    { id: "scene:a", ref: { kind: "scene", path: "assets/a.scene.babasset" }, content: unread },
-    { id: "scene:b", ref: { kind: "scene", path: "assets/b.scene.babasset" }, content: unread },
+    { id: "scene:a", ref: { kind: "scene", path: "assets/a.scene.hasset" }, content: unread },
+    { id: "scene:b", ref: { kind: "scene", path: "assets/b.scene.hasset" }, content: unread },
   ];
 
   it("names the active scene, else the first open one, without reading its content", () => {
     expect(playSceneRefFromOpenDocuments(documents, "scene:b")).toEqual({
       sceneAssetGuid: "scene:b",
-      path: "assets/b.scene.babasset",
+      path: "assets/b.scene.hasset",
     });
     expect(playSceneRefFromOpenDocuments(documents, null)).toEqual({
       sceneAssetGuid: "scene:a",
-      path: "assets/a.scene.babasset",
+      path: "assets/a.scene.hasset",
     });
   });
 
@@ -260,17 +260,17 @@ describe("playSceneFromOpenDocuments", () => {
       playSceneFromOpenDocuments(
         [
           {
-            id: "scene:assets/level.scene.babasset",
-            ref: { kind: "scene", path: "assets/level.scene.babasset" },
+            id: "scene:assets/level.scene.hasset",
+            ref: { kind: "scene", path: "assets/level.scene.hasset" },
             content,
           },
         ],
-        "scene:assets/level.scene.babasset",
+        "scene:assets/level.scene.hasset",
       ),
     ).toEqual({
-      sceneAssetGuid: "scene:assets/level.scene.babasset",
+      sceneAssetGuid: "scene:assets/level.scene.hasset",
       scene: normalizeScene(content),
-      path: "assets/level.scene.babasset",
+      path: "assets/level.scene.hasset",
     });
   });
 
@@ -362,12 +362,12 @@ describe("playSceneFromOpenDocuments", () => {
       resolvePlayScene({
         documents: [
           {
-            id: "scene:assets/level.scene.babasset",
+            id: "scene:assets/level.scene.hasset",
             ref: { kind: "scene" },
             content: open,
           },
         ],
-        activeDocumentId: "scene:assets/level.scene.babasset",
+        activeDocumentId: "scene:assets/level.scene.hasset",
         playFromScene: false,
         fallback,
       }),
@@ -381,7 +381,7 @@ describe("playSceneFromOpenDocuments", () => {
       actors: [{ id: "open", name: "Open" }],
     };
     const fallback = {
-      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      sceneAssetGuid: "scene:assets/main.scene.hasset",
       scene: normalizeScene({
         name: "Main",
         actors: [{ id: "hero", name: "Hero" }],
@@ -391,16 +391,16 @@ describe("playSceneFromOpenDocuments", () => {
       resolvePlayScene({
         documents: [
           {
-            id: "scene:assets/level.scene.babasset",
+            id: "scene:assets/level.scene.hasset",
             ref: { kind: "scene" },
             content: open,
           },
         ],
-        activeDocumentId: "scene:assets/level.scene.babasset",
+        activeDocumentId: "scene:assets/level.scene.hasset",
         fallback,
       }),
     ).toEqual({
-      sceneAssetGuid: "scene:assets/level.scene.babasset",
+      sceneAssetGuid: "scene:assets/level.scene.hasset",
       scene: normalizeScene(open),
     });
   });

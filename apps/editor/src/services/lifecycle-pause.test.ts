@@ -36,7 +36,7 @@ describe("attachLifecyclePause", () => {
 
   it("reacts to the vfs-forwarded appstate custom event on mobile hosts", async () => {
     vi.resetModules();
-    vi.doMock("@babylonslate/vfs", () => ({
+    vi.doMock("@haptic/vfs", () => ({
       getHostPlatform: () => "ios" as const,
     }));
     const { attachLifecyclePause: attach } = await import("./lifecycle-pause");
@@ -45,7 +45,7 @@ describe("attachLifecyclePause", () => {
 
     await vi.waitFor(() => {
       window.dispatchEvent(
-        new CustomEvent("babylonslate:appstate", {
+        new CustomEvent("haptic:appstate", {
           detail: { isActive: false },
         }),
       );
@@ -53,24 +53,24 @@ describe("attachLifecyclePause", () => {
     });
 
     window.dispatchEvent(
-      new CustomEvent("babylonslate:appstate", {
+      new CustomEvent("haptic:appstate", {
         detail: { isActive: true },
       }),
     );
     expect(handler).toHaveBeenLastCalledWith(false);
     detach();
-    vi.doUnmock("@babylonslate/vfs");
+    vi.doUnmock("@haptic/vfs");
   });
 
   it("keeps rendering paused until both native activity and visibility allow resume", () => {
     const handler = vi.fn();
     const detach = attachLifecyclePause(handler);
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } }));
     document.dispatchEvent(new Event("visibilitychange"));
     expect(handler).toHaveBeenLastCalledWith(true);
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     document.dispatchEvent(new Event("visibilitychange"));
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } }));
     expect(handler).toHaveBeenLastCalledWith(true);
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     document.dispatchEvent(new Event("visibilitychange"));

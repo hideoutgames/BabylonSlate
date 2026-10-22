@@ -10,8 +10,8 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
-import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
-import { eulerDegreesToQuaternion } from "@babylonslate/core";
+import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
+import { eulerDegreesToQuaternion } from "@haptic/core";
 import { markPlayDebugOverlay } from "./play-debug-overlay";
 
 export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";

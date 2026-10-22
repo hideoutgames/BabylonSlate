@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   SNAPSHOT_FLAG_VISIBLE,
   readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   createDefaultScene,
@@ -16,14 +16,14 @@ import {
   createText2DComponent,
   createText3DComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import { createRuntimeFromLoad } from "./play-load";
 import type { CompiledScript } from "./script-host";
@@ -126,7 +126,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/main.scene.babasset",
+        sceneAssetGuid: "assets/main.scene.hasset",
         scene: {
           name: "Main",
           viewportMode: "3d",
@@ -516,7 +516,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/possess.scene.babasset",
+        sceneAssetGuid: "assets/possess.scene.hasset",
         scene: cameraPossessScene(true),
       },
       (command) => commands.push(command),
@@ -552,7 +552,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/possess.scene.babasset",
+        sceneAssetGuid: "assets/possess.scene.hasset",
         scene: cameraPossessScene(false),
       },
       (command) => commands.push(command),
@@ -587,7 +587,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/possess.scene.babasset",
+        sceneAssetGuid: "assets/possess.scene.hasset",
         scene,
       },
       (command) => commands.push(command),
@@ -646,7 +646,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/possess.scene.babasset",
+        sceneAssetGuid: "assets/possess.scene.hasset",
         scene,
       },
       (command) => commands.push(command),
@@ -678,7 +678,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/parts.scene.babasset",
+        sceneAssetGuid: "assets/parts.scene.hasset",
         scene: {
           name: "Parts",
           viewportMode: "3d",
@@ -738,7 +738,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/component-parent.scene.babasset",
+        sceneAssetGuid: "assets/component-parent.scene.hasset",
         scene: {
           name: "ComponentParent",
           viewportMode: "3d",
@@ -786,7 +786,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/lit.scene.babasset",
+        sceneAssetGuid: "assets/lit.scene.hasset",
         scene: {
           name: "Lit",
           viewportMode: "3d",
@@ -892,7 +892,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/helpers.scene.babasset",
+        sceneAssetGuid: "assets/helpers.scene.hasset",
         scene: {
           name: "Helpers",
           viewportMode: "3d",
@@ -966,7 +966,7 @@ describe("p7-play-scene-load", () => {
       const runtime = createRuntimeFromLoad(
         {
           type: "load",
-          sceneAssetGuid: "assets/mat.scene.babasset",
+          sceneAssetGuid: "assets/mat.scene.hasset",
           scene: {
             name: "Shaded",
             viewportMode: "3d",
@@ -1016,7 +1016,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/main.scene.babasset",
+        sceneAssetGuid: "assets/main.scene.hasset",
         scene,
       },
       (command) => commands.push(command),
@@ -1051,7 +1051,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/parts-mat.scene.babasset",
+        sceneAssetGuid: "assets/parts-mat.scene.hasset",
         scene: {
           name: "Parts",
           viewportMode: "3d",
@@ -1536,7 +1536,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/sky.scene.babasset",
+        sceneAssetGuid: "assets/sky.scene.hasset",
         scene: {
           name: "Sky",
           viewportMode: "3d",
@@ -1581,7 +1581,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/text.scene.babasset",
+        sceneAssetGuid: "assets/text.scene.hasset",
         scene: {
           name: "Text",
           viewportMode: "3d",
@@ -1631,7 +1631,7 @@ describe("p7-play-scene-load", () => {
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
-        sceneAssetGuid: "assets/hud.scene.babasset",
+        sceneAssetGuid: "assets/hud.scene.hasset",
         scene: {
           name: "World",
           viewportMode: "2d",

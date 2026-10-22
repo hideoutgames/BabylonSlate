@@ -1,4 +1,4 @@
-import { isVirtualizedOverlayClass } from "@babylonslate/core";
+import { isVirtualizedOverlayClass } from "@haptic/core";
 import type { EngineScriptVariable } from "./engine-script-api";
 
 export function overlayContainerScriptVariables(classId: string): EngineScriptVariable[] {

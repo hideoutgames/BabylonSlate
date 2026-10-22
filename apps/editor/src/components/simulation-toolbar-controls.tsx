@@ -1,6 +1,6 @@
-import { ToolbarOverflowItem } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
+import { ToolbarOverflowItem } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SkipForwardIcon, SquareIcon } from "lucide-react";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import {

@@ -20,7 +20,7 @@ import {
   VertexBuffer,
   VertexData,
 } from "@babylonjs/core";
-import { DynamicRuntimeMeshGeometry, normalizeShadowSettings } from "@babylonslate/core";
+import { DynamicRuntimeMeshGeometry, normalizeShadowSettings } from "@haptic/core";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { sceneShadowController } from "./shadow-controller";
 import { attachModelLods, generateModelLods } from "./model-lod";

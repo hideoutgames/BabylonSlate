@@ -8,7 +8,7 @@ import {
   STRING,
   BOXED_WILDCARD,
   objectRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 function factExpr(field: string, fallback: string): string {
@@ -104,7 +104,7 @@ export const animationNodes: NodeDefinition[] = [
   boolFact("anim.state.justLooped", "Just Looped", "justLooped"),
   boolFact("anim.state.justFinished", "Just Finished", "justFinished"),
   {
-    // Crossing test lives in @babylonslate/anim-graph (`animExitTimeReached`);
+    // Crossing test lives in @haptic/anim-graph (`animExitTimeReached`);
     // the host binds it to this tick's facts.
     id: "anim.state.exitTimeReached",
     title: "Exit Time Reached",

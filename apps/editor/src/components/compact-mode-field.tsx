@@ -3,8 +3,8 @@ import {
   FieldContent,
   FieldDescription,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/field";
+import { Switch } from "@haptic/ui/components/switch";
 
 /** The Compact Mode switch, shared by the Account dialog and Engine Settings. */
 export function CompactModeField({

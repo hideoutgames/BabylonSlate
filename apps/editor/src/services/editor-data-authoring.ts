@@ -7,8 +7,8 @@ import {
   type DataDefinitionField,
   type DataTreeAsset,
   type DataTreeEntry,
-} from "@babylonslate/core";
-import type { AssetRegistry, IndexedAsset } from "@babylonslate/assets";
+} from "@haptic/core";
+import type { AssetRegistry, IndexedAsset } from "@haptic/assets";
 import {
   createDataEntryForDefinition,
   reconcileDataEntry,
@@ -20,7 +20,7 @@ import {
   type EditorDataResult,
   type StructField,
   type TypeSchemas,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import type { useDocuments } from "../context/document-context";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";

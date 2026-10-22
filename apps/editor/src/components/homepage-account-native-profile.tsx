@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ImagePlusIcon, LoaderCircleIcon, Trash2Icon } from "lucide-react";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,8 +10,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/alert-dialog";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
   FieldDescription,
@@ -20,9 +20,9 @@ import {
   FieldLegend,
   FieldSet,
   FieldTitle,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
-import { getHostPlatform } from "@babylonslate/vfs";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
+import { getHostPlatform } from "@haptic/vfs";
 import type { NativeClerkReverification } from "../services/native-clerk";
 import type { NativeProfileEditing } from "./homepage-account-types";
 import { storeSubscriptionsUrl } from "./homepage-plans";

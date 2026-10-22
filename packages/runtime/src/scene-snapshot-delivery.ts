@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 
 type SceneRealized = Extract<CommandMessage, { type: "sceneRealized" | "sceneLayerRealized" | "sceneStreamRealized" }>;
 

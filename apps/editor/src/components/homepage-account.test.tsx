@@ -57,8 +57,8 @@ vi.mock("@clerk/react", () => ({
 
 const purchases = vi.hoisted(() => ({ create: vi.fn() }));
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
+vi.mock("@haptic/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/vfs")>();
   return {
     ...actual,
     createPurchases: () => {

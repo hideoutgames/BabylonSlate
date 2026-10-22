@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
   createActor,
   createDefaultScene,
@@ -13,19 +13,19 @@ import {
   isOk,
   SCENE_SCHEMA_VERSION,
   type SerializedGraph,
-} from "@babylonslate/core";
-import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@babylonslate/assets";
-import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+} from "@haptic/core";
+import { migrateLegacyShaderPayload } from "@haptic/shader-graph";
+import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@haptic/assets";
+import { MISSING_STARTUP_SCENE_MESSAGE } from "@haptic/exporter";
+import type { ScriptBundleEntry } from "@haptic/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
-import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
+import type { ExportIndexedAsset, ExportArtifact } from "@haptic/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
 import "./script-compiler";
 import { defaultNodeRegistry } from "./graph-validation";
-import { EXEC, pin } from "@babylonslate/scripting";
+import { EXEC, pin } from "@haptic/scripting";
 
 function compiledScripts(artifact: ExportArtifact): ScriptBundleEntry[] {
   return artifact.manifest.assets.filter(asset => asset.type === "CompiledScript").map(asset =>
@@ -41,7 +41,7 @@ function asset(
     rootId: "project",
     parentClass: null,
     // A Class's compile id is its file stem; fixtures name the file after the Class.
-    ...(partial.type === "Class" ? { path: `assets/${partial.name}.class.babasset` } : {}),
+    ...(partial.type === "Class" ? { path: `assets/${partial.name}.class.hasset` } : {}),
     ...partial,
   };
 }
@@ -68,7 +68,7 @@ describe("collectAndExportGame", () => {
     ];
     const indexed: IndexedAsset[] = documents.map(({ guid, type, payload }) => ({
       rootId: "project",
-      path: `assets/${guid}.babasset`,
+      path: `assets/${guid}.hasset`,
       header: {
         guid, type, name: guid, engineVersion: "0.0.0", version: type === "Scene" ? SCENE_SCHEMA_VERSION : 1, mode: "thin",
         payload, ...collectAssetDependencyMetadata(type, payload),
@@ -81,7 +81,7 @@ describe("collectAndExportGame", () => {
     const loaded = await loadFixtureExportDocuments({
       assets: indexed,
       loadDocument: async (_kind, path) => indexed.find(entry => entry.path === path)?.header.payload ?? null,
-      readAssetChunk: async (path, chunk) => path === "assets/hero-model.babasset" && chunk === "source"
+      readAssetChunk: async (path, chunk) => path === "assets/hero-model.hasset" && chunk === "source"
         ? new Uint8Array([0x67, 0x6c, 0x54, 0x46]) : null,
     });
     const result = await collectAndExportGame({
@@ -106,12 +106,12 @@ describe("collectAndExportGame", () => {
   it("fails once the game reaches an asset stored in an unsupported format", async () => {
     const scene = createDefaultScene();
     const indexed: IndexedAsset[] = [
-      { rootId: "project", path: "assets/Main.scene.babasset", header: {
+      { rootId: "project", path: "assets/Main.scene.hasset", header: {
         guid: "scene", type: "Scene", name: "Main", engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
         payload: scene as unknown as Record<string, unknown>, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
       } },
       // Audio keeps its settings in its header, and an old format still fails once reached.
-      { rootId: "project", path: "assets/Clip.audio.babasset", header: {
+      { rootId: "project", path: "assets/Clip.audio.hasset", header: {
         guid: "clip", type: "Audio", name: "Clip", engineVersion: "0.0.0", version: 0, mode: "thin",
         payload: { clips: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
       } },
@@ -139,7 +139,7 @@ describe("collectAndExportGame", () => {
 
   it("fails once the game reaches a Scene the reverb bake could not read or save", async () => {
     const scene = createDefaultScene();
-    const sceneAsset = (guid: string, name: string): IndexedAsset => ({ rootId: "project", path: `assets/${name}.scene.babasset`, header: {
+    const sceneAsset = (guid: string, name: string): IndexedAsset => ({ rootId: "project", path: `assets/${name}.scene.hasset`, header: {
       guid, type: "Scene", name, engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
       payload: scene as unknown as Record<string, unknown>, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
     } });
@@ -158,18 +158,18 @@ describe("collectAndExportGame", () => {
         renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
       });
     };
-    expect(isOk(await exportAfterBakeFailed("assets/Unused.scene.babasset"))).toBe(true);
-    expect(await exportAfterBakeFailed("assets/Main.scene.babasset")).toEqual({
+    expect(isOk(await exportAfterBakeFailed("assets/Unused.scene.hasset"))).toBe(true);
+    expect(await exportAfterBakeFailed("assets/Main.scene.hasset")).toEqual({
       ok: false,
       error: "Main could not be read for its audio reverb bake: read failed",
     });
     // A fresh result that writes refused to save fails only when it differs from the saved chunk.
     const locked = new Error("Read-only during Simulation Play");
-    expect(await exportAfterBakeFailed("assets/Main.scene.babasset", new AudioReverbBakeUnsavedError(new Uint8Array([2]), locked))).toEqual({
+    expect(await exportAfterBakeFailed("assets/Main.scene.hasset", new AudioReverbBakeUnsavedError(new Uint8Array([2]), locked))).toEqual({
       ok: false,
       error: "Main's audio reverb bake could not be saved: Read-only during Simulation Play",
     });
-    expect(isOk(await exportAfterBakeFailed("assets/Main.scene.babasset", new AudioReverbBakeUnsavedError(new Uint8Array([1]), locked)))).toBe(true);
+    expect(isOk(await exportAfterBakeFailed("assets/Main.scene.hasset", new AudioReverbBakeUnsavedError(new Uint8Array([1]), locked)))).toBe(true);
   });
 
   it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
@@ -310,9 +310,9 @@ describe("collectAndExportGame", () => {
         startupSceneGuid: "scene-main",
         alwaysPackageFolders,
         assets: [
-          asset({ guid: "scene-main", type: "Scene", name: "Main", path: "assets/Levels/Main.scene.babasset" }),
-          asset({ guid: "unreferenced", type: "Texture", name: "Spare", path: "assets/Spare/spare.texture.babasset" }),
-          asset({ guid: "outside", type: "Texture", name: "Outside", path: "assets/Other/outside.texture.babasset" }),
+          asset({ guid: "scene-main", type: "Scene", name: "Main", path: "assets/Levels/Main.scene.hasset" }),
+          asset({ guid: "unreferenced", type: "Texture", name: "Spare", path: "assets/Spare/spare.texture.hasset" }),
+          asset({ guid: "outside", type: "Texture", name: "Outside", path: "assets/Other/outside.texture.hasset" }),
         ],
         plugins: [],
         projectPluginOverrides: {},
@@ -330,8 +330,8 @@ describe("collectAndExportGame", () => {
     if (!isOk(without) || !isOk(included)) throw new Error("export failed");
     expect(without.value.manifest.assets.map((entry) => entry.guid)).toEqual(["scene-main"]);
     expect(included.value.manifest.assets.map((entry) => [entry.guid, entry.assetPath])).toEqual([
-      ["scene-main", "assets/Levels/Main.scene.babasset"],
-      ["unreferenced", "assets/Spare/spare.texture.babasset"],
+      ["scene-main", "assets/Levels/Main.scene.hasset"],
+      ["unreferenced", "assets/Spare/spare.texture.hasset"],
     ]);
   });
 
@@ -614,7 +614,7 @@ describe("collectAndExportGame", () => {
       alwaysPackageFolders: ["assets/Game"],
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "class-game", type: "Class", name: "Player Game", path: "assets/Game/PlayerGame.class.babasset", parentClass: "GameInstance" }),
+        asset({ guid: "class-game", type: "Class", name: "Player Game", path: "assets/Game/PlayerGame.class.hasset", parentClass: "GameInstance" }),
       ],
       plugins: [],
       projectPluginOverrides: {},
@@ -655,7 +655,7 @@ describe("collectAndExportGame", () => {
       alwaysPackageFolders: ["assets/Game"],
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "class-broken", type: "Class", name: "Broken", path: "assets/Game/Broken.class.babasset", parentClass: "Actor" }),
+        asset({ guid: "class-broken", type: "Class", name: "Broken", path: "assets/Game/Broken.class.hasset", parentClass: "Actor" }),
       ],
       plugins: [],
       projectPluginOverrides: {},
@@ -908,7 +908,7 @@ describe("collectAndExportGame", () => {
           guid: "graph-1",
           type: "AnimationGraph",
           name: "Loco",
-          path: "assets/Loco.anim.babasset",
+          path: "assets/Loco.anim.hasset",
         }),
       ],
       plugins: [],

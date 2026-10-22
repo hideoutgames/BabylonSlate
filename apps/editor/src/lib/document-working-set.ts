@@ -1,6 +1,6 @@
-import { CONTENT_BROWSER_ID } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID } from "@haptic/core";
 import { useEffect, useRef, useState } from "react";
-import { isTestModeEnabled } from "@babylonslate/vfs";
+import { isTestModeEnabled } from "@haptic/vfs";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 
 /** Inactive chrome tabs stay mounted this long after last being active. */
@@ -103,7 +103,7 @@ export function createIdleClock(now: () => number = () => Date.now()) {
   };
 }
 
-const TEST_IDLE_CLOCK_EVENT = "babylonslate:test-idle-clock";
+const TEST_IDLE_CLOCK_EVENT = "haptic:test-idle-clock";
 
 let testIdleClock: ReturnType<typeof createIdleClock> | null = null;
 

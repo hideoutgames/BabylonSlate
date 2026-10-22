@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { humanizePropertyLabel } from "@haptic/editor-kit";
 import { createRunFlasher } from "./run-flash";
 import { NO_STATUS_TEXT, NO_VALUE_TEXT, pinShowsValue, resolvePinValue, type GraphRunTrace, type RunGraph } from "./run-trace";
 

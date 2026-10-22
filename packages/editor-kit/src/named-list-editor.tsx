@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
+import { Button } from "@haptic/ui/components/button";
+import { Input } from "@haptic/ui/components/input";
 import { ListRowActions } from "./list-row-actions";
 
 export type NamedListItemRenderArgs = {

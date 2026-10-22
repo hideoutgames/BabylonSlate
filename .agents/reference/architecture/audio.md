@@ -25,9 +25,9 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 ## Formats
 
 - **Audio**: `volume` 0..1 (1), `loop` (false), `audioChannelGuid` / `soundAttenuationGuid` (null), `clips` (default one `source` clip, cap 8; extra files are `source:<id>` chunks, not other Audio guids; `source` cannot be removed), `pitch` 0.25..4, `pitchRandom`, `pitchMin` / `pitchMax`. Old `{}` payloads normalize without rewriting.
-- **AudioChannel** (`.channel.babasset`): no volume; `parentChannelGuid`, `effects` of `environmentReverb` / `muffleThroughWalls`. Keep both effect kinds when editing. Parent cycles fail validation; missing parents route to master.
-- **AudioMixer** (`.mixer.babasset`): user asset, not a singleton; `globalVolume`, `channels: { channelGuid, volume }[]` (unique guids).
-- **SoundAttenuation** (`.atten.babasset`): opts into 3D (`null` = non-spatial); radii, distance model, rolloff, spatialisation, optional cone and Doppler.
+- **AudioChannel** (`.channel.hasset`): no volume; `parentChannelGuid`, `effects` of `environmentReverb` / `muffleThroughWalls`. Keep both effect kinds when editing. Parent cycles fail validation; missing parents route to master.
+- **AudioMixer** (`.mixer.hasset`): user asset, not a singleton; `globalVolume`, `channels: { channelGuid, volume }[]` (unique guids).
+- **SoundAttenuation** (`.atten.hasset`): opts into 3D (`null` = non-spatial); radii, distance model, rolloff, spatialisation, optional cone and Doppler.
 - Project Settings `audio`: `audioMixerGuid`, `occlusionEnabled`, reverb wet/decay/damping scales (0..2).
 - Header `dependencies[]` list channel, attenuation, parent and mixer channels for references and delete guards.
 - Scene `audioReverb` chunk: magic `BSAR`, v2 adds occupancy bitmap, ≤ 64 KiB. Export sidecar `audioReverb:<sceneGuid>`. Packed Audio uses a `BSAU` envelope.

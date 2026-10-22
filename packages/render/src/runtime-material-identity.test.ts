@@ -6,8 +6,8 @@ import {
   NullEngine,
   Scene,
 } from "@babylonjs/core";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import type { CommandMessage } from "@haptic/bridge";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import {
   applyAssignMaterial,

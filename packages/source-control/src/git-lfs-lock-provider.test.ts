@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isErr, isOk } from "@babylonslate/core";
+import { isErr, isOk } from "@haptic/core";
 import { GitLfsLockProvider } from "./git-lfs-lock-provider";
 import { LFS_JSON, type LfsRequest, type LfsResponse } from "./types";
 
@@ -9,7 +9,7 @@ function jsonResponse(status: number, body: unknown): LfsResponse {
 
 const sampleLock = {
   id: "lock-1",
-  path: "assets/hero.scene.babasset",
+  path: "assets/hero.scene.hasset",
   locked_at: "2026-08-15T12:00:00Z",
   owner: { name: "Ada" },
 };
@@ -26,12 +26,12 @@ describe("GitLfsLockProvider", () => {
         return jsonResponse(201, { lock: sampleLock });
       },
     });
-    const result = await provider.create("assets/hero.scene.babasset");
+    const result = await provider.create("assets/hero.scene.hasset");
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
     expect(result.value).toEqual({
       id: "lock-1",
-      path: "assets/hero.scene.babasset",
+      path: "assets/hero.scene.hasset",
       ownerName: "Ada",
       lockedAt: "2026-08-15T12:00:00Z",
       ours: true,
@@ -47,7 +47,7 @@ describe("GitLfsLockProvider", () => {
       `Basic ${btoa("x-access-token:ghp_secret")}`,
     );
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
-      path: "assets/hero.scene.babasset",
+      path: "assets/hero.scene.hasset",
       ref: { name: "refs/heads/main" },
     });
   });
@@ -70,7 +70,7 @@ describe("GitLfsLockProvider", () => {
         });
       },
     });
-    const result = await provider.create("assets/hero.scene.babasset");
+    const result = await provider.create("assets/hero.scene.hasset");
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
     expect(result.error.kind).toBe("conflict");
@@ -98,7 +98,7 @@ describe("GitLfsLockProvider", () => {
         return jsonResponse(500, { message: `unexpected ${request.url}` });
       },
     });
-    const result = await provider.create("assets/hero.scene.babasset");
+    const result = await provider.create("assets/hero.scene.hasset");
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
     expect(result.value.ours).toBe(true);
@@ -124,7 +124,7 @@ describe("GitLfsLockProvider", () => {
           theirs: [
             {
               id: "lock-2",
-              path: "assets/other.babasset",
+              path: "assets/other.hasset",
               locked_at: "2026-08-15T13:00:00Z",
               owner: { name: "Bob" },
             },
@@ -162,7 +162,7 @@ describe("GitLfsLockProvider", () => {
           theirs: [
             {
               id: "lock-2",
-              path: "assets/other.babasset",
+              path: "assets/other.hasset",
               locked_at: "2026-08-15T13:00:00Z",
               owner: { name: "Bob" },
             },
@@ -220,7 +220,7 @@ describe("GitLfsLockProvider", () => {
         throw new Error("network down");
       },
     });
-    const result = await provider.create("assets/a.babasset");
+    const result = await provider.create("assets/a.hasset");
     expect(isErr(result) && result.error.kind).toBe("offline");
   });
 
@@ -254,7 +254,7 @@ describe("GitLfsLockProvider", () => {
       getToken: async () => "token",
       fetch: async () => jsonResponse(201, { message: "ok" }),
     });
-    const result = await provider.create("assets/hero.scene.babasset");
+    const result = await provider.create("assets/hero.scene.hasset");
     expect(isErr(result) && result.error.kind).toBe("http");
     if (!isErr(result)) return;
     expect(result.error.message).toBe("create response missing lock");
@@ -273,7 +273,7 @@ describe("GitLfsLockProvider", () => {
         return jsonResponse(422, { message: "path required" });
       },
     });
-    const created = await provider.create("assets/hero.scene.babasset");
+    const created = await provider.create("assets/hero.scene.hasset");
     expect(isErr(created) && created.error.kind).toBe("http");
     if (!isErr(created)) return;
     expect(created.error.message).toBe("path required");
@@ -299,7 +299,7 @@ describe("GitLfsLockProvider", () => {
       const verified = await provider.verify();
       expect(isErr(verified) && verified.error.kind).toBe("http");
     }
-    const created = await provider.create("assets/a.babasset");
+    const created = await provider.create("assets/a.hasset");
     expect(isErr(created) && created.error.kind).toBe("unauthorized");
     if (!isErr(created)) return;
     expect(created.error.status).toBe(403);
@@ -314,10 +314,10 @@ describe("GitLfsLockProvider", () => {
         jsonResponse(200, {
           ours: [
             sampleLock,
-            { id: "", path: "assets/skip.babasset" },
+            { id: "", path: "assets/skip.hasset" },
             { id: "lock-2", path: "" },
             { not: "a lock" },
-            { id: "lock-3", path: "assets/undated.babasset" },
+            { id: "lock-3", path: "assets/undated.hasset" },
           ],
         }),
     });
@@ -343,7 +343,7 @@ describe("GitLfsLockProvider", () => {
         });
       },
     });
-    const result = await provider.create("assets/hero.scene.babasset");
+    const result = await provider.create("assets/hero.scene.hasset");
     expect(isErr(result) && result.error.kind).toBe("conflict");
     if (!isErr(result)) return;
     expect(result.error.lock?.ours).toBe(false);

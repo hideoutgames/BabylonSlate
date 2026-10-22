@@ -1,4 +1,4 @@
-import { rangeSelectTreeIds } from "@babylonslate/editor-kit";
+import { rangeSelectTreeIds } from "@haptic/editor-kit";
 import { PREFAB_ROOT_ID } from "./prefab-preview";
 
 export function applyPrefabTreeSelect(input: {

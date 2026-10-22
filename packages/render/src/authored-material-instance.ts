@@ -1,5 +1,5 @@
 import { Mesh, type Material } from "@babylonjs/core";
-import type { SerializedComponent } from "@babylonslate/core";
+import type { SerializedComponent } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { ownedMaterialPreparation } from "./material-library";
 import { applyMaterialBounds } from "./material-bounds";

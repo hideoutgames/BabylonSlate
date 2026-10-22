@@ -8,12 +8,12 @@ import {
   PropertyGrid,
   SearchDropdown,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   normalizePluginSettings,
   type PluginSettingsPayload,
-} from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
   FieldDescription,
@@ -21,8 +21,8 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import {
   useDocumentActions,
   useRegistryState,

@@ -1,5 +1,5 @@
-import { isVirtualizedOverlayClass, overlayLayoutKey, parseOverlayContainerProperties, type OverlayLayoutEntry } from "@babylonslate/core";
-import type { Actor } from "@babylonslate/object-model";
+import { isVirtualizedOverlayClass, overlayLayoutKey, parseOverlayContainerProperties, type OverlayLayoutEntry } from "@haptic/core";
+import type { Actor } from "@haptic/object-model";
 
 type Pool = { layerId: string; owner: Actor; classId: string; actors: Map<number, Actor> };
 /** Only visible indices (plus overscan) own Actors, components and render resources. */

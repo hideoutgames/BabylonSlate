@@ -6,9 +6,9 @@ it("keeps native inactivity independent of visibility and detaches on disposal",
   const visibility = Object.assign(new EventTarget(), { visibilityState: "visible" });
   const states: boolean[] = [];
   const dispose = attachLifecyclePause((paused) => states.push(paused), host, visibility);
-  host.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+  host.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } }));
   visibility.dispatchEvent(new Event("visibilitychange"));
-  host.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+  host.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } }));
   expect(states).toEqual([false, true, true, false]);
   dispose();
   visibility.visibilityState = "hidden";

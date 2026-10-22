@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
-import { createDefaultTilesetPayload } from "@babylonslate/assets";
+import { createDefaultTilesetPayload } from "@haptic/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetEditor, TilesetPreview } from "./tileset-editor";
@@ -33,7 +33,7 @@ vi.mock("../context/document-context", async () => {
   const assets = [
     {
       header: { guid: "tex-1", name: "GroundAtlas", type: "Texture" },
-      path: "assets/GroundAtlas.texture.babasset",
+      path: "assets/GroundAtlas.texture.hasset",
     },
   ];
   return (await import("../testing/document-context-mock")).documentContextMock(() => ({

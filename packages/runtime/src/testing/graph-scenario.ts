@@ -1,5 +1,5 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { createDefaultScene, type SerializedScene } from "@haptic/core";
 import {
   compileGraph,
   type CompileOptions,
@@ -7,7 +7,7 @@ import {
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createInProcessRuntime, type RuntimeDriver, type RuntimeDriverOptions } from "../driver";
 import type { CompiledScript } from "../script-host";
 

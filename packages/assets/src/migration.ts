@@ -1,4 +1,4 @@
-import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
+import { SCENE_SCHEMA_VERSION } from "@haptic/core";
 
 export type MigrationFn = (
   payload: Record<string, unknown>,

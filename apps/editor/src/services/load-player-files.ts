@@ -1,5 +1,5 @@
-import { defaultPlayerIndexHtml } from "@babylonslate/exporter";
-import { KTX2_TRANSCODER_RELATIVE_FILES, GLTF_MESH_DECODER_RELATIVE_FILES } from "@babylonslate/assets";
+import { defaultPlayerIndexHtml } from "@haptic/exporter";
+import { KTX2_TRANSCODER_RELATIVE_FILES, GLTF_MESH_DECODER_RELATIVE_FILES } from "@haptic/assets";
 import { playerHostBase } from "../lib/player-host-url";
 
 const PLAYER_CANDIDATES = [

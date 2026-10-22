@@ -6,9 +6,9 @@ import {
   exportExtensionZip,
   writeProjectExtension,
   type ExtensionSettings,
-} from "@babylonslate/assets";
-import { convertGlslToMaterial } from "@babylonslate/shader-graph";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { convertGlslToMaterial } from "@haptic/shader-graph";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EditorExtensionService, type EditorExtensionWriteOptions } from "./editor-extension-service";
 import { ProjectWriteAdmission } from "./project-write-admission";
 
@@ -71,7 +71,7 @@ describe("EditorExtensionService lifecycle", () => {
     const module = `
       export function activate(api) {
         api.registerCommand({ id: "code", title: "Write Code", execute() { return api.code.write("code/blocked.js", "blocked"); } });
-        api.registerCommand({ id: "asset", title: "Create Asset", execute() { return api.assets.create("assets/blocked.babasset", { type: "Class", name: "Blocked", payload: { nodes: [], edges: [] } }); } });
+        api.registerCommand({ id: "asset", title: "Create Asset", execute() { return api.assets.create("assets/blocked.hasset", { type: "Class", name: "Blocked", payload: { nodes: [], edges: [] } }); } });
         api.registerCommand({ id: "read", title: "Read", execute() { api.log("Read-only command ran"); } });
       }
     `;
@@ -87,7 +87,7 @@ describe("EditorExtensionService lifecycle", () => {
       await service.run("tools", "read", {});
       expect(messages).toContain("Read-only command ran");
       expect(await project.exists("code/blocked.js")).toBe(false);
-      expect(await project.exists("assets/blocked.babasset")).toBe(false);
+      expect(await project.exists("assets/blocked.hasset")).toBe(false);
       expect(await project.readText("extensions/tools/index.ts")).toBe(module);
     } finally { lease.release(); }
     await service.run("tools", "code", {});

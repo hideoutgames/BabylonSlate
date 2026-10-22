@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { identitySerializedTransform } from "@babylonslate/core";
+import { identitySerializedTransform } from "@haptic/core";
 import { spatialTransformPropertyRows } from "./transform-property-rows";
 
 describe("spatialTransformPropertyRows", () => {

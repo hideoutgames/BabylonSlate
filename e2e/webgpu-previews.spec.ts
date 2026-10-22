@@ -18,8 +18,8 @@ const PBR_MATERIAL_GUID = "00000000-0000-4000-8000-000000000011";
 const CEL_MATERIAL_GUID = "00000000-0000-4000-8000-000000000012";
 const UNLIT_MATERIAL_GUID = "00000000-0000-4000-8000-000000000013";
 
-const MODEL_ASSET = "assets/Quad.model.babasset";
-const PBR_MATERIAL_ASSET = "assets/AuthoredPbr.material.babasset";
+const MODEL_ASSET = "assets/Quad.model.hasset";
+const PBR_MATERIAL_ASSET = "assets/AuthoredPbr.material.hasset";
 
 // WebGL2 previews are covered by the default-backend specs; this one pins WebGPU.
 type Backend = "webgpu";
@@ -165,11 +165,11 @@ async function proofProjectFiles(page: Page, backend: Backend) {
     await materialAsset(PBR_MATERIAL_GUID, "AuthoredPbr", [0.7, 0.18, 0.14]),
   );
   files.set(
-    "assets/AuthoredCel.material.babasset",
+    "assets/AuthoredCel.material.hasset",
     await materialAsset(CEL_MATERIAL_GUID, "AuthoredCel", [0.16, 0.45, 0.85]),
   );
   files.set(
-    "assets/Unlit.material.babasset",
+    "assets/Unlit.material.hasset",
     await materialAsset(UNLIT_MATERIAL_GUID, "Unlit", [0.9, 0.75, 0.1], true),
   );
   return files;
@@ -178,11 +178,11 @@ async function proofProjectFiles(page: Page, backend: Backend) {
 async function engineSceneDiagnostics(page: Page) {
   return page.evaluate(async () => {
     const host = globalThis as unknown as {
-      __babylonslateViewportTest?: {
+      __hapticViewportTest?: {
         engineSceneDiagnostics: () => Promise<unknown>;
       };
     };
-    return host.__babylonslateViewportTest?.engineSceneDiagnostics() ?? null;
+    return host.__hapticViewportTest?.engineSceneDiagnostics() ?? null;
   });
 }
 
@@ -356,7 +356,7 @@ for (const backend of ["webgpu"] as const) {
       ).toBeGreaterThan(Math.max(modelRed!, modelBlue!));
 
       // Real Prefab document preview: pitch-black background, no skybox.
-      await openAssetFromBrowser(page, "assets/main.class.babasset");
+      await openAssetFromBrowser(page, "assets/main.class.hasset");
       await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
       const prefabCanvas = page.getByTestId("prefab-preview-canvas");
       await expect(prefabCanvas).toBeVisible({ timeout: 30_000 });

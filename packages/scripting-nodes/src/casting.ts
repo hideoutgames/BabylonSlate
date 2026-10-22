@@ -10,7 +10,7 @@ import {
   classRef,
   type PinType,
   createWildcardNodes,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 /**
  * The Class pin's literal default (`default:class`), or BObject. Editor

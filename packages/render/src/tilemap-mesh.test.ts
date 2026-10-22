@@ -4,7 +4,7 @@ import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { createTilemapMeshes, updateSceneTilemapAnimations, updateSceneTilemapParallax } from "./tilemap-mesh";
 
 describe("createTilemapMeshes", () => {

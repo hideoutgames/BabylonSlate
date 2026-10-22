@@ -7,7 +7,7 @@ Inventory and rules for the built-in **Feature Test** starter (`apps/editor/src/
 - Create Project → Feature Test (listed only in Debug Mode). `ProjectService.createEmptyProject(name, { kind: "feature-test" })` runs the Basic 3D scaffold (Input assets, Kenney Mannequin) and then lazily loads [`apps/editor/src/lib/feature-test/`](../../apps/editor/src/lib/feature-test/).
 - `index.ts` runs areas in a fixed order so every referenced asset exists before its referrer: imports, audio, materials, scripting types, scripting, rendering, physics, world, animation, particles, AI, 2D, Scene Layers. Area modules then place actors in their zones. Scene documents save last (Scene Layers, sub-scenes, scenes, then the main scene), then the navmesh bake and project settings.
 - Content is deterministic: fixed ids, positions and counts. Only asset guids differ between projects, so tooling finds assets by path or name.
-- Feature Test's own assets live under `assets/FeatureTest/<Area>/`, an Always Package Folder, so Preview Build and export ship the whole showcase. The Basic 3D scaffold keeps its files where it writes them: the startup scene `assets/main.scene.babasset`, Input assets under `assets/Input/`, and the Mannequin (`assets/Mannequin/` plus `assets/Mannequin.class.babasset`), which the areas reuse.
+- Feature Test's own assets live under `assets/FeatureTest/<Area>/`, an Always Package Folder, so Preview Build and export ship the whole showcase. The Basic 3D scaffold keeps its files where it writes them: the startup scene `assets/main.scene.hasset`, Input assets under `assets/Input/`, and the Mannequin (`assets/Mannequin/` plus `assets/Mannequin.class.hasset`), which the areas reuse.
 - Zones sit on a 32 m grid in [`layout.ts`](../../apps/editor/src/lib/feature-test/layout.ts) (`FEATURE_TEST_ZONES`); each has an Outliner folder and a 3D Text label. The main camera `ft-camera-main` (`FT_RenderCameraTour`) starts at the head of the closed `FEATURE_TEST_CAMERA_TOUR` Spline (`Camera Tour Path`, `FT_RenderCameraPath`) and, in Play, Preview and export, rides it at 6 m/s (about 2.5 min a lap) on a lagging Spring Arm: in front of the first row, low through both gaps between rows, high behind the back row and down the left side. Play-frame measurements of the main scene therefore see a moving view. Landscape and water live in the separate `FT_World` scene.
 
 ## Source content
@@ -23,7 +23,7 @@ Only existing repository files and runtime primitives are used (no generated art
 | Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
 | Billboards | `engine-content/billboards` | UI Textures |
 | Onest | `engine-content/fonts/Onest` (SIL OFL 1.1, `OFL.txt` + `Source.txt` alongside; keep `OFL.txt` with any export that ships the font) | Source Font for overlay text |
-| Bundled ASCII glyphs | `@babylonslate/render/default-typeface` | Facetype Font for 3D Text |
+| Bundled ASCII glyphs | `@haptic/render/default-typeface` | Facetype Font for 3D Text |
 
 A new third-party pack must be human-made and CC0 (fonts: OFL), ship its `License.txt` (or `OFL.txt`) and `Source.txt` beside it, and be listed in this table.
 
@@ -43,12 +43,12 @@ The Kenney sounds are CC0; `License.txt` and `Source.txt` beside them record lic
 
 | Scene | Path | Purpose |
 | --- | --- | --- |
-| Main | `assets/main.scene.babasset` | Every 3D feature except the open world, in fixed zones at moderate cost; startup scene and default perf workload |
-| FT_Stress | `assets/FeatureTest/Scenes/FT_Stress.scene.babasset` | Heavy, scalable load: physics pile, particle stress, animated crowd, dense foliage |
-| FT_World | `assets/FeatureTest/Scenes/FT_World.scene.babasset` | Landscape, Foliage, every water body kind, buoyancy, Cables and Splines |
-| FT_Clustered | `assets/FeatureTest/Scenes/FT_Clustered.scene.babasset` | Many unshadowed point lights for Clustered Forward comparisons |
-| FT_2D | `assets/FeatureTest/Scenes/FT_2D.scene.babasset` | Sprites, Sprite Animation, Tilemaps, 2D physics |
-| FT_StreamedRoom | `assets/FeatureTest/Scenes/FT_StreamedRoom.scene.babasset` | Sub-scene streamed into the main scene |
+| Main | `assets/main.scene.hasset` | Every 3D feature except the open world, in fixed zones at moderate cost; startup scene and default perf workload |
+| FT_Stress | `assets/FeatureTest/Scenes/FT_Stress.scene.hasset` | Heavy, scalable load: physics pile, particle stress, animated crowd, dense foliage |
+| FT_World | `assets/FeatureTest/Scenes/FT_World.scene.hasset` | Landscape, Foliage, every water body kind, buoyancy, Cables and Splines |
+| FT_Clustered | `assets/FeatureTest/Scenes/FT_Clustered.scene.hasset` | Many unshadowed point lights for Clustered Forward comparisons |
+| FT_2D | `assets/FeatureTest/Scenes/FT_2D.scene.hasset` | Sprites, Sprite Animation, Tilemaps, 2D physics |
+| FT_StreamedRoom | `assets/FeatureTest/Scenes/FT_StreamedRoom.scene.hasset` | Sub-scene streamed into the main scene |
 
 Open a scene from the Content Browser, or use the console `changescene` command in Play.
 
@@ -144,52 +144,52 @@ For devices without a test harness (iPad, phones, other browsers), a Feature Tes
 The opt-in route `e2e/feature-test-perf-route.spec.ts` runs only through `playwright.perf.config.ts`:
 
 ```sh
-BL_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts \
+HAPTIC_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts \
   --config playwright.perf.config.ts --project perf-software
 ```
 
-It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `BL_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen. A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `BL_PERF_OUT` when set.
+It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen. A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
-| `BL_PERF_SAMPLE_MS` / `BL_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
-| `BL_PERF_WARMUP_MS` / `BL_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
-| `BL_PERF_QUALITY` / `BL_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
-| `BL_PERF_VIEWPORT_CAP` | Engine Settings (30) | Editor viewport frame cap |
-| `BL_PERF_REOPEN` | 1 | `0` skips the reload-and-reopen timing |
-| `BL_PERF_LABEL` / `BL_PERF_OUT` | none | Free-text label; extra report path that survives the next run |
+| `HAPTIC_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
+| `HAPTIC_PERF_SAMPLE_MS` / `HAPTIC_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
+| `HAPTIC_PERF_WARMUP_MS` / `HAPTIC_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
+| `HAPTIC_PERF_QUALITY` / `HAPTIC_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
+| `HAPTIC_PERF_VIEWPORT_CAP` | Engine Settings (30) | Editor viewport frame cap |
+| `HAPTIC_PERF_REOPEN` | 1 | `0` skips the reload-and-reopen timing |
+| `HAPTIC_PERF_LABEL` / `HAPTIC_PERF_OUT` | none | Free-text label; extra report path that survives the next run |
 
-Rules: compare runs on the same machine, browser project and build only; never assert frame rates. Dynamic resolution is off in FeatureTest projects so the workload stays fixed. Quick smoke: `BL_PERF_SAMPLES=1 BL_PERF_SAMPLE_MS=2000 BL_PERF_WARMUP_MS=2000`. Agents wrap long runs in `pnpm --silent agent:wait local --script test:e2e -- <same arguments>`.
+Rules: compare runs on the same machine, browser project and build only; never assert frame rates. Dynamic resolution is off in FeatureTest projects so the workload stays fixed. Quick smoke: `HAPTIC_PERF_SAMPLES=1 HAPTIC_PERF_SAMPLE_MS=2000 HAPTIC_PERF_WARMUP_MS=2000`. Agents wrap long runs in `pnpm --silent agent:wait local --script test:e2e -- <same arguments>`.
 
 ### Fly-through route
 
-`e2e/feature-test-flythrough-route.spec.ts` (opt-in `BL_PERF_FLYTHROUGH=1`, same config) looks for camera-motion stutter. It creates FeatureTest, optionally switches the project backend and quality in Project Settings, then per scene drives the editor camera along a fixed eye path at fly speed the way the joystick and WASD do (a pose change and camera invalidation per animation frame under a continuous render lease): a static warm-up, then the same path `BL_FLY_PASSES` times. The test-build hook `__babylonslateViewportTest.flyThrough` ([`flythrough-probe.ts`](../../apps/editor/src/testing/flythrough-probe.ts)) instruments the Engine for the run only and records every rendered frame: main-thread frame time, eye position, and counters for new Effects, WebGL links and compiles or WebGPU pipelines, shader modules, bind groups, buffers, textures and uploads, material and define invalidations by flag, failed readiness checks, strict readiness probes, graph builds, held frames, shadow generator construction, disposal and moves, enabled-light changes and visible-set churn, plus long tasks and JS heap. The spec ranks spike frames, correlates event kinds with frame cost, groups the event log (with stacks) and, with `BL_FLY_PROFILE=1`, adds the hottest functions of each spike frame from a CDP CPU profile. Counts are hardware-independent; compare counts across backends and builds, and times only on one machine.
+`e2e/feature-test-flythrough-route.spec.ts` (opt-in `HAPTIC_PERF_FLYTHROUGH=1`, same config) looks for camera-motion stutter. It creates FeatureTest, optionally switches the project backend and quality in Project Settings, then per scene drives the editor camera along a fixed eye path at fly speed the way the joystick and WASD do (a pose change and camera invalidation per animation frame under a continuous render lease): a static warm-up, then the same path `HAPTIC_FLY_PASSES` times. The test-build hook `__hapticViewportTest.flyThrough` ([`flythrough-probe.ts`](../../apps/editor/src/testing/flythrough-probe.ts)) instruments the Engine for the run only and records every rendered frame: main-thread frame time, eye position, and counters for new Effects, WebGL links and compiles or WebGPU pipelines, shader modules, bind groups, buffers, textures and uploads, material and define invalidations by flag, failed readiness checks, strict readiness probes, graph builds, held frames, shadow generator construction, disposal and moves, enabled-light changes and visible-set churn, plus long tasks and JS heap. The spec ranks spike frames, correlates event kinds with frame cost, groups the event log (with stacks) and, with `HAPTIC_FLY_PROFILE=1`, adds the hottest functions of each spike frame from a CDP CPU profile. Counts are hardware-independent; compare counts across backends and builds, and times only on one machine.
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SCENES` | `main,world` | Scenes with a built-in path: `main`, `world`, `clustered`; others need `BL_FLY_PATH` |
-| `BL_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `BL_RENDER_NATIVE_GPU=1` |
-| `BL_PERF_QUALITY` | starter (Medium) | `low`, `medium`, `high` or `ultra`: the project's Overall Quality, with Dynamic Resolution off; High and Ultra allow the starter's scene-wide Volumetric Lighting |
-| `BL_FLY_SPEED` / `BL_FLY_PASSES` / `BL_FLY_WARMUP_MS` | 8 m/s / 2 / 5000 | Fly speed, flights of the path, static hold before the first |
-| `BL_FLY_PATH` | per scene | JSON array of `[x, y, z]` eye waypoints |
-| `BL_FLY_PROFILE` | off | `1` records a CPU profile of the flights |
-| `BL_FLY_PLAY` | none | Selected scenes to fly again in overlay Play with the free camera (`freecam`) |
-| `BL_PERF_SCALING` / `BL_PERF_VIEWPORT_CAP` | Engine Settings | Hardware scaling level and viewport frame cap |
-| `BL_PERF_SETTLE_MS`, `BL_PERF_LABEL`, `BL_PERF_OUT` | 5000, none, none | Settle after opening, label, extra report path |
+| `HAPTIC_PERF_SCENES` | `main,world` | Scenes with a built-in path: `main`, `world`, `clustered`; others need `HAPTIC_FLY_PATH` |
+| `HAPTIC_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `HAPTIC_RENDER_NATIVE_GPU=1` |
+| `HAPTIC_PERF_QUALITY` | starter (Medium) | `low`, `medium`, `high` or `ultra`: the project's Overall Quality, with Dynamic Resolution off; High and Ultra allow the starter's scene-wide Volumetric Lighting |
+| `HAPTIC_FLY_SPEED` / `HAPTIC_FLY_PASSES` / `HAPTIC_FLY_WARMUP_MS` | 8 m/s / 2 / 5000 | Fly speed, flights of the path, static hold before the first |
+| `HAPTIC_FLY_PATH` | per scene | JSON array of `[x, y, z]` eye waypoints |
+| `HAPTIC_FLY_PROFILE` | off | `1` records a CPU profile of the flights |
+| `HAPTIC_FLY_PLAY` | none | Selected scenes to fly again in overlay Play with the free camera (`freecam`) |
+| `HAPTIC_PERF_SCALING` / `HAPTIC_PERF_VIEWPORT_CAP` | Engine Settings | Hardware scaling level and viewport frame cap |
+| `HAPTIC_PERF_SETTLE_MS`, `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | 5000, none, none | Settle after opening, label, extra report path |
 
-A switched backend or quality is saved before the first scene opens; scene edits a flight leaves behind are discarded when the next scene opens. On a GPU host (`perf-gpu`), set `BL_RENDER_NATIVE_GPU=1` so the project's launch arguments are kept. Main-scene Play (`BL_FLY_PLAY=main`) only loads on a real GPU.
+A switched backend or quality is saved before the first scene opens; scene edits a flight leaves behind are discarded when the next scene opens. On a GPU host (`perf-gpu`), set `HAPTIC_RENDER_NATIVE_GPU=1` so the project's launch arguments are kept. Main-scene Play (`HAPTIC_FLY_PLAY=main`) only loads on a real GPU.
 
 ### Cold-load route
 
-`e2e/feature-test-load-route.spec.ts` (opt-in `BL_PERF_LOAD=1`, same config) measures shader compile work during a cold scene open. It creates FeatureTest, optionally switches the backend, then opens each scene once and records scene-ready time and, from page-level hooks installed before the editor boots (no editor code), every WebGL program link, WebGPU shader module and render pipeline: total, distinct by exact source, and distinct by normalized source (define lines sorted apart from the body, `SHADER_NAME` dropped). An Engine-level ledger records each Babylon Effect with its cache-key kind (named shader, inline source, shadow-depth token (unpatched Babylon)), defines, render pass, creation stack, cache hits, release and the GPU objects it built. The report groups Effects that built the same source and says why their keys differ, lists the define changes that recompiled one shader, and names the live draw wrappers (scene, pass, mesh, material) holding each Effect when the scene is ready; an Effect no wrapper holds was compiled for nothing. It also includes the water compile log. Counts are hardware-independent; never asserts timings.
+`e2e/feature-test-load-route.spec.ts` (opt-in `HAPTIC_PERF_LOAD=1`, same config) measures shader compile work during a cold scene open. It creates FeatureTest, optionally switches the backend, then opens each scene once and records scene-ready time and, from page-level hooks installed before the editor boots (no editor code), every WebGL program link, WebGPU shader module and render pipeline: total, distinct by exact source, and distinct by normalized source (define lines sorted apart from the body, `SHADER_NAME` dropped). An Engine-level ledger records each Babylon Effect with its cache-key kind (named shader, inline source, shadow-depth token (unpatched Babylon)), defines, render pass, creation stack, cache hits, release and the GPU objects it built. The report groups Effects that built the same source and says why their keys differ, lists the define changes that recompiled one shader, and names the live draw wrappers (scene, pass, mesh, material) holding each Effect when the scene is ready; an Effect no wrapper holds was compiled for nothing. It also includes the water compile log. Counts are hardware-independent; never asserts timings.
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
-| `BL_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `BL_RENDER_NATIVE_GPU=1` |
-| `BL_PERF_SETTLE_MS` | 8000 | How long after ready the settled window keeps counting |
-| `BL_PERF_LABEL`, `BL_PERF_OUT` | none | Label; extra report path |
+| `HAPTIC_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
+| `HAPTIC_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `HAPTIC_RENDER_NATIVE_GPU=1` |
+| `HAPTIC_PERF_SETTLE_MS` | 8000 | How long after ready the settled window keeps counting |
+| `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | none | Label; extra report path |
 
 ## Verification
 

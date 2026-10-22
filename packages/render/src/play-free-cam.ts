@@ -5,8 +5,8 @@ import {
   Vector3,
   type Scene,
 } from "@babylonjs/core";
-import type { ViewportMode } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { ViewportMode } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   attachViewportFlyKeys,
   DEFAULT_FLY_SPEED,

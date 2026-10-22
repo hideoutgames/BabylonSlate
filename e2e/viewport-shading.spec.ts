@@ -75,7 +75,7 @@ test("Scene fog changes authored PBR surface pixels in the editor and Play", asy
   test.setTimeout(180_000);
   await openTestProject(page);
   await createContentBrowserAsset(page, "Material", "FogSurface");
-  const materialPath = "assets/FogSurface.material.babasset";
+  const materialPath = "assets/FogSurface.material.hasset";
   await openAssetFromBrowser(page, materialPath);
   await page.getByTestId("material-graph-editor").locator('.react-flow__node[data-id="baseColor"]').click();
   await page.getByTestId("property-color").fill("#00ff00");
@@ -141,7 +141,7 @@ test("Scene fog changes authored PBR surface pixels in the editor and Play", asy
 test("Emissive color popup stays reachable outside the graph and within a short viewport", async ({ page }) => {
   await openTestProject(page);
   await createContentBrowserAsset(page, "Material", "EmissivePicker");
-  await openAssetFromBrowser(page, "assets/EmissivePicker.material.babasset");
+  await openAssetFromBrowser(page, "assets/EmissivePicker.material.hasset");
   const graph = page.getByTestId("material-graph-editor");
   await page.setViewportSize({ width: 1100, height: 420 });
   await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
@@ -170,7 +170,7 @@ test("Unlit preserves model color and skybox state in Scene, Prefab, and Model P
   test.setTimeout(180_000);
   await openTestProject(page);
   await createContentBrowserAsset(page, "Material", "UnlitSurface");
-  const materialPath = "assets/UnlitSurface.material.babasset";
+  const materialPath = "assets/UnlitSurface.material.hasset";
   await openAssetFromBrowser(page, materialPath);
   await page
     .getByTestId("material-graph-editor")
@@ -179,7 +179,7 @@ test("Unlit preserves model color and skybox state in Scene, Prefab, and Model P
   await page.getByTestId("property-color").fill("#00ff00");
   await saveAllIfEnabled(page);
   const materialGuid = await guidForPath(page, materialPath);
-  const modelPath = "assets/Mannequin/mannequin.babasset";
+  const modelPath = "assets/Mannequin/mannequin.hasset";
   const modelGuid = await guidForPath(page, modelPath);
   expect(materialGuid).not.toBe("");
   expect(modelGuid).not.toBe("");
@@ -261,7 +261,7 @@ test("Unlit preserves model color and skybox state in Scene, Prefab, and Model P
     .toBeGreaterThan(500);
   await viewport.screenshot({ path: testInfo.outputPath("scene-pbr.png") });
 
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   await expect(page.getByTestId("graph-panel")).toBeVisible({
     timeout: 15_000,
   });
@@ -269,13 +269,13 @@ test("Unlit preserves model color and skybox state in Scene, Prefab, and Model P
     await page.evaluate(
       async (components) => {
         const host = globalThis as unknown as {
-          __babylonslateTest: {
+          __hapticTest: {
             setMainGraphComponents: (
               value: typeof components,
             ) => Promise<boolean>;
           };
         };
-        return host.__babylonslateTest.setMainGraphComponents(components);
+        return host.__hapticTest.setMainGraphComponents(components);
       },
       [mesh],
     ),
@@ -290,8 +290,8 @@ test("Unlit preserves model color and skybox state in Scene, Prefab, and Model P
       .toBeGreaterThan(500);
   } finally {
     const diagnostics = await page.evaluate(() => (globalThis as unknown as {
-      __babylonslatePrefabViewportTest?: { diagnostics: () => unknown };
-    }).__babylonslatePrefabViewportTest?.diagnostics());
+      __hapticPrefabViewportTest?: { diagnostics: () => unknown };
+    }).__hapticPrefabViewportTest?.diagnostics());
     await testInfo.attach("prefab-render-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
   }
   // Prefab Preview opts out of the preview skybox (black clear) in both modes.

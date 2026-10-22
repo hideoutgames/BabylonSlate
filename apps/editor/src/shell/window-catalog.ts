@@ -1,4 +1,4 @@
-import type { DockWindowDirection } from "@babylonslate/core";
+import type { DockWindowDirection } from "@haptic/core";
 import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 

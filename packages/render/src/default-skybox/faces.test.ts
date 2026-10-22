@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
+import { SKYBOX_FACE_KEYS } from "@haptic/core";
 
 const PNG_MAGIC = [137, 80, 78, 71, 13, 10, 26, 10];
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");

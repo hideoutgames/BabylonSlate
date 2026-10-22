@@ -5,9 +5,9 @@ import {
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
   type MaterialDocument,
-} from "@babylonslate/shader-graph";
-import { normalizeEnvironmentLightingSettings } from "@babylonslate/core";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+} from "@haptic/shader-graph";
+import { normalizeEnvironmentLightingSettings } from "@haptic/core";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { compileMaterialPlan } from "./material-compiler";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { ResourceCache } from "./resource-cache";

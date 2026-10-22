@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, RawTexture, Scene, StandardMaterial } from "@babylonjs/core";
-import { installEngineDefaultMaterial } from "@babylonslate/render";
-import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import { installEngineDefaultMaterial } from "@haptic/render";
+import { SessionDiagnosticAggregator } from "@haptic/runtime";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
   snapshotFloatCount,
   writeSnapshotHeader,
-} from "@babylonslate/bridge";
-import { createDefaultScene } from "@babylonslate/core";
+} from "@haptic/bridge";
+import { createDefaultScene } from "@haptic/core";
 import {
   applyPlayFpsSample,
   applyWorkerPlayStats,

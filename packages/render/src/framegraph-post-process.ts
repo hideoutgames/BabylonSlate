@@ -3,13 +3,13 @@ import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
-import { normalizeMaterialParameterOverrides } from "@babylonslate/core";
+import type { MaterialParameterValue } from "@haptic/bridge";
+import { normalizeMaterialParameterOverrides } from "@haptic/core";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
   MaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { OwnedPostProcess } from "./owned-post-process";

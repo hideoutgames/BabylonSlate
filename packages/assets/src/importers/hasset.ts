@@ -1,15 +1,15 @@
-import { decodeBabasset } from "../babasset";
+import { decodeHasset } from "../hasset";
 import { remapImportResultGuids } from "./guid-remap";
 import type { ImportOptions, ImportResult } from "./types";
 
 /**
- * Unpacks an incoming `.babasset` (and any bundled-mode nested assets) into
+ * Unpacks an incoming `.hasset` (and any bundled-mode nested assets) into
  * one `ImportResult` per asset, remapping guids that collide with the
  * destination project so header, dependency and nested references all stay
  * consistent. Chunks must be inline: a pure importer has no blob store, so a
  * thin-mode file with externalised blobs cannot be re-hydrated here.
  */
-export async function importBabasset(
+export async function importHasset(
   bytes: Uint8Array,
   options: ImportOptions,
 ): Promise<ImportResult[]> {
@@ -19,7 +19,7 @@ export async function importBabasset(
 }
 
 async function collect(bytes: Uint8Array, out: ImportResult[]): Promise<void> {
-  const decoded = await decodeBabasset(bytes);
+  const decoded = await decodeHasset(bytes);
   const chunks = decoded.header.chunks
     .filter((entry) => !(entry.kind === "asset" && entry.id.startsWith("nested:")))
     .map((entry) => ({

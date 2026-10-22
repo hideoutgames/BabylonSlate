@@ -9,7 +9,7 @@ export function attachPreviewLifecycle(
   const dispatch = (type: string, detail: unknown) => {
     target()?.dispatchEvent(new CustomEvent(type, { detail }));
   };
-  const publishActive = () => dispatch("babylonslate:appstate", {
+  const publishActive = () => dispatch("haptic:appstate", {
     isActive: active && visibility.visibilityState !== "hidden",
   });
   const onAppState = (event: Event) => {
@@ -20,22 +20,22 @@ export function attachPreviewLifecycle(
   };
   const onInterruption = (event: Event) => {
     interruption = (event as CustomEvent).detail;
-    dispatch("babylonslate:audiointerruption", interruption);
+    dispatch("haptic:audiointerruption", interruption);
   };
-  const onRoute = (event: Event) => dispatch("babylonslate:audioroutechange", (event as CustomEvent).detail);
-  host.addEventListener("babylonslate:appstate", onAppState);
-  host.addEventListener("babylonslate:audiointerruption", onInterruption);
-  host.addEventListener("babylonslate:audioroutechange", onRoute);
+  const onRoute = (event: Event) => dispatch("haptic:audioroutechange", (event as CustomEvent).detail);
+  host.addEventListener("haptic:appstate", onAppState);
+  host.addEventListener("haptic:audiointerruption", onInterruption);
+  host.addEventListener("haptic:audioroutechange", onRoute);
   visibility.addEventListener("visibilitychange", publishActive);
   return {
     sync() {
       publishActive();
-      if (interruption) dispatch("babylonslate:audiointerruption", interruption);
+      if (interruption) dispatch("haptic:audiointerruption", interruption);
     },
     dispose() {
-      host.removeEventListener("babylonslate:appstate", onAppState);
-      host.removeEventListener("babylonslate:audiointerruption", onInterruption);
-      host.removeEventListener("babylonslate:audioroutechange", onRoute);
+      host.removeEventListener("haptic:appstate", onAppState);
+      host.removeEventListener("haptic:audiointerruption", onInterruption);
+      host.removeEventListener("haptic:audioroutechange", onRoute);
       visibility.removeEventListener("visibilitychange", publishActive);
     },
   };

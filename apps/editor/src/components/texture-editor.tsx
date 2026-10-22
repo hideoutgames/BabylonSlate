@@ -9,10 +9,10 @@ import {
   ToolbarStrip,
   type PropertyRow,
   usePanZoomSurface,
-} from "@babylonslate/editor-kit";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -20,19 +20,19 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/toggle-group";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   currentAreaEmissionChunk,
   isEnvironmentTexturePayload,
   shouldCompressTexture,
   type AreaEmissionProgress,
-} from "@babylonslate/assets";
-import { documentId } from "@babylonslate/core";
+} from "@haptic/assets";
+import { documentId } from "@haptic/core";
 import {
   useDocumentActions,
   useOpenDocument,

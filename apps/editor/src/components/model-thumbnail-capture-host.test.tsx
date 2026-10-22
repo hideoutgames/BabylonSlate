@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import type { ThumbnailCaptureResult } from "@babylonslate/render";
+import type { ThumbnailCaptureResult } from "@haptic/render";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { holdBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
@@ -54,7 +54,7 @@ const assets = new Map<
   { path: string; header: { type: string; payload: Record<string, unknown> } }
 >();
 
-vi.mock("@babylonslate/render", () => ({
+vi.mock("@haptic/render", () => ({
   captureAssetThumbnailPng: (...args: unknown[]) => captureAssetThumbnailPng(...args),
   captureModelThumbnailPng: (
     engine: unknown,
@@ -141,9 +141,9 @@ afterEach(() => {
 
 describe("ModelThumbnailCaptureHost", () => {
   it.each(["Material", "Class"] as const)("captures a saved %s with its revision and project write guard", async (type) => {
-    assets.set("asset", { path: "assets/preview.babasset", header: { type, payload: {} } });
+    assets.set("asset", { path: "assets/preview.hasset", header: { type, payload: {} } });
     render(<ModelThumbnailCaptureHost />);
-    const job = { guid: "asset", path: "assets/preview.babasset", type, payload: {}, cacheKey: "asset.revision-1", projectGuid, onlyIfMissing: true };
+    const job = { guid: "asset", path: "assets/preview.hasset", type, payload: {}, cacheKey: "asset.revision-1", projectGuid, onlyIfMissing: true };
     enqueueModelThumbnailJobs([job, job]);
     await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { cacheKey: "asset.revision-1", projectGuid: "project-a" }));
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(1);
@@ -154,9 +154,9 @@ describe("ModelThumbnailCaptureHost", () => {
   it("keeps a backfill job until the shared Engine is registered", async () => {
     sharedEngine.engine = null;
     sharedEngine.generation = 0;
-    assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
+    assets.set("asset", { path: "assets/preview.hasset", header: { type: "Material", payload: {} } });
     const view = render(<ModelThumbnailCaptureHost />);
-    enqueueModelThumbnailJobs([{ guid: "asset", path: "assets/preview.babasset", type: "Material", payload: {}, cacheKey: "asset.revision-1", projectGuid, onlyIfMissing: true }]);
+    enqueueModelThumbnailJobs([{ guid: "asset", path: "assets/preview.hasset", type: "Material", payload: {}, cacheKey: "asset.revision-1", projectGuid, onlyIfMissing: true }]);
     await waitFor(() => expect(scopes[0]?.dispose).toHaveBeenCalledOnce());
     expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
     sharedEngine.engine = { id: "shared-engine" };
@@ -169,9 +169,9 @@ describe("ModelThumbnailCaptureHost", () => {
   it.each(["project switch", "disabled thumbnails", "unmount"])("discards an in-flight capture after %s", async (change) => {
     let finish!: (capture: ThumbnailCaptureResult) => void;
     captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
-    assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
+    assets.set("asset", { path: "assets/preview.hasset", header: { type: "Material", payload: {} } });
     const view = render(<ModelThumbnailCaptureHost />);
-    enqueueModelThumbnailJobs([{ guid: "asset", path: "assets/preview.babasset", type: "Material", payload: {}, projectGuid, cacheKey: "old" }]);
+    enqueueModelThumbnailJobs([{ guid: "asset", path: "assets/preview.hasset", type: "Material", payload: {}, projectGuid, cacheKey: "old" }]);
     await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
     const shouldContinue = captureAssetThumbnailPng.mock.calls[0]![2] as () => boolean;
     expect(shouldContinue()).toBe(true);
@@ -190,9 +190,9 @@ describe("ModelThumbnailCaptureHost", () => {
   it("replaces queued saves with the newest revision without overlapping captures", async () => {
     let finish!: (capture: ThumbnailCaptureResult) => void;
     captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
-    assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
+    assets.set("asset", { path: "assets/preview.hasset", header: { type: "Material", payload: {} } });
     render(<ModelThumbnailCaptureHost />);
-    const job = { guid: "asset", path: "assets/preview.babasset", type: "Material" as const, payload: {}, projectGuid };
+    const job = { guid: "asset", path: "assets/preview.hasset", type: "Material" as const, payload: {}, projectGuid };
     enqueueModelThumbnailJobs([{ ...job, cacheKey: "old" }]);
     await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
     enqueueModelThumbnailJobs([{ ...job, cacheKey: "middle" }, { ...job, cacheKey: "new" }]);
@@ -208,7 +208,7 @@ describe("ModelThumbnailCaptureHost", () => {
     const holds: Array<() => void> = [];
     afterEach(() => { for (const release of holds.splice(0)) release(); });
     const openLoad = () => { const release = holdBlockingSceneLoad(); holds.push(release); return release; };
-    const material = { guid: "asset", path: "assets/preview.babasset", type: "Material" as const, payload: {}, cacheKey: "asset.revision-1", projectGuid };
+    const material = { guid: "asset", path: "assets/preview.hasset", type: "Material" as const, payload: {}, cacheKey: "asset.revision-1", projectGuid };
 
     it("starts no capture until the load closes", async () => {
       assets.set("asset", { path: material.path, header: { type: "Material", payload: {} } });
@@ -263,9 +263,9 @@ describe("ModelThumbnailCaptureHost", () => {
   });
 
   describe("a capture that runs out of time", () => {
-    const register = (guid: string) => assets.set(guid, { path: `assets/${guid}.babasset`, header: { type: "Material", payload: {} } });
+    const register = (guid: string) => assets.set(guid, { path: `assets/${guid}.hasset`, header: { type: "Material", payload: {} } });
     const backfill = (guid: string, revision = 1) => ({
-      guid, path: `assets/${guid}.babasset`, type: "Material" as const, payload: {}, cacheKey: `${guid}.revision-${revision}`, projectGuid, onlyIfMissing: true,
+      guid, path: `assets/${guid}.hasset`, type: "Material" as const, payload: {}, cacheKey: `${guid}.revision-${revision}`, projectGuid, onlyIfMissing: true,
     });
     const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
     const capturedPaths = () => prepareAssetThumbnailInput.mock.calls.map(([input]) => (input as { asset: { path: string } }).asset.path);
@@ -287,7 +287,7 @@ describe("ModelThumbnailCaptureHost", () => {
     it("is retried with the longer ceiling for a Model too", async () => {
       captureModelThumbnailPng.mockResolvedValueOnce(expired);
       render(<ModelThumbnailCaptureHost />);
-      enqueueModelThumbnailJobs([{ guid: "model", path: "assets/model.babasset", payload: {} }]);
+      enqueueModelThumbnailJobs([{ guid: "model", path: "assets/model.hasset", payload: {} }]);
       await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("model", expect.any(Uint8Array)));
       expect(captureModelThumbnailPng.mock.calls.map((call) => call[5]?.ceilingMs)).toEqual([undefined, retryCeilingMs]);
     });
@@ -327,7 +327,7 @@ describe("ModelThumbnailCaptureHost", () => {
       render(<ModelThumbnailCaptureHost />);
       enqueueModelThumbnailJobs([backfill("a"), backfill("b")]);
       await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
-      expect(capturedPaths()).toEqual(["assets/a.babasset", "assets/b.babasset", "assets/a.babasset"]);
+      expect(capturedPaths()).toEqual(["assets/a.hasset", "assets/b.hasset", "assets/a.hasset"]);
       expect(writtenGuids()).toEqual(["b", "a"]);
     });
 
@@ -366,7 +366,7 @@ describe("ModelThumbnailCaptureHost", () => {
       expect(scopes[1]!.dispose).toHaveBeenCalledOnce();
       holdRetry({ outcome: "cancelled" });
       await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
-      expect(capturedPaths()).toEqual(["assets/a.babasset", "assets/a.babasset", "assets/b.babasset", "assets/a.babasset"]);
+      expect(capturedPaths()).toEqual(["assets/a.hasset", "assets/a.hasset", "assets/b.hasset", "assets/a.hasset"]);
       expect(ceilings()).toEqual([undefined, retryCeilingMs, undefined, retryCeilingMs]);
       expect(writtenGuids()).toEqual(["b", "a"]);
     });
@@ -390,7 +390,7 @@ describe("ModelThumbnailCaptureHost", () => {
         await waitFor(() => expect(writtenGuids()).toContain(guid));
       }
       await settle();
-      expect(capturedPaths().filter((path) => path === "assets/a.babasset")).toHaveLength(4);
+      expect(capturedPaths().filter((path) => path === "assets/a.hasset")).toHaveLength(4);
       expect(writtenGuids()).toEqual(["b", "c", "d"]);
     });
 
@@ -433,7 +433,7 @@ describe("ModelThumbnailCaptureHost", () => {
     let finish!: (bytes: Uint8Array) => void;
     readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const view = render(<ModelThumbnailCaptureHost />);
-    enqueueModelThumbnailJobs([{ guid: "model", path: "assets/model.babasset", type: "Model", payload: {} }]);
+    enqueueModelThumbnailJobs([{ guid: "model", path: "assets/model.hasset", type: "Model", payload: {} }]);
     await waitFor(() => expect(readAssetChunk).toHaveBeenCalledOnce());
     const options = readAssetChunk.mock.calls[0]![2]!;
     expect(options.priority).toBe("background");
@@ -449,27 +449,27 @@ describe("ModelThumbnailCaptureHost", () => {
 
   it("captures an Animation from its owning Model and retarget source", async () => {
     assets.set("hero-model", {
-      path: "assets/hero.babasset",
+      path: "assets/hero.hasset",
       header: { type: "Model", payload: { importScale: 0.5 } },
     });
     assets.set("source-anim", {
-      path: "assets/source-idle.babasset",
+      path: "assets/source-idle.hasset",
       header: { type: "Animation", payload: { modelGuid: "source-model" } },
     });
     assets.set("source-model", {
-      path: "assets/source.babasset",
+      path: "assets/source.hasset",
       header: { type: "Model", payload: {} },
     });
     const targetBytes = new Uint8Array([1]);
     const sourceBytes = new Uint8Array([2]);
     readAssetChunk.mockImplementation(async (path) =>
-      path === "assets/hero.babasset" ? targetBytes : sourceBytes,
+      path === "assets/hero.hasset" ? targetBytes : sourceBytes,
     );
     render(<ModelThumbnailCaptureHost />);
     enqueueModelThumbnailJobs([
       {
         guid: "idle",
-        path: "assets/idle.babasset",
+        path: "assets/idle.hasset",
         type: "Animation",
         payload: {
           modelGuid: "hero-model",
@@ -485,8 +485,8 @@ describe("ModelThumbnailCaptureHost", () => {
       ),
     );
     expect(readAssetChunk.mock.calls).toEqual([
-      ["assets/hero.babasset", "source", { scope: scopes[0], signal: expect.any(AbortSignal), priority: "background" }],
-      ["assets/source.babasset", "source", { scope: scopes[0], signal: expect.any(AbortSignal), priority: "background" }],
+      ["assets/hero.hasset", "source", { scope: scopes[0], signal: expect.any(AbortSignal), priority: "background" }],
+      ["assets/source.hasset", "source", { scope: scopes[0], signal: expect.any(AbortSignal), priority: "background" }],
     ]);
     expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
     expect(captureModelThumbnailPng.mock.calls[0]![1]).toBe(targetBytes);
@@ -509,11 +509,11 @@ describe("ModelThumbnailCaptureHost", () => {
     render(<ModelThumbnailCaptureHost />);
     const missing = {
       guid: "missing",
-      path: "assets/missing.babasset",
+      path: "assets/missing.hasset",
       payload: {},
       onlyIfMissing: true,
     };
-    const good = { guid: "good", path: "assets/good.babasset", payload: {} };
+    const good = { guid: "good", path: "assets/good.hasset", payload: {} };
     enqueueModelThumbnailJobs([missing]);
     enqueueModelThumbnailJobs([missing, good]);
     await waitFor(() => expect(readAssetChunk).toHaveBeenCalledTimes(1));
@@ -535,7 +535,7 @@ describe("ModelThumbnailCaptureHost", () => {
   it("preserves every explicitly selected job in a large batch while reading only one at a time", async () => {
     let release!: (value: Uint8Array | null) => void;
     readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
-    const jobs = Array.from({ length: 130 }, (_, index) => ({ guid: `model-${index}`, path: `assets/model-${index}.babasset`, payload: {} }));
+    const jobs = Array.from({ length: 130 }, (_, index) => ({ guid: `model-${index}`, path: `assets/model-${index}.hasset`, payload: {} }));
     render(<ModelThumbnailCaptureHost />);
     enqueueModelThumbnailJobs(jobs);
     await waitFor(() => expect(readAssetChunk).toHaveBeenCalledOnce());
@@ -552,7 +552,7 @@ describe("ModelThumbnailCaptureHost", () => {
     enqueueModelThumbnailJobs([
       {
         guid: "model-1",
-        path: "assets/hero.babasset",
+        path: "assets/hero.hasset",
         payload: {
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-1" },

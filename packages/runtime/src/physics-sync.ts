@@ -1,7 +1,7 @@
 import { WaterWorld } from "./water-world";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
-import { landscapeCollisionMesh, normalizeWaterBuoyancy, resolveCollisionFilter, sameCollisionTriangleMesh, type CollisionFilter, type CollisionPreset, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy, resolveCollisionFilter, sameCollisionTriangleMesh, type CollisionFilter, type CollisionPreset, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@haptic/core";
 import { parsedMovementProperties } from "./movement-settings";
 import type {
   ColliderDesc,
@@ -11,7 +11,7 @@ import type {
   PhysicsTransform,
   Vec3,
   TeleportOptions,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import {
   decodeTileGid,
   parseMeshCollisionLayer,
@@ -28,7 +28,7 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   parseColliderProperties,
   parseRigidBodyProperties,
@@ -36,9 +36,9 @@ import {
   multiplyQuat,
   rotateQuatVec,
   type ColliderShape,
-} from "@babylonslate/physics";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import { COLLISION_CHANNEL_MEMBERS } from "@babylonslate/scripting";
+} from "@haptic/physics";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import { COLLISION_CHANNEL_MEMBERS } from "@haptic/scripting";
 import {
   PhysicsCompositionScratch,
   PreparedColliderGeometry,
@@ -68,7 +68,7 @@ import {
 export type MovementDrive = { component: ActorComponent; dynamic: boolean; mass: number };
 
 /**
- * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
+ * Keeps `@haptic/physics` bodies in sync with World actors that carry
  * RigidBodyComponent / ColliderComponent, MeshComponent collision, tilemap
  * collision, enabled Landscapes, or a Blocking Volume.
  */

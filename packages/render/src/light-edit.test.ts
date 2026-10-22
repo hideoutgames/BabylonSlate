@@ -5,7 +5,7 @@ import {
   createMeshComponent,
   type SerializedActor,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { isLightValueOnlySceneEdit } from "./light-edit";
 
 type Properties = Record<string, unknown>;

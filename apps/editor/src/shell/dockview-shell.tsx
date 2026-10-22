@@ -16,7 +16,7 @@ import {
   useState,
   type FunctionComponent,
 } from "react";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 import { createDefaultLayoutForKind } from "./default-layout";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
@@ -299,7 +299,7 @@ export function DockviewShell({
       >
         <DockviewReact
           className={cn(
-            "dockview-theme-babylonslate h-full w-full",
+            "dockview-theme-haptic h-full w-full",
             platformOptions.singleWindow && "phone-dockview",
           )}
           theme={platformOptions.singleWindow ? themeAbyss : SPACED_THEME}

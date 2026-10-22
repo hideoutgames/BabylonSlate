@@ -1,14 +1,14 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import { SearchInput } from "./search-input";
-import { Separator } from "@babylonslate/ui/components/separator";
+import { Separator } from "@haptic/ui/components/separator";
 import {
   Select,
   SelectContent,
@@ -17,8 +17,8 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/select";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface CatalogCategory {
   id: string;

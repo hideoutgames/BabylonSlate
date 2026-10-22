@@ -11,7 +11,7 @@ import {
 } from "@xyflow/react";
 import { useCallback } from "react";
 import { Repeat2Icon } from "lucide-react";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { animTransitionPath } from "./anim-transition-path";
 

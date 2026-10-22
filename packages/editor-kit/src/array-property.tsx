@@ -1,8 +1,8 @@
 import { useId, useState } from "react";
 import { RotateCcwIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldDescription, FieldLabel } from "@babylonslate/ui/components/field";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@babylonslate/ui/components/select";
+import { Button } from "@haptic/ui/components/button";
+import { Field, FieldDescription, FieldLabel } from "@haptic/ui/components/field";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 import { EntryListEditor } from "./entry-list-editor";
 
 export type ArrayPropertyOption<T> = {

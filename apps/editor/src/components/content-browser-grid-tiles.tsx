@@ -1,7 +1,7 @@
 import { memo, useCallback } from "react";
 import type { LucideIcon } from "lucide-react";
-import type { IndexedAsset } from "@babylonslate/assets";
-import type { TypeVisual } from "@babylonslate/editor-kit";
+import type { IndexedAsset } from "@haptic/assets";
+import type { TypeVisual } from "@haptic/editor-kit";
 import { contentBrowserTileStyle } from "../lib/content-browser-grid";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTile } from "./content-browser-folder-tile";

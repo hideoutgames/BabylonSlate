@@ -9,8 +9,8 @@ import {
   type PointerEvent,
 } from "react";
 import { ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 import { ColorField } from "./color-field";
 import {
   KEY_NEIGHBOUR_GAP,

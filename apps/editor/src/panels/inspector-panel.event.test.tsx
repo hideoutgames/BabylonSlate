@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphPanel } from "./graph-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -28,17 +28,17 @@ const eventState = vi.hoisted(() => ({ qualifier: "" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
+    documentId: "graph:assets/Hero.class.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Hero.class.babasset",
+      id: "graph:assets/Hero.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
       content: {

@@ -1,4 +1,4 @@
-import type { Actor } from "@babylonslate/object-model";
+import type { Actor } from "@haptic/object-model";
 import type { RuntimeSubsystems } from "./runtime-subsystems";
 
 interface RenderSlotsHost {

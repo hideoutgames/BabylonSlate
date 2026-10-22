@@ -1,7 +1,7 @@
 import {
   DEFAULT_EXPORT_FILE_COUNT_FAIL,
   DEFAULT_EXPORT_FILE_COUNT_WARN,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export const MISSING_STARTUP_SCENE_MESSAGE =
   "Set Startup Scene in Project Settings.";

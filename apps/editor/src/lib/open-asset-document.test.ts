@@ -7,7 +7,7 @@ import {
 function asset(
   guid: string,
   type: string,
-  path = `assets/${guid}.babasset`,
+  path = `assets/${guid}.hasset`,
 ) {
   return { path, header: { type } };
 }
@@ -41,13 +41,13 @@ describe("openOrFocusAssetDocument", () => {
     const openDocument = vi.fn();
     await openOrFocusAssetDocument({
       guid: "tex-1",
-      getByGuid: () => asset("tex-1", "Texture", "assets/grass.babasset"),
-      openDocumentIds: new Set(["texture:assets/grass.babasset"]),
+      getByGuid: () => asset("tex-1", "Texture", "assets/grass.hasset"),
+      openDocumentIds: new Set(["texture:assets/grass.hasset"]),
       setActiveDocument,
       openDocument,
     });
     expect(setActiveDocument).toHaveBeenCalledWith(
-      "texture:assets/grass.babasset",
+      "texture:assets/grass.hasset",
     );
     expect(openDocument).not.toHaveBeenCalled();
   });
@@ -57,14 +57,14 @@ describe("openOrFocusAssetDocument", () => {
     const openDocument = vi.fn(async () => {});
     await openOrFocusAssetDocument({
       guid: "tex-1",
-      getByGuid: () => asset("tex-1", "Texture", "assets/grass.babasset"),
+      getByGuid: () => asset("tex-1", "Texture", "assets/grass.hasset"),
       openDocumentIds: new Set(),
       setActiveDocument,
       openDocument,
     });
     expect(openDocument).toHaveBeenCalledWith({
       kind: "texture",
-      path: "assets/grass.babasset",
+      path: "assets/grass.hasset",
       label: "Grass",
     });
     expect(setActiveDocument).not.toHaveBeenCalled();

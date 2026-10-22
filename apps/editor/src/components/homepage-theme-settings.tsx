@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { pickImportFiles } from "@babylonslate/vfs";
+import { pickImportFiles } from "@haptic/vfs";
 import {
   ColorField,
   colorFromHex,
   colorToHex,
   DisclosureSection,
   NamePromptDialog,
-} from "@babylonslate/editor-kit";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
+} from "@haptic/editor-kit";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,8 +17,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/alert-dialog";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
   FieldDescription,
@@ -26,7 +26,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -35,7 +35,7 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 import { useAppSettings } from "../context/app-settings-context";
 import { ThemePreview } from "./editor-theme-preview";
 import { downloadBlob } from "../lib/download";

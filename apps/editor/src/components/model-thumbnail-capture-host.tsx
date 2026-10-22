@@ -2,13 +2,13 @@ import { useEffect, useRef } from "react";
 import {
   normalizeAnimationPayload,
   normalizeModelPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   captureAssetThumbnailPng,
   captureModelThumbnailPng,
   SCENE_CAPTURE_RETRY_CEILING_MS,
   type ThumbnailCaptureResult,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import {
   useDocumentActions,
   useEditorShellState,

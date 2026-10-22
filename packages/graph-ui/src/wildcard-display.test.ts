@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pinTypeKey } from "@babylonslate/scripting";
+import { pinTypeKey } from "@haptic/scripting";
 import { displayPinTypesForGraph } from "./wildcard-display";
 import type { SerializedPin } from "./graph-types";
 
