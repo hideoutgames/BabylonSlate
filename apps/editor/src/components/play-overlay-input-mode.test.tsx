@@ -57,3 +57,35 @@ it("keeps Escape releasing Simulation game input after a failed release", async 
   expect(setInputMode.mock.calls).toEqual([["edit"], ["edit"]]);
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+it("takes a Simulation's pause on an error as the user's pause and opens the error's source", async () => {
+  const result: PlaySessionResult = {
+    diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
+    released: Promise.resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false }),
+    runtimeMode: "worker", lastTrace: null,
+  };
+  const setPauseReason = vi.fn<PlaySession["setPauseReason"]>().mockResolvedValue({
+    sessionGeneration: 0, requestId: 1, success: true, paused: true, pauseReasons: ["user"],
+    tickIndex: 3, sceneAssetGuid: "scene", sceneLoadId: 0, commandRevision: 0,
+  });
+  vi.mocked(startPlaySession).mockReturnValue({
+    handle: { resize() {}, setSize() {}, scheduler: { setResizing() {} } },
+    executeConsoleCommand: () => Promise.resolve({ success: true, output: "" }),
+    setPauseReason,
+    requestPausedRedraw() {},
+    stop: () => result,
+  } as unknown as PlaySession);
+  const owner = new GameSessionOwner<PlaySessionResult>();
+  const ticket = owner.begin("simulate")!;
+  const onPausedOnError = vi.fn();
+  render(<PlayOverlay sharedEngine={{} as Engine} sessionOwner={owner} sessionTicket={ticket}
+    pauseOnErrors onPausedOnError={onPausedOnError} onClose={() => {}} />);
+  await act(async () => {});
+  const options = vi.mocked(startPlaySession).mock.lastCall![0];
+  expect(options.pauseOnErrors).toBe(true);
+
+  const cause = { code: "runtime.assert", message: "Assertion failed", assetGuid: "Hero.class", graphId: "event-graph", nodeId: "check" };
+  await act(async () => { options.onSessionPaused?.(true, cause); });
+  expect(setPauseReason).toHaveBeenCalledWith("user", true);
+  expect(onPausedOnError).toHaveBeenCalledWith(cause);
+});

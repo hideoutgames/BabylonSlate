@@ -103,7 +103,7 @@ import {
   resolvePreviewStartupGuid,
   type PlaySceneLoad,
 } from "../services/play-physics";
-import { documentIdToRevealForDiagnostic, navigateToSessionReportEntry } from "../services/diagnostic-navigation";
+import { documentIdToRevealForDiagnostic, navigateToSessionReportEntry, type SessionReportNavigationHost } from "../services/diagnostic-navigation";
 import { requestDocumentFocus } from "../lib/document-focus-request";
 import type {
   PlayAnimGraphEntry,
@@ -1722,6 +1722,21 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     };
   }, [assetRegistry, playOpen, registryEpoch]);
 
+  // Session report rows and a Simulation paused on an error open their source the same way.
+  const sessionReportNavigationHost: SessionReportNavigationHost = {
+    findAsset: reportLocationSources.findAsset,
+    currentFocus: () => focusDiagnostic,
+    setFocusDiagnostic,
+    setFocusedNodeId,
+    openDocument,
+    isDocumentOpen: (id) =>
+      getOpenDocuments().some((doc) => doc.id === id && doc.content !== null),
+    setActiveDocument,
+    setAnimEditorMode,
+    requestDocumentFocus,
+    log: appendLog,
+  };
+
   const gamePresentation = playOpen && !previewOpen && engineRef.current && sessionTicketRef.current && sessionTicketRef.current.mode !== "preview" ? (
           <PlayOverlay
             sessionOwner={sessionOwner}
@@ -1785,6 +1800,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}
+            pauseOnErrors={simulationDefaultsFromSettings(appSettings.debuggerDefaults).pauseOnErrors}
+            onPausedOnError={(cause) => void navigateToSessionReportEntry({ severity: "error", ...cause }, sessionReportNavigationHost)}
             navmeshBytes={playNavmeshBytes}
             sceneNavmeshBytes={playSceneNavmeshBytes}
             audioReverbByScene={playAudioReverbByScene}
@@ -1970,21 +1987,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           onOpenChange={setReportOpen}
           locationSources={reportLocationSources}
           // Rows open their source beside the report; only its own close actions dismiss it.
-          onNavigate={(entry) =>
-            navigateToSessionReportEntry(entry, {
-              findAsset: reportLocationSources.findAsset,
-              currentFocus: () => focusDiagnostic,
-              setFocusDiagnostic,
-              setFocusedNodeId,
-              openDocument,
-              isDocumentOpen: (id) =>
-                getOpenDocuments().some((doc) => doc.id === id && doc.content !== null),
-              setActiveDocument,
-              setAnimEditorMode,
-              requestDocumentFocus,
-              log: appendLog,
-            })
-          }
+          onNavigate={(entry) => navigateToSessionReportEntry(entry, sessionReportNavigationHost)}
         />
         {/* Focus marker for Playwright / graph navigation hook. */}
         {focusedNodeId ? (

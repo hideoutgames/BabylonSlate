@@ -122,6 +122,11 @@ export interface RuntimeDriverOptions {
   infiniteLoopDetection?: boolean;
   /** Iterations in one tick that count as infinite when detection is on. */
   loopCount?: number;
+  /**
+   * Simulation: the first error from each node (by code, asset and node, as the session report
+   * groups them) pauses the session at the end of the tick and sends `sessionPaused` with its cause.
+   */
+  pauseOnErrors?: boolean;
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
   audioAssetGuids?: readonly string[];
   materialParameterCatalog?: MaterialParameterCatalog;

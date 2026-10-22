@@ -246,6 +246,8 @@ export const engineSettingsSchema = z.object({
       overlayProfiler: z.boolean().default(false),
       pauseOnPlay: z.boolean().default(false),
       keepSimulationChanges: z.boolean().default(false),
+      /** Simulation pauses the first time each node reports an error. */
+      pauseSimulationOnErrors: z.boolean().default(true),
       profileDurationSeconds: z.preprocess((value) => {
         if (typeof value !== "number" || !Number.isFinite(value)) return value;
         return Math.min(60, Math.max(1, Math.round(value)));
@@ -266,6 +268,7 @@ export const engineSettingsSchema = z.object({
       overlayProfiler: false,
       pauseOnPlay: false,
       keepSimulationChanges: false,
+      pauseSimulationOnErrors: true,
       profileDurationSeconds: 10,
       profileByteBudget: 16 * 1024 * 1024,
       profileGpuTiming: false,

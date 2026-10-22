@@ -91,7 +91,7 @@ const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
  * way: the caller shows `message` when the entry cannot be opened.
  */
 export async function navigateToSessionReportEntry(
-  entry: SessionReportEntry,
+  entry: Pick<SessionReportEntry, "severity" | "code" | "message" | "assetGuid" | "graphId" | "nodeId" | "btNodeId" | "bodyLine">,
   host: SessionReportNavigationHost,
 ): Promise<SessionReportNavigationResult> {
   const nav = sessionReportNavigation(entry, (ref) => host.findAsset(ref));

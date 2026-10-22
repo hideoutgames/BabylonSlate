@@ -49,6 +49,7 @@ export function runtimeOptionsFromLoadControl(
   | "traceDebugDraw"
   | "infiniteLoopDetection"
   | "loopCount"
+  | "pauseOnErrors"
   | "materialParameterCatalog"
   | "materialTextureAssetGuids"
   | "renderTargets"
@@ -123,6 +124,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.traceDebugDraw !== undefined ? { traceDebugDraw: msg.traceDebugDraw } : {}),
     infiniteLoopDetection: msg.infiniteLoopDetection,
     loopCount: msg.loopCount,
+    ...(msg.pauseOnErrors ? { pauseOnErrors: true } : {}),
     ...(msg.audioAssetGuids && msg.audioAssetGuids.length > 0
       ? { audioAssetGuids: msg.audioAssetGuids }
       : {}),

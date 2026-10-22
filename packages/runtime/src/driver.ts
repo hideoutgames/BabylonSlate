@@ -247,6 +247,9 @@ class InProcessRuntime implements RuntimeDriver {
   // Logs and diagnostics.
   private readonly logs = new LogRingBuffer(512);
   private readonly diagnostics = new SessionDiagnosticAggregator();
+  /** Simulation's Pause On Errors, and the error sources (as the session report groups them) that already paused it. */
+  private readonly pauseOnErrors: boolean;
+  private readonly pausedErrorSources = new Set<string>();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
   private readonly loopGuard: InfiniteLoopGuard;
 
@@ -422,6 +425,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.scriptRuntime.setClassAssetGuid(command.classId, command.assetGuid);
       this.bindUserCommand({ ...command, name: command.name || command.classId.toLowerCase() });
     }
+    this.pauseOnErrors = options.pauseOnErrors === true;
     this.loopGuard = createInfiniteLoopGuard({
       enabled:
         (options.includeDebugCommands ?? true) &&
@@ -712,7 +716,7 @@ class InProcessRuntime implements RuntimeDriver {
       scripts: () => this.scriptHost,
       setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
       actorName: (actor) => this.debugActorName(actor),
-      recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+      recordDiagnostic: (diagnostic) => this.recordDiagnostic(diagnostic),
       emit: (command) => this.emit(command),
     }, nowMs);
   }
@@ -884,7 +888,7 @@ class InProcessRuntime implements RuntimeDriver {
       canTickActor: (actor) => this.admission.canTickActor(actor),
       scripts: () => this.scriptHost,
       frameId: () => this.frameId,
-      recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+      recordDiagnostic: (diagnostic) => this.recordDiagnostic(diagnostic),
       emit: (command) => this.emit(command),
     }, {
       kind: options.physicsWorld ?? options.playScene?.settings.physicsWorld ?? "3d",
@@ -1128,7 +1132,7 @@ class InProcessRuntime implements RuntimeDriver {
         frameId,
         tickIndex: () => this.world.clock.tickIndex,
         anchors: this.anchors,
-        recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+        recordDiagnostic: (diagnostic) => this.recordDiagnostic(diagnostic),
         recordPrint: (print) => this.ticks.recordPrint(print),
         emit,
       }),
@@ -2112,7 +2116,7 @@ class InProcessRuntime implements RuntimeDriver {
       frameId,
       tickIndex: this.world.clock.tickIndex,
     };
-    this.diagnostics.push(diag);
+    this.recordDiagnostic(diag);
     this.logs.push({
       severity: "error",
       category: "runtime",
@@ -2134,6 +2138,22 @@ class InProcessRuntime implements RuntimeDriver {
       severity: "error",
     });
     return diag;
+  }
+
+  /**
+   * Every session diagnostic. With Pause On Errors, the first error from a source pauses the session
+   * (at the end of the tick when one is running) and tells the editor what it paused on. A runaway
+   * loop ends the session instead.
+   */
+  private recordDiagnostic(diagnostic: RuntimeDiagnostic): void {
+    this.diagnostics.push(diagnostic);
+    if (!this.pauseOnErrors || this.stopped || diagnostic.severity !== "error" || diagnostic.code === INFINITE_LOOP_DIAGNOSTIC_CODE) return;
+    const source = `${diagnostic.code}|${diagnostic.assetGuid ?? ""}|${diagnostic.nodeId ?? diagnostic.btNodeId ?? ""}`;
+    if (this.pausedErrorSources.has(source)) return;
+    this.pausedErrorSources.add(source);
+    this.pause();
+    const { code, message, assetGuid, graphId, nodeId, btNodeId, bodyLine } = diagnostic;
+    this.emit({ type: "sessionPaused", paused: true, cause: { code, message, assetGuid, graphId, nodeId, btNodeId, bodyLine } });
   }
 
   private emit(command: CommandMessage): void {
