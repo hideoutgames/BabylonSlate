@@ -379,6 +379,12 @@ const INPUT_EVENT_TYPE_IDS = new Set([
   "input.onGamepadDisconnected",
 ]);
 
+// Custom Events only get the event marker when they override a parent script's event.
+function isInheritedCustomEvent(nodeType: string, data: Record<string, unknown> | undefined) {
+  if (nodeType !== "flow.event.custom") return false;
+  return data?.eventQualifier === "Inherited" || (typeof data?.parentClassId === "string" && data.parentClassId !== "");
+}
+
 function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (data?.__material || data?.__particleRole) return null;
   const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
@@ -391,7 +397,7 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (INPUT_EVENT_TYPE_IDS.has(nodeType)) {
     return { Icon: Gamepad2Icon, label: "Input Event" };
   }
-  if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {
+  if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || isInheritedCustomEvent(nodeType, data)) {
     return { Icon: PlugZapIcon, label: "Event" };
   }
   return null;
