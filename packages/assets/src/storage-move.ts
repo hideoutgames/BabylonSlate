@@ -31,19 +31,22 @@ async function removeBackup(storage: ProjectStorage, path: string): Promise<void
   try { await storage.remove(path); } catch { /* A retained backup must not undo a successful move. */ }
 }
 
-/** Copy before removing the source, including empty directories and unindexed files. */
-export async function copyStorageTree(storage: ProjectStorage, from: string, to: string): Promise<string[]> {
+/**
+ * Copy before removing the source, including empty directories and unindexed
+ * files. `target` receives the copy when it is another storage.
+ */
+export async function copyStorageTree(storage: ProjectStorage, from: string, to: string, target: ProjectStorage = storage): Promise<string[]> {
   const folders: string[] = [];
   async function walk(relative: string): Promise<void> {
     const source = relative ? `${from}/${relative}` : from;
     const destination = relative ? `${to}/${relative}` : to;
     const entries = await storage.readdir(source);
-    await storage.mkdir(destination, true);
+    await target.mkdir(destination, true);
     folders.push(relative);
     for (const entry of entries) {
       const child = relative ? `${relative}/${entry.name}` : entry.name;
       if (entry.isDir) await walk(child);
-      else await storage.writeBinary(`${to}/${child}`, await storage.readBinary(`${from}/${child}`));
+      else await target.writeBinary(`${to}/${child}`, await storage.readBinary(`${from}/${child}`));
     }
   }
   await walk("");
