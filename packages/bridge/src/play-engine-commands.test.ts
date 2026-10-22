@@ -24,6 +24,7 @@ describe("isPlayEngineCommandType", () => {
     expect(isPlayEngineCommandType("sceneLayerRemove")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerClear")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerPostProcess")).toBe(true);
+    expect(isPlayEngineCommandType("sceneLayerCamera")).toBe(true);
     expect(isPlayEngineCommandType("despawn")).toBe(true);
   });
 

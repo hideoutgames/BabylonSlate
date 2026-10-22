@@ -99,4 +99,33 @@ describe("Tween runtime integration", () => {
       expect(commands.some(command => command.type === "log" && command.message === "fade complete")).toBe(false);
     } finally { runtime.stop(); }
   });
+
+  it("tweens a layer actor's own Scene Layer camera location, roll and zoom together", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("rig", "Rig", { classId: "CameraRig" })];
+    const script: CompiledScript = { classId: "CameraRig", parentClassId: "SceneLayerActor", assetGuid: "rig", anchors: [],
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: true }],
+      source: `export async function onBeginPlay(ctx) {
+        const layer = ctx.getOwningSceneLayer(ctx.self);
+        const moved = ctx.tweenProperty(layer, "sceneLayer.cameraLocation", "vec2", {x:0,y:0}, {x:4,y:2}, 2, "linear");
+        const turned = ctx.tweenProperty(layer, "sceneLayer.cameraRotation", "float", 0, 90, 2, "linear");
+        const zoomed = await ctx.tweenProperty(layer, "sceneLayer.cameraZoom", "float", 1, 3, 2, "linear");
+        if (zoomed && await moved && await turned) ctx.log("log", "Tween", "camera complete");
+      }`,
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5,
+      playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    const cameras = () => commands.flatMap(command => command.type === "sceneLayerCamera" ? [command.camera] : []);
+    try {
+      await runtime.loadScripts([script]); runtime.realizePlayWorld(); runtime.start();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      commands.length = 0;
+      runtime.tick();
+      expect(cameras().at(-1)).toEqual({ x: 1, y: 0.5, rotation: 22.5, zoom: 1.5 });
+      runtime.tick(); runtime.tick(); runtime.tick(); await flush();
+      expect(liveLayer.camera).toEqual({ x: 4, y: 2, rotation: 90, zoom: 3 });
+      expect(commands.filter(command => command.type === "log" && command.message === "camera complete")).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
 });
