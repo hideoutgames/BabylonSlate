@@ -27,7 +27,18 @@
  * Material, any WebGPU pipeline) assert only that the view recovers; their holds
  * are in the failure message.
  */
-import { NullEngine, NullEngineOptions, type AbstractEngine, type Effect } from "@babylonjs/core";
+import {
+  DirectionalLight,
+  MeshBuilder,
+  NullEngine,
+  NullEngineOptions,
+  PointLight,
+  Scene,
+  UniversalCamera,
+  Vector3,
+  type AbstractEngine,
+  type Effect,
+} from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_VISIBLE,
   snapshotFloatCount,
@@ -36,11 +47,13 @@ import {
 } from "@babylonslate/bridge";
 import { areaRectLightBindings, createDefaultScene } from "@babylonslate/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@babylonslate/assets";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEngine } from "./create-engine";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { isForwardLightExcluded } from "./light-policy";
+import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
+import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
+import { compileMaterialPlan } from "./material-compiler";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isSceneGameTimePaused } from "./scene-game-time";
@@ -531,3 +544,52 @@ describe("compile holds after the first frame", () => {
 async function areaEmissionPixels() {
   return decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
 }
+
+describe("the editor world view", () => {
+  it("probes each steady frame while a frozen graph Material swaps, so it draws its new variant once that is ready", async () => {
+    // The editor's world view is the same coordinator without Play's end-of-frame readiness check, and it freezes
+    // library Materials: a frozen NodeMaterial adopts a ready variant only when a probe asks it again.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
+    cleanups.push(() => vi.useRealTimers());
+    const engine = headlessEngine();
+    const driver = driverModel(engine, "parallel");
+    const scene = new Scene(engine);
+    const camera = new UniversalCamera("camera", new Vector3(0, 3, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    scene.activeCamera = camera;
+    setFixedShapeLightingWorldScene(scene);
+    new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
+    new PointLight("near", new Vector3(-1.5, 2.5, -1), scene);
+    const far = new PointLight("far", new Vector3(1.5, 2.5, -1), scene);
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+    if (!lowered.ok) throw new Error("The default Material did not lower.");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph" });
+    if (!compiled.ok) throw new Error("The default Material did not compile.");
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = compiled.material;
+    const view = new SceneRenderCoordinator(scene, { deferPipelines: true });
+    cleanups.push(() => view.dispose());
+    await withClock(view.prepare());
+    const frame = async () => {
+      engine.beginFrame();
+      const drawn = view.render(false).rendered;
+      engine.endFrame();
+      await vi.advanceTimersByTimeAsync(FRAME_MS);
+      return drawn;
+    };
+    const effect = () => box.subMeshes[0]!._getDrawWrapper(camera.renderPassId)?.effect;
+    for (let index = 0; index < 3; index++) expect(await frame()).toBe(true);
+    compiled.material.freeze();
+    const before = effect();
+    driver.arm();
+    setAuthoredLightEnabled(far, false);
+    for (let index = 0; index < 3; index++) {
+      expect(await frame()).toBe(true);
+      expect(effect()).toBe(before);
+    }
+    expect(driver.created.length).toBeGreaterThan(0);
+    driver.release();
+    expect(await frame()).toBe(true);
+    expect(driver.created).toContain(effect());
+  });
+});
