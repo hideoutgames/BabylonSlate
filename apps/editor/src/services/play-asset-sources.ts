@@ -1,15 +1,15 @@
-import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@babylonslate/core";
+import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@haptic/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, mapBounded,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
-} from "@babylonslate/assets";
-import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@babylonslate/exporter";
-import type { SceneSourceAssets } from "@babylonslate/render";
-import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/assets";
+import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
+import type { SceneSourceAssets } from "@haptic/render";
+import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
+import type { Diagnostic } from "@haptic/scripting";
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { OpenDocument } from "./document-service";
@@ -220,7 +220,7 @@ type PlayAssetSourceOptions = {
   priority?: AssetLoadPriority;
   onProgress?: (progress: { completed: number; total: number }) => void;
   allowCompileErrors?: boolean;
-  fontModes?: import("@babylonslate/render").CommandFontModes;
+  fontModes?: import("@haptic/render").CommandFontModes;
 };
 
 /** A background bake/save may invalidate a snapshot; retry the complete owned acquisition. */

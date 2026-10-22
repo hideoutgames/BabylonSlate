@@ -7,8 +7,8 @@ import {
   type AffineTransform,
   type Quat,
   type Transform,
-} from "@babylonslate/core";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import {
   actorWorldTransform,
   composeActorWorldTransforms,

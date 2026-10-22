@@ -1,4 +1,4 @@
-import type { CommandMessage, MaterialParameterValue } from "@babylonslate/bridge";
+import type { CommandMessage, MaterialParameterValue } from "@haptic/bridge";
 import {
   normalizeRenderTargetPayload,
   normalizeRenderTargetTexturePayload,
@@ -7,14 +7,14 @@ import {
   type ScalabilityRequest,
   type ScalabilityResult,
   type ScalabilitySnapshot,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   Actor,
   ActorComponent,
   getPostProcessMaterialObject,
   type BObject,
   type MaterialInstanceObject,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import { captureComponent } from "./render-targets";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import type { ScriptHostServices } from "./script-host";

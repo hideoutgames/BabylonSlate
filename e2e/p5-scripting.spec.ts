@@ -16,7 +16,7 @@ async function injectGamepad(
   await page.evaluate((next) => {
     (
       globalThis as {
-        __babylonslateTest: {
+        __hapticTest: {
           injectTestGamepad: (
             pad: {
               index?: number;
@@ -26,7 +26,7 @@ async function injectGamepad(
           ) => void;
         };
       }
-    ).__babylonslateTest.injectTestGamepad(
+    ).__hapticTest.injectTestGamepad(
       next
         ? {
             index: 0,
@@ -84,17 +84,17 @@ test.describe("P5 visual scripting acceptance", () => {
 
     const installed = await page.evaluate(async (graph) => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           setMainGraphContent: (g: unknown) => Promise<boolean>;
         };
       };
-      if (!host.__babylonslateTest) return false;
-      return host.__babylonslateTest.setMainGraphContent(graph);
+      if (!host.__hapticTest) return false;
+      return host.__hapticTest.setMainGraphContent(graph);
     }, SCRIPTED_GRAPH);
     expect(installed).toBe(true);
 
     await openMainScene(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("compile-graph")).toBeVisible();
     await expect(page.getByTestId("compilation-error")).toHaveCount(0);
 
@@ -117,18 +117,18 @@ test.describe("P5 visual scripting acceptance", () => {
     await openTestProject(page);
     const moveAsset = await guidForPath(
       page,
-      "assets/Input/Move.inputaxis.babasset",
+      "assets/Input/Move.inputaxis.hasset",
     );
 
     const installed = await page.evaluate(
       async (graph) => {
         const host = globalThis as unknown as {
-          __babylonslateTest?: {
+          __hapticTest?: {
             setMainGraphContent: (g: unknown) => Promise<boolean>;
           };
         };
-        if (!host.__babylonslateTest) return false;
-        return host.__babylonslateTest.setMainGraphContent(graph);
+        if (!host.__hapticTest) return false;
+        return host.__hapticTest.setMainGraphContent(graph);
       },
       {
         nodes: [
@@ -189,11 +189,11 @@ test.describe("P5 visual scripting acceptance", () => {
 
     await page.evaluate(async () => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           setMainGraphContent: (g: unknown) => Promise<boolean>;
         };
       };
-      await host.__babylonslateTest?.setMainGraphContent({
+      await host.__hapticTest?.setMainGraphContent({
         nodes: [
           {
             id: "tick",
@@ -227,7 +227,7 @@ test.describe("P5 visual scripting acceptance", () => {
       });
     });
 
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("compiler-results")).toBeVisible();
     await expect(page.getByTestId("compiler-result-row").first()).toBeVisible({
       timeout: 15_000,
@@ -253,7 +253,7 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import { commitAnimGraphVariables } from "./anim-graph-variables";
 
 describe("commitAnimGraphVariables", () => {

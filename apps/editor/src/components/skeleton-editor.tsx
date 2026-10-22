@@ -6,20 +6,20 @@ import {
   assetRowIdentity,
   type PropertyRow,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   isGltfModelBytes,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import {
   normalizeSkeletonPayload,
   type SkeletonPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   useOpenDocument,
   useRegistryState,

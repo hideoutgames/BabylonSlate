@@ -1,10 +1,10 @@
-import { classIdForAssetPath, isBuiltinBehaviourTreeClassId } from "@babylonslate/core";
-import { isLockedEngineClassId } from "@babylonslate/object-model";
-import type { BabassetHeader } from "./babasset";
+import { classIdForAssetPath, isBuiltinBehaviourTreeClassId } from "@haptic/core";
+import { isLockedEngineClassId } from "@haptic/object-model";
+import type { HassetHeader } from "./hasset";
 
 export interface AssetClassCatalogEntry {
   path: string;
-  header: BabassetHeader;
+  header: HassetHeader;
 }
 
 /** Class alias (guid, path-derived id or authored `classId`) -> guids of the Class assets answering to it. */
@@ -27,7 +27,7 @@ export function buildClassAliasIndex(assets: Iterable<AssetClassCatalogEntry>): 
 
 /** Resolve symbolic authored class IDs from catalog headers without opening documents. */
 export function resolveAssetCatalogDependencies(
-  header: BabassetHeader,
+  header: HassetHeader,
   assets: readonly AssetClassCatalogEntry[],
   required = false,
 ): string[] {
@@ -36,7 +36,7 @@ export function resolveAssetCatalogDependencies(
 
 /** As `resolveAssetCatalogDependencies`, with the alias index supplied (and built only when the header needs it). */
 export function resolveDependenciesWithClassAliases(
-  header: BabassetHeader,
+  header: HassetHeader,
   aliases: () => ClassAliasIndex,
   required = false,
 ): string[] {

@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { FieldError } from "@babylonslate/ui/components/field";
+import { FieldError } from "@haptic/ui/components/field";
 import { NumericDragField } from "./numeric-drag-field";
 import { SelectAllInput } from "./select-all-input";
 

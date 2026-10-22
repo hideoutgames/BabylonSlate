@@ -1,5 +1,5 @@
-import type { ClassAssetReference, ClassAssetReplacement, IndexedAsset } from "@babylonslate/assets";
-import { walkAncestry } from "@babylonslate/editor-kit";
+import type { ClassAssetReference, ClassAssetReplacement, IndexedAsset } from "@haptic/assets";
+import { walkAncestry } from "@haptic/editor-kit";
 import { classIdFromClassAsset, classParentLookup } from "./class-asset-lookup";
 
 export function classAssetReference(asset: IndexedAsset): ClassAssetReference {

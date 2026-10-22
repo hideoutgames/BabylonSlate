@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Actor } from "@babylonslate/object-model";
+import { Actor } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
 function stubServices(
@@ -60,7 +60,7 @@ describe("ScriptHost flowState", () => {
       assetGuid: "hero-logic",
       classId: "Hero",
       source: [
-        "//# sourceURL=babylonslate:///hero-logic.js",
+        "//# sourceURL=haptic:///hero-logic.js",
         "export function onBeginPlay(ctx) { ctx.flowState('gate1').open = true; }",
         "export function onDestroyed(ctx) { /* host clears around lifecycle */ }",
         "",

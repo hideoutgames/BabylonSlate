@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
+import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath } from "@haptic/core";
 import {
   createActor,
   createDefaultScene,
@@ -18,11 +18,11 @@ import {
   normalizeShadowSettings,
   quaternionToEulerDegrees,
   sceneLayerToEditorScene,
-} from "@babylonslate/core";
-import { AssetCreateProvider } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import { AssetCreateProvider } from "@haptic/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
-import { diffSceneCommands, EditSession } from "@babylonslate/edit";
+import { diffSceneCommands, EditSession } from "@haptic/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
 if (
@@ -46,7 +46,7 @@ const harness = vi.hoisted(() => ({
   /** Assets a test creates after mount; the registry mock lists them. */
   createdAssets: [] as Array<{ header: Record<string, unknown>; path: string }>,
   documentKind: "scene" as "scene" | "scene-layer",
-  documentId: "scene:assets/Main.scene.babasset",
+  documentId: "scene:assets/Main.scene.hasset",
   render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined, renderPath: undefined as RenderPath | undefined },
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
@@ -73,7 +73,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       id: harness.documentId,
       ref: {
         kind: harness.documentKind,
-        path: "assets/Main.scene.babasset",
+        path: "assets/Main.scene.hasset",
         label: "Main Scene",
       },
       content: harness.scene,
@@ -97,11 +97,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           guid: "class-rich-label", name: "RichLabel", type: "Class", parentClass: "Actor",
           payload: { components: harness.prefabComponents },
         },
-        path: "assets/RichLabel.class.babasset",
+        path: "assets/RichLabel.class.hasset",
       }] : []),
       {
         header: { guid: "scene-cave", name: "Cave", type: "Scene", parentClass: null },
-        path: "assets/Cave.scene.babasset",
+        path: "assets/Cave.scene.hasset",
       },
       {
         header: {
@@ -110,7 +110,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Model",
           parentClass: null,
         },
-        path: "assets/Rock.model.babasset",
+        path: "assets/Rock.model.hasset",
       },
       {
         header: {
@@ -119,7 +119,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Texture",
           parentClass: null,
         },
-        path: "assets/Atlas.texture.babasset",
+        path: "assets/Atlas.texture.hasset",
       },
       {
         header: {
@@ -128,7 +128,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Class",
           parentClass: "GameInstance",
         },
-        path: "assets/MyGame.class.babasset",
+        path: "assets/MyGame.class.hasset",
       },
       {
         header: {
@@ -138,7 +138,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           parentClass: null,
           payload: { domain: "postProcess" },
         },
-        path: "assets/Blur.material.babasset",
+        path: "assets/Blur.material.hasset",
       },
       {
         header: {
@@ -148,7 +148,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           parentClass: null,
           payload: { domain: "surface" },
         },
-        path: "assets/Rock.material.babasset",
+        path: "assets/Rock.material.hasset",
       },
       {
         header: {
@@ -157,7 +157,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "SceneLayer",
           parentClass: null,
         },
-        path: "assets/Hud.scenelayer.babasset",
+        path: "assets/Hud.scenelayer.hasset",
       },
     ],
     getByGuid: (guid: string) =>
@@ -167,7 +167,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
               guid: "mesh-1", name: "Rock", type: "Model",
               payload: { materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }] },
             },
-            path: "assets/Rock.model.babasset",
+            path: "assets/Rock.model.hasset",
           }
         : undefined,
   },
@@ -178,7 +178,7 @@ beforeEach(() => {
   harness.shapeEditTarget = null;
   harness.setShapeEditTarget.mockReset();
   harness.documentKind = "scene";
-  harness.documentId = "scene:assets/Main.scene.babasset";
+  harness.documentId = "scene:assets/Main.scene.hasset";
   harness.render.mode = "pbr";
   harness.render.shadows = undefined;
   harness.render.renderPath = undefined;
@@ -676,7 +676,7 @@ describe("SceneDetailsPanel authoring", () => {
     const createAsset = vi.fn(async () => {
       harness.createdAssets.push({
         header: { guid: "mat-glyph", name: "Glyph", type: "Material", parentClass: null, payload: { domain: "text" } },
-        path: "assets/Glyph.material.babasset",
+        path: "assets/Glyph.material.hasset",
       });
       // The real provider re-renders document consumers once the registry indexed the asset.
       act(() => refreshDocuments());
@@ -1131,7 +1131,7 @@ describe("SceneDetailsPanel authoring", () => {
 
   it("shows overlay Details with gravity and post-process only", () => {
     harness.documentKind = "scene-layer";
-    harness.documentId = "scene-layer:assets/Hud.scenelayer.babasset";
+    harness.documentId = "scene-layer:assets/Hud.scenelayer.hasset";
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("scene-settings-grid")).toBeTruthy();
     expect(screen.getByTestId("property-row-scene-gravity")).toBeTruthy();
@@ -1156,7 +1156,7 @@ describe("SceneDetailsPanel authoring", () => {
 
   it("toggles Scene Layer Enable Physics into the saved SceneLayer document", () => {
     harness.documentKind = "scene-layer";
-    harness.documentId = "scene-layer:assets/Hud.scenelayer.babasset";
+    harness.documentId = "scene-layer:assets/Hud.scenelayer.hasset";
     harness.scene = sceneLayerToEditorScene(createDefaultSceneLayer());
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const toggle = screen.getByRole("checkbox", { name: "Enable Physics" });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { defaultEngineSettings } from "@babylonslate/vfs";
+import { defaultEngineSettings } from "@haptic/vfs";
 import {
   applyFocusLayout,
   canFocusLayout,

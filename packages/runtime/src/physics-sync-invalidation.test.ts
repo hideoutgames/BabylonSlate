@@ -1,18 +1,18 @@
 import { afterEach, expect, it, vi } from "vitest";
-import * as physics from "@babylonslate/physics";
-import * as assets from "@babylonslate/assets";
+import * as physics from "@haptic/physics";
+import * as assets from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
   createMeshComponent,
   identityTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
-} from "@babylonslate/bridge";
-import { ClassRegistry, World } from "@babylonslate/object-model";
+} from "@haptic/bridge";
+import { ClassRegistry, World } from "@haptic/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 import { createInProcessRuntime } from "./driver";
 

@@ -1,4 +1,4 @@
-import { isCoarsePointerEnvironment } from "@babylonslate/editor-kit";
+import { isCoarsePointerEnvironment } from "@haptic/editor-kit";
 
 /**
  * Whether a touch screen is attached. Dialogs skip focusing a text field then,

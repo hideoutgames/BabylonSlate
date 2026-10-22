@@ -1,5 +1,5 @@
 import { AppWindowIcon } from "lucide-react";
-import { ToolbarStrip } from "@babylonslate/editor-kit";
+import { ToolbarStrip } from "@haptic/editor-kit";
 import {
   Select,
   SelectContent,
@@ -7,7 +7,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 import type { DockWindowDefinition } from "./window-catalog";
 
 export function PhoneWindowSwitcher({

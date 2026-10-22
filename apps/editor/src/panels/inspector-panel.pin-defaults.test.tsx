@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
-import { AssetOpenProvider } from "@babylonslate/editor-kit";
-import { assetRef, classRef, pin } from "@babylonslate/scripting";
+import type { SerializedGraph } from "@haptic/core";
+import { AssetOpenProvider } from "@haptic/editor-kit";
+import { assetRef, classRef, pin } from "@haptic/scripting";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
@@ -29,17 +29,17 @@ const fixture = vi.hoisted(() => ({ kind: "asset" as "asset" | "class" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
+    documentId: "graph:assets/Hero.class.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Hero.class.babasset",
+      id: "graph:assets/Hero.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
       content: {
@@ -81,7 +81,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Audio",
           parentClass: null,
         },
-        path: "assets/Hit.audio.babasset",
+        path: "assets/Hit.audio.hasset",
       },
     ],
   },

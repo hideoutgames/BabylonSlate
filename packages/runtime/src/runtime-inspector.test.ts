@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@haptic/core";
 import { readSnapshotHeader, snapshotFloatCount, type CommandMessage, type RuntimeInspectorAction, type RuntimeInspectorResult,
-  type RuntimeObjectIdentity } from "@babylonslate/bridge";
+  type RuntimeObjectIdentity } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 const catalog = { mat: { domain: "surface" as const, planHash: "mat", parameters: { Gain: { kind: "float" as const, value: 1 } } } };

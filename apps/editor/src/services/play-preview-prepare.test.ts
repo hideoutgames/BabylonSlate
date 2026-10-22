@@ -19,8 +19,8 @@ describe("planPlayPreviewPrepare", () => {
     expect(
       planPlayPreviewPrepare({
         dirtyDocuments: [
-          { label: "main.class.babasset" },
-          { label: "main.scene.babasset" },
+          { label: "main.class.hasset" },
+          { label: "main.scene.hasset" },
         ],
         scriptsStale: true,
         migrationPending: false,
@@ -29,7 +29,7 @@ describe("planPlayPreviewPrepare", () => {
       action: "prepare",
       needsSave: true,
       needsCompile: true,
-      dirtyNames: ["main.class.babasset", "main.scene.babasset"],
+      dirtyNames: ["main.class.hasset", "main.scene.hasset"],
     });
   });
 
@@ -51,7 +51,7 @@ describe("planPlayPreviewPrepare", () => {
   it("prepares save when documents are dirty even if scripts are current", () => {
     expect(
       planPlayPreviewPrepare({
-        dirtyDocuments: [{ label: "main.scene.babasset" }],
+        dirtyDocuments: [{ label: "main.scene.hasset" }],
         scriptsStale: false,
         migrationPending: false,
       }),
@@ -59,14 +59,14 @@ describe("planPlayPreviewPrepare", () => {
       action: "prepare",
       needsSave: true,
       needsCompile: false,
-      dirtyNames: ["main.scene.babasset"],
+      dirtyNames: ["main.scene.hasset"],
     });
   });
 
   it("requires migration approval before saving dirty documents", () => {
     expect(
       planPlayPreviewPrepare({
-        dirtyDocuments: [{ label: "main.class.babasset" }],
+        dirtyDocuments: [{ label: "main.class.hasset" }],
         scriptsStale: true,
         migrationPending: true,
       }),

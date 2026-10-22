@@ -1,11 +1,11 @@
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import type { PropertyRow } from "@haptic/editor-kit";
 import {
   eulerDegreesToQuaternion,
   identitySerializedTransform,
   quaternionToEulerDegrees,
   type SerializedTransform,
   type ViewportMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Position / rotation / scale rows; 2D splits Position Z out as Z-Order. */
 export function spatialTransformPropertyRows(

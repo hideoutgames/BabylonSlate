@@ -4,9 +4,9 @@ import {
   FONT_MSDF_PNG_CHUNK_ID,
   compileText2DFontStacks,
   normalizeFontPayload,
-} from "@babylonslate/assets";
-import type { FontAssetEntry } from "@babylonslate/render";
-import { parseText2DProperties, type SerializedScene } from "@babylonslate/core";
+} from "@haptic/assets";
+import type { FontAssetEntry } from "@haptic/render";
+import { parseText2DProperties, type SerializedScene } from "@haptic/core";
 
 export interface FontAssetSource {
   guid: string;

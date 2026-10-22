@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
+import { SCENE_SCHEMA_VERSION } from "@haptic/core";
 import {
   AssetFormatVersionError,
   MATERIAL_PAYLOAD_VERSION,
@@ -29,7 +29,7 @@ describe("migration harness", () => {
       type: "Thing",
       version: 1,
       payload: { steps: [] },
-      path: "assets/Thing.babasset",
+      path: "assets/Thing.hasset",
     });
     expect(loaded.payload).toEqual({ steps: [2, 3] });
     expect(loaded.version).toBe(3);
@@ -37,7 +37,7 @@ describe("migration harness", () => {
       type: "Thing",
       fromVersion: 1,
       toVersion: 3,
-      path: "assets/Thing.babasset",
+      path: "assets/Thing.hasset",
     });
     expect(registryWithSteps().migrate("Thing", 2, { steps: [] })).toEqual({
       version: 3,
@@ -100,7 +100,7 @@ describe("default migration registry", () => {
           type,
           version,
           payload: {},
-          path: "assets/Old.babasset",
+          path: "assets/Old.hasset",
         });
       // The editor shows this error type's message to the user.
       expect(load).toThrow(AssetFormatVersionError);
@@ -115,7 +115,7 @@ describe("default migration registry", () => {
       schemaVersion: 7,
       fields: [{ id: "stable-score", name: "Coins", type: "int", defaultValue: 0 }],
     };
-    const options = { type: "SaveGame", payload, path: "assets/Progress.savegame.babasset" };
+    const options = { type: "SaveGame", payload, path: "assets/Progress.savegame.hasset" };
     const loaded = loadPayloadWithMigration(registry, { ...options, version: 1 });
     expect(loaded.pending).toBeNull();
     expect(loaded.payload).toBe(payload);

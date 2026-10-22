@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseText2DAppearProperties, text2DCharacterReveal } from "@babylonslate/core";
+import { parseText2DAppearProperties, text2DCharacterReveal } from "@haptic/core";
 import { mergeEngineTypeSchemas } from "./type-defaults";
 import {
   ENGINE_STRUCTS,

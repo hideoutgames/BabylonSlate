@@ -2,7 +2,7 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import {
   CALL_PIN_IDS,
   assignResultFields,

@@ -1,6 +1,6 @@
 import { ArrowUpRightIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useTouchUi } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { useTouchUi } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 
 export function ContentBrowserSelectionActions({
   selectionCount,

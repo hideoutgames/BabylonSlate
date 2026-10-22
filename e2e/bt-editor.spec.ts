@@ -10,7 +10,7 @@ const E2E_TIMEOUT_MS = 90_000;
 
 async function openPatrolTree(page: Page): Promise<void> {
   await createContentBrowserAsset(page, "BehaviourTree", "Patrol");
-  await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+  await page.locator('[data-asset-path="assets/Patrol.bt.hasset"]').dblclick();
   await expect(page.getByTestId("document-workspace-behaviour-tree")).toBeVisible({
     timeout: 15_000,
   });
@@ -89,7 +89,7 @@ test.describe("Behaviour Tree editor UX", () => {
       .getByTestId("document-tab-close")
       .click();
     await expect(page.getByTestId("behaviour-tree-editor")).toHaveCount(0);
-    await openAssetFromBrowser(page, "assets/Patrol.bt.babasset");
+    await openAssetFromBrowser(page, "assets/Patrol.bt.hasset");
     await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
     const reopened = parseTranslate(await flowNodeTransform(page, "task"));
     expect(Math.abs(reopened.x - saved.x)).toBeLessThan(8);

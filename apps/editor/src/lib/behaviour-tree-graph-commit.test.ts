@@ -3,7 +3,7 @@ import {
   behaviourTreeToSerialized,
   createDefaultBehaviourTree,
   type BehaviourTreeDocument,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import { commitBehaviourTreeGraphChange } from "./behaviour-tree-graph-commit";
 
 function treeWithSiblings(): BehaviourTreeDocument {

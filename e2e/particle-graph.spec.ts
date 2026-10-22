@@ -31,12 +31,12 @@ async function closeWindowsMenu(page: Page): Promise<void> {
 /** New Material switched to the Particle Domain, which draws each particle's own color. */
 async function createParticleMaterial(page: Page, name: string): Promise<string> {
   await createContentBrowserAsset(page, "Material", name);
-  await openAssetFromBrowser(page, `assets/${name}.material.babasset`);
+  await openAssetFromBrowser(page, `assets/${name}.material.hasset`);
   await expect(page.getByTestId("document-workspace-material")).toBeVisible();
   await page.getByTestId("property-domain").click();
   await page.getByRole("option", { name: "Particle", exact: true }).click();
   await expect(page.getByTestId("property-domain")).toContainText("Particle");
-  const guid = await guidForPath(page, `assets/${name}.material.babasset`);
+  const guid = await guidForPath(page, `assets/${name}.material.hasset`);
   expect(guid.length).toBeGreaterThan(0);
   return guid;
 }
@@ -200,9 +200,9 @@ async function particleStats(page: Page): Promise<{
   return page.evaluate(() => {
     const stats = (
       window as {
-        __babylonslateParticleStats?: { systems: number; playing: number; graphSystems: number };
+        __hapticParticleStats?: { systems: number; playing: number; graphSystems: number };
       }
-    ).__babylonslateParticleStats;
+    ).__hapticParticleStats;
     return stats
       ? { systems: stats.systems, playing: stats.playing, graphSystems: stats.graphSystems }
       : null;
@@ -227,7 +227,7 @@ test.describe("Particle Graph", () => {
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleGraph", "Embers");
-    await openAssetFromBrowser(page, "assets/Embers.particlegraph.babasset");
+    await openAssetFromBrowser(page, "assets/Embers.particlegraph.hasset");
     await expect(page.getByTestId("document-workspace-particle-graph")).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
     await openWindowsMenu(page);
@@ -288,7 +288,7 @@ test.describe("Particle Graph", () => {
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleEmitter", "EmberSparks");
-    await openAssetFromBrowser(page, "assets/EmberSparks.emitter.babasset");
+    await openAssetFromBrowser(page, "assets/EmberSparks.emitter.hasset");
     await expect(page.getByTestId("document-workspace-particle-emitter")).toBeVisible();
     const emitterDetails = page.getByTestId("particle-emitter-details-panel");
     await emitterDetails.getByTestId("property-material").click();
@@ -312,10 +312,10 @@ test.describe("Particle Graph", () => {
     await closeDocumentTab(page, "particle-graph");
 
     await createContentBrowserAsset(page, "ParticleSystem", "EmberMix");
-    await openAssetFromBrowser(page, "assets/EmberMix.particles.babasset");
+    await openAssetFromBrowser(page, "assets/EmberMix.particles.hasset");
     await expect(page.getByTestId("particle-system-details-panel")).toBeVisible();
-    await addSystemEmitter(page, "assets/EmberSparks.emitter.babasset", 0, /EmberSparks/);
-    await addSystemEmitter(page, "assets/Embers.particlegraph.babasset", 1, /Embers/);
+    await addSystemEmitter(page, "assets/EmberSparks.emitter.hasset", 0, /EmberSparks/);
+    await addSystemEmitter(page, "assets/Embers.particlegraph.hasset", 1, /Embers/);
     const systemPreview = page.getByTestId("particle-system-preview");
     await expect(systemPreview.getByTestId("particle-system-preview-canvas")).toBeVisible();
     await expect(systemPreview.getByTestId("particle-preview-backend")).toHaveText(systemBackend, {
@@ -333,7 +333,7 @@ test.describe("Particle Graph", () => {
       .filter({ has: page.getByRole("button", { name: /^Particle(?: \(|$)/ }) });
     await expect(particleCard).toBeVisible();
     await particleCard.locator('button[data-testid$="-particleSystemGuid"]').click();
-    const systemGuid = await guidForPath(page, "assets/EmberMix.particles.babasset");
+    const systemGuid = await guidForPath(page, "assets/EmberMix.particles.hasset");
     expect(systemGuid.length).toBeGreaterThan(0);
     await pickAsset(page, "details-asset-picker", systemGuid);
 

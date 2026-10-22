@@ -5,8 +5,8 @@ import {
   openTestProject,
 } from "./open-test-project";
 
-const SOURCE_CLASS = "assets/Mannequin.class.babasset";
-const TARGET_CLASS = "assets/CopyTarget.class.babasset";
+const SOURCE_CLASS = "assets/Mannequin.class.hasset";
+const TARGET_CLASS = "assets/CopyTarget.class.hasset";
 
 /** Open Class documents keep their windows mounted; only the visible one is in play. */
 const classPanel = (page: Page) => page.locator('[data-testid="my-class-panel"]:visible');

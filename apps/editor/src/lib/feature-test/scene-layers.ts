@@ -9,8 +9,8 @@ import {
   type SerializedGraph,
   type SerializedSceneLayer,
   type SerializedTransform,
-} from "@babylonslate/core";
-import { engineScriptApiFor, type EngineScriptFunction } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { engineScriptApiFor, type EngineScriptFunction } from "@haptic/object-model";
 import {
   comp,
   requireRef,

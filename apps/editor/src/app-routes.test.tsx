@@ -7,7 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { AppRoutes } from "./app-routes";
 
 const documentState = vi.hoisted(() => ({
@@ -41,7 +41,7 @@ vi.mock("./routes/editor-route", () => ({
 vi.mock("./components/settings-modal", () => ({ SettingsModal: () => null }));
 
 beforeEach(() => {
-  vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
+  vi.stubGlobal("__HAPTIC_BUILD_LABEL__", "0.0.1 Development build");
   vi.stubGlobal("matchMedia", (media: string) => ({
     matches: false,
     media,

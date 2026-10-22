@@ -16,7 +16,7 @@ Open **Project Settings > Plugins**. Each plugin has a row with its name, icon, 
 | --- | --- |
 | Enable switch | Turn the plugin on or off for this project. |
 | Open | Open the plugin's settings document. |
-| Export | Save the plugin as a `.babplugin` file, or add it to Engine Plugins. |
+| Export | Save the plugin as a `.hplugin` file, or add it to Engine Plugins. |
 | Delete | Project plugins only. Permanently deletes the plugin from disk. |
 | Show Plugin Content | Show plugin folders in the Content Browser. Hiding them keeps their assets available. |
 
@@ -51,8 +51,8 @@ See [Plugin Settings](../assets/plugin-settings.md) for the asset itself.
 
 ## Share plugins
 
-- **Export > Export To Download** saves a `.babplugin` file.
-- **Import Plugin** adds a `.babplugin` file to the project. If the same plugin and version is already installed, choose **Keep** or **Replace**. A different version updates the installed plugin.
+- **Export > Export To Download** saves a `.hplugin` file.
+- **Import Plugin** adds a `.hplugin` file to the project. If the same plugin and version is already installed, choose **Keep** or **Replace**. A different version updates the installed plugin.
 - **Export > Export To Engine Plugins** adds the plugin to your Engine Plugins on this device.
 
 ## Engine Plugins
@@ -62,7 +62,7 @@ See [Plugin Settings](../assets/plugin-settings.md) for the asset itself.
 | Control | Description |
 | --- | --- |
 | Enabled By Default | Whether new projects start with the plugin on. |
-| Export | Save the plugin as a `.babplugin` file. |
+| Export | Save the plugin as a `.hplugin` file. |
 | Delete | Plugins you added only. Bundled plugins cannot be removed. |
 
 ### Starter Content

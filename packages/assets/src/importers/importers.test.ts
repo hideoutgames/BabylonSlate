@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ASSET_TYPES } from "@babylonslate/core";
-import { encodeBabasset } from "../babasset";
+import { ASSET_TYPES } from "@haptic/core";
+import { encodeHasset } from "../hasset";
 import { importAudio, mimeForAudioBytes } from "./audio";
-import { importBabasset } from "./babasset";
+import { importHasset } from "./hasset";
 import { importFont } from "./font";
 import { importImage } from "./image";
 import { importModel } from "./model";
@@ -360,8 +360,8 @@ describe("importers", () => {
     expect(results[0]!.chunks[0]!.id).toBe("msdf-atlas-png");
   });
 
-  it("imports .babasset and remaps colliding guids", async () => {
-    const bytes = await encodeBabasset({
+  it("imports .hasset and remaps colliding guids", async () => {
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "taken",
@@ -383,8 +383,8 @@ describe("importers", () => {
         },
       ],
     });
-    const results = await importBabasset(bytes, {
-      fileName: "tex.babasset",
+    const results = await importHasset(bytes, {
+      fileName: "tex.hasset",
       existingGuids: new Set(["taken"]),
     });
     const remapped = remapImportResultGuids(results, new Set(["taken"]));

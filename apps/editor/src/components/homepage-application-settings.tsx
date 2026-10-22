@@ -1,4 +1,4 @@
-import { getHostPlatform, resolveCompactMode } from "@babylonslate/vfs";
+import { getHostPlatform, resolveCompactMode } from "@haptic/vfs";
 import {
   Field,
   FieldContent,
@@ -7,8 +7,8 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/field";
+import { Switch } from "@haptic/ui/components/switch";
 import { useAppSettings } from "../context/app-settings-context";
 import { CompactModeField } from "./compact-mode-field";
 import { ThemeSettingsFields } from "./homepage-theme-settings";

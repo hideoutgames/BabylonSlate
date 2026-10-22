@@ -9,8 +9,8 @@ import {
   Vector3,
   type VertexData,
 } from "@babylonjs/core";
-import { convexHullEdges } from "@babylonslate/assets";
-import type { ColliderShape } from "@babylonslate/physics";
+import { convexHullEdges } from "@haptic/assets";
+import type { ColliderShape } from "@haptic/physics";
 import { shareHelperProgram } from "./helper-program";
 import { RENDERING_GROUP } from "./sorting";
 

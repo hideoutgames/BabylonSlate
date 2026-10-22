@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
-import { createText3DComponent } from "@babylonslate/core";
-import { objectRef } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
-import { filterPaletteForPin, type SerializedPin } from "@babylonslate/graph-ui";
+import type { SerializedGraph } from "@haptic/core";
+import { createText3DComponent } from "@haptic/core";
+import { objectRef } from "@haptic/scripting";
+import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@haptic/scripting-nodes";
+import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,

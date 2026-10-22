@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, DEFAULT_MOVEMENT_PROPERTIES, type MovementProperties, type SerializedActor } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createSoftwarePhysicsBackend, type Vec3 } from "@babylonslate/physics";
+import { createActor, createDefaultSceneSettings, DEFAULT_MOVEMENT_PROPERTIES, type MovementProperties, type SerializedActor } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { createSoftwarePhysicsBackend, type Vec3 } from "@haptic/physics";
 import { createInProcessRuntime } from "./driver";
 import { MovementWorldSync } from "./movement";
 import { PhysicsWorldSync } from "./physics-sync";

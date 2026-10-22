@@ -1,4 +1,4 @@
-import { installAssetBytes } from "@babylonslate/assets";
+import { installAssetBytes } from "@haptic/assets";
 import { NullEngine, Scene, StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeParentedAnimatedTriangleGlb } from "./glb-test-fixtures";

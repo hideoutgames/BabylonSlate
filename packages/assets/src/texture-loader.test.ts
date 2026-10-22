@@ -6,7 +6,7 @@ import {
   KTX2_TRANSCODER_RELATIVE_FILES,
   copyTextureBytesForUpload,
 } from "./texture-loader";
-import type { BabassetHeader } from "./babasset";
+import type { HassetHeader } from "./hasset";
 
 const KTX2_PREFIX = new Uint8Array([
   0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -54,8 +54,8 @@ describe("texture upload compatibility", () => {
 });
 
 function textureHeader(
-  chunks: BabassetHeader["chunks"],
-): BabassetHeader {
+  chunks: HassetHeader["chunks"],
+): HassetHeader {
   return {
     dependencyMetadataVersion: 1, requiredDependencies: [],
     guid: "tex-1",

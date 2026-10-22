@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { PropertyGrid, walkAncestry, type PropertyRow } from "@babylonslate/editor-kit";
+import { PropertyGrid, walkAncestry, type PropertyRow } from "@haptic/editor-kit";
 import {
   resolveActorDefaults,
   type ActorDefaults,
   type ActorEventTickMode,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";

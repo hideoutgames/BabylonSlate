@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
 import { useGraphPanelCatalogs } from "./graph-panel-catalogs";
 
-const SAVE_PATH = "assets/Progress.babasset";
+const SAVE_PATH = "assets/Progress.hasset";
 const docs = vi.hoisted(() => ({
   projectDocument: { settings: { saveGame: { definitionGuid: "save-asset" } } },
   assetRegistry: {
-    list: () => [{ rootId: "project", path: "assets/Progress.babasset", header: { guid: "save-asset", type: "SaveGame", name: "Progress", payload: {} } }],
+    list: () => [{ rootId: "project", path: "assets/Progress.hasset", header: { guid: "save-asset", type: "SaveGame", name: "Progress", payload: {} } }],
   },
   registryEpoch: 1,
   openDocuments: [] as unknown[],

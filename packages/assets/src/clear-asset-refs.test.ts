@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyProject } from "@babylonslate/core";
+import { createEmptyProject } from "@haptic/core";
 import {
   clearDeletedAssetRefs,
   clearDeletedRefsFromProjectSettings,

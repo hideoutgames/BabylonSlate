@@ -15,18 +15,18 @@ afterEach(() => {
 
 describe("documentDirtyTrace", () => {
   it("records the documents that were marked dirty", () => {
-    recordDocumentDirty("scene", "scene:assets/main.scene.babasset");
-    recordDocumentDirty("material", "material:assets/Rock.material.babasset");
+    recordDocumentDirty("scene", "scene:assets/main.scene.hasset");
+    recordDocumentDirty("material", "material:assets/Rock.material.hasset");
     const trace = documentDirtyTrace();
     expect(trace).toHaveLength(2);
     expect(trace[0]).toMatchObject({
       kind: "scene",
-      id: "scene:assets/main.scene.babasset",
+      id: "scene:assets/main.scene.hasset",
     });
     expect(trace[0]?.via).toMatch(/recordDocumentDirty|dirty-trace\.test/);
     expect(trace[1]).toMatchObject({
       kind: "material",
-      id: "material:assets/Rock.material.babasset",
+      id: "material:assets/Rock.material.hasset",
     });
   });
 

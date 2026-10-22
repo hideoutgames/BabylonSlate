@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, createMeshComponent } from "@babylonslate/core";
-import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultSceneSettings, createMeshComponent } from "@haptic/core";
+import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("runtime deformers", () => {

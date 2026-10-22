@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import * as physics from "@babylonslate/physics";
-import { identityTransform } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
+import * as physics from "@haptic/physics";
+import { identityTransform } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 
 const box = { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };

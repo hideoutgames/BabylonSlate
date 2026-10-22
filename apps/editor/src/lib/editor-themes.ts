@@ -1,4 +1,4 @@
-import type { CustomEditorTheme, EngineSettings } from "@babylonslate/vfs";
+import type { CustomEditorTheme, EngineSettings } from "@haptic/vfs";
 
 /**
  * Editor themes override the dark tokens in `packages/ui/src/styles/tokens.css`.

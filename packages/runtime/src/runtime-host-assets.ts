@@ -1,4 +1,4 @@
-import { isLockedEngineClassId, type BObject, type World } from "@babylonslate/object-model";
+import { isLockedEngineClassId, type BObject, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { ScriptHostServices } from "./script-host";
 import type { SimulationBlocks } from "./simulation-blocks";

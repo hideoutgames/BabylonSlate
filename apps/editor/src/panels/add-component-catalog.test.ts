@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ADDABLE_COMPONENT_CLASSES,
   addableComponentsForHost,
@@ -335,21 +335,21 @@ describe("projectAddComponentItems", () => {
         name: "Health",
         type: "Class",
         parentClass: "ActorComponent",
-        path: "assets/Health.class.babasset",
+        path: "assets/Health.class.hasset",
       }),
       asset({
         guid: "hero",
         name: "Hero",
         type: "Class",
         parentClass: "Actor",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
       }),
       asset({
         guid: "stats",
         name: "Stats",
         type: "Class",
         parentClass: "BObject",
-        path: "assets/Stats.class.babasset",
+        path: "assets/Stats.class.hasset",
       }),
     ]);
     expect(items.map((item) => item.classId)).toEqual(["Health"]);
@@ -368,14 +368,14 @@ describe("projectAddComponentItems", () => {
         name: "Health",
         type: "Class",
         parentClass: "ActorComponent",
-        path: "assets/Health.class.babasset",
+        path: "assets/Health.class.hasset",
       }),
       asset({
         guid: "child",
         name: "RegenHealth",
         type: "Class",
         parentClass: "Health",
-        path: "assets/RegenHealth.class.babasset",
+        path: "assets/RegenHealth.class.hasset",
       }),
     ]);
     expect(items.map((item) => item.classId).sort()).toEqual([
@@ -392,7 +392,7 @@ describe("projectAddComponentItems", () => {
         name: "RoomNav",
         type: "Class",
         parentClass: "NavMeshComponent",
-        path: "assets/RoomNav.class.babasset",
+        path: "assets/RoomNav.class.hasset",
       }),
     ]);
     expect(items.map((item) => item.classId)).toEqual([]);

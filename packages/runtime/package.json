@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/runtime",
+  "name": "@haptic/runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,21 +13,21 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/runtime"
   },
   "dependencies": {
-    "@babylonslate/anim-graph": "workspace:*",
-    "@babylonslate/assets": "workspace:*",
-    "@babylonslate/behaviour-tree": "workspace:*",
-    "@babylonslate/bridge": "workspace:*",
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/debugger": "workspace:*",
-    "@babylonslate/input": "workspace:*",
-    "@babylonslate/navigation": "workspace:*",
-    "@babylonslate/object-model": "workspace:*",
-    "@babylonslate/physics": "workspace:*",
-    "@babylonslate/scripting": "workspace:*",
+    "@haptic/anim-graph": "workspace:*",
+    "@haptic/assets": "workspace:*",
+    "@haptic/behaviour-tree": "workspace:*",
+    "@haptic/bridge": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/debugger": "workspace:*",
+    "@haptic/input": "workspace:*",
+    "@haptic/navigation": "workspace:*",
+    "@haptic/object-model": "workspace:*",
+    "@haptic/physics": "workspace:*",
+    "@haptic/scripting": "workspace:*",
     "acorn": "8.18.0"
   },
   "devDependencies": {
-    "@babylonslate/scripting-nodes": "workspace:*",
+    "@haptic/scripting-nodes": "workspace:*",
     "typescript": "~6.0.3"
   }
 }

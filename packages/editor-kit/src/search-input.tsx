@@ -1,7 +1,7 @@
 import { forwardRef, type ComponentProps } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { Input } from "@haptic/ui/components/input";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface SearchInputProps extends Omit<
   ComponentProps<"input">,

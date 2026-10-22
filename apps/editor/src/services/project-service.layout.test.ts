@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import { ProjectService } from "./project-service";
 
 function fakeStorage(): ProjectStorage {

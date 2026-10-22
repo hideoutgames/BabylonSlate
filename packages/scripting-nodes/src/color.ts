@@ -4,7 +4,7 @@ import {
   BOOL,
   COLOR,
   FLOAT,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
 
 /**

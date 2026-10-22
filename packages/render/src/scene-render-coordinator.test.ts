@@ -1,12 +1,12 @@
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
 import { Color3, DirectionalLight, Effect, FreeCamera, HemisphericLight, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, SpotLight, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
-import { createDefaultAudioPayload, createDefaultSoundAttenuationPayload } from "@babylonslate/assets";
-import { createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings } from "@babylonslate/core";
+import { createDefaultAudioPayload, createDefaultSoundAttenuationPayload } from "@haptic/assets";
+import { createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings } from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { sceneShadowController } from "./shadow-controller";
 import { setSceneRenderSettings } from "./scene-render-mode";
@@ -1214,7 +1214,7 @@ describe("selection outline changes", () => {
     let compiled = false;
     const isReady = Effect.prototype.isReady;
     vi.spyOn(Effect.prototype, "isReady").mockImplementation(function (this: Effect) {
-      return (this.name === "babylonSlateSharedOutlineMask" ? compiled : true) && isReady.call(this);
+      return (this.name === "hapticSharedOutlineMask" ? compiled : true) && isReady.call(this);
     });
     outlines.setSelection(["b"]);
     for (let frame = 0; frame < 3; frame += 1)

@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { PerformanceRecorder } from "@babylonslate/debugger";
+import { PerformanceRecorder } from "@haptic/debugger";
 import { PerformanceSummary, PerformanceTimeline } from "./diagnostic-results-dialog";
 
 afterEach(cleanup);

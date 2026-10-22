@@ -14,7 +14,7 @@ import {
   assetRef,
   classRef,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 function makeLiteral(
   id: string,

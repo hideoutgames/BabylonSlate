@@ -1,6 +1,6 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { ResolvedInputTick } from "@babylonslate/input";
-import type { WorldInputProvider } from "@babylonslate/object-model";
+import type { CommandMessage } from "@haptic/bridge";
+import type { ResolvedInputTick } from "@haptic/input";
+import type { WorldInputProvider } from "@haptic/object-model";
 
 interface WorldInputDeps {
   /** This tick's resolved input, replaced every tick. */

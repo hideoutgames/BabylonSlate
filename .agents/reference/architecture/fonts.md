@@ -19,7 +19,7 @@ Font assets, optional facetype/MSDF chunks, CSS fallback stacks and the main-thr
 - Imported from woff2 / woff / ttf / otf; New Asset never creates Fonts. A Font can also be created from representation files alone (MSDF JSON + PNG or facetype JSON) and then has no `source` chunk.
 - Payload: `family`, `weight`, `style` (`normal` | `italic`), ordered `fallbackGuids`, `representations` flags (`source`, `facetype`, `msdfJson`, `msdfPng`, `msdf` true only when both MSDF parts exist).
 - Optional chunks are import-only, never baked in-engine: `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`), `msdf-atlas` (JSON), `msdf-atlas-png` (PNG). The MSDF PNG is a Font companion, not a Texture asset.
-- Imported Fonts store their payload on the `.babasset` header (no `document` chunk); `decodeAssetDocument` falls back to `header.payload`. Saving keeps the extra chunks beside the rewritten body.
+- Imported Fonts store their payload on the `.hasset` header (no `document` chunk); `decodeAssetDocument` falls back to `header.payload`. Saving keeps the extra chunks beside the rewritten body.
 - Attaching MSDF merges representation flags with OR (never clears `source`) and writes both the header and any saved `document` chunk; an open Font tab merges only those flags into its payload.
 - Export packs `font-facetype:<guid>`, `font-msdf:<guid>` and `font-msdf-png:<guid>` sidecars so the source Font stays a font file. A player missing the MSDF sidecar falls back to Bitmap (log once).
 

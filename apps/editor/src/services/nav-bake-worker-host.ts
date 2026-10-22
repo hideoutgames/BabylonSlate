@@ -1,4 +1,4 @@
-import type { NavMeshGenerateInput } from "@babylonslate/navigation";
+import type { NavMeshGenerateInput } from "@haptic/navigation";
 
 type BakeResponse =
   | { id: number; ok: true; bytes: Uint8Array }

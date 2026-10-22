@@ -1,5 +1,5 @@
-import { isSceneLayerAnchorActor } from "@babylonslate/core";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import { isSceneLayerAnchorActor } from "@haptic/core";
+import type { Actor, ActorComponent } from "@haptic/object-model";
 import { actorParentGuid, actorGuidIndex } from "./actor-world-transform";
 
 /** Resolve the uppermost layout owner; descendants inherit its spatial movement. */

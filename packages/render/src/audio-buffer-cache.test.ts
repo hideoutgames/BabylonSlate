@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUDIO_DECODED_PCM_LRU_BYTES } from "@babylonslate/assets";
+import { AUDIO_DECODED_PCM_LRU_BYTES } from "@haptic/assets";
 import { AudioBufferCache } from "./audio-buffer-cache";
 
 describe("AudioBufferCache", () => {

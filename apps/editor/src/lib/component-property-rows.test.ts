@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SerializedComponent } from "@babylonslate/core";
+import type { SerializedComponent } from "@haptic/core";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 import {
@@ -1120,7 +1120,7 @@ describe("gameInstanceClassEntries", () => {
   it("omits the default Actor class asset from the Game Instance picker", () => {
     const entries = gameInstanceClassEntries([
       {
-        path: "assets/main.class.babasset",
+        path: "assets/main.class.hasset",
         header: { type: "Class", name: "main.class", parentClass: "Actor" },
       },
     ]);
@@ -1199,7 +1199,7 @@ describe("subclassClassEntries", () => {
   it("offers subsystem classes with their ancestry but never the hidden Subsystem base", () => {
     const assets = [
       {
-        path: "assets/Inventory.class.babasset",
+        path: "assets/Inventory.class.hasset",
         header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" },
       },
     ];
@@ -1221,7 +1221,7 @@ describe("subclassClassEntries", () => {
   it("uses the compile class id for a Class asset named main.class", () => {
     const assets = [
       {
-        path: "assets/main.class.babasset",
+        path: "assets/main.class.hasset",
         header: { type: "Class", name: "main.class", parentClass: "Actor" },
       },
     ];

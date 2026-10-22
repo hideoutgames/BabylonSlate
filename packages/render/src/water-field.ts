@@ -8,7 +8,7 @@ import {
   Vector3,
   type Scene,
 } from "@babylonjs/core";
-import { landscapeWorldHeightAt, type LandscapeProperties, type Transform } from "@babylonslate/core";
+import { landscapeWorldHeightAt, type LandscapeProperties, type Transform } from "@haptic/core";
 import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 
 /**

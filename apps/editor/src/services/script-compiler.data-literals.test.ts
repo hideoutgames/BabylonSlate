@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
-import type { TypeSchemas } from "@babylonslate/scripting";
+import type { SerializedGraph } from "@haptic/core";
+import type { TypeSchemas } from "@haptic/scripting";
 import { compileGraphDocument } from "./script-compiler";
 import { hydrateSerializedGraphForEditor, validateSerializedGraph } from "./graph-validation";
 
@@ -26,7 +26,7 @@ function createGraph(type = "editorData.addEntry"): SerializedGraph {
 describe("Compiled data literal schema changes", () => {
   it.each(["editorData.addEntry", "editorData.updateEntry"])("%s retains authored values after a stable field rename", async (type) => {
     const graph = createGraph(type);
-    const compiled = compileGraphDocument(graph, { path: "assets/Build.class.babasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, structs, dataDefinitions: structs });
+    const compiled = compileGraphDocument(graph, { path: "assets/Build.class.hasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, structs, dataDefinitions: structs });
     expect(compiled).not.toBeNull();
     const js = compiled!.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
     const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;

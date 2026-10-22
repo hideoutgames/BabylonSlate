@@ -3,7 +3,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
 import {
   AddActorCommand,
@@ -58,7 +58,7 @@ describe("journal", () => {
     const reset = new SetSceneSettingCommand("celShading", { shadowBands: 3 }, undefined);
     const serialized = serializeJournalLine({
       v: 1,
-      docId: "scene:assets/main.scene.babasset",
+      docId: "scene:assets/main.scene.hasset",
       at: "2026-09-14T12:00:00.000Z",
       command: commandToJournalPayload(reset),
     });
@@ -71,7 +71,7 @@ describe("journal", () => {
   it("serializes and parses journal lines", () => {
     const line: JournalLine = {
       v: 1,
-      docId: "graph:assets/main.class.babasset",
+      docId: "graph:assets/main.class.hasset",
       at: "2026-08-11T17:00:00.000Z",
       command: {
         type: "graph.moveNode",

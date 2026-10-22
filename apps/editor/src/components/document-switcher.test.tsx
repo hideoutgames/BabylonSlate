@@ -5,10 +5,10 @@ import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { OpenDocument } from "../services/document-service";
-import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { AssetRegistry, projectContentRoot } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createDocumentTypeVisualResolver } from "../lib/document-type-visual";
 import { DocumentSwitcher } from "./document-switcher";
 import { KeybindProvider } from "../context/keybind-context";
@@ -25,14 +25,14 @@ const documents: OpenDocument[] = [
   },
   {
     id: "scene",
-    ref: createDocumentRef("scene", "assets/main.scene.babasset"),
+    ref: createDocumentRef("scene", "assets/main.scene.hasset"),
     content: null,
     layout: null,
     dirty: true,
   },
   {
     id: "graph",
-    ref: createDocumentRef("graph", "assets/Hero.class.babasset"),
+    ref: createDocumentRef("graph", "assets/Hero.class.hasset"),
     content: null,
     layout: null,
     dirty: false,
@@ -67,14 +67,14 @@ describe("DocumentSwitcher", () => {
 
   it("shows the inherited engine-class icon for a project Class", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("test.babproject");
+    await storage.openDocumentsProject("test.hproject");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     for (const { name, parentClass } of [
       { name: "Hero", parentClass: "BaseHero" },
       { name: "BaseHero", parentClass: "Actor" },
     ]) {
-      await registry.createAsset("project", `${name}.class.babasset`, {
+      await registry.createAsset("project", `${name}.class.hasset`, {
         guid: name,
         type: "Class",
         name,

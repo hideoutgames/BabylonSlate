@@ -1,4 +1,4 @@
-import { hardLoadingProperty, type DataAssetCatalogEntry, type DataFieldSnapshot } from "@babylonslate/core";
+import { hardLoadingProperty, type DataAssetCatalogEntry, type DataFieldSnapshot } from "@haptic/core";
 import { mergeEngineTypeSchemas, type EnumSchema, type StructSchema, type TypeSchemas } from "./type-defaults";
 import { clampEnumValue } from "./type-assets";
 

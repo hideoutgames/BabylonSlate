@@ -1,7 +1,7 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { deprojectCursorRay, sceneLayerCanvasToLayer, SCENE_LAYER_DEFAULT_CAMERA, type SerializedScene } from "@babylonslate/core";
-import type { ResolvedInputTick } from "@babylonslate/input";
-import type { Actor, World } from "@babylonslate/object-model";
+import type { CommandMessage } from "@haptic/bridge";
+import { deprojectCursorRay, sceneLayerCanvasToLayer, SCENE_LAYER_DEFAULT_CAMERA, type SerializedScene } from "@haptic/core";
+import type { ResolvedInputTick } from "@haptic/input";
+import type { Actor, World } from "@haptic/object-model";
 import { actorChainWorldTransform } from "./actor-world-transform";
 import { actorFromIlluminationTarget } from "./runtime-host-render";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";

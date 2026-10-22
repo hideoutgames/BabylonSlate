@@ -28,11 +28,11 @@ describe("createPurchases", () => {
     vi.clearAllMocks();
     capacitorConfigure.mockResolvedValue(undefined);
     webConfigure.mockReturnValue({});
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
+    delete (globalThis as { haptic?: unknown }).haptic;
   });
 
   afterEach(() => {
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
+    delete (globalThis as { haptic?: unknown }).haptic;
   });
 
   it.each([
@@ -59,7 +59,7 @@ describe("createPurchases", () => {
   });
 
   it("uses Web Billing in the desktop app, which reports as web to Capacitor", async () => {
-    (globalThis as { babylonslate?: unknown }).babylonslate = { userData: {} };
+    (globalThis as { haptic?: unknown }).haptic = { userData: {} };
     const purchases = (await createPurchasesOn("web"))();
 
     expect(purchases.store).toBe("web");

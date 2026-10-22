@@ -13,8 +13,8 @@ import {
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
-import { MATERIAL_PREVIEW_MESHES, createDefaultMaterialDocument } from "@babylonslate/shader-graph";
-import { normalizeCelShadingSettings } from "@babylonslate/core";
+import { MATERIAL_PREVIEW_MESHES, createDefaultMaterialDocument } from "@haptic/shader-graph";
+import { normalizeCelShadingSettings } from "@haptic/core";
 import { isEngineDefaultMaterial } from "./default-material";
 import { CelMaterial } from "./cel-material";
 import { setSceneRenderSettings } from "./scene-render-mode";

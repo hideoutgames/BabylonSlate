@@ -14,7 +14,7 @@ test("release news survives reload and the account menu reopens it offline", asy
   const notes = changelog.releases.find(release => release.version === declared.version)!;
   await expect(news).toContainText(notes.changes[0]);
   await news.getByRole("button", { name: "Done", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("babylonslate:engine-settings") ?? "{}").seenReleaseVersions)).toContain(declared.version);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("haptic:engine-settings") ?? "{}").seenReleaseVersions)).toContain(declared.version);
 
   await page.reload();
   await expect(page.getByTestId("homepage")).toBeVisible();

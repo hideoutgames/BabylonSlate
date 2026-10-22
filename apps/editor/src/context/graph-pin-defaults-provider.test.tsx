@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { AssetCreateProvider } from "@babylonslate/editor-kit";
-import type { PinType } from "@babylonslate/scripting";
-import { GraphEditor, type PinDefaultEditorRequest } from "@babylonslate/graph-ui";
-import type { SerializedGraph } from "@babylonslate/core";
+import { AssetCreateProvider } from "@haptic/editor-kit";
+import type { PinType } from "@haptic/scripting";
+import { GraphEditor, type PinDefaultEditorRequest } from "@haptic/graph-ui";
+import type { SerializedGraph } from "@haptic/core";
 import { GraphPinDefaultEditor, GraphPinDefaultsProvider, type GraphPinDefaultCatalogs } from "./graph-pin-defaults-provider";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { subclassClassEntries } from "../lib/component-property-rows";
@@ -11,12 +11,12 @@ import { subclassClassEntries } from "../lib/component-property-rows";
 afterEach(cleanup);
 
 const assets = [
-  { path: "assets/Hero.class.babasset", header: { guid: "hero", type: "Class", name: "Hero", parentClass: "Actor" } },
-  { path: "assets/Service.class.babasset", header: { guid: "service", type: "Class", name: "Service", parentClass: "BObject" } },
-  { path: "assets/Brick.texture.babasset", header: { guid: "brick", type: "Texture", name: "Brick" } },
-  { path: "assets/BrickSound.audio.babasset", header: { guid: "sound", type: "Audio", name: "Brick Sound" } },
-  { path: "assets/Tool.class.babasset", header: { guid: "tool", type: "Class", name: "Tool", parentClass: "EditorUtilityObject" } },
-  { path: "assets/Items.babasset", header: { guid: "items", type: "DataTree", name: "Items", payload: {
+  { path: "assets/Hero.class.hasset", header: { guid: "hero", type: "Class", name: "Hero", parentClass: "Actor" } },
+  { path: "assets/Service.class.hasset", header: { guid: "service", type: "Class", name: "Service", parentClass: "BObject" } },
+  { path: "assets/Brick.texture.hasset", header: { guid: "brick", type: "Texture", name: "Brick" } },
+  { path: "assets/BrickSound.audio.hasset", header: { guid: "sound", type: "Audio", name: "Brick Sound" } },
+  { path: "assets/Tool.class.hasset", header: { guid: "tool", type: "Class", name: "Tool", parentClass: "EditorUtilityObject" } },
+  { path: "assets/Items.hasset", header: { guid: "items", type: "DataTree", name: "Items", payload: {
     defaultDefinitionGuid: "weapon", entries: [{ id: "stable-sword", parentId: null, name: "Sword", values: {} }],
   } } },
 ];
@@ -71,7 +71,7 @@ describe("project-backed inline pin defaults", () => {
     expect(picker().getAttribute("role")).toBe("combobox");
     expect(picker().textContent).toContain("Sword");
 
-    documents.openDocuments = [{ ref: { kind: "data-tree", path: "assets/Items.babasset" }, content: {
+    documents.openDocuments = [{ ref: { kind: "data-tree", path: "assets/Items.hasset" }, content: {
       defaultDefinitionGuid: "weapon", entries: [{ id: "stable-sword", parentId: null, name: "Longsword", values: {} }],
     } }];
     view.rerender(show(graph));

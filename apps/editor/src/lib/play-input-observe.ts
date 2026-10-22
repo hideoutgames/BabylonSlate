@@ -1,4 +1,4 @@
-import type { RawInputEvent } from "@babylonslate/input";
+import type { RawInputEvent } from "@haptic/input";
 
 /**
  * Last Move.x observed from the Play ring. Gamepad axis 0 and the default

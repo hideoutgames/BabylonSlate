@@ -7,11 +7,11 @@ import {
   type IndexedAsset,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   lowerParticleGraphDocumentCached,
   type ParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import {
   ParticleService,
   acquireMaterialTexture,
@@ -24,7 +24,7 @@ import {
   type MaterialPreviewScene,
   type ParticlePreviewStats,
   type ParticleServiceDiagnostic,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { textureUploadSignature } from "../lib/texture-upload-signature";

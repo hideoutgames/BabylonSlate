@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { AssetRegistry, dataAssetDependencies, decodeAssetDocument, encodeAssetDocument, projectContentRoot } from "@babylonslate/assets";
-import { buildDataTreeIndex, documentId, type DataDefinitionField, type DataTreeAsset, type DocumentRef } from "@babylonslate/core";
-import { EditSession, SetAssetDocumentCommand } from "@babylonslate/edit";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { reconcileDataEntry } from "@babylonslate/scripting";
+import { AssetRegistry, dataAssetDependencies, decodeAssetDocument, encodeAssetDocument, projectContentRoot } from "@haptic/assets";
+import { buildDataTreeIndex, documentId, type DataDefinitionField, type DataTreeAsset, type DocumentRef } from "@haptic/core";
+import { EditSession, SetAssetDocumentCommand } from "@haptic/edit";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { reconcileDataEntry } from "@haptic/scripting";
 import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { DocumentService } from "./document-service";
 import type { ProjectService } from "./project-service";
@@ -17,16 +17,16 @@ const itemFields: DataDefinitionField[] = [
 
 async function fixture() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("data.babproject");
+  await storage.openDocumentsProject("data.hproject");
   await storage.mkdir("assets", true);
   for (const guid of ["item", "other", "stats"]) {
     const definition = { kind: "dataDefinition", fields: itemFields };
-    await storage.writeBinary(`assets/${guid}.datadefinition.babasset`, await encodeAssetDocument({
+    await storage.writeBinary(`assets/${guid}.datadefinition.hasset`, await encodeAssetDocument({
       guid, name: guid, type: "DataDefinition", version: 1, payload: definition,
     }, { headerPayload: definition }));
   }
   const structure = { kind: "structure", guid: "legacy-structure", name: "Legacy Structure", fields: itemFields };
-  await storage.writeBinary("assets/legacy.structure.babasset", await encodeAssetDocument({
+  await storage.writeBinary("assets/legacy.structure.hasset", await encodeAssetDocument({
     guid: "legacy-structure", name: "Legacy Structure", type: "Structure", version: 1, payload: structure,
   }, { headerPayload: structure }));
   const registry = new AssetRegistry(storage);
@@ -58,11 +58,11 @@ async function fixture() {
   const tree = (guid: string) => documents.getDocument(treeId(guid))!.content as unknown as DataTreeAsset;
   const schemas = () => typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets: registry.list(), openDocuments: host.getOpenDocuments() }));
   const changeDefinition = async (fields: DataDefinitionField[]) => {
-    const id = await host.ensureAssetDocument({ kind: "data-definition", path: "assets/item.datadefinition.babasset", label: "Item" });
+    const id = await host.ensureAssetDocument({ kind: "data-definition", path: "assets/item.datadefinition.hasset", label: "Item" });
     await host.applyAssetDocumentChange(id, { kind: "dataDefinition", fields });
   };
   const changeNestedDefinition = async (fields: DataDefinitionField[]) => {
-    const id = await host.ensureAssetDocument({ kind: "data-definition", path: "assets/stats.datadefinition.babasset", label: "Stats" });
+    const id = await host.ensureAssetDocument({ kind: "data-definition", path: "assets/stats.datadefinition.hasset", label: "Stats" });
     await host.applyAssetDocumentChange(id, { kind: "dataDefinition", fields });
   };
   const migrate = async (guid: string) => {

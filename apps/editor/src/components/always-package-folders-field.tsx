@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { FolderIcon } from "lucide-react";
-import type { FolderNode } from "@babylonslate/assets";
-import { normalizeAlwaysPackageFolders } from "@babylonslate/core";
-import { NamedListEditor } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
+import type { FolderNode } from "@haptic/assets";
+import { normalizeAlwaysPackageFolders } from "@haptic/core";
+import { NamedListEditor } from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
 import { useRegistryState } from "../context/document-context";
 import { FolderPickerDialog } from "./folder-picker-dialog";
 

@@ -1,17 +1,17 @@
-import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@babylonslate/core";
-import { createSaveGameStorage } from "@babylonslate/vfs";
-import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
-import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
-import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@babylonslate/assets";
-import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
+import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
+import { createSaveGameStorage } from "@haptic/vfs";
+import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
+import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
+import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
+import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core";
-import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@babylonslate/bridge";
-import { encodeInputEvents } from "@babylonslate/input";
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
+import { encodeInputEvents } from "@haptic/input";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   applyRuntimeSourceControl,
   createSceneSourceHost,
@@ -20,7 +20,7 @@ import {
   createRuntimeFromLoad,
   captureConsoleLogs,
   type RuntimeDriver,
-} from "@babylonslate/runtime";
+} from "@haptic/runtime";
 import {
   attachLifecyclePause,
   createEngine,
@@ -30,9 +30,9 @@ import {
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
-} from "@babylonslate/render";
-import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@babylonslate/core";
-import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@babylonslate/exporter";
+} from "@haptic/render";
+import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@haptic/core";
+import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
@@ -60,7 +60,7 @@ import {
 import { packedFontCssStacks } from "./fonts";
 import { createPlayerConsoleHost } from "./console-host";
 import { createPlayerPauseState } from "./console-pause";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 
 function havokWasmUrl(): string {
@@ -137,7 +137,7 @@ export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
   /** Preview iframes borrow the editor host's application-private storage. */
-  saveStorage?: import("@babylonslate/core").SaveGameStorage;
+  saveStorage?: import("@haptic/core").SaveGameStorage;
   /** Preview host's trace budget; omitted by standalone games. */
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
@@ -712,7 +712,7 @@ function initializePlayer(
     for (const [key, value] of source) target.set(key, value);
   };
   let nextSourceRequest = 0;
-  let publishedScripts: readonly import("@babylonslate/bridge").ScriptBundleEntry[] | null = [...game.scripts];
+  let publishedScripts: readonly import("@haptic/bridge").ScriptBundleEntry[] | null = [...game.scripts];
   let sourcePublication: Promise<void> = Promise.resolve();
   const pendingSourceRequests = new Map<number, { resolve: () => void; reject: (error: unknown) => void }>();
   own(() => { for (const request of pendingSourceRequests.values()) request.reject(new DOMException("Player stopped", "AbortError")); pendingSourceRequests.clear(); });
@@ -896,7 +896,7 @@ function initializePlayer(
   // answer is asynchronous, so it never re-enters the requesting physics tick.
   const answerComplexCollision = (guid: string) => queueMicrotask(() => {
     if (halted) return;
-    let mesh: import("@babylonslate/core").CollisionTriangleMesh | null = null;
+    let mesh: import("@haptic/core").CollisionTriangleMesh | null = null;
     try {
       const source = game.modelBytes.get(guid);
       mesh = game.cookComplexCollision ? game.cookComplexCollision(guid)
@@ -904,7 +904,7 @@ function initializePlayer(
     } catch (error) {
       options.onConsoleEvent?.({ type: "log", severity: "warning", message: `Complex Collision for ${guid}: ${error instanceof Error ? error.message : String(error)}` });
     }
-    const control: import("@babylonslate/bridge").ControlMessage = mesh
+    const control: import("@haptic/bridge").ControlMessage = mesh
       ? { type: "loadComplexCollision", meshes: [{ guid, positions: mesh.positions, indices: mesh.indices }] }
       : { type: "loadComplexCollision", meshes: [], unavailable: [guid] };
     if (worker) worker.postControl(control);
@@ -921,7 +921,7 @@ function initializePlayer(
     }
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command as never)) return;
-    if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
+    if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@haptic/core").SaveStorageRequest); return; }
     if (halted) return;
     if (command.type === "requestComplexCollision") { answerComplexCollision(String(command.assetGuid)); return; }
     if (command.type === "simulationBlocking") handle.setSceneStreamingPaused(command.blocking === true);

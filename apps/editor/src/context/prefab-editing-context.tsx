@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import type { OpenDocument } from "../services/document-service";
 import {
   identitySerializedTransform,
@@ -16,8 +16,8 @@ import {
   type SerializedGraph,
   type SerializedPrefab,
   type SerializedTransform,
-} from "@babylonslate/core";
-import type { TreeDropPlacement } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import type { TreeDropPlacement } from "@haptic/editor-kit";
 import { patchInspectorComponentProperty } from "../lib/mesh-material-properties";
 import {
   useDocumentActions,

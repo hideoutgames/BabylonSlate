@@ -1,5 +1,5 @@
-import type { SerializedComponent } from "@babylonslate/core";
-import type { ColliderShape } from "@babylonslate/physics";
+import type { SerializedComponent } from "@haptic/core";
+import type { ColliderShape } from "@haptic/physics";
 
 type HalfSize = { x: number; y: number; z: number };
 

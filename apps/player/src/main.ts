@@ -1,9 +1,9 @@
-import type { GameManifest } from "@babylonslate/exporter";
+import type { GameManifest } from "@haptic/exporter";
 import {
   getHostMemoryStats,
   type HostMemoryStats,
-} from "@babylonslate/vfs";
-import { audioStats, particleStats } from "@babylonslate/render";
+} from "@haptic/vfs";
+import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
 import type { PlayerTestHandle } from "./boot";
@@ -18,7 +18,7 @@ import {
   PREVIEW_CONSOLE_CONTEXT_MESSAGE,
   isPreviewConsoleRequest,
   createPreviewSaveStorageClient,
-} from "@babylonslate/exporter";
+} from "@haptic/exporter";
 import {
   filesFromPreviewPack,
   isExpectedPreviewHostMessage,
@@ -228,9 +228,9 @@ async function launchLoaded(
   if (import.meta.env.VITE_TEST_MODE === "true") {
     (
       window as typeof window & {
-        __babylonslatePlayerTest?: PlayerTestHandle;
+        __hapticPlayerTest?: PlayerTestHandle;
       }
-    ).__babylonslatePlayerTest = {
+    ).__hapticPlayerTest = {
       tickIndex: () => session.ticks(),
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
@@ -245,7 +245,7 @@ async function launchLoaded(
       stop: () => session.stop(),
     };
     // Test-mode hatches, as in the editor; release players do not install them.
-    Object.assign(window, { __babylonslateAudioStats: audioStats, __babylonslateParticleStats: particleStats });
+    Object.assign(window, { __hapticAudioStats: audioStats, __hapticParticleStats: particleStats });
   }
   if (window.parent !== window) {
     window.parent.postMessage(
@@ -321,7 +321,7 @@ async function launchLoaded(
     if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
       return;
     if (stopped) return;
-    if (previewMode && session.previewDiagnostics && event.data?.type === "babylonslate-preview-diagnostic-control") {
+    if (previewMode && session.previewDiagnostics && event.data?.type === "haptic-preview-diagnostic-control") {
       if (previewDiagnostics) { previewDiagnostics.receive(event); return; }
       if (event.data?.action !== "open" || preparingDiagnostics) return;
       // This independently built entry is absent from ordinary exported games.

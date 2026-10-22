@@ -34,7 +34,7 @@ async function coldFontProject(fontBytes: Uint8Array) {
   const files = await minimalProjectFiles();
   const versions = createDefaultMigrationRegistry();
   const font = createFontPayload(COLD_FONT_FAMILY, { representations: { source: true } }) as unknown as Record<string, unknown>;
-  files.set("assets/ColdLoadOnest.babasset", await encodeAssetDocument(
+  files.set("assets/ColdLoadOnest.hasset", await encodeAssetDocument(
     { guid: COLD_FONT_GUID, type: "Font", name: COLD_FONT_FAMILY, version: versions.currentVersion("Font") || 1, payload: font },
     { headerPayload: font, extraChunks: [{ id: "source", kind: "font", mime: "font/woff2", data: fontBytes }] },
   ));
@@ -54,7 +54,7 @@ async function coldFontProject(fontBytes: Uint8Array) {
         return text;
       })),
   })];
-  files.set("assets/ColdFont.scenelayer.babasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "ColdFont",
+  files.set("assets/ColdFont.scenelayer.hasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "ColdFont",
     version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }));
   const scene = createDefaultScene();
   scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
@@ -111,14 +111,14 @@ async function previewSlotMaterialNames(page: Page): Promise<string[]> {
     .getByTestId("player-root");
   return root.evaluate(() => {
     const host = globalThis as unknown as {
-      __babylonslatePlayerTest?: {
+      __hapticPlayerTest?: {
         meshMaterialNames?: () => string[];
         visuals: () => Array<{ materialName: string | null }>;
       };
     };
-    const named = host.__babylonslatePlayerTest?.meshMaterialNames?.() ?? [];
+    const named = host.__hapticPlayerTest?.meshMaterialNames?.() ?? [];
     if (named.length > 0) return named;
-    return (host.__babylonslatePlayerTest?.visuals() ?? [])
+    return (host.__hapticPlayerTest?.visuals() ?? [])
       .map((visual) => visual.materialName)
       .filter((name): name is string => typeof name === "string");
   });
@@ -243,8 +243,8 @@ test.describe("P14 Preview Build", () => {
     expect(await page.evaluate((family) => [...document.fonts].some((face) => face.family.replace(/"/g, "") === family), COLD_FONT_FAMILY)).toBe(false);
     await clickPlayAndWaitForOverlay(page);
     await expectCustomFaceLaidOut(() => page.evaluate(() =>
-      (globalThis as unknown as { __babylonslatePlayTest?: { text2dLayouts: () => Text2DLayout[] } })
-        .__babylonslatePlayTest?.text2dLayouts() ?? []), reference.custom);
+      (globalThis as unknown as { __hapticPlayTest?: { text2dLayouts: () => Text2DLayout[] } })
+        .__hapticPlayTest?.text2dLayouts() ?? []), reference.custom);
     await page.getByTestId("play-overlay-close").click();
     // The Preview Build player is a fresh document, so its faces load cold as in a served export.
     await page.getByTestId("debug-menu").click();
@@ -252,8 +252,8 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("play-preview").click();
     const root = await waitForPreviewBuildBoot(page);
     await expectCustomFaceLaidOut(() => root.evaluate(() =>
-      (globalThis as unknown as { __babylonslatePlayerTest?: { text2dLayouts: () => Text2DLayout[] } })
-        .__babylonslatePlayerTest?.text2dLayouts() ?? []), reference.custom);
+      (globalThis as unknown as { __hapticPlayerTest?: { text2dLayouts: () => Text2DLayout[] } })
+        .__hapticPlayerTest?.text2dLayouts() ?? []), reference.custom);
     await page.getByTestId("preview-build-close").click();
   });
 
@@ -280,17 +280,17 @@ test.describe("P14 Preview Build", () => {
     await createContentBrowserAsset(page, "Scene", "LevelTwo");
     const guids = await page.evaluate(() => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           guidForPath: (path: string) => string | null;
           projectStartupSceneGuid: () => string;
         };
       };
       return {
         open:
-          host.__babylonslateTest?.guidForPath(
-            "assets/LevelTwo.scene.babasset",
+          host.__hapticTest?.guidForPath(
+            "assets/LevelTwo.scene.hasset",
           ) ?? "",
-        startup: host.__babylonslateTest?.projectStartupSceneGuid() ?? "",
+        startup: host.__hapticTest?.projectStartupSceneGuid() ?? "",
       };
     });
     expect(guids.open).not.toBe(guids.startup);

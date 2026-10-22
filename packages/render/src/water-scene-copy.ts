@@ -35,7 +35,7 @@ export const WATER_SCENE_COPY_SKY_DEPTH = 65000;
  * a copy alpha at or above this as sky. Real depths are clamped to the sentinel.
  */
 export const WATER_SCENE_COPY_SKY_THRESHOLD = 64000;
-export const WATER_SCENE_COPY_SHADER = "babylonSlateWaterSceneCopy";
+export const WATER_SCENE_COPY_SHADER = "hapticWaterSceneCopy";
 
 /**
  * One view's opaque scene copy, sampled by built-in water drawn in that view's

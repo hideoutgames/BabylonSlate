@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseGlbForBrowse, splitGlbJsonBin } from "@babylonslate/assets";
+import { parseGlbForBrowse, splitGlbJsonBin } from "@haptic/assets";
 import { loadKenneyMannequinGlb } from "./kenney-mannequin";
 
 describe("Kenney Mannequin GLB", () => {

@@ -45,7 +45,7 @@ for (const mode of ["Normal Play"] as const) {
   }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.babasset");
+    await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.hasset");
     let bindings = page.getByTestId("document-workspace-input-action");
     await bindings
       .getByRole("button", { name: "Listen", exact: true })
@@ -68,7 +68,7 @@ for (const mode of ["Normal Play"] as const) {
     await expect(
       page.getByTestId("content-browser-new-asset-dialog"),
     ).toHaveCount(0);
-    await openAssetFromBrowser(page, "assets/Fire.inputaction.babasset");
+    await openAssetFromBrowser(page, "assets/Fire.inputaction.hasset");
     bindings = page
       .getByTestId("document-workspace-input-action")
       .filter({ visible: true });
@@ -77,11 +77,11 @@ for (const mode of ["Normal Play"] as const) {
     await bindings.getByRole("button", { name: "Listen", exact: true }).click();
     await page.keyboard.press("f");
     const graph = inputGraph({
-      Jump: await guidForPath(page, "assets/Input/Jump.inputaction.babasset"),
-      Fire: await guidForPath(page, "assets/Fire.inputaction.babasset"),
+      Jump: await guidForPath(page, "assets/Input/Jump.inputaction.hasset"),
+      Fire: await guidForPath(page, "assets/Fire.inputaction.hasset"),
       Confirm: await guidForPath(
         page,
-        "assets/Input/Confirm.inputaction.babasset",
+        "assets/Input/Confirm.inputaction.hasset",
       ),
     });
     expect(
@@ -89,24 +89,24 @@ for (const mode of ["Normal Play"] as const) {
         async (next) =>
           (
             globalThis as unknown as {
-              __babylonslateTest: {
+              __hapticTest: {
                 setMainGraphContent: (
                   value: SerializedGraph,
                 ) => Promise<boolean>;
               };
             }
-          ).__babylonslateTest.setMainGraphContent(next),
+          ).__hapticTest.setMainGraphContent(next),
         graph,
       ),
     ).toBe(true);
     await saveAllIfEnabled(page);
     await page.reload();
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.babasset");
+    await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.hasset");
     await expect(page.getByTestId("input-control-binding-1")).toContainText(
       "H",
     );
-    await openAssetFromBrowser(page, "assets/Fire.inputaction.babasset");
+    await openAssetFromBrowser(page, "assets/Fire.inputaction.hasset");
     await expect(
       page
         .getByTestId("document-workspace-input-action")

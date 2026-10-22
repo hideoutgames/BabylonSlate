@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileGraph, type GraphNode, type NodeRegistry } from "@babylonslate/scripting";
+import { compileGraph, type GraphNode, type NodeRegistry } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 function node(registry: NodeRegistry, id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode {

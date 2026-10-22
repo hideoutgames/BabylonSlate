@@ -19,7 +19,7 @@ import {
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@babylonslate/assets";
+import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@haptic/assets";
 import { createSpriteQuad } from "./sprite-quad";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";

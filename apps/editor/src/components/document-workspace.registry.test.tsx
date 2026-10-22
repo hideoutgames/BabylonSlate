@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { AssetRegistry, projectContentRoot } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { DocumentWorkspace } from "./document-workspace";
 import type { OpenDocument } from "../services/document-service";
 
@@ -19,7 +19,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   activeDocumentId: state.tabs[0],
   openDocuments: state.documents ?? state.tabs.map((id) => ({
     id,
-    ref: { kind: "graph", path: `assets/${id}.class.babasset` },
+    ref: { kind: "graph", path: `assets/${id}.class.hasset` },
     content: { nodes: [], edges: [] },
     layout: null,
   })),
@@ -84,7 +84,7 @@ vi.mock("./document-lock-banner", () => ({ DocumentLockBanner: () => null }));
 /** Resave a Class with another parent, as a save or external change reindexes it. */
 async function reparent(registry: AssetRegistry, name: string, parentClass: string) {
   await registry.deleteAsset(name);
-  await registry.createAsset("project", `${name}.class.babasset`, {
+  await registry.createAsset("project", `${name}.class.hasset`, {
     guid: name,
     name,
     parentClass,
@@ -98,7 +98,7 @@ async function reparent(registry: AssetRegistry, name: string, parentClass: stri
 
 async function createRegistry() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("test.babproject");
+  await storage.openDocumentsProject("test.hproject");
   const registry = new AssetRegistry(storage);
   await registry.mountRoot(projectContentRoot());
   for (const [name, parentClass] of [
@@ -106,7 +106,7 @@ async function createRegistry() {
     ["first", "base"],
     ["second", "base"],
   ]) {
-    await registry.createAsset("project", `${name}.class.babasset`, {
+    await registry.createAsset("project", `${name}.class.hasset`, {
       guid: name,
       name,
       parentClass,
@@ -138,11 +138,11 @@ describe("workspace registry traversal", () => {
     state.tabs = ["definition", "sheet"];
     state.mountedIds = new Set(state.tabs);
     const sheet: OpenDocument = {
-      id: "sheet", ref: { kind: "data-tree", path: "assets/Weapons.datatree.babasset", label: "Weapons" },
+      id: "sheet", ref: { kind: "data-tree", path: "assets/Weapons.datatree.hasset", label: "Weapons" },
       content: { kind: "dataTree", defaultDefinitionGuid: null, entries: [] }, layout: null, dirty: true, background: true,
     };
     state.documents = [
-      { id: "definition", ref: { kind: "data-definition", path: "assets/Stats.datadefinition.babasset", label: "Stats" }, content: { kind: "dataDefinition", fields: [] }, layout: null, dirty: false },
+      { id: "definition", ref: { kind: "data-definition", path: "assets/Stats.datadefinition.hasset", label: "Stats" }, content: { kind: "dataDefinition", fields: [] }, layout: null, dirty: false },
       sheet,
     ];
     const view = render(<DocumentWorkspace />);

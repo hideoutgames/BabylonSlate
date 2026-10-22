@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASSET_TYPES } from "@babylonslate/core";
+import { ASSET_TYPES } from "@haptic/core";
 import { pinTypeForVariable } from "./member-pin-type";
 import { mergeEngineTypeSchemas, structInstanceDefault } from "./type-defaults";
 import { arrayOf, assetRef, classRef, enumRef } from "./types";

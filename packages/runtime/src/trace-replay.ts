@@ -1,5 +1,5 @@
-import type { TraceInputEvent, TracePayload } from "@babylonslate/debugger";
-import type { RawInputEvent } from "@babylonslate/input";
+import type { TraceInputEvent, TracePayload } from "@haptic/debugger";
+import type { RawInputEvent } from "@haptic/input";
 
 export function rawInputFromTraceEvents(
   events: readonly TraceInputEvent[] | undefined,

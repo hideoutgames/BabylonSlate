@@ -9,7 +9,7 @@ import {
   STRING,
   arrayOf,
   TRANSFORM,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { selfActorPin, subject } from "./self-pin";
 
 export const actorNodes: NodeDefinition[] = [

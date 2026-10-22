@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
 import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@babylonslate/core";
-import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@babylonslate/vfs";
-import { encodeAssetDocument, encodeBabasset, decodeBabasset } from "@babylonslate/assets";
+import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
+import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
+import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
@@ -15,8 +15,8 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@babylonslate/vfs")>();
+vi.mock("@haptic/vfs", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@haptic/vfs")>();
   return { ...mod, pickImportFiles: vi.fn(mod.pickImportFiles) };
 });
 
@@ -118,11 +118,11 @@ describe("ProjectService lifecycle", () => {
     let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
     const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
     await service.createEmptyProject("EncodeDrain", { kind: "2d" });
-    await storage.writeBinary("assets/test.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/test.hasset", await encodeHasset({
       header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "encode-drain", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
-    await service.registry!.reindexPath("assets/test.babasset");
+    await service.registry!.reindexPath("assets/test.hasset");
     service.textureEncodeQueue.enqueue({ assetGuid: "encode-drain", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     const lease = service.lockAuthoringWrites("Read-only baseline");
@@ -132,7 +132,7 @@ describe("ProjectService lifecycle", () => {
     expect(ready).toBe(false);
     finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
     expect(await lease.ready).toBe(true);
-    const saved = await decodeBabasset(await storage.readBinary("assets/test.babasset"));
+    const saved = await decodeHasset(await storage.readBinary("assets/test.hasset"));
     expect(saved.header.payload.compressionState).toBe("compressed");
     expect([...saved.chunks.values()].some(bytes => bytes.length === 3 && bytes[0] === 9)).toBe(true);
     lease.release();
@@ -144,11 +144,11 @@ describe("ProjectService lifecycle", () => {
     let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
     const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
     await service.createEmptyProject("EncodeClose", { kind: "2d" });
-    await storage.writeBinary("assets/test.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/test.hasset", await encodeHasset({
       header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "encode-close", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
-    await service.registry!.reindexPath("assets/test.babasset");
+    await service.registry!.reindexPath("assets/test.hasset");
     const write = storage.writeBinary.bind(storage);
     let resumeCommit!: () => void;
     const commitPaused = new Promise<void>(resolve => { resumeCommit = resolve; });
@@ -173,7 +173,7 @@ describe("ProjectService lifecycle", () => {
     await closing;
     expect(release).toHaveBeenCalled();
     await storage.openDocumentsProject("EncodeClose");
-    const saved = await decodeBabasset(await storage.readBinary("assets/test.babasset"));
+    const saved = await decodeHasset(await storage.readBinary("assets/test.hasset"));
     expect(saved.header.payload.compressionState).toBe("compressed");
   });
 
@@ -182,11 +182,11 @@ describe("ProjectService lifecycle", () => {
     let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
     const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
     await service.createEmptyProject("EncodeLate", { kind: "2d" });
-    await storage.writeBinary("assets/test.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/test.hasset", await encodeHasset({
       header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "encode-late", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
-    await service.registry!.reindexPath("assets/test.babasset");
+    await service.registry!.reindexPath("assets/test.hasset");
     service.textureEncodeQueue.enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     await vi.waitFor(() => expect(service.textureEncodingGuids.has("encode-late")).toBe(true));
@@ -217,7 +217,7 @@ describe("ProjectService lifecycle", () => {
     await storage.openDocumentsProject("ConcurrentRead");
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
-    const path = "assets/Racing.scene.babasset";
+    const path = "assets/Racing.scene.hasset";
     const bytes = (name: string) => encodeAssetDocument({ type: "Scene", name, guid: "racing", version: 4, payload: { name, actors: [] } });
     await storage.writeBinary(path, await bytes("Before"));
     await service.registry!.reindexPath(path);
@@ -246,7 +246,7 @@ describe("ProjectService lifecycle", () => {
     await storage.openDocumentsProject("GrowingRead");
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
-    const path = "assets/Growing.scene.babasset";
+    const path = "assets/Growing.scene.hasset";
     const before = { name: "Before", actors: [] };
     const after = { name: "After saving", actors: [], notes: "x".repeat(8192) };
     const bytes = (payload: Record<string, unknown>) => encodeAssetDocument({ type: "Scene", name: "Growing", guid: "growing", version: 4, payload });
@@ -289,7 +289,7 @@ describe("ProjectService lifecycle", () => {
     await storage.openDocumentsProject("FailedRead");
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
-    const path = "assets/Racing.scene.babasset";
+    const path = "assets/Racing.scene.hasset";
     await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Racing", guid: "racing", version: 4, payload: { actors: [] } }));
     await service.registry!.reindexPath(path);
     const read = storage.readBinaryRange.bind(storage);
@@ -317,7 +317,7 @@ describe("ProjectService lifecycle", () => {
     await storage.openDocumentsProject("CancelledTransport");
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
-    const path = "assets/Pending.scene.babasset";
+    const path = "assets/Pending.scene.hasset";
     await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Pending", guid: "pending", version: 4, payload: { actors: [] } }));
     await service.registry!.reindexPath(path);
     const port: ProjectStorage = storage;
@@ -352,7 +352,7 @@ describe("ProjectService lifecycle", () => {
     await storage.openDocumentsProject("IdleCatalog");
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
-    await storage.writeBinary("assets/unused.scene.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/unused.scene.hasset", await encodeAssetDocument({
       type: "Scene", name: "Unused", guid: "unused-scene", version: 4,
       payload: { name: "Unused", actors: [], notes: "x".repeat(256 * 1024) },
     }, { extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }] }));
@@ -360,7 +360,7 @@ describe("ProjectService lifecycle", () => {
     const fullReads = vi.spyOn(storage, "readBinary");
     await service.loadCurrentProject();
     expect(service.registry!.getByGuid("unused-scene")?.header.name).toBe("Unused");
-    expect(fullReads.mock.calls.filter(([path]) => path.endsWith(".babasset") || path.includes(".blobs/"))).toEqual([]);
+    expect(fullReads.mock.calls.filter(([path]) => path.endsWith(".hasset") || path.includes(".blobs/"))).toEqual([]);
     expect(storage.getReadMetrics().actualBytesRead - before).toBeLessThan(64 * 1024);
     expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
     service.dispose();
@@ -492,7 +492,7 @@ describe("project round-trip", () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
-    await storage.openDocumentsProject("RoundTrip.babproject");
+    await storage.openDocumentsProject("RoundTrip.hproject");
 
     const { document, layouts } = await service.loadCurrentProject();
     expect(document.metadata.name).toBeTruthy();
@@ -504,7 +504,7 @@ describe("project round-trip", () => {
     expect(exists).toBe(true);
   });
 
-  it("creates a project folder without a .babproject suffix", async () => {
+  it("creates a project folder without a .hproject suffix", async () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
@@ -561,14 +561,14 @@ describe("project round-trip", () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
-    const handle = await storage.openDocumentsProject("RenameMe.babproject");
+    const handle = await storage.openDocumentsProject("RenameMe.hproject");
     await service.loadCurrentProject();
     await service.closeProject();
 
     await service.renameListedProjectDisplayName(handle, "Pretty Name");
     const reopened = await service.openListedProject(handle);
     expect(reopened.document.metadata.name).toBe("Pretty Name");
-    expect(storage.getCurrentFolder()?.name).toBe("RenameMe.babproject");
+    expect(storage.getCurrentFolder()?.name).toBe("RenameMe.hproject");
   });
 
   it("persists the selected project badge through creation and reopening", async () => {
@@ -632,7 +632,7 @@ describe("project round-trip", () => {
     expect(created.document.settings.twoD).toEqual(
       (await source.loadCurrentProject()).document.settings.twoD,
     );
-    const asset = files.find((file) => file.path.endsWith(".babasset"))!;
+    const asset = files.find((file) => file.path.endsWith(".hasset"))!;
     expect(await storage.readBinary(asset.path)).toEqual(asset.data);
   });
 
@@ -676,7 +676,7 @@ describe("project round-trip", () => {
     const storage = new MemoryStorageAdapter("documents");
     if (!supportsDeleteProject) Object.defineProperty(storage, "deleteProject", { value: undefined });
     await storage.openDocumentsProject("Interrupted");
-    await storage.writeText(".babylonslate-creating", "Project creation in progress\n");
+    await storage.writeText(".haptic-creating", "Project creation in progress\n");
     await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Interrupted")));
     await storage.mkdir("assets", true);
     await storage.writeText("assets/PreviousTemplate.txt", "interrupted template content");
@@ -684,7 +684,7 @@ describe("project round-trip", () => {
     const service = new ProjectService(storage);
     const result = await service.createEmptyProject("Interrupted", { kind: "blank" });
     expect(result.document.metadata.name).toBe("Interrupted");
-    expect(await storage.exists(".babylonslate-creating")).toBe(false);
+    expect(await storage.exists(".haptic-creating")).toBe(false);
     expect(await storage.exists("assets/PreviousTemplate.txt")).toBe(false);
     expect((await service.listProjects()).map((project) => project.name)).toEqual(["Interrupted"]);
     await expect(service.createEmptyProject("Interrupted")).rejects.toThrow(/already exists/);
@@ -875,7 +875,7 @@ describe("texture encode diagnostics", () => {
     });
     // 2D Empty has no Kenney albedo Texture, so this test does not race scaffold encodes.
     await service.createEmptyProject("EncodeDiag", { kind: "2d" });
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-guid-1",
@@ -897,7 +897,7 @@ describe("texture encode diagnostics", () => {
         },
       ],
     });
-    await storage.writeBinary("assets/albedo.babasset", bytes);
+    await storage.writeBinary("assets/albedo.hasset", bytes);
     await service.loadCurrentProject();
     const lines: string[] = [];
     service.onDiagnostic((line) => lines.push(line));
@@ -928,7 +928,7 @@ describe("texture encode diagnostics", () => {
     const service = new ProjectService(storage);
     await service.createEmptyProject("Fallback", { kind: "2d" });
     for (const name of ["Stuck", "Wall"]) {
-      await storage.writeBinary(`assets/${name}.babasset`, await encodeBabasset({
+      await storage.writeBinary(`assets/${name}.hasset`, await encodeHasset({
         header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: name, type: "Texture", name, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { compressionState: "compressed", usage: "albedo" } },
         chunks: [
           { id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) },

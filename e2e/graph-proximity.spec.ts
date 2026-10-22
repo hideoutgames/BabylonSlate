@@ -3,7 +3,7 @@ import type { SerializedGraph } from "../packages/core/src/index.ts";
 import { openAssetFromBrowser, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
-const GRAPH_PATH = "assets/Mannequin.class.babasset";
+const GRAPH_PATH = "assets/Mannequin.class.hasset";
 
 async function center(locator: Locator): Promise<{ x: number; y: number }> {
   await expect(locator).toBeVisible();
@@ -16,11 +16,11 @@ async function readSavedGraph(page: Page): Promise<SerializedGraph> {
   return page.evaluate(async (path) => {
     const bytes = await (
       globalThis as unknown as {
-        __babylonslateTest: {
+        __hapticTest: {
           readAssetChunk: (path: string, chunk: string) => Promise<Uint8Array>;
         };
       }
-    ).__babylonslateTest.readAssetChunk(path, "document");
+    ).__hapticTest.readAssetChunk(path, "document");
     return JSON.parse(new TextDecoder().decode(bytes)) as SerializedGraph;
   }, GRAPH_PATH);
 }
@@ -49,11 +49,11 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   const installed = await page.evaluate(async (next) => {
     return (
       globalThis as unknown as {
-        __babylonslateTest: {
+        __hapticTest: {
           setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         };
       }
-    ).__babylonslateTest.setMainGraphContent(next);
+    ).__hapticTest.setMainGraphContent(next);
   }, graph);
   expect(installed).toBe(true);
   await openAssetFromBrowser(page, GRAPH_PATH);

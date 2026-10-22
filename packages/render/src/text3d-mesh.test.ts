@@ -1,7 +1,7 @@
 import { Mesh, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import type { IFontData } from "@babylonjs/core/Meshes/Builders/textBuilder";
 import { afterEach, describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createText3DComponent } from "@babylonslate/core";
+import { createActor, createDefaultScene, createText3DComponent } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { bundledAsciiTypeFace } from "./default-typeface";
 import {

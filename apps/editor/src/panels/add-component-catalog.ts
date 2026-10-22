@@ -1,8 +1,8 @@
-import { UI_CONTROL_2D_CLASS_IDS, OVERLAY_LAYOUT_CLASSES } from "@babylonslate/core";
-import type { PhysicsWorldKind, SerializedComponent, SerializedScene, ViewportMode } from "@babylonslate/core";
-import { defaultComponentAuthoringProperties } from "@babylonslate/runtime/component-authoring";
-import { humanizePropertyLabel, walkAncestry } from "@babylonslate/editor-kit";
-import { isLockedEngineClassId, isSceneLayerAllowedComponent, isSceneLayerExclusiveComponent } from "@babylonslate/object-model";
+import { UI_CONTROL_2D_CLASS_IDS, OVERLAY_LAYOUT_CLASSES } from "@haptic/core";
+import type { PhysicsWorldKind, SerializedComponent, SerializedScene, ViewportMode } from "@haptic/core";
+import { defaultComponentAuthoringProperties } from "@haptic/runtime/component-authoring";
+import { humanizePropertyLabel, walkAncestry } from "@haptic/editor-kit";
+import { isLockedEngineClassId, isSceneLayerAllowedComponent, isSceneLayerExclusiveComponent } from "@haptic/object-model";
 import {
   classIdFromClassAsset,
   classParentLookup,

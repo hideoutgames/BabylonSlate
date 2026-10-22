@@ -13,10 +13,10 @@ import type {
   SessionPauseReason,
   SimulationCaptureRequest,
   SimulationQuiesceRequest,
-} from "@babylonslate/bridge";
-import type { AnimClipCatalogEntry, AnimGraphDocument } from "@babylonslate/anim-graph";
-import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
-import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
+} from "@haptic/bridge";
+import type { AnimClipCatalogEntry, AnimGraphDocument } from "@haptic/anim-graph";
+import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@haptic/assets";
+import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviour-tree";
 import type {
   CollisionTriangleMesh,
   FocusNavigationSettings,
@@ -37,12 +37,12 @@ import type {
   SerializedSceneLayer,
   Transform,
   WaterDefinition,
-} from "@babylonslate/core";
-import type { RegisteredCommand, TraceBtState, TraceFrame, TracePayload, UserCommandDef } from "@babylonslate/debugger";
-import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@babylonslate/input";
-import type { NavObstacleKind, NavPoint } from "@babylonslate/navigation";
-import type { Actor, BObject, DebugInspectSnapshot, SceneLayer, World } from "@babylonslate/object-model";
-import type { PhysicsWorldKind } from "@babylonslate/physics";
+} from "@haptic/core";
+import type { RegisteredCommand, TraceBtState, TraceFrame, TracePayload, UserCommandDef } from "@haptic/debugger";
+import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@haptic/input";
+import type { NavObstacleKind, NavPoint } from "@haptic/navigation";
+import type { Actor, BObject, DebugInspectSnapshot, SceneLayer, World } from "@haptic/object-model";
+import type { PhysicsWorldKind } from "@haptic/physics";
 import type { RuntimeDiagnostic, SessionDiagnosticAggregator } from "./diagnostics";
 import type { LogRingBuffer, LogSeverity } from "./log-ring";
 import type { PhysicsWorldSync } from "./physics-sync";
@@ -61,11 +61,11 @@ export interface RuntimeDriverOptions {
   sessionMode?: GameSessionMode;
   /** Catalog identity only; registering an available class never reads its source. */
   classAssetGuids?: Readonly<Record<string, string>>;
-  consoleCommands?: ReadonlyArray<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
+  consoleCommands?: ReadonlyArray<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   /** JSON data and shared Structures snapshotted at session startup. */
-  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query; omitted means an empty catalog. */
-  assetCatalog?: readonly import("@babylonslate/core").RuntimeAssetCatalogEntry[];
+  assetCatalog?: readonly import("@haptic/core").RuntimeAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;
@@ -89,7 +89,7 @@ export interface RuntimeDriverOptions {
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`); omitted: every collider is Custom. */
-  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
+  collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
   havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */

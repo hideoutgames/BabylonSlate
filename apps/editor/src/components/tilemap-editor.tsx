@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
 import {
   BrushIcon,
   ChevronDownIcon,
@@ -17,9 +17,9 @@ import {
   SquareIcon,
   StampIcon,
 } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { Separator } from "@haptic/ui/components/separator";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,12 +29,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import {
   Empty,
   EmptyContent,
@@ -42,7 +42,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   AssetPicker,
   NamedListEditor,
@@ -57,7 +57,7 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   addTilemapLayer,
   addTilemapTileset,
@@ -89,7 +89,7 @@ import {
   type TilemapLayer,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   useDocumentActions,
   useOpenDocument,

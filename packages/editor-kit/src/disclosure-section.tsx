@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
+import { Button } from "@haptic/ui/components/button";
+import { FieldLegend, FieldSet } from "@haptic/ui/components/field";
 
 export interface DisclosureSectionProps {
   title: string;

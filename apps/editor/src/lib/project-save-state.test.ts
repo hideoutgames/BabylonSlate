@@ -1,4 +1,4 @@
-import { createEmptyProject } from "@babylonslate/core";
+import { createEmptyProject } from "@haptic/core";
 import { describe, expect, it } from "vitest";
 import { ProjectSaveState } from "./project-save-state";
 
@@ -38,7 +38,7 @@ describe("project settings save ownership", () => {
     const next = createEmptyProject("Next");
     state.reset(next);
     state.complete(old);
-    expect(state.isDirty({ ...next, scenes: ["assets/new.scene.babasset"] })).toBe(false);
+    expect(state.isDirty({ ...next, scenes: ["assets/new.scene.hasset"] })).toBe(false);
     state.reset(null);
     state.complete(old);
     expect(state.isDirty(null)).toBe(false);

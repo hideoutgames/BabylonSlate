@@ -1,4 +1,4 @@
-import { areaEmissionChunkId, AREA_EMISSION_CHUNK_KIND, type IndexedAsset } from "@babylonslate/assets";
+import { areaEmissionChunkId, AREA_EMISSION_CHUNK_KIND, type IndexedAsset } from "@haptic/assets";
 import { describe, expect, it, vi } from "vitest";
 import { areaEmissionStatusDescription, prepareReferencedAreaEmissions } from "./area-emission-preparation";
 
@@ -6,7 +6,7 @@ const sha = (fill: string) => fill.repeat(64);
 function texture(guid: string, source: string, prepared = false): IndexedAsset {
   const chunks = [{ id: "pixels", kind: "pixels", sha256: sha(source) }];
   if (prepared) chunks.push({ id: areaEmissionChunkId(sha(source)), kind: AREA_EMISSION_CHUNK_KIND, sha256: sha("f") });
-  return { rootId: "project", path: `assets/${guid}.babasset`, header: { guid, type: "Texture", name: guid, chunks } } as unknown as IndexedAsset;
+  return { rootId: "project", path: `assets/${guid}.hasset`, header: { guid, type: "Texture", name: guid, chunks } } as unknown as IndexedAsset;
 }
 
 describe("automatic area emission preparation", () => {

@@ -45,8 +45,8 @@ import type {
   MaterialOperand,
   MaterialOperation,
   MaterialValueType,
-} from "@babylonslate/shader-graph";
-import { componentCount, materialNodeDefinition } from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
+import { componentCount, materialNodeDefinition } from "@haptic/shader-graph";
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
@@ -72,7 +72,7 @@ import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geom
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
+import type { MaterialParameterValue } from "@haptic/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { TextMaterialBlock } from "./text-material-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";

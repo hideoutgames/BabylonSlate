@@ -4,7 +4,7 @@ import type {
 } from "../apps/editor/src/testing/render-target-quality-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 type ProofWindow = {
@@ -66,9 +66,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
   });
 }
 
-// Opt-in measurement (BL_RENDER_TARGET_COST=1): capture cost per frame on this device.
+// Opt-in measurement (HAPTIC_RENDER_TARGET_COST=1): capture cost per frame on this device.
 test("capture cost per frame for Fast and Full Quality", async ({ page }, testInfo) => {
-  test.skip(process.env.BL_RENDER_TARGET_COST !== "1", "Opt-in measurement.");
+  test.skip(process.env.HAPTIC_RENDER_TARGET_COST !== "1", "Opt-in measurement.");
   test.setTimeout(600_000);
   await page.goto("/?test=1&renderTargetQualityProof=1");
   await page.waitForFunction(() => "__renderTargetQualityCost" in window);

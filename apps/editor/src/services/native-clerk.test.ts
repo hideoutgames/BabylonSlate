@@ -3,7 +3,7 @@ import {
   MemorySecretStore,
   type NativeHttpRequest,
   type NativeHttpResponse,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import { createNativeClerkClient, NativeClerkClient } from "./native-clerk";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -64,7 +64,7 @@ describe("NativeClerkClient", () => {
     const http = vi.fn<(request: NativeHttpRequest) => Promise<NativeHttpResponse>>(
       async () => response(client, "desktop-rotated"),
     );
-    vi.stubGlobal("babylonslate", {
+    vi.stubGlobal("haptic", {
       userData: {
         readSettings: async () => null,
         writeSettings: async () => {},

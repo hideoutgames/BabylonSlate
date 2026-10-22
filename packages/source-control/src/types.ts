@@ -1,4 +1,4 @@
-import type { Result } from "@babylonslate/core";
+import type { Result } from "@haptic/core";
 
 export const LFS_JSON = "application/vnd.git-lfs+json";
 

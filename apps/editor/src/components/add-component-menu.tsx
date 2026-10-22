@@ -3,7 +3,7 @@ import {
   CatalogMenu,
   TypeVisualIcon,
   resolveTypeVisual,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   addableComponentsForHost,
   type AddComponentItem,

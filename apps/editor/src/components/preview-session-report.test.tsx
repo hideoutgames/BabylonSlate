@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { SessionReportEntry } from "@babylonslate/runtime";
+import type { SessionReportEntry } from "@haptic/runtime";
 import type {
   SessionReportAsset,
   SessionReportLocationSources,
@@ -27,13 +27,13 @@ function entry(overrides: Partial<SessionReportEntry>): SessionReportEntry {
 
 const HERO: SessionReportAsset = {
   guid: "hero-guid",
-  path: "assets/Hero.class.babasset",
+  path: "assets/Hero.class.hasset",
   name: "Hero",
   type: "Class",
 };
 const ENEMY_AI: SessionReportAsset = {
   guid: "enemy-ai-guid",
-  path: "assets/EnemyAI.bt.babasset",
+  path: "assets/EnemyAI.bt.hasset",
   name: "Enemy AI",
   type: "BehaviourTree",
 };

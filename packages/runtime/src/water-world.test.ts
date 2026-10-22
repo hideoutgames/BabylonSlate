@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
-import { createDefaultWaterDefinition, eulerDegreesToQuaternion, normalizeWaterBody } from "@babylonslate/core";
+import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
+import { createDefaultWaterDefinition, eulerDegreesToQuaternion, normalizeWaterBody } from "@haptic/core";
 import { composeActorWorldTransformsInto } from "./actor-world-transform";
 import { WaterWorld } from "./water-world";
 
 // Pass-through spies: count how often the worker normalizes water components and composes actor poses.
-vi.mock("@babylonslate/core", async (importOriginal) => {
-  const core = await importOriginal<typeof import("@babylonslate/core")>();
+vi.mock("@haptic/core", async (importOriginal) => {
+  const core = await importOriginal<typeof import("@haptic/core")>();
   return { ...core, normalizeWaterBody: vi.fn(core.normalizeWaterBody) };
 });
 vi.mock("./actor-world-transform", async (importOriginal) => {

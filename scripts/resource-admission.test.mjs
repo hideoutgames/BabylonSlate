@@ -33,7 +33,7 @@ async function fixture(t) {
   );
   return {
     directory,
-    env: { LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: configPath },
+    env: { LOCALAPPDATA: directory, HAPTIC_LOCAL_RESOURCE_CONFIG: configPath },
     pollMs: 5,
     freeMemory: () => 16 * 1024 ** 3,
     memoryLimit: () => 16 * 1024 ** 3,
@@ -65,11 +65,11 @@ test("application builds fit a six-GiB host budget while retaining headroom", as
 
 test("fast browser runs queue when overlapping work would exceed the memory budget", async (t) => {
   const options = await fixture(t);
-  const fast = workloadFor("browser", { BL_TEST_PROFILE: "fast" });
+  const fast = workloadFor("browser", { HAPTIC_TEST_PROFILE: "fast" });
   assert.deepEqual(fast, { workers: 2, browsers: 1, memoryGiB: 4 });
   assert.equal(workloadFor("dom", {}).workers, 1);
   assert.throws(
-    () => workloadFor("dom", { BL_TEST_PROFILE: "unbounded" }),
+    () => workloadFor("dom", { HAPTIC_TEST_PROFILE: "unbounded" }),
     /profile/i,
   );
   const first = await acquireResources({ ...small, memoryGiB: 3 }, options);
@@ -267,7 +267,7 @@ test("machine low-memory settings serialize roots including lightweight work", a
       maxBypasses: 3,
     }),
   );
-  options.env = { ...options.env, BL_LOCAL_RESOURCE_CONFIG: config };
+  options.env = { ...options.env, HAPTIC_LOCAL_RESOURCE_CONFIG: config };
   const first = await acquireResources(workloadFor("dom", {}), options);
   const abort = new AbortController();
   let reportQueued;
@@ -345,7 +345,7 @@ for (const scenario of [
       config,
       JSON.stringify({ version: 1, ...scenario.initial }),
     );
-    options.env = { ...options.env, BL_LOCAL_RESOURCE_CONFIG: config };
+    options.env = { ...options.env, HAPTIC_LOCAL_RESOURCE_CONFIG: config };
     options.freeMemory = () => scenario.freeGiB * 1024 ** 3;
     const first = scenario.first
       ? await acquireResources(workloadFor(scenario.first, {}), options)
@@ -611,7 +611,7 @@ test("native Windows state is shared across shell temporary directories", () => 
 test("three independent low-memory roots serialize light and heavy work", async (t) => {
   const options = await fixture(t);
   await writeFile(
-    options.env.BL_LOCAL_RESOURCE_CONFIG,
+    options.env.HAPTIC_LOCAL_RESOURCE_CONFIG,
     JSON.stringify({ version: 1, profile: "low-memory" }),
   );
   const eventsPath = join(options.directory, "events.jsonl");

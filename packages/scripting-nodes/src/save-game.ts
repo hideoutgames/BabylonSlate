@@ -1,7 +1,7 @@
 import {
   arrayOf, actorRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
   pin, pinTypeForMember, structRef, type NodeDefinition, type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 /** Stable field ids are authored in nodes; display names may change freely. */

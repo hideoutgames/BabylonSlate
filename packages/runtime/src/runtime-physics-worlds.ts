@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   findCollisionPreset,
   normalizeWaterBlendDistance,
@@ -9,9 +9,9 @@ import {
   type SerializedActor,
   type SerializedScene,
   type WaterDefinition,
-} from "@babylonslate/core";
-import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
-import type { Actor, World } from "@babylonslate/object-model";
+} from "@haptic/core";
+import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@haptic/assets";
+import type { Actor, World } from "@haptic/object-model";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
@@ -20,7 +20,7 @@ import {
   type PhysicsBackend,
   type PhysicsWorldKind,
   type Vec3,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
 import { PhysicsWorldSync } from "./physics-sync";

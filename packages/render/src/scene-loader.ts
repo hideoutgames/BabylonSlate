@@ -1,7 +1,7 @@
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial, type Matrix, type TransformNode } from "@babylonjs/core";
-import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
-import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties, resolveOverlayLayout } from "@babylonslate/core";
+import { normalizeWaterBody, waterKindForClass } from "@haptic/core";
+import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import { createWaterMesh } from "./water-mesh";
 import { createSplineMesh } from "./spline-mesh";
@@ -9,15 +9,15 @@ import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { bindEditorCable, configureCableMesh, createCableMesh, findEditorCableMesh, hasEditorCableMeshes, pruneEditorCables, updateCablePreview } from "./cable-mesh";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
-import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
+import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
 import { sceneShadowController } from "./shadow-controller";
 import { createJoystick2DMesh } from "./joystick2d-mesh";
 import { createUIControl2DMesh } from "./ui-controls2d-mesh";
-import { isUIControl2DClass, UI_CONTROL_2D_CLASS_IDS } from "@babylonslate/core";
+import { isUIControl2DClass, UI_CONTROL_2D_CLASS_IDS } from "@haptic/core";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { shareHelperProgram } from "./helper-program";
-import { supportsOverlayVisualStyle } from "@babylonslate/core";
+import { supportsOverlayVisualStyle } from "@haptic/core";
 import {
   identitySerializedTransform,
   isSceneLayerAnchorActor,
@@ -33,7 +33,7 @@ import {
   parseCableProperties,
   SKYBOX_FACE_KEYS,
   SPRING_ARM_COMPONENT_CLASS_ID,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { createFoliageMesh, foliagePropertiesFingerprint, foliageSourceFingerprint } from "./foliage-mesh";
@@ -42,8 +42,8 @@ import {
   meshCollisionFingerprint,
   parseMeshCollisionMode,
   resolveMeshCollisions,
-} from "@babylonslate/assets";
-import type { ColliderShape } from "@babylonslate/physics";
+} from "@haptic/assets";
+import type { ColliderShape } from "@haptic/physics";
 import {
   createOverlayTextureQuad,
   createOverlayUnlitMaterial,
@@ -86,7 +86,7 @@ import {
   NAV_BLOCKER_VOLUME_COLOR,
   type EditorVolumeKind,
 } from "./editor-volume";
-import { parseColliderProperties } from "@babylonslate/physics";
+import { parseColliderProperties } from "@haptic/physics";
 import { createText3DMesh } from "./text3d-mesh";
 import { attachmentParentFor, createEditorSpringArmMesh } from "./spring-arm";
 import { createText2DMesh, refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";

@@ -1,1 +1,1 @@
-export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "@babylonslate/exporter";
+export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "@haptic/exporter";

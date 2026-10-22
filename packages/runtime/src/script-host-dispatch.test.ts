@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { InfiniteLoopError } from "@babylonslate/debugger";
-import { Actor, ActorComponent, InterfaceRegistry, type TickContext } from "@babylonslate/object-model";
+import { InfiniteLoopError } from "@haptic/debugger";
+import { Actor, ActorComponent, InterfaceRegistry, type TickContext } from "@haptic/object-model";
 import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
 
 function services(extras: Partial<ScriptHostServices> = {}): ScriptHostServices {

@@ -3,7 +3,7 @@ import {
   type NodeDefinition,
   EXEC,
   assetRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const SCENE_ASSET = assetRef("Scene");
 

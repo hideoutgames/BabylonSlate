@@ -6,8 +6,8 @@ import {
   openTestProject,
 } from "./open-test-project";
 
-const SCENE_PATH = "assets/main.scene.babasset";
-const CLASS_PATH = "assets/Mannequin.class.babasset";
+const SCENE_PATH = "assets/main.scene.hasset";
+const CLASS_PATH = "assets/Mannequin.class.hasset";
 
 async function closeSettings(page: Page): Promise<void> {
   await page
@@ -34,9 +34,9 @@ async function enableSourceControl(page: Page): Promise<void> {
     .poll(async () =>
       page.evaluate(() => {
         const host = globalThis as {
-          __babylonslateSourceControl?: { enabled: boolean };
+          __hapticSourceControl?: { enabled: boolean };
         };
-        return host.__babylonslateSourceControl?.enabled === true;
+        return host.__hapticSourceControl?.enabled === true;
       }),
     )
     .toBe(true);
@@ -67,18 +67,18 @@ async function ensureLocksPanel(page: Page): Promise<void> {
 function classReadOnly(page: Page): Promise<boolean | null> {
   return page.evaluate((path) => {
     const host = globalThis as {
-      __babylonslateSourceControl?: { isDocumentReadOnly: (path: string) => boolean };
+      __hapticSourceControl?: { isDocumentReadOnly: (path: string) => boolean };
     };
-    return host.__babylonslateSourceControl?.isDocumentReadOnly(path) ?? null;
+    return host.__hapticSourceControl?.isDocumentReadOnly(path) ?? null;
   }, CLASS_PATH);
 }
 
 function dirtyKinds(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const host = globalThis as {
-      __babylonslateTest?: { dirtyDocuments: () => { kind: string }[] };
+      __hapticTest?: { dirtyDocuments: () => { kind: string }[] };
     };
-    return host.__babylonslateTest?.dirtyDocuments().map((doc) => doc.kind) ?? [];
+    return host.__hapticTest?.dirtyDocuments().map((doc) => doc.kind) ?? [];
   });
 }
 
@@ -98,13 +98,13 @@ test.describe("P15 source-control locking", () => {
 
     const nudged = await page.evaluate(async () => {
       const host = globalThis as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           nudgeActiveSceneActor: () => Promise<boolean>;
           cancelDebouncedSave: () => void;
         };
       };
-      const ok = (await host.__babylonslateTest?.nudgeActiveSceneActor()) ?? false;
-      host.__babylonslateTest?.cancelDebouncedSave();
+      const ok = (await host.__hapticTest?.nudgeActiveSceneActor()) ?? false;
+      host.__hapticTest?.cancelDebouncedSave();
       return ok;
     });
     expect(nudged).toBe(true);
@@ -123,15 +123,15 @@ test.describe("P15 source-control locking", () => {
 
     await page.evaluate(async () => {
       const host = globalThis as {
-        __babylonslateSourceControl?: {
+        __hapticSourceControl?: {
           fakeProvider: {
             addTheirs: (path: string, ownerName: string) => unknown;
           } | null;
           refresh: () => Promise<void>;
         };
       };
-      const sc = host.__babylonslateSourceControl;
-      sc?.fakeProvider?.addTheirs("assets/Mannequin.class.babasset", "Teammate");
+      const sc = host.__hapticSourceControl;
+      sc?.fakeProvider?.addTheirs("assets/Mannequin.class.hasset", "Teammate");
       await sc?.refresh();
     });
 
@@ -167,15 +167,15 @@ test.describe("P15 source-control locking", () => {
 
     await page.evaluate(async (path) => {
       const host = globalThis as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           touchAssetOnDisk: (path: string) => Promise<void>;
           runForegroundRescan: () => Promise<void>;
           cancelDebouncedSave: () => void;
         };
       };
-      host.__babylonslateTest?.cancelDebouncedSave();
-      await host.__babylonslateTest?.touchAssetOnDisk(path);
-      await host.__babylonslateTest?.runForegroundRescan();
+      host.__hapticTest?.cancelDebouncedSave();
+      await host.__hapticTest?.touchAssetOnDisk(path);
+      await host.__hapticTest?.runForegroundRescan();
     }, SCENE_PATH);
 
     await expect(page.getByTestId("external-change-dirty-disk")).toBeVisible();

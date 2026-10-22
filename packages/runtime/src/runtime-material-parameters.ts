@@ -3,12 +3,12 @@ import {
   normalizeMaterialParameterOverrides,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   MaterialObject,
   PostProcessMaterialObject,
   type MaterialInstanceObject,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 
 type Definition = MaterialParameterCatalog[string];
 type State = {

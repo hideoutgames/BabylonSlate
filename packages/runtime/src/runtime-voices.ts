@@ -1,6 +1,6 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createSeededRng, type Rng } from "@babylonslate/core";
-import type { TraceAudioState, TraceVoice } from "@babylonslate/debugger";
+import type { CommandMessage } from "@haptic/bridge";
+import { createSeededRng, type Rng } from "@haptic/core";
+import type { TraceAudioState, TraceVoice } from "@haptic/debugger";
 
 type LiveVoice = Omit<TraceVoice, "elapsedSeconds"> & { startedAt: number };
 type PlaySound = Extract<CommandMessage, { type: "playSound" }>;

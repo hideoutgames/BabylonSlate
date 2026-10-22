@@ -12,7 +12,7 @@ import {
   structRef,
   enumRef,
   isAssignable,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import {
   jsIdent,
   localVariableIdent,

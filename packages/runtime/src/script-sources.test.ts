@@ -14,7 +14,7 @@ describe("owned compiled script sources", () => {
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
       onCommand: (command) => { if (command.type === "diagnostic" && command.message === "actual-body") failures.push(command); } });
     const source: CompiledScript = { ...script("throwing"), source: [
-      "//# sourceURL=babylonslate:///class-a.js",
+      "//# sourceURL=haptic:///class-a.js",
       "export function tick(ctx) {",
       "  const marker = 1;",
       '  throw new Error("actual-body");',
@@ -44,7 +44,7 @@ describe("owned compiled script sources", () => {
       anchors: [{ assetGuid: "animation-owner", graphId: "rule-graph", nodeId: "rule-node", line: 3, column: 1 }] };
     const diagnostic = (classId: string) => {
       const error = new Error("module failure");
-      error.stack = `Error: module failure\n    at tick (babylonslate:///animation-owner~${classId}.js:6:1)`;
+      error.stack = `Error: module failure\n    at tick (haptic:///animation-owner~${classId}.js:6:1)`;
       return runtime.reportError(error);
     };
     try {

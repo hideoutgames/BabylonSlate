@@ -5,9 +5,9 @@ import {
   encodeProjectZip,
   loadTemplateFiles,
   writeProjectTree,
-} from "@babylonslate/assets";
-import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 
 async function folderWithTemplates() {
@@ -61,7 +61,7 @@ describe("Create Project from a template", () => {
       payload: { name: "Level 1", meshes: [] },
     });
     await templates.writeBinary(
-      "Platformer/assets/level1.scene.babasset",
+      "Platformer/assets/level1.scene.hasset",
       sceneBytes,
     );
 
@@ -73,9 +73,9 @@ describe("Create Project from a template", () => {
       name: "FromTemplate",
     });
 
-    expect(document.scenes).toEqual(["assets/level1.scene.babasset"]);
+    expect(document.scenes).toEqual(["assets/level1.scene.hasset"]);
     expect(
-      await service.loadDocument("scene", "assets/level1.scene.babasset"),
+      await service.loadDocument("scene", "assets/level1.scene.hasset"),
     ).toMatchObject({ name: "Level 1", actors: [], viewportMode: "3d" });
   });
 });

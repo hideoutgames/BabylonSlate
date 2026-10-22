@@ -1,6 +1,6 @@
-import type { DiagnosticOperationRequest, DiagnosticOperationResult } from "@babylonslate/bridge";
-import type { PerformanceIdentity } from "@babylonslate/debugger";
-import type { EngineHandle, RenderFrameReport } from "@babylonslate/render";
+import type { DiagnosticOperationRequest, DiagnosticOperationResult } from "@haptic/bridge";
+import type { PerformanceIdentity } from "@haptic/debugger";
+import type { EngineHandle, RenderFrameReport } from "@haptic/render";
 
 /** These ports exist only in an editor-hosted, debugger-enabled Preview. */
 export type PlayerPreviewDiagnosticPorts = {

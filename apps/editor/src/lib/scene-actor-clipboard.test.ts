@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, eulerDegreesToQuaternion, identitySerializedTransform } from "@babylonslate/core";
+import { createActor, createDefaultScene, eulerDegreesToQuaternion, identitySerializedTransform } from "@haptic/core";
 import { copySceneActors, pasteSceneActors } from "./scene-actor-clipboard";
 import { EditorSessionState } from "./editor-session-state";
 

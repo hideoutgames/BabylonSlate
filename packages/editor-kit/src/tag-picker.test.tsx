@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTag, type TagContainer, type TagDefinition, type TagRegistry } from "@babylonslate/core";
+import { createTag, type TagContainer, type TagDefinition, type TagRegistry } from "@haptic/core";
 import { TagPicker, TagProvider } from "./tag-picker";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 

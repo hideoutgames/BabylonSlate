@@ -5,8 +5,8 @@ import {
   pinTypeForVariable,
   type GraphPin,
   type PinType,
-} from "@babylonslate/scripting";
-import { declaredValueUnit, mapDefaultLiteral } from "@babylonslate/core";
+} from "@haptic/scripting";
+import { declaredValueUnit, mapDefaultLiteral } from "@haptic/core";
 import { selfPin, subject } from "./self-pin";
 
 export {
@@ -18,7 +18,7 @@ export {
   isStructOrEnumTypeId,
   normalizeVariableContainer,
   variableTypeFromPinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export type MemberPinRow = {
   name?: string;

@@ -1,5 +1,5 @@
-import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
-import { normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import type { GraphClassMember, SerializedGraph } from "@haptic/core";
+import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 
 export const ANIM_GRAPH_SCHEMA_VERSION = 2 as const;
 

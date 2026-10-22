@@ -27,17 +27,17 @@ test.describe("P2 acceptance proofs", () => {
     await expect(page.getByTestId("importing-count")).toBeVisible();
 
     await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
+      page.locator('[data-asset-path="assets/albedo.hasset"]'),
     ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("importing-overlay")).toHaveCount(0);
     await expect(
-      page.locator('[data-asset-path="assets/hero.babasset"]'),
+      page.locator('[data-asset-path="assets/hero.hasset"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/hero_HeroMat.babasset"]'),
+      page.locator('[data-asset-path="assets/hero_HeroMat.hasset"]'),
     ).toBeVisible();
 
-    await openAssetFromBrowser(page, "assets/hero.babasset");
+    await openAssetFromBrowser(page, "assets/hero.hasset");
     await expect(page.getByTestId("model-preview")).toBeVisible();
     await expect(page.getByTestId("model-colliders-panel")).toBeVisible();
     await expect(page.getByTestId("model-show-collision")).toBeVisible();
@@ -46,14 +46,14 @@ test.describe("P2 acceptance proofs", () => {
     await expect(page.getByTestId("property-materialCount")).toHaveCount(0);
 
     await openContentBrowser(page);
-    const albedo = page.locator('[data-asset-path="assets/albedo.babasset"]');
+    const albedo = page.locator('[data-asset-path="assets/albedo.hasset"]');
     await expect(async () => {
       await expect(albedo.getByText("Encoding")).toHaveCount(0);
       await expect(albedo.getByText("Compress pending")).toHaveCount(0);
       const readable = await page.evaluate(async () => {
         const api = (
           globalThis as {
-            __babylonslateTest?: {
+            __hapticTest?: {
               textureEncodeState?: (path: string) => {
                 compressionState: string | null;
                 encodeError: string | null;
@@ -65,8 +65,8 @@ test.describe("P2 acceptance proofs", () => {
               ) => Promise<Uint8Array | null>;
             };
           }
-        ).__babylonslateTest;
-        const pathName = "assets/albedo.babasset";
+        ).__hapticTest;
+        const pathName = "assets/albedo.hasset";
         const state = api?.textureEncodeState?.(pathName);
         if (!state?.hasPixels) return false;
         if (
@@ -105,10 +105,10 @@ test.describe("P2 acceptance proofs", () => {
       .click();
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
+      page.locator('[data-asset-path="assets/albedo.hasset"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/hero.babasset"]'),
+      page.locator('[data-asset-path="assets/hero.hasset"]'),
     ).toBeVisible();
   });
 });

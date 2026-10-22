@@ -1,6 +1,6 @@
-import type { SessionReportEntry } from "@babylonslate/runtime";
-import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@babylonslate/debugger";
-import type { PreviewDiagnosticsMessage } from "@babylonslate/exporter";
+import type { SessionReportEntry } from "@haptic/runtime";
+import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@haptic/debugger";
+import type { PreviewDiagnosticsMessage } from "@haptic/exporter";
 
 export function sessionEntriesFromPreviewDiagnostics(
   diagnostics: PreviewDiagnosticsMessage["diagnostics"],

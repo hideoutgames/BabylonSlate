@@ -8,7 +8,7 @@ import {
   overlayPanelDestFromScale,
   parseOverlayPanelProperties,
   type OverlayPanelProperties,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
   createOverlayUnlitMaterial,

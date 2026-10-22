@@ -3,7 +3,7 @@ import {
   actorRef, objectRef, enumRef, defaultJsValue,
   ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID,
   type NodeDefinition, type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const curve = enumRef(ENGINE_EASING_CURVE_ENUM_ID);
 const space = enumRef(ENGINE_TWEEN_SPACE_ENUM_ID);

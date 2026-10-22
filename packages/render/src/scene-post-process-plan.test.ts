@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { prepareScenePostProcessPlan } from "./scene-post-process-plan";
 

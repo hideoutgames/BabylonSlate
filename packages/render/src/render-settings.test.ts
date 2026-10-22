@@ -5,7 +5,7 @@ import {
 } from "@babylonjs/core";
 import {
   DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality,
   sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,

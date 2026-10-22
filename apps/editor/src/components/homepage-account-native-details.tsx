@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CircleUserRoundIcon, LogOutIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import type { NativeHomepageAccount } from "./homepage-account-context";
 
 export function NativeAccountDetails({

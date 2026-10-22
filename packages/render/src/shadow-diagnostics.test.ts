@@ -7,7 +7,7 @@ import {
   UniversalCamera,
   Vector3,
 } from "@babylonjs/core";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { normalizeShadowSettings } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { updateSceneRenderingSettings } from "./render-settings";
 import {

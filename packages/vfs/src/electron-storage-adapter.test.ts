@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
+import { isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
 import { ElectronLibraryStorageAdapter, ElectronStorageAdapter } from "./electron-storage-adapter";
 import type { ElectronLibraryBridge, ElectronProjectBridge } from "./platform";
 import { createMountedProjectStorage } from "./mounted-storage";
@@ -52,14 +52,14 @@ function fakeProjectBridge(): ElectronProjectBridge {
 
 describe("ElectronStorageAdapter", () => {
   beforeEach(() => {
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
+    delete (globalThis as { haptic?: unknown }).haptic;
   });
 
   it("round-trips project files through the preload bridge", async () => {
     const bridge = fakeProjectBridge();
     const storage = new ElectronStorageAdapter(bridge);
-    const handle = await storage.openDocumentsProject("Game.babproject");
-    expect(handle.name).toBe("Game.babproject");
+    const handle = await storage.openDocumentsProject("Game.hproject");
+    expect(handle.name).toBe("Game.hproject");
     await storage.writeBinary("assets/a.bin", new Uint8Array([1, 2, 3]));
     expect(await storage.readBinary("assets/a.bin")).toEqual(new Uint8Array([1, 2, 3]));
     expect(await storage.exists("assets/a.bin")).toBe(true);
@@ -73,7 +73,7 @@ describe("ElectronStorageAdapter", () => {
       actualBytesRead: 12, error: "Source revision changed", errorCode: "source-revision-changed" });
     const storage = new ElectronStorageAdapter(bridge);
     const mounted = createMountedProjectStorage([{ path: "plugin", storage, sourcePath: "" }]);
-    await expect(mounted.readBinaryRange("plugin/asset.babasset", 0, 12)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    await expect(mounted.readBinaryRange("plugin/asset.hasset", 0, 12)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 12, rangeReads: 1, fullReads: 0 });
     expect(mounted.getReadMetrics!()).toMatchObject({ actualBytesRead: 12, rangeReads: 1, fullReads: 0 });
   });
@@ -84,7 +84,7 @@ describe("ElectronStorageAdapter", () => {
       bytes: new ArrayBuffer(0), totalSize: 0, revision: "", actualBytesRead: 0, error: message,
     });
     const storage = new ElectronStorageAdapter(bridge);
-    const failure = await storage.readBinaryRange("asset.babasset", 0, 12).catch((error: unknown) => error);
+    const failure = await storage.readBinaryRange("asset.hasset", 0, 12).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(SourceRevisionChangedError);
     expect(failure).toMatchObject({ message });

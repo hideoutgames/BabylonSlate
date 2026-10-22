@@ -1,10 +1,10 @@
-import type { PropertyRow, Vector3Value } from "@babylonslate/editor-kit";
+import type { PropertyRow, Vector3Value } from "@haptic/editor-kit";
 import {
   eulerDegreesToQuaternion,
   quaternionToEulerDegrees,
   type SerializedActor,
   type ViewportMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { depthFromZOrder, zOrderFromDepth } from "./transform-property-rows";
 
 /** Shared axis edits are absolute values; other axes retain each actor's values. */

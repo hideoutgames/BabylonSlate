@@ -1,4 +1,4 @@
-import { diagnostic, type Diagnostic, type TypeContext } from "@babylonslate/scripting";
+import { diagnostic, type Diagnostic, type TypeContext } from "@haptic/scripting";
 import type { BehaviourTreeDocument, BlackboardKey, BtNode } from "./types";
 import { propertyFieldsForClassId } from "./catalog";
 
