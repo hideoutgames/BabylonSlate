@@ -194,7 +194,7 @@ describe("bounded catalog and payload loading", () => {
   it("rejects invalid header lengths before allocating or requesting the header", async () => {
     const storage = await fixture();
     const bytes = new Uint8Array(12);
-    bytes.set(new TextEncoder().encode("BABA"));
+    bytes.set(new TextEncoder().encode("HAPT"));
     const view = new DataView(bytes.buffer);
     view.setUint32(4, 1, true);
     view.setUint32(8, MAX_HASSET_HEADER_BYTES + 1, true);

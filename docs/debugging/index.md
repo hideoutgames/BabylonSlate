@@ -37,6 +37,7 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | Control | Does |
 | --- | --- |
 | **Pause** / **Resume** | Freezes gameplay so you can inspect values that would otherwise keep changing. |
+| **Step** | While paused, advances the Simulation by one tick and pauses again. The view shows the new tick. |
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
 | **Game** / **Edit** | One button showing the current input; tap it to switch. **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
@@ -107,9 +108,10 @@ For a selected actor you can also:
 | --- | --- |
 | [Print](../scripting/class/print.md), [Print String](../scripting/class/print-string.md) | Shows a value as text on the game view. Use **Key** to update one line in place instead of adding lines. |
 | [Log](../scripting/class/log.md) | Writes a message to the **Output Log** with a severity. |
+| [Assert](../scripting/class/assert.md), [Assert Equal](../scripting/class/assert-equal.md), [Assert Is Valid](../scripting/class/assert-is-valid.md) | Report an error for the node when a check fails, so a broken assumption shows up in the **Output Log** and the **Preview Session Report**. |
 | [Draw Debug Line](../scripting/class/draw-debug-line.md), [Draw Debug Box](../scripting/class/draw-debug-box.md), [Draw Debug Sphere](../scripting/class/draw-debug-sphere.md) and other Draw Debug nodes | Draw shapes in the world for a set **Duration**. |
 
-Print and Draw Debug nodes are **Development Only** by default: release exports leave them out. Turn off **Development Only** in the node's **Inspector** to keep one in the exported game.
+Print, Assert and Draw Debug nodes are **Development Only** by default: release exports leave them out. Turn off **Development Only** in the node's **Inspector** to keep one in the exported game.
 
 ## After Play
 
