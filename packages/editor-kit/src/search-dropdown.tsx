@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,7 @@ import {
   type SearchDialogItem,
 } from "./search-dialog";
 import { PickerIdentity } from "./picker-identity";
+import { cn } from "@babylonslate/ui/lib/utils";
 
 export interface SearchDropdownProps {
   open?: boolean;
@@ -27,7 +28,7 @@ export interface SearchDropdownProps {
   children: ReactElement;
   /** When true, outside clicks are captured so chrome behind the menu is not hit. Default false so canvas pickers do not paint an iPad WKWebView black overlay. */
   modal?: boolean;
-  /** Max height class for the scrollable list. Default max-h-80. */
+  /** Size classes for the menu; the header stays fixed and only the results scroll. Default max-h-96. */
   contentClassName?: string;
   /** Viewport point to open at instead of the trigger (a double-tap on empty space). */
   anchor?: { x: number; y: number } | null;
@@ -63,6 +64,27 @@ export function SearchDropdown({
     [items, query],
   );
   const grouped = useMemo(() => groupSearchItems(filtered), [filtered]);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const [overflow, setOverflow] = useState({ above: false, below: false });
+  const overflowRef = useRef(overflow);
+  const measureOverflow = useCallback(() => {
+    if (!scrollEl) return;
+    // One pixel of slack absorbs fractional scroll positions at either end.
+    const above = scrollEl.scrollTop > 1;
+    const below = scrollEl.scrollTop + scrollEl.clientHeight < scrollEl.scrollHeight - 1;
+    if (above === overflowRef.current.above && below === overflowRef.current.below) return;
+    overflowRef.current = { above, below };
+    setOverflow(overflowRef.current);
+  }, [scrollEl]);
+  useLayoutEffect(() => {
+    measureOverflow();
+  }, [measureOverflow, filtered]);
+  useLayoutEffect(() => {
+    if (!scrollEl || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(scrollEl);
+    return () => observer.disconnect();
+  }, [measureOverflow, scrollEl]);
   const anchorX = anchor?.x;
   const anchorY = anchor?.y;
   const virtualAnchor = useMemo(
@@ -83,12 +105,15 @@ export function SearchDropdown({
       <DropdownMenuContent
         align="start"
         anchor={virtualAnchor}
-        className={
-          contentClassName ?? "max-h-96 w-max min-w-52 max-w-sm overflow-y-auto"
-        }
+        // The popup does not scroll: a fixed header over its own results
+        // scroller, so no row can slide behind or above the search field.
+        className={cn(
+          "flex flex-col overflow-hidden p-0",
+          contentClassName ?? "max-h-96 w-max min-w-52 max-w-sm",
+        )}
         data-testid={testId}
       >
-        <div className="sticky top-0 z-10 -mx-1 -mt-1 bg-popover px-1 pt-1">
+        <div className="shrink-0 px-1 pt-1">
           <DropdownMenuGroup>
             <DropdownMenuLabel>{title}</DropdownMenuLabel>
           </DropdownMenuGroup>
@@ -117,36 +142,56 @@ export function SearchDropdown({
             />
           </div>
         </div>
-        {grouped.map((section, index) => (
-          <DropdownMenuGroup key={section.items[0]?.id ?? index}>
-            {section.group ? (
-              <DropdownMenuLabel>{section.group}</DropdownMenuLabel>
-            ) : null}
-            {section.items.map((item) => (
-              <DropdownMenuItem
-                key={item.id}
-                className="min-h-7 pointer-coarse:min-h-[var(--touch-target,44px)]"
-                onClick={() => {
-                  onSelect(item.id);
-                  onOpenChange?.(false);
-                }}
-                data-testid={`search-item-${item.id}`}
-              >
-                <PickerIdentity
-                  label={item.label}
-                  description={item.description}
-                  leading={item.leading}
-                />
-                {item.trailing}
-              </DropdownMenuItem>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={setScrollEl}
+            onScroll={measureOverflow}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1 pt-0"
+            data-testid={testId ? `${testId}-results` : undefined}
+          >
+            {grouped.map((section, index) => (
+              <DropdownMenuGroup key={section.items[0]?.id ?? index}>
+                {section.group ? (
+                  <DropdownMenuLabel>{section.group}</DropdownMenuLabel>
+                ) : null}
+                {section.items.map((item) => (
+                  <DropdownMenuItem
+                    key={item.id}
+                    className="min-h-7 pointer-coarse:min-h-[var(--touch-target,44px)]"
+                    onClick={() => {
+                      onSelect(item.id);
+                      onOpenChange?.(false);
+                    }}
+                    data-testid={`search-item-${item.id}`}
+                  >
+                    <PickerIdentity
+                      label={item.label}
+                      description={item.description}
+                      leading={item.leading}
+                    />
+                    {item.trailing}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
             ))}
-          </DropdownMenuGroup>
-        ))}
-        {filtered.length === 0 ? (
-          <DropdownMenuGroup>
-            <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
-          </DropdownMenuGroup>
-        ) : null}
+            {filtered.length === 0 ? (
+              <DropdownMenuGroup>
+                <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
+              </DropdownMenuGroup>
+            ) : null}
+          </div>
+          <div
+            aria-hidden="true"
+            data-visible={overflow.above || undefined}
+            className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-linear-to-b from-popover to-transparent opacity-0 transition-opacity duration-150 data-visible:opacity-100"
+          />
+          <div
+            aria-hidden="true"
+            data-visible={overflow.below || undefined}
+            data-testid={testId ? `${testId}-more-below` : undefined}
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-lg bg-linear-to-t from-popover to-transparent opacity-0 transition-opacity duration-150 data-visible:opacity-100"
+          />
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
