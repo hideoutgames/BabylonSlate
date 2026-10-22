@@ -843,6 +843,11 @@ export type CommandMessage =
   | { type: "runtimeStopped" }
   /** The runtime stopped itself (console `quit`); the host ends the session as its Stop control does. */
   | { type: "sessionEnded" }
+  /**
+   * The game reads tilt or device motion. Sent once per session: the host
+   * starts motion input, asking permission on the next tap where required.
+   */
+  | { type: "requestDeviceMotion"; frameId: number }
   /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
   | {
       type: "setGamepadRumble";

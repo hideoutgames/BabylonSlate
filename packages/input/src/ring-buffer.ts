@@ -42,6 +42,29 @@ export type RawInputEvent =
       kind: "gamepadDisconnect";
       tick: number;
       gamepadIndex: number;
+    }
+  | {
+      /**
+       * The device's motion, sampled once per frame while motion input is on.
+       * NaN `beta` and `gamma` mean no reading (released at an ownership boundary).
+       */
+      kind: "motion";
+      tick: number;
+      /** `DeviceOrientationEvent` front-to-back and left-to-right tilt, in degrees. */
+      beta: number;
+      gamma: number;
+      /** `screen.orientation.angle`, in degrees. */
+      screenAngle: number;
+      /** Device acceleration without gravity, in m/s² along the device's x, y and z. */
+      accelerationX: number;
+      accelerationY: number;
+      accelerationZ: number;
+      /** The largest acceleration magnitude since the previous sample, for shakes. */
+      peakAcceleration: number;
+      /** Degrees per second around the device's x, y and z (`rotationRate` beta, gamma, alpha). */
+      rotationX: number;
+      rotationY: number;
+      rotationZ: number;
     };
 
 // Bytes 3 and 5 belonged to retired raw kinds; never reuse or renumber them.
@@ -51,12 +74,19 @@ const KIND = {
   gamepad: 4,
   touchAxis: 6,
   gamepadDisconnect: 7,
+  motion: 8,
 } as const;
 const PHASE = { down: 1, move: 2, up: 3, cancel: 4 } as const;
 const PHASE_NAME = ["", "down", "move", "up", "cancel"] as const;
 // Byte 0 means the pointer type was not given.
 const POINTER_KIND = { mouse: 1, touch: 2, pen: 3 } as const;
 const POINTER_KIND_NAME = [undefined, "mouse", "touch", "pen"] as const;
+
+/** Motion sample fields in wire order, each a float32. */
+const MOTION_FIELDS = [
+  "beta", "gamma", "screenAngle", "accelerationX", "accelerationY", "accelerationZ",
+  "peakAcceleration", "rotationX", "rotationY", "rotationZ",
+] as const satisfies readonly (keyof Extract<RawInputEvent, { kind: "motion" }>)[];
 
 // Whole-buffer, non-streaming use only: neither keeps state between calls.
 const textEncoder = new TextEncoder();
@@ -93,6 +123,7 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       case "gamepad": size += 3 + 4 * (event.axes.length + event.buttons.length); break;
       case "touchAxis": size += 6 + textEncoder.encode(event.controlId).length; break;
       case "gamepadDisconnect": size += 1; break;
+      case "motion": size += 4 * MOTION_FIELDS.length; break;
     }
   }
   const scratch = new ArrayBuffer(size);
@@ -146,6 +177,11 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       o += writeString(view, o, event.controlId);
       view.setFloat32(o, event.value, true);
       o += 4;
+    } else if (event.kind === "motion") {
+      for (const field of MOTION_FIELDS) {
+        view.setFloat32(o, event[field], true);
+        o += 4;
+      }
     } else {
       view.setUint8(o, event.gamepadIndex);
       o += 1;
@@ -225,6 +261,16 @@ export function decodeInputEvents(
         controlId: controlId.value,
         value,
       });
+    } else if (kindByte === KIND.motion) {
+      const motion: Extract<RawInputEvent, { kind: "motion" }> = {
+        kind: "motion", tick, beta: 0, gamma: 0, screenAngle: 0, accelerationX: 0, accelerationY: 0, accelerationZ: 0,
+        peakAcceleration: 0, rotationX: 0, rotationY: 0, rotationZ: 0,
+      };
+      for (const field of MOTION_FIELDS) {
+        motion[field] = view.getFloat32(o, true);
+        o += 4;
+      }
+      events.push(motion);
     } else if (kindByte === KIND.gamepadDisconnect) {
       const gamepadIndex = view.getUint8(o);
       o += 1;
@@ -243,6 +289,8 @@ export function isInputReleaseEvent(event: RawInputEvent): boolean {
     case "pointer": return event.phase === "up" || event.phase === "cancel";
     case "touchAxis": return event.value === 0;
     case "gamepad": return event.axes.every(value => value === 0) && event.buttons.every(value => value === 0);
+    // A reading of the device's pose, not a press; the next sample replaces it.
+    case "motion": return false;
     default: return true;
   }
 }
@@ -253,6 +301,7 @@ function controlKey(event: RawInputEvent): string | undefined {
     case "pointer": return `p${event.pointerId}`;
     case "gamepad": case "gamepadDisconnect": return `g${event.gamepadIndex}`;
     case "touchAxis": return `t${event.controlId}`;
+    case "motion": return "m";
     default: return undefined;
   }
 }
@@ -267,6 +316,7 @@ function level(value: number): number {
 function supersededBy(sample: RawInputEvent, next: RawInputEvent): boolean {
   if (sample.kind === "pointer") return sample.phase === "move";
   if (sample.kind === "touchAxis" && next.kind === "touchAxis") return level(sample.value) === level(next.value);
+  if (sample.kind === "motion") return next.kind === "motion";
   if (sample.kind !== "gamepad" || next.kind !== "gamepad") return false;
   const levels = (event: typeof sample) => [...event.axes, ...event.buttons].map(level).join();
   return sample.axes.length === next.axes.length && levels(sample) === levels(next);

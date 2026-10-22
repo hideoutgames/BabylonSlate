@@ -684,6 +684,8 @@ export interface CreateEngineOptions {
   navBlockers?: readonly NavDebugBlockerPose[] | null;
   /** Authored SceneLayer joystick input for the host input ring. */
   onTouchAxis?: (controlId: string, value: number) => void;
+  /** The game reads tilt or device motion (`requestDeviceMotion`); the host starts motion input. */
+  onDeviceMotionRequest?: () => void;
   /** Overlay 2DButton graph events (Play compositor). */
   onSceneLayerPointer?: (event: {
     layerId: string;
@@ -3653,6 +3655,7 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "setGamepadRumble") applyGamepadRumble(command);
+      if (command.type === "requestDeviceMotion") options.onDeviceMotionRequest?.();
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
         runtimeComponentTokens.delete(command.slotId);
