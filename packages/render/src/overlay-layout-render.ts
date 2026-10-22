@@ -56,8 +56,7 @@ export function overlayClipAllowsPoint(mesh: AbstractMesh, x: number, y: number)
 // Clipped meshes bind every frame; project their corners through shared scratch.
 const scratchViewport = new Viewport(0, 0, 1, 1);
 const scratchCorner = new Vector3();
-const scratchMin = new Vector3();
-const scratchMax = new Vector3();
+const scratchProjected = new Vector3();
 function installClip(mesh: Mesh): () => void {
   let scissored = false;
   const beforeBind = mesh.onBeforeBindObservable.add(() => {
@@ -65,12 +64,18 @@ function installClip(mesh: Mesh): () => void {
     if (!clip || !camera) return;
     const engine = scene.getEngine(), width = engine.getRenderWidth(), height = engine.getRenderHeight();
     camera.viewport.toGlobalToRef(width, height, scratchViewport);
-    const min = Vector3.ProjectToRef(scratchCorner.set(clip.x - clip.width / 2, clip.y - clip.height / 2, 0), Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchMin);
-    const max = Vector3.ProjectToRef(scratchCorner.set(clip.x + clip.width / 2, clip.y + clip.height / 2, 0), Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchMax);
-    const x = Math.max(0, Math.min(width, Math.floor(Math.min(min.x, max.x))));
-    const top = Math.max(0, Math.min(height, Math.floor(Math.min(min.y, max.y))));
-    const right = Math.max(x, Math.min(width, Math.ceil(Math.max(min.x, max.x))));
-    const bottom = Math.max(top, Math.min(height, Math.ceil(Math.max(min.y, max.y))));
+    // All four corners: a turned Scene Layer camera puts any of them at the screen extremes.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let corner = 0; corner < 4; corner++) {
+      scratchCorner.set(clip.x + (corner & 1 ? 1 : -1) * clip.width / 2, clip.y + (corner & 2 ? 1 : -1) * clip.height / 2, 0);
+      const projected = Vector3.ProjectToRef(scratchCorner, Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchProjected);
+      minX = Math.min(minX, projected.x); maxX = Math.max(maxX, projected.x);
+      minY = Math.min(minY, projected.y); maxY = Math.max(maxY, projected.y);
+    }
+    const x = Math.max(0, Math.min(width, Math.floor(minX)));
+    const top = Math.max(0, Math.min(height, Math.floor(minY)));
+    const right = Math.max(x, Math.min(width, Math.ceil(maxX)));
+    const bottom = Math.max(top, Math.min(height, Math.ceil(maxY)));
     const empty = clip.width <= 0 || clip.height <= 0;
     // Babylon's canvas scissor uses a bottom-left origin on both backends.
     // WebGPU RTTs also flip geometry Y, so their unflipped scissor has the same

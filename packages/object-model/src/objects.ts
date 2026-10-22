@@ -7,8 +7,10 @@ import {
   normalizeSuppressedComponentSourceIds,
   type MaterialInstanceOverrides,
   type ScenePostProcessEntry,
+  SCENE_LAYER_DEFAULT_CAMERA,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   supportsOverlayVisualStyle,
+  type SceneLayerCamera,
   type Guid,
   type InputKey,
   type GuidFactory,
@@ -471,6 +473,8 @@ export class SceneLayer extends BObject {
   ownerSceneGuid: string | null;
   postProcessStack: ScenePostProcessEntry[];
   layerBounds: { width: number; height: number };
+  /** Its Play camera; every instance starts at the default and scripts move it. */
+  camera: SceneLayerCamera = { ...SCENE_LAYER_DEFAULT_CAMERA };
 
   constructor(options: {
     classId?: string;
