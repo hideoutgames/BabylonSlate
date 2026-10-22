@@ -5,10 +5,10 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { syncEditorPlayState } from "@babylonslate/render";
-import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, type SerializedScene } from "@babylonslate/core";
-import { areaEmissionChunkId, encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry, type AreaEmissionPixels } from "@babylonslate/assets";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { syncEditorPlayState } from "@haptic/render";
+import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, type SerializedScene } from "@haptic/core";
+import { areaEmissionChunkId, encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry, type AreaEmissionPixels } from "@haptic/assets";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 import type { SimulationViewport } from "../services/simulation-viewport";
@@ -131,8 +131,8 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
   };
 });
 
-vi.mock("@babylonslate/render", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+vi.mock("@haptic/render", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/render")>();
   return {
     ...actual,
     createEngine: createEngineMock,
@@ -212,7 +212,7 @@ vi.mock("../components/viewport-joystick", () => ({
 
 vi.mock("../lib/viewport-render-gate", () => ({
   attachViewportRenderGate: () => () => {},
-  ENGINE_SETTINGS_CHANGED_EVENT: "babylonslate:engine-settings",
+  ENGINE_SETTINGS_CHANGED_EVENT: "haptic:engine-settings",
 }));
 
 class IntersectionObserverStub {
@@ -233,7 +233,7 @@ const textureChunk = (id: string, kind: string, sha256: string) =>
 async function textureAsset(guid: string, payload: Record<string, unknown>, chunks: Array<ReturnType<typeof textureChunk>>) {
   return {
     rootId: "project",
-    path: `assets/${guid}.texture.babasset`,
+    path: `assets/${guid}.texture.hasset`,
     header: {
       ...readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid, name: guid, version: 1, payload })),
       payload,
@@ -306,7 +306,7 @@ describe("ViewportPanel engine", () => {
       id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" },
     }] });
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [audioActor] },
     }];
     const library = playAudioLibraryFromAssets({ mixerGuid: null, assets: [
@@ -325,12 +325,12 @@ describe("ViewportPanel engine", () => {
 
   it("prepares only the active scene's required water and resource catalog", async () => {
     const assets = await Promise.all(["used", "unused"].map(async (guid) => ({
-      rootId: "project", path: `assets/${guid}.water.babasset`,
+      rootId: "project", path: `assets/${guid}.water.hasset`,
       header: readAssetDocumentHeader(await encodeAssetDocument({ type: "Water", guid, name: guid, version: 1, payload: {} })),
     })));
     documents.assetRegistry = { list: () => assets, getByGuid: (guid) => assets.find((asset) => asset.header.guid === guid) };
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [createActor("water", "Water", { components: [{
         id: "water", classId: "WaterOceanComponent", properties: { waterGuid: "used" },
       }] })] },
@@ -344,7 +344,7 @@ describe("ViewportPanel engine", () => {
 
   it("defers a hidden dock canvas without blocking its sibling, then waits for a real presentation", async () => {
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     const width = vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockReturnValue(0);
@@ -377,7 +377,7 @@ describe("ViewportPanel engine", () => {
 
   it("cancels a first frame when its tab hides and retries only after activation", async () => {
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     const width = vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockReturnValue(256);
@@ -432,7 +432,7 @@ describe("ViewportPanel engine", () => {
     documents.collectPlayTextureBytes.mockImplementationOnce(async (_sprites, _tilesets, guids) =>
       new Map(guids?.includes("entry-mask") ? [["entry-mask", maskBytes]] : []));
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: scene,
     }];
     createEngineMock.mockImplementationOnce(() => {
@@ -457,7 +457,7 @@ describe("ViewportPanel engine", () => {
 
   it("collects once and waits for chunked realization before model readiness", async () => {
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: createDefaultScene(),
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" }, content: createDefaultScene(),
     }];
     let finish!: () => void;
     handle.loadSceneAsync.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
@@ -476,7 +476,7 @@ describe("ViewportPanel engine", () => {
   it.each(["create", "realize", "assets", "shaders", "present"] as const)(
     "keeps %s failures unready and retries with a fresh transition", async (stage) => {
       documents.openDocuments = [{
-        id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+        id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
         content: createDefaultScene(),
       }];
       const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -503,7 +503,7 @@ describe("ViewportPanel engine", () => {
 
   it("keeps Retry in the viewport after closing a failed load and holds Play only while loading", async () => {
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -527,7 +527,7 @@ describe("ViewportPanel engine", () => {
 
   it("closes a failed load when the project Engine goes away, leaving no Retry for the old Engine", async () => {
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -556,7 +556,7 @@ describe("ViewportPanel engine", () => {
 
   it("closes its loading dialog when a Simulation takes the viewport mid-load, and reloads on restore", async () => {
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     let viewport!: SimulationViewport;
@@ -585,7 +585,7 @@ describe("ViewportPanel engine", () => {
   it("applies compatible settings behind blocking progress without replacing the scene or camera", async () => {
     const scene = createDefaultScene();
     const document = {
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: scene,
     };
     documents.openDocuments = [document];
@@ -619,7 +619,7 @@ describe("ViewportPanel engine", () => {
   it("recreates compiled material ownership when shading changes while keeping the project Engine", async () => {
     documents.projectDocument = createEmptyProject("Rendering");
     documents.openDocuments = [{
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     const view = renderViewport();
@@ -636,7 +636,7 @@ describe("ViewportPanel engine", () => {
 
   it("rejects stale same-handle asset completion while the replacement waits for presentation", async () => {
     const document = {
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     };
     documents.openDocuments = [document];
@@ -665,12 +665,12 @@ describe("ViewportPanel engine", () => {
       points: [[0, 0, 0], [0, 0, 5]], curvature: 0.5, closed: false,
     } });
     const untouched = createActor("b", "Other");
-    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [actor, untouched] },
     }];
     renderViewport();
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
-    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@haptic/render").CreateEngineOptions;
     act(() => options.onComponentShapeEdit?.({ actorId: "a", componentId: "path", properties: { points: [[1, 2, 3], [4, 5, 6]] } }));
     expect(documents.applySceneChange).toHaveBeenCalledOnce();
     const next = documents.applySceneChange.mock.calls[0]![1];
@@ -690,7 +690,7 @@ describe("ViewportPanel engine", () => {
       { id: "river", classId: "WaterRiverComponent", properties: {} },
       { id: "curve", classId: "SplineComponent", properties: {} },
     ] });
-    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: { ...createDefaultScene(), actors: [actor, createActor("other", "Other")] } }];
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" }, content: { ...createDefaultScene(), actors: [actor, createActor("other", "Other")] } }];
     selection.actorIds = actorIds;
     selection.shapeEditTarget = target;
     renderViewport();
@@ -705,7 +705,7 @@ describe("ViewportPanel engine", () => {
     const scene = { ...createDefaultScene(), actors: [a, b, miss] };
     documents.openDocuments = [{
       id: "scene:S",
-      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: scene,
     }];
     selection.actorIds = [a.id, b.id, miss.id];
@@ -742,7 +742,7 @@ describe("ViewportPanel engine", () => {
     const actor = createActor("a", "Box");
     documents.openDocuments = [{
       id: "scene:S",
-      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [actor] },
     }];
     selection.actorIds = [actor.id];
@@ -758,7 +758,7 @@ describe("ViewportPanel engine", () => {
   it("reads the stored navmesh once while scene edits redraw its overlay", async () => {
     const scene = createDefaultScene();
     const document = {
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...scene, settings: { ...scene.settings, showNavmesh: true } },
     };
     const stored = new Uint8Array([1, 2, 3]);
@@ -778,7 +778,7 @@ describe("ViewportPanel engine", () => {
   describe("a Show Navmesh overlay that cannot be drawn", () => {
     const scene = createDefaultScene();
     const document = {
-      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...scene, settings: { ...scene.settings, showNavmesh: true } },
     };
     const logs: string[] = [];
@@ -821,7 +821,7 @@ describe("ViewportPanel engine", () => {
     const actor = createActor("a", "Box");
     const document = {
       id: "scene:S",
-      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [actor] },
     };
     documents.openDocuments = [document];
@@ -877,7 +877,7 @@ describe("ViewportPanel engine", () => {
         id: "scene:S",
         ref: {
           kind: "scene-layer",
-          path: "assets/HUD.overlay.babasset",
+          path: "assets/HUD.overlay.hasset",
           label: "HUD",
         },
         content: null,
@@ -902,7 +902,7 @@ describe("ViewportPanel engine", () => {
         id: "scene:S",
         ref: {
           kind: "scene-layer",
-          path: "assets/HUD.overlay.babasset",
+          path: "assets/HUD.overlay.hasset",
           label: "HUD",
         },
         content: null,
@@ -936,7 +936,7 @@ describe("ViewportPanel engine", () => {
         id: "scene:S",
         ref: {
           kind: "scene-layer",
-          path: "assets/HUD.overlay.babasset",
+          path: "assets/HUD.overlay.hasset",
           label: "HUD",
         },
         content: scene,
@@ -977,7 +977,7 @@ describe("ViewportPanel engine", () => {
   it.each(["Material", "MaterialFunction"])("refreshes a saved %s without reloading the scene", async (type) => {
     const savedAsset = async (value: number) => ({
       rootId: "project",
-      path: "assets/Surface.material.babasset",
+      path: "assets/Surface.material.hasset",
       header: readAssetDocumentHeader(await encodeAssetDocument({
         type,
         guid: "saved-material",
@@ -990,7 +990,7 @@ describe("ViewportPanel engine", () => {
     documents.assetRegistry = { list: () => [asset], getByGuid: () => asset };
     documents.openDocuments = [{
       id: "scene:S",
-      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     const { rerender } = renderViewport();
@@ -1038,12 +1038,12 @@ describe("ViewportPanel engine", () => {
   it("gives the engine each Tilemap's revision, which holds while other assets are saved and moves with its own save or open document", async () => {
     const saved = async (type: string, guid: string, value: number) => ({
       rootId: "project",
-      path: `assets/${guid}.babasset`,
+      path: `assets/${guid}.hasset`,
       header: readAssetDocumentHeader(await encodeAssetDocument({ type, guid, name: guid, version: 1, payload: { value } })),
     });
     const scene = {
       id: "scene:S",
-      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     };
     const first = await saved("Tilemap", "map-first", 1);
@@ -1097,7 +1097,7 @@ describe("ViewportPanel engine", () => {
     documents.assetRegistry = { list: () => [asset], getByGuid: () => asset };
     documents.openDocuments = [{
       id: "scene:S",
-      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: createDefaultScene(),
     }];
     documents.collectPlayTextureBytes.mockResolvedValue(new Map([["tex", png]]));
@@ -1163,7 +1163,7 @@ describe("ViewportPanel engine", () => {
     documents.assetRegistry = { list: () => [...entries.values()], getByGuid: (guid) => entries.get(guid) };
     const doc = {
       id: "scene:S",
-      ref: { kind: "scene" as const, path: "assets/S.scene.babasset", label: "S" },
+      ref: { kind: "scene" as const, path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [createActor("probe", "Probe")] },
     };
     documents.openDocuments = [doc];
@@ -1273,7 +1273,7 @@ describe("ViewportPanel engine", () => {
     scene.actors = [createActor("light", "Light", { components: [{
       id: "light-component", classId: "LightComponent", properties: { lightKind: "point" },
     }] })];
-    const doc = { id: "scene:S", ref: { kind: "scene" as const, path: "assets/S.scene.babasset", label: "S" }, content: scene };
+    const doc = { id: "scene:S", ref: { kind: "scene" as const, path: "assets/S.scene.hasset", label: "S" }, content: scene };
     documents.openDocuments = [doc];
     const { rerender } = renderViewport();
     const refresh = () => rerender(<DocumentWorkspaceProvider documentId="scene:S">
@@ -1302,7 +1302,7 @@ describe("ViewportPanel engine", () => {
     const sourceHash = "a".repeat(64);
     const header = readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} }));
     header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, byteLength: 4, locator: { inline: { offset: 0, length: 4 } } });
-    let asset = { rootId: "project", path: "assets/Emitter.texture.babasset", header };
+    let asset = { rootId: "project", path: "assets/Emitter.texture.hasset", header };
     documents.assetRegistry = { list: () => [asset], getByGuid: (guid) => guid === "emission" ? asset : undefined };
     // The registry re-indexes a rewritten Texture with a new header; it never edits one in place.
     const reindex = (chunks: typeof header.chunks) => {
@@ -1311,7 +1311,7 @@ describe("ViewportPanel engine", () => {
     };
     const scene = createDefaultScene();
     scene.actors = [createActor("emitter", "Emitter", { components: [{ id: "area", classId: "AreaRectLightComponent", properties: { textureGuid: "emission" } }] })];
-    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: scene }];
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" }, content: scene }];
     const view = renderViewport();
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
     const loads = handle.loadScene.mock.calls.length;

@@ -4,7 +4,7 @@ import {
   createActor,
   createRichText2DComponent,
   createText2DComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   actorVisualFingerprint,

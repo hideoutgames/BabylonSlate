@@ -3,7 +3,7 @@ import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
-import type { MaterialParameterValue } from "@babylonslate/core";
+import type { MaterialParameterValue } from "@haptic/core";
 import { AuthoredPostProcessTask } from "./framegraph-post-process";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import type { MaterialLibrary } from "./material-library";

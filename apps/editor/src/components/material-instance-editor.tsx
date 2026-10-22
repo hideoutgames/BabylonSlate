@@ -6,14 +6,14 @@ import {
   PropertyGrid,
   PropertySectionTitle,
   assetRowIdentity,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldDescription } from "@babylonslate/ui/components/field";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { FieldDescription } from "@haptic/ui/components/field";
 import {
   normalizeMaterialInstanceDocument,
   parseMaterialDomain,
   type MaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   useDocumentActions,
   useOpenDocument,

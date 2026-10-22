@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Matrix, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createActor, createDefaultScene, parseLandscapeProperties, type SerializedScene, type SerializedTransform } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseLandscapeProperties, type SerializedScene, type SerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";

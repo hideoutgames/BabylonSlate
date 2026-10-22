@@ -213,7 +213,7 @@ describe("compileGraph instrumentExecutionTrace", () => {
   });
 
   it("emits visits, wires taken and the values nodes read and produce, pure nodes included", () => {
-    expect(compile(makeThenLog(), TRACED).source).toBe(`//# sourceURL=babylonslate:///classes/Door.class.js
+    expect(compile(makeThenLog(), TRACED).source).toBe(`//# sourceURL=haptic:///classes/Door.class.js
 var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));
 var __dw = (t, node, pin, value) => (t === null ? value : (t.write(node, pin, value), value));
 export function run(ctx) {

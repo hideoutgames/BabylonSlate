@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   readProjectJsonMtime,
   refreshMtimeSnapshotAfterEditorSave,
@@ -8,7 +8,7 @@ import {
 describe("readProjectJsonMtime", () => {
   it("returns the project.json mtime when the file exists", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("demo.babproject");
+    await storage.openDocumentsProject("demo.hproject");
     await storage.writeText("project.json", "{}");
     const mtime = await readProjectJsonMtime(storage);
     expect(mtime).toBe((await storage.stat("project.json")).mtime);
@@ -16,7 +16,7 @@ describe("readProjectJsonMtime", () => {
 
   it("returns null when project.json is missing", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("demo.babproject");
+    await storage.openDocumentsProject("demo.hproject");
     expect(await readProjectJsonMtime(storage)).toBeNull();
   });
 

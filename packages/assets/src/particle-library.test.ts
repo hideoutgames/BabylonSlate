@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
+import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
 import {
   particleLibraryCompileKey,
   particleLibraryFromAssets,

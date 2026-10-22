@@ -1,17 +1,17 @@
 /**
  * Particle System payload plus the reference helpers shared by the particle asset
- * types. Budgets and mode ids live in `@babylonslate/core` (`particle-settings.ts`) so
+ * types. Budgets and mode ids live in `@haptic/core` (`particle-settings.ts`) so
  * the Babylon-free Particle Graph IR can share them; the Basic emitter schema is in
- * `particle-basic-emitter.ts` and the Particle Graph document in `@babylonslate/particle-graph`.
+ * `particle-basic-emitter.ts` and the Particle Graph document in `@haptic/particle-graph`.
  */
 import {
   PARTICLE_SYSTEM_MAX_EMITTERS,
   type ParticleSpace,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   normalizeParticleGraphDocument,
   particleGraphDependencies,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { normalizeParticleEmitterPayload } from "./particle-basic-emitter";
 
 export {
@@ -19,8 +19,8 @@ export {
   PARTICLE_CAPACITY_MAX,
   PARTICLE_CAPACITY_MIN,
   PARTICLE_SYSTEM_MAX_EMITTERS,
-} from "@babylonslate/core";
-export type { ParticleBlendMode, ParticleSpace } from "@babylonslate/core";
+} from "@haptic/core";
+export type { ParticleBlendMode, ParticleSpace } from "@haptic/core";
 
 export const PARTICLE_ASSET_TYPES = [
   "ParticleEmitter",

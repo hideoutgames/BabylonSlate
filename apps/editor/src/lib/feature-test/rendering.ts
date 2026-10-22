@@ -25,9 +25,9 @@ import {
   type SerializedComponent,
   type SerializedScene,
   type SkyboxFaces,
-} from "@babylonslate/core";
-import { engineScriptApiFor } from "@babylonslate/object-model";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/core";
+import { engineScriptApiFor } from "@haptic/object-model";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import {
   actor,
   comp,

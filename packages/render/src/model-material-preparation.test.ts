@@ -1,6 +1,6 @@
 import { FreeCamera, Mesh, NullEngine, RawTexture, Scene, StandardMaterial, TextureBlock, Vector3 } from "@babylonjs/core";
-import { installAssetBytes } from "@babylonslate/assets";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { installAssetBytes } from "@haptic/assets";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import { MaterialLibrary } from "./material-library";

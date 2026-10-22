@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import { readActorSlot, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene } from "@haptic/core";
+import { readActorSlot, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 

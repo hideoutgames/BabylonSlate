@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage, DebugGraphTrace } from "@babylonslate/bridge";
-import { createActor, createDefaultSceneSettings, type SerializedScene } from "@babylonslate/core";
-import { FLOAT, compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
-import { BObject } from "@babylonslate/object-model";
+import type { CommandMessage, DebugGraphTrace } from "@haptic/bridge";
+import { createActor, createDefaultSceneSettings, type SerializedScene } from "@haptic/core";
+import { FLOAT, compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { BObject } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { DEBUG_ROSTER_LIMIT, ExecutionTraceSink, formatDebugValue } from "./script-debug";
 import type { CompiledScript } from "./script-host";

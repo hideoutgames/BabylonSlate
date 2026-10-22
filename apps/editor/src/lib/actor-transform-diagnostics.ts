@@ -1,5 +1,5 @@
-import { shearedActorIds, type SerializedActor } from "@babylonslate/core";
-import { diagnostic, type Diagnostic } from "@babylonslate/scripting";
+import { shearedActorIds, type SerializedActor } from "@haptic/core";
+import { diagnostic, type Diagnostic } from "@haptic/scripting";
 
 const SHEARED_TRANSFORM =
   "Sheared world transform: nonuniform parent scale with an oblique rotation. " +

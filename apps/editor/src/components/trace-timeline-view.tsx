@@ -1,13 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { TracePayload } from "@babylonslate/debugger";
-import { TICK_BUDGET_MS } from "@babylonslate/debugger";
-import { NumberField, SelectableText } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldLabel } from "@babylonslate/ui/components/field";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Slider } from "@babylonslate/ui/components/slider";
-import { cn } from "@babylonslate/ui/lib/utils";
+import type { TracePayload } from "@haptic/debugger";
+import { TICK_BUDGET_MS } from "@haptic/debugger";
+import { NumberField, SelectableText } from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
+import { FieldLabel } from "@haptic/ui/components/field";
+import { Separator } from "@haptic/ui/components/separator";
+import { Slider } from "@haptic/ui/components/slider";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,

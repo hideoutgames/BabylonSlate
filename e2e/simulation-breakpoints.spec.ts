@@ -11,9 +11,9 @@ import { openMainScene } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
 
 type TestHost = typeof globalThis & {
-  __babylonslateSimulationTest: { start(): Promise<void> };
-  __babylonslatePlayTest: { tickIndex(): number };
-  __babylonslateTest: { setMainGraphContent(graph: SerializedGraph): Promise<boolean> };
+  __hapticSimulationTest: { start(): Promise<void> };
+  __hapticPlayTest: { tickIndex(): number };
+  __hapticTest: { setMainGraphContent(graph: SerializedGraph): Promise<boolean> };
 };
 
 const node = (id: string, type: string, data: Record<string, unknown> = {}, x = 0, y = 0) =>
@@ -30,13 +30,13 @@ const CLASS_GRAPH = {
 
 const graphPanel = (page: Page) => page.getByTestId("graph-panel");
 const printNode = (page: Page) => graphPanel(page).locator('.react-flow__node[data-id="print"]');
-const tickIndex = (page: Page) => page.evaluate(() => (globalThis as TestHost).__babylonslatePlayTest.tickIndex());
+const tickIndex = (page: Page) => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex());
 
 test("a breakpoint set from a node's menu stops a Simulation and opens the node", async ({ page }) => {
   test.setTimeout(240_000);
   await openMinimalTestProject(page);
   await openMainScene(page);
-  expect(await page.evaluate((graph) => (globalThis as TestHost).__babylonslateTest.setMainGraphContent(graph), CLASS_GRAPH)).toBe(true);
+  expect(await page.evaluate((graph) => (globalThis as TestHost).__hapticTest.setMainGraphContent(graph), CLASS_GRAPH)).toBe(true);
   const scene = createDefaultScene();
   scene.actors = [
     ...scene.actors.filter((actor) => actor.classId !== "main"),
@@ -54,7 +54,7 @@ test("a breakpoint set from a node's menu stops a Simulation and opens the node"
   await page.getByRole("menuitem", { name: "Add Breakpoint" }).click();
   await expect(printNode(page).locator('[data-breakpoint="enabled"]')).toHaveCount(1);
 
-  await page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.start());
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
   await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
   // The first tick stops: the Simulation pauses (Step appears) and the Class graph opens at the node.
   await expect(page.getByTestId("simulation-step")).toBeVisible({ timeout: 60_000 });

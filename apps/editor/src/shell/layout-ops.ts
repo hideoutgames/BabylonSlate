@@ -1,4 +1,4 @@
-import type { EngineSettings } from "@babylonslate/vfs";
+import type { EngineSettings } from "@haptic/vfs";
 import {
   isDockviewDocumentKind,
   listDockWindows,

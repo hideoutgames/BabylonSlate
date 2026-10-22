@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
+import { mergeEngineTypeSchemas } from "@haptic/scripting";
 import type { useDataCatalog } from "../lib/use-data-catalog";
 import { DataValueEditor } from "./data-value-editor";
 

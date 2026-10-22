@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { InputBlock, MeshBuilder, NodeMaterial, NullEngine, RawTexture, Scene } from "@babylonjs/core";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest } from "./runtime-material-edit";

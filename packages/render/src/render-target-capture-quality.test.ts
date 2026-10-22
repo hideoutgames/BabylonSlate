@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, normalizeShadowSettings, normalizeWaterBody,
   outlineBindings, type RenderTargetCaptureQuality,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";

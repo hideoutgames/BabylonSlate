@@ -1,5 +1,5 @@
 import { Color3, Vector3, type Camera, type Scene, type UtilityLayerRenderer } from "@babylonjs/core";
-import { parseDeformerProperties, type DeformerProperties } from "@babylonslate/core";
+import { parseDeformerProperties, type DeformerProperties } from "@haptic/core";
 import { latticeFitBounds, setMeshLatticeDeformer } from "./lattice-deformer";
 import { createShapeHandles, type ShapeHandlesHost, type ShapeHandlesOptions, type ShapeHandleTarget, type ShapePoint } from "./shape-handles";
 

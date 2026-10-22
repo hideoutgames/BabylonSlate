@@ -4,13 +4,13 @@ import {
   POPUP_PICKER_ATTRIBUTE,
   popupMenuFrame,
   usePopupOutsideDismiss,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 
 export interface SnapValues {
   gridSize: number;

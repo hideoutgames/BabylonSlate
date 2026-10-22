@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { isEditorGraphClass } from "@babylonslate/core";
+import { isEditorGraphClass } from "@haptic/core";
 import {
   AssetPicker, ClassPicker, PropertyGrid, humanizePropertyLabel,
   type AssetPickerEntry, type ClassPickerEntry,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   PinDefaultEditorContext, type PinDefaultEditorRenderer, type PinDefaultEditorRequest,
-} from "@babylonslate/graph-ui";
-import { pinDefaultPropertyKey, type PinType } from "@babylonslate/scripting";
+} from "@haptic/graph-ui";
+import { pinDefaultPropertyKey, type PinType } from "@haptic/scripting";
 import { useRegistryState } from "./document-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";

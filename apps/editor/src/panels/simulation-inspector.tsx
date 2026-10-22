@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { RuntimeInspectorValue, RuntimeObjectIdentity, RuntimePropertyDescriptor } from "@babylonslate/bridge";
-import type { MaterialParameterValue, SerializedTransform, ViewportMode } from "@babylonslate/core";
-import { AssetPicker, EditorReadOnlyContext, PanelFrame, PropertyGrid, SearchInput, type AssetPickerEntry, type PropertyRow } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import type { RuntimeInspectorValue, RuntimeObjectIdentity, RuntimePropertyDescriptor } from "@haptic/bridge";
+import type { MaterialParameterValue, SerializedTransform, ViewportMode } from "@haptic/core";
+import { AssetPicker, EditorReadOnlyContext, PanelFrame, PropertyGrid, SearchInput, type AssetPickerEntry, type PropertyRow } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import { useRegistryState } from "../context/document-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { useSimulationInspection } from "../context/simulation-inspection-context";

@@ -3,8 +3,8 @@ import {
   usePreventDocumentOverscroll,
   useSuppressIosEditingGestures,
   useSuppressNativeContextMenu,
-} from "@babylonslate/editor-kit";
-import { isTestModeEnabled } from "@babylonslate/vfs";
+} from "@haptic/editor-kit";
+import { isTestModeEnabled } from "@haptic/vfs";
 import { useAppRoute } from "./context/document-context";
 import { useOrientationScrollReset } from "./shell/use-orientation-scroll-reset";
 

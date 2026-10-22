@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
-import type { ActorComponent } from "@babylonslate/object-model";
+import { createActor, createDefaultSceneSettings } from "@haptic/core";
+import type { ActorComponent } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

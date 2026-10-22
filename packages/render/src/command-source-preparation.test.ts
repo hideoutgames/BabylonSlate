@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import { CommandSourcePreparation, commandSourceGuids } from "./command-source-preparation";
 
 function deferred<T>() {

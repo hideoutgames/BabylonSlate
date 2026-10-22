@@ -63,8 +63,8 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
   const x = bounds.x + bounds.width * point.x;
   const y = bounds.y + bounds.height * point.y;
   const documentX = () => page.evaluate(() => (window as unknown as {
-    __babylonslateTest: { activeSceneActorPosition(): number[] | null };
-  }).__babylonslateTest.activeSceneActorPosition()![0]!);
+    __hapticTest: { activeSceneActorPosition(): number[] | null };
+  }).__hapticTest.activeSceneActorPosition()![0]!);
   const before = await documentX();
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -81,12 +81,12 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
   await expect.poll(async () => (await handles(canvas)).colors[2], { timeout: 30_000 }).toBeGreaterThan(30);
 
   // Prefab presents a depth-backed RTT through the same shared Engine.
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   await expect(page.getByTestId("graph-panel")).toBeVisible({ timeout: 15_000 });
   const components = [createMeshComponent("prefab-mesh", "box")];
   expect(await page.evaluate((components) => (window as unknown as {
-    __babylonslateTest: { setMainGraphComponents(value: typeof components): Promise<boolean> };
-  }).__babylonslateTest.setMainGraphComponents(components), components)).toBe(true);
+    __hapticTest: { setMainGraphComponents(value: typeof components): Promise<boolean> };
+  }).__hapticTest.setMainGraphComponents(components), components)).toBe(true);
   await page.getByTestId("tree-row-prefab-mesh").click();
   await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
   const prefab = page.getByTestId("prefab-preview-canvas");

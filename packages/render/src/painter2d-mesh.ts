@@ -1,5 +1,5 @@
 import { Color3, CreatePlaneVertexData, DynamicTexture, MeshBuilder, StandardMaterial, Texture, type Mesh, type Scene } from "@babylonjs/core";
-import { painterRevision, painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@babylonslate/core";
+import { painterRevision, painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@haptic/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
 type PaintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;

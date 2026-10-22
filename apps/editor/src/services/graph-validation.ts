@@ -7,8 +7,8 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
   type SaveGameDefinition,
-} from "@babylonslate/core";
-import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
 import {
   fromSerializedGraph,
   validateGraphs,
@@ -40,7 +40,7 @@ import {
   latentSourcesFromSerializedGraph,
   diagnostic,
   isTouchEventNodeType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_BT_BUILTIN_CLASSES,
@@ -54,7 +54,7 @@ import {
   subsystemClassIdsForGet,
   type EngineScriptPin,
   type SubsystemClassHierarchy,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import {
   componentGraphMembersForClass,
   mergedPrefabViewsForGraph,
@@ -72,12 +72,12 @@ import {
   subsystemGetPaletteCategory,
   subsystemGetProperties,
   subsystemGetTitle,
-} from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting-nodes";
 import {
   warnDebugTierConsoleCommands,
   warnReservedConsoleCommandNames,
-} from "@babylonslate/debugger";
-import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
+} from "@haptic/debugger";
+import type { PaletteNode, PinCompatibilityRule } from "@haptic/graph-ui";
 import {
   ensureCallParentForEvent,
   GET_GAME_INSTANCE_NODE_ID,

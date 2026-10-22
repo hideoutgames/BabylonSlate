@@ -6,8 +6,8 @@ import {
   dryAudioReverbFallbackBytes,
   geometryHashForAudioBake,
   type AudioReverbGeometry,
-} from "@babylonslate/assets";
-import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+} from "@haptic/assets";
+import type { SerializedActor, SerializedScene } from "@haptic/core";
 import type { ProjectSceneWriter } from "../services/project-write-admission";
 
 export type AudioReverbBakeWrite = {

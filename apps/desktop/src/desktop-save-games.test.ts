@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeSaveGameStorage } from "@babylonslate/vfs/save-game-node";
+import { NodeSaveGameStorage } from "@haptic/vfs/save-game-node";
 import { DesktopSaveGames } from "./desktop-save-games";
 
 const directories: string[] = [];

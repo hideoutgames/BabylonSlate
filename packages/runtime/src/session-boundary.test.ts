@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import type { CommandMessage, SessionBoundaryRequest, SessionBoundaryResult } from "@babylonslate/bridge";
+import { createActor, createDefaultScene } from "@haptic/core";
+import type { CommandMessage, SessionBoundaryRequest, SessionBoundaryResult } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 
 const makeRuntime = (options: Partial<Parameters<typeof createInProcessRuntime>[0]> = {}) =>

@@ -10,7 +10,7 @@ import {
 import {
   ensureTilesetTiles,
   normalizeTilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { AtlasTileGrid } from "./atlas-tile-grid";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 

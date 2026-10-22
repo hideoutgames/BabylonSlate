@@ -1,4 +1,4 @@
-import type { ActorComponent } from "@babylonslate/object-model";
+import type { ActorComponent } from "@haptic/object-model";
 
 type Entry<T> = { revision: number; value: T };
 

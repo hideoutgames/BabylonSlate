@@ -1,4 +1,4 @@
-import { AUDIO_DECODED_PCM_LRU_BYTES } from "@babylonslate/assets";
+import { AUDIO_DECODED_PCM_LRU_BYTES } from "@haptic/assets";
 
 export interface AudioBufferCacheOptions {
   byteCeiling?: number;

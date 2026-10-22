@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createExtensionSettings, exportExtensionZip, unpackEngineExtensionZip, writeProjectExtension } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { createExtensionSettings, exportExtensionZip, unpackEngineExtensionZip, writeProjectExtension } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EngineExtensionLibrary } from "../lib/engine-extension-library";
 import { EngineExtensionsSettings } from "./engine-extensions-settings";
 
@@ -65,7 +65,7 @@ describe("EngineExtensionsSettings", () => {
   });
 
   it("shows corrupted archives as disabled recovery rows without blocking healthy defaults", async () => {
-    await saved.writeBinary("broken.babextension", new Uint8Array([1, 2, 3]));
+    await saved.writeBinary("broken.hextension", new Uint8Array([1, 2, 3]));
     const broken = (await harness.library!.list()).find((entry) => entry.invalid)!;
     render(<EngineExtensionsSettings />);
     const row = within(await screen.findByTestId(`engine-extension-row-${broken.extensionGuid}`));
@@ -80,7 +80,7 @@ describe("EngineExtensionsSettings", () => {
     fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Delete Engine Extension" })).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByTestId(`engine-extension-row-${broken.extensionGuid}`)).toBeNull());
 
-    expect(await saved.exists("broken.babextension")).toBe(false);
+    expect(await saved.exists("broken.hextension")).toBe(false);
     expect((await harness.library!.list()).find((entry) => entry.extensionGuid === "custom")).toMatchObject({ enabledByDefault: true });
     expect(screen.getByTestId("engine-extension-row-bundled")).toBeTruthy();
   });

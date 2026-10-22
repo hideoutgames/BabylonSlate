@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { parseDocumentId } from "@babylonslate/core";
+import { parseDocumentId } from "@haptic/core";
 import { useDocumentActions, useRegistryState } from "./document-context";
 import {
   BreakpointStore,

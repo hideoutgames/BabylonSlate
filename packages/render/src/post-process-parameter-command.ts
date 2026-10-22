@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 
 export type PostProcessParameterCommand = Extract<
   CommandMessage,

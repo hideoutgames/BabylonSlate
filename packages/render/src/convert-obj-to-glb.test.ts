@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
-import { importModel } from "@babylonslate/assets";
+import { importModel } from "@haptic/assets";
 import {
   convertObjImportBatch,
   convertObjToGlb,

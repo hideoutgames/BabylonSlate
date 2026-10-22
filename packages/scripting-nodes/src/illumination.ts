@@ -7,7 +7,7 @@ import {
   COLOR,
   actorRef,
   objectRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 const CAMERA = objectRef("CameraComponent");

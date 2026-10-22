@@ -1,26 +1,26 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
-import { VALUE_UNITS, normalizeTag, normalizeValueUnit, typeAcceptsUnit } from "@babylonslate/core";
-import { nextCopyName } from "@babylonslate/assets";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { VALUE_UNITS, normalizeTag, normalizeValueUnit, typeAcceptsUnit } from "@haptic/core";
+import { nextCopyName } from "@haptic/assets";
+import { cn } from "@haptic/ui/lib/utils";
 import { EditableName } from "./inline-rename";
 import { TagPicker } from "./tag-picker";
 import { VariableTypeFields, type VariableContainer } from "./variable-type-fields";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import { ListRowActions } from "./list-row-actions";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import { Checkbox } from "@haptic/ui/components/checkbox";
 import {
   Field,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 import { NamedListEditor } from "./named-list-editor";
 import { TypeColorMark } from "./type-color-mark";
 import { PinTypeMenu, PinTypePicker } from "./pin-type-picker";

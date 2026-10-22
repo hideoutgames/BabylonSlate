@@ -29,7 +29,7 @@ import {
   type Light,
   type Scene,
 } from "@babylonjs/core";
-import { PLAY_FREE_CAM_NAME, type EngineHandle } from "@babylonslate/render";
+import { PLAY_FREE_CAM_NAME, type EngineHandle } from "@haptic/render";
 
 export type FlyVec3 = [number, number, number];
 

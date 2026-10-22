@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import type { SearchEntry } from "@babylonslate/assets";
+import type { SearchEntry } from "@haptic/assets";
 import { GlobalSearchDialog } from "./global-search-dialog";
 
 const hits: SearchEntry[] = Array.from({ length: 40 }, (_, index) => ({

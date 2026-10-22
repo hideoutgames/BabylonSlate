@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AssetRegistry,
-  encodeBabasset,
+  encodeHasset,
   projectContentRoot,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createPickerAsset, createProjectAsset } from "./create-project-asset";
 
 async function registryWith(
@@ -18,7 +18,7 @@ async function registryWith(
     file: { path: string; type: string; name: string; parentClass?: string },
   ) => {
     await storage.mkdir(file.path.slice(0, file.path.lastIndexOf("/")), true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: `guid-${file.path}`,
@@ -36,7 +36,7 @@ async function registryWith(
     await storage.writeBinary(file.path, bytes);
   };
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("test.babproject");
+  await storage.openDocumentsProject("test.hproject");
   for (const file of files) await write(storage, file);
   const registry = new AssetRegistry(storage);
   await registry.mountRoot(projectContentRoot());
@@ -63,35 +63,35 @@ describe("createPickerAsset", () => {
   it("creates a persisted Save Game definition through the standard asset registry", async () => {
     const registry = await registryWith([]);
     const asset = await createPickerAsset({ registry, ownerPath: null, openDocuments: [], type: "SaveGame", name: "Player Progress" });
-    expect(asset.path).toBe("assets/Player_Progress.savegame.babasset");
+    expect(asset.path).toBe("assets/Player_Progress.savegame.hasset");
     expect(asset.header.type).toBe("SaveGame");
     expect(asset.header.payload).toEqual({ id: asset.header.guid, schemaVersion: 1, fields: [] });
     expect(registry.getByGuid(asset.header.guid)).toBeDefined();
   });
   it("creates a uniquely named asset beside the owning document", async () => {
     const registry = await registryWith([
-      { path: "assets/Levels/Main.scene.babasset", type: "Scene", name: "Main" },
-      { path: "assets/Levels/NewMaterial.material.babasset", type: "Material", name: "NewMaterial" },
-      { path: "assets/NewMaterial_1.material.babasset", type: "Material", name: "NewMaterial_1" },
+      { path: "assets/Levels/Main.scene.hasset", type: "Scene", name: "Main" },
+      { path: "assets/Levels/NewMaterial.material.hasset", type: "Material", name: "NewMaterial" },
+      { path: "assets/NewMaterial_1.material.hasset", type: "Material", name: "NewMaterial_1" },
     ]);
 
     const created = await createPickerAsset({
       registry,
-      ownerPath: "assets/Levels/Main.scene.babasset",
+      ownerPath: "assets/Levels/Main.scene.hasset",
       openDocuments: [],
       type: "Material",
     });
     const named = await createPickerAsset({
       registry,
-      ownerPath: "assets/Levels/Main.scene.babasset",
+      ownerPath: "assets/Levels/Main.scene.hasset",
       openDocuments: [],
       type: "Material",
       name: "Lava Glow",
     });
 
-    expect(created.path).toBe("assets/Levels/NewMaterial_1.material.babasset");
+    expect(created.path).toBe("assets/Levels/NewMaterial_1.material.hasset");
     expect(created.header.name).toBe("NewMaterial_1");
-    expect(named.path).toBe("assets/Levels/Lava_Glow.material.babasset");
+    expect(named.path).toBe("assets/Levels/Lava_Glow.material.hasset");
     expect(named.header.name).toBe("Lava Glow");
     expect(registry.getByGuid(created.header.guid)?.path).toBe(created.path);
   });
@@ -119,14 +119,14 @@ describe("createPickerAsset", () => {
 
   it("keeps Class ids unique across folders and engine classes", async () => {
     const registry = await registryWith([
-      { path: "assets/Characters/Hero.class.babasset", type: "Class", name: "Hero", parentClass: "Actor" },
-      { path: "assets/Game/GameInstance_1.class.babasset", type: "Class", name: "GameInstance_1", parentClass: "GameInstance" },
-      { path: "assets/Levels/Main.scene.babasset", type: "Scene", name: "Main" },
+      { path: "assets/Characters/Hero.class.hasset", type: "Class", name: "Hero", parentClass: "Actor" },
+      { path: "assets/Game/GameInstance_1.class.hasset", type: "Class", name: "GameInstance_1", parentClass: "GameInstance" },
+      { path: "assets/Levels/Main.scene.hasset", type: "Scene", name: "Main" },
     ]);
     const create = (name: string) =>
       createPickerAsset({
         registry,
-        ownerPath: "assets/Levels/Main.scene.babasset",
+        ownerPath: "assets/Levels/Main.scene.hasset",
         openDocuments: [],
         type: "Class",
         name,
@@ -139,17 +139,17 @@ describe("createPickerAsset", () => {
     // `_N` stripping must not land on the engine class id `GameInstance`.
     const copy = await create("GameInstance_1");
 
-    expect(hero.path).toBe("assets/Levels/Hero_1.class.babasset");
+    expect(hero.path).toBe("assets/Levels/Hero_1.class.hasset");
     expect(hero.header.parentClass).toBe("Hero");
-    expect(spaced.path).toBe("assets/Levels/Boss_Fight.class.babasset");
+    expect(spaced.path).toBe("assets/Levels/Boss_Fight.class.hasset");
     expect(spaced.header.name).toBe("Boss_Fight");
-    expect(engine.path).toBe("assets/Levels/Actor_1.class.babasset");
-    expect(copy.path).toBe("assets/Levels/GameInstance_2.class.babasset");
+    expect(engine.path).toBe("assets/Levels/Actor_1.class.hasset");
+    expect(copy.path).toBe("assets/Levels/GameInstance_2.class.hasset");
   });
 
   it("refuses Class parents that New Asset does not offer, before writing", async () => {
     const registry = await registryWith([
-      { path: "assets/Layers/Fog.class.babasset", type: "Class", name: "Fog", parentClass: "SceneLayer" },
+      { path: "assets/Layers/Fog.class.hasset", type: "Class", name: "Fog", parentClass: "SceneLayer" },
     ]);
     const before = registry.list().length;
 
@@ -173,7 +173,7 @@ describe("createPickerAsset", () => {
 
     const created = await createPickerAsset({
       registry,
-      ownerPath: "plugins/Tools/Tools.plugin.babasset",
+      ownerPath: "plugins/Tools/Tools.plugin.hasset",
       openDocuments: [],
       type: "Class",
       name: "Cleanup",
@@ -181,18 +181,18 @@ describe("createPickerAsset", () => {
     });
 
     expect(created.rootId).toBe("plugin:plugins/Tools/assets");
-    expect(created.path).toBe("plugins/Tools/assets/Cleanup.class.babasset");
+    expect(created.path).toBe("plugins/Tools/assets/Cleanup.class.hasset");
   });
 
   it("falls back to the project assets root for read-only or missing owners", async () => {
     const registry = await registryWith(
       [],
-      [{ path: "starter/assets/Demo/Intro.scene.babasset", type: "Scene", name: "Intro" }],
+      [{ path: "starter/assets/Demo/Intro.scene.hasset", type: "Scene", name: "Intro" }],
     );
 
     const fromPlugin = await createPickerAsset({
       registry,
-      ownerPath: "starter/assets/Demo/Intro.scene.babasset",
+      ownerPath: "starter/assets/Demo/Intro.scene.hasset",
       openDocuments: [],
       type: "RenderTarget",
     });
@@ -204,8 +204,8 @@ describe("createPickerAsset", () => {
     });
 
     expect(fromPlugin.rootId).toBe("project");
-    expect(fromPlugin.path).toBe("assets/NewRenderTarget.rendertarget.babasset");
-    expect(fromNothing.path).toBe("assets/NewRenderTarget_1.rendertarget.babasset");
+    expect(fromPlugin.path).toBe("assets/NewRenderTarget.rendertarget.hasset");
+    expect(fromNothing.path).toBe("assets/NewRenderTarget_1.rendertarget.hasset");
   });
 });
 

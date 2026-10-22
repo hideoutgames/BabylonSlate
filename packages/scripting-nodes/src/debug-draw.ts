@@ -7,7 +7,7 @@ import {
   VEC3,
   ROTATOR,
   type GraphPin,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const WHITE = { x: 1, y: 1, z: 1, w: 1 };
 const ORIGIN = { x: 0, y: 0, z: 0 };

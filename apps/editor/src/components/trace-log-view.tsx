@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import type { TracePayload } from "@babylonslate/debugger";
+import type { TracePayload } from "@haptic/debugger";
 import {
   SearchInput,
   SelectableText,
   WindowedList,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import {
   Select,
   SelectContent,
@@ -14,8 +14,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/select";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   collectTraceLogWindow,
   filterTraceLogs,

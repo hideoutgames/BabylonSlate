@@ -1,7 +1,7 @@
 import { CircleXIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 
 const SEVERITY = {
   error: { label: "Error", tone: "text-destructive" },

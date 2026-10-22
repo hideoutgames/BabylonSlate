@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, FreeCamera, Matrix, Mesh, MeshBuilder, NullEngine, Scene, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel } from "@haptic/core";
 import { createEditorGrid } from "./editor-grid";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";

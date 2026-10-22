@@ -15,8 +15,8 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   createAppSettingsStore: () => ({ load: () => new Promise(() => {}) }),
 }));
 vi.mock("../services/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));

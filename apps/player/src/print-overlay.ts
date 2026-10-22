@@ -5,7 +5,7 @@ import {
   visiblePrintHudEntries,
   type PrintHudColor,
   type PrintHudEntry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 function asPrintColor(value: unknown): PrintHudColor | undefined {
   if (!value || typeof value !== "object") return undefined;

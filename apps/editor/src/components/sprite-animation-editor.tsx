@@ -16,11 +16,11 @@ import {
   ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Slider } from "@babylonslate/ui/components/slider";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Slider } from "@haptic/ui/components/slider";
+import { Toggle } from "@haptic/ui/components/toggle";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   createDefaultSpriteAnimationPayload,
   parseSpriteAnimationPayload,
@@ -31,7 +31,7 @@ import {
   spriteAnimationFrameStartMs,
   spriteAnimationPlayhead,
   type SpriteAnimationPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   useDocumentActions,
   useOpenDocument,

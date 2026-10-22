@@ -1,5 +1,5 @@
-import { normalizeValueUnit } from "@babylonslate/core";
-import { pinTypeFromJson, type PinType } from "@babylonslate/scripting";
+import { normalizeValueUnit } from "@haptic/core";
+import { pinTypeFromJson, type PinType } from "@haptic/scripting";
 import type {
   BehaviourTreeDocument,
   BlackboardDocument,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { decodeBabasset, encodeBabasset } from "./babasset";
+import { decodeHasset, encodeHasset } from "./hasset";
 import { sha256Hex } from "./bytes";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import { EncodeQueue, type EncodeJobResult } from "./encode-queue";
@@ -82,7 +82,7 @@ async function writeTexture(
         }
       : {}),
   };
-  await storage.writeBinary(path, await encodeBabasset({
+  await storage.writeBinary(path, await encodeHasset({
     header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
     chunks: [
       ...(options.pixels === false
@@ -124,7 +124,7 @@ async function mount(
 
 async function storageWithProject(name: string): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject(`${name}.babproject`);
+  await storage.openDocumentsProject(`${name}.hproject`);
   await storage.mkdir("assets", true);
   return storage;
 }
@@ -150,22 +150,22 @@ describe("texture encode alignment", () => {
     expect(aligned).not.toHaveProperty("ktx2BlockAlign");
   });
 
-  it("aligns a Texture a .babasset import or a Duplicate creates with an old encode, unless an atlas uses it", async () => {
+  it("aligns a Texture a .hasset import or a Duplicate creates with an old encode, unless an atlas uses it", async () => {
     const storage = await storageWithProject("created");
-    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/legacy-odd.hasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     // Saved before the Texture it uses was imported.
-    await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/ground.tileset.hasset", await encodeAssetDocument({
       guid: "ground", type: "Tileset", name: "Ground", version: 1,
       payload: { ...createDefaultTilesetPayload(), textureGuid: "incoming-atlas" } as unknown as Record<string, unknown>,
     }, { dependencies: ["incoming-atlas"] }));
     const outside = await storageWithProject("outside");
     for (const guid of ["incoming", "incoming-atlas"]) {
-      await writeTexture(outside, `assets/${guid}.babasset`, guid, { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+      await writeTexture(outside, `assets/${guid}.hasset`, guid, { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     }
     const { registry, jobs, queue } = await mount(storage);
 
     for (const guid of ["incoming", "incoming-atlas"]) {
-      await registry.importFile("project", "", `${guid}.babasset`, await outside.readBinary(`assets/${guid}.babasset`));
+      await registry.importFile("project", "", `${guid}.hasset`, await outside.readBinary(`assets/${guid}.hasset`));
     }
     const copy = await registry.duplicateAsset("legacy-odd", "project");
     await vi.waitFor(() => {
@@ -184,7 +184,7 @@ describe("texture encode alignment", () => {
 
   it("queues one re-encode when two alignment checks of a Texture overlap", async () => {
     const storage = await storageWithProject("overlap");
-    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/legacy-odd.hasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     const { registry } = await mount(storage);
     // An import's own check and the editor's pass (an atlas status change, a remount) may run at once.
     const requeued = await Promise.all([1, 2].map(() => registry.reconcileTextureAlignment({ guids: ["legacy-odd"] })));
@@ -193,7 +193,7 @@ describe("texture encode alignment", () => {
 
   it("queues one re-encode when checks on a registry and on its remount overlap", async () => {
     const storage = await storageWithProject("overlap-remount");
-    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/legacy-odd.hasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     const queue = new EncodeQueue();
     queue.pause();
     // The editor hands every remount the same queue and in-flight set.
@@ -212,7 +212,7 @@ describe("texture encode alignment", () => {
 
   it("writes nothing from a re-encode once its Texture's source pixels were replaced on disk", async () => {
     const storage = await storageWithProject("replaced-source");
-    const path = "assets/legacy-odd.babasset";
+    const path = "assets/legacy-odd.hasset";
     await writeTexture(storage, path, "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     const { registry, jobs, queue } = await mount(storage);
     queue.pause();
@@ -231,7 +231,7 @@ describe("texture encode alignment", () => {
 
   it("writes nothing from the user's own re-encode once its source pixels were replaced on disk", async () => {
     const storage = await storageWithProject("replaced-source-retry");
-    const path = "assets/retried.babasset";
+    const path = "assets/retried.hasset";
     await writeTexture(storage, path, "retried", { source: [4, 4], committed: { id: KEY_MAX_1, size: [4, 4] } });
     const { registry, jobs, queue } = await mount(storage);
     queue.pause();
@@ -250,9 +250,9 @@ describe("texture encode alignment", () => {
 
   it("never requeues or rewrites a Texture in a read-only root", async () => {
     const storage = await storageWithProject("read-only-retry");
-    const path = "plugin/assets/locked.babasset";
+    const path = "plugin/assets/locked.hasset";
     await storage.mkdir("plugin/assets", true);
-    await storage.writeBinary(path, await encodeBabasset({
+    await storage.writeBinary(path, await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "locked", type: "Texture", name: "locked", engineVersion: "0.0.0", version: 1, mode: "thin",
@@ -274,38 +274,38 @@ describe("texture encode alignment", () => {
 
   it("requeues on open only compressed textures committed off the grid that are not atlases", async () => {
     const storage = await storageWithProject("open");
-    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
-    await writeTexture(storage, "assets/aligned.babasset", "aligned", { source: [64, 32], committed: { id: KEY_MAX_64, size: [64, 32] } });
-    await writeTexture(storage, "assets/atlas-odd.babasset", "atlas-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
-    await writeTexture(storage, "assets/refused-odd.babasset", "refused-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/legacy-odd.hasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/aligned.hasset", "aligned", { source: [64, 32], committed: { id: KEY_MAX_64, size: [64, 32] } });
+    await writeTexture(storage, "assets/atlas-odd.hasset", "atlas-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/refused-odd.hasset", "refused-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     // A Particle encode from before sizes were recorded, under its real id: its
     // clamped source size is off the grid, but Particle always pads.
-    await writeTexture(storage, "assets/particle-odd.babasset", "particle-odd", {
+    await writeTexture(storage, "assets/particle-odd.hasset", "particle-odd", {
       usage: "particle", source: [1, 1], committed: { id: await particleKeyMax1(), size: [4, 4] },
     });
     // No recorded source size (WebP, GIF or Model textures imported before sizes were recorded): the committed KTX2 header decides.
-    await writeTexture(storage, "assets/unsized-odd.babasset", "unsized-odd", {
+    await writeTexture(storage, "assets/unsized-odd.hasset", "unsized-odd", {
       source: [30, 30], sized: false, committed: { id: KEY_MAX_2048, size: [30, 30] },
     });
-    await writeTexture(storage, "assets/unsized-even.babasset", "unsized-even", {
+    await writeTexture(storage, "assets/unsized-even.hasset", "unsized-even", {
       source: [32, 32], sized: false, committed: { id: KEY_MAX_2048, size: [32, 32] },
     });
     // Its payload size is on the grid, so a re-encode would land off it again: never requeued.
-    await writeTexture(storage, "assets/mismatched.babasset", "mismatched", {
+    await writeTexture(storage, "assets/mismatched.hasset", "mismatched", {
       source: [64, 32], committed: { id: KEY_MAX_64, size: [30, 30] }, recorded: { size: [30, 30] },
     });
     // Nothing to re-encode from: it keeps drawing its committed encode.
-    await writeTexture(storage, "assets/sourceless-odd.babasset", "sourceless-odd", {
+    await writeTexture(storage, "assets/sourceless-odd.hasset", "sourceless-odd", {
       source: [1, 1], pixels: false, committed: { id: KEY_MAX_1, size: [1, 1] },
     });
     // A Tileset document lists the texture it samples in its header.
-    await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/ground.tileset.hasset", await encodeAssetDocument({
       guid: "ground", type: "Tileset", name: "Ground", version: 1,
       payload: { ...createDefaultTilesetPayload(), textureGuid: "atlas-odd" } as unknown as Record<string, unknown>,
     }, { dependencies: ["atlas-odd"] }));
     const plugin = new MemoryStorageAdapter("opfs");
     await plugin.openDocumentsProject("engine-plugins");
-    await writeTexture(plugin, "starter/assets/plugin-odd.babasset", "plugin-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(plugin, "starter/assets/plugin-odd.hasset", "plugin-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     const { registry, jobs, queue } = await mount(storage, [
       { id: "plugin:starter", kind: "plugin", pathPrefix: "starter/assets", readOnly: true, storage: plugin },
     ]);
@@ -333,18 +333,18 @@ describe("texture encode alignment", () => {
     const storage = await storageWithProject("replaced");
     // Padded to 4x4 and recorded, then re-encoded 1x1 under the same id by an
     // editor that keeps the fields without knowing them.
-    await writeTexture(storage, "assets/replaced-odd.babasset", "replaced-odd", {
+    await writeTexture(storage, "assets/replaced-odd.hasset", "replaced-odd", {
       source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] }, recorded: { size: [4, 4], blockAlign: 4, replaced: [4, 4] },
     });
-    await writeTexture(storage, "assets/replaced-atlas.babasset", "replaced-atlas", {
+    await writeTexture(storage, "assets/replaced-atlas.hasset", "replaced-atlas", {
       source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] }, recorded: { size: [4, 4], blockAlign: 4, replaced: [4, 4] },
     });
     // Its record still describes its committed bytes: a padded atlas.
-    await writeTexture(storage, "assets/padded-atlas.babasset", "padded-atlas", {
+    await writeTexture(storage, "assets/padded-atlas.hasset", "padded-atlas", {
       source: [1, 1], committed: { id: KEY_MAX_1, size: [4, 4] }, recorded: { size: [4, 4], blockAlign: 4 },
     });
     for (const texture of ["replaced-atlas", "padded-atlas"]) {
-      await storage.writeBinary(`assets/${texture}.tileset.babasset`, await encodeAssetDocument({
+      await storage.writeBinary(`assets/${texture}.tileset.hasset`, await encodeAssetDocument({
         guid: `${texture}-tileset`, type: "Tileset", name: texture, version: 1,
         payload: { ...createDefaultTilesetPayload(), textureGuid: texture } as unknown as Record<string, unknown>,
       }, { dependencies: [texture] }));
@@ -365,7 +365,7 @@ describe("texture encode alignment", () => {
     const storage = await storageWithProject("webp");
     // Imported before WebP sizes were recorded, still waiting for its encode.
     for (const [guid, edge] of [["even-webp", 32], ["odd-webp", 30]] as const) {
-      await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
+      await storage.writeBinary(`assets/${guid}.hasset`, await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -386,7 +386,7 @@ describe("texture encode alignment", () => {
 
     // Tilesets pick both: only the padded one must return to its own size.
     for (const texture of ["even-webp", "odd-webp"]) {
-      const path = `assets/${texture}.tileset.babasset`;
+      const path = `assets/${texture}.tileset.hasset`;
       await storage.writeBinary(path, await encodeAssetDocument({
         guid: `${texture}-tileset`, type: "Tileset", name: texture, version: 1,
         payload: { ...createDefaultTilesetPayload(), textureGuid: texture } as unknown as Record<string, unknown>,
@@ -400,11 +400,11 @@ describe("texture encode alignment", () => {
     const storage = await storageWithProject("gif");
     // A GIF imported before sizes were recorded: its logical screen sniffs 32x32,
     // but its first frame is larger, and the browser decodes that 34x34.
-    await writeTexture(storage, "assets/legacy-gif.babasset", "legacy-gif", {
+    await writeTexture(storage, "assets/legacy-gif.hasset", "legacy-gif", {
       source: [32, 32], sized: false, gif: true, committed: { id: KEY_MAX_2048, size: [34, 34] },
     });
     // The same Texture once such a re-encode committed: unpadded, recorded off the grid.
-    await writeTexture(storage, "assets/recorded-gif.babasset", "recorded-gif", {
+    await writeTexture(storage, "assets/recorded-gif.hasset", "recorded-gif", {
       source: [32, 32], sized: false, gif: true, committed: { id: KEY_MAX_2048, size: [34, 34] }, recorded: { size: [34, 34] },
     });
     const { registry, queue } = await mount(storage);
@@ -417,7 +417,7 @@ describe("texture encode alignment", () => {
     const storage = await storageWithProject("dropped-record");
     // Padded 1x1 -> 4x4 under today's id; a Texture tab opened before that commit
     // was saved by an older editor, which kept the id but not the recorded fields.
-    await writeTexture(storage, "assets/dropped.babasset", "dropped", { source: [1, 1], committed: { id: KEY_MAX_1, size: [4, 4] } });
+    await writeTexture(storage, "assets/dropped.hasset", "dropped", { source: [1, 1], committed: { id: KEY_MAX_1, size: [4, 4] } });
     const { registry, queue } = await mount(storage);
 
     expect(await registry.reconcileTextureAlignment()).toEqual([]);
@@ -433,7 +433,7 @@ describe("texture encode alignment", () => {
     const full = await textureEncodeChunkId(textureEncodeSettingsFor(payload, DEFAULT_TEXTURE_ENCODE_SETTINGS), "albedo");
     const projectSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, maxDimension: 15 };
     const clamped = await textureEncodeChunkId(textureEncodeSettingsFor(payload, projectSettings), "albedo");
-    await storage.writeBinary("assets/retained.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/retained.hasset", await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "retained", type: "Texture", name: "retained", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -453,7 +453,7 @@ describe("texture encode alignment", () => {
       expect(jobs).toHaveLength(1);
     });
     const { header } = registry.getByGuid("retained")!;
-    const file = await decodeBabasset(await storage.readBinary("assets/retained.babasset"));
+    const file = await decodeHasset(await storage.readBinary("assets/retained.hasset"));
     const resolved = await resolveGpuTexture({
       header,
       readChunk: async (id) => file.chunks.get(id) ?? null,
@@ -465,8 +465,8 @@ describe("texture encode alignment", () => {
 
   it("keeps an atlas's own-size encode when a Particle Usage encode commits for it", async () => {
     const storage = await storageWithProject("atlas-particle");
-    await writeTexture(storage, "assets/atlas.babasset", "atlas", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
-    await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
+    await writeTexture(storage, "assets/atlas.hasset", "atlas", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await storage.writeBinary("assets/ground.tileset.hasset", await encodeAssetDocument({
       guid: "ground", type: "Tileset", name: "Ground", version: 1,
       payload: { ...createDefaultTilesetPayload(), textureGuid: "atlas" } as unknown as Record<string, unknown>,
     }, { dependencies: ["atlas"] }));
@@ -485,11 +485,11 @@ describe("texture encode alignment", () => {
 
   it("writes nothing until a requeued encode commits, and asks the guard again when it starts and commits", async () => {
     const storage = await storageWithProject("guarded-jobs");
-    await writeTexture(storage, "assets/free.babasset", "free", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
-    await writeTexture(storage, "assets/refused-queued.babasset", "refused-queued", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/free.hasset", "free", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/refused-queued.hasset", "refused-queued", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     // Its own source size, so the encoder can tell its job apart.
     const key5 = await textureEncodeChunkId(textureEncodeSettingsFor({ usage: "albedo", width: 5, height: 5 }, DEFAULT_TEXTURE_ENCODE_SETTINGS), "albedo");
-    await writeTexture(storage, "assets/refused-encoding.babasset", "refused-encoding", { source: [5, 5], committed: { id: key5, size: [5, 5] } });
+    await writeTexture(storage, "assets/refused-encoding.hasset", "refused-encoding", { source: [5, 5], committed: { id: key5, size: [5, 5] } });
     const refused = new Set<string>();
     const encoded: number[] = [];
     const { registry, queue } = await mount(storage, [], DEFAULT_TEXTURE_ENCODE_SETTINGS, (size) => {
@@ -498,7 +498,7 @@ describe("texture encode alignment", () => {
       if (size.width === 5) refused.add("refused-encoding");
     });
     const onDisk = async (guid: string) =>
-      (await decodeBabasset(await storage.readBinary(`assets/${guid}.babasset`))).header.payload;
+      (await decodeHasset(await storage.readBinary(`assets/${guid}.hasset`))).header.payload;
 
     queue.pause();
     const canWrite = (guid: string) => !refused.has(guid);
@@ -526,14 +526,14 @@ describe("texture encode alignment", () => {
   it("leaves a texture alone when the editor refuses it while the pass reads its committed encode", async () => {
     const storage = await storageWithProject("refused-during-read");
     // No recorded size: the pass reads the committed KTX2 header from the file.
-    await writeTexture(storage, "assets/unsized-odd.babasset", "unsized-odd", {
+    await writeTexture(storage, "assets/unsized-odd.hasset", "unsized-odd", {
       source: [30, 30], sized: false, committed: { id: KEY_MAX_2048, size: [30, 30] },
     });
     const { registry, queue } = await mount(storage);
     let refused = false;
     const readBinaryRange = storage.readBinaryRange.bind(storage);
     vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, offset, length, revision) => {
-      if (path === "assets/unsized-odd.babasset") refused = true;
+      if (path === "assets/unsized-odd.hasset") refused = true;
       return readBinaryRange(path, offset, length, revision);
     });
 

@@ -21,9 +21,9 @@ import {
   type Effect,
   type Light,
 } from "@babylonjs/core";
-import { normalizeRenderingQuality, normalizeShadowSettings } from "@babylonslate/core";
-import { applyAuthoredLightProperties, createAppWebGpuEngine, setSceneRenderSettings } from "@babylonslate/render";
-import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
+import { applyAuthoredLightProperties, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import {
   fixedLightSlotTable,
   setFixedShapeLightingEnabled,

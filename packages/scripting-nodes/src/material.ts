@@ -9,7 +9,7 @@ import {
   VEC4,
   type NodeDefinition,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 function setter(

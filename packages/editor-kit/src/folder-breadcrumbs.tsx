@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { ArrowUpIcon, ChevronRightIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface FolderBreadcrumbsProps {
   root: { path: string; label: string };

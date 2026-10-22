@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import { RuntimeAssetPreloads } from "./asset-preloads";
 
 it("deduplicates automatic preparation per owner and retries failed work after releasing ownership", async () => {

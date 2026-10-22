@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { AssetPicker, ClassPicker, DisclosureSection, EntryListEditor, PropertyGrid, classRowIdentity, humanizePropertyLabel, walkAncestry, type ClassPickerEntry, type PropertyRow } from "@babylonslate/editor-kit";
-import { parseMapDefaultEntries, type GraphClassMember, type SerializedGraph } from "@babylonslate/core";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@babylonslate/ui/components/field";
+import { AssetPicker, ClassPicker, DisclosureSection, EntryListEditor, PropertyGrid, classRowIdentity, humanizePropertyLabel, walkAncestry, type ClassPickerEntry, type PropertyRow } from "@haptic/editor-kit";
+import { parseMapDefaultEntries, type GraphClassMember, type SerializedGraph } from "@haptic/core";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@haptic/ui/components/field";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { subclassClassEntries } from "../lib/component-property-rows";

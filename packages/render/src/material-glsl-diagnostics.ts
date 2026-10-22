@@ -1,5 +1,5 @@
 import type { Effect } from "@babylonjs/core";
-import type { MaterialDiagnostic, MaterialOperation } from "@babylonslate/shader-graph";
+import type { MaterialDiagnostic, MaterialOperation } from "@haptic/shader-graph";
 
 /** Babylon keeps a failed link as the thrown Error's `stack`: the shader log, then JS frames. Report the log. */
 export function shaderLinkLog(errors: string): string {

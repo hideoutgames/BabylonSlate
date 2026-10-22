@@ -5,9 +5,9 @@ import {
   type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
-} from "@babylonslate/bridge";
-import type { RawInputEvent } from "@babylonslate/input";
-import { encodeInputEvents } from "@babylonslate/input";
+} from "@haptic/bridge";
+import type { RawInputEvent } from "@haptic/input";
+import { encodeInputEvents } from "@haptic/input";
 
 export interface GameWorkerHost {
   postControl: (message: ControlMessage) => void;

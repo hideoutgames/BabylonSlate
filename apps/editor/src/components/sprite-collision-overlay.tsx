@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
-import { parseSpriteCollision, resizeSpriteCollision, type SpriteCollision } from "@babylonslate/assets";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { parseSpriteCollision, resizeSpriteCollision, type SpriteCollision } from "@haptic/assets";
+import { cn } from "@haptic/ui/lib/utils";
 
 const HANDLES = ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const;
 type CollisionHandle = (typeof HANDLES)[number];

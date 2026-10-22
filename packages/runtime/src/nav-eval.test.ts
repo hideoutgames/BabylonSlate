@@ -3,12 +3,12 @@ import {
   readActorSlot,
   snapshotFloatCount,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   createDefaultSceneSettings,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createNavigationBackend,
   generateNavMesh,
@@ -16,7 +16,7 @@ import {
   mergeNavBakeMeshes,
   recastWalkableQuadFromXy,
   solidBlockerMesh,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

@@ -2,13 +2,13 @@ import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
 import { withNetMaterialChanges } from "./material-change-batch";
-import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@babylonslate/core";
+import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import type {
   SerializedActor,
   SerializedComponent,
   SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,

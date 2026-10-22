@@ -16,7 +16,7 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { newAssetFileName } from "../content-browser-helpers";
 import { instanceOverrideKeys } from "../prefab-instance-sync";
 import {

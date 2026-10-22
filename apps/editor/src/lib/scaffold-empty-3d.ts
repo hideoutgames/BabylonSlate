@@ -1,19 +1,19 @@
 import {
   createDefaultAnimGraph,
   type AnimGraphDocument,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   DOCUMENT_CHUNK_ID,
   collectAssetDependencyMetadata,
-  decodeBabasset,
-  encodeBabasset,
+  decodeHasset,
+  encodeHasset,
   normalizeModelPayload,
   newAssetGuid,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
   type AssetRegistry,
   type ImportResult,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   createMeshComponent,
   identitySerializedTransform,
@@ -21,17 +21,17 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   parseColliderProperties,
   parseRigidBodyProperties,
-} from "@babylonslate/physics/component-props";
+} from "@haptic/physics/component-props";
 import {
   buildNewAssetResult,
   newAssetFileName,
 } from "./content-browser-helpers";
 
-export const MANNEQUIN_CLASS_FILE = "Mannequin.class.babasset";
+export const MANNEQUIN_CLASS_FILE = "Mannequin.class.hasset";
 export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
@@ -196,7 +196,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   const blobs = registry.blobsFor("project");
   const materials = created.filter((asset) => asset.header.type === "Material");
   for (const asset of [...materials, model]) {
-    const decoded = await decodeBabasset(
+    const decoded = await decodeHasset(
       await storage.readBinary(asset.path),
       (hash) => blobs.readBlob(hash),
     );
@@ -224,7 +224,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
         ? new TextEncoder().encode(JSON.stringify(payload))
         : decoded.chunks.get(chunk.id)!,
     }));
-    await storage.writeBinary(asset.path, await encodeBabasset({
+    await storage.writeBinary(asset.path, await encodeHasset({
       header: {
         ...decoded.header,
         ...collectAssetDependencyMetadata(decoded.header.type, payload, {

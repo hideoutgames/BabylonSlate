@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { Camera, FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
-import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";

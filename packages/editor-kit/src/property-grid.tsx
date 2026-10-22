@@ -1,16 +1,16 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useEditorReadOnly } from "./editor-read-only";
-import type { Tag, TagContainer } from "@babylonslate/core";
+import type { Tag, TagContainer } from "@haptic/core";
 import { TagPicker } from "./tag-picker";
-import { Button } from "@babylonslate/ui/components/button";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import { Button } from "@haptic/ui/components/button";
+import { Checkbox } from "@haptic/ui/components/checkbox";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import { SelectAllInput } from "./select-all-input";
 import {
   Select,
@@ -18,9 +18,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { Slider } from "@babylonslate/ui/components/slider";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/select";
+import { Slider } from "@haptic/ui/components/slider";
+import { cn } from "@haptic/ui/lib/utils";
 import { NumericDragField } from "./numeric-drag-field";
 import { isInlineNumberUnit } from "./number-units";
 import { humanizePropertyLabel } from "./humanize-property-label";

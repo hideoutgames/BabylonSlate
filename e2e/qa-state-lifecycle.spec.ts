@@ -3,10 +3,10 @@ import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-tes
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
-const CLASS_PATH = "assets/Mannequin.class.babasset";
+const CLASS_PATH = "assets/Mannequin.class.hasset";
 
 type TestHost = {
-  __babylonslateTest: {
+  __hapticTest: {
     nudgeActiveGraphNode: () => Promise<boolean>;
     activeGraphNodePosition: () => { x: number; y: number } | null;
     nudgeActiveSceneActor: () => Promise<boolean>;
@@ -26,24 +26,24 @@ async function openClassGraph(page: Page) {
 
 async function graphPosition(page: Page) {
   const position = await page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.activeGraphNodePosition());
+    .__hapticTest.activeGraphNodePosition());
   expect(position).not.toBeNull();
   return position!;
 }
 
 async function scenePosition(page: Page) {
   return page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.activeSceneActorPosition());
+    .__hapticTest.activeSceneActorPosition());
 }
 
 async function dirtyKinds(page: Page) {
   return page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.dirtyDocuments().map((doc) => doc.kind).sort());
+    .__hapticTest.dirtyDocuments().map((doc) => doc.kind).sort());
 }
 
 async function moveGraph(page: Page) {
   expect(await page.evaluate(async () => {
-    const api = (globalThis as unknown as TestHost).__babylonslateTest;
+    const api = (globalThis as unknown as TestHost).__hapticTest;
     const changed = await api.nudgeActiveGraphNode();
     api.cancelDebouncedSave();
     return changed;
@@ -58,7 +58,7 @@ test("H6: Undo in a Class preserves unsaved Scene content and its independent hi
   const originalGraph = await graphPosition(page);
   const originalScene = await scenePosition(page);
   expect(await page.evaluate(async () => {
-    const api = (globalThis as unknown as TestHost).__babylonslateTest;
+    const api = (globalThis as unknown as TestHost).__hapticTest;
     const changed = await api.nudgeActiveSceneActor();
     api.cancelDebouncedSave();
     return changed;

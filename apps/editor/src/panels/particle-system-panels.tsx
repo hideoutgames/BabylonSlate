@@ -9,7 +9,7 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   PARTICLE_EMITTER_ASSET_TYPES,
   PARTICLE_SYSTEM_MAX_EMITTERS,
@@ -17,9 +17,9 @@ import {
   normalizeParticleSystemPayload,
   type ParticleLibraryEmitter,
   type ParticleSystemPayload,
-} from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+} from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import {
   useDocumentActions,
   useOpenDocument,

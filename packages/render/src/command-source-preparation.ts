@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 
 export type CommandFontMode = "bitmap" | "msdf" | "facetype";
 /** An empty GUID selects the project's default font. */

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Material, MeshBuilder, NullEngine, Scene, StandardMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
-import { createActor, createDefaultScene, createMeshComponent, outlineBindings } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, outlineBindings } from "@haptic/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { EditorSceneSync } from "./editor-scene-sync";

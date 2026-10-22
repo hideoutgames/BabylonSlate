@@ -76,8 +76,8 @@ Extensions run as trusted editor code, not in a sandbox. Disabling an extension,
 
 ## Share extensions
 
-- **Export** offers **Export To Download** (a `.babextension` file) and **Export To Engine Extensions**.
-- **Import Extension** adds a `.babextension` file. Imported extensions stay disabled until you enable them. Replacing an installed extension asks first.
+- **Export** offers **Export To Download** (a `.hextension` file) and **Export To Engine Extensions**.
+- **Import Extension** adds a `.hextension` file. Imported extensions stay disabled until you enable them. Replacing an installed extension asks first.
 - Packages are limited to 64 MiB compressed, 256 MiB expanded and 4,096 files.
 
 Extensions are saved in the project folder, so project backups include them. Assets an extension creates are ordinary project assets.

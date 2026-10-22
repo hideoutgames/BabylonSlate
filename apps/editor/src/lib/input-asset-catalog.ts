@@ -1,7 +1,7 @@
 import {
   isInputAssetType,
   normalizeInputAssetPayload,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Open documents win so unsaved dimension changes update graph pins immediately. */
 export function inputAssetCatalog(

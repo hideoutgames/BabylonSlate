@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { DisclosureSection, NumberField } from "@babylonslate/editor-kit";
-import type { EngineSettings } from "@babylonslate/vfs";
-import { Switch } from "@babylonslate/ui/components/switch";
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
+import { DisclosureSection, NumberField } from "@haptic/editor-kit";
+import type { EngineSettings } from "@haptic/vfs";
+import { Switch } from "@haptic/ui/components/switch";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 
 export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
   settings: EngineSettings;

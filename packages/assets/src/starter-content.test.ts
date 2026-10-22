@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { decodeAssetDocument } from "./asset-document";
-import { readBabassetHeader } from "./babasset";
+import { readHassetHeader } from "./hasset";
 import { bytesEqual } from "./bytes";
 import { discoverEnginePlugins } from "./plugin-host";
 import { PLUGIN_SETTINGS_TYPE } from "./plugin-settings";
@@ -25,12 +25,12 @@ describe("buildStarterContentFiles", () => {
     const files = await buildStarterContentFiles();
     const paths = files.map((file) => file.path).sort();
     expect(paths).toEqual([
-      "assets/StarterActor.class.babasset",
-      "starter-content.plugin.babasset",
+      "assets/StarterActor.class.hasset",
+      "starter-content.plugin.hasset",
     ]);
 
     const settingsDoc = await decodeAssetDocument(
-      files.find((file) => file.path === "starter-content.plugin.babasset")!.data,
+      files.find((file) => file.path === "starter-content.plugin.hasset")!.data,
     );
     expect(settingsDoc.type).toBe(PLUGIN_SETTINGS_TYPE);
     expect(settingsDoc.guid).toBe(STARTER_CONTENT_PLUGIN_GUID);
@@ -46,8 +46,8 @@ describe("buildStarterContentFiles", () => {
     expect(payload.enabledByDefault).toBe(false);
     expect(payload.iconKey).toBe("Puzzle");
 
-    const actorHeader = readBabassetHeader(
-      files.find((file) => file.path === "assets/StarterActor.class.babasset")!
+    const actorHeader = readHassetHeader(
+      files.find((file) => file.path === "assets/StarterActor.class.hasset")!
         .data,
     );
     expect(actorHeader.guid).toBe(STARTER_ACTOR_GUID);

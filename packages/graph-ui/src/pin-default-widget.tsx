@@ -1,5 +1,5 @@
-import { tagDisplayName, useTags } from "@babylonslate/editor-kit";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { tagDisplayName, useTags } from "@haptic/editor-kit";
+import { cn } from "@haptic/ui/lib/utils";
 import type { PinDefaultPreview } from "./pin-default-preview";
 
 const FIELD_CLASS =

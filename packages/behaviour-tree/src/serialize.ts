@@ -1,5 +1,5 @@
 import { hierarchy, tree } from "d3-hierarchy";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import type {
   BehaviourTreeDocument,
   BtDecorator,

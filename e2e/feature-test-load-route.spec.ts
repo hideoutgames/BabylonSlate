@@ -13,11 +13,11 @@ import { saveAllIfEnabled } from "./save-all";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /**
- * FeatureTest cold-load route for shader compile work. Opt-in: BL_PERF_LOAD=1, through
+ * FeatureTest cold-load route for shader compile work. Opt-in: HAPTIC_PERF_LOAD=1, through
  * playwright.perf.config.ts only.
  *
  * Creates the Feature Test starter, optionally switches the project backend, then opens each scene in
- * BL_PERF_SCENES once and records the scene-ready time and what the GPU API was asked to build while it
+ * HAPTIC_PERF_SCENES once and records the scene-ready time and what the GPU API was asked to build while it
  * loaded: WebGL program links, WebGPU shader modules and render pipelines, each counted in total, by exact
  * source and by normalized source (define lines sorted apart from the body, SHADER_NAME dropped), which
  * also finds sources that differ only in define order or name. Every Babylon Effect the Engine creates is
@@ -28,16 +28,16 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  * from page-level hooks installed before the editor boots; no editor code is touched. Counts are
  * hardware-independent; times compare only on one machine, backend and build. Never asserts timings.
  *
- * Env: BL_PERF_SCENES (comma list, default main), BL_PERF_BACKEND (webgl2|webgpu, default the project's
- *      WebGL2), BL_RENDER_NATIVE_GPU=1 (keep the project's launch arguments: perf-gpu), BL_PERF_SETTLE_MS
- *      (default 8000: how long after ready the settled window keeps counting), BL_PERF_LABEL, BL_PERF_OUT
+ * Env: HAPTIC_PERF_SCENES (comma list, default main), HAPTIC_PERF_BACKEND (webgl2|webgpu, default the project's
+ *      WebGL2), HAPTIC_RENDER_NATIVE_GPU=1 (keep the project's launch arguments: perf-gpu), HAPTIC_PERF_SETTLE_MS
+ *      (default 8000: how long after ready the settled window keeps counting), HAPTIC_PERF_LABEL, HAPTIC_PERF_OUT
  *      (extra report path).
  */
-const ENABLED = process.env.BL_PERF_LOAD === "1";
-const BACKEND = process.env.BL_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.BL_PERF_BACKEND === "webgl2" ? "webgl2" : null;
-const NATIVE_GPU = process.env.BL_RENDER_NATIVE_GPU === "1";
-const SETTLE_MS = Number(process.env.BL_PERF_SETTLE_MS ?? 8_000);
-const SCENES = (process.env.BL_PERF_SCENES ?? "main")
+const ENABLED = process.env.HAPTIC_PERF_LOAD === "1";
+const BACKEND = process.env.HAPTIC_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.HAPTIC_PERF_BACKEND === "webgl2" ? "webgl2" : null;
+const NATIVE_GPU = process.env.HAPTIC_RENDER_NATIVE_GPU === "1";
+const SETTLE_MS = Number(process.env.HAPTIC_PERF_SETTLE_MS ?? 8_000);
+const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main")
   .split(",")
   .map((scene) => scene.trim())
   .filter((scene): scene is FeatureTestSceneName => scene in FEATURE_TEST_SCENES);
@@ -613,7 +613,7 @@ function waterWindow(from: Snapshot, to: Snapshot) {
   return { requests: compact.length, distinctSignatures: new Set(compact.map(signature)).size, requestsDetail: compact.slice(0, 200) };
 }
 
-test.skip(!ENABLED, "FeatureTest cold-load route; set BL_PERF_LOAD=1 to run it.");
+test.skip(!ENABLED, "FeatureTest cold-load route; set HAPTIC_PERF_LOAD=1 to run it.");
 
 test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   test.setTimeout(60 * 60_000);
@@ -627,8 +627,8 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   await waitForTextureEncodes(page);
   const afterCreate = await take(page);
   const backendNow = () =>
-    page.evaluate(() => (globalThis as unknown as { __babylonslateViewportTest?: { renderingBaseline: () => { backend: string } | null } })
-      .__babylonslateViewportTest?.renderingBaseline()?.backend ?? null);
+    page.evaluate(() => (globalThis as unknown as { __hapticViewportTest?: { renderingBaseline: () => { backend: string } | null } })
+      .__hapticViewportTest?.renderingBaseline()?.backend ?? null);
   const switchStarted = Date.now();
   await setPhase(page, "backend");
   if (BACKEND) {
@@ -662,7 +662,7 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   const report = () => ({
     qualification:
       "Cold scene load on this machine's adapter; counts are hardware-independent, times compare only on the same machine, backend and build. No timing assertion.",
-    label: process.env.BL_PERF_LABEL ?? null,
+    label: process.env.HAPTIC_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
     adapter,
@@ -680,9 +680,9 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   const write = () => {
     const body = JSON.stringify(report(), null, 1);
     writeFileSync(testInfo.outputPath("feature-test-load.json"), body);
-    if (process.env.BL_PERF_OUT) {
-      mkdirSync(path.dirname(process.env.BL_PERF_OUT), { recursive: true });
-      writeFileSync(process.env.BL_PERF_OUT, body);
+    if (process.env.HAPTIC_PERF_OUT) {
+      mkdirSync(path.dirname(process.env.HAPTIC_PERF_OUT), { recursive: true });
+      writeFileSync(process.env.HAPTIC_PERF_OUT, body);
     }
     return body;
   };

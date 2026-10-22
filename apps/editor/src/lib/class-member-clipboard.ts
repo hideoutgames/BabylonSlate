@@ -3,25 +3,25 @@ import type {
   GraphClassMemberPin,
   SerializedComponent,
   SerializedGraph,
-} from "@babylonslate/core";
-import { nextCopyName } from "@babylonslate/assets";
+} from "@haptic/core";
+import { nextCopyName } from "@haptic/assets";
 import {
   engineParentOf,
   formatEventMemberName,
   formatEventTitle,
   walkAncestry,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   NODE_PLACEMENT_GAP,
   estimateGraphNodeSize,
   graphNodesBounds,
-} from "@babylonslate/graph-ui";
+} from "@haptic/graph-ui";
 import {
   isSceneLayerAllowedComponent,
   isSceneLayerExclusiveComponent,
-} from "@babylonslate/object-model";
-import { singletonEventKey, variableTypeFromPinType } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/object-model";
+import { singletonEventKey, variableTypeFromPinType } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { renamedComponentName } from "../panels/add-component-catalog";
 import {
   canRenameCustomEvent,

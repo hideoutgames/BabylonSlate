@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { FolderNode } from "@babylonslate/assets";
+import type { FolderNode } from "@haptic/assets";
 import { AlwaysPackageFoldersField } from "./always-package-folders-field";
 
 const node = (path: string, children: FolderNode[] = []): FolderNode => ({

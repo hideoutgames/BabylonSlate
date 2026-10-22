@@ -5,29 +5,29 @@ import {
   createDefaultScene,
   createMeshComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
-} from "@babylonslate/core";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+} from "@haptic/core";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   PARTICLE_GRAPH_LIMITS,
   createDefaultParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
   createDefaultSpriteAnimationPayload,
   normalizeAudioPayload,
-} from "@babylonslate/assets";
-import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@babylonslate/exporter";
-import { resolveAudioPlayback } from "@babylonslate/assets";
-import { RuntimeDataCatalog } from "@babylonslate/runtime";
+} from "@haptic/assets";
+import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@haptic/exporter";
+import { resolveAudioPlayback } from "@haptic/assets";
+import { RuntimeDataCatalog } from "@haptic/runtime";
 import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
 
 import {
@@ -284,7 +284,7 @@ describe("packedContentFromGame", () => {
 
   it("cooks typed triangle meshes only for Models used with Use Complex Collision", async () => {
     const { buildBoxGlbFixture, encodePackedModelAsset } = await import(
-      "@babylonslate/assets"
+      "@haptic/assets"
     );
     const packedModel = encodePackedModelAsset(
       {
@@ -635,7 +635,7 @@ describe("packedContentFromGame", () => {
   });
 
   it("hydrates Audio mixer, channel, attenuation, and packed source", async () => {
-    const { encodePackedAudioAsset } = await import("@babylonslate/assets");
+    const { encodePackedAudioAsset } = await import("@haptic/assets");
     const packedAudio = encodePackedAudioAsset(
       { volume: 0.5, audioChannelGuid: "sfx", soundAttenuationGuid: "near" },
       new Uint8Array([1, 2, 3, 4]),
@@ -715,7 +715,7 @@ describe("packedContentFromGame", () => {
 
   it("hydrates every packed Audio clip onto guid:chunk keys", async () => {
     const { audioClipCacheKey, encodePackedAudioAsset } = await import(
-      "@babylonslate/assets"
+      "@haptic/assets"
     );
     const packedAudio = encodePackedAudioAsset(
       {
@@ -772,7 +772,7 @@ describe("packedContentFromGame", () => {
   });
 
   it("hydrates a packed audioReverb sidecar for the startup scene", async () => {
-    const { audioReverbExportGuid } = await import("@babylonslate/exporter");
+    const { audioReverbExportGuid } = await import("@haptic/exporter");
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",

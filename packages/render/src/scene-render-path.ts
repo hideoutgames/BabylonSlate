@@ -4,7 +4,7 @@ import {
   resolveRenderingPipeline,
   type ClusteredRenderingAvailability,
   type ResolvedRenderingPipeline,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ClusteredSceneLights,
   isClusterableCamera,

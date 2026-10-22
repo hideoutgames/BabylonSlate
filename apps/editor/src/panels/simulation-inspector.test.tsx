@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { RuntimeInspectorResult, RuntimeObjectIdentity } from "@babylonslate/bridge";
-import { identitySerializedTransform } from "@babylonslate/core";
+import type { RuntimeInspectorResult, RuntimeObjectIdentity } from "@haptic/bridge";
+import { identitySerializedTransform } from "@haptic/core";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { SimulationInspector } from "./simulation-inspector";

@@ -1,9 +1,9 @@
-import { isTouchEventNodeType } from "@babylonslate/scripting";
+import { isTouchEventNodeType } from "@haptic/scripting";
 import {
   PARTICLE_STAGE_ROLE,
   pinColorVar,
   type ParticleStage,
-} from "@babylonslate/ui/lib/data-types";
+} from "@haptic/ui/lib/data-types";
 
 export type PinTypeRef = {
   kind: string;

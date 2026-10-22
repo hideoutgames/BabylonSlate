@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { type InputAssetDefinition } from "@babylonslate/core";
-import { encodeInputEvents } from "@babylonslate/input";
+import { type InputAssetDefinition } from "@haptic/core";
+import { encodeInputEvents } from "@haptic/input";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 
 const assets: InputAssetDefinition[] = [

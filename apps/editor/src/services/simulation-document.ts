@@ -1,4 +1,4 @@
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene } from "@haptic/core";
 import type { OpenDocument } from "./document-service";
 
 export type SimulationDocumentCommitResult =

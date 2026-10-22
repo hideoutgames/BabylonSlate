@@ -1,7 +1,7 @@
 import {
   packAudioReverbTriangles,
   type AudioReverbGeometry,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 type BakeResponse =
   | { id: number; ok: true; bytes: Uint8Array }

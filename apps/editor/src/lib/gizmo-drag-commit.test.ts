@@ -3,7 +3,7 @@ import {
   createActor,
   createText2DComponent,
   identitySerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { applyLiveGizmoToActor, takeGizmoDragScene } from "./gizmo-drag-commit";
 
 describe("takeGizmoDragScene", () => {

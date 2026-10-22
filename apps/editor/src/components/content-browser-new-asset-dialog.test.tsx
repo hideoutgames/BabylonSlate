@@ -181,7 +181,7 @@ describe("ContentBrowserNewAssetDialog", () => {
       type: "Class",
       classAssets: [
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           header: { type: "Class", name: "Hero", parentClass: "Actor" },
         },
       ],

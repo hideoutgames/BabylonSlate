@@ -5,7 +5,7 @@ import { BlackboardEditingProvider } from "../context/blackboard-editing-context
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene } from "@haptic/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
@@ -54,12 +54,12 @@ import {
   classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
-import { EditorReadOnlyContext, walkAncestry } from "@babylonslate/editor-kit";
+import { EditorReadOnlyContext, walkAncestry } from "@haptic/editor-kit";
 import { useAuthoringLock } from "../lib/use-authoring-lock";
 import { type DockviewDocumentKind } from "../shell/window-catalog";
 import { AnimEditorModeBar } from "./anim-editor-mode-bar";
 import { parseAnimDocumentLayout } from "../shell/anim-document-layout";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 import { parseSceneDocumentLayout, type SceneMode } from "../shell/scene-document-layout";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {

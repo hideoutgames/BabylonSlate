@@ -15,11 +15,11 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createTestEngine } from "./create-null-engine";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";

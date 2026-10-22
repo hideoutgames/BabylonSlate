@@ -1,6 +1,6 @@
 # Plugins
 
-Content plugins: PluginSettings identity, discovery and enablement, mounted content roots, engine plugins, `.babplugin` interchange and export.
+Content plugins: PluginSettings identity, discovery and enablement, mounted content roots, engine plugins, `.hplugin` interchange and export.
 
 ## Decisions
 
@@ -18,7 +18,7 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 | --- | --- |
 | PluginSettings schema and defaults | [`plugin-settings.ts`](../../../packages/assets/src/plugin-settings.ts) |
 | Discovery, shadowing, dependency graph, mounting, placeholders, diagnostics | [`plugin-host.ts`](../../../packages/assets/src/plugin-host.ts) |
-| `.babplugin` export, inspect, import planning, engine library install | [`plugin-package.ts`](../../../packages/assets/src/plugin-package.ts) |
+| `.hplugin` export, inspect, import planning, engine library install | [`plugin-package.ts`](../../../packages/assets/src/plugin-package.ts) |
 | Starter Content generator | [`starter-content.ts`](../../../packages/assets/src/starter-content.ts), committed tree [`engine-plugins/starter-content/`](../../../engine-plugins/starter-content/) |
 | Engine plugin catalog build | [`apps/editor/vite-engine-plugins.ts`](../../../apps/editor/vite-engine-plugins.ts) |
 | Read-only and HTTP catalog storage | [`read-only-storage.ts`](../../../packages/vfs/src/read-only-storage.ts), [`http-catalog-storage.ts`](../../../packages/vfs/src/http-catalog-storage.ts) |
@@ -27,8 +27,8 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 
 ## Layout and format
 
-- On disk: `plugins/<folder>/<name>.plugin.babasset` (PluginSettings at the plugin root) and `plugins/<folder>/assets/` with its own `.blobs`, so a `.babplugin` is self-contained ([containers.md](containers.md)).
-- `.babplugin` uses the project-tree codec with `kind: "plugin"`; `plugin.json` is the container manifest only, derived at export. In-project discovery scans for `type: "PluginSettings"` and never needs `plugin.json`. Archives are never listed as assets.
+- On disk: `plugins/<folder>/<name>.plugin.hasset` (PluginSettings at the plugin root) and `plugins/<folder>/assets/` with its own `.blobs`, so a `.hplugin` is self-contained ([containers.md](containers.md)).
+- `.hplugin` uses the project-tree codec with `kind: "plugin"`; `plugin.json` is the container manifest only, derived at export. In-project discovery scans for `type: "PluginSettings"` and never needs `plugin.json`. Archives are never listed as assets.
 - PluginSettings is editor-only (`isEditorOnlyAssetType`), stripped from Play and export, and not a New Asset type; **New Plugin** in Project Settings creates the folder and settings.
 - Fields: `displayName`, `pluginGuid`, author-controlled string `version`, `description`, `author`, `category`, optional Lucide `iconKey` (never generated art), `experimental` / `beta` (confirm before enable), `editorUtilityObjects`, `enabledByDefault`, recorded `engineVersion` and `pluginDependencies[] { guid, version }`.
 - Compatibility stamps are recorded automatically from `release/version.json` and installed dependency versions only when the author Version or a plugin-owned asset document actually changes; reads, imports, re-exports and metadata-only saves preserve them.
@@ -49,7 +49,7 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 
 ## Engine plugins
 
-- Bundled plugins live in repo `engine-plugins/` (directory form). Vite emits each file as a content-addressed `content/<sha256>` part listed in `index.json`, plus `public/engine-plugins/<id>.babplugin`. The editor mounts `index.json` through a read-only `HttpCatalogStorageAdapter` that fetches parts on demand and never downloads the archives. A missing or invalid index yields empty read-only storage.
+- Bundled plugins live in repo `engine-plugins/` (directory form). Vite emits each file as a content-addressed `content/<sha256>` part listed in `index.json`, plus `public/engine-plugins/<id>.hplugin`. The editor mounts `index.json` through a read-only `HttpCatalogStorageAdapter` that fetches parts on demand and never downloads the archives. A missing or invalid index yields empty read-only storage.
 - **Engine Settings → Engine Plugins** combines bundled entries with user-exported archives in the app-owned `__slate_engine_plugins__` library (excluded from the project list). Bundled entries cannot be deleted or replaced.
 - New projects copy the library into `plugins/<folder>/` with the same guids and the chosen default enabled state; later library changes never modify project copies. Opening an existing project copies nothing new; the bundled read-only fallback remains.
 - Starter Content: `enabledByDefault: false`, Actor class StarterActor, Lucide `Puzzle`, no artwork, stable guids `c0ffee00-0000-4000-8000-000000000001` (plugin) and `…0002` (class). `UPDATE_GOLDENS=1` regenerates the committed tree from `buildStarterContentFiles()`.

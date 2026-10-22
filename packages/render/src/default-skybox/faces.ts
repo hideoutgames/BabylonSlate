@@ -1,4 +1,4 @@
-import type { SkyboxFaceKey } from "@babylonslate/core";
+import type { SkyboxFaceKey } from "@haptic/core";
 
 const ENGINE_DEFAULT_SKYBOX_PUBLIC_DIR = "engine-content/skybox";
 

@@ -1,4 +1,4 @@
-import { DOCUMENT_CHUNK_ID, type IndexedAsset } from "@babylonslate/assets";
+import { DOCUMENT_CHUNK_ID, type IndexedAsset } from "@haptic/assets";
 
 /** Saved content identity; registry reindexing and unrelated document edits stay stable. */
 export function savedMaterialLibraryKey(assets: readonly IndexedAsset[]): string {

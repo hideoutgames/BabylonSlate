@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, type ReactNode } from "react";
-import { setTouchUi } from "@babylonslate/editor-kit";
-import { createStatusBarStyle } from "@babylonslate/vfs";
+import { setTouchUi } from "@haptic/editor-kit";
+import { createStatusBarStyle } from "@haptic/vfs";
 import { applyEditorTheme, resolveEditorTheme } from "../lib/editor-themes";
 import { useAppSettings, useCompactMode } from "./app-settings-context";
 

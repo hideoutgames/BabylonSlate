@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { bindingCodesForDevice, type InputDevice } from "@babylonslate/input";
-import { Button } from "@babylonslate/ui/components/button";
+import { bindingCodesForDevice, type InputDevice } from "@haptic/input";
+import { Button } from "@haptic/ui/components/button";
 import { formatBindingLabel } from "./format-binding-label";
 import { PickerIdentity } from "./picker-identity";
 import { SearchDropdown } from "./search-dropdown";

@@ -1,4 +1,4 @@
-import { documentKindForAssetType, type AssetDocumentKind } from "@babylonslate/core";
+import { documentKindForAssetType, type AssetDocumentKind } from "@haptic/core";
 import {
   createDefaultParticleSystemPayload,
   isParticleEmitterAssetType,
@@ -6,7 +6,7 @@ import {
   type ParticleLibrary,
   type ParticleLibraryEmitter,
   type ParticleSystemPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 export const PREVIEW_EMITTER_GUID = "preview-em";
 export const PREVIEW_SYSTEM_GUID = "preview-sys";

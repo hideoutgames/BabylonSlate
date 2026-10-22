@@ -64,13 +64,13 @@ async function chooseValueMode(
 /** Particle Domain Material; the switch wires Particle Color into the Particle Output. */
 async function createParticleMaterial(page: Page, name: string): Promise<string> {
   await createContentBrowserAsset(page, "Material", name);
-  await openAssetFromBrowser(page, `assets/${name}.material.babasset`);
+  await openAssetFromBrowser(page, `assets/${name}.material.hasset`);
   await expect(page.getByTestId("document-workspace-material")).toBeVisible();
   await expect(page.getByTestId("property-domain")).toBeVisible();
   await page.getByTestId("property-domain").click();
   await page.getByRole("option", { name: "Particle", exact: true }).click();
   await expect(page.getByTestId("property-domain")).toContainText("Particle");
-  const guid = await guidForPath(page, `assets/${name}.material.babasset`);
+  const guid = await guidForPath(page, `assets/${name}.material.hasset`);
   expect(guid.length).toBeGreaterThan(0);
   return guid;
 }
@@ -91,9 +91,9 @@ async function particleStats(page: Page): Promise<{
   return page.evaluate(() => {
     const stats = (
       window as {
-        __babylonslateParticleStats?: { systems: number; playing: number };
+        __hapticParticleStats?: { systems: number; playing: number };
       }
-    ).__babylonslateParticleStats;
+    ).__hapticParticleStats;
     return stats ? { systems: stats.systems, playing: stats.playing } : null;
   });
 }
@@ -134,7 +134,7 @@ test.describe("P17 particles", () => {
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleEmitter", "Sparks");
-    await openAssetFromBrowser(page, "assets/Sparks.emitter.babasset");
+    await openAssetFromBrowser(page, "assets/Sparks.emitter.hasset");
     await expect(
       page.getByTestId("document-workspace-particle-emitter"),
     ).toBeVisible();
@@ -201,14 +201,14 @@ test.describe("P17 particles", () => {
     );
 
     await createContentBrowserAsset(page, "ParticleSystem", "Fire");
-    await openAssetFromBrowser(page, "assets/Fire.particles.babasset");
+    await openAssetFromBrowser(page, "assets/Fire.particles.hasset");
     await expect(
       page.getByTestId("document-workspace-particle-system"),
     ).toBeVisible();
     await expect(
       page.getByTestId("particle-system-details-panel"),
     ).toBeVisible();
-    await addSystemEmitter(page, "assets/Sparks.emitter.babasset", /Sparks/);
+    await addSystemEmitter(page, "assets/Sparks.emitter.hasset", /Sparks/);
     await expect(page.getByText("Preview Skybox")).toBeVisible();
     await saveAllIfEnabled(page);
     await page
@@ -238,7 +238,7 @@ test.describe("P17 particles", () => {
       .click();
     const systemGuid = await guidForPath(
       page,
-      "assets/Fire.particles.babasset",
+      "assets/Fire.particles.hasset",
     );
     expect(systemGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId("details-asset-picker")).toBeVisible();
@@ -278,7 +278,7 @@ test.describe("P17 particles", () => {
     await openTestProject(page);
     const materialGuid = await createParticleMaterial(page, "ReopenMat");
     await createContentBrowserAsset(page, "ParticleEmitter", "ReopenSparks");
-    await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.babasset");
+    await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.hasset");
     await page.getByTestId("property-material").click();
     await pickAsset(page, "particle-emitter-material-picker", materialGuid);
     await expect(page.getByTestId("property-material")).toContainText(/ReopenMat/i);
@@ -287,13 +287,13 @@ test.describe("P17 particles", () => {
     await rate.press("Tab");
     await expect(rate).toHaveValue("35/s");
     await createContentBrowserAsset(page, "ParticleSystem", "ReopenFire");
-    await openAssetFromBrowser(page, "assets/ReopenFire.particles.babasset");
+    await openAssetFromBrowser(page, "assets/ReopenFire.particles.hasset");
     await expect(
       page.getByTestId("document-workspace-particle-system"),
     ).toBeVisible();
     await addSystemEmitter(
       page,
-      "assets/ReopenSparks.emitter.babasset",
+      "assets/ReopenSparks.emitter.hasset",
       /ReopenSparks/,
     );
     await saveAllIfEnabled(page);
@@ -306,12 +306,12 @@ test.describe("P17 particles", () => {
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
     await expect(
-      page.locator('[data-asset-path="assets/ReopenSparks.emitter.babasset"]'),
+      page.locator('[data-asset-path="assets/ReopenSparks.emitter.hasset"]'),
     ).toBeVisible();
-    await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.babasset");
+    await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.hasset");
     await expect(page.getByTestId("property-material")).toContainText(/ReopenMat/i);
     await expect(page.getByTestId("property-rate")).toHaveValue("35/s");
-    await openAssetFromBrowser(page, "assets/ReopenFire.particles.babasset");
+    await openAssetFromBrowser(page, "assets/ReopenFire.particles.hasset");
     await expect(page.getByTestId("particle-system-emitter-0")).toContainText(
       /ReopenSparks/,
     );

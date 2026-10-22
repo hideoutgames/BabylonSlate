@@ -14,8 +14,8 @@ import {
   isApplePlatform,
   keepsNativeEditing,
   type KeyChord,
-} from "@babylonslate/editor-kit";
-import { GraphKeybindsContext, type GraphKeybinds } from "@babylonslate/graph-ui";
+} from "@haptic/editor-kit";
+import { GraphKeybindsContext, type GraphKeybinds } from "@haptic/graph-ui";
 import {
   editorCommand,
   resolveKeybinds,

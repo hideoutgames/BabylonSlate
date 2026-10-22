@@ -11,8 +11,8 @@ import {
   PlusIcon,
   SparklesIcon,
 } from "lucide-react";
-import { SearchInput } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { SearchInput } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,12 +20,12 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import {
   Empty,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { HomepageGallery } from "./homepage-gallery";
 import { useDebugMode } from "../context/app-settings-context";
 import { TemplatePickCard } from "./homepage-template-card";

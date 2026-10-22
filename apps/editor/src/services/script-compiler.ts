@@ -1,15 +1,15 @@
-import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@babylonslate/core";
-import { stripAssetFileSuffix } from "@babylonslate/assets";
+import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@haptic/core";
+import { stripAssetFileSuffix } from "@haptic/assets";
 import {
   type GraphClassMember,
   type SerializedGraph,
   type TagRegistry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ANIM_OBJECT_DEBUG_GRAPH_ID,
   type ScriptBundleEntry,
   type ScriptConsoleCommand,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -17,7 +17,7 @@ import {
   findReverseTransition,
   parseAnimGraphDocument,
   type AnimGraphDocument,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   compileGraph,
   compileTransitionRuleGraph,
@@ -27,10 +27,10 @@ import {
   latentSourcesFromSerializedGraph,
   type LatentFunctionSource,
   type LogicGraph,
-} from "@babylonslate/scripting";
-import { localVariablePreamble } from "@babylonslate/scripting-nodes";
-import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
-import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
+} from "@haptic/scripting";
+import { localVariablePreamble } from "@haptic/scripting-nodes";
+import { subsystemBaseClassIdOf } from "@haptic/object-model";
+import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
 import {
   bindUnboundComponentEvents,
   defaultNodeRegistry,
@@ -93,7 +93,7 @@ export function classIdForGraphPath(path: string): string {
 
 /**
  * Name of a Class as the Content Browser shows it: the file name without its
- * container suffix (`assets/My Hero.class.babasset` is "My Hero", its class id
+ * container suffix (`assets/My Hero.class.hasset` is "My Hero", its class id
  * `My_Hero`). Null-access errors name the class this way.
  */
 export function classDisplayNameForGraphPath(path: string): string {

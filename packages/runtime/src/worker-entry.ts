@@ -1,14 +1,14 @@
 import { simulationCaptureChunks } from "./simulation-capture-transport";
-import { createSaveStorageClient, normalizeWaterDefinition } from "@babylonslate/core";
+import { createSaveStorageClient, normalizeWaterDefinition } from "@haptic/core";
 /**
  * Game worker entry. Hosts create a Worker from this module URL and post
  * control / input messages. In-process Play uses `createInProcessRuntime`.
  */
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   normalizeModelPayload,
   normalizeTilemapPayload,
@@ -16,7 +16,7 @@ import {
   parseSpriteAnimationPayload,
   type ModelPayload,
   type SpritePayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   TransferablePingPong,
   dynamicMeshTransferables,
@@ -24,7 +24,7 @@ import {
   type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { createRuntimeFromLoad } from "./play-load";
 import { createPlayBootCoordinator } from "./play-boot";

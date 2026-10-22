@@ -23,7 +23,7 @@ import {
   COLOR,
   BOOL,
 } from "./index";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import type { LogicGraph } from "./ir";
 
 describe("serialize adapter", () => {

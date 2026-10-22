@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { playAssetCatalog } from "../services/asset-catalog";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
-import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
+import { createSaveGameStorage, isTestModeEnabled } from "@haptic/vfs";
 import { acquirePlayAssetSources, createMergedPlaySourceControls, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   createContext,
@@ -18,8 +18,8 @@ import {
   type ReactNode,
 } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
-import type { SceneSourceAssets } from "@babylonslate/render";
-import { shouldPackKtx2ForPreviewBuild, webGpuMaterialCompatibilityReason } from "@babylonslate/render";
+import type { SceneSourceAssets } from "@haptic/render";
+import { shouldPackKtx2ForPreviewBuild, webGpuMaterialCompatibilityReason } from "@haptic/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
   DEFAULT_LOOP_COUNT,
@@ -29,10 +29,10 @@ import {
   isErr,
   normalizeRenderingPipeline,
   type CollisionTriangleMesh,
-} from "@babylonslate/core";
-import type { SessionReportEntry } from "@babylonslate/runtime";
-import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry } from "@babylonslate/bridge";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/core";
+import type { SessionReportEntry } from "@haptic/runtime";
+import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry } from "@haptic/bridge";
+import type { Diagnostic } from "@haptic/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
 import { createFrameFlush } from "../lib/use-debug-console-logs";
@@ -53,7 +53,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   isPreviewDiagnosticsMessage,
@@ -64,11 +64,11 @@ import {
   PREVIEW_READY_MESSAGE,
   createPreviewSaveStorageHost,
   createPreviewAssetServer,
-} from "@babylonslate/exporter";
+} from "@haptic/exporter";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   DEFAULT_PLAY_DEBUGGER_OVERLAY,
   playDebuggerOverlayFromSettings,
@@ -125,7 +125,7 @@ import {
   type ModelPayload,
   type RetargetAnimationLoad,
   readStoredAssetDocument,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
@@ -323,7 +323,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playing = playOpen || sessionState.lifecycle === "running" || sessionState.lifecycle === "paused" ||
     sessionState.lifecycle === "stopping" || sessionState.quarantined;
   const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
-  const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
+  const [playSaveGame, setPlaySaveGame] = useState<import("@haptic/core").SaveGameConfiguration>();
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
   const [playResumeRequested, setPlayResumeRequested] = useState(false);
@@ -396,7 +396,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [sessionSources, setSessionSources] = useState<SceneSourceAssets>();
   const acquireAssetSources = useCallback(async (
     guids: readonly string[],
-    options: { consumer: string; signal: AbortSignal; priority?: import("@babylonslate/assets").AssetLoadPriority; onProgress?: (progress: number) => void; fontModes?: import("@babylonslate/render").CommandFontModes },
+    options: { consumer: string; signal: AbortSignal; priority?: import("@haptic/assets").AssetLoadPriority; onProgress?: (progress: number) => void; fontModes?: import("@haptic/render").CommandFontModes },
   ) => {
     const host = playSourceHostRef.current;
     const lifetime = playSourceLifetimeRef.current;
@@ -503,8 +503,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
     Map<string, SpriteAnimationPayload>
   >(() => new Map());
-  const [playRenderTargets, setPlayRenderTargets] = useState<{ renderTargets: Map<string, import("@babylonslate/core").RenderTargetPayload>; renderTargetTextures: Map<string, import("@babylonslate/core").RenderTargetTexturePayload> }>({ renderTargets: new Map(), renderTargetTextures: new Map() });
-  const [playWaters, setPlayWaters] = useState<Map<string, import("@babylonslate/core").WaterDefinition>>(new Map());
+  const [playRenderTargets, setPlayRenderTargets] = useState<{ renderTargets: Map<string, import("@haptic/core").RenderTargetPayload>; renderTargetTextures: Map<string, import("@haptic/core").RenderTargetTexturePayload> }>({ renderTargets: new Map(), renderTargetTextures: new Map() });
+  const [playWaters, setPlayWaters] = useState<Map<string, import("@haptic/core").WaterDefinition>>(new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
   );
@@ -520,7 +520,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playFontFacetypeBytes, setPlayFontFacetypeBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
-  const [playAreaEmissions, setPlayAreaEmissions] = useState<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>(() => new Map());
+  const [playAreaEmissions, setPlayAreaEmissions] = useState<Map<string, import("@haptic/assets").AreaEmissionPixels>>(() => new Map());
   const [playFontMsdfJson, setPlayFontMsdfJson] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
@@ -528,7 +528,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     Map<string, Uint8Array>
   >(() => new Map());
   const [playFontFaceEntries, setPlayFontFaceEntries] = useState<
-    import("@babylonslate/render").FontAssetEntry[]
+    import("@haptic/render").FontAssetEntry[]
   >([]);
   const [playFontCssStack, setPlayFontCssStack] = useState("sans-serif");
   const [playFontCssStackByGuid, setPlayFontCssStackByGuid] = useState<
@@ -551,9 +551,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   >(() => new Map());
   const [playAudioSourceLoader, setPlayAudioSourceLoader] =
     useState<PlayAudioSourceLoader | undefined>(undefined);
-  const [playInputAssets, setPlayInputAssets] = useState<import("@babylonslate/core").InputAssetDefinition[]>([]);
-  const [playDataAssets, setPlayDataAssets] = useState<import("@babylonslate/core").DataAssetCatalogEntry[]>([]);
-  const [playCatalog, setPlayAssetCatalog] = useState<import("@babylonslate/core").RuntimeAssetCatalogEntry[]>([]);
+  const [playInputAssets, setPlayInputAssets] = useState<import("@haptic/core").InputAssetDefinition[]>([]);
+  const [playDataAssets, setPlayDataAssets] = useState<import("@haptic/core").DataAssetCatalogEntry[]>([]);
+  const [playCatalog, setPlayAssetCatalog] = useState<import("@haptic/core").RuntimeAssetCatalogEntry[]>([]);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -576,12 +576,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [playSceneLibrary, setPlaySceneLibrary] = useState<
-    Array<{ guid: string; scene: import("@babylonslate/core").SerializedScene }>
+    Array<{ guid: string; scene: import("@haptic/core").SerializedScene }>
   >([]);
   const [playSceneLayers, setPlaySceneLayers] = useState<
     Array<{
       guid: string;
-      layer: import("@babylonslate/core").SerializedSceneLayer;
+      layer: import("@haptic/core").SerializedSceneLayer;
     }>
   >([]);
   const documents = useDocuments();
@@ -1560,10 +1560,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isTestModeEnabled()) return;
     const host = globalThis as typeof globalThis & {
-      __babylonslateSimulationTest?: { start: () => Promise<void>; stop: () => Promise<unknown>; state: () => GameSessionState };
+      __hapticSimulationTest?: { start: () => Promise<void>; stop: () => Promise<unknown>; state: () => GameSessionState };
     };
-    host.__babylonslateSimulationTest = { start: requestSimulate, stop: () => sessionOwner.stop(), state: sessionOwner.getSnapshot };
-    return () => { delete host.__babylonslateSimulationTest; };
+    host.__hapticSimulationTest = { start: requestSimulate, stop: () => sessionOwner.stop(), state: sessionOwner.getSnapshot };
+    return () => { delete host.__hapticSimulationTest; };
   }, [requestSimulate, sessionOwner]);
 
   const resumePlayAfterMigration = useCallback(async () => {

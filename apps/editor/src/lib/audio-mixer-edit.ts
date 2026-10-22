@@ -1,4 +1,4 @@
-import type { AudioMixerPayload } from "@babylonslate/assets";
+import type { AudioMixerPayload } from "@haptic/assets";
 
 export const AUDIO_MIXER_EMPTY_CHANNELS_COPY =
   "Global Volume still applies. Add a channel to control per-channel volume.";

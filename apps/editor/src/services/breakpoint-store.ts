@@ -1,5 +1,5 @@
-import type { BreakpointLocation } from "@babylonslate/bridge";
-import type { GraphBreakpoints, GraphBreakpointState } from "@babylonslate/graph-ui";
+import type { BreakpointLocation } from "@haptic/bridge";
+import type { GraphBreakpoints, GraphBreakpointState } from "@haptic/graph-ui";
 
 /**
  * Node breakpoints: editor state per project, never stored in an asset, so setting one never makes a

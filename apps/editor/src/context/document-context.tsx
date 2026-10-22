@@ -1,7 +1,7 @@
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
-import { type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
+import { type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
-import type { InputAssetDefinition } from "@babylonslate/core";
+import type { InputAssetDefinition } from "@haptic/core";
 import type { DockviewApi } from "dockview-react";
 import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
 import {
@@ -34,8 +34,8 @@ import type {
   SerializedGraph,
   SerializedScene,
   SerializedSceneLayer,
-} from "@babylonslate/core";
-import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+} from "@haptic/core";
+import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import {
   appendJournalLines,
   discardSealedJournal,
@@ -68,7 +68,7 @@ import {
   type TilesetPayload,
   newAssetGuid,
   playerFilesHaveKtx2Transcoder,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
   EditSession,
@@ -76,7 +76,7 @@ import {
   journalDiscardLine,
   journalCheckpointLine,
   resolveJournalLines,
-} from "@babylonslate/edit";
+} from "@haptic/edit";
 import { attachJournalFlushOnHide, JournalBuffer } from "../lib/journal-buffer";
 import {
   createAppSettingsStore,
@@ -88,11 +88,11 @@ import {
   createNativeHttp,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type EngineSettings,
-} from "@babylonslate/vfs";
-import type { ProjectStorage } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import type { Diagnostic } from "@babylonslate/scripting";
-import type { TracePayload } from "@babylonslate/debugger";
+} from "@haptic/vfs";
+import type { ProjectStorage } from "@haptic/core";
+import type { ScriptBundleEntry } from "@haptic/bridge";
+import type { Diagnostic } from "@haptic/scripting";
+import type { TracePayload } from "@haptic/debugger";
 import {
   DocumentService,
   documentKindsRevision,
@@ -105,7 +105,7 @@ import { createPlayContentService, GRAPH_SIGNATURE_KINDS, type PlayScriptCompile
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
 import { DocumentTransitionGate } from "../services/document-transition-gate";
-import type { GitConfigPrefill } from "@babylonslate/source-control";
+import type { GitConfigPrefill } from "@haptic/source-control";
 import {
   readGitPrefill,
   SourceControlService,
@@ -131,7 +131,7 @@ import {
 } from "../services/script-compiler";
 import { playBundlesNeedCollect } from "../services/play-preview-prepare";
 import type { CreateProjectOptions } from "../lib/create-project";
-import type { ExportArtifact } from "@babylonslate/exporter";
+import type { ExportArtifact } from "@haptic/exporter";
 import {
   assetsFromIndexed,
   collectAndExportGame,
@@ -199,7 +199,7 @@ import {
   classifyExternalChanges,
   snapshotIndexedMtimes,
   type ExternalChangeClassification,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   listedProjectsFromRecents,
   recentProjectsWithOpenedProject,
@@ -232,7 +232,7 @@ import {
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { useDebugMode } from "./app-settings-context";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { shownCompressionState, unfinishedTextureEncodePaths } from "../lib/texture-encode-state";
@@ -327,7 +327,7 @@ interface DocumentContextValue {
   writeProjectDerivedText: (projectGuid: string, name: string, text: string) => Promise<void>;
   retryFailedTextureEncoding: () => Promise<number>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
-  collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
+  collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@haptic/assets").AreaEmissionPixels>>;
   retryTextureEncoding: (
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string },
@@ -603,7 +603,7 @@ interface DocumentContextValue {
   ) => Promise<Map<string, { json: Uint8Array; png: Uint8Array }>>;
   /** FontFace source bytes for Bitmap 2D Text. */
   collectPlayFontFaceEntries: (requiredGuids?: ReadonlySet<string>) => Promise<
-    import("@babylonslate/render").FontAssetEntry[]
+    import("@haptic/render").FontAssetEntry[]
   >;
   /** Compiled CSS stacks for Bitmap overlay 2D Text. */
   collectPlayFontCssStacks: () => {
@@ -620,7 +620,7 @@ interface DocumentContextValue {
   collectPlayModelPayloads: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
-  ) => Promise<Map<string, import("@babylonslate/assets").ModelPayload>>;
+  ) => Promise<Map<string, import("@haptic/assets").ModelPayload>>;
   /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
   collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>) => Promise<InputAssetDefinition[]>;
   collectPlayAudio: (requiredGuids?: ReadonlySet<string>) => Promise<{
@@ -1715,7 +1715,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
-        "@babylonslate/render/ktx2-transcoder"
+        "@haptic/render/ktx2-transcoder"
       );
       const transcoderOk = await probeKtx2TranscoderAvailable(
         editorKtx2PublicBase(),
@@ -3182,11 +3182,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
-      __babylonslateTest?: {
+      __hapticTest?: {
         ensureMainGraphOpen: () => Promise<boolean>;
         nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
-        assetLoading: () => { sources: ReturnType<import("@babylonslate/assets").AssetLoadingService["snapshot"]>; storage: import("@babylonslate/core").StorageReadMetrics | null; chunks: ReturnType<import("@babylonslate/assets").AccountedPayloadLoader["snapshot"]> | null; requestedPayloadBytes: number };
+        assetLoading: () => { sources: ReturnType<import("@haptic/assets").AssetLoadingService["snapshot"]>; storage: import("@haptic/core").StorageReadMetrics | null; chunks: ReturnType<import("@haptic/assets").AccountedPayloadLoader["snapshot"]> | null; requestedPayloadBytes: number };
         trimAssetSources: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
@@ -3255,10 +3255,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ktx2ChunkId: string | null;
         } | null;
       };
-      __babylonslateSourceControl?: SourceControlService;
+      __hapticSourceControl?: SourceControlService;
     };
-    host.__babylonslateSourceControl = sourceControlRef.current;
-    host.__babylonslateTest = {
+    host.__hapticSourceControl = sourceControlRef.current;
+    host.__hapticTest = {
       assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, chunks: projectService.registry?.payloadLoader.snapshot() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
       trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
       cancelDebouncedSave: () => {
@@ -3287,8 +3287,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {
         const candidates = [
-          "assets/Mannequin.class.babasset",
-          "assets/main.class.babasset",
+          "assets/Mannequin.class.hasset",
+          "assets/main.class.hasset",
         ];
         const existing = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
@@ -3359,17 +3359,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       },
       injectTestGamepad: (pad) => {
         const globalHost = globalThis as {
-          __babylonslateTestGamepad?: {
+          __hapticTestGamepad?: {
             index: number;
             axes: number[];
             buttons: number[];
           };
         };
         if (!pad) {
-          delete globalHost.__babylonslateTestGamepad;
+          delete globalHost.__hapticTestGamepad;
           return;
         }
-        globalHost.__babylonslateTestGamepad = {
+        globalHost.__hapticTestGamepad = {
           index: pad.index ?? 0,
           axes: pad.axes ?? [0, 0, 0, 0],
           buttons: pad.buttons ?? [0, 0, 0, 0],
@@ -3377,19 +3377,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       },
       injectTestTouchAxis: (axes) => {
         const globalHost = globalThis as {
-          __babylonslateTestTouchAxes?: Record<string, number>;
+          __hapticTestTouchAxes?: Record<string, number>;
         };
         if (!axes) {
-          delete globalHost.__babylonslateTestTouchAxes;
+          delete globalHost.__hapticTestTouchAxes;
           return;
         }
-        globalHost.__babylonslateTestTouchAxes = { ...axes };
+        globalHost.__hapticTestTouchAxes = { ...axes };
       },
       /** Replace the main graph so Preview compiles a known script. */
       setMainGraphContent: async (graph: SerializedGraph) => {
         const candidates = [
-          "assets/Mannequin.class.babasset",
-          "assets/main.class.babasset",
+          "assets/Mannequin.class.hasset",
+          "assets/main.class.hasset",
         ];
         const openGraph = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
@@ -3520,12 +3520,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ],
     };
     return () => {
-      delete host.__babylonslateTest;
-      delete host.__babylonslateSourceControl;
-      delete (globalThis as { __babylonslateTestGamepad?: unknown })
-        .__babylonslateTestGamepad;
-      delete (globalThis as { __babylonslateTestTouchAxes?: unknown })
-        .__babylonslateTestTouchAxes;
+      delete host.__hapticTest;
+      delete host.__hapticSourceControl;
+      delete (globalThis as { __hapticTestGamepad?: unknown })
+        .__hapticTestGamepad;
+      delete (globalThis as { __hapticTestTouchAxes?: unknown })
+        .__hapticTestTouchAxes;
     };
   }, [
     applyGraphChange,

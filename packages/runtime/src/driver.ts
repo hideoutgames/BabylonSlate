@@ -3,20 +3,20 @@ import { SimulationSession } from "./simulation-session";
 import { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
 import { RuntimeAssetCatalog } from "./asset-catalog";
-import type { SaveGameService } from "@babylonslate/core";
+import type { SaveGameService } from "@haptic/core";
 import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
-import type { RuntimeAssetLoadState } from "@babylonslate/core";
+import type { RuntimeAssetLoadState } from "@haptic/core";
 import { SceneLayerOverlay, createSceneLayerOverlayHostBindings } from "./scene-layer-overlay";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
-import type { RenderTargetPayload, RenderTargetTexturePayload } from "@babylonslate/core";
-import type { WaterDefinition } from "@babylonslate/core";
-import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath } from "@babylonslate/core";
-import type { CollisionTriangleMesh } from "@babylonslate/core";
-import { inputMappingsFromAssets } from "@babylonslate/input";
+import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
+import type { WaterDefinition } from "@haptic/core";
+import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath } from "@haptic/core";
+import type { CollisionTriangleMesh } from "@haptic/core";
+import { inputMappingsFromAssets } from "@haptic/input";
 import {
   type CommandMessage,
   type ControlMessage,
@@ -34,7 +34,7 @@ import {
   type DebugObserveTarget,
   type BreakpointLocation,
   BREAKPOINT_PAUSE_CODE,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import { debugInstanceLabel, ScriptDebugObserver } from "./script-debug";
 import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
 import {
@@ -46,13 +46,13 @@ import {
   BObject,
   SceneLayer,
   type DebugInspectSnapshot,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import {
   type RenderPathStatus,
   type SerializedScene,
   type SerializedSceneLayer,
   type SceneStreamingState,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   InputRingBuffer,
   InputResolver,
@@ -62,7 +62,7 @@ import {
   type InputBindingControls,
   type RawInputEvent,
   type ResolvedInputTick,
-} from "@babylonslate/input";
+} from "@haptic/input";
 import { sceneRealizationCancelled, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { AcquireRuntimeScene } from "./scene-source";
 import {
@@ -78,7 +78,7 @@ import {
   type TraceFrame,
   type TracePayload,
   type UserCommandDef,
-} from "@babylonslate/debugger";
+} from "@haptic/debugger";
 import { LogRingBuffer, type LogSeverity } from "./log-ring";
 import {
   SessionDiagnosticAggregator,
@@ -89,8 +89,8 @@ import { Painter2DRuntime } from "./painter2d-runtime";
 import { UIControls2DRuntime } from "./ui-controls2d-runtime";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import { TweenRuntime } from "./tween-runtime";
-import type { AnimGraphDocument } from "@babylonslate/anim-graph";
-import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
+import type { AnimGraphDocument } from "@haptic/anim-graph";
+import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviour-tree";
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { ScriptRuntime } from "./script-runtime";
 import type { PhysicsWorldSync } from "./physics-sync";
@@ -99,9 +99,9 @@ import { RagdollWorldSync } from "./ragdoll-sync";
 import { RuntimeConsole } from "./runtime-console";
 import { actorGuidIndex } from "./actor-world-transform";
 import { ActorRealization, type ScriptedActorSpawn } from "./actor-realization";
-import type { OverlaySafeAreaInsets } from "@babylonslate/core";
-import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
-import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
+import type { OverlaySafeAreaInsets } from "@haptic/core";
+import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@haptic/assets";
+import { initNavigation, type NavObstacleKind, type NavPoint } from "@haptic/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { RenderSlots } from "./render-slots";
 import { TickPipeline } from "./tick-pipeline";

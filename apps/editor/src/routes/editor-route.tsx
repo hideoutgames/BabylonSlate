@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CONTENT_BROWSER_ID } from "@babylonslate/core";
-import { Button } from "@babylonslate/ui/components/button";
+import { CONTENT_BROWSER_ID } from "@haptic/core";
+import { Button } from "@haptic/ui/components/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import { HistoryIcon } from "lucide-react";
 import { ComponentGallery } from "../components/component-gallery";
 import { EditorChromeBar } from "../components/editor-chrome-bar";

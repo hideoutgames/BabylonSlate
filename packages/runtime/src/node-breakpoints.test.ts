@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BREAKPOINT_PAUSE_CODE, type CommandMessage } from "@babylonslate/bridge";
-import { createActor } from "@babylonslate/core";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { BREAKPOINT_PAUSE_CODE, type CommandMessage } from "@haptic/bridge";
+import { createActor } from "@haptic/core";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { compileClassScript, graphNode, startGraphScenario, wire } from "./testing/graph-scenario";
 
 const registry = createDefaultNodeRegistry();

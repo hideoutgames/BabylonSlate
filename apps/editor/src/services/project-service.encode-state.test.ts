@@ -1,16 +1,16 @@
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { describe, expect, it, vi } from "vitest";
 import {
-  decodeBabasset,
-  encodeBabasset,
+  decodeHasset,
+  encodeHasset,
   readAssetDocumentHeader,
   sniffImageSize,
   textureEncodeChunkId,
   textureEncodeSize,
   type EncodeFn,
   type TextureEncodeSettings,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 
 /** KTX2 identifier plus pixelWidth / pixelHeight. */
@@ -57,7 +57,7 @@ function gatedEncode() {
 /** A compressed 1x1 Texture whose encode predates alignment: committed 1x1, nothing recorded. */
 async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string, guid: string): Promise<void> {
   const chunkId = "ktx2:legacy";
-  await storage.writeBinary(path, await encodeBabasset({
+  await storage.writeBinary(path, await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -72,7 +72,7 @@ async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string
 
 async function openService(encode: EncodeFn, seed?: (storage: MemoryStorageAdapter) => Promise<void>) {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("EncodeState.babproject");
+  await storage.openDocumentsProject("EncodeState.hproject");
   await installMinimalProject(storage);
   await seed?.(storage);
   const service = new ProjectService(storage, { encode });
@@ -87,7 +87,7 @@ function recordTextureWrites(storage: MemoryStorageAdapter, path?: string): Text
   const writes: TextureWrite[] = [];
   const write = storage.writeBinary.bind(storage);
   vi.spyOn(storage, "writeBinary").mockImplementation(async (target, bytes) => {
-    if (target.endsWith(".babasset") && (path === undefined || target === path)) {
+    if (target.endsWith(".hasset") && (path === undefined || target === path)) {
       const payload = readAssetDocumentHeader(bytes).payload;
       if (payload.compressionState !== undefined) {
         writes.push({ state: payload.compressionState, error: payload.encodeError, chunk: payload.ktx2ChunkId });
@@ -123,7 +123,7 @@ describe("texture encode state writes", () => {
   });
 
   it("leaves a compressed Texture as it was when its background alignment re-encode fails", async () => {
-    const path = "assets/odd.babasset";
+    const path = "assets/odd.hasset";
     const { storage, service } = await openService(failingEncode, (seeded) => writeLegacyOddTexture(seeded, path, "odd"));
     const before = await storage.readBinary(path);
     const writes = recordTextureWrites(storage);
@@ -147,7 +147,7 @@ describe("texture encode state writes", () => {
     let writeStarted!: () => void;
     const started = new Promise<void>((resolve) => { writeStarted = resolve; });
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path.endsWith(".babasset") && readAssetDocumentHeader(bytes).payload.compressionState === "encode_failed") {
+      if (path.endsWith(".hasset") && readAssetDocumentHeader(bytes).payload.compressionState === "encode_failed") {
         writeStarted();
         await gate;
       }
@@ -165,8 +165,8 @@ describe("texture encode state writes", () => {
     await closing;
     expect(release).toHaveBeenCalledTimes(1);
 
-    await storage.openDocumentsProject("EncodeState.babproject");
-    const saved = await decodeBabasset(await storage.readBinary(texture!.path));
+    await storage.openDocumentsProject("EncodeState.hproject");
+    const saved = await decodeHasset(await storage.readBinary(texture!.path));
     expect(saved.header.payload).toMatchObject({ compressionState: "encode_failed", encodeError: "BasisEncoder.encode returned 0" });
   });
 
@@ -213,7 +213,7 @@ describe("texture encode state writes", () => {
     ["a re-encode", "re-encode", standInEncode, ["pending", "compressed"]],
     ["a re-encode whose encode fails", "re-encode", failingEncode, ["pending", "encode_failed"]],
   ] as const)("writes the Texture file only for its pending mark and the outcome: %s", async (_name, kind, encode, expected) => {
-    const path = "assets/odd.babasset";
+    const path = "assets/odd.hasset";
     const seed = kind === "re-encode" ? (seeded: MemoryStorageAdapter) => writeLegacyOddTexture(seeded, path, "odd") : undefined;
     const { storage, service } = await openService(encode, seed);
     const writes = recordTextureWrites(storage);
@@ -252,7 +252,7 @@ describe("texture encode state writes", () => {
 
   it("does not show a background alignment re-encode as encoding", async () => {
     const { encode, calls } = gatedEncode();
-    const { service } = await openService(encode, (seeded) => writeLegacyOddTexture(seeded, "assets/odd.babasset", "odd"));
+    const { service } = await openService(encode, (seeded) => writeLegacyOddTexture(seeded, "assets/odd.hasset", "odd"));
     expect(await service.reconcileTextureAlignment()).toBe(1);
     await vi.waitFor(() => expect(calls).toHaveLength(1));
     expect(service.textureEncodingGuids.size).toBe(0);

@@ -5,12 +5,12 @@ import {
   SplineIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 import { NestedMenu, type NestedMenuItem } from "./nested-menu";
 
 export type ValueModeOption<M extends string> = {

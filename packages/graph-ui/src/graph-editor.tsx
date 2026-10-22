@@ -39,13 +39,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { pinDefaultPropertyKey } from "@babylonslate/scripting";
+import { pinDefaultPropertyKey } from "@haptic/scripting";
 import { PinDefaultEditorContext, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, UnlinkIcon, WaypointsIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
+import { Separator } from "@haptic/ui/components/separator";
 import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
@@ -54,7 +54,7 @@ import {
   useContextMenu,
   useEditorReadOnly,
   type NestedMenuItem,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   hasSerializedPins,
   type GraphDiagnostic,

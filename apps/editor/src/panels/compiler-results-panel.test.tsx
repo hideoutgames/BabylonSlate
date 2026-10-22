@@ -4,8 +4,8 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   WINDOWED_SLICE_OVERSCAN,
-} from "@babylonslate/editor-kit";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/editor-kit";
+import type { Diagnostic } from "@haptic/scripting";
 import { CompilerResultsPanel } from "./compiler-results-panel";
 
 const selectActor = vi.hoisted(() => vi.fn());
@@ -17,8 +17,8 @@ const pairingWarning: Diagnostic = {
   severity: "warning",
   code: "physics.body_without_collider",
   message: "Rigid Body needs a Collider on the same actor.",
-  assetGuid: "assets/Main.scene.babasset",
-  graphId: "scene:assets/Main.scene.babasset",
+  assetGuid: "assets/Main.scene.hasset",
+  graphId: "scene:assets/Main.scene.hasset",
   actorId: "hero",
   componentId: "rb",
 };
@@ -29,27 +29,27 @@ const scene = vi.hoisted(() => ({ physicsWorld: "3d" as "2d" | "3d" }));
 // A Model with no simple collision shapes, and one with a shape.
 const registry = vi.hoisted(() => ({
   getByGuid: (guid: string) => guid === "hollow" || guid === "solid"
-    ? { path: `assets/${guid}.model.babasset`, header: { type: "Model", payload: { simpleColliders: guid === "solid" ? [{ id: "box" }] : [] } } }
+    ? { path: `assets/${guid}.model.hasset`, header: { type: "Model", payload: { simpleColliders: guid === "solid" ? [{ id: "box" }] : [] } } }
     : undefined,
 }));
 diagnostics.current = [pairingWarning];
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "scene:assets/Main.scene.babasset",
+    documentId: "scene:assets/Main.scene.hasset",
   }),
   useOptionalDocumentWorkspace: () => ({
-    documentId: "scene:assets/Main.scene.babasset",
+    documentId: "scene:assets/Main.scene.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "scene:assets/Main.scene.babasset",
+      id: "scene:assets/Main.scene.hasset",
       ref: {
         kind: "scene",
-        path: "assets/Main.scene.babasset",
+        path: "assets/Main.scene.hasset",
         label: "Main",
       },
       content: {
@@ -75,14 +75,14 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       },
     },
     {
-      id: "graph:assets/Hero.class.babasset",
-      ref: { kind: "graph", path: "assets/Hero.class.babasset", label: "Hero" },
+      id: "graph:assets/Hero.class.hasset",
+      ref: { kind: "graph", path: "assets/Hero.class.hasset", label: "Hero" },
       content: { nodes: [], edges: [] },
     },
   ],
   setActiveDocument,
   assetRegistry: registry,
-  activeDocumentId: "scene:assets/Main.scene.babasset",
+  activeDocumentId: "scene:assets/Main.scene.hasset",
 })));
 
 vi.mock("../context/validation-context", () => ({
@@ -185,8 +185,8 @@ describe("CompilerResultsPanel", () => {
       severity: "error",
       code: "graph.missing_exec",
       message: "Exec pin is not connected.",
-      assetGuid: "assets/Hero.class.babasset",
-      graphId: "graph:assets/Hero.class.babasset",
+      assetGuid: "assets/Hero.class.hasset",
+      graphId: "graph:assets/Hero.class.hasset",
       nodeId: "tick",
     };
     diagnostics.current = [graphDiagnostic];
@@ -202,8 +202,8 @@ describe("CompilerResultsPanel", () => {
       severity: "error" as const,
       code: `graph.error.${i}`,
       message: `Diagnostic ${i}`,
-      assetGuid: "assets/Mannequin.class.babasset",
-      graphId: "class:assets/Mannequin.class.babasset",
+      assetGuid: "assets/Mannequin.class.hasset",
+      graphId: "class:assets/Mannequin.class.hasset",
       nodeId: `n${i}`,
     }));
     const restore = stubScrollViewportHeight(440);

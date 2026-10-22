@@ -5,8 +5,8 @@ import {
   TEXT2D_APPEAR_STARTS,
   TEXT2D_APPEAR_START_LABELS,
   type SerializedComponent,
-} from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
 
 export function richTextAppearPropertyRows(
   actorId: string,

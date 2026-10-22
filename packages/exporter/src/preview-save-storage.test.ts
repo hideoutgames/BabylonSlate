@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SaveGameService, type SaveGameDefinition, type SaveGameStorage } from "@babylonslate/core";
+import { SaveGameService, type SaveGameDefinition, type SaveGameStorage } from "@haptic/core";
 import { createPreviewSaveStorageClient, createPreviewSaveStorageHost } from "./preview-save-storage";
 
 const projectId = "preview-project";
@@ -86,7 +86,7 @@ describe("Preview iframe save storage", () => {
   it("ignores messages from another window or origin without displacing the active session", async () => {
     const setup = fixture();
     const client = setup.connect();
-    const data = { type: "babylonslate-preview-save-storage", action: "open", session: "untrusted" };
+    const data = { type: "haptic-preview-save-storage", action: "open", session: "untrusted" };
     setup.host.receive({ source: {}, origin: setup.origin, data });
     setup.host.receive({ source: setup.frame, origin: "https://other.example", data });
     await client.storage.withLock(namespace, async () => {

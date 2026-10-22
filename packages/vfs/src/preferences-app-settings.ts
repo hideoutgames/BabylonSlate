@@ -8,7 +8,7 @@ import {
   runSerializedAppSettingsUpdate,
 } from "./app-settings";
 
-const KEY = "babylonslate:engine-settings";
+const KEY = "haptic:engine-settings";
 
 /**
  * Capacitor Preferences-backed Engine Settings (iPad / Android).

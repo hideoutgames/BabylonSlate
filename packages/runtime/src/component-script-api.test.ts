@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
+import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
 import {
   createActor,
   createDefaultWaterDefinition,
@@ -10,7 +10,7 @@ import {
   type SerializedActor,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

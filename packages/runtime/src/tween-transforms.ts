@@ -1,8 +1,8 @@
 import {
   cloneTweenValue, identityTransform, isSceneLayerAnchorActor, normalizeQuat, rotatorToQuat,
   springArmChildOffset, type Transform, type TweenTransformSpace,
-} from "@babylonslate/core";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { Actor, ActorComponent } from "@haptic/object-model";
 import {
   actorChainWorldTransform, actorParentGuid, composeParentChildTransform, copyTransform,
   inverseQuaternion, multiplyQuaternion, relativeTransform, rotateVector,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor } from "@babylonslate/core";
+import { createActor } from "@haptic/core";
 import { startGraphScenario } from "./testing/graph-scenario";
 
 describe("script Delay", () => {

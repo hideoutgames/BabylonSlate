@@ -1,16 +1,16 @@
-import { createSaveStorageServer, createSessionSaveStorage } from "@babylonslate/core";
-import { createSaveGameStorage } from "@babylonslate/vfs";
-import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
-import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
+import { createSaveStorageServer, createSessionSaveStorage } from "@haptic/core";
+import { createSaveGameStorage } from "@haptic/vfs";
+import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
+import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import {
   parseAnimGraphDocument,
   resolveAnimGraphClips,
   type AnimClipCatalogEntry,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   createPlayBootCoordinator,
   createPlayPauseGate,
@@ -23,9 +23,9 @@ import {
   type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
-} from "@babylonslate/runtime";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
+} from "@haptic/runtime";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
+import { materialParameterTextureAssetGuids } from "@haptic/assets";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   printHudCssColor,
@@ -33,7 +33,7 @@ import {
   type ResolvedRenderingPipeline,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -41,11 +41,11 @@ import type {
   TilesetPayload,
   ModelPayload,
   RetargetAnimationLoad,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   playLoadModelsControl,
   playLoadSpritesControl,
@@ -66,8 +66,8 @@ import {
   type ParticleLibrary,
   type PlayActorPosition,
   type SceneSourceAssets,
-} from "@babylonslate/render";
-import { encodeInputEvents } from "@babylonslate/input";
+} from "@haptic/render";
+import { encodeInputEvents } from "@haptic/input";
 import {
   isPlayEngineCommandType,
   snapshotFloatCount,
@@ -78,7 +78,7 @@ import {
   type ScriptBundleEntry,
   type SessionPauseCause,
   type BreakpointLocation,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
 import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
@@ -99,7 +99,7 @@ import {
   createDiagnosticOperationClient,
   type PerformanceProfile,
   type TracePayload,
-} from "@babylonslate/debugger";
+} from "@haptic/debugger";
 
 /**
  * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
@@ -411,9 +411,9 @@ export interface PlaySession {
   runtime: RuntimeDriver | null;
   worker: GameWorkerHost | null;
   runtimeMode: "worker" | "in-process";
-  diagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport>;
+  diagnostics: SessionDiagnostics<import("@haptic/render").RenderFrameReport>;
   setPaused: (paused: boolean) => void;
-  setPauseReason: (reason: import("@babylonslate/bridge").SessionPauseReason, paused: boolean) => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
+  setPauseReason: (reason: import("@haptic/bridge").SessionPauseReason, paused: boolean) => Promise<import("@haptic/bridge").SessionBoundaryResult>;
   setInputMode: (mode: "game" | "edit") => Promise<void>;
   setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   /**
@@ -440,16 +440,16 @@ export interface PlaySession {
   ) => Promise<{ success: boolean; output: string }>;
   inspectWorld: () => Promise<DebugInspectSnapshot>;
   /** Correlated typed selection and live edits; continuous drafts are coalesced. */
-  requestRuntimeInspection: (action: RuntimeInspectionAction, options?: RuntimeInspectionWriteOptions) => Promise<import("@babylonslate/bridge").RuntimeInspectorResult>;
+  requestRuntimeInspection: (action: RuntimeInspectionAction, options?: RuntimeInspectionWriteOptions) => Promise<import("@haptic/bridge").RuntimeInspectorResult>;
   /** Complete final canonical scene, captured before destructive Stop/End Play. */
-  captureSimulationScene: (maxBytes?: number) => Promise<import("@babylonslate/runtime").SimulationSceneCaptureResult>;
+  captureSimulationScene: (maxBytes?: number) => Promise<import("@haptic/runtime").SimulationSceneCaptureResult>;
   /** Advance one simulation tick while paused. */
   step: () => void;
   /**
    * Simulation's Step: one tick of a session paused only by the user, acknowledged through the
    * session boundary after the tick's commands, so the paused view can redraw the result.
    */
-  stepPaused: () => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
+  stepPaused: () => Promise<import("@haptic/bridge").SessionBoundaryResult>;
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
@@ -474,8 +474,8 @@ export type PlaySceneSourceLoader = (guid: string, options: {
 export type PlayAssetSourceLoader = (guids: string[], options: {
   consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
   /** Orders this load's source reads against other queued work; default gameplay. */
-  priority?: import("@babylonslate/core").RuntimeAssetSchedulerPriority;
-  fontModes?: import("@babylonslate/render").CommandFontModes;
+  priority?: import("@haptic/core").RuntimeAssetSchedulerPriority;
+  fontModes?: import("@haptic/render").CommandFontModes;
 }) => Promise<PlaySourcePreparation>;
 
 /** Resolve a Play session cap; omitted or non-positive values become 60. */
@@ -604,9 +604,9 @@ export function startPlaySession(options: {
   /** Authoring asset identities admitted by preparation; this does not load assets. */
   simulationAssetGuids?: readonly string[];
   onRetentionUnavailable?: (reason: string) => void;
-  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
-  renderSettings?: import("@babylonslate/render").RenderShadingSettings;
-  consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
+  saveGame?: import("@haptic/core").SaveGameConfiguration;
+  renderSettings?: import("@haptic/render").RenderShadingSettings;
+  consoleRenderSettings?: import("@haptic/render").RenderShadingSettings;
   canvas: HTMLCanvasElement;
   sharedEngine: EngineHandle["engine"];
   injectFixtureThrow?: boolean;
@@ -622,13 +622,13 @@ export function startPlaySession(options: {
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneCatalog?: Array<{ guid: string; name: string }>;
   classAssetGuids?: Record<string, string>;
-  consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
+  consoleCommands?: Array<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   audioAssetGuids?: string[];
   acquireSceneSources?: PlaySceneSourceLoader;
   acquireAssetSources?: PlayAssetSourceLoader;
   releaseInitialSources?: () => void | ControlMessage[];
   sessionSources?: SceneSourceAssets;
-  getAssetLoadState?: (guid: string) => import("@babylonslate/core").RuntimeAssetLoadState;
+  getAssetLoadState?: (guid: string) => import("@haptic/core").RuntimeAssetLoadState;
   getSourceControls?: () => ControlMessage[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   onStats?: (stats: {
@@ -657,32 +657,32 @@ export function startPlaySession(options: {
   /** Sprite Animation clips referenced by loaded Animation Graphs. */
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
-  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
-  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
-  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
+  renderTargets?: ReadonlyMap<string, import("@haptic/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@haptic/core").RenderTargetTexturePayload>;
+  waterPayloads?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
-  areaEmissions?: ReadonlyMap<string, import("@babylonslate/assets").AreaEmissionPixels>;
+  areaEmissions?: ReadonlyMap<string, import("@haptic/assets").AreaEmissionPixels>;
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
-  fontFaceEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
+  fontFaceEntries?: readonly import("@haptic/render").FontAssetEntry[];
   fontCssStack?: string;
   fontCssStackByGuid?: ReadonlyMap<string, string>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /** Complex Collision meshes cooked during source preparation; Play never re-cooks them. */
-  complexMeshes?: ReadonlyMap<string, import("@babylonslate/core").CollisionTriangleMesh>;
+  complexMeshes?: ReadonlyMap<string, import("@haptic/core").CollisionTriangleMesh>;
   /** Answers the runtime's `requestComplexCollision` for a Model the content scan missed. */
-  cookComplexCollision?: (assetGuid: string) => Promise<import("@babylonslate/core").CollisionTriangleMesh | null>;
+  cookComplexCollision?: (assetGuid: string) => Promise<import("@haptic/core").CollisionTriangleMesh | null>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   retargetAnimationLoads?: ReadonlyMap<
     string,
     readonly RetargetAnimationLoad[]
   >;
-  loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
+  loadAudioSourceBytes?: import("@haptic/render").AudioSourceBytesLoader;
   audioLibrary?: AudioLibrary;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
   animClipCatalog?: readonly AnimClipCatalogEntry[];
@@ -705,7 +705,7 @@ export function startPlaySession(options: {
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
-  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
+  collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   /** Overlay 2DButton pick floor in CSS pixels. */
@@ -720,11 +720,11 @@ export function startPlaySession(options: {
   /** Simulation: the enabled node breakpoints when it starts; `setBreakpoints` changes them. */
   breakpoints?: BreakpointLocation[];
   loopCount?: number;
-  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  inputAssets?: import("@haptic/core").InputAssetDefinition[];
+  dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query, snapshotted when Play starts. */
-  assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
+  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
   /** Called when the runtime ended its own session (console `quit`); the host stops as for its Stop control. */
@@ -742,7 +742,7 @@ export function startPlaySession(options: {
   onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
   onBehaviourTreeDebug?: (enabled: boolean) => void;
   onBehaviourTreeSnapshot?: (
-    trees: readonly import("@babylonslate/bridge").DebugBehaviourTree[],
+    trees: readonly import("@haptic/bridge").DebugBehaviourTree[],
   ) => void;
   onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
   onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
@@ -760,7 +760,7 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   // eslint-disable-next-line prefer-const -- runtime command handlers installed first may run before assignment.
-  let performanceDiagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport> | undefined;
+  let performanceDiagnostics: SessionDiagnostics<import("@haptic/render").RenderFrameReport> | undefined;
   const diagnosticClient = createDiagnosticOperationClient({
     sessionGeneration: options.sessionGeneration ?? 0,
     send: async (request) => {
@@ -783,7 +783,7 @@ export function startPlaySession(options: {
   let inputExclusive = false;
   let acknowledgedPaused = false;
   let lastBoundaryId = 0;
-  const requestedPauses = new Set<import("@babylonslate/bridge").SessionPauseReason>();
+  const requestedPauses = new Set<import("@haptic/bridge").SessionPauseReason>();
   const boundaryClient = createSessionBoundaryClient(options.sessionGeneration ?? 0, (request) => {
     if (worker) worker.postControl({ type: "sessionBoundary", ...request });
     else if (runtime) void runtime.requestSessionBoundary(request).then((result) => boundaryClient.receive(result));
@@ -826,8 +826,8 @@ export function startPlaySession(options: {
     if (routed) handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
-  let pendingPauseBoundary: Promise<import("@babylonslate/bridge").SessionBoundaryResult> | null = null;
-  const synchronizePauseBoundary = (action: import("@babylonslate/bridge").SessionBoundaryRequest["action"]) => {
+  let pendingPauseBoundary: Promise<import("@haptic/bridge").SessionBoundaryResult> | null = null;
+  const synchronizePauseBoundary = (action: import("@haptic/bridge").SessionBoundaryRequest["action"]) => {
     const work = boundaryClient.request(action).then(result => {
       if (result.success && result.requestId > lastBoundaryId) {
         lastBoundaryId = result.requestId;
@@ -1068,11 +1068,11 @@ export function startPlaySession(options: {
   const preparedAssetGuids = new Set<string>();
   const initialSourceGuids = new Set(options.getSourceControls?.().flatMap((control) => control.type === "loadSceneContent" ? control.assetGuids : []) ?? []);
   let initialSourcesReady = false;
-  const publishedAssetStates = new Map<string, import("@babylonslate/core").RuntimeAssetLoadState>();
+  const publishedAssetStates = new Map<string, import("@haptic/core").RuntimeAssetLoadState>();
   const preparedSourceScopes = new Map<PlaySourcePreparation, { guids: string[]; ready: boolean }>();
   const sceneSourceScopes = new Map<string, Set<PlaySourcePreparation>>();
   const streamSceneAssets = new Map<string, { guid: string; loadId: number; prepared?: PlaySourcePreparation }>();
-  const publishAssetStates = (guids: readonly string[], fallback: import("@babylonslate/core").RuntimeAssetLoadState, queryCache = false) => {
+  const publishAssetStates = (guids: readonly string[], fallback: import("@haptic/core").RuntimeAssetLoadState, queryCache = false) => {
     const states = guids.map((guid) => {
       knownAssetGuids.add(guid);
       if (!queryCache && fallback === "ready") preparedAssetGuids.add(guid);
@@ -1109,7 +1109,7 @@ export function startPlaySession(options: {
     });
     if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
   };
-  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: import("@babylonslate/core").RuntimeAssetSchedulerPriority = "gameplay") => {
+  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: import("@haptic/core").RuntimeAssetSchedulerPriority = "gameplay") => {
     let releaseRender: (() => void) | undefined;
     const scope = { guids: [...(prepared.required ?? [])], ready: false };
     preparedSourceScopes.set(prepared, scope);
@@ -1367,12 +1367,12 @@ export function startPlaySession(options: {
     : undefined;
   const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
-  let captureTask: Promise<import("@babylonslate/runtime").SimulationSceneCaptureResult> | null = null;
+  let captureTask: Promise<import("@haptic/runtime").SimulationSceneCaptureResult> | null = null;
   let captureAbort: AbortController | null = null;
   let captureRequested = false;
   let captureFenceActive = false;
   let captureFenceChanged = false;
-  const acceptQuiesced = (result: import("@babylonslate/bridge").SessionBoundaryResult) => {
+  const acceptQuiesced = (result: import("@haptic/bridge").SessionBoundaryResult) => {
     if (captureClient.receive({ type: "simulationQuiesced", ...result }) && result.success) {
       captureFenceActive = true;
       captureFenceChanged = false;
@@ -1820,7 +1820,7 @@ export function startPlaySession(options: {
       const hint = previewFixtureThrowHint(options.behaviourTrees);
       if (runtime) {
         const err = new Error("Preview fixture throw");
-        err.stack = `Error: Preview fixture throw\n    at run (babylonslate:///${FIXTURE_ASSET}.js:1:1)`;
+        err.stack = `Error: Preview fixture throw\n    at run (haptic:///${FIXTURE_ASSET}.js:1:1)`;
         runtime.reportError(err, undefined, hint ?? undefined);
       } else if (worker) {
         // Worker path: route through the same aggregator a real worker

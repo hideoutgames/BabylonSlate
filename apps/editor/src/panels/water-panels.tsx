@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DirectionalLight, Vector3, type AbstractEngine, type Mesh, type Scene } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
-import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition } from "@babylonslate/core";
+import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
+import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition } from "@haptic/core";
 import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateWaterMeshDefinition,
   MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine, type RenderShadingSettings,
-} from "@babylonslate/render";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+} from "@haptic/render";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   useDocumentActions,
   useProjectState,

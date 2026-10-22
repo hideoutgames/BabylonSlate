@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import { derivedDataRoot } from "./derived-data";
 
 export const DEFAULT_THUMBNAIL_MAX_EDGE = 128;

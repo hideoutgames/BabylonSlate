@@ -7,7 +7,7 @@ import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { EnvironmentLightingFields } from "./environment-lighting-fields";
 import { RenderEffectsFields } from "./render-effects-fields";
-import { MAX_WATER_BLEND_DISTANCE, normalizeShadowSettings, normalizeWaterBlendDistance } from "@babylonslate/core";
+import { MAX_WATER_BLEND_DISTANCE, normalizeShadowSettings, normalizeWaterBlendDistance } from "@haptic/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CelShadingFields } from "./cel-shading-fields";
 import {
@@ -25,7 +25,7 @@ import {
   type AssetCreateOptions,
   type CatalogCategory,
   type CatalogCategoryGroup,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   defaultExportPreset,
   isErr,
@@ -34,17 +34,17 @@ import {
   normalizeEnvironmentLightingSettings,
   normalizeRenderEffectsSettings,
   type ExportPreset,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { Button } from "@babylonslate/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/empty";
+import { Button } from "@haptic/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Checkbox } from "@haptic/ui/components/checkbox";
+import { Input } from "@haptic/ui/components/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,7 +54,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import {
   Field,
   FieldContent,
@@ -64,7 +64,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -72,17 +72,17 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { Switch } from "@babylonslate/ui/components/switch";
-import { Slider } from "@babylonslate/ui/components/slider";
+} from "@haptic/ui/components/select";
+import { Switch } from "@haptic/ui/components/switch";
+import { Slider } from "@haptic/ui/components/slider";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
   getHostPlatform,
   isTestModeEnabled,
   type EngineSettings,
-} from "@babylonslate/vfs";
-import { isSourceControlHost } from "@babylonslate/source-control";
+} from "@haptic/vfs";
+import { isSourceControlHost } from "@haptic/source-control";
 import { LogOutIcon } from "lucide-react";
 import {
   useDocumentActions,
@@ -165,12 +165,12 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "plugins",
     label: "Plugins",
-    keywords: "plugins enable engine project starter content babplugin",
+    keywords: "plugins enable engine project starter content hplugin",
   },
   {
     id: "extensions",
     label: "Project Extensions",
-    keywords: "extensions editor code typescript javascript GLSL material converter babextension",
+    keywords: "extensions editor code typescript javascript GLSL material converter hextension",
   },
   {
     id: "export",
@@ -227,7 +227,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "debugger",
     label: "Debugger",
-    keywords: "trace babtrace snapshot performance profiler recording duration gpu timing frames memory budget pause play simulation debug mode diagnostics feature test copy error",
+    keywords: "trace htrace snapshot performance profiler recording duration gpu timing frames memory budget pause play simulation debug mode diagnostics feature test copy error",
   },
   {
     id: "viewport",

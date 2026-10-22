@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { Trash2Icon } from "lucide-react";
-import { BREAKPOINT_PAUSE_CODE } from "@babylonslate/bridge";
+import { BREAKPOINT_PAUSE_CODE } from "@haptic/bridge";
 import {
   PanelFrame,
   ShortcutKeys,
@@ -8,11 +8,11 @@ import {
   useTouchUi,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Checkbox } from "@haptic/ui/components/checkbox";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { useKeybindChord } from "../context/keybind-context";
 import { usePlay } from "../context/play-context";

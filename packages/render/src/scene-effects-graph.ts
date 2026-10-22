@@ -9,7 +9,7 @@ import { FrameGraphFXAATask } from "@babylonjs/core/FrameGraph/Tasks/PostProcess
 import { FrameGraphFsr1SharpenTask, FrameGraphFsr1UpscaleTask } from "./fsr1-tasks";
 import { FrameGraphImageProcessingTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/imageProcessingTask";
 import { ThinImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/thinImageProcessingPostProcess";
-import type { RenderEffectsSettings } from "@babylonslate/core";
+import type { RenderEffectsSettings } from "@haptic/core";
 import {
   retireOwnedEffect,
   type OwnedEffectRetirement,

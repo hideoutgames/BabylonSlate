@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
-import { identityTransform } from "@babylonslate/core";
-import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { Actor, ActorComponent } from "@haptic/object-model";
+import { identityTransform } from "@haptic/core";
+import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 import { TweenRuntime } from "./tween-runtime";
 

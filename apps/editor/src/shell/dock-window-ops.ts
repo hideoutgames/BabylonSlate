@@ -1,4 +1,4 @@
-import type { PanelPlacement } from "@babylonslate/core";
+import type { PanelPlacement } from "@haptic/core";
 import {
   dockLayoutHostWidth,
   resolveDockInitialWidth,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { RuntimeAssetCatalogEntry } from "@babylonslate/core";
-import { compileGraph, mergeEngineTypeSchemas, structInstanceDefault, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import type { RuntimeAssetCatalogEntry } from "@haptic/core";
+import { compileGraph, mergeEngineTypeSchemas, structInstanceDefault, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { RuntimeAssetCatalog, emptyAssetData, type AssetFilterValue } from "./asset-catalog";
 import { createInProcessRuntime } from "./driver";
 import { loadCompiledModule } from "./module-loader";
@@ -17,20 +17,20 @@ function entry(
   return { guid: extra.guid ?? `guid-${name}`, name, type, path, dependencies: [], requiredDependencies: [], ...extra };
 }
 
-const rifle = entry("assets/Weapons/Rifle.class.babasset", "Class", {
+const rifle = entry("assets/Weapons/Rifle.class.hasset", "Class", {
   classId: "Rifle", parentClass: "Weapon", dependencies: ["guid-rifleTex", "guid-Impact", "guid-Missing"], requiredDependencies: ["guid-rifleTex"],
 });
-const sniper = entry("assets/Weapons/Rifles/Sniper.class.babasset", "Class", {
+const sniper = entry("assets/Weapons/Rifles/Sniper.class.hasset", "Class", {
   classId: "Sniper", parentClass: "Rifle", dependencies: ["guid-Rifle", "guid-Sniper"], requiredDependencies: ["guid-Rifle"],
 });
-const weapon = entry("assets/Weapons/Weapon.class.babasset", "Class", { classId: "Weapon", parentClass: "Actor" });
-const pickup = entry("assets/Items/Pickup.class.babasset", "Class", { classId: "Pickup", parentClass: "Actor", dependencies: ["guid-rifleTex"] });
-const gem = entry("plugins/Foo/assets/Gem.class.babasset", "Class", { classId: "Gem", parentClass: "Weapon" });
-const hud = entry("assets/UI/Hud.class.babasset", "Class", { classId: "Hud", parentClass: "ActorComponent" });
-const rifleTex = entry("assets/Weapons/Textures/rifle.texture.babasset", "Texture", { guid: "guid-rifleTex" });
-const impact = entry("assets/Weapons/Impact.audio.babasset", "Audio", { guid: "guid-Impact" });
-const logo = entry("assets/UI/Logo.texture.babasset", "Texture");
-const main = entry("assets/Levels/Main.scene.babasset", "Scene", { dependencies: ["guid-Rifle"], requiredDependencies: [] });
+const weapon = entry("assets/Weapons/Weapon.class.hasset", "Class", { classId: "Weapon", parentClass: "Actor" });
+const pickup = entry("assets/Items/Pickup.class.hasset", "Class", { classId: "Pickup", parentClass: "Actor", dependencies: ["guid-rifleTex"] });
+const gem = entry("plugins/Foo/assets/Gem.class.hasset", "Class", { classId: "Gem", parentClass: "Weapon" });
+const hud = entry("assets/UI/Hud.class.hasset", "Class", { classId: "Hud", parentClass: "ActorComponent" });
+const rifleTex = entry("assets/Weapons/Textures/rifle.texture.hasset", "Texture", { guid: "guid-rifleTex" });
+const impact = entry("assets/Weapons/Impact.audio.hasset", "Audio", { guid: "guid-Impact" });
+const logo = entry("assets/UI/Logo.texture.hasset", "Texture");
+const main = entry("assets/Levels/Main.scene.hasset", "Scene", { dependencies: ["guid-Rifle"], requiredDependencies: [] });
 const all = [rifle, sniper, weapon, pickup, gem, hud, rifleTex, impact, logo, main];
 const paths = (found: Array<{ Path: string }>) => found.map((asset) => asset.Path);
 
@@ -39,11 +39,11 @@ describe("RuntimeAssetCatalog", () => {
 
   it("describes an asset with the Asset Data fields, leaving Class empty for non-Class assets", () => {
     expect(catalog.getAssetData("guid-Rifle")).toEqual({
-      Asset: "guid-Rifle", Name: "Rifle", Path: "assets/Weapons/Rifle.class.babasset", Folder: "assets/Weapons",
+      Asset: "guid-Rifle", Name: "Rifle", Path: "assets/Weapons/Rifle.class.hasset", Folder: "assets/Weapons",
       Type: "Class", Class: "Rifle", ParentClass: "Weapon",
     });
     expect(catalog.getAssetData("guid-rifleTex")).toEqual({
-      Asset: "guid-rifleTex", Name: "rifle", Path: "assets/Weapons/Textures/rifle.texture.babasset", Folder: "assets/Weapons/Textures",
+      Asset: "guid-rifleTex", Name: "rifle", Path: "assets/Weapons/Textures/rifle.texture.hasset", Folder: "assets/Weapons/Textures",
       Type: "Texture", Class: "", ParentClass: "",
     });
     expect(catalog.hasAsset("guid-Rifle")).toBe(true);
@@ -61,28 +61,28 @@ describe("RuntimeAssetCatalog", () => {
   it("reports an unknown asset or path as an empty Asset Data and not found", () => {
     expect(catalog.getAssetData("missing")).toEqual(emptyAssetData());
     expect(catalog.hasAsset("missing")).toBe(false);
-    expect(catalog.getAssetByPath("assets/Nope.texture.babasset")).toEqual(emptyAssetData());
-    expect(catalog.hasAssetPath("assets/Nope.texture.babasset")).toBe(false);
+    expect(catalog.getAssetByPath("assets/Nope.texture.hasset")).toEqual(emptyAssetData());
+    expect(catalog.hasAssetPath("assets/Nope.texture.hasset")).toBe(false);
   });
 
   it("finds an asset by its normalized full storage path", () => {
-    expect(catalog.getAssetByPath("/assets//UI/Logo.texture.babasset ").Asset).toBe("guid-Logo");
-    expect(catalog.hasAssetPath("assets/UI/Logo.texture.babasset")).toBe(true);
-    expect(catalog.hasAssetPath("assets/ui/logo.texture.babasset")).toBe(false);
+    expect(catalog.getAssetByPath("/assets//UI/Logo.texture.hasset ").Asset).toBe("guid-Logo");
+    expect(catalog.hasAssetPath("assets/UI/Logo.texture.hasset")).toBe(true);
+    expect(catalog.hasAssetPath("assets/ui/logo.texture.hasset")).toBe(false);
   });
 
   it("lists a folder's own assets, or with Recursive its subfolders too, in Path order", () => {
     expect(paths(catalog.getAssetsByPath("assets/Weapons", false))).toEqual([
-      "assets/Weapons/Impact.audio.babasset",
-      "assets/Weapons/Rifle.class.babasset",
-      "assets/Weapons/Weapon.class.babasset",
+      "assets/Weapons/Impact.audio.hasset",
+      "assets/Weapons/Rifle.class.hasset",
+      "assets/Weapons/Weapon.class.hasset",
     ]);
     expect(paths(catalog.getAssetsByPath("assets/Weapons", true))).toEqual([
-      "assets/Weapons/Impact.audio.babasset",
-      "assets/Weapons/Rifle.class.babasset",
-      "assets/Weapons/Rifles/Sniper.class.babasset",
-      "assets/Weapons/Textures/rifle.texture.babasset",
-      "assets/Weapons/Weapon.class.babasset",
+      "assets/Weapons/Impact.audio.hasset",
+      "assets/Weapons/Rifle.class.hasset",
+      "assets/Weapons/Rifles/Sniper.class.hasset",
+      "assets/Weapons/Textures/rifle.texture.hasset",
+      "assets/Weapons/Weapon.class.hasset",
     ]);
   });
 
@@ -96,16 +96,16 @@ describe("RuntimeAssetCatalog", () => {
   it("treats an empty folder as every root only when searching recursively", () => {
     expect(catalog.getAssetsByPath("", true)).toHaveLength(all.length);
     expect(catalog.getAssetsByPath("", false)).toEqual([]);
-    expect(paths(catalog.getAssetsByType("Class", "", true))).toContain("plugins/Foo/assets/Gem.class.babasset");
+    expect(paths(catalog.getAssetsByType("Class", "", true))).toContain("plugins/Foo/assets/Gem.class.hasset");
   });
 
   it("filters by type within an optional folder", () => {
     expect(paths(catalog.getAssetsByType("Texture", "", true))).toEqual([
-      "assets/UI/Logo.texture.babasset",
-      "assets/Weapons/Textures/rifle.texture.babasset",
+      "assets/UI/Logo.texture.hasset",
+      "assets/Weapons/Textures/rifle.texture.hasset",
     ]);
     expect(paths(catalog.getAssetsByType("Texture", "assets/Weapons", true))).toEqual([
-      "assets/Weapons/Textures/rifle.texture.babasset",
+      "assets/Weapons/Textures/rifle.texture.hasset",
     ]);
     expect(catalog.getAssetsByType("Texture", "assets/Weapons", false)).toEqual([]);
     expect(catalog.getAssetsByType("", "", true)).toEqual([]);
@@ -130,8 +130,8 @@ describe("RuntimeAssetCatalog", () => {
 
   it("limits a Class query to a folder and never matches non-Class assets or unknown Classes", () => {
     expect(paths(catalog.getAssetsByClass("Weapon", true, "assets/Weapons", false))).toEqual([
-      "assets/Weapons/Rifle.class.babasset",
-      "assets/Weapons/Weapon.class.babasset",
+      "assets/Weapons/Rifle.class.hasset",
+      "assets/Weapons/Weapon.class.hasset",
     ]);
     expect(catalog.getAssetsByClass("Texture", true, "", true)).toEqual([]);
     expect(catalog.getAssetsByClass("Nope", true, "", true)).toEqual([]);
@@ -140,9 +140,9 @@ describe("RuntimeAssetCatalog", () => {
 
   it("stops at a parent cycle or a parent that is not in the catalog", () => {
     const loop = new RuntimeAssetCatalog([
-      entry("assets/A.class.babasset", "Class", { classId: "A", parentClass: "B" }),
-      entry("assets/B.class.babasset", "Class", { classId: "B", parentClass: "A" }),
-      entry("assets/C.class.babasset", "Class", { classId: "C", parentClass: "Gone" }),
+      entry("assets/A.class.hasset", "Class", { classId: "A", parentClass: "B" }),
+      entry("assets/B.class.hasset", "Class", { classId: "B", parentClass: "A" }),
+      entry("assets/C.class.hasset", "Class", { classId: "C", parentClass: "Gone" }),
     ]);
     expect(loop.getAssetsByClass("A", true, "", true).map((asset) => asset.Class)).toEqual(["A", "B"]);
     expect(loop.getAssetsByClass("Gone", true, "", true).map((asset) => asset.Class)).toEqual(["C"]);
@@ -151,26 +151,26 @@ describe("RuntimeAssetCatalog", () => {
 
   it("combines every Find Assets constraint", () => {
     expect(paths(catalog.findAssets({ Folders: ["assets/Weapons"], NameContains: "RIF" }))).toEqual([
-      "assets/Weapons/Rifle.class.babasset",
-      "assets/Weapons/Textures/rifle.texture.babasset",
+      "assets/Weapons/Rifle.class.hasset",
+      "assets/Weapons/Textures/rifle.texture.hasset",
     ]);
     expect(paths(catalog.findAssets({ Folders: ["assets/Weapons"], Types: ["Class"], NameContains: "RIF" }))).toEqual([
-      "assets/Weapons/Rifle.class.babasset",
+      "assets/Weapons/Rifle.class.hasset",
     ]);
     expect(paths(catalog.findAssets({ Folders: ["assets/Weapons"], Recursive: false, Types: ["Class", "Audio"] }))).toEqual([
-      "assets/Weapons/Impact.audio.babasset",
-      "assets/Weapons/Rifle.class.babasset",
-      "assets/Weapons/Weapon.class.babasset",
+      "assets/Weapons/Impact.audio.hasset",
+      "assets/Weapons/Rifle.class.hasset",
+      "assets/Weapons/Weapon.class.hasset",
     ]);
     expect(paths(catalog.findAssets({ Folders: ["assets/Weapons", "assets/UI"], Types: ["Texture"] }))).toEqual([
-      "assets/UI/Logo.texture.babasset",
-      "assets/Weapons/Textures/rifle.texture.babasset",
+      "assets/UI/Logo.texture.hasset",
+      "assets/Weapons/Textures/rifle.texture.hasset",
     ]);
     expect(paths(catalog.findAssets({ Classes: ["Rifle"], IncludeSubclasses: false }))).toEqual([
-      "assets/Weapons/Rifle.class.babasset",
+      "assets/Weapons/Rifle.class.hasset",
     ]);
     expect(paths(catalog.findAssets({ Classes: ["Rifle"], Folders: ["assets/Weapons/Rifles"] }))).toEqual([
-      "assets/Weapons/Rifles/Sniper.class.babasset",
+      "assets/Weapons/Rifles/Sniper.class.hasset",
     ]);
     expect(catalog.findAssets({ Types: ["Texture"], Classes: ["Rifle"] })).toEqual([]);
   });

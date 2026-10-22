@@ -1,4 +1,4 @@
-import { PARTICLE_CPU_CAPACITY_BUDGET } from "@babylonslate/core";
+import { PARTICLE_CPU_CAPACITY_BUDGET } from "@haptic/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_UNSUPPORTED_V1_TYPES,

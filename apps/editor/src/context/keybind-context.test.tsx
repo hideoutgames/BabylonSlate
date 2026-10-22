@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useContext, useRef } from "react";
-import { GraphKeybindsContext } from "@babylonslate/graph-ui";
-import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
-import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
-import { Sheet, SheetContent, SheetTitle } from "@babylonslate/ui/components/sheet";
-import { MemoryAppSettingsStore, defaultEngineSettings } from "@babylonslate/vfs";
+import { GraphKeybindsContext } from "@haptic/graph-ui";
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
+import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
+import { Sheet, SheetContent, SheetTitle } from "@haptic/ui/components/sheet";
+import { MemoryAppSettingsStore, defaultEngineSettings } from "@haptic/vfs";
 import { AppSettingsProvider } from "./app-settings-context";
 import { KeybindProvider, useKeybindCommand } from "./keybind-context";
 import type { EditorCommandId } from "../lib/editor-keybinds";

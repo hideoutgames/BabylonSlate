@@ -89,7 +89,7 @@ test("Data Trees own hierarchical values and infer mixed Definition graph types"
   test.setTimeout(180_000);
   await openTestProject(page);
   await createDataAsset(page, "DataDefinition", "ItemStats");
-  const definitionPath = "assets/ItemStats.datadefinition.babasset";
+  const definitionPath = "assets/ItemStats.datadefinition.hasset";
   await addDefinitionField(page, "Damage", "int", "12");
   const definitionFields = page.getByTestId("data-definition-fields-panel");
   const definitionDetails = page.getByTestId("data-definition-details-panel");
@@ -111,10 +111,10 @@ test("Data Trees own hierarchical values and infer mixed Definition graph types"
   await createDataAsset(page, "DataDefinition", "ArmorStats");
   await addDefinitionField(page, "Defense", "int", "8");
   await saveAllIfEnabled(page);
-  const armorGuid = await assetGuidFromBrowser(page, "assets/ArmorStats.datadefinition.babasset", "ArmorStats");
+  const armorGuid = await assetGuidFromBrowser(page, "assets/ArmorStats.datadefinition.hasset", "ArmorStats");
 
   await createDataAsset(page, "DataTree", "Equipment");
-  const treePath = "assets/Equipment.datatree.babasset";
+  const treePath = "assets/Equipment.datatree.hasset";
   const tree = activeTree(page);
   const weaponsId = await addNamedEntry(page, "Weapons");
   const values = tree.getByTestId("data-tree-values-panel");
@@ -161,7 +161,7 @@ test("Data Trees own hierarchical values and infer mixed Definition graph types"
   await expect(tree.getByTestId(`tree-row-${armorId}`)).toContainText("Armor");
 
   // Known paths infer the entry's effective Definition, including branch overrides.
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   await page.getByTestId("graph-add-node").click();
   await page.getByTestId("node-palette-search").fill("Read Data Entry");
   await page.getByTestId("node-palette-item-data.readEntry").click();
@@ -222,7 +222,7 @@ test("Data Trees own hierarchical values and infer mixed Definition graph types"
   await expect(renameSword).toBeFocused();
   await renameSword.fill("Iron Sword Renamed");
   await renameSword.press("Enter");
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   await readNode.getByText("Read ItemStats Data", { exact: true }).click();
   await expect(inlinePath).toContainText("Missing Entry (Weapons/Iron Sword)");
   await expect(defaultPath).toContainText("Missing Entry (Weapons/Iron Sword)");

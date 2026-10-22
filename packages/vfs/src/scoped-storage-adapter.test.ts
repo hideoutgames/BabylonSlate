@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BabylonSlateScopedStoragePlugin } from "./capacitor-scoped-storage";
-import type { ProjectStorageReader } from "@babylonslate/core";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import type { ProjectStorageReader } from "@haptic/core";
+import { SourceRevisionChangedError } from "@haptic/core";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 import { createMountedProjectStorage } from "./mounted-storage";
 
@@ -52,15 +52,15 @@ describe("ScopedStorageAdapter", () => {
     vi.mocked(plugin.readFileRange).mockResolvedValue({ data: btoa("ab"), totalSize: 1024, revision: "one", actualBytesRead: 2 });
     const adapter = new ScopedStorageAdapter(plugin);
     await adapter.pickProjectFolder();
-    const selected = await adapter.withReadScope(reader => reader.readBinaryRange("large.babasset", 10, 2));
+    const selected = await adapter.withReadScope(reader => reader.readBinaryRange("large.hasset", 10, 2));
     expect(selected.bytes).toEqual(new Uint8Array([97, 98]));
     expect(adapter.getReadMetrics()).toMatchObject({ actualBytesRead: 2, rangeReads: 1, fullReads: 0 });
     const mounted = createMountedProjectStorage([{ path: "plugin", storage: adapter, sourcePath: "" }]);
-    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2, "old")).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    await expect(mounted.readBinaryRange("plugin/large.hasset", 10, 2, "old")).rejects.toBeInstanceOf(SourceRevisionChangedError);
     vi.mocked(plugin.readFileRange).mockResolvedValue({ data: btoa("a"), totalSize: 1024, revision: "one", actualBytesRead: 1 });
-    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2)).rejects.toThrow(/range response/i);
+    await expect(mounted.readBinaryRange("plugin/large.hasset", 10, 2)).rejects.toThrow(/range response/i);
     vi.mocked(plugin.readFileRange).mockRejectedValue({ code: "NOT_FOUND", data: { actualBytesRead: 1 } });
-    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2)).rejects.toThrow(/not found/i);
+    await expect(mounted.readBinaryRange("plugin/large.hasset", 10, 2)).rejects.toThrow(/not found/i);
     expect(adapter.getReadMetrics().actualBytesRead).toBe(6);
     expect(mounted.getReadMetrics!()).toMatchObject({ actualBytesRead: 4, rangeReads: 3 });
     expect(plugin.readFile).not.toHaveBeenCalled();
@@ -72,10 +72,10 @@ describe("ScopedStorageAdapter", () => {
     vi.mocked(plugin.readFileRange).mockRejectedValue({ code: "REVISION_CHANGED", data: { actualBytesRead: 3 } });
     const adapter = new ScopedStorageAdapter(plugin);
     await adapter.pickProjectFolder();
-    await expect(adapter.readBinaryRange("asset.babasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    await expect(adapter.readBinaryRange("asset.hasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     const unrelated = Object.assign(new Error("Source revision changed"), { code: "UNREACHABLE" });
     vi.mocked(plugin.readFileRange).mockRejectedValue(unrelated);
-    await expect(adapter.readBinaryRange("asset.babasset", 0, 4)).rejects.toBe(unrelated);
+    await expect(adapter.readBinaryRange("asset.hasset", 0, 4)).rejects.toBe(unrelated);
     expect(adapter.getReadMetrics()).toMatchObject({ rangeReads: 2, actualBytesRead: 3, fullReads: 0 });
     expect(await adapter.needsReconnect()).toBe(false);
   });
@@ -123,7 +123,7 @@ describe("ScopedStorageAdapter", () => {
 
   it("loads a persisted folder on init", async () => {
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "folder-1", name: "My Game" }),
     );
     const plugin = createMockPlugin();
@@ -153,14 +153,14 @@ describe("ScopedStorageAdapter", () => {
       name: "World",
       tier: "external",
     });
-    expect(prefs.get("babylonslate:scoped-folder")).toBe(
+    expect(prefs.get("haptic:scoped-folder")).toBe(
       JSON.stringify({ id: "uuid-2", name: "World" }),
     );
     expect(adapter.getCurrentFolder()).toEqual(handle);
   });
 
   it("retains the failed recent folder as the reconnect target", async () => {
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "previous", name: "Previous" }));
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "previous", name: "Previous" }));
     const plugin = createMockPlugin();
     vi.mocked(plugin.openFolder).mockRejectedValue({ code: "NOT_FOUND" });
     const adapter = new ScopedStorageAdapter(plugin);
@@ -172,8 +172,8 @@ describe("ScopedStorageAdapter", () => {
   });
 
   it("keeps the expired folder and reconnect action when a picked replacement fails validation", async () => {
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "original", name: "Cloud" }));
-    prefs.set("babylonslate:scoped-stale", "1");
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "original", name: "Cloud" }));
+    prefs.set("haptic:scoped-stale", "1");
     const plugin = createMockPlugin();
     vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "empty", name: "Empty" } });
     vi.mocked(plugin.exists).mockResolvedValue({ exists: false, isDirectory: false });
@@ -184,12 +184,12 @@ describe("ScopedStorageAdapter", () => {
     })).rejects.toThrow("No project");
     expect(adapter.getCurrentFolder()?.id).toBe("original");
     expect(await adapter.needsReconnect()).toBe(true);
-    expect(JSON.parse(prefs.get("babylonslate:scoped-folder")!).id).toBe("original");
+    expect(JSON.parse(prefs.get("haptic:scoped-folder")!).id).toBe("original");
     expect(plugin.exists).toHaveBeenCalledWith({ folder: "empty", path: "project.json" });
   });
 
   it.each(["{broken", "null", '{"id":42}', '{"name":"Game"}'])("ignores malformed persisted folder data: %s", async (value) => {
-    prefs.set("babylonslate:scoped-folder", value);
+    prefs.set("haptic:scoped-folder", value);
     const adapter = new ScopedStorageAdapter(createMockPlugin());
     await adapter.init();
     expect(adapter.getCurrentFolder()).toBeNull();
@@ -207,7 +207,7 @@ describe("ScopedStorageAdapter", () => {
 
   it("opens a known external folder and clears stale state", async () => {
     prefs.set(
-      "babylonslate:scoped-stale",
+      "haptic:scoped-stale",
       "1",
     );
     const plugin = createMockPlugin();
@@ -235,7 +235,7 @@ describe("ScopedStorageAdapter", () => {
   it("reads text from the current external folder", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-4", name: "Game" }),
     );
     vi.mocked(plugin.readFile).mockResolvedValue({ data: "hello" });
@@ -255,7 +255,7 @@ describe("ScopedStorageAdapter", () => {
   it("writes text to the current external folder", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-5", name: "Game" }),
     );
     vi.mocked(plugin.writeFile).mockResolvedValue(undefined);
@@ -275,7 +275,7 @@ describe("ScopedStorageAdapter", () => {
   it("reads and writes binary as base64", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-6", name: "Game" }),
     );
     const bytes = new Uint8Array([0x00, 0x7f, 0xff]);
@@ -306,7 +306,7 @@ describe("ScopedStorageAdapter", () => {
   it("lists entries from the plugin and maps isDir", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-7", name: "Game" }),
     );
     vi.mocked(plugin.readdir).mockResolvedValue({
@@ -333,7 +333,7 @@ describe("ScopedStorageAdapter", () => {
 
   it("lists the project root with the portable dot spelling used by project exports", async () => {
     const plugin = createMockPlugin();
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "export-root", name: "Game" }));
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "export-root", name: "Game" }));
     vi.mocked(plugin.readdir).mockImplementation(async ({ path }) => {
       if (path !== "") throw new Error("Wrong native root path");
       return { entries: [{ name: "project.json", isDir: false, size: 2 }] };
@@ -346,7 +346,7 @@ describe("ScopedStorageAdapter", () => {
   it("maps NOT_FOUND plugin errors to a clear file message", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-8", name: "Game" }),
     );
     vi.mocked(plugin.readFile).mockRejectedValue({
@@ -364,7 +364,7 @@ describe("ScopedStorageAdapter", () => {
   it("marks the folder stale and persists the flag on STALE", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-9", name: "Game" }),
     );
     vi.mocked(plugin.readFile).mockRejectedValue({
@@ -379,24 +379,24 @@ describe("ScopedStorageAdapter", () => {
       message: "bookmark stale",
     });
     expect(adapter.needsReconnect()).resolves.toBe(true);
-    expect(prefs.get("babylonslate:scoped-stale")).toBe("1");
+    expect(prefs.get("haptic:scoped-stale")).toBe("1");
   });
 
   it("marks the folder stale when native security-scoped access is revoked", async () => {
     const plugin = createMockPlugin();
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "uuid-revoked", name: "Game" }));
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "uuid-revoked", name: "Game" }));
     vi.mocked(plugin.readFile).mockRejectedValue({ code: "ACCESS_REVOKED", message: "access revoked" });
     const adapter = new ScopedStorageAdapter(plugin);
     await adapter.init();
 
     await expect(adapter.readText("x")).rejects.toMatchObject({ code: "ACCESS_REVOKED" });
     await expect(adapter.needsReconnect()).resolves.toBe(true);
-    expect(prefs.get("babylonslate:scoped-stale")).toBe("1");
+    expect(prefs.get("haptic:scoped-stale")).toBe("1");
   });
 
   it("rejects project-root mutation and traversal before invoking the plugin", async () => {
     const plugin = createMockPlugin();
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "uuid-paths", name: "Game" }));
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "uuid-paths", name: "Game" }));
     const adapter = new ScopedStorageAdapter(plugin);
     await adapter.init();
 
@@ -411,7 +411,7 @@ describe("ScopedStorageAdapter", () => {
   it("removes files with deleteFile and directories with rmdir", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-10", name: "Game" }),
     );
     vi.mocked(plugin.exists)
@@ -440,7 +440,7 @@ describe("ScopedStorageAdapter", () => {
   it("throws a plain message when removing a missing path", async () => {
     const plugin = createMockPlugin();
     prefs.set(
-      "babylonslate:scoped-folder",
+      "haptic:scoped-folder",
       JSON.stringify({ id: "uuid-11", name: "Game" }),
     );
     vi.mocked(plugin.exists).mockResolvedValue({

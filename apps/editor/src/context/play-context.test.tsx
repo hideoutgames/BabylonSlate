@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent } from "dockview-react";
-import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
+import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { OutputLogPanel } from "../panels/output-log-panel";
 import { enterPhoneDockLayout } from "../shell/phone-dock-layout";
 import { DocumentWorkspaceProvider } from "./document-workspace-context";
@@ -114,14 +114,14 @@ it("delivers logs only to their subscribers while Play controls stay live", asyn
 
 it("keeps Play controls stable across document edits while Play saves the newest dirty documents", async () => {
   const scene = {
-    id: "scene:assets/Main.scene.babasset",
-    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    id: "scene:assets/Main.scene.hasset",
+    ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
     content: createDefaultScene(),
     dirty: false,
   };
   const hero = {
-    id: "graph:assets/Hero.class.babasset",
-    ref: { kind: "graph", path: "assets/Hero.class.babasset", label: "Hero Class" },
+    id: "graph:assets/Hero.class.hasset",
+    ref: { kind: "graph", path: "assets/Hero.class.hasset", label: "Hero Class" },
     content: { nodes: [], edges: [] },
     dirty: false,
   };
@@ -177,8 +177,8 @@ it("keeps Play controls stable across document edits while Play saves the newest
 
 it("keeps Play stopped and the preparation error visible even with fixture injection enabled", async () => {
   const scene = {
-    id: "scene:assets/Main.scene.babasset",
-    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    id: "scene:assets/Main.scene.hasset",
+    ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
     content: createDefaultScene(),
     dirty: false,
   };
@@ -199,8 +199,8 @@ it("keeps Play stopped and the preparation error visible even with fixture injec
   await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available."));
 });
 
-const MAIN_SCENE_ID = "scene:assets/Main.scene.babasset";
-const OTHER_SCENE_ID = "scene:assets/Other.scene.babasset";
+const MAIN_SCENE_ID = "scene:assets/Main.scene.hasset";
+const OTHER_SCENE_ID = "scene:assets/Other.scene.hasset";
 
 it.each([
   { where: "visible in the active Scene document", documentId: MAIN_SCENE_ID, dialog: false },
@@ -270,8 +270,8 @@ it.each([
 
 it("cancels or plays without saving from the Unsaved Changes prompt", async () => {
   const scene = {
-    id: "scene:assets/Main.scene.babasset",
-    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    id: "scene:assets/Main.scene.hasset",
+    ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
     content: createDefaultScene(),
     dirty: true,
   };
@@ -318,8 +318,8 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
 
 it("cancels Simulation before save admission drains without touching its scene or starting a viewport", async () => {
   const scene = {
-    id: "scene:assets/Main.scene.babasset",
-    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    id: "scene:assets/Main.scene.hasset",
+    ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
     content: createDefaultScene(), dirty: true,
   };
   let resolveReady!: (ready: boolean) => void;

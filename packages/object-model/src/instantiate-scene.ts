@@ -3,11 +3,11 @@ import type {
   SerializedComponent,
   SerializedTransform,
   Transform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   identitySerializedTransform,
   isSceneLayerDeniedComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { LifecycleHooks } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";

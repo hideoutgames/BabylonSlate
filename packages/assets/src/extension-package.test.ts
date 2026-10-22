@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { decodeProjectZip, encodeProjectZip, exportProjectZip, writeProjectTree } from "./babproject";
+import { decodeProjectZip, encodeProjectZip, exportProjectZip, writeProjectTree } from "./hproject";
 import { projectContentRoot } from "./content-root";
 import { createExtensionSettings, discoverEngineExtensions, discoverProjectExtensions, shadowEngineExtensions, writeProjectExtension } from "./extension-host";
-import { applyExtensionImport, exportExtensionZip, inspectBabextension, installEngineExtensionDefaults, planExtensionImport, unpackEngineExtensionZip } from "./extension-package";
+import { applyExtensionImport, exportExtensionZip, inspectHextension, installEngineExtensionDefaults, planExtensionImport, unpackEngineExtensionZip } from "./extension-package";
 import { encodeExtensionSettings } from "./extension-settings";
 import { AssetRegistry } from "./registry";
 
@@ -23,7 +23,7 @@ async function extensionPackage() {
   await source.writeText("extensions/tools/assets/template.txt", "template");
   await source.mkdir("extensions/tools/assets/.blobs", true);
   await source.writeBinary("extensions/tools/assets/.blobs/blob", new Uint8Array([9, 2]));
-  return { source, descriptor, incoming: await inspectBabextension(await exportExtensionZip(source, descriptor)) };
+  return { source, descriptor, incoming: await inspectHextension(await exportExtensionZip(source, descriptor)) };
 }
 
 describe("Extension packages", () => {
@@ -35,7 +35,7 @@ describe("Extension packages", () => {
     expect(await target.readText("extensions/imported-tools/index.ts")).toBe("export function activate(api) { api.log('ready'); }");
     expect(await target.readText("extensions/imported-tools/assets/template.txt")).toBe("template");
     expect(await target.readBinary("extensions/imported-tools/assets/.blobs/blob")).toEqual(new Uint8Array([9, 2]));
-    expect((await inspectBabextension(await exportExtensionZip(target, installed))).settings.extensionGuid).toBe("tools");
+    expect((await inspectHextension(await exportExtensionZip(target, installed))).settings.extensionGuid).toBe("tools");
   });
 
   it("requires replacement for same-version imports and removes obsolete files only after confirmation", async () => {
@@ -80,15 +80,15 @@ describe("Extension packages", () => {
 
   it.each(["../outside.js", "/absolute.js", "C:/outside.js", "code\\outside.js", "assets/../../outside.js", "assets/.. /outside.js", "assets/CON.js", "INDEX.ts", "assets", "assets/template.txt/child.txt"])("rejects unsafe or conflicting package path %s before writing", async (path) => {
     const { incoming } = await extensionPackage();
-    await expect(inspectBabextension(encodeProjectZip([...incoming.files, { path, data: text("bad") }]))).rejects.toThrow(/path/i);
+    await expect(inspectHextension(encodeProjectZip([...incoming.files, { path, data: text("bad") }]))).rejects.toThrow(/path/i);
   });
 
   it("rejects a missing module or an entry point escaping the package", async () => {
     const { incoming } = await extensionPackage();
-    await expect(inspectBabextension(encodeProjectZip(incoming.files.filter((file) => file.path !== "index.ts")))).rejects.toThrow(/Entry Point is missing/);
+    await expect(inspectHextension(encodeProjectZip(incoming.files.filter((file) => file.path !== "index.ts")))).rejects.toThrow(/Entry Point is missing/);
     const manifest = JSON.stringify({ kind: "extension", formatVersion: 1, ...incoming.settings, entryPoint: "../index.ts" });
     const invalidFiles = incoming.files.map((file) => file.path === "extension.json" ? { ...file, data: text(manifest) } : file);
-    await expect(inspectBabextension(encodeProjectZip(invalidFiles))).rejects.toThrow(/relative/);
+    await expect(inspectHextension(encodeProjectZip(invalidFiles))).rejects.toThrow(/relative/);
   });
 
   it("rejects oversized ZIP entries before decompression and oversized source modules before import", async () => {
@@ -101,11 +101,11 @@ describe("Extension packages", () => {
       view.setUint32(offset + 24, 300 * 1024 * 1024, true);
       break;
     }
-    await expect(inspectBabextension(archive)).rejects.toThrow(/size limit/);
+    await expect(inspectHextension(archive)).rejects.toThrow(/size limit/);
     const oversizedSource = incoming.files.map((file) => file.path === "index.ts"
       ? { ...file, data: new Uint8Array(1024 * 1024 + 1) }
       : file);
-    await expect(inspectBabextension(encodeProjectZip(oversizedSource))).rejects.toThrow(/Entry Point exceeds/);
+    await expect(inspectHextension(encodeProjectZip(oversizedSource))).rejects.toThrow(/Entry Point exceeds/);
   });
 
   it("rejects malformed manifest identities and unsupported formats instead of installing defaults", async () => {
@@ -117,7 +117,7 @@ describe("Extension packages", () => {
       { kind: "extension", formatVersion: 1, ...incoming.settings, entryPoint: "assets/../index.ts" },
     ]) {
       const files = incoming.files.map((file) => file.path === "extension.json" ? { ...file, data: text(JSON.stringify(replacement)) } : file);
-      await expect(inspectBabextension(encodeProjectZip(files))).rejects.toThrow();
+      await expect(inspectHextension(encodeProjectZip(files))).rejects.toThrow();
     }
   });
 
@@ -153,9 +153,9 @@ describe("Extension packages", () => {
   it("keeps extension files in project backups but exposes only generated project assets to the registry", async () => {
     const { source } = await extensionPackage();
     const asset = await encodeAssetDocument({ type: "Material", name: "Example", guid: "template", version: 1, payload: {} });
-    await source.writeBinary("extensions/tools/assets/Example.material.babasset", asset);
+    await source.writeBinary("extensions/tools/assets/Example.material.hasset", asset);
     await source.mkdir("assets", true);
-    await source.writeBinary("assets/Generated.material.babasset", await encodeAssetDocument({ type: "Material", name: "Generated", guid: "generated", version: 1, payload: {} }));
+    await source.writeBinary("assets/Generated.material.hasset", await encodeAssetDocument({ type: "Material", name: "Generated", guid: "generated", version: 1, payload: {} }));
     const registry = new AssetRegistry(source);
     await registry.mountRoot(projectContentRoot());
     expect(registry.list().map((asset) => asset.header.guid)).toEqual(["generated"]);

@@ -1,4 +1,4 @@
-import { DEFAULT_TRACE_BYTE_BUDGET } from "@babylonslate/core";
+import { DEFAULT_TRACE_BYTE_BUDGET } from "@haptic/core";
 
 export type TraceLogEvent = {
   severity: string;

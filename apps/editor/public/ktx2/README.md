@@ -12,7 +12,7 @@ Vendored Babylon `KhronosTextureContainer2` decoder assets (never a CDN):
 | `uastc_r8_unorm.wasm` / `uastc_rg8_unorm.wasm` | UASTC → R8 / RG8 |
 | `zstddec.wasm` | Zstd supercompression |
 
-Configured via `@babylonslate/render` `configureKtx2Transcoder` in `createEngine`.
+Configured via `@haptic/render` `configureKtx2Transcoder` in `createEngine`.
 Encode uses a separate Basis encoder under `/basis/` (`encode-worker.js`).
 
 ## Provenance
@@ -51,4 +51,4 @@ sha256sum "$DEST"/*.js "$DEST"/*.wasm
 ```
 
 Copy only the files listed above (`KTX2_TRANSCODER_RELATIVE_FILES` in
-`@babylonslate/assets`), then update the version and hashes in this file.
+`@haptic/assets`), then update the version and hashes in this file.

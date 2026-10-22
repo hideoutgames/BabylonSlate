@@ -1,4 +1,4 @@
-import { buildDataTreeIndex, isDataTreeAsset, normalizeDataTreeAsset, type SerializedGraph } from "@babylonslate/core";
+import { buildDataTreeIndex, isDataTreeAsset, normalizeDataTreeAsset, type SerializedGraph } from "@haptic/core";
 
 type DataGraphMetadata = {
   title: string; operation: string; required: boolean; schema?: false;

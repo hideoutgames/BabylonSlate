@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { identityTransform, type Transform } from "@babylonslate/core";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
+import { identityTransform, type Transform } from "@haptic/core";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   type PhysicsBackend,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
 import { PhysicsWorldSync } from "./physics-sync";
 

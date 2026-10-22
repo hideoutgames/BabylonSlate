@@ -24,54 +24,54 @@ export function nextCopyName(name: string, existingNames: string[]): string {
 /**
  * Container suffixes of typed assets (`newAssetFileSuffix` and
  * `PLUGIN_FILE_SUFFIX`). Rename and Duplicate keep these; any other file name
- * only loses its trailing `.babasset`.
+ * only loses its trailing `.hasset`.
  */
 const ASSET_FILE_SUFFIXES = [
-  ".scenelayer.babasset",
-  ".matinst.babasset",
-  ".bt.babasset",
-  ".blackboard.babasset",
-  ".water.babasset",
-  ".datadefinition.babasset",
-  ".datatree.babasset",
-  ".rendertargettexture.babasset",
-  ".rendertarget.babasset",
-  ".inputaction.babasset",
-  ".inputaxis.babasset",
-  ".savegame.babasset",
-  ".scene.babasset",
-  ".class.babasset",
-  ".prefab.babasset",
-  ".spriteanim.babasset",
-  ".sprite.babasset",
-  ".anim.babasset",
-  ".material.babasset",
-  ".matfunc.babasset",
-  ".tileset.babasset",
-  ".tilemap.babasset",
-  ".mixer.babasset",
-  ".channel.babasset",
-  ".atten.babasset",
-  ".plugin.babasset",
-  ".skyboxcreator.babasset",
-  ".emitter.babasset",
-  ".particlegraph.babasset",
-  ".particles.babasset",
+  ".scenelayer.hasset",
+  ".matinst.hasset",
+  ".bt.hasset",
+  ".blackboard.hasset",
+  ".water.hasset",
+  ".datadefinition.hasset",
+  ".datatree.hasset",
+  ".rendertargettexture.hasset",
+  ".rendertarget.hasset",
+  ".inputaction.hasset",
+  ".inputaxis.hasset",
+  ".savegame.hasset",
+  ".scene.hasset",
+  ".class.hasset",
+  ".prefab.hasset",
+  ".spriteanim.hasset",
+  ".sprite.hasset",
+  ".anim.hasset",
+  ".material.hasset",
+  ".matfunc.hasset",
+  ".tileset.hasset",
+  ".tilemap.hasset",
+  ".mixer.hasset",
+  ".channel.hasset",
+  ".atten.hasset",
+  ".plugin.hasset",
+  ".skyboxcreator.hasset",
+  ".emitter.hasset",
+  ".particlegraph.hasset",
+  ".particles.hasset",
 ] as const;
 
 function containerSuffix(fileName: string): string | undefined {
   const lower = fileName.toLowerCase();
   return ASSET_FILE_SUFFIXES.find((suffix) => lower.endsWith(suffix))
-    ?? (lower.endsWith(".babasset") ? ".babasset" : undefined);
+    ?? (lower.endsWith(".hasset") ? ".hasset" : undefined);
 }
 
-/** File stem without its container suffix (`main.scene.babasset` → `main`, `tex.babasset` → `tex`). */
+/** File stem without its container suffix (`main.scene.hasset` → `main`, `tex.hasset` → `tex`). */
 export function stripAssetFileSuffix(fileName: string): string {
   const suffix = containerSuffix(fileName);
   return suffix ? fileName.slice(0, fileName.length - suffix.length) : fileName;
 }
 
-/** Container suffix to keep when renaming or duplicating; `.babasset` for untyped names. */
+/** Container suffix to keep when renaming or duplicating; `.hasset` for untyped names. */
 export function assetFileSuffix(fileName: string): string {
-  return containerSuffix(fileName) ?? ".babasset";
+  return containerSuffix(fileName) ?? ".hasset";
 }

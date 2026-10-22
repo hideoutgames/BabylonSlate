@@ -1,4 +1,4 @@
-import type { ProjectAppearance } from "@babylonslate/core";
+import type { ProjectAppearance } from "@haptic/core";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
 // for example "Walnut Apple Sauce" or "Velvet Comet Parade".

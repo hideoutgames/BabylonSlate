@@ -4,7 +4,7 @@ import {
   labelFromPath,
   type AssetDocumentKind,
   type DocumentRef,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export type AssetDocumentLookup = {
   path: string;

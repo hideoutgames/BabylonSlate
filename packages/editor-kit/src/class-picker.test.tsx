@@ -10,7 +10,7 @@ afterEach(() => {
 describe("ClassPicker", () => {
   const classes = [
     { id: "GameInstance", name: "Game Instance", group: "Engine" },
-    { id: "MyGame", name: "My Game", group: "Project", description: "assets/MyGame.class.babasset" },
+    { id: "MyGame", name: "My Game", group: "Project", description: "assets/MyGame.class.hasset" },
     { id: "Actor", name: "Actor", group: "Engine" },
   ];
 

@@ -1,7 +1,7 @@
-import { StorageNotFoundError, type ProjectStorage } from "@babylonslate/core";
+import { StorageNotFoundError, type ProjectStorage } from "@haptic/core";
 import { newAssetGuid } from "./guid";
 
-export const STORAGE_MOVE_BACKUP_PREFIX = ".babylonslate-move-";
+export const STORAGE_MOVE_BACKUP_PREFIX = ".haptic-move-";
 
 /** Resolve the spelling on disk before deciding whether two existing paths alias. */
 async function storedPath(storage: ProjectStorage, path: string): Promise<string> {

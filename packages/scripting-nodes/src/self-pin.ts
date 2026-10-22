@@ -1,4 +1,4 @@
-import { actorRef, pin, type GraphPin, type PinType } from "@babylonslate/scripting";
+import { actorRef, pin, type GraphPin, type PinType } from "@haptic/scripting";
 
 /**
  * Marks an object or Actor input as the node's subject: the object it reads,

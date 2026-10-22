@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import { isTestModeEnabled } from "@babylonslate/vfs";
-import { audioStats } from "@babylonslate/render";
+import { isTestModeEnabled } from "@haptic/vfs";
+import { audioStats } from "@haptic/render";
 
 declare global {
   interface Window {
-    __babylonslateAudioStats?: typeof audioStats;
+    __hapticAudioStats?: typeof audioStats;
   }
 }
 
@@ -12,9 +12,9 @@ declare global {
 export function TestAudioHostStats() {
   useEffect(() => {
     if (!isTestModeEnabled()) return;
-    window.__babylonslateAudioStats = audioStats;
+    window.__hapticAudioStats = audioStats;
     return () => {
-      delete window.__babylonslateAudioStats;
+      delete window.__hapticAudioStats;
     };
   }, []);
   return null;

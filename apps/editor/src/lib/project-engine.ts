@@ -1,10 +1,10 @@
-import type { GpuBackend } from "@babylonslate/core";
+import type { GpuBackend } from "@haptic/core";
 import {
   createBackendEngineSession,
   setFixedShapeLightGuard,
   setFixedShapeLightingEnabled,
   type BackendEngineSession,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "./public-engine-assets";
 import { isUsableEngine } from "./shared-engine-generation";
 
@@ -69,8 +69,8 @@ export async function createProjectEngineSession(
   return session;
 }
 
-/** Test builds' perf routes (`BL_PERF_FIXED_LIGHTS`): fixed-shape lighting from the Engine's first load. */
-export const TEST_FIXED_SHAPE_LIGHTING_KEY = "babylonslate:test-fixed-shape-lighting";
+/** Test builds' perf routes (`HAPTIC_PERF_FIXED_LIGHTS`): fixed-shape lighting from the Engine's first load. */
+export const TEST_FIXED_SHAPE_LIGHTING_KEY = "haptic:test-fixed-shape-lighting";
 
 function applyTestFixedShapeLighting(session: ProjectEngineSession): void {
   let guard: string | null;

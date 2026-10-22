@@ -2,7 +2,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
-import type { DynamicMeshRange, DynamicMeshUpdate } from "@babylonslate/core";
+import type { DynamicMeshRange, DynamicMeshUpdate } from "@haptic/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 
 type Channel = { kind: string; data: Float32Array; start: number; end: number };

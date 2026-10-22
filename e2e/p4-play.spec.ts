@@ -68,7 +68,7 @@ test.describe("P4 Play overlay and session report", () => {
           async () =>
             page.evaluate(async () => {
               const host = globalThis as unknown as {
-                __babylonslatePlayTest?: {
+                __hapticPlayTest?: {
                   visuals: () => { slotId: number }[];
                   whenModelsReady: () => Promise<void>;
                   modelLoadCount: () => number;
@@ -78,7 +78,7 @@ test.describe("P4 Play overlay and session report", () => {
                   } | null;
                 };
               };
-              const api = host.__babylonslatePlayTest;
+              const api = host.__hapticPlayTest;
               if (!api || api.modelLoadCount() === 0) return false;
               await api.whenModelsReady();
               const visuals = api.visuals().length;
@@ -95,7 +95,7 @@ test.describe("P4 Play overlay and session report", () => {
         .toBe(true);
       const sample = await page.evaluate(async () => {
         const host = globalThis as unknown as {
-          __babylonslatePlayTest?: {
+          __hapticPlayTest?: {
             whenModelsReady: () => Promise<void>;
             liveObjectCounts: () => {
               meshes: number;
@@ -103,8 +103,8 @@ test.describe("P4 Play overlay and session report", () => {
             } | null;
           };
         };
-        await host.__babylonslatePlayTest?.whenModelsReady();
-        return host.__babylonslatePlayTest?.liveObjectCounts() ?? null;
+        await host.__hapticPlayTest?.whenModelsReady();
+        return host.__hapticPlayTest?.liveObjectCounts() ?? null;
       });
       expect(sample, `cycle ${cycle} live object counts`).not.toBeNull();
       expect(sample!.meshes).toBeGreaterThan(0);
@@ -131,16 +131,16 @@ test.describe("P4 Play overlay and session report", () => {
 
     const nudged = await page.evaluate(async () => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           ensureMainGraphOpen: () => Promise<boolean>;
           nudgeActiveGraphNode: () => Promise<boolean>;
           cancelDebouncedSave: () => void;
         };
       };
-      if (!host.__babylonslateTest) return false;
-      await host.__babylonslateTest.ensureMainGraphOpen();
-      const ok = await host.__babylonslateTest.nudgeActiveGraphNode();
-      host.__babylonslateTest.cancelDebouncedSave();
+      if (!host.__hapticTest) return false;
+      await host.__hapticTest.ensureMainGraphOpen();
+      const ok = await host.__hapticTest.nudgeActiveGraphNode();
+      host.__hapticTest.cancelDebouncedSave();
       return ok;
     });
     expect(nudged).toBe(true);
@@ -181,17 +181,17 @@ test.describe("P4 Play overlay and session report", () => {
     await createContentBrowserAsset(page, "Scene", "LevelTwo");
     const guids = await page.evaluate(() => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           guidForPath: (path: string) => string | null;
           projectStartupSceneGuid: () => string;
         };
       };
       return {
         open:
-          host.__babylonslateTest?.guidForPath(
-            "assets/LevelTwo.scene.babasset",
+          host.__hapticTest?.guidForPath(
+            "assets/LevelTwo.scene.hasset",
           ) ?? "",
-        startup: host.__babylonslateTest?.projectStartupSceneGuid() ?? "",
+        startup: host.__hapticTest?.projectStartupSceneGuid() ?? "",
       };
     });
     expect(guids.open.length).toBeGreaterThan(0);

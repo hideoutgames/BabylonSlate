@@ -8,7 +8,7 @@ import {
   resolveAudioPlayback,
   type AudioChannelPayload,
   type AudioMixerPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { AudioService } from "./audio-service";

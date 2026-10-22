@@ -12,8 +12,8 @@ const PROJECT_GUID = "00000000-0000-4000-8000-000000000100";
 const MATERIAL_GUID = "00000000-0000-4000-8000-000000000101";
 const BASE_GUID = "00000000-0000-4000-8000-000000000102";
 const PREFAB_GUID = "00000000-0000-4000-8000-000000000103";
-const MATERIAL_PATH = "assets/ThumbnailRed.material.babasset";
-const PREFAB_PATH = "assets/ThumbnailPrefab.class.babasset";
+const MATERIAL_PATH = "assets/ThumbnailRed.material.hasset";
+const PREFAB_PATH = "assets/ThumbnailPrefab.class.hasset";
 
 async function thumbnailProjectFiles() {
   const files = await minimalProjectFiles();
@@ -38,7 +38,7 @@ async function thumbnailProjectFiles() {
   childMesh.parentId = baseMesh.id;
   childMesh.transform = { position: [4, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] };
   const version = createDefaultMigrationRegistry().currentVersion("Class");
-  files.set("assets/ThumbnailBase.class.babasset", await encodeAssetDocument({
+  files.set("assets/ThumbnailBase.class.hasset", await encodeAssetDocument({
     guid: BASE_GUID, type: "Class", name: "ThumbnailBase", version,
     payload: { nodes: [], edges: [], members: [], components: [baseMesh] },
   }, { parentClass: "Actor", dependencies: [MATERIAL_GUID] }));
@@ -107,7 +107,7 @@ async function thumbnailPixels(image: Locator) {
 }
 
 async function persistedCaptures(page: Page) {
-  const directoryName = await opfsProjectDirectory(page, "opfs:__babylonslate_derived__");
+  const directoryName = await opfsProjectDirectory(page, "opfs:__haptic_derived__");
   return page.evaluate(async ({ storageDirectory, projectGuid, guids }) => {
     type Listable = FileSystemDirectoryHandle & { values(): AsyncIterableIterator<FileSystemHandle> };
     let directory = await navigator.storage.getDirectory();

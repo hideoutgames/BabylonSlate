@@ -9,15 +9,15 @@ import {
   type GraphCanvasDropApi,
   type GraphPasteElements,
   type PaletteNode,
-} from "@babylonslate/graph-ui";
-import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@babylonslate/editor-kit";
-import { isEditorGraphHost, type SerializedGraph } from "@babylonslate/core";
+} from "@haptic/graph-ui";
+import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
+import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   useDocumentActions,
   useRegistryState,
@@ -50,7 +50,7 @@ import {
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
-import { sceneAssetClassId } from "@babylonslate/object-model";
+import { sceneAssetClassId } from "@haptic/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
   MODEL_DOCUMENT_KINDS,

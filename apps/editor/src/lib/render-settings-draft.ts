@@ -1,4 +1,4 @@
-import type { ProjectSettings } from "@babylonslate/core";
+import type { ProjectSettings } from "@haptic/core";
 
 export type RenderingDraft = Pick<
   ProjectSettings,
