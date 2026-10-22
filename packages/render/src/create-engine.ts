@@ -4247,7 +4247,10 @@ function initializeEngine(
           const registered = await nativePreparation.schedule({ label: `Font ${font.guid}`,
             temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal: preparation?.signal,
             priority: preparation?.priority }, () => fontRegistry.registerAll([font]));
-          if (!registered) throw new Error(`Font ${font.guid} failed to load. Inspect its source and family.`);
+          if (!registered) {
+            const reason = [...fontRegistry.getWarnings()].reverse().find((warning) => warning.guid === font.guid)?.message;
+            throw new Error(`${(reason ?? `Font "${font.family}" failed to load`).replace(/\.?$/, ".")} Inspect the source and family of Font ${font.guid}.`);
+          }
         }
         if (preparation?.prepare) {
           preparation.signal?.throwIfAborted();

@@ -6,6 +6,7 @@ import {
   createDefaultScene,
   createDefaultSceneLayer,
   createText2DComponent,
+  identitySerializedTransform,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
 } from "../packages/core/src/index.ts";
@@ -39,19 +40,20 @@ async function coldFontProject(fontBytes: Uint8Array) {
   ));
   const layerGuid = "00000000-0000-4000-8000-0000000000f2";
   const layer = createDefaultSceneLayer();
-  layer.actors = (["explicit", "default"] as const).flatMap((route, row) =>
-    (["narrow", "wide"] as const).map((digits, column) => {
-      const text = createText2DComponent(`${route}-${digits}`);
-      text.properties = {
-        ...text.properties, text: (digits === "narrow" ? "1" : "0").repeat(COLD_GLYPHS), size: 48,
-        fontAssetGuid: route === "explicit" ? COLD_FONT_GUID : null, wrapWidth: 0, wrapHeight: 0,
-      };
-      return createActor(`${route}-${digits}`, `${route} ${digits}`, {
-        classId: "SceneLayerActor",
-        transform: { position: [column * 8 - 4, 3 - row * 6, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-        components: [text],
-      });
-    }));
+  // One actor, so each Text mesh is named after its component.
+  layer.actors = [createActor("cold-font-texts", "Cold Font Texts", {
+    classId: "SceneLayerActor",
+    components: (["explicit", "default"] as const).flatMap((route, row) =>
+      (["narrow", "wide"] as const).map((digits, column) => {
+        const text = createText2DComponent(`${route}-${digits}`);
+        text.properties = {
+          ...text.properties, text: (digits === "narrow" ? "1" : "0").repeat(COLD_GLYPHS), size: 48,
+          fontAssetGuid: route === "explicit" ? COLD_FONT_GUID : null, wrapWidth: 0, wrapHeight: 0,
+        };
+        text.transform = { ...identitySerializedTransform(), position: [column * 8 - 4, 3 - row * 6, 0] };
+        return text;
+      })),
+  })];
   files.set("assets/ColdFont.scenelayer.babasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "ColdFont",
     version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }));
   const scene = createDefaultScene();
@@ -253,6 +255,21 @@ test.describe("P14 Preview Build", () => {
       (globalThis as unknown as { __babylonslatePlayerTest?: { text2dLayouts: () => Text2DLayout[] } })
         .__babylonslatePlayerTest?.text2dLayouts() ?? []), reference.custom);
     await page.getByTestId("preview-build-close").click();
+  });
+
+  test("a Font that cannot load stops Play with an error naming it instead of drawing a fallback", async ({ page }) => {
+    test.setTimeout(120_000);
+    // A WOFF2 signature with no font data.
+    const broken = new Uint8Array(await readFile(path.join(process.cwd(), "e2e/fixtures/display.woff2")));
+    await openMinimalTestProject(page, await coldFontProject(broken));
+    await openMainScene(page);
+    await page.getByTestId("play-preview").click();
+    // The failed Scene Layer load ends the session, and its report names the Font.
+    const report = page.getByTestId("preview-session-report");
+    await expect(report).toBeVisible({ timeout: 60_000 });
+    for (const toggle of await report.getByTestId("session-report-group-toggle").all()) await toggle.click();
+    await expect(report.getByTestId("session-report-row").filter({ hasText: `Font "${COLD_FONT_FAMILY}" failed to load` }).first())
+      .toBeVisible();
   });
 
   test("Preview Build Play from Scene packs the open tab; off packs startup", async ({

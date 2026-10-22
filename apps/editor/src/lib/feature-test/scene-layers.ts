@@ -262,8 +262,9 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
       insetBottom: 0.25,
     }),
   ], { folderId }));
+  // No Font of its own: the label draws with the project Default Font (Onest).
   add(layerActor("ft-ui-safe-area-label", "Safe Area Label", [
-    ui("ft-ui-safe-area-label-text", "2DTextComponent", text(refs, "Safe Area", 24, [220, 32], { color: [0.7, 0.9, 1] })),
+    ui("ft-ui-safe-area-label-text", "2DTextComponent", text(refs, "Safe Area", 24, [220, 32], { color: [0.7, 0.9, 1], fontAssetGuid: null })),
   ], { parentId: "ft-ui-safe-area" }));
 }
 
