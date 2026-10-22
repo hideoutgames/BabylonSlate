@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { RENDER_QUALITY_PROFILES, WATER_REFLECTION_MODES, WATER_SHADING_DETAILS } from "@babylonslate/core";
+import { RENDER_QUALITY_PROFILES, WATER_REFLECTION_MODES, WATER_SHADING_DETAILS } from "@haptic/core";
 import { ENGINE_ENUMS, ENGINE_STRUCTS } from "./engine-types";
 
 it("exposes CEL outline appearance with the graph's native Color value", () => {

@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   createDefaultParticleGraphDocument,
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { ParticleGraphEditingProvider } from "../context/particle-graph-editing-context";
 import {
   ParticleGraphCanvasPanel,
@@ -31,7 +31,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-const DOC_ID = "particle-graph:assets/Embers.particlegraph.babasset";
+const DOC_ID = "particle-graph:assets/Embers.particlegraph.hasset";
 
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
@@ -64,11 +64,11 @@ vi.mock("../context/document-context", async () => {
     list: () => [
       {
         header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
-        path: "assets/Rock.material.babasset",
+        path: "assets/Rock.material.hasset",
       },
       {
         header: { guid: "mat-particle", name: "SparksMat", type: "Material", payload: { domain: "particle" } },
-        path: "assets/SparksMat.material.babasset",
+        path: "assets/SparksMat.material.hasset",
       },
     ],
   };
@@ -78,7 +78,7 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [
         {
           id: DOC_ID,
-          ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.babasset" },
+          ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.hasset" },
           content,
         },
       ],

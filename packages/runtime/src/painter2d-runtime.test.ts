@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
-import { createActor, createDefaultScene, createDefaultSceneLayer, PAINTER_MAX_MASK_DEPTH, type Painter2DProperties } from "@babylonslate/core";
-import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
+import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
+import { createActor, createDefaultScene, createDefaultSceneLayer, PAINTER_MAX_MASK_DEPTH, type Painter2DProperties } from "@haptic/core";
+import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
 import { Painter2DRuntime } from "./painter2d-runtime";
 import { createInProcessRuntime } from "./driver";
 

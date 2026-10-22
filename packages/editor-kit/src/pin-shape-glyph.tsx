@@ -1,4 +1,4 @@
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 
 export type PinShape = "diamond" | "circle" | "list" | "map";
 

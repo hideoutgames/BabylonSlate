@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GraphClassMember, GraphClassMemberPin, SerializedComponent, SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMember, GraphClassMemberPin, SerializedComponent, SerializedGraph } from "@haptic/core";
 import {
   copyClassMembers,
   pasteClassMembers,

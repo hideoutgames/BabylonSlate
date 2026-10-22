@@ -1,7 +1,7 @@
-import type { AssetRegistry, FolderNode } from "@babylonslate/assets";
-import type { ProjectSettings, RuntimeAssetCatalogEntry } from "@babylonslate/core";
-import { collectHeaderReachability, runtimeAssetCatalogFromIndexed } from "@babylonslate/exporter";
-import { RuntimeAssetCatalog } from "@babylonslate/runtime";
+import type { AssetRegistry, FolderNode } from "@haptic/assets";
+import type { ProjectSettings, RuntimeAssetCatalogEntry } from "@haptic/core";
+import { collectHeaderReachability, runtimeAssetCatalogFromIndexed } from "@haptic/exporter";
+import { RuntimeAssetCatalog } from "@haptic/runtime";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { assetsFromIndexed, exportRootSettings } from "./export-game";
 

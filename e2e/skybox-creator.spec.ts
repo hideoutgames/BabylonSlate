@@ -11,15 +11,15 @@ import {
 import { saveAllIfEnabled } from "./save-all";
 
 const ALBEDO_PNG = path.join(process.cwd(), "e2e/fixtures/albedo.png");
-const HELPER_PATH = "assets/DaySky.skyboxcreator.babasset";
+const HELPER_PATH = "assets/DaySky.skyboxcreator.hasset";
 const FACE_KEYS = ["px", "py", "pz", "nx", "ny", "nz"] as const;
 
 async function guidForPath(page: Page, assetPath: string): Promise<string> {
   return page.evaluate((target) => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath(target) ?? "";
+    return host.__hapticTest?.guidForPath(target) ?? "";
   }, assetPath);
 }
 
@@ -63,7 +63,7 @@ test.describe("Skybox Creator helper", () => {
       .setInputFiles([ALBEDO_PNG]);
     await page.getByTestId("content-browser-search").fill("albedo");
     await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
+      page.locator('[data-asset-path="assets/albedo.hasset"]'),
     ).toBeVisible({ timeout: 30_000 });
 
     await createContentBrowserAsset(page, "SkyboxCreator", "DaySky");
@@ -94,7 +94,7 @@ test.describe("Skybox Creator helper", () => {
     ).toBeVisible();
     await closeWindowsMenu(page);
 
-    const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
+    const albedoGuid = await guidForPath(page, "assets/albedo.hasset");
     expect(albedoGuid.length).toBeGreaterThan(0);
     await page.getByTestId("property-source").click();
     await pickAsset(page, "skybox-creator-texture-picker", albedoGuid);
@@ -108,7 +108,7 @@ test.describe("Skybox Creator helper", () => {
     await page.getByTestId("content-browser-search").fill("DaySky");
     for (const key of FACE_KEYS) {
       await expect(
-        page.locator(`[data-asset-path="assets/DaySky_${key}.babasset"]`),
+        page.locator(`[data-asset-path="assets/DaySky_${key}.hasset"]`),
       ).toBeVisible({ timeout: 30_000 });
     }
 

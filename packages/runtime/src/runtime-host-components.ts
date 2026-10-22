@@ -1,4 +1,4 @@
-import type { ActorComponent } from "@babylonslate/object-model";
+import type { ActorComponent } from "@haptic/object-model";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import type { MovementWorldSync } from "./movement";
 import type { Painter2DRuntime } from "./painter2d-runtime";

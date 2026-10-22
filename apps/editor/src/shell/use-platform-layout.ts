@@ -1,4 +1,4 @@
-import { isMobilePlatform } from "@babylonslate/vfs";
+import { isMobilePlatform } from "@haptic/vfs";
 import { useCallback, useSyncExternalStore } from "react";
 
 /** Narrow windows and phone landscape; full-size iPads keep their dock layout. */

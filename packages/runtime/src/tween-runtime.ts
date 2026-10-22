@@ -1,8 +1,8 @@
 import {
   cloneTweenValue, interpolateTweenValue, parseEasingCurve, sampleEasingCurve,
   type EasingCurve, type TweenValue, type TweenValueType,
-} from "@babylonslate/core";
-import { ActorComponent, type BObject } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { ActorComponent, type BObject } from "@haptic/object-model";
 
 /** Storage identity is separate from its current value, including for scalar locals. */
 export type TweenReference = {

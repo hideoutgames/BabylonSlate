@@ -1,8 +1,8 @@
-import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylonslate/core";
-import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
-import { dataTypeSchemas } from "@babylonslate/scripting";
-import type { DataAssetCatalogEntry } from "@babylonslate/core";
-import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
+import { validateSaveGameDefinition, type SaveGameConfiguration } from "@haptic/core";
+import { subsystemBaseClassIdOf } from "@haptic/object-model";
+import { dataTypeSchemas } from "@haptic/scripting";
+import type { DataAssetCatalogEntry } from "@haptic/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
 import {
   collectExportReachability,
   exportGame,
@@ -24,7 +24,7 @@ import {
   type ExportIndexedAsset,
   type ExportRootInput,
   type ExportArtifact,
-} from "@babylonslate/exporter";
+} from "@haptic/exporter";
 import {
   defaultExportPreset,
   type ExportPreset,
@@ -36,7 +36,7 @@ import {
   type SerializedGraph,
   type SerializedScene,
   type TagRegistry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   normalizeFontPayload,
   resolveAssetCatalogDependencies,
@@ -44,15 +44,15 @@ import {
   resolvePluginGraph,
   type IndexedAsset,
   type PluginGraphInput,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   missingPackedMaterialTextureGuids,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+} from "@haptic/shader-graph";
+import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
@@ -102,7 +102,7 @@ export type ExportPluginDescriptor = PluginGraphInput;
 
 export type CollectExportGameParams = {
   projectId?: string;
-  saveGameSettings?: import("@babylonslate/core").SaveGameProjectSettings;
+  saveGameSettings?: import("@haptic/core").SaveGameProjectSettings;
   project?: { name: string; version: string };
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
@@ -139,10 +139,10 @@ export type CollectExportGameParams = {
   pixelPerfect?: boolean;
   physicsWorld: "2d" | "3d";
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
-  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
+  collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   infiniteLoopDetection?: boolean;
   loopCount?: number;
-  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */

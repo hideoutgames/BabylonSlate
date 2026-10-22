@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { encodeAssetDocument } from "./asset-document";
-import { readBabassetHeader } from "./babasset";
+import { readHassetHeader } from "./hasset";
 
 describe("typed asset dependencies", () => {
   it("keeps streamed scenes and disabled layers reachable without preparing them, while active components load normally", () => {
@@ -37,7 +37,7 @@ describe("typed asset dependencies", () => {
         } },
       ] }],
     } });
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     expect(header.dependencies).toEqual(["private-texture", "replacement", "surface"]);
     expect(header.requiredDependencies).toEqual(["private-texture", "replacement", "surface"]);
   });
@@ -293,7 +293,7 @@ describe("typed asset dependencies", () => {
           { id: "trophy", kind: "variable", name: "Trophy", typeId: "asset", typeClassId: "Model", defaultValue: "cup" },
         ],
       } });
-      const header = readBabassetHeader(bytes);
+      const header = readHassetHeader(bytes);
       expect(header.dependencies).toEqual(["cup", "sword"]);
       expect(header.requiredDependencies).toEqual(["sword"]);
       expect(header.requiredVariableNames).toEqual(["Weapon"]);
@@ -302,7 +302,7 @@ describe("typed asset dependencies", () => {
 
   it("stamps saved documents with required dependency metadata", async () => {
     const bytes = await encodeAssetDocument({ type: "Font", guid: "font", name: "Font", version: 1, payload: { fallbackGuids: ["fallback"] } });
-    expect(readBabassetHeader(bytes).requiredDependencies).toEqual(["fallback"]);
+    expect(readHassetHeader(bytes).requiredDependencies).toEqual(["fallback"]);
   });
 
   it("keeps command registration and unresolved typed Class identities in catalog metadata", async () => {
@@ -311,7 +311,7 @@ describe("typed asset dependencies", () => {
         commandName: "heal", description: "Restore health", parameters: [{ name: "amount", type: "int" }],
       } }], edges: [],
     } }, { parentClass: "BDebugCommand" });
-    const header = readBabassetHeader(command);
+    const header = readHassetHeader(command);
     expect(header.consoleCommand).toEqual({ name: "heal", description: "Restore health", category: "game", parameters: [{ name: "amount", type: "int" }] });
     const scene = collectAssetDependencyMetadata("Scene", { actors: [{ classId: "CustomActor", components: [] }] });
     expect(scene.requiredClassReferences).toEqual(["CustomActor"]);

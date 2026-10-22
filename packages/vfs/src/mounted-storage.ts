@@ -1,5 +1,5 @@
-import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageReadOptions } from "@babylonslate/core";
-import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
+import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageReadOptions } from "@haptic/core";
+import { isStorageNotFound, StorageNotFoundError } from "@haptic/core";
 import { projectRelativePath } from "./project-path";
 import { StorageReadCounter, validateStorageRange } from "./storage-range";
 

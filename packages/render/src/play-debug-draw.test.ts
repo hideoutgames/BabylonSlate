@@ -1,6 +1,6 @@
 import type { LinesMesh } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
-import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
+import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
 import { createTestEngine } from "./create-null-engine";
 import { createPlayDebugDraw, PLAY_DEBUG_DRAW_PREFIX } from "./play-debug-draw";
 import { RENDERING_GROUP } from "./sorting";

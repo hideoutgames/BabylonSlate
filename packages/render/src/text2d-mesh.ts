@@ -23,7 +23,7 @@ import {
   text2DCharacterReveal,
   type RichTextStyle,
   type Text2DProperties,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import {

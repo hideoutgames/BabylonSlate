@@ -1,5 +1,5 @@
-import { sha256Hex, stableStringify, type IndexedAsset } from "@babylonslate/assets";
-import { DEFAULT_TWO_D_PROJECT_SETTINGS } from "@babylonslate/core";
+import { sha256Hex, stableStringify, type IndexedAsset } from "@haptic/assets";
+import { DEFAULT_TWO_D_PROJECT_SETTINGS } from "@haptic/core";
 import {
   classDocumentShowsPrefab,
   classIdFromClassAsset,

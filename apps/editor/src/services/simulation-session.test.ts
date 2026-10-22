@@ -1,7 +1,7 @@
-import { EditSession, ReplaceSceneCommand } from "@babylonslate/edit";
-import type { SimulationSceneCaptureResult } from "@babylonslate/runtime";
+import { EditSession, ReplaceSceneCommand } from "@haptic/edit";
+import type { SimulationSceneCaptureResult } from "@haptic/runtime";
 import { expect, it, vi } from "vitest";
-import { createDefaultScene, type SaveGameStorage } from "@babylonslate/core";
+import { createDefaultScene, type SaveGameStorage } from "@haptic/core";
 import { DocumentService } from "./document-service";
 import { GameSessionOwner } from "./game-session-owner";
 import type { PlaySessionResult } from "./play-session";
@@ -12,7 +12,7 @@ import { SimulationSession } from "./simulation-session";
 it("takes its baseline after admitted writes, protects it, and discards save writes on release", async () => {
   const documents = new DocumentService();
   const sceneId = await documents.openDocument({ loadDocument: async () => createDefaultScene() } as unknown as ProjectService,
-    { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" });
+    { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" });
   const admission = new ProjectWriteAdmission();
   let finishSave!: () => void;
   const saving = admission.run(async () => {
@@ -67,7 +67,7 @@ async function retainingFixture(maxBytes = 1_000_000, announce?: () => Promise<v
   const documents = new DocumentService();
   const original = createDefaultScene();
   const id = await documents.openDocument({ loadDocument: async () => original } as unknown as ProjectService,
-    { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" });
+    { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" });
   const edits = new EditSession({ maxBytes });
   const owner = new GameSessionOwner<PlaySessionResult>(), ticket = owner.begin("simulate")!;
   const storage: SaveGameStorage = { read: async () => null, write: async () => {}, remove: async () => {}, list: async () => [], withLock: async (_key, operation) => operation() };

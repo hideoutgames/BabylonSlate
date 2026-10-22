@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { OctagonAlertIcon, PuzzleIcon } from "lucide-react";
-import { NamePromptDialog, SelectableText } from "@babylonslate/editor-kit";
-import type { PluginDescriptor } from "@babylonslate/assets";
-import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import { NamePromptDialog, SelectableText } from "@haptic/editor-kit";
+import type { PluginDescriptor } from "@haptic/assets";
+import { isMobilePlatform, pickImportFiles } from "@haptic/vfs";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   Field,
   FieldContent,
@@ -14,8 +14,8 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/field";
+import { Switch } from "@haptic/ui/components/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,8 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogMedia,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { documentKindForAssetType } from "@babylonslate/core";
+} from "@haptic/ui/components/alert-dialog";
+import { documentKindForAssetType } from "@haptic/core";
 import {
   useDocumentActions,
   useProjectState,
@@ -35,12 +35,12 @@ import {
 } from "../context/document-context";
 import {
   inboundRefsFromOtherRoots,
-  isBabpluginFile,
+  isHpluginFile,
   pluginDependencyStatus,
   pluginEnableNeedsConfirm,
   pluginRootId,
 } from "../lib/plugin-ui";
-import { resolvePluginEnabled } from "@babylonslate/assets";
+import { resolvePluginEnabled } from "@haptic/assets";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { PluginExportDialog } from "./plugin-export-dialog";
 
@@ -175,10 +175,10 @@ export function ProjectPluginsSettings() {
       await run("Importing Plugin", async () => {
       const files = await pickImportFiles({
         multiple: false,
-        accept: ".babplugin",
+        accept: ".hplugin",
       });
       const file =
-        files.find((entry) => isBabpluginFile(entry.name)) ?? files[0];
+        files.find((entry) => isHpluginFile(entry.name)) ?? files[0];
       if (file) await runImport(file.bytes);
       });
       return;
@@ -352,7 +352,7 @@ export function ProjectPluginsSettings() {
         <input
           ref={importInputRef}
           type="file"
-          accept=".babplugin,application/zip"
+          accept=".hplugin,application/zip"
           className="hidden"
           data-testid="import-plugin-input"
           onChange={(event) => {

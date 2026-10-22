@@ -1,5 +1,5 @@
 import { Color3, Matrix, Quaternion, RectAreaLight, TransformNode, Vector3, type MaterialDefines, type Scene } from "@babylonjs/core";
-import { type AreaRectLightBinding } from "@babylonslate/core";
+import { type AreaRectLightBinding } from "@haptic/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { setAuthoredLightEnabled } from "./light-policy";
 import type { MeshAssetContext } from "./mesh-assets";

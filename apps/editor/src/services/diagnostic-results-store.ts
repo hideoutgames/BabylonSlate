@@ -1,5 +1,5 @@
-import type { PerformanceProfile } from "@babylonslate/debugger";
-import type { RenderFrameReport } from "@babylonslate/render";
+import type { PerformanceProfile } from "@haptic/debugger";
+import type { RenderFrameReport } from "@haptic/render";
 
 export type DiagnosticResult = { kind: "profile"; profile: PerformanceProfile } | { kind: "frame"; report: RenderFrameReport };
 export type DiagnosticView = "summary" | "timeline" | "frame";

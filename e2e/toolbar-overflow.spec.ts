@@ -11,9 +11,9 @@ import { openMainScene } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
 
 type TestHost = typeof globalThis & {
-  __babylonslateSimulationTest: { start(): Promise<void> };
-  __babylonslatePlayTest: { tickIndex(): number };
-  __babylonslateTest: { setMainGraphContent(graph: SerializedGraph): Promise<boolean> };
+  __hapticSimulationTest: { start(): Promise<void> };
+  __hapticPlayTest: { tickIndex(): number };
+  __hapticTest: { setMainGraphContent(graph: SerializedGraph): Promise<boolean> };
 };
 
 const CLASS_GRAPH = {
@@ -54,11 +54,11 @@ async function expectNoOverlap(page: Page) {
 }
 
 async function startSimulation(page: Page) {
-  await page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.start());
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
   await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
   await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
   await expect
-    .poll(() => page.evaluate(() => (globalThis as TestHost).__babylonslatePlayTest.tickIndex()), { timeout: 30_000 })
+    .poll(() => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex()), { timeout: 30_000 })
     .toBeGreaterThan(2);
 }
 
@@ -67,7 +67,7 @@ async function openProject(page: Page) {
   await page.setViewportSize({ width: 1194, height: 834 });
   await openMinimalTestProject(page);
   await openMainScene(page);
-  expect(await page.evaluate((graph) => (globalThis as TestHost).__babylonslateTest.setMainGraphContent(graph), CLASS_GRAPH)).toBe(true);
+  expect(await page.evaluate((graph) => (globalThis as TestHost).__hapticTest.setMainGraphContent(graph), CLASS_GRAPH)).toBe(true);
   const scene = createDefaultScene();
   scene.actors = [
     ...scene.actors.filter((actor) => actor.classId !== "main"),

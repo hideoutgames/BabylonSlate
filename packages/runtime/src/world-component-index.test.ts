@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { componentOwners, walkComponentOwners } from "./world-component-index";
 
 const CLASS = "Probe";

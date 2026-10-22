@@ -11,7 +11,7 @@ import {
 
 const DOOR = { kind: "class", classId: "Door" } as const;
 
-function mountGraph(classId: string | undefined = "Door", assetPath: string | undefined = "assets/Door.class.babasset") {
+function mountGraph(classId: string | undefined = "Door", assetPath: string | undefined = "assets/Door.class.hasset") {
   return renderHook(
     () => ({ store: useGraphDebugStore()!, trace: useClassGraphRunTrace(assetPath, classId, "event-graph") }),
     { wrapper: GraphDebugProvider },
@@ -29,7 +29,7 @@ describe("useClassGraphRunTrace", () => {
   });
 
   it("gives another Class's graph nothing while a different class is followed", () => {
-    const view = mountGraph("Lamp", "assets/Lamp.class.babasset");
+    const view = mountGraph("Lamp", "assets/Lamp.class.hasset");
     act(() => view.result.current.store.setTarget(DOOR));
     expect(view.result.current.trace).toBeUndefined();
   });
@@ -45,7 +45,7 @@ describe("useClassGraphRunTrace", () => {
     view.result.current.trace!.subscribe(listener);
     store.receiveTrace({
       target: DOOR, instanceId: "d1", tickIndex: 1,
-      graphs: [{ assetGuid: "assets/Door.class.babasset", graphId: "event-graph", nodes: ["tick"], edges: [], values: [] }],
+      graphs: [{ assetGuid: "assets/Door.class.hasset", graphId: "event-graph", nodes: ["tick"], edges: [], values: [] }],
     });
     expect(listener).toHaveBeenCalledWith({ nodes: ["tick"], edges: [] });
   });
@@ -59,7 +59,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
       store: useGraphDebugStore()!,
       tree: useBehaviourTreeRunTrace(treeGuid),
       machine: useAnimStateMachineRunTrace(graphGuid),
-      object: useAnimObjectGraphRunTrace("assets/Loco.anim.babasset", graphGuid),
+      object: useAnimObjectGraphRunTrace("assets/Loco.anim.hasset", graphGuid),
     }),
     { wrapper: GraphDebugProvider },
   );
@@ -90,7 +90,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
       target: LOCO, instanceId: "anim-1", tickIndex: 1,
       graphs: [
         { assetGuid: "loco-graph", graphId: "state-machine", nodes: ["run"], edges: ["idle-run"], values: [] },
-        { assetGuid: "assets/Loco.anim.babasset", graphId: "animation-object", nodes: ["update"], edges: [], values: [] },
+        { assetGuid: "assets/Loco.anim.hasset", graphId: "animation-object", nodes: ["update"], edges: [], values: [] },
       ],
     });
     expect(machine.mock.calls).toEqual([[{ nodes: ["run"], edges: ["idle-run"] }]]);

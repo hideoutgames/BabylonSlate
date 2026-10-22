@@ -8,14 +8,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { particleLibraryEmitterKey } from "@babylonslate/assets";
+import { particleLibraryEmitterKey } from "@haptic/assets";
 import {
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
   type ParticleGraphDiagnostic,
   type ParticleGraphDocument,
   type ParticleGraphValidationContext,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import {
   useDocumentActions,
   useRegistryState,

@@ -1,17 +1,17 @@
-import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
-import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@haptic/core";
+import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
 import {
   ASSET_DEPENDENCY_METADATA_VERSION,
-  decodeBabasset,
-  encodeBabasset,
+  decodeHasset,
+  encodeHasset,
   isCarriedChunk,
-  readBabassetHeader,
-  type BabassetHeader,
+  readHassetHeader,
+  type HassetHeader,
   type ChunkEntry,
   type ChunkInput,
   type EncodableChunk,
-} from "./babasset";
-import { carryStoredChunks } from "./babasset-carry";
+} from "./hasset";
+import { carryStoredChunks } from "./hasset-carry";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
@@ -69,7 +69,7 @@ export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: 
 export interface IndexedAsset {
   rootId: string;
   path: string;
-  header: BabassetHeader;
+  header: HassetHeader;
   /** Storage snapshot for bounded payload reads; populated on scan or first request. */
   locator?: AssetSourceLocator;
   /** Missing plugin/dependency guid kept so references do not drop. */
@@ -85,12 +85,12 @@ export type ThumbnailWriter = (
 
 /** A Texture file edit: the header and chunks to write back, or null to write nothing. */
 type TextureRewrite = (
-  header: Omit<BabassetHeader, "chunks">,
+  header: Omit<HassetHeader, "chunks">,
   chunks: Map<string, EncodableChunk>,
   /** The header as read from disk, chunk sha256s included. */
-  current: BabassetHeader,
+  current: HassetHeader,
 ) => Promise<{
-  header: Omit<BabassetHeader, "chunks">;
+  header: Omit<HassetHeader, "chunks">;
   chunks: Map<string, EncodableChunk>;
 } | null>;
 
@@ -105,7 +105,7 @@ export interface OwnAssetWrite {
 }
 
 /** Marker file so empty folders survive Git and remount scans. */
-export const FOLDER_MARKER_NAME = ".babylonslate-folder";
+export const FOLDER_MARKER_NAME = ".haptic-folder";
 
 export interface FolderNode {
   name: string;
@@ -163,7 +163,7 @@ const BLOBS_DIR_NAME = ".blobs";
 
 /**
  * Content-root-aware asset registry (.agents/reference/architecture/asset-registry.md).
- * Scanning and browsing only ever call `readBabassetHeader`; payload bytes
+ * Scanning and browsing only ever call `readHassetHeader`; payload bytes
  * load on demand through `payloadLoader`.
  */
 export class AssetRegistry {
@@ -284,7 +284,7 @@ export class AssetRegistry {
   }
 
   /** Index a file this registry just created; never evicts another asset's entry. */
-  private indexCreatedHeader(rootId: string, path: string, header: BabassetHeader, mtime: number | null = null): IndexedAsset {
+  private indexCreatedHeader(rootId: string, path: string, header: HassetHeader, mtime: number | null = null): IndexedAsset {
     const existing = this.byPath.get(path);
     if (existing && existing.header.guid !== header.guid) {
       throw new Error(`Asset already exists: ${path} (indexed as ${existing.header.guid})`);
@@ -309,7 +309,7 @@ export class AssetRegistry {
 
   /**
    * Report each Texture the registry creates with a KTX2 encode already
-   * committed (a `.babasset` import, a Duplicate or Copy): a new file, so its
+   * committed (a `.hasset` import, a Duplicate or Copy): a new file, so its
    * committed encode is this session's own. Called as it is indexed, before
    * any alignment check sees it.
    */
@@ -510,7 +510,7 @@ export class AssetRegistry {
   indexPlaceholder(guid: string): IndexedAsset {
     const existing = this.byGuid.get(guid);
     if (existing && !existing.placeholder) return existing;
-    const header: BabassetHeader = {
+    const header: HassetHeader = {
       chunks: [],
       dependencies: [],
       dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION,
@@ -699,7 +699,7 @@ export class AssetRegistry {
       dependencies.dependencies = [...new Set([...dependencies.dependencies, ...result.requiredDependencies])].sort();
     }
 
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         guid: result.guid,
         type: result.type,
@@ -715,12 +715,12 @@ export class AssetRegistry {
       writeBlob: (sha256, data) => this.blobsOf(root).writeBlob(sha256, data),
     });
     await storage.writeBinary(path, bytes);
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     const mtime = await this.statMtime(storage, path);
     return this.indexCreatedHeader(root.id, path, header, mtime);
   }
 
-  /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
+  /** Re-read a .hasset header after an in-place save so catalog fields stay current. */
   async reindexPath(path: string): Promise<IndexedAsset | null> {
     const existing = this.byPath.get(path);
     const rootId =
@@ -803,7 +803,7 @@ export class AssetRegistry {
     await storage.mkdir(folderPath, true);
     await storage.writeText(
       `${folderPath}/${FOLDER_MARKER_NAME}`,
-      "# BabylonSlate folder marker\n",
+      "# Haptic folder marker\n",
     );
     this.addKnownFolder(folderPath);
     // Ensure parent folders are visible even without their own markers.
@@ -884,7 +884,7 @@ export class AssetRegistry {
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const fileBytes = await storage.readBinary(asset.path);
-    const decoded = await decodeBabasset(fileBytes, (sha256) =>
+    const decoded = await decodeHasset(fileBytes, (sha256) =>
       blobs.readBlob(sha256),
     );
     const chunksById = new Map<string, ChunkInput>();
@@ -902,7 +902,7 @@ export class AssetRegistry {
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
     stampDocumentChunkName(chunksById, safe);
-    const encoded = await encodeBabasset({
+    const encoded = await encodeHasset({
       header: { ...headerRest, name: safe },
       chunks: [...chunksById.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
@@ -910,10 +910,10 @@ export class AssetRegistry {
     if (newPath !== asset.path) {
       await moveStorageFile(storage, asset.path, newPath, fileBytes, encoded);
       this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
-      return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded), false, await this.statMtime(storage, newPath));
+      return this.indexHeader(asset.rootId, newPath, readHassetHeader(encoded), false, await this.statMtime(storage, newPath));
     }
     await storage.writeBinary(asset.path, encoded);
-    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded), false, await this.statMtime(storage, asset.path));
+    return this.indexHeader(asset.rootId, asset.path, readHassetHeader(encoded), false, await this.statMtime(storage, asset.path));
   }
 
   async duplicateAsset(
@@ -936,7 +936,7 @@ export class AssetRegistry {
     const destStorage = this.storageOf(root);
     const destBlobs = this.blobsOf(root);
     const fileBytes = await sourceStorage.readBinary(asset.path);
-    const decoded = await decodeBabasset(fileBytes, (sha256) =>
+    const decoded = await decodeHasset(fileBytes, (sha256) =>
       sourceBlobs.readBlob(sha256),
     );
     const chunksById = new Map<string, ChunkInput>();
@@ -1002,7 +1002,7 @@ export class AssetRegistry {
       const { chunks, ...headerRest } = decoded.header;
       void chunks;
       stampDocumentChunkName(chunksById, uniqueName);
-      const encoded = await encodeBabasset({
+      const encoded = await encodeHasset({
         header: { ...headerRest, guid: newGuid, name: uniqueName },
         chunks: [...chunksById.values()],
         writeBlob: (sha256, data) => destBlobs.writeBlob(sha256, data),
@@ -1012,7 +1012,7 @@ export class AssetRegistry {
         : "";
       if (dir) await destStorage.mkdir(dir, true);
       await destStorage.writeBinary(candidate, encoded);
-      return this.indexCreatedHeader(rootId, candidate, readBabassetHeader(encoded), await this.statMtime(destStorage, candidate));
+      return this.indexCreatedHeader(rootId, candidate, readHassetHeader(encoded), await this.statMtime(destStorage, candidate));
     } finally {
       release();
     }
@@ -1121,7 +1121,7 @@ export class AssetRegistry {
   /**
    * Point each folder copy's references to another asset in the copied folder
    * at that asset's copy (guids, and Class ids, which follow the copies' file
-   * stems), as a `.babasset` import does for colliding guids. References to
+   * stems), as a `.hasset` import does for colliding guids. References to
    * assets outside the folder are left as they were.
    */
   private async remapFolderCopyReferences(
@@ -1162,7 +1162,7 @@ export class AssetRegistry {
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
-    const decoded = await decodeBabasset(await storage.readBinary(asset.path), (sha256) => blobs.readBlob(sha256));
+    const decoded = await decodeHasset(await storage.readBinary(asset.path), (sha256) => blobs.readBlob(sha256));
     const { chunks: entries, ...header } = decoded.header;
     const chunks: ChunkInput[] = entries.flatMap((entry) => {
       const data = decoded.chunks.get(entry.id);
@@ -1189,7 +1189,7 @@ export class AssetRegistry {
     const replaceClasses = <T>(value: T): T =>
       classes.length > 0 ? replaceClassAssetReferences(value, classes, definitionFields).value : value;
     const classIdsOf = (entries: readonly string[] | undefined) => entries?.map((entry) => classIds.get(entry) ?? entry);
-    const next: Omit<BabassetHeader, "chunks"> = {
+    const next: Omit<HassetHeader, "chunks"> = {
       ...header,
       dependencies: result.dependencies,
       ...(result.requiredDependencies ? { requiredDependencies: result.requiredDependencies } : {}),
@@ -1210,13 +1210,13 @@ export class AssetRegistry {
       return { ...chunk, data: textEncoder.encode(JSON.stringify(document)) };
     });
     if (!changed) return asset;
-    const encoded = await encodeBabasset({
+    const encoded = await encodeHasset({
       header: next,
       chunks: nextChunks,
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     await storage.writeBinary(asset.path, encoded);
-    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded), false, await this.statMtime(storage, asset.path));
+    return this.indexHeader(asset.rootId, asset.path, readHassetHeader(encoded), false, await this.statMtime(storage, asset.path));
   }
 
   async duplicateFolder(
@@ -1310,7 +1310,7 @@ export class AssetRegistry {
         await this.attachToExistingAsset(result.attachToGuid, result);
         continue;
       }
-      const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.babasset`);
+      const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.hasset`);
       const asset = await this.createAsset(rootId, relativePath, result);
       created.push(asset);
       await this.maybeWriteThumbnail(asset, result);
@@ -1322,7 +1322,7 @@ export class AssetRegistry {
   }
 
   /**
-   * A Texture created with an encode already committed (a `.babasset` import
+   * A Texture created with an encode already committed (a `.hasset` import
    * or a Duplicate) is a new file, not an older one teammates may share:
    * align it now, as an image import pads its first encode, whatever the
    * editor's rule for re-encoding older Textures in the background.
@@ -1360,7 +1360,7 @@ export class AssetRegistry {
   async setCompressionState(
     guid: string,
     state: TextureCompressionState,
-    options?: { error?: string; canWrite?: (guid: string, current: BabassetHeader) => boolean },
+    options?: { error?: string; canWrite?: (guid: string, current: HassetHeader) => boolean },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
       // Header only: the chunk table is reused as it is, so the source pixels
@@ -1492,7 +1492,7 @@ export class AssetRegistry {
           if (!pixels || isCarriedChunk(pixels) || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
           for (const [id, chunk] of chunks) if (chunk.kind === AREA_EMISSION_CHUNK_KIND) chunks.delete(id);
           const id = areaEmissionChunkId(sourceEntry.sha256);
-          chunks.set(id, { id, kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-babylonslate-area-emission", data: bytes });
+          chunks.set(id, { id, kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-haptic-area-emission", data: bytes });
           return { header: current, chunks };
         }, () => signal.throwIfAborted());
       });
@@ -1709,7 +1709,7 @@ export class AssetRegistry {
      * Asked before the requeue, when the job starts, and before its commit
      * with the header of the file on disk it would replace (`EncodeJobGuard`).
      */
-    canWrite?: (guid: string, current?: BabassetHeader) => boolean;
+    canWrite?: (guid: string, current?: HassetHeader) => boolean;
     /**
      * Usage to check and re-encode with instead of the saved one: an open
      * Texture tab's, which an unsaved Details edit may have changed.
@@ -1962,7 +1962,7 @@ export class AssetRegistry {
     const next = await mutate({ ...headerRest }, chunksById, stored);
     // Nothing to write (a refused guard).
     if (!next) return false;
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: next.header,
       chunks: [...next.chunks.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
@@ -1970,7 +1970,7 @@ export class AssetRegistry {
     assertCurrent();
     await storage.writeBinary(asset.path, bytes);
     const mtime = await this.statMtime(storage, asset.path);
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     this.indexHeader(asset.rootId, asset.path, header, false, mtime);
     this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
     return true;
@@ -1982,7 +1982,7 @@ export class AssetRegistry {
     blobs: BlobStore,
     path: string,
     load?: (entry: ChunkEntry) => boolean,
-  ): Promise<{ header: BabassetHeader; chunks: Map<string, EncodableChunk> }> {
+  ): Promise<{ header: HassetHeader; chunks: Map<string, EncodableChunk> }> {
     if (load) {
       try {
         const stored = await readAssetCatalog(storage, path);
@@ -1992,7 +1992,7 @@ export class AssetRegistry {
         // Decoded in full below, which reports an unreadable file as it always has.
       }
     }
-    const decoded = await decodeBabasset(await storage.readBinary(path), (sha256) => blobs.readBlob(sha256));
+    const decoded = await decodeHasset(await storage.readBinary(path), (sha256) => blobs.readBlob(sha256));
     const chunks = new Map<string, EncodableChunk>();
     for (const entry of decoded.header.chunks) {
       const data = decoded.chunks.get(entry.id);
@@ -2016,7 +2016,7 @@ export class AssetRegistry {
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const fileBytes = await storage.readBinary(asset.path);
-    const decoded = await decodeBabasset(fileBytes, (sha256) => blobs.readBlob(sha256));
+    const decoded = await decodeHasset(fileBytes, (sha256) => blobs.readBlob(sha256));
 
     const chunksById = new Map<string, ChunkInput>();
     for (const entry of decoded.header.chunks) {
@@ -2045,14 +2045,14 @@ export class AssetRegistry {
     if (documentChunk) {
       chunksById.set(DOCUMENT_CHUNK_ID, { ...documentChunk, data: textEncoder.encode(stableStringify(merged)) });
     }
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       // Header readers (font stacks, an open Font editor) see the same payload.
       header: { ...headerRest, payload: { ...headerRest.payload, ...merged } },
       chunks: [...chunksById.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     await storage.writeBinary(asset.path, bytes);
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     this.indexHeader(asset.rootId, asset.path, header, false, await this.statMtime(storage, asset.path));
   }
 
@@ -2122,7 +2122,7 @@ export class AssetRegistry {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
         if (!(entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX))) run = [];
-      } else if (entry.name !== FOLDER_MARKER_NAME && path.endsWith(".babasset")) {
+      } else if (entry.name !== FOLDER_MARKER_NAME && path.endsWith(".hasset")) {
         run.push(path);
         slots.push({ run, index: run.length - 1 });
       }
@@ -2142,7 +2142,7 @@ export class AssetRegistry {
           this.addKnownFolder(dir);
           continue;
         }
-        if (!path.endsWith(".babasset")) continue;
+        if (!path.endsWith(".hasset")) continue;
         const slot = slots[nextSlot++]!;
         const { header, locator } = await readCatalog(slot.run, slot.index);
         const indexed = this.byGuid.get(header.guid);
@@ -2165,7 +2165,7 @@ export class AssetRegistry {
   private indexHeader(
     rootId: string,
     path: string,
-    header: BabassetHeader,
+    header: HassetHeader,
     placeholder = false,
     mtime: number | null = null,
     locator?: AssetSourceLocator,
@@ -2281,7 +2281,7 @@ function isOnBlockGrid(size: ImageSize | null): boolean {
  * bytes, so they are ignored.
  */
 function committedEncodeRecord(
-  header: BabassetHeader,
+  header: HassetHeader,
 ): { size: ImageSize | null; blockAlign: number | null } | null {
   const payload = header.payload;
   const committed = header.chunks.find((chunk) => chunk.id === payload.ktx2ChunkId);

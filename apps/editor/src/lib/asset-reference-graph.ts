@@ -1,5 +1,5 @@
-import type { IndexedAsset } from "@babylonslate/assets";
-import type { GraphDocument } from "@babylonslate/graph-ui";
+import type { IndexedAsset } from "@haptic/assets";
+import type { GraphDocument } from "@haptic/graph-ui";
 import { assetDependenciesIncludingOpenDocuments } from "./content-browser-helpers";
 
 /** Node footprint is 224x48 (`AssetReferenceNode`); gaps leave room for wire fans. */

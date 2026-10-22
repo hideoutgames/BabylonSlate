@@ -1,18 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { AssetRegistry } from "./registry";
 import { EncodeQueue } from "./encode-queue";
 import { projectContentRoot } from "./content-root";
 import { AREA_EMISSION_EDGE, currentAreaEmissionChunk, encodeAreaEmission } from "./area-emission";
-import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { encodeHasset, readHassetHeader } from "./hasset";
 
 async function fixture() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("emission.babproject");
+  await storage.openDocumentsProject("emission.hproject");
   const registry = new AssetRegistry(storage);
   await registry.mountRoot(projectContentRoot());
   registry.setEncodePipeline(new EncodeQueue());
-  const asset = await registry.createAsset("project", "Pattern.babasset", { guid: "pattern", type: "Texture", name: "Pattern", version: 1, dependencies: [], payload: { width: 2, height: 2, usage: "emissive" }, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }] });
+  const asset = await registry.createAsset("project", "Pattern.hasset", { guid: "pattern", type: "Texture", name: "Pattern", version: 1, dependencies: [], payload: { width: 2, height: 2, usage: "emissive" }, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }] });
   const process = vi.fn(async ({ sourceHash }: { sourceHash: string }) => encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(200), sourceHash));
   return { storage, registry, asset, process };
 }
@@ -24,7 +24,7 @@ describe("area emission asset representation", () => {
     const next = await registry.prepareAreaEmission("pattern", process);
     expect(next.byteLength).toBe(first.byteLength);
     expect(process).toHaveBeenCalledTimes(1);
-    const header = readBabassetHeader(await storage.readBinary(asset.path));
+    const header = readHassetHeader(await storage.readBinary(asset.path));
     expect(header.guid).toBe("pattern");
     expect(header.payload.usage).toBe("emissive");
     expect(header.chunks.some((chunk) => chunk.id === "pixels")).toBe(true);
@@ -40,16 +40,16 @@ describe("area emission asset representation", () => {
   it("discards a completed result if the source changed while the worker was running", async () => {
     const { storage, registry, asset, process } = await fixture();
     const prepare = registry.prepareAreaEmission("pattern", async (request) => {
-      const { chunks: _chunks, ...header } = readBabassetHeader(await storage.readBinary(asset.path));
+      const { chunks: _chunks, ...header } = readHassetHeader(await storage.readBinary(asset.path));
       void _chunks;
-      await storage.writeBinary(asset.path, await encodeBabasset({ header, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([4, 5, 6]) }] }));
+      await storage.writeBinary(asset.path, await encodeHasset({ header, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([4, 5, 6]) }] }));
       await registry.reindexPath(asset.path);
       return process(request);
     });
     await expect(prepare).rejects.toThrow("stale results were discarded");
-    expect(currentAreaEmissionChunk(readBabassetHeader(await storage.readBinary(asset.path)))).toBeUndefined();
+    expect(currentAreaEmissionChunk(readHassetHeader(await storage.readBinary(asset.path)))).toBeUndefined();
     await registry.prepareAreaEmission("pattern", process);
-    expect(currentAreaEmissionChunk(readBabassetHeader(await storage.readBinary(asset.path)))).toBeDefined();
+    expect(currentAreaEmissionChunk(readHassetHeader(await storage.readBinary(asset.path)))).toBeDefined();
   });
 
   it("cancels a queued job without allocating a worker or preventing the next job", async () => {

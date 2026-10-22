@@ -1,4 +1,4 @@
-import { normalizeTag, normalizeTagContainer, type TagContainer } from "@babylonslate/core";
+import { normalizeTag, normalizeTagContainer, type TagContainer } from "@haptic/core";
 import {
   defaultJsValue,
   pinAcceptsLiteralDefault,
@@ -10,9 +10,9 @@ import {
   pinDefaultColorRgb,
   readPinDefaultForPin,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import type { SerializedPin } from "./graph-types";
-import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { humanizePropertyLabel } from "@haptic/editor-kit";
 
 export type PinTypeNames = Readonly<Record<string, string>>;
 

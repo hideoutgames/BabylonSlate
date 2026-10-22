@@ -1,4 +1,4 @@
-import type { BabassetHeader, ChunkEntry } from "./babasset";
+import type { HassetHeader, ChunkEntry } from "./hasset";
 import { isEnvironmentTexturePayload } from "./environment-texture";
 
 export interface TextureChunkSelection {
@@ -21,7 +21,7 @@ export interface SelectTextureChunkOptions {
  * fall back to the source `pixels` chunk with an explicit reason (never silent).
  */
 export function selectTextureChunk(
-  header: BabassetHeader,
+  header: HassetHeader,
   options: SelectTextureChunkOptions = {},
 ): TextureChunkSelection {
   if (isEnvironmentTexturePayload(header.payload)) {

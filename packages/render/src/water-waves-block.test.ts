@@ -3,8 +3,8 @@ import { FreeCamera, Matrix, MeshBuilder, NullEngine, Scene, ShaderLanguage, Vec
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterVertex, normalizeWaterBody, RENDER_QUALITY_PROFILES, waterBankFadeLength, waterEulerianGradient,
   waterWaveSet, type WaterDefinition,
-} from "@babylonslate/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { acquireAuthoredMaterialVariant, compileMaterialPlan } from "./material-compiler";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { WATER_SWELL_UNIFORMS, WaterVertexWaves, waterWaveBlockSource } from "./water-material";

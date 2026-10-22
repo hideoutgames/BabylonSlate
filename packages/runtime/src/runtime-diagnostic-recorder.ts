@@ -1,5 +1,5 @@
-import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@babylonslate/bridge";
-import { PERFORMANCE_TICK_COLUMNS } from "@babylonslate/debugger";
+import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@haptic/bridge";
+import { PERFORMANCE_TICK_COLUMNS } from "@haptic/debugger";
 
 const ROWS = 256;
 const WIDTH = PERFORMANCE_TICK_COLUMNS.length;

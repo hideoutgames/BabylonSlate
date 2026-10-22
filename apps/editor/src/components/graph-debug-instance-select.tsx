@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { useToolbarOverflowEntry } from "@babylonslate/editor-kit";
+import { useToolbarOverflowEntry } from "@haptic/editor-kit";
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 import { useGraphDebugSnapshot, useGraphDebugStore } from "../context/graph-debug-context";
 import { SIMULATION_CONTROL_ATTRIBUTE } from "../context/simulation-controls-context";
 import { debugInstanceNames } from "../lib/graph-debug-target";

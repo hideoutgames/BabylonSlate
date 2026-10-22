@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { sceneLayerActors } from "./world-layer-index";
 
 function newWorld(): World {

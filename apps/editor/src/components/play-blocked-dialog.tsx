@@ -7,9 +7,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import type { Diagnostic } from "@babylonslate/scripting";
-import { SelectableText } from "@babylonslate/editor-kit";
+} from "@haptic/ui/components/alert-dialog";
+import type { Diagnostic } from "@haptic/scripting";
+import { SelectableText } from "@haptic/editor-kit";
 
 export type PlayBlockedDialogProps = {
   open: boolean;

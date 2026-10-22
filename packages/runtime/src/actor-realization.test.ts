@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@babylonslate/debugger";
+import type { CommandMessage } from "@haptic/bridge";
+import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@haptic/debugger";
 import { createInProcessRuntime } from "./driver";
 
 describe("scripted actor realization", () => {

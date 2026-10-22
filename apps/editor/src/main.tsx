@@ -1,13 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@babylonslate/ui/styles/globals.css";
-import "@babylonslate/editor-kit/styles/context-menu.css";
+import "@haptic/ui/styles/globals.css";
+import "@haptic/editor-kit/styles/context-menu.css";
 import {
   initializeCapacitorAudioLifecycle,
   initializeCapacitorLifecycle,
   isTestModeEnabled,
-} from "@babylonslate/vfs";
-import { installDirectViewReadSync } from "@babylonslate/render";
+} from "@haptic/vfs";
+import { installDirectViewReadSync } from "@haptic/render";
 import App from "./App";
 import { installPreloadErrorReload } from "./lib/preload-error-reload";
 
@@ -44,18 +44,18 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/clustered-light-proof").then(
     ({ runClusteredLightProof }) => {
       Object.assign(window, {
-        __babylonslateClusteredLightProof: runClusteredLightProof,
+        __hapticClusteredLightProof: runClusteredLightProof,
       });
     },
   );
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("fixedLightProof")) {
-  void import("./testing/fixed-light-proof").then(({ runFixedLightProof }) => Object.assign(window, { __babylonslateFixedLightProof: runFixedLightProof }));
+  void import("./testing/fixed-light-proof").then(({ runFixedLightProof }) => Object.assign(window, { __hapticFixedLightProof: runFixedLightProof }));
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("sharedOutlineProof")
 ) {
   void import("./testing/shared-outline-proof").then(({ runSharedOutlineProof }) => {
-    Object.assign(window, { __babylonslateSharedOutlineProof: runSharedOutlineProof });
+    Object.assign(window, { __hapticSharedOutlineProof: runSharedOutlineProof });
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
@@ -64,7 +64,7 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/framegraph-forward-proof").then(
     ({ runFrameGraphForwardProof }) => {
       Object.assign(window, {
-        __babylonslateFrameGraphForwardProof: runFrameGraphForwardProof,
+        __hapticFrameGraphForwardProof: runFrameGraphForwardProof,
       });
     },
   );
@@ -73,7 +73,7 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   new URLSearchParams(location.search).has("webgpuProof")
 ) {
   void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
-    Object.assign(window, { __babylonslateWebGpuProof: runWebGpuProof });
+    Object.assign(window, { __hapticWebGpuProof: runWebGpuProof });
   });
 } else {
   // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.

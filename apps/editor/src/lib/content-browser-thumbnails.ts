@@ -1,4 +1,4 @@
-import { thumbnailMime } from "@babylonslate/assets";
+import { thumbnailMime } from "@haptic/assets";
 
 export type ThumbnailUrlMap = Record<string, string>;
 

@@ -1,5 +1,5 @@
 import { ArrowUpRightIcon, Trash2Icon, XIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 
 export function ContentBrowserSelectionActions({
   selectionCount,

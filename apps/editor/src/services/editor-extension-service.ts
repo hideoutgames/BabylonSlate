@@ -1,12 +1,12 @@
-import { ENGINE_VERSION, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, type ProjectStorage } from "@haptic/core";
 import {
   applyExtensionImport, createExtensionSettings, discoverEngineExtensions,
   discoverProjectExtensions, encodeExtensionSettings, exportExtensionZip,
-  inspectBabextension, isExtensionPackagePath, normalizeExtensionSettings,
+  inspectHextension, isExtensionPackagePath, normalizeExtensionSettings,
   planExtensionImport, resolveExtensionGraph, shadowEngineExtensions,
   uniqueExtensionFolderName, writeProjectExtension,
   type ExtensionDescriptor, type ExtensionSettings,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { EditorExtensionHost, type EditorExtensionServices, type EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
 
 export type ExtensionOverrides = Record<string, { enabled: boolean }>;
@@ -246,7 +246,7 @@ export class EditorExtensionService {
 
   import(bytes: Uint8Array, replace = false): Promise<{ status: "imported" } | { status: "conflict"; name: string }> {
     return this.runAuthoringWrite(() => this.serialize(async () => {
-      const incoming = await inspectBabextension(bytes);
+      const incoming = await inspectHextension(bytes);
       const existing = await discoverProjectExtensions(this.storage);
       const plan = planExtensionImport({ incoming, existingExtensions: existing,
         existingFolderNames: existing.map((entry) => entry.folderName), occupiedGuids: new Set(existing.map((entry) => entry.extensionGuid)) });

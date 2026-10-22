@@ -10,12 +10,12 @@ import {
   PROJECT_FILE,
   SCENE_SCHEMA_VERSION,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   decodeAssetDocument,
-  decodeBabasset,
+  decodeHasset,
   encodeAssetDocument,
-  encodeBabasset,
+  encodeHasset,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
   readAssetDocumentHeader,
@@ -30,7 +30,7 @@ import {
   classifyExternalChanges,
   snapshotIndexedMtimes,
   type EncodeFn,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   AREA_EMISSION_CHUNK_KIND,
   AREA_EMISSION_EDGE,
@@ -40,14 +40,14 @@ import {
   decodeAreaEmission,
   decodePackedAudioAsset,
   encodeAreaEmission,
-} from "@babylonslate/assets";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { DocumentService } from "./document-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
 import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { collectAudioReverbFlushScenes, createAudioReverbBakeController } from "../lib/audio-reverb-bake";
 import { loadExportDocuments } from "./export-game-inputs";
 
@@ -85,7 +85,7 @@ const KTX2_KEY_MAX_1 = "ktx2:30d6ee4fb9bf2d2e";
 
 /** A compressed 1x1 Texture whose encode predates alignment: committed 1x1, nothing recorded. */
 async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string, guid: string): Promise<void> {
-  await storage.writeBinary(path, await encodeBabasset({
+  await storage.writeBinary(path, await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -110,14 +110,14 @@ const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 async function scaffolded(authentic = false) {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("Assets.babproject");
+  await storage.openDocumentsProject("Assets.hproject");
   if (!authentic) await installMinimalProject(storage);
   const service = new ProjectService(storage);
   const loaded = await service.loadCurrentProject();
   return { storage, service, loaded };
 }
 
-describe("project documents as .babasset", () => {
+describe("project documents as .hasset", () => {
   it.each(["rename", "move"])("restores saved Scene and Class tabs by GUID after a %s", async (operation) => {
     const { service, storage, loaded } = await scaffolded();
     const documents = new DocumentService();
@@ -129,10 +129,10 @@ describe("project documents as .babasset", () => {
     const classGuid = service.guidForPath(MAIN_CLASS_FILE)!;
     const scene = operation === "rename"
       ? await service.registry!.renameAsset(sceneGuid, "Arena")
-      : await service.registry!.moveAsset(sceneGuid, "project", "Levels/main.scene.babasset");
+      : await service.registry!.moveAsset(sceneGuid, "project", "Levels/main.scene.hasset");
     const graph = operation === "rename"
       ? await service.renameAsset(classGuid, "Hero")
-      : await service.registry!.moveAsset(classGuid, "project", "Classes/main.class.babasset");
+      : await service.registry!.moveAsset(classGuid, "project", "Classes/main.class.hasset");
     const fresh = new ProjectService(storage);
     const restored = await fresh.loadCurrentProject();
     const reopened = new DocumentService();
@@ -149,7 +149,7 @@ describe("project documents as .babasset", () => {
   it("opens a legacy project with stale saved tabs while retaining tabs whose assets exist", async () => {
     const { service, loaded } = await scaffolded();
     const documents = new DocumentService();
-    const sceneId = documentId({ kind: "scene", path: "assets/Removed.scene.babasset" });
+    const sceneId = documentId({ kind: "scene", path: "assets/Removed.scene.hasset" });
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
     await documents.initializeFromProject(service, loaded.document, { documents: {}, tabOrder: [sceneId, graphId] });
     expect(documents.getDocument(sceneId)).toBeUndefined();
@@ -161,8 +161,8 @@ describe("project documents as .babasset", () => {
 
   it("renames a Class without detaching scene instances, child Classes, or project settings", async () => {
     const { service, storage, loaded } = await scaffolded();
-    const sourcePath = "assets/Hero.class.babasset";
-    const childPath = "assets/Child.class.babasset";
+    const sourcePath = "assets/Hero.class.hasset";
+    const childPath = "assets/Child.class.hasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [], components: [createMeshComponent("body", "sphere")] }, { parentClass: "Actor" });
     await service.saveDocument("graph", childPath, { nodes: [], edges: [], properties: { "default:classId": "Hero", label: "Hero" } }, { parentClass: "Hero" });
     await service.saveDocument("scene", MAIN_SCENE_FILE, { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] });
@@ -171,7 +171,7 @@ describe("project documents as .babasset", () => {
     const renamed = await service.renameAsset(sourceGuid, "Champion");
     const fresh = new ProjectService(storage);
     const reopened = await fresh.loadCurrentProject();
-    expect(renamed.path).toBe("assets/Champion.class.babasset");
+    expect(renamed.path).toBe("assets/Champion.class.hasset");
     expect(fresh.guidForPath(renamed.path)).toBe(sourceGuid);
     expect((await fresh.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).actors[0]).toMatchObject({ id: "hero", name: "Hero", classId: "Champion" });
     expect(readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass).toBe("Champion");
@@ -190,7 +190,7 @@ describe("project documents as .babasset", () => {
 
   it.each([false, true])("restores the Class path if a dependent scene write fails (persistent: %s)", async (persistent) => {
     const { service, storage } = await scaffolded();
-    const sourcePath = "assets/Hero.class.babasset";
+    const sourcePath = "assets/Hero.class.hasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
     await service.saveDocument("scene", MAIN_SCENE_FILE, { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] });
     const sourceGuid = service.guidForPath(sourcePath)!;
@@ -203,14 +203,14 @@ describe("project documents as .babasset", () => {
     });
     await expect(service.renameAsset(sourceGuid, "Champion")).rejects.toThrow(persistent ? /could not be restored/ : "Disk full");
     expect(await storage.exists(sourcePath)).toBe(true);
-    expect(await storage.exists("assets/Champion.class.babasset")).toBe(false);
+    expect(await storage.exists("assets/Champion.class.hasset")).toBe(false);
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
     expect(service.registry!.getByGuid(sourceGuid)?.path).toBe(sourcePath);
   });
 
   it.each(["read", "decode"])("rejects a Class %s failure instead of opening an empty graph", async (failure) => {
     const { service, storage } = await scaffolded();
-    const path = "assets/Unreadable.class.babasset";
+    const path = "assets/Unreadable.class.hasset";
     await service.saveDocument("graph", path, { nodes: [], edges: [], properties: { label: "Keep me" } });
     if (failure === "decode") await storage.writeBinary(path, new Uint8Array([1, 2, 3]));
     const bytes = await storage.readBinary(path);
@@ -228,7 +228,7 @@ describe("project documents as .babasset", () => {
 
   it.each([true, false])("refuses to save over an asset it cannot read (indexed=%s)", async (indexed) => {
     const { service, storage } = await scaffolded();
-    const path = "assets/Corrupt.class.babasset";
+    const path = "assets/Corrupt.class.hasset";
     // An indexed file keeps its GUID but not its chunks; an unindexed one has neither.
     if (indexed) await service.saveDocument("graph", path, { nodes: [], edges: [] });
     const corrupt = new Uint8Array([1, 2, 3]);
@@ -239,9 +239,9 @@ describe("project documents as .babasset", () => {
 
   it.each([false, true])("persists one Class replacement across all usages (None=%s)", async (none) => {
     const { service, storage } = await scaffolded();
-    const sourcePath = "assets/Hero.class.babasset";
-    const replacementPath = "assets/NPC.class.babasset";
-    const childPath = "assets/Child.class.babasset";
+    const sourcePath = "assets/Hero.class.hasset";
+    const replacementPath = "assets/NPC.class.hasset";
+    const childPath = "assets/Child.class.hasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
     await service.saveDocument("graph", replacementPath, { nodes: [], edges: [] }, { parentClass: "Actor" });
     await service.saveDocument("graph", childPath, { nodes: [], edges: [], properties: { "default:classId": "Hero" } }, { parentClass: "Hero" });
@@ -267,8 +267,8 @@ describe("project documents as .babasset", () => {
 
   it("rejects descendant replacements before changing any saved reference", async () => {
     const { service, storage } = await scaffolded();
-    const sourcePath = "assets/Hero.class.babasset";
-    const childPath = "assets/Child.class.babasset";
+    const sourcePath = "assets/Hero.class.hasset";
+    const childPath = "assets/Child.class.hasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
     await service.saveDocument("graph", childPath, { nodes: [], edges: [] }, { parentClass: "Hero" });
     const sourceGuid = service.guidForPath(sourcePath)!;
@@ -282,8 +282,8 @@ describe("project documents as .babasset", () => {
 
   it("stops Class replacement when a referrer cannot be read, preserving its bytes and the source", async () => {
     const { service, storage } = await scaffolded();
-    const sourcePath = "assets/Hero.class.babasset";
-    const childPath = "assets/Child.class.babasset";
+    const sourcePath = "assets/Hero.class.hasset";
+    const childPath = "assets/Child.class.hasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
     await service.saveDocument("graph", childPath, { nodes: [], edges: [] }, { parentClass: "Hero" });
     const sourceGuid = service.guidForPath(sourcePath)!;
@@ -300,12 +300,12 @@ describe("project documents as .babasset", () => {
 
   it("restores the referrers already rewritten when a later Class replacement write fails", async () => {
     const { service, storage } = await scaffolded();
-    const sourcePath = "assets/Hero.class.babasset";
+    const sourcePath = "assets/Hero.class.hasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
-    await service.saveDocument("graph", "assets/A.class.babasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
-    await service.saveDocument("graph", "assets/B.class.babasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
+    await service.saveDocument("graph", "assets/A.class.hasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
+    await service.saveDocument("graph", "assets/B.class.hasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
     const sourceGuid = service.guidForPath(sourcePath)!;
-    const before = new Map(await Promise.all(["assets/A.class.babasset", "assets/B.class.babasset"].map(async (path) => [path, await storage.readBinary(path)] as const)));
+    const before = new Map(await Promise.all(["assets/A.class.hasset", "assets/B.class.hasset"].map(async (path) => [path, await storage.readBinary(path)] as const)));
     const write = storage.writeBinary.bind(storage);
     let writes = 0;
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
@@ -317,12 +317,12 @@ describe("project documents as .babasset", () => {
       { guid: sourceGuid, classId: "Hero", replacement: null },
     ], new Set([sourceGuid]))).rejects.toThrow("Disk full");
     for (const [path, bytes] of before) expect(await storage.readBinary(path)).toEqual(bytes);
-    expect(service.registry!.getByPath("assets/A.class.babasset")?.header.parentClass).toBe("Hero");
+    expect(service.registry!.getByPath("assets/A.class.hasset")?.header.parentClass).toBe("Hero");
   });
 
   it("refuses to save unnamed or duplicate material parameters and keeps the saved asset intact", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Named.material.babasset";
+    const path = "assets/Named.material.hasset";
     const doc = createDefaultMaterialDocument();
     await service.saveDocument("material", path, doc as unknown as Record<string, unknown>);
     const saved = await storage.readBinary(path);
@@ -336,9 +336,9 @@ describe("project documents as .babasset", () => {
   });
   it("H17: indexes saved scene and class assignments by asset identity, including after reload and bake", async () => {
     const { storage, service } = await scaffolded();
-    const classPath = "assets/My Hero.class.babasset";
-    const matPath = "assets/Assigned.material.babasset";
-    const replacementPath = "assets/Replacement.material.babasset";
+    const classPath = "assets/My Hero.class.hasset";
+    const matPath = "assets/Assigned.material.hasset";
+    const replacementPath = "assets/Replacement.material.hasset";
     await service.saveDocument("material", matPath, {});
     await service.saveDocument("material", replacementPath, {});
     const materialGuid = service.guidForPath(matPath)!;
@@ -423,10 +423,10 @@ describe("project documents as .babasset", () => {
     const { storage, service } = await scaffolded();
     await service.saveDocument(
       "material",
-      "assets/Unassigned.material.babasset",
+      "assets/Unassigned.material.hasset",
       {},
     );
-    const guid = service.guidForPath("assets/Unassigned.material.babasset")!;
+    const guid = service.guidForPath("assets/Unassigned.material.hasset")!;
     const scene = {
       ...createDefaultScene(),
       actors: [
@@ -642,20 +642,20 @@ describe("project documents as .babasset", () => {
     );
     expect(idle).toBeTruthy();
 
-    expect(await storage.exists("assets/Mannequin.class.babasset")).toBe(true);
-    expect(await storage.exists("assets/main.class.babasset")).toBe(false);
+    expect(await storage.exists("assets/Mannequin.class.hasset")).toBe(true);
+    expect(await storage.exists("assets/main.class.hasset")).toBe(false);
     expect(
-      await storage.exists("assets/Mannequin/Mannequin.anim.babasset"),
+      await storage.exists("assets/Mannequin/Mannequin.anim.hasset"),
     ).toBe(true);
     const classHeader = readAssetDocumentHeader(
-      await storage.readBinary("assets/Mannequin.class.babasset"),
+      await storage.readBinary("assets/Mannequin.class.hasset"),
     );
     expect(classHeader.type).toBe("Class");
     expect(classHeader.parentClass).toBe("Actor");
     expect(classHeader.name).toBe("Mannequin");
 
     const graphDoc = await decodeAssetDocument(
-      await storage.readBinary("assets/Mannequin/Mannequin.anim.babasset"),
+      await storage.readBinary("assets/Mannequin/Mannequin.anim.hasset"),
     );
     expect(graphDoc.type).toBe("AnimationGraph");
     const clips = (
@@ -682,10 +682,10 @@ describe("project documents as .babasset", () => {
   it("opens an imported Font (header payload, no document chunk) and keeps source bytes on save", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([10, 11, 12, 13]);
-    const path = "assets/Ui.babasset";
+    const path = "assets/Ui.hasset";
     await storage.writeBinary(
       path,
-      await encodeBabasset({
+      await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "font-guid",
@@ -715,7 +715,7 @@ describe("project documents as .babasset", () => {
       ...payload,
       family: "Ui Display",
     });
-    const saved = await decodeBabasset(await storage.readBinary(path));
+    const saved = await decodeHasset(await storage.readBinary(path));
     expect(saved.chunks.get("source")).toEqual(source);
     // The whole payload stays in the header, where an MSDF attach merges.
     expect(saved.header.payload).toMatchObject({ family: "Ui Display", weight: 400, style: "normal" });
@@ -730,10 +730,10 @@ describe("project documents as .babasset", () => {
   it("saves Texture settings onto the header without dropping pixel chunks", async () => {
     const { storage, service } = await scaffolded();
     const pixels = new Uint8Array([9, 8, 7, 6]);
-    const path = "assets/hero.babasset";
+    const path = "assets/hero.hasset";
     await storage.writeBinary(
       path,
-      await encodeBabasset({
+      await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "tex-guid",
@@ -762,7 +762,7 @@ describe("project documents as .babasset", () => {
       usage: "pixelArt",
     });
 
-    const saved = await decodeBabasset(await storage.readBinary(path));
+    const saved = await decodeHasset(await storage.readBinary(path));
     expect(saved.header.type).toBe("Texture");
     expect(saved.header.payload.usage).toBe("pixelArt");
     expect(saved.chunks.get("pixels")).toEqual(pixels);
@@ -773,10 +773,10 @@ describe("project documents as .babasset", () => {
 
   it("keeps an encode committed while the Texture was open when saving it", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/spark.babasset";
+    const path = "assets/spark.hasset";
     await storage.writeBinary(
       path,
-      await encodeBabasset({
+      await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "tex-spark",
@@ -806,7 +806,7 @@ describe("project documents as .babasset", () => {
 
     await service.saveDocument("texture", path, { ...opened, usage: "particle" });
 
-    const saved = await decodeBabasset(await storage.readBinary(path));
+    const saved = await decodeHasset(await storage.readBinary(path));
     expect(saved.header.payload).toMatchObject({
       usage: "particle",
       compressionState: "compressed",
@@ -824,7 +824,7 @@ describe("project documents as .babasset", () => {
 
   it("keeps a Tileset's texture at its own size, even when picked mid-encode, and pads it again once no atlas uses it", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Atlas.babproject");
+    await storage.openDocumentsProject("Atlas.hproject");
     await installMinimalProject(storage);
     const service = new ProjectService(storage, {
       // Stand-in encoder: a KTX2 header at the size the real encoders produce.
@@ -843,7 +843,7 @@ describe("project documents as .babasset", () => {
 
     service.pauseTextureEncodeQueue();
     const [texture] = await registry.importFile("project", "", "odd.png", pngHeader(1, 1));
-    const tilesetPath = "assets/Ground.tileset.babasset";
+    const tilesetPath = "assets/Ground.tileset.hasset";
     await service.saveDocument("tileset", tilesetPath, { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
     expect(readAssetDocumentHeader(await storage.readBinary(tilesetPath)).payload.atlasTextures).toEqual([texture!.header.guid]);
     // The import encode was queued padded, before the Tileset used the texture.
@@ -856,7 +856,7 @@ describe("project documents as .babasset", () => {
 
   it("keeps the Particle encode of an unsaved Texture Details Usage through a remount, then saves it", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Unsaved.babproject");
+    await storage.openDocumentsProject("Unsaved.hproject");
     await installMinimalProject(storage);
     const service = new ProjectService(storage, {
       encode: async (source, settings) => {
@@ -873,7 +873,7 @@ describe("project documents as .babasset", () => {
     service.setOpenTextureUsage((id) => tabUsages.get(id));
     const payload = () => service.registry!.getByGuid(guid)!.header.payload;
     const encoded = () => [payload().compressionState, payload().ktx2Width, payload().ktx2Height, payload().ktx2BlockAlign];
-    await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
+    await service.saveDocument("tileset", "assets/Ground.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 1, 1, undefined]));
     const opened = (await service.loadDocument("texture", texture!.path)) as Record<string, unknown>;
 
@@ -892,22 +892,22 @@ describe("project documents as .babasset", () => {
     expect(payload().ktx2ChunkId).toBe(particleChunkId);
 
     await service.saveDocument("texture", texture!.path, { ...opened, usage: "particle" });
-    const saved = await decodeBabasset(await storage.readBinary(texture!.path));
+    const saved = await decodeHasset(await storage.readBinary(texture!.path));
     expect(saved.header.payload).toMatchObject({ usage: "particle", ktx2ChunkId: particleChunkId, ktx2BlockAlign: 4 });
   });
 
   it("leaves an old odd Texture unread on project open and encodes it on explicit Retry", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Solo.babproject");
+    await storage.openDocumentsProject("Solo.hproject");
     await installMinimalProject(storage);
-    await writeLegacyOddTexture(storage, "assets/odd.babasset", "odd");
+    await writeLegacyOddTexture(storage, "assets/odd.hasset", "odd");
     const encode = vi.fn(standInEncode);
     const service = new ProjectService(storage, { encode });
 
     await service.loadCurrentProject();
     expect(encode).not.toHaveBeenCalled();
     expect(service.registry!.getByGuid("odd")!.header.payload).not.toHaveProperty("ktx2Width");
-    expect(service.registry!.payloadLoader.snapshot().recentRequests.filter(request => request.path === "assets/odd.babasset")).toEqual([]);
+    expect(service.registry!.payloadLoader.snapshot().recentRequests.filter(request => request.path === "assets/odd.hasset")).toEqual([]);
     expect(await service.retryTextureEncoding("odd", { force: true })).toBe(true);
     await vi.waitFor(() =>
       expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({
@@ -921,11 +921,11 @@ describe("project documents as .babasset", () => {
 
   it("requires explicit Retry for old odd Textures before and after source control is turned off", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("SharedOdd.babproject");
+    await storage.openDocumentsProject("SharedOdd.hproject");
     await installMinimalProject(storage);
     await enableSourceControlOnDisk(storage);
-    await writeLegacyOddTexture(storage, "assets/retried.babasset", "retried");
-    await writeLegacyOddTexture(storage, "assets/waiting.babasset", "waiting");
+    await writeLegacyOddTexture(storage, "assets/retried.hasset", "retried");
+    await writeLegacyOddTexture(storage, "assets/waiting.hasset", "waiting");
     const encode = vi.fn(standInEncode);
     const service = new ProjectService(storage, { encode });
     const payload = (guid: string) => service.registry!.getByGuid(guid)!.header.payload;
@@ -965,12 +965,12 @@ describe("project documents as .babasset", () => {
 
   it("with source control on, keeps a Tileset's texture at its own size only when this session padded it or created its file", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Shared.babproject");
+    await storage.openDocumentsProject("Shared.hproject");
     await installMinimalProject(storage);
     await enableSourceControlOnDisk(storage);
     // Padded by an earlier session: a teammate may be changing it.
-    const legacyPath = "assets/legacy-padded.babasset";
-    await storage.writeBinary(legacyPath, await encodeBabasset({
+    const legacyPath = "assets/legacy-padded.hasset";
+    await storage.writeBinary(legacyPath, await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "legacy-padded", type: "Texture", name: "legacy-padded", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -993,16 +993,16 @@ describe("project documents as .babasset", () => {
       return [payload.compressionState, payload.ktx2Width, payload.ktx2Height, payload.ktx2BlockAlign];
     };
     await vi.waitFor(() => expect(encoded(texture!.header.guid)).toEqual(["compressed", 4, 4, 4]));
-    // New files carrying the earlier session's padded encode: a Duplicate and a .babasset import.
+    // New files carrying the earlier session's padded encode: a Duplicate and a .hasset import.
     const copy = await registry.duplicateAsset("legacy-padded", "project");
-    const [imported] = await registry.importFile("project", "incoming", "incoming.babasset", await storage.readBinary(legacyPath));
+    const [imported] = await registry.importFile("project", "incoming", "incoming.hasset", await storage.readBinary(legacyPath));
     expect(imported!.header.guid).not.toBe("legacy-padded");
     for (const created of [copy, imported!]) expect(encoded(created.header.guid)).toEqual(["compressed", 4, 4, 4]);
 
-    await service.saveDocument("tileset", "assets/Old.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: "legacy-padded" });
-    await service.saveDocument("tileset", "assets/New.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
-    await service.saveDocument("tileset", "assets/Copy.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: copy.header.guid });
-    await service.saveDocument("tileset", "assets/Imported.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: imported!.header.guid });
+    await service.saveDocument("tileset", "assets/Old.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: "legacy-padded" });
+    await service.saveDocument("tileset", "assets/New.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
+    await service.saveDocument("tileset", "assets/Copy.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: copy.header.guid });
+    await service.saveDocument("tileset", "assets/Imported.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: imported!.header.guid });
     // The import's padding was this session's own write, and so were the new files, so it is undone...
     await vi.waitFor(() => {
       for (const guid of [texture!.header.guid, copy.header.guid, imported!.header.guid]) {
@@ -1016,9 +1016,9 @@ describe("project documents as .babasset", () => {
 
   it("with source control on, leaves an encode a git revert restored alone, though this session re-encoded the Texture before", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Reverted.babproject");
+    await storage.openDocumentsProject("Reverted.hproject");
     await installMinimalProject(storage);
-    const path = "assets/odd.babasset";
+    const path = "assets/odd.hasset";
     await writeLegacyOddTexture(storage, path, "odd");
     const committedInGit = await storage.readBinary(path);
     const encode = vi.fn(standInEncode);
@@ -1047,9 +1047,9 @@ describe("project documents as .babasset", () => {
 
   it("with source control on, writes nothing from this session's queued re-encode once a git revert restored the file, even without a rescan", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("RevertedQueued.babproject");
+    await storage.openDocumentsProject("RevertedQueued.hproject");
     await installMinimalProject(storage);
-    const path = "assets/odd.babasset";
+    const path = "assets/odd.hasset";
     await writeLegacyOddTexture(storage, path, "odd");
     const committedInGit = await storage.readBinary(path);
     const encode = vi.fn(standInEncode);
@@ -1063,7 +1063,7 @@ describe("project documents as .babasset", () => {
     // A Tileset picks it while the queue is paused: the padding is this
     // session's own, so a re-encode at its own size is queued.
     service.pauseTextureEncodeQueue();
-    await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: "odd" });
+    await service.saveDocument("tileset", "assets/Ground.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: "odd" });
     await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(1));
     // A git client restores the committed file; the window only lost focus, so nothing rescans.
     await nextMillisecond();
@@ -1077,7 +1077,7 @@ describe("project documents as .babasset", () => {
 
   it("rechecks a Texture a Tileset picks while an unsaved Details Usage re-encodes it", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("InFlight.babproject");
+    await storage.openDocumentsProject("InFlight.hproject");
     await installMinimalProject(storage);
     const service = new ProjectService(storage, { encode: standInEncode });
     await service.loadCurrentProject();
@@ -1098,7 +1098,7 @@ describe("project documents as .babasset", () => {
     await service.retryTextureEncoding(guid, { force: true, usage: "normal" });
     // A Tileset picks the texture while that encode waits: the pass leaves a pending encode alone.
     const runs = service.textureAlignmentState.runs;
-    await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
+    await service.saveDocument("tileset", "assets/Ground.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
     await vi.waitFor(() => {
       expect(service.textureAlignmentState.runs).toBeGreaterThan(runs);
       expect(service.textureAlignmentState.pending).toBe(0);
@@ -1111,9 +1111,9 @@ describe("project documents as .babasset", () => {
 
   it("does not report its own alignment re-encodes as external changes on a foreground rescan", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Rescan.babproject");
+    await storage.openDocumentsProject("Rescan.hproject");
     await installMinimalProject(storage);
-    const paths = Array.from({ length: 8 }, (_, index) => `assets/odd-${index}.babasset`);
+    const paths = Array.from({ length: 8 }, (_, index) => `assets/odd-${index}.hasset`);
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
     // Open with source control on, then request maintenance explicitly below.
     await enableSourceControlOnDisk(storage);
@@ -1151,9 +1151,9 @@ describe("project documents as .babasset", () => {
 
   it("stops the pass's re-encodes once source control is turned on, leaving nothing for the next open to re-encode", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("TurnedOn.babproject");
+    await storage.openDocumentsProject("TurnedOn.hproject");
     await installMinimalProject(storage);
-    const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
+    const paths = ["assets/odd-a.hasset", "assets/odd-b.hasset"];
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
     let releaseFirst!: () => void;
     const firstEncode = new Promise<void>((resolve) => {
@@ -1167,7 +1167,7 @@ describe("project documents as .babasset", () => {
       return standInEncode(source, settings);
     });
     const service = new ProjectService(storage, { encode });
-    const onDisk = async (path: string) => (await decodeBabasset(await storage.readBinary(path))).header.payload;
+    const onDisk = async (path: string) => (await decodeHasset(await storage.readBinary(path))).header.payload;
 
     // Source control is off: explicit maintenance queues both re-encodes.
     await service.loadCurrentProject();
@@ -1198,9 +1198,9 @@ describe("project documents as .babasset", () => {
 
   it("tells Texture Details when turning source control on leaves the pass's re-encoding and waiting Textures stale", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("TurnedOnDetails.babproject");
+    await storage.openDocumentsProject("TurnedOnDetails.hproject");
     await installMinimalProject(storage);
-    for (const guid of ["odd-0", "odd-1"]) await writeLegacyOddTexture(storage, `assets/${guid}.babasset`, guid);
+    for (const guid of ["odd-0", "odd-1"]) await writeLegacyOddTexture(storage, `assets/${guid}.hasset`, guid);
     let releaseFirst!: () => void;
     const firstEncode = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -1242,7 +1242,7 @@ describe("project documents as .babasset", () => {
 
   it("refreshes a remount that captured the pending state before the encoder committed to the previous registry", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("EncodingRemount.babproject");
+    await storage.openDocumentsProject("EncodingRemount.hproject");
     await installMinimalProject(storage);
     let releaseEncode!: () => void;
     const encoding = new Promise<void>((resolve) => { releaseEncode = resolve; });
@@ -1307,9 +1307,9 @@ describe("project documents as .babasset", () => {
 
   it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Backlog.babproject");
+    await storage.openDocumentsProject("Backlog.hproject");
     await installMinimalProject(storage);
-    const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
+    const paths = ["assets/odd-a.hasset", "assets/odd-b.hasset"];
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
     let releaseFirst!: () => void;
     const firstEncode = new Promise<void>((resolve) => {
@@ -1358,10 +1358,10 @@ describe("project documents as .babasset", () => {
   it("saves Model slots onto the header without replacing the source GLB", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
-    const path = "assets/hero.babasset";
+    const path = "assets/hero.hasset";
     await storage.writeBinary(
       path,
-      await encodeBabasset({
+      await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "model-guid",
@@ -1399,7 +1399,7 @@ describe("project documents as .babasset", () => {
       materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-new" }],
     });
 
-    const saved = await decodeBabasset(await storage.readBinary(path));
+    const saved = await decodeHasset(await storage.readBinary(path));
     expect(saved.header.type).toBe("Model");
     expect(saved.header.payload.clipNames).toEqual(["Walk"]);
     expect(saved.header.payload.materialSlots).toEqual([
@@ -1415,11 +1415,11 @@ describe("project documents as .babasset", () => {
   it("reports a copied asset file hidden because its guid duplicates another asset, once", async () => {
     const { storage, service } = await scaffolded();
     await storage.mkdir("assets/Copies", true);
-    await storage.writeBinary("assets/Copies/main.scene.babasset", await storage.readBinary(MAIN_SCENE_FILE));
+    await storage.writeBinary("assets/Copies/main.scene.hasset", await storage.readBinary(MAIN_SCENE_FILE));
     await service.remountRegistry();
     await service.remountRegistry();
-    expect(service.sessionDiagnostics.filter((line) => line.includes("assets/Copies/main.scene.babasset"))).toEqual([
-      `assets/Copies/main.scene.babasset is hidden: it has the same asset id as ${MAIN_SCENE_FILE}. Remove the copy or import it again to give it its own id.`,
+    expect(service.sessionDiagnostics.filter((line) => line.includes("assets/Copies/main.scene.hasset"))).toEqual([
+      `assets/Copies/main.scene.hasset is hidden: it has the same asset id as ${MAIN_SCENE_FILE}. Remove the copy or import it again to give it its own id.`,
     ]);
   });
 
@@ -1493,7 +1493,7 @@ describe("project documents as .babasset", () => {
     // Closing/discarding this tab can leave no authored or derived disk changes.
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(savedBytes);
     await service.saveDocument("scene", MAIN_SCENE_FILE, dirtyScene);
-    const decoded = await decodeBabasset(await storage.readBinary(MAIN_SCENE_FILE));
+    const decoded = await decodeHasset(await storage.readBinary(MAIN_SCENE_FILE));
     expect(decoded.chunks.get(AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
     expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).actors[0]!.transform.position[0]).toBe(50);
   });
@@ -1524,7 +1524,7 @@ describe("project documents as .babasset", () => {
     writes.mockRestore();
     const bytes = await storage.readBinary(MAIN_SCENE_FILE);
     expect((await decodeAssetDocument(bytes)).payload.name).toBe("Explicitly saved");
-    const decoded = await decodeBabasset(bytes);
+    const decoded = await decodeHasset(bytes);
     expect(decoded.chunks.get(NAVMESH_CHUNK_ID)).toEqual(new Uint8Array([4, 5]));
     expect(decoded.chunks.get(AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([7, 8]));
   });
@@ -1673,8 +1673,8 @@ describe("project documents as .babasset", () => {
 
   it("packs an Audio's settings and clips from one saved version when a Save lands between export's reads", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Jump.babasset";
-    await storage.writeBinary(path, await encodeBabasset({
+    const path = "assets/Jump.hasset";
+    await storage.writeBinary(path, await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "jump", type: "Audio", name: "Jump", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -1696,11 +1696,11 @@ describe("project documents as .babasset", () => {
 
   it("packs a Texture's variant, settings and area emission from one saved version when a Save lands between export's reads", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Lamp.babasset";
+    const path = "assets/Lamp.hasset";
     const version = async (edge: number, ktx2ChunkId: string, emission: number) => {
       const pixels = pngHeader(edge, edge);
       const sourceHash = await sha256Hex(pixels);
-      return encodeBabasset({
+      return encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "lamp", type: "Texture", name: "Lamp", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
@@ -1709,7 +1709,7 @@ describe("project documents as .babasset", () => {
         chunks: [
           { id: "pixels", kind: "pixels", mime: "image/png", data: pixels },
           { id: ktx2ChunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2Header(edge, edge) },
-          { id: areaEmissionChunkId(sourceHash), kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-babylonslate-area-emission",
+          { id: areaEmissionChunkId(sourceHash), kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-haptic-area-emission",
             data: await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(emission), sourceHash) },
         ],
       });
@@ -1742,7 +1742,7 @@ describe("project documents as .babasset", () => {
   ] as const)("fails export only on a Scene whose changed reverb could not be saved because %s", async (cause, reason) => {
     const { storage, service } = await scaffolded();
     const scene = createDefaultScene();
-    const unchanged = "assets/Unchanged.scene.babasset";
+    const unchanged = "assets/Unchanged.scene.hasset";
     await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
     await service.saveDocument("scene", unchanged, scene);
     // Main holds an earlier result; Unchanged already holds the one the bake produces.
@@ -1830,7 +1830,7 @@ describe("project documents as .babasset", () => {
     const { storage, service } = await scaffolded();
     const scene = createDefaultScene();
     await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
-    const unreadable = "assets/Unreadable.scene.babasset";
+    const unreadable = "assets/Unreadable.scene.hasset";
     await storage.writeBinary(unreadable, state === "that is corrupt" ? new Uint8Array([1, 2, 3]) : await encodeAssetDocument({
       guid: "00000000-0000-4000-8000-0000000000aa", type: "Scene", name: "Unreadable",
       version: SCENE_SCHEMA_VERSION - 1, payload: scene as unknown as Record<string, unknown>,
@@ -1872,7 +1872,7 @@ describe("project documents as .babasset", () => {
 
   it.each(["save", "navmesh", "reverb"] as const)("follows a queued rename before a %s write without recreating the old file", async (kind) => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Queued.scene.babasset";
+    const path = "assets/Queued.scene.hasset";
     const scene = createDefaultScene();
     await service.saveDocument("scene", path, scene);
     const guid = service.guidForPath(path)!;
@@ -1890,7 +1890,7 @@ describe("project documents as .babasset", () => {
 
   it("does not recreate an asset deleted ahead of a queued Save", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Deleted.scene.babasset";
+    const path = "assets/Deleted.scene.hasset";
     const scene = createDefaultScene();
     await service.saveDocument("scene", path, scene);
     const deletion = service.registry!.deleteAsset(service.guidForPath(path)!);
@@ -1902,7 +1902,7 @@ describe("project documents as .babasset", () => {
 
   it.each(["rename", "delete"] as const)("creates a fresh GUID when a path is reused after %s", async (operation) => {
     const { service } = await scaffolded();
-    const path = "assets/Reusable.class.babasset";
+    const path = "assets/Reusable.class.hasset";
     await service.saveDocument("graph", path, { nodes: [], edges: [] });
     await service.loadDocument("graph", path); // Populate the pre-registry path cache.
     const previousGuid = service.guidForPath(path)!;
@@ -1919,7 +1919,7 @@ describe("project documents as .babasset", () => {
 
   it("uses reindexed on-disk identity instead of a previously loaded path GUID", async () => {
     const { service, storage } = await scaffolded();
-    const path = "assets/Replaced.class.babasset";
+    const path = "assets/Replaced.class.hasset";
     await service.saveDocument("graph", path, { nodes: [], edges: [] });
     await service.loadDocument("graph", path);
     const replacement = await decodeAssetDocument(await storage.readBinary(path));
@@ -1958,7 +1958,7 @@ describe("project documents as .babasset", () => {
 
   it("indexes FunctionLibrary function members on the Class header", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/MathLib.class.babasset";
+    const path = "assets/MathLib.class.hasset";
     await storage.writeBinary(
       path,
       await encodeAssetDocument(
@@ -2094,7 +2094,7 @@ describe("project documents as .babasset", () => {
   async function audioAsset(service: ProjectService, storage: MemoryStorageAdapter, path: string, source: Uint8Array) {
     await storage.writeBinary(
       path,
-      await encodeBabasset({
+      await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "audio-guid",
@@ -2117,7 +2117,7 @@ describe("project documents as .babasset", () => {
 
   it("writes extra Audio clip chunks and refuses to delete source", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Jump.babasset";
+    const path = "assets/Jump.hasset";
     const source = new Uint8Array([1, 2, 3, 4]);
     await audioAsset(service, storage, path, source);
     const extra = new Uint8Array([9, 8, 7]);
@@ -2142,7 +2142,7 @@ describe("project documents as .babasset", () => {
 
   it("follows a queued rename before an Audio clip write without recreating the old file", async () => {
     const { storage, service } = await scaffolded();
-    const path = "assets/Jump.babasset";
+    const path = "assets/Jump.hasset";
     await audioAsset(service, storage, path, new Uint8Array([1, 2]));
     const rename = service.registry!.renameAsset("audio-guid", "Leap");
     const write = service.writeAudioClipChunk(path, "source:2", new Uint8Array([9]), "audio/ogg", {
@@ -2155,8 +2155,8 @@ describe("project documents as .babasset", () => {
 
   it("rewrites remaining sprites to None after a referenced texture is deleted", async () => {
     const { storage, service } = await scaffolded();
-    const texPath = "assets/wall.babasset";
-    const spritePath = "assets/hero.sprite.babasset";
+    const texPath = "assets/wall.hasset";
+    const spritePath = "assets/hero.sprite.hasset";
     await storage.writeBinary(
       texPath,
       await encodeAssetDocument({
@@ -2216,15 +2216,15 @@ describe("project documents as .babasset", () => {
 
   it("reports a referrer it could not rewrite and still repairs the others", async () => {
     const { storage, service } = await scaffolded();
-    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/wall.hasset", await encodeAssetDocument({
       type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
     }));
     const sprite = (name: string) => encodeAssetDocument(
       { type: "Sprite", name, guid: `${name}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
       { dependencies: ["tex-1"] },
     );
-    await storage.writeBinary("assets/stuck.sprite.babasset", await sprite("stuck"));
-    await storage.writeBinary("assets/hero.sprite.babasset", await sprite("hero"));
+    await storage.writeBinary("assets/stuck.sprite.hasset", await sprite("stuck"));
+    await storage.writeBinary("assets/hero.sprite.hasset", await sprite("hero"));
     await service.remountRegistry();
     await service.registry!.deleteAsset("tex-1");
     const write = storage.writeBinary.bind(storage);
@@ -2235,27 +2235,27 @@ describe("project documents as .babasset", () => {
 
     const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]));
     expect(failed.map((entry) => [entry.path, String(entry.error)])).toEqual([
-      ["assets/stuck.sprite.babasset", "Error: Disk full"],
+      ["assets/stuck.sprite.hasset", "Error: Disk full"],
     ]);
-    expect((await service.loadDocument("sprite", "assets/hero.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBeNull();
-    expect((await service.loadDocument("sprite", "assets/stuck.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBe("tex-1");
+    expect((await service.loadDocument("sprite", "assets/hero.sprite.hasset") as { textureGuid: string | null }).textureGuid).toBeNull();
+    expect((await service.loadDocument("sprite", "assets/stuck.sprite.hasset") as { textureGuid: string | null }).textureGuid).toBe("tex-1");
   });
 
   it("repairs referrers one at a time in catalog order while reading their documents ahead, and skips one it cannot read", async () => {
     const { storage, service } = await scaffolded();
-    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/wall.hasset", await encodeAssetDocument({
       type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
     }));
     const names = ["a", "b", "c", "d", "e", "f", "g"];
     for (const name of names) {
-      await storage.writeBinary(`assets/${name}.sprite.babasset`, await encodeAssetDocument(
+      await storage.writeBinary(`assets/${name}.sprite.hasset`, await encodeAssetDocument(
         { type: "Sprite", name, guid: `${name}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
         { dependencies: ["tex-1"] },
       ));
     }
     await service.remountRegistry();
     await service.registry!.deleteAsset("tex-1");
-    const catalog = service.registry!.list().map((asset) => asset.path).filter((path) => path.endsWith(".sprite.babasset"));
+    const catalog = service.registry!.list().map((asset) => asset.path).filter((path) => path.endsWith(".sprite.hasset"));
     expect(catalog).toHaveLength(names.length);
     // A file that became unreadable after it was catalogued is skipped, as it always was.
     const unreadable = catalog[2]!;
@@ -2266,7 +2266,7 @@ describe("project documents as .babasset", () => {
     let inFlight = 0;
     let peak = 0;
     vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
-      const sprite = path.endsWith(".sprite.babasset");
+      const sprite = path.endsWith(".sprite.hasset");
       if (sprite) peak = Math.max(peak, ++inFlight);
       try {
         if (sprite) await new Promise((resolve) => setTimeout(resolve, path === catalog[0] ? 40 : 2));
@@ -2276,7 +2276,7 @@ describe("project documents as .babasset", () => {
     const write = storage.writeBinary.bind(storage);
     const saved: string[] = [];
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path.endsWith(".sprite.babasset")) saved.push(path);
+      if (path.endsWith(".sprite.hasset")) saved.push(path);
       return write(path, bytes);
     });
 
@@ -2294,11 +2294,11 @@ describe("project documents as .babasset", () => {
 
   it("reads a document again before giving up on it when the read that ran ahead failed", async () => {
     const { storage, service } = await scaffolded();
-    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/wall.hasset", await encodeAssetDocument({
       type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
     }));
     const names = ["a", "b", "c"];
-    const paths = names.map((name) => `assets/${name}.sprite.babasset`);
+    const paths = names.map((name) => `assets/${name}.sprite.hasset`);
     for (const [index, path] of paths.entries()) {
       await storage.writeBinary(path, await encodeAssetDocument(
         { type: "Sprite", name: names[index]!, guid: `${names[index]}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
@@ -2326,12 +2326,12 @@ describe("project documents as .babasset", () => {
 
   it("repairs a reference stored in a field the header dependency metadata does not describe", async () => {
     const { storage, service } = await scaffolded();
-    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/wall.hasset", await encodeAssetDocument({
       type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
     }));
     // The dependency scan reads typed fields only, so this reference leaves the header's
     // dependency list empty. Delete repair must still find it by walking the document.
-    await storage.writeBinary("assets/hero.sprite.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/hero.sprite.hasset", await encodeAssetDocument({
       type: "Sprite", name: "hero", guid: "sprite-1", version: 1,
       payload: { pixelsPerUnit: 100, frames: [], clips: [], notes: { favourite: "tex-1" } },
     }));
@@ -2341,13 +2341,13 @@ describe("project documents as .babasset", () => {
 
     await service.clearDeletedAssetReferences(new Set(["tex-1"]));
 
-    expect((await service.loadDocument("sprite", "assets/hero.sprite.babasset") as { notes: { favourite: string | null } }).notes.favourite).toBeNull();
+    expect((await service.loadDocument("sprite", "assets/hero.sprite.hasset") as { notes: { favourite: string | null } }).notes.favourite).toBeNull();
   });
 
   it("resets a Class parentClass to BObject when the parent Class is deleted", async () => {
     const { storage, service } = await scaffolded();
-    const parentPath = "assets/Hero.class.babasset";
-    const childPath = "assets/Sidekick.class.babasset";
+    const parentPath = "assets/Hero.class.hasset";
+    const childPath = "assets/Sidekick.class.hasset";
     const graph = createDefaultLogicGraphSerialized();
     await storage.writeBinary(
       parentPath,
@@ -2387,8 +2387,8 @@ describe("project documents as .babasset", () => {
 
   it("clears a dirty open referrer in memory and on disk without dropping dirty", async () => {
     const { storage, service } = await scaffolded();
-    const texPath = "assets/wall.babasset";
-    const spritePath = "assets/hero.sprite.babasset";
+    const texPath = "assets/wall.hasset";
+    const spritePath = "assets/hero.sprite.hasset";
     await storage.writeBinary(
       texPath,
       await encodeAssetDocument({

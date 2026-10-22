@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { GameInstance } from "@babylonslate/object-model";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { GameInstance } from "@haptic/object-model";
+import { createActor, createDefaultScene } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("RuntimeDriver.executeConsoleCommand", () => {

@@ -1,8 +1,8 @@
 import { Color3, Color4, Engine, FreeCamera, Material, Mesh, MeshBuilder, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } from "@babylonslate/core";
-import { createAppWebGpuEngine, disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@babylonslate/render";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
-import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
+import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } from "@haptic/core";
+import { createAppWebGpuEngine, disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@haptic/render";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
+import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 
 /** Real capture shaders and texture sampling, with numeric primitive fixtures. */
 export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {

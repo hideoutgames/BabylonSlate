@@ -50,7 +50,7 @@ test.describe("Phone Content Browser", () => {
     await expect(drawer).toHaveCount(0);
     await page.getByTestId("content-browser-search").fill("main.scene");
     const scene = page.locator(
-      '[data-asset-path="assets/main.scene.babasset"]',
+      '[data-asset-path="assets/main.scene.hasset"]',
     );
     await expectWithinPhoneViewport(page, scene);
     await scene.tap();

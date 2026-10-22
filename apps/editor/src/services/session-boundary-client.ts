@@ -1,1 +1,1 @@
-export { createSessionBoundaryClient } from "@babylonslate/bridge";
+export { createSessionBoundaryClient } from "@haptic/bridge";

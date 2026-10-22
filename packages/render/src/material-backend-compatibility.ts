@@ -1,4 +1,4 @@
-import { lowerMaterialDocument, type MaterialDocument, type MaterialFunctionDocument } from "@babylonslate/shader-graph";
+import { lowerMaterialDocument, type MaterialDocument, type MaterialFunctionDocument } from "@haptic/shader-graph";
 
 /** Use the emitted function closure, so an unused Custom GLSL node does not change backends. */
 export function webGpuMaterialCompatibilityReason(

@@ -4,7 +4,7 @@ import {
   type GuidFactory,
   type Rng,
   type ScenePostProcessEntry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
 import { InterfaceRegistry } from "./interfaces";
 import {

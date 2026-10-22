@@ -80,7 +80,7 @@ describe("ContentBrowserNewAssetDialog", () => {
         onCreate={() => {}}
       />,
     );
-    expect(screen.getByTestId("new-asset-summary-file").textContent).toBe("My_Hero.class.babasset");
+    expect(screen.getByTestId("new-asset-summary-file").textContent).toBe("My_Hero.class.hasset");
     expect(screen.getByTestId("new-asset-summary").textContent).toContain("Appears in this folder");
   });
 
@@ -158,7 +158,7 @@ describe("ContentBrowserNewAssetDialog", () => {
       type: "Class",
       classAssets: [
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           header: { type: "Class", name: "Hero", parentClass: "Actor" },
         },
       ],

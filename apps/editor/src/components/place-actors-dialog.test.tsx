@@ -144,8 +144,8 @@ describe("PlaceActorsDialog", () => {
         onOpenChange={() => {}}
         onSelect={() => {}}
         projectItems={[
-          asset("Hero", "Class", "assets/actors/Hero.class.babasset"),
-          asset("Door", "Prefab", "assets/props/Door.prefab.babasset"),
+          asset("Hero", "Class", "assets/actors/Hero.class.hasset"),
+          asset("Door", "Prefab", "assets/props/Door.prefab.hasset"),
         ]}
       />,
     );

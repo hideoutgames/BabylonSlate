@@ -1,4 +1,4 @@
-.dockview-theme-babylonslate {
+.dockview-theme-haptic {
   --dv-tabs-and-actions-container-height: 26px;
   --dv-group-view-background-color: var(--background);
   --dv-tabs-and-actions-container-background-color: var(--panel-header);
@@ -29,16 +29,16 @@
  * hidden tabs stay flat until hovered. Wide minimums keep short titles easy to
  * hit; the strip keeps compact heights.
  */
-.dockview-theme-babylonslate .dv-tabs-and-actions-container {
+.dockview-theme-haptic .dv-tabs-and-actions-container {
   box-shadow: none;
 }
 
-.dockview-theme-babylonslate .dv-tabs-container {
+.dockview-theme-haptic .dv-tabs-container {
   align-items: center;
   padding-inline: 2px;
 }
 
-.dockview-theme-babylonslate .dv-tab {
+.dockview-theme-haptic .dv-tab {
   display: flex;
   align-items: center;
   height: 20px;
@@ -54,7 +54,7 @@
     color 120ms ease;
 }
 
-.dockview-theme-babylonslate .dv-tab .dv-default-tab {
+.dockview-theme-haptic .dv-tab .dv-default-tab {
   display: flex;
   flex: 1;
   align-items: center;
@@ -62,7 +62,7 @@
   min-width: 0;
 }
 
-.dockview-theme-babylonslate .dv-tab .dv-default-tab-content {
+.dockview-theme-haptic .dv-tab .dv-default-tab-content {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -70,7 +70,7 @@
   white-space: nowrap;
 }
 
-.dockview-theme-babylonslate .dv-tab .dv-default-tab-action {
+.dockview-theme-haptic .dv-tab .dv-default-tab-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -83,42 +83,42 @@
   transition: opacity 120ms ease;
 }
 
-.dockview-theme-babylonslate .dv-tab .dv-default-tab-action .dv-svg {
+.dockview-theme-haptic .dv-tab .dv-default-tab-action .dv-svg {
   width: 8px;
   height: 8px;
 }
 
-.dockview-theme-babylonslate .dv-tab:is(:hover, :focus-visible, .dv-active-tab) .dv-default-tab-action {
+.dockview-theme-haptic .dv-tab:is(:hover, :focus-visible, .dv-active-tab) .dv-default-tab-action {
   opacity: 1;
 }
 
-.dockview-theme-babylonslate .dv-tab.dv-inactive-tab:hover {
+.dockview-theme-haptic .dv-tab.dv-inactive-tab:hover {
   --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
   --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
   --dv-activegroup-hiddenpanel-tab-color: var(--foreground);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--foreground);
 }
 
-.dockview-theme-babylonslate .dv-active-tab {
+.dockview-theme-haptic .dv-active-tab {
   border-color: var(--border);
   color: var(--foreground);
   font-weight: 500;
   box-shadow: 0 1px 1px color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-.dockview-theme-babylonslate .dv-tab:focus-visible {
+.dockview-theme-haptic .dv-tab:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
 /* The overflow trigger reads as a ghost chip beside the tabs. */
-.dockview-theme-babylonslate .dv-tabs-overflow-dropdown-root {
+.dockview-theme-haptic .dv-tabs-overflow-dropdown-root {
   display: flex;
   align-items: center;
   height: 100%;
 }
 
-.dockview-theme-babylonslate .dv-tabs-overflow-dropdown-default {
+.dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
   gap: 2px;
   height: 20px;
   margin: 0 4px 0 2px;
@@ -134,16 +134,16 @@
     color 120ms ease;
 }
 
-.dockview-theme-babylonslate .dv-tabs-overflow-dropdown-default > svg {
+.dockview-theme-haptic .dv-tabs-overflow-dropdown-default > svg {
   width: 10px;
   height: 10px;
 }
 
-.dockview-theme-babylonslate .dv-tabs-overflow-dropdown-default > span {
+.dockview-theme-haptic .dv-tabs-overflow-dropdown-default > span {
   padding-left: 0;
 }
 
-.dockview-theme-babylonslate .dv-tabs-overflow-dropdown-default:hover {
+.dockview-theme-haptic .dv-tabs-overflow-dropdown-default:hover {
   border-radius: var(--radius-sm);
   background-color: var(--muted);
   color: var(--foreground);
@@ -251,23 +251,23 @@
 
 /* Coarse pointers get a taller strip, wider tabs, and always-visible close. */
 @media (pointer: coarse) {
-  .dockview-theme-babylonslate {
+  .dockview-theme-haptic {
     --dv-tabs-and-actions-container-height: 30px;
   }
 
-  .dockview-theme-babylonslate .dv-tab {
+  .dockview-theme-haptic .dv-tab {
     height: 26px;
     min-width: 128px;
     padding-inline: 10px 4px;
   }
 
-  .dockview-theme-babylonslate .dv-tab .dv-default-tab-action {
+  .dockview-theme-haptic .dv-tab .dv-default-tab-action {
     width: 22px;
     height: 22px;
     opacity: 1;
   }
 
-  .dockview-theme-babylonslate .dv-tabs-overflow-dropdown-default {
+  .dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
     height: 26px;
     padding-inline: 8px;
   }
@@ -287,27 +287,27 @@
  * Dockview sizes sashes inline from its own constant, so the hit area is
  * widened with a transparent pseudo-element rather than by changing layout.
  */
-.dockview-theme-babylonslate .dv-sash-container .dv-sash::after {
+.dockview-theme-haptic .dv-sash-container .dv-sash::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
-.dockview-theme-babylonslate
+.dockview-theme-haptic
   .dv-split-view-container.dv-horizontal
   > .dv-sash-container
   > .dv-sash::after {
   inset-inline: -10px;
 }
 
-.dockview-theme-babylonslate
+.dockview-theme-haptic
   .dv-split-view-container.dv-vertical
   > .dv-sash-container
   > .dv-sash::after {
   inset-block: -10px;
 }
 
-.dockview-theme-babylonslate .dv-drop-target-anchor {
+.dockview-theme-haptic .dv-drop-target-anchor {
   border-radius: var(--radius-md);
 }
 
@@ -318,31 +318,31 @@
   background: var(--background);
 }
 
-.dockview-frame .dockview-theme-babylonslate.dv-dockview {
+.dockview-frame .dockview-theme-haptic.dv-dockview {
   background: var(--background);
 }
 
-.dockview-frame .dockview-theme-babylonslate .dv-groupview {
+.dockview-frame .dockview-theme-haptic .dv-groupview {
   overflow: hidden;
   border: 0;
   border-radius: var(--radius-md);
   background: var(--sidebar);
 }
 
-.dockview-theme-babylonslate .dv-content-container {
+.dockview-theme-haptic .dv-content-container {
   background: var(--sidebar);
   outline: 1px solid var(--border);
   outline-offset: -1px;
 }
 
-.dockview-frame .dockview-theme-babylonslate .dv-content-container {
+.dockview-frame .dockview-theme-haptic .dv-content-container {
   outline-color: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dockview-theme-babylonslate .dv-tab,
-  .dockview-theme-babylonslate .dv-tab .dv-default-tab-action,
-  .dockview-theme-babylonslate .dv-tabs-overflow-dropdown-default {
+  .dockview-theme-haptic .dv-tab,
+  .dockview-theme-haptic .dv-tab .dv-default-tab-action,
+  .dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
     transition: none;
   }
 

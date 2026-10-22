@@ -1,13 +1,13 @@
 import { useState } from "react";
-import type { FolderNode } from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
+import type { FolderNode } from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import { FolderTreePicker } from "./folder-tree-picker";
 
 export interface FolderPickerDialogProps {

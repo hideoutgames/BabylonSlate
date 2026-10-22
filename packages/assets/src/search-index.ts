@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import { readStoredAssetDocument, type AssetDocument } from "./asset-document";
 import type { BlobStore } from "./blob-store";
 import type { AssetRegistry, IndexedAsset } from "./registry";

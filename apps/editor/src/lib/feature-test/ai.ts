@@ -8,7 +8,7 @@ import {
   type BtNode,
   type BtNodeKind,
   type BtService,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   composeAffineTransform,
   identitySerializedTransform,
@@ -19,7 +19,7 @@ import {
   type SerializedScene,
   type SerializedTransform,
   type Transform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   mergeNavBakeMeshes,
   parseNavMeshActorSettings,
@@ -29,7 +29,7 @@ import {
   type NavBakeBounds,
   type NavBakeMeshPart,
   type NavMeshGenerateInput,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 import {
   actor,
   comp,

@@ -2,7 +2,7 @@
 
 One-page map of Haptic for contributors: where code lives, how data flows, and the coding, performance and gesture rules every change must keep.
 
-Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsystem notes: [architecture/](architecture/). Package import boundaries are enforced by `no-restricted-imports` in `eslint.config.js`; read them there. Code identifiers keep the `@babylonslate/*` scope.
+Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsystem notes: [architecture/](architecture/). Package import boundaries are enforced by `no-restricted-imports` in `eslint.config.js`; read them there. Code identifiers keep the `@haptic/*` scope.
 
 ## Package map
 
@@ -10,7 +10,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | --- | --- |
 | [core](../../packages/core/src/) | GUIDs, `Result`, math, seeded RNG, zod schemas, document and asset kinds, engine component catalog, `engineCommandBus`, the `ProjectStorage` port, `formatValue`, Print HUD registry |
 | [vfs](../../packages/vfs/src/) | Storage adapters (OPFS, Capacitor, Electron IPC, Node, memory), `createStorage()`, `getHostPlatform()`, app settings, secret store, native HTTP, Save Game storage |
-| [assets](../../packages/assets/src/) | `.babasset` codec, project folder/zip backends, content-root-aware header-only registry, search index, importers, texture encode queue and import worker |
+| [assets](../../packages/assets/src/) | `.hasset` codec, project folder/zip backends, content-root-aware header-only registry, search index, importers, texture encode queue and import worker |
 | [edit](../../packages/edit/src/) | Per-document undo stacks, reversible commands with merge keys, crash-recovery journal and replay |
 | [object-model](../../packages/object-model/src/) | Headless `BObject` / Actor / ActorComponent / World, class registry, interfaces, subsystems, deterministic tick |
 | [scripting](../../packages/scripting/src/) | Graph IR, pin types and assignability, pure validator, JS code generator with anchor tables |
@@ -69,7 +69,7 @@ render: snapshot apply + command handlers on the Play Scene of the shared Engine
 
 ## Bundle, chunk and worker rules
 
-- The boot path (`main.tsx` → `App` → `DocumentProvider`) must not statically import the heavy barrels `@babylonslate/render`, `/runtime`, `/physics` or `/navigation`; they drag Babylon into the entry's preload closure. Import leaf deep exports instead (for example `@babylonslate/render/png-encode`, `/scene-load-readiness`, `/lifecycle-pause`, `/gl-error-trace`, `/ktx2-transcoder`; `@babylonslate/physics/component-props`; `@babylonslate/navigation/chunk`, `/settings`; `@babylonslate/runtime/component-authoring`). A deep-exported module must not import Babylon or a heavy barrel.
+- The boot path (`main.tsx` → `App` → `DocumentProvider`) must not statically import the heavy barrels `@haptic/render`, `/runtime`, `/physics` or `/navigation`; they drag Babylon into the entry's preload closure. Import leaf deep exports instead (for example `@haptic/render/png-encode`, `/scene-load-readiness`, `/lifecycle-pause`, `/gl-error-trace`, `/ktx2-transcoder`; `@haptic/physics/component-props`; `@haptic/navigation/chunk`, `/settings`; `@haptic/runtime/component-authoring`). A deep-exported module must not import Babylon or a heavy barrel.
 - Viewport, Play and import code is reached only from the lazy Editor route and may import full barrels.
 - A lazy route chunk that fails to download must not leave a blank page: `main.tsx` installs `installPreloadErrorReload` (first `vite:preloadError` of a session reloads, guarded in `sessionStorage`), and `RouteErrorBoundary` wraps `LauncherTransitionProvider` in `AppRoutes` so its splash cannot cover the Reload action. Babylon's own shader-chunk imports retry on the next compile and are not part of this.
 - The built editor has a chunk import cycle (`document-context` → `render` → helpers in `editor-route`). Never read another chunk's value at module scope (`const ROOT = PROJECT_CONTENT_ROOT_ID`, top-level calls); read at render or call time. Vitest's unbundled modules will not catch this.
@@ -88,7 +88,7 @@ TypeScript
 
 React and editor UI
 
-- Compose from `@babylonslate/ui` and `@babylonslate/editor-kit`; forms use `Field` + shadcn inputs; docked panels use `PanelFrame` / `ToolbarStrip`. No raw styled `<input>`, `<select>`, `<textarea>` or `<button>` in `apps/editor/src`.
+- Compose from `@haptic/ui` and `@haptic/editor-kit`; forms use `Field` + shadcn inputs; docked panels use `PanelFrame` / `ToolbarStrip`. No raw styled `<input>`, `<select>`, `<textarea>` or `<button>` in `apps/editor/src`.
 - Semantic tokens only (no raw hex); edit tokens only in `packages/ui/src/styles/tokens.css` (imported by `globals.css`). Radius tokens only. `flex` + `gap-*`, not `space-y-*`.
 - `--chrome-row` 28px for chrome and rows; graph pin rows 44px. Keep compact desktop density.
 - Wrap copyable read-only text in `SelectableText`.

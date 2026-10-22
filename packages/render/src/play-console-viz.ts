@@ -10,9 +10,9 @@ import {
   type Material,
   type Scene,
 } from "@babylonjs/core";
-import type { CommandMessage, DebugColliderPrimitive } from "@babylonslate/bridge";
-import { convexHullEdges } from "@babylonslate/assets";
-import type { PhysicsWorldKind } from "@babylonslate/core";
+import type { CommandMessage, DebugColliderPrimitive } from "@haptic/bridge";
+import { convexHullEdges } from "@haptic/assets";
+import type { PhysicsWorldKind } from "@haptic/core";
 import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 import { createPlayNavigationOverlay } from "./play-navigation-overlay";

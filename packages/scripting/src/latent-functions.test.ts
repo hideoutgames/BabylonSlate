@@ -7,7 +7,7 @@ import {
   latentFunctionKey,
   latentSourcesFromSerializedGraph,
 } from "./latent-functions";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 
 function registryWithLatentCatalog(): NodeRegistry {
   const registry = new NodeRegistry();

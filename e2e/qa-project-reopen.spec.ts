@@ -44,24 +44,24 @@ for (const operation of ["rename", "move"] as const) {
       await page.getByTestId("content-browser-name-confirm").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
     }
-    await openAssetFromBrowser(page, "assets/ReopenProbe.scene.babasset");
+    await openAssetFromBrowser(page, "assets/ReopenProbe.scene.hasset");
     const scene: SerializedScene = {
       ...createDefaultScene(),
       actors: [createActor("rename-hero", "Hero Instance", { classId: "ReopenHero" })],
     };
     expect(await page.evaluate(async (content) => (
-      globalThis as unknown as { __babylonslateTest: { setActiveSceneContent: (scene: SerializedScene) => Promise<boolean> } }
-    ).__babylonslateTest.setActiveSceneContent(content), scene)).toBe(true);
-    await openAssetFromBrowser(page, "assets/ReopenHero.class.babasset");
+      globalThis as unknown as { __hapticTest: { setActiveSceneContent: (scene: SerializedScene) => Promise<boolean> } }
+    ).__hapticTest.setActiveSceneContent(content), scene)).toBe(true);
+    await openAssetFromBrowser(page, "assets/ReopenHero.class.hasset");
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await saveAllIfEnabled(page);
 
     if (operation === "rename") {
-      await renameAsset(page, "assets/ReopenProbe.scene.babasset", "Arena");
-      await renameAsset(page, "assets/ReopenHero.class.babasset", "Champion");
+      await renameAsset(page, "assets/ReopenProbe.scene.hasset", "Arena");
+      await renameAsset(page, "assets/ReopenHero.class.hasset", "Champion");
     } else {
-      await moveAsset(page, "assets/ReopenProbe.scene.babasset");
-      await moveAsset(page, "assets/ReopenHero.class.babasset");
+      await moveAsset(page, "assets/ReopenProbe.scene.hasset");
+      await moveAsset(page, "assets/ReopenHero.class.hasset");
     }
 
     // No Save All after moving: the previous saved layout still names old paths.
@@ -73,7 +73,7 @@ for (const operation of ["rename", "move"] as const) {
     await openMainScene(page);
     await expect(page.getByTestId("tree-row-actor:rename-hero")).toBeVisible();
     expect(await page.evaluate(() => (
-      globalThis as unknown as { __babylonslateTest: { activeSceneContent: () => SerializedScene | null } }
-    ).__babylonslateTest.activeSceneContent()?.actors.find(actor => actor.id === "rename-hero")?.classId)).toBe(operation === "rename" ? "Champion" : "ReopenHero");
+      globalThis as unknown as { __hapticTest: { activeSceneContent: () => SerializedScene | null } }
+    ).__hapticTest.activeSceneContent()?.actors.find(actor => actor.id === "rename-hero")?.classId)).toBe(operation === "rename" ? "Champion" : "ReopenHero");
   });
 }

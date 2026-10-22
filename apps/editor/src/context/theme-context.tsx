@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { createStatusBarStyle } from "@babylonslate/vfs";
+import { createStatusBarStyle } from "@haptic/vfs";
 import { applyEditorTheme, resolveEditorTheme } from "../lib/editor-themes";
 import { useAppSettings } from "./app-settings-context";
 

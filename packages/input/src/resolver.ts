@@ -3,7 +3,7 @@ import {
   type InputKey,
   type InputTypeValue,
   type InputValueState,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { inputMappingKey } from "./input-assets";
 import type { RawInputEvent } from "./ring-buffer";
 import { InputBindingProfile } from "./input-bindings";

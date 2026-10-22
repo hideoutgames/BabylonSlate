@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { Actor, ActorComponent } from "@haptic/object-model";
 import { TweenRuntime, type TweenRequest } from "./tween-runtime";
 
 function floatRequest(values: unknown[], identity = {}): TweenRequest {

@@ -1,12 +1,12 @@
 import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
+import { Button } from "@haptic/ui/components/button";
+import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
 import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Slider } from "@babylonslate/ui/components/slider";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@haptic/ui/components/field";
+import { Separator } from "@haptic/ui/components/separator";
+import { Slider } from "@haptic/ui/components/slider";
+import { cn } from "@haptic/ui/lib/utils";
 import { popupMenuFrame } from "./catalog-menu";
 import { colorToHex, parseHexColor, type ColorValue } from "./color-field";
 import { isCoarsePointerEnvironment } from "./prevent-document-overscroll";

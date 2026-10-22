@@ -1,4 +1,4 @@
-import type { MaterialParameterValue } from "@babylonslate/core";
+import type { MaterialParameterValue } from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -10,7 +10,7 @@ import {
   type MaterialGraphEdge,
   type MaterialGraphNode,
   type MaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
   actor,

@@ -9,15 +9,15 @@ import {
   type ReactNode,
 } from "react";
 import { PlusIcon } from "lucide-react";
-import { buttonVariants } from "@babylonslate/ui/components/button";
+import { buttonVariants } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/dialog";
+import { cn } from "@haptic/ui/lib/utils";
 import { popupMenuFrame } from "./catalog-menu";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";

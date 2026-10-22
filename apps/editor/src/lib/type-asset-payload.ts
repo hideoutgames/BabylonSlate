@@ -1,10 +1,10 @@
-import { hardLoadingProperty, normalizeValueUnit } from "@babylonslate/core";
+import { hardLoadingProperty, normalizeValueUnit } from "@haptic/core";
 import {
   clampEnumValue,
   type EnumAsset,
   type ScriptInterfaceAsset,
   type StructureAsset,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"

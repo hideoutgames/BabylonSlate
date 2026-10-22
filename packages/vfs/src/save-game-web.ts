@@ -1,4 +1,4 @@
-import type { SaveGameStorage } from "@babylonslate/core";
+import type { SaveGameStorage } from "@haptic/core";
 import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, saveGameSegments } from "./save-game-path";
 import { withSaveGameWebLock } from "./save-game-web-lock";
 
@@ -18,7 +18,7 @@ export class WebSaveGameStorage implements SaveGameStorage {
   }) { this.getRoot = getRoot; }
 
   private async directory(parts: string[], create: boolean): Promise<FileSystemDirectoryHandle> {
-    let directory = await (await this.getRoot()).getDirectoryHandle("babylonslate-game-saves", { create });
+    let directory = await (await this.getRoot()).getDirectoryHandle("haptic-game-saves", { create });
     for (const part of parts) directory = await directory.getDirectoryHandle(encodeSaveGameSegment(part), { create });
     return directory;
   }

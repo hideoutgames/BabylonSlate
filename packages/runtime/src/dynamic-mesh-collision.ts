@@ -1,6 +1,6 @@
-import type { ActorComponent } from "@babylonslate/object-model";
-import { prepareColliderShape, type ColliderShape, type Vec3 } from "@babylonslate/physics";
-import { collisionIndexArray, type DynamicRuntimeMeshGeometry, type Transform } from "@babylonslate/core";
+import type { ActorComponent } from "@haptic/object-model";
+import { prepareColliderShape, type ColliderShape, type Vec3 } from "@haptic/physics";
+import { collisionIndexArray, type DynamicRuntimeMeshGeometry, type Transform } from "@haptic/core";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { sameDescriptor, transformDescriptor } from "./physics-preparation";
 

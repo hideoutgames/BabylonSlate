@@ -13,7 +13,7 @@ import {
 import { ChevronRightIcon } from "lucide-react";
 import { treeGuideSegments } from "./tree-guides";
 import { InlineRenameInput } from "./inline-rename";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,

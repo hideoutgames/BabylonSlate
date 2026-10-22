@@ -1,12 +1,12 @@
 import { Color4, Effect, GPUParticleSystem, NodeMaterial, NodeMaterialModes, ParticleSystem, Vector3, type Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import {
   normalizeParticleEmitterPayload,
   resolveBasicEmitterPlan,
   type ParticleBlendMode,
-} from "@babylonslate/assets";
-import type { ParticleBillboardMode } from "@babylonslate/core";
+} from "@haptic/assets";
+import type { ParticleBillboardMode } from "@haptic/core";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { createTestEngine } from "./create-null-engine";
 import {

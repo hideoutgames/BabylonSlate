@@ -1,6 +1,6 @@
-import type { MovementProperties } from "@babylonslate/core";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import type { Vec3 } from "@babylonslate/physics";
+import type { MovementProperties } from "@haptic/core";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import type { Vec3 } from "@haptic/physics";
 import { actorChainWorldTransform, rotateVector } from "./actor-world-transform";
 import { parsedMovementProperties } from "./movement-settings";
 import type { PhysicsWorldSync } from "./physics-sync";

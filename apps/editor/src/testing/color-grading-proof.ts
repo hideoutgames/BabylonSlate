@@ -14,8 +14,8 @@ import {
   type AbstractEngine,
   type AbstractMesh,
 } from "@babylonjs/core";
-import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
-import { normalizeRenderEffectsSettings } from "@babylonslate/core";
+import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { normalizeRenderEffectsSettings } from "@haptic/core";
 import {
   applyAlbedoTexture,
   applyTilemapAlbedoTextures,
@@ -30,10 +30,10 @@ import {
   setSceneRenderSettings,
   worldTileSize,
   type Text2DAssetContext,
-} from "@babylonslate/render";
-import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
-import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
-import { sceneRenderingSettings, setSceneEffectsAssets } from "@babylonslate/render/render-settings";
+} from "@haptic/render";
+import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
+import { sceneRenderingSettings, setSceneEffectsAssets } from "@haptic/render/render-settings";
 
 const WIDTH = 64;
 const HEIGHT = 32;

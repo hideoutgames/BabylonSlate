@@ -7,7 +7,7 @@ import {
   type DataTreeAsset,
   type DataDefinitionAsset,
   type DataDefinitionField,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { StructField } from "./type-assets";
 import { defaultValueForMember, mergeEngineTypeSchemas, structInstanceDefaultWithSchema, type StructSchema, type TypeSchemas } from "./type-defaults";
 import { ENGINE_STRUCTS } from "./engine-types";

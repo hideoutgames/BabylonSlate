@@ -1,13 +1,13 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { Kbd } from "@babylonslate/ui/components/kbd";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/dialog";
+import { Kbd } from "@haptic/ui/components/kbd";
+import { cn } from "@haptic/ui/lib/utils";
 import { clampOverlayMenuPosition } from "./clamp-overlay-menu";
 import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 import { humanizePropertyLabel } from "./humanize-property-label";

@@ -3,7 +3,7 @@
  * "Basic Particle Emitter"). `PARTICLE_VALUE_SPECS` is the single table of allowed modes, ranges,
  * units and curve axes that the normalizer, the plan and the editor all read.
  */
-import { PARTICLE_CURVE_MAX_KEYS, PARTICLE_CURVE_MIN_KEYS } from "@babylonslate/core";
+import { PARTICLE_CURVE_MAX_KEYS, PARTICLE_CURVE_MIN_KEYS } from "@haptic/core";
 
 /** Minimum key spacing. Babylon divides by the key gap and bakes GPU gradients at x/256. */
 export const PARTICLE_CURVE_MIN_KEY_GAP = 1 / 256;

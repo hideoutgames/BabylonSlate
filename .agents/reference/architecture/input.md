@@ -1,6 +1,6 @@
 # Input
 
-Input Action / Input Axis assets, the `@babylonslate/input` mapping model and resolver, runtime tick wiring and player rebinding.
+Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver, runtime tick wiring and player rebinding.
 
 ## Ownership
 
@@ -12,7 +12,7 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 | Player rebinding profile | [`packages/input/src/input-bindings.ts`](../../../packages/input/src/input-bindings.ts) |
 | `InputResolver` | [`packages/input/src/resolver.ts`](../../../packages/input/src/resolver.ts) |
 | `InputRingBuffer`, wire encoding | [`packages/input/src/ring-buffer.ts`](../../../packages/input/src/ring-buffer.ts) |
-| DOM capture (Play and player) | [`packages/input/src/dom-input-capture.ts`](../../../packages/input/src/dom-input-capture.ts) (`@babylonslate/input/dom`) |
+| DOM capture (Play and player) | [`packages/input/src/dom-input-capture.ts`](../../../packages/input/src/dom-input-capture.ts) (`@haptic/input/dom`) |
 | Tick wiring | [`packages/runtime/src/driver.ts`](../../../packages/runtime/src/driver.ts) |
 | `TickContext` input API | [`packages/object-model/src/objects.ts`](../../../packages/object-model/src/objects.ts) |
 | Graph nodes | [`packages/scripting-nodes/src/input.ts`](../../../packages/scripting-nodes/src/input.ts), [`input-bindings.ts`](../../../packages/scripting-nodes/src/input-bindings.ts); event gating in [`packages/scripting/src/compile.ts`](../../../packages/scripting/src/compile.ts) |
@@ -28,7 +28,7 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 
 ## Formats
 
-- `InputAction` / `InputAxis` are version 1 `.babasset` documents with `valueType` and stable-id `bindings`. Normalization drops bindings without an id or with a repeated id. Registry headers hold value type; full bindings live in the document chunk.
+- `InputAction` / `InputAxis` are version 1 `.hasset` documents with `valueType` and stable-id `bindings`. Normalization drops bindings without an id or with a repeated id. Registry headers hold value type; full bindings live in the document chunk.
 - Mapping model: `ActionMapping { name, bindings[] }`, `AxisMapping { name, kind: "1d" | "2d", bindings[] }`. A binding targets `key` / `mouseButton` / `gamepadButton` / `gamepadAxis` / `touch` with a device `code` and optional modifiers. Axis bindings add `deadZone`, `scale`, `invert`, `sensitivity`, `component` (x/y), `digitalValue`.
 - `normalizeInputMappings()` drops empty codes (so a blank draft is never mouse button 0); a missing list is empty, never replaced by defaults.
 - Gamepad codes stay `padIndex:buttonIndex`; labels are layout-agnostic Standard Gamepad names.

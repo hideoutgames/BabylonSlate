@@ -1,11 +1,11 @@
-import { discoverEnginePlugins } from "@babylonslate/assets";
+import { discoverEnginePlugins } from "@haptic/assets";
 import {
   MemoryStorageAdapter,
   HttpCatalogStorageAdapter,
   type HttpStorageCatalog,
   createReadOnlyProjectStorage,
-} from "@babylonslate/vfs";
-import type { ProjectStorage } from "@babylonslate/core";
+} from "@haptic/vfs";
+import type { ProjectStorage } from "@haptic/core";
 
 export const ENGINE_PLUGIN_INDEX_FILE = "index.json";
 

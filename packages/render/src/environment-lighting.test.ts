@@ -9,11 +9,11 @@ import {
   Matrix,
   MeshBuilder,
 } from "@babylonjs/core";
-import { normalizeEnvironmentLightingSettings } from "@babylonslate/core";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { normalizeEnvironmentLightingSettings } from "@haptic/core";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { ResourceCache } from "./resource-cache";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene } from "@haptic/core";
 import { applySceneEnvironment } from "./scene-illumination";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { isSceneFrameReady } from "./scene-perf";
@@ -21,7 +21,7 @@ import { compileMaterialPlan } from "./material-compiler";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   applyEnvironmentLighting,
   isEnvironmentLightingReady,

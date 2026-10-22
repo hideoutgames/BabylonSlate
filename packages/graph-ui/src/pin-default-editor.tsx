@@ -4,10 +4,10 @@ import {
   NumericDragField,
   TagPicker,
   humanizePropertyLabel,
-} from "@babylonslate/editor-kit";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
-import { Input } from "@babylonslate/ui/components/input";
-import { Label } from "@babylonslate/ui/components/label";
+} from "@haptic/editor-kit";
+import { Checkbox } from "@haptic/ui/components/checkbox";
+import { Input } from "@haptic/ui/components/input";
+import { Label } from "@haptic/ui/components/label";
 import {
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
@@ -16,7 +16,7 @@ import {
   pinDefaultAsVec4Tuple,
   vec3TupleToObject,
   vec4TupleToObject,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import type { PinDefaultEditorRenderer, PinDefaultEditorRequest } from "./pin-default-editor-context";
 import { PinDefaultPreviewWidget } from "./pin-default-widget";
 

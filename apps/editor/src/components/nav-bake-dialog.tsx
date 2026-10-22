@@ -4,8 +4,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/dialog";
+import { Button } from "@haptic/ui/components/button";
 import type { NavBakePhase } from "../lib/nav-bake";
 
 export type NavBakeDialogProps = {

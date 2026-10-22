@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { SourceRevisionChangedError } from "@haptic/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { createMountedProjectStorage } from "./mounted-storage";
 import {
@@ -24,7 +24,7 @@ describe("DocumentsStorageAdapter", () => {
   });
 
   it("creates and lists documents projects without a picker", async () => {
-    await storage.openDocumentsProject("Demo.babproject");
+    await storage.openDocumentsProject("Demo.hproject");
     await storage.writeText("project.json", '{"ok":true}');
     expect(await storage.readText("project.json")).toBe('{"ok":true}');
     expect(await storage.exists(".")).toBe(true);
@@ -33,22 +33,22 @@ describe("DocumentsStorageAdapter", () => {
     const listed = await storage.listProjects();
     expect(listed).toEqual([
       {
-        id: "documents:Demo.babproject",
-        name: "Demo.babproject",
+        id: "documents:Demo.hproject",
+        name: "Demo.hproject",
         tier: "documents",
       },
     ]);
   });
 
   it("reopens a known documents folder without prompting", async () => {
-    await storage.openDocumentsProject("A.babproject");
+    await storage.openDocumentsProject("A.hproject");
     await storage.writeBinary("blob.bin", new Uint8Array([1, 2, 3]));
     await storage.releaseFolder();
 
     const reopened = new DocumentsStorageAdapter(fs);
     await reopened.openKnownFolder({
-      id: "documents:A.babproject",
-      name: "A.babproject",
+      id: "documents:A.hproject",
+      name: "A.hproject",
       tier: "documents",
     });
     expect(await reopened.readBinary("blob.bin")).toEqual(
@@ -61,7 +61,7 @@ describe("DocumentsStorageAdapter", () => {
   });
 
   it("uses one bridge write per asset and preserves each payload", async () => {
-    await storage.openDocumentsProject("Writes.babproject");
+    await storage.openDocumentsProject("Writes.hproject");
     await storage.mkdir("assets", true);
     const write = vi.spyOn(fs, "writeFile");
     for (const value of [1, 2, 3]) {
@@ -74,7 +74,7 @@ describe("DocumentsStorageAdapter", () => {
   });
 
   it("round-trips a payload larger than one base64 encoding chunk", async () => {
-    await storage.openDocumentsProject("Large.babproject");
+    await storage.openDocumentsProject("Large.hproject");
     const bytes = Uint8Array.from({ length: 70_001 }, (_, index) => (index * 31) % 256);
     await storage.writeBinary("large.bin", bytes);
     expect(await storage.readBinary("large.bin")).toEqual(bytes);
@@ -82,28 +82,28 @@ describe("DocumentsStorageAdapter", () => {
 
   it("uses native bounded reads and rejects unsupported hosts without reading the file", async () => {
     await storage.openDocumentsProject("Game");
-    await storage.writeBinary("large.babasset", new Uint8Array([1, 2, 3, 4]));
+    await storage.writeBinary("large.hasset", new Uint8Array([1, 2, 3, 4]));
     const fullRead = vi.spyOn(fs, "readFile");
-    const selected = await storage.readBinaryRange("large.babasset", 1, 2);
+    const selected = await storage.readBinaryRange("large.hasset", 1, 2);
     expect(selected.bytes).toEqual(new Uint8Array([2, 3]));
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 2, fullReads: 0 });
-    await storage.writeBinary("large.babasset", new Uint8Array([9, 8, 7, 6]));
-    await expect(storage.readBinaryRange("large.babasset", 1, 2, selected.revision)).rejects.toThrow(/revision/i);
+    await storage.writeBinary("large.hasset", new Uint8Array([9, 8, 7, 6]));
+    await expect(storage.readBinaryRange("large.hasset", 1, 2, selected.revision)).rejects.toThrow(/revision/i);
     fs.readFileRange = vi.fn().mockRejectedValue(Object.assign(new Error("Source changed during read"), { data: { actualBytesRead: 1 } }));
-    await expect(storage.readBinaryRange("large.babasset", 1, 2)).rejects.toThrow(/changed/i);
+    await expect(storage.readBinaryRange("large.hasset", 1, 2)).rejects.toThrow(/changed/i);
     expect(storage.getReadMetrics().actualBytesRead).toBe(3);
     delete fs.readFileRange;
-    await expect(storage.readBinaryRange("large.babasset", 1, 2)).rejects.toThrow(/bounded reads/i);
+    await expect(storage.readBinaryRange("large.hasset", 1, 2)).rejects.toThrow(/bounded reads/i);
     expect(fullRead).not.toHaveBeenCalled();
   });
 
   it("translates only native revision codes and preserves failed-read accounting", async () => {
     await storage.openDocumentsProject("Game");
     fs.readFileRange = vi.fn().mockRejectedValue({ code: "REVISION_CHANGED", data: { actualBytesRead: 2 } });
-    await expect(storage.readBinaryRange("asset.babasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    await expect(storage.readBinaryRange("asset.hasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     const unrelated = Object.assign(new Error("Source revision changed"), { code: "UNREACHABLE" });
     vi.mocked(fs.readFileRange).mockRejectedValue(unrelated);
-    await expect(storage.readBinaryRange("asset.babasset", 0, 4)).rejects.toBe(unrelated);
+    await expect(storage.readBinaryRange("asset.hasset", 0, 4)).rejects.toBe(unrelated);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 2, actualBytesRead: 2, fullReads: 0 });
   });
 

@@ -1,6 +1,6 @@
 import { DrawWrapper, ParticleSystem } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createTestEngine } from "./create-null-engine";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";

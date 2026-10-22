@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 
@@ -38,17 +38,17 @@ vi.mock("../shell/use-platform-layout", () => ({
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
+    documentId: "graph:assets/Hero.class.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Hero.class.babasset",
+      id: "graph:assets/Hero.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
       content: {
@@ -95,7 +95,7 @@ describe("MyClassPanel name prompt", () => {
       within(screen.getByTestId("add-function-menu")).getByTestId("search-item-__new__"),
     );
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         members: expect.arrayContaining([
           expect.objectContaining({ kind: "function", name: "NewFunction" }),
@@ -124,7 +124,7 @@ describe("MyClassPanel name prompt", () => {
       expect.objectContaining({ id: eventNode.id, kind: "event", name: "NewEvent" }),
     ]));
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         nodes: expect.arrayContaining([
           expect.objectContaining({
@@ -161,7 +161,7 @@ describe("MyClassPanel name prompt", () => {
     fireEvent.click(screen.getByTestId("class-add-local-variables"));
     fireEvent.click(await screen.findByTestId("search-item-int"));
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         members: expect.arrayContaining([
           expect.objectContaining({

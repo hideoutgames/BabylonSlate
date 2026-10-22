@@ -3,13 +3,13 @@ import { sceneRenderPathStatus } from "./scene-render-path";
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
-import type { ResolvedRenderingPipeline } from "@babylonslate/core";
+import type { ResolvedRenderingPipeline } from "@haptic/core";
 import {
   type AbstractEngine,
   type Scene,
 } from "@babylonjs/core";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
-import { effectiveShadowSettings } from "@babylonslate/core";
+import { effectiveShadowSettings } from "@haptic/core";
 import { sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";

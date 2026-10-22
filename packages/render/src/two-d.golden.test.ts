@@ -6,7 +6,7 @@ import {
   normalizeGoldenText,
   readGolden,
   writeGolden,
-} from "@babylonslate/test-kit";
+} from "@haptic/test-kit";
 import { createEditorCamera } from "./editor-camera";
 import {
   meshNamesInCanvasRect,

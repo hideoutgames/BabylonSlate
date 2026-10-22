@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LinesMesh, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { editorComponentMeshName } from "./scene-loader";

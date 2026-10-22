@@ -3,7 +3,7 @@ import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/ren
 import {
   DEFAULT_THUMBNAIL_MAX_EDGE,
   type ModelMaterialSlot,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   applyModelMaterialSlots,
   createModelPreviewScene,

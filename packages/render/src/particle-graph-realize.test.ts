@@ -1,6 +1,6 @@
 import { GPUParticleSystem, MeshBuilder, ParticleSystem, UpdateSizeBlock, type Mesh, type Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PARTICLE_UPDATE_SPEED, type ParticleSpace } from "@babylonslate/core";
+import { PARTICLE_UPDATE_SPEED, type ParticleSpace } from "@haptic/core";
 import {
   PARTICLE_CATALOG,
   createDefaultParticleGraphDocument,
@@ -13,7 +13,7 @@ import {
   type ParticleGraphNode,
   type ParticleGraphSettings,
   type ParticleNumericType,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { createTestEngine } from "./create-null-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";

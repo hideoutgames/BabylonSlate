@@ -1,4 +1,4 @@
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import {
   multiplyQuat,
   parseConstraintProperties,
@@ -7,7 +7,7 @@ import {
   type PhysicsBackend,
   type Quat,
   type Vec3,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import { sameDescriptor } from "./physics-preparation";
 import { componentOwners } from "./world-component-index";
 

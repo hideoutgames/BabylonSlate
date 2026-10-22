@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { carriesLoadingPolicy } from "@babylonslate/core";
+import { carriesLoadingPolicy } from "@haptic/core";
 import {
   AssetLoadingField,
   AssetPicker,
@@ -11,9 +11,9 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { defaultValueForMember, keepsTypeClassId } from "@babylonslate/scripting";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { defaultValueForMember, keepsTypeClassId } from "@haptic/scripting";
 import {
   useDocumentActions,
   useRegistryState,

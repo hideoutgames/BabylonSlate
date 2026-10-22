@@ -2,7 +2,7 @@ import { SimulationOutliner } from "./simulation-outliner";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { usePlaySimulationDocumentId } from "../context/play-context";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import {
   memo,
   type ComponentProps,
@@ -28,7 +28,7 @@ import {
   type TreeDropPlacement,
   type TreeSelectOptions,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   actorSubtree,
   isSceneLayerAnchorActor,
@@ -38,9 +38,9 @@ import {
   type SerializedGraph,
   type SerializedOutlinerFolder,
   type SerializedScene,
-} from "@babylonslate/core";
-import { isSceneWorkspaceKind } from "@babylonslate/core";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/core";
+import { isSceneWorkspaceKind } from "@haptic/core";
+import { Button } from "@haptic/ui/components/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,8 +51,8 @@ import {
   AlertDialogHeader,
   AlertDialogMedia,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+} from "@haptic/ui/components/alert-dialog";
+import { Toggle } from "@haptic/ui/components/toggle";
 import {
   CopyIcon,
   ClipboardPasteIcon,
@@ -71,7 +71,7 @@ import {
   UnlockIcon,
   PlusIcon,
 } from "lucide-react";
-import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
+import { GraphDropHint, type GraphDropHintState } from "@haptic/graph-ui";
 import {
   useDocumentActions,
   useRegistryState,

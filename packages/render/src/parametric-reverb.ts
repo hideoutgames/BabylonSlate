@@ -1,7 +1,7 @@
 import {
   AUDIO_REVERB_ALLPASS_COUNT,
   AUDIO_REVERB_COMB_COUNT,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 /** Fixed Schroeder delay taps (seconds). Lengths are the P16 comb / all-pass counts. */
 export const PARAMETRIC_REVERB_COMB_DELAYS = [0.0297, 0.0371, 0.0411, 0.0437];

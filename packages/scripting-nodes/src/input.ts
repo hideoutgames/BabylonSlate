@@ -12,7 +12,7 @@ import {
   structRef,
   ENGINE_COLLISION_CHANNEL_ENUM_ID,
   ENGINE_HIT_RESULT_STRUCT_ID,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { inputBindingNodes } from "./input-bindings";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);

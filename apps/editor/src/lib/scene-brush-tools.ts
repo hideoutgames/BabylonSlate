@@ -1,5 +1,5 @@
 import { AlignVerticalJustifyEndIcon, ArrowDownIcon, ArrowUpIcon, EraserIcon, HandIcon, PaintbrushIcon, WavesIcon, type LucideIcon } from "lucide-react";
-import type { LandscapeBrushTool } from "@babylonslate/core";
+import type { LandscapeBrushTool } from "@haptic/core";
 
 export type LandscapeTool = LandscapeBrushTool | "navigate";
 export type FoliageTool = "navigate" | "paint" | "erase";

@@ -4,8 +4,8 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 
 ## Invariants
 
-- `@babylonslate/navigation` may use Recast wasm (`@recast-navigation/core` / `generators`) but must not import React, Babylon, Capacitor or `@recast-navigation/babylon` (not a published package). Do not use Babylon `RecastJSPlugin`.
-- `@babylonslate/scripting-nodes` must not import `@babylonslate/navigation`; graphs call `ctx.*` hooks.
+- `@haptic/navigation` may use Recast wasm (`@recast-navigation/core` / `generators`) but must not import React, Babylon, Capacitor or `@recast-navigation/babylon` (not a published package). Do not use Babylon `RecastJSPlugin`.
+- `@haptic/scripting-nodes` must not import `@haptic/navigation`; graphs call `ctx.*` hooks.
 - Play never generates a navmesh; it only imports baked bytes. Export never auto-bakes.
 - `worldToRecast` / `recastToWorld` are the only 2D axis remap (world `(x, y)` ↔ Recast `(x, 0, y)`); no other code touches Recast axes.
 - A navmesh is not a Content Browser asset: bytes live in the Scene's `navmesh` chunk.
@@ -26,7 +26,7 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 
 | Field | Value |
 | --- | --- |
-| Parent | Scene `.scene.babasset` extra chunk |
+| Parent | Scene `.scene.hasset` extra chunk |
 | Chunk id | `NAVMESH_CHUNK_ID = "navmesh"` |
 | Solo / tiled | `exportNavMesh()` bytes |
 | Tile cache (dynamic obstacles) | magic `BSNT` + `exportTileCache()` |

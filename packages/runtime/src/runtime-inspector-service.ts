@@ -5,9 +5,9 @@ import type {
   RuntimeInspectorRequest,
   RuntimeInspectorResult,
   RuntimeMaterialEditPreparation,
-} from "@babylonslate/bridge";
-import type { MaterialParameterValue } from "@babylonslate/core";
-import { Actor, ActorComponent, MaterialObject, type World } from "@babylonslate/object-model";
+} from "@haptic/bridge";
+import type { MaterialParameterValue } from "@haptic/core";
+import { Actor, ActorComponent, MaterialObject, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RenderCommandEmitter } from "./render-command-emitter";

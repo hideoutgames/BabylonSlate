@@ -70,7 +70,7 @@ async function currentIdentity(environment) {
 }
 
 function buildContract(environment) {
-  const mode = environment.BL_TEST_BUILD_MODE ?? "standalone";
+  const mode = environment.HAPTIC_TEST_BUILD_MODE ?? "standalone";
   if (mode === "standalone") return "standalone-typecheck";
   if (mode !== "ci-bundle" || !hostedExecution(environment))
     throw new Error(
@@ -140,9 +140,9 @@ export async function buildTestArtifact(options = {}) {
     MSYS2_ENV_CONV_EXCL: [environment.MSYS2_ENV_CONV_EXCL, "VITE_BASE_PATH"]
       .filter(Boolean)
       .join(";"),
-    BL_TEST_BUILD_DESTINATION: join(root, identity.key),
-    BL_TEST_BUILD_IDENTITY: JSON.stringify(identity),
-    BL_TEST_BUILD_RESULT: resultPath,
+    HAPTIC_TEST_BUILD_DESTINATION: join(root, identity.key),
+    HAPTIC_TEST_BUILD_IDENTITY: JSON.stringify(identity),
+    HAPTIC_TEST_BUILD_RESULT: resultPath,
   };
   try {
     await runStage(
@@ -168,9 +168,9 @@ export async function buildTestArtifact(options = {}) {
 }
 
 export async function buildOwnedArtifact() {
-  const directory = process.env.BL_TEST_BUILD_DESTINATION;
-  const expected = JSON.parse(process.env.BL_TEST_BUILD_IDENTITY ?? "null");
-  const resultPath = process.env.BL_TEST_BUILD_RESULT;
+  const directory = process.env.HAPTIC_TEST_BUILD_DESTINATION;
+  const expected = JSON.parse(process.env.HAPTIC_TEST_BUILD_IDENTITY ?? "null");
+  const resultPath = process.env.HAPTIC_TEST_BUILD_RESULT;
   const root = resolve(repoRoot, ".cache", "test-build");
   if (
     !directory ||
@@ -240,8 +240,8 @@ export async function buildOwnedArtifact() {
 export async function runBrowserTests(args, options = {}) {
   const environment = { ...process.env, ...options.env };
   let artifact;
-  if (environment.BL_TEST_ARTIFACT) {
-    const directory = resolve(repoRoot, environment.BL_TEST_ARTIFACT);
+  if (environment.HAPTIC_TEST_ARTIFACT) {
+    const directory = resolve(repoRoot, environment.HAPTIC_TEST_ARTIFACT);
     const identity = await verifyBrowserArtifact(directory, environment);
     artifact = { directory, identity };
   } else artifact = await buildTestArtifact(options);

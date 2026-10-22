@@ -1,7 +1,7 @@
 import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
-import { installAssetBytes } from "@babylonslate/assets";
+import { installAssetBytes } from "@haptic/assets";
 import { AnimationGroup, FreeCamera, Matrix, Vector3, Mesh, MeshBuilder, StandardMaterial, TransformNode } from "@babylonjs/core";
-import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
+import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
 import {
   applyAnimStateToScene,
   sceneAnimHostFromBinding,

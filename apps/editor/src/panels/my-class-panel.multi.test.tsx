@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createText3DComponent, type SerializedGraph } from "@babylonslate/core";
+import { createText3DComponent, type SerializedGraph } from "@haptic/core";
 import { MyClassPanel } from "./my-class-panel";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
@@ -50,7 +50,7 @@ const applyGraphChange = vi.hoisted(() =>
   vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true),
 );
 const harness = vi.hoisted(() => ({
-  path: "assets/Hero.class.babasset",
+  path: "assets/Hero.class.hasset",
   graphs: {} as Record<string, SerializedGraph>,
   assets: [] as Array<{ path: string; header: { type: string; name: string; guid: string; parentClass?: string } }>,
 }));
@@ -148,10 +148,10 @@ function panel() {
 }
 
 function renderPanel(graph = heroGraph()) {
-  harness.path = "assets/Hero.class.babasset";
+  harness.path = "assets/Hero.class.hasset";
   harness.graphs = {
-    "assets/Hero.class.babasset": graph,
-    "assets/Enemy.class.babasset": enemyGraph(),
+    "assets/Hero.class.hasset": graph,
+    "assets/Enemy.class.hasset": enemyGraph(),
   };
   const view = render(panel());
   const tree = screen.getByTestId("my-blueprint-tree");
@@ -380,14 +380,14 @@ describe("Class tree copy and paste", () => {
     copySelection();
     expect(applyGraphChange).not.toHaveBeenCalled();
 
-    harness.path = "assets/Enemy.class.babasset";
+    harness.path = "assets/Enemy.class.hasset";
     view.rerender(panel());
     fireEvent.contextMenu(screen.getByTestId("my-blueprint-tree"), { clientX: 5, clientY: 390 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
 
     expect(applyGraphChange).toHaveBeenCalledTimes(1);
     const [documentId, next] = applyGraphChange.mock.calls[0]!;
-    expect(documentId).toBe("graph:assets/Enemy.class.babasset");
+    expect(documentId).toBe("graph:assets/Enemy.class.hasset");
     const pasted = (next.members ?? []).filter((member) => !["enemy-health"].includes(member.id));
     // Health exists in Enemy, so its copy is numbered; Mana and Jump keep their names.
     expect(pasted.map((member) => [member.kind, member.name, member.category ?? null])).toEqual([
@@ -435,7 +435,7 @@ describe("Class tree copy and paste", () => {
     const view = renderPanel();
     click("var-pawn");
     pressChord(screen.getByRole("tree"), "c");
-    harness.path = "assets/Enemy.class.babasset";
+    harness.path = "assets/Enemy.class.hasset";
     view.rerender(panel());
     screen.getByRole("tree").focus();
     pressChord(screen.getByRole("tree"), "v");
@@ -458,11 +458,11 @@ describe("Class tree copy and paste", () => {
     openMenu("evt-begin");
     fireEvent.click(screen.getByTestId("class-menu-copy"));
     // A Function Library has no Event Graph.
-    harness.graphs["assets/Lib.class.babasset"] = { nodes: [], edges: [] };
+    harness.graphs["assets/Lib.class.hasset"] = { nodes: [], edges: [] };
     harness.assets = [
-      { path: "assets/Lib.class.babasset", header: { type: "Class", name: "Lib", guid: "lib", parentClass: "FunctionLibrary" } },
+      { path: "assets/Lib.class.hasset", header: { type: "Class", name: "Lib", guid: "lib", parentClass: "FunctionLibrary" } },
     ];
-    harness.path = "assets/Lib.class.babasset";
+    harness.path = "assets/Lib.class.hasset";
     view.rerender(panel());
     fireEvent.contextMenu(screen.getByTestId("my-blueprint-tree"), { clientX: 5, clientY: 390 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
@@ -485,8 +485,8 @@ describe("Class tree copy and paste", () => {
       click("var-temp");
       openMenu("var-temp");
       fireEvent.click(screen.getByTestId("class-menu-copy"));
-      harness.graphs["assets/Enemy.class.babasset"] = addClassMember(enemyGraph(), "function", "Run", () => "fn-run");
-      harness.path = "assets/Enemy.class.babasset";
+      harness.graphs["assets/Enemy.class.hasset"] = addClassMember(enemyGraph(), "function", "Run", () => "fn-run");
+      harness.path = "assets/Enemy.class.hasset";
       view.rerender(panel());
     }
 
@@ -595,10 +595,10 @@ describe("Class tree drag to the graph", () => {
 
 describe("Events add menu", () => {
   it("adds a native event of a Class with a parent wired to Call Parent, like its inherited row", () => {
-    harness.path = "assets/Child.class.babasset";
-    harness.graphs = { "assets/Child.class.babasset": { nodes: [], edges: [] } };
+    harness.path = "assets/Child.class.hasset";
+    harness.graphs = { "assets/Child.class.hasset": { nodes: [], edges: [] } };
     harness.assets = [
-      { path: "assets/Child.class.babasset", header: { type: "Class", name: "Child", guid: "child", parentClass: "Actor" } },
+      { path: "assets/Child.class.hasset", header: { type: "Class", name: "Child", guid: "child", parentClass: "Actor" } },
     ];
     render(panel());
     fireEvent.click(screen.getByTestId("class-add-events"));

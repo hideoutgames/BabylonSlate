@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { AbstractEngine } from "@babylonjs/core";
-import type { SkeletonKind } from "@babylonslate/assets";
+import type { SkeletonKind } from "@haptic/assets";
 import {
   attachMaterialPreviewGestures,
   attachSkeletonPreview,
@@ -14,7 +14,7 @@ import {
   retargetAnimationGroupWithMeshProxy,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";

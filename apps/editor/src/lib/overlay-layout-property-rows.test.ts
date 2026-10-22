@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, resolveOverlayLayout, type SerializedComponent } from "@babylonslate/core";
+import { createActor, resolveOverlayLayout, type SerializedComponent } from "@haptic/core";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import { overlayLayoutPropertyRows } from "./overlay-layout-property-rows";
 

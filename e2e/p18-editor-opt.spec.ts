@@ -5,7 +5,7 @@ import { clickPlayAndWaitForOverlay } from "./play";
 const E2E_TIMEOUT_MS = 180_000;
 
 async function openClassPrefab(page: Page): Promise<void> {
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
   await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
   await expect(page.getByTestId("prefab-viewport-panel")).toBeVisible();
@@ -15,8 +15,8 @@ async function openClassPrefab(page: Page): Promise<void> {
 /** Babylon Engines alive in the page, read through the warm Scene viewport's hook. */
 function engineCount(page: Page): Promise<number | null> {
   return page.evaluate(() => (globalThis as unknown as {
-    __babylonslateViewportTest?: { renderingBaseline(): { engineCount: number } | null };
-  }).__babylonslateViewportTest?.renderingBaseline()?.engineCount ?? null);
+    __hapticViewportTest?: { renderingBaseline(): { engineCount: number } | null };
+  }).__hapticViewportTest?.renderingBaseline()?.engineCount ?? null);
 }
 
 test.describe.configure({ mode: "serial" });

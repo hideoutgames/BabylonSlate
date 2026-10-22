@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
-import { ENGINE_COMPONENT_CLASS_IDS } from "@babylonslate/core";
+import { ENGINE_COMPONENT_CLASS_IDS } from "@haptic/core";
 import {
   CloudIcon,
   FileBoxIcon,

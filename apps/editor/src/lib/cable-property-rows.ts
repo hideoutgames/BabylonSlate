@@ -1,5 +1,5 @@
-import { DEFAULT_CABLE_PROPERTIES, parseCableProperties, type SerializedComponent } from "@babylonslate/core";
-import { humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
+import { DEFAULT_CABLE_PROPERTIES, parseCableProperties, type SerializedComponent } from "@haptic/core";
+import { humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 
 function isZeroOffset(value: readonly number[]): boolean {

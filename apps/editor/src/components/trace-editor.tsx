@@ -7,8 +7,8 @@
   type ReactNode,
 } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { TracePayload } from "@babylonslate/debugger";
-import { PanelFrame } from "@babylonslate/editor-kit";
+import type { TracePayload } from "@haptic/debugger";
+import { PanelFrame } from "@haptic/editor-kit";
 import { useOpenDocument } from "../context/document-context";
 import { asTracePayload, validTraceIndex } from "../lib/trace-view";
 import { TraceTimelineView } from "./trace-timeline-view";

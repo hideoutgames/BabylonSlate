@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SaveGameDefinition } from "@babylonslate/core";
+import type { SaveGameDefinition } from "@haptic/core";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "./save-game-panels";
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 
@@ -18,7 +18,7 @@ const harness = vi.hoisted(() => ({
 }));
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "progress" }) }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
-  openDocuments: [{ id: "progress", ref: { kind: "save-game", path: "Progress.savegame.babasset" }, content: harness.definition }],
+  openDocuments: [{ id: "progress", ref: { kind: "save-game", path: "Progress.savegame.hasset" }, content: harness.definition }],
   assetRegistry: { getByPath: () => ({ header: { guid: "definition" } }), list: () => [] },
   projectDocument: { settings: { saveGame: { definitionGuid: harness.defaultGuid, defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } } },
   applyAssetDocumentChange: harness.apply,

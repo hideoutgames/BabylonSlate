@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { BabassetHeader } from "@babylonslate/assets";
+import type { HassetHeader } from "@haptic/assets";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "./collect-gpu-texture-bytes";
 
 function textureHeader(
-  chunks: BabassetHeader["chunks"],
+  chunks: HassetHeader["chunks"],
   payload: Record<string, unknown> = {},
-): BabassetHeader {
+): HassetHeader {
   return {
     dependencyMetadataVersion: 1, requiredDependencies: [],
     guid: "tex-1",
@@ -27,10 +27,10 @@ describe("collectGpuTextureBytes", () => {
     const classBytes = new Uint8Array([7, 8, 9]);
     const localBytes = new Uint8Array([10, 11, 12]);
     const sources = new Map([
-      ["assets/tex-event.texture.babasset", eventBytes],
-      ["assets/tex-function.texture.babasset", functionBytes],
-      ["assets/tex-class.texture.babasset", classBytes],
-      ["assets/tex-local.texture.babasset", localBytes],
+      ["assets/tex-event.texture.hasset", eventBytes],
+      ["assets/tex-function.texture.hasset", functionBytes],
+      ["assets/tex-class.texture.hasset", classBytes],
+      ["assets/tex-local.texture.hasset", localBytes],
     ]);
     const readChunk = async (path: string, chunkId: string) =>
       chunkId === "pixels" ? sources.get(path) ?? null : null;
@@ -42,7 +42,7 @@ describe("collectGpuTextureBytes", () => {
     });
     const bytes = await collectGpuTextureBytes({
       assets: ["tex-event", "tex-function", "tex-class", "tex-local", "tex-unused"].map((guid) => ({
-        path: `assets/${guid}.texture.babasset`,
+        path: `assets/${guid}.texture.hasset`,
         header: {
           ...textureHeader([{
             id: "pixels",
@@ -92,7 +92,7 @@ describe("collectGpuTextureBytes", () => {
     const bytes = await collectGpuTextureBytes({
       assets: [
         {
-          path: "assets/Hero.texture.babasset",
+          path: "assets/Hero.texture.hasset",
           header: textureHeader(
             [
               {
@@ -124,7 +124,7 @@ describe("collectGpuTextureBytes", () => {
     const bytes = await collectGpuTextureBytes({
       assets: [
         {
-          path: "assets/Hero.texture.babasset",
+          path: "assets/Hero.texture.hasset",
           header: textureHeader(
             [
               {
@@ -154,7 +154,7 @@ describe("collectGpuTextureBytes", () => {
     await collectGpuTextureBytes({
       assets: [
         {
-          path: "assets/Hero.texture.babasset",
+          path: "assets/Hero.texture.hasset",
           header: textureHeader(
             [
               {
@@ -181,7 +181,7 @@ describe("collectGpuTextureBytes", () => {
     const sizes = texturePixelSizesFromHeaders(
       [
         {
-          path: "assets/Hero.texture.babasset",
+          path: "assets/Hero.texture.hasset",
           header: textureHeader(
             [
               {

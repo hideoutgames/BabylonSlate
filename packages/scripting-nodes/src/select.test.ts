@@ -20,7 +20,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import {
   selectNodes,

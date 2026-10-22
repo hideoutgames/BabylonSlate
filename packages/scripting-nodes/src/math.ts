@@ -4,7 +4,7 @@ import {
   FLOAT,
   INT,
   BOOL,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 import { hoistedCall } from "./hoisted-helper";
 

@@ -14,7 +14,7 @@ import {
   type Scene,
   type ShadowGenerator,
 } from "@babylonjs/core";
-import type { VolumetricLightingSettings } from "@babylonslate/core";
+import type { VolumetricLightingSettings } from "@haptic/core";
 import {
   sceneEffectLights,
   isClusteredLocalAllowed,

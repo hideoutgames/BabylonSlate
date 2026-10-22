@@ -1,6 +1,6 @@
 /**
  * Basic Particle Emitter payload: a module stack nested by stage, its normalizer, and
- * the Babylon-free plan that `@babylonslate/render` applies onto a GPU (or CPU
+ * the Babylon-free plan that `@haptic/render` applies onto a GPU (or CPU
  * fallback) particle system (.agents/reference/architecture/particles.md, "Basic Particle Emitter").
  * The plan carries semantic ids only; render maps them to Babylon constants by name.
  */
@@ -18,7 +18,7 @@ import {
   type ParticleBlendMode,
   type ParticleLoopMode,
   type ParticleSpace,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { stableStringify } from "./bytes";
 import type { ParticleBurst } from "./particle-schedule";
 import {

@@ -9,7 +9,7 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 - Kind → token maps live in [`packages/ui/src/lib/data-types.ts`](../../../packages/ui/src/lib/data-types.ts) (`pinColorVar`, `PIN_COLOR_VAR`, `assetColorVar`, `PARTICLE_STAGE_ROLE`, `typeColorThumbAccent`). `graph-ui` `pinCssVar` and editor-kit `TypeColorMark` read that module; never add a local color table. Change a hue in `tokens.css`; change which kind uses which token in `data-types.ts`.
 - Icons resolve through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../../packages/editor-kit/src/type-visuals.tsx). Color is by kind, icon by concrete type; user classes reuse their first engine ancestor's icon. Icon sizes: 16 in chrome/lists, 40 on tiles with `absoluteStrokeWidth`.
 - Tailwind scans sources relative to the CSS entry, so `globals.css` lists each UI-rendering package with `@source`. Add an `@source` line when a new package renders components, or its utilities silently produce no CSS.
-- Dockview theming: [`apps/editor/src/shell/dockview-theme.css`](../../../apps/editor/src/shell/dockview-theme.css). The overflow popover mounts outside `.dockview-theme-babylonslate` and is styled from editor tokens directly.
+- Dockview theming: [`apps/editor/src/shell/dockview-theme.css`](../../../apps/editor/src/shell/dockview-theme.css). The overflow popover mounts outside `.dockview-theme-haptic` and is styled from editor tokens directly.
 
 ## Appearance
 
@@ -38,7 +38,7 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 
 ## Composition
 
-- Compose chrome from `@babylonslate/ui` (shadcn) and `@babylonslate/editor-kit`. No raw styled `<input>`, `<select>` or `<button>` in `apps/editor/src`.
+- Compose chrome from `@haptic/ui` (shadcn) and `@haptic/editor-kit`. No raw styled `<input>`, `<select>` or `<button>` in `apps/editor/src`.
 - `outline` buttons for visible actions and for the trigger of an irreversible confirm; `ghost` for tabs, menu items and icon-only close; solid `destructive` only for the confirm inside a danger `AlertDialog` (`AlertDialogContent variant="destructive"`).
 - Exclusive tools use `Toggle` / `ToggleGroup` outline with accent fill + primary border + `aria-pressed`. Inside a `.toolbar-island` the pressed tool instead takes the `--selection` orange (#ff8000, the viewport selection colour) as a tinted fill and text, and mode switches (`toolbar-island-segmented`) take a neutral fill. Selected rows use a whole-row fill; no edge stripes or inset underlines.
 - Large icons (asset tiles, catalog cards, project cards) draw at multiples of Lucide's 24-unit grid with whole-pixel line widths (48px with 1-unit lines, 24px with 2), so lines never straddle pixels and read as a faint outline.

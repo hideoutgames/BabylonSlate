@@ -9,9 +9,9 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import type { IndexedAsset } from "@babylonslate/assets";
-import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import type { IndexedAsset } from "@haptic/assets";
+import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { KeybindProvider } from "../context/keybind-context";
 import { subscribeModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
@@ -87,7 +87,7 @@ vi.mock("../context/validation-context", () => ({
 function texture(index: number): IndexedAsset {
   return {
     rootId: "project",
-    path: `assets/tex-${index}.babasset`,
+    path: `assets/tex-${index}.hasset`,
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: `tex-${index}`,
@@ -232,10 +232,10 @@ afterEach(async () => {
 describe("ContentBrowserWorkspace referenced Class deletion", () => {
   function classAndScene(folder = "assets") {
     const actorClass = texture(0);
-    actorClass.path = `${folder}/Hero.class.babasset`;
+    actorClass.path = `${folder}/Hero.class.hasset`;
     actorClass.header = { ...actorClass.header, type: "Class", name: "Hero", guid: "hero" };
     const scene = texture(1);
-    scene.path = "assets/main.scene.babasset";
+    scene.path = "assets/main.scene.hasset";
     scene.header = { ...scene.header, type: "Scene", name: "main", guid: "main" };
     return { actorClass, scene };
   }
@@ -282,7 +282,7 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
 
   it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
     const { actorClass, scene } = classAndScene("assets/Actors");
-    scene.path = "assets/Actors/main.scene.babasset";
+    scene.path = "assets/Actors/main.scene.hasset";
     scene.header.dependencies = ["hero"];
     installRegistry([actorClass, scene], ["Actors"]);
     render(<ContentBrowserWorkspace />);
@@ -341,7 +341,7 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
 
   it("chooses one replacement for two usages and stops deletion if updating references fails", async () => {
     const { actorClass, scene } = classAndScene();
-    const replacement = { ...actorClass, path: "assets/NPC.class.babasset", header: { ...actorClass.header, guid: "npc", name: "NPC" } };
+    const replacement = { ...actorClass, path: "assets/NPC.class.hasset", header: { ...actorClass.header, guid: "npc", name: "NPC" } };
     docs.openDocuments = [{ ref: { path: scene.path }, content: { actors: [
       { id: "one", classId: "Hero", components: [] }, { id: "two", classId: "Hero", components: [] },
     ] } }];
@@ -394,7 +394,7 @@ describe("ContentBrowserWorkspace grid window", () => {
       readOnly: false,
       folderPath: "plugins/tools",
       contentPath: "plugins/tools/assets",
-      settingsPath: "plugins/tools/tools.plugin.babasset",
+      settingsPath: "plugins/tools/tools.plugin.hasset",
       settings: {
         ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }),
         enabledByDefault: true,
@@ -452,11 +452,11 @@ describe("ContentBrowserWorkspace grid window", () => {
     const duplicateAsset = vi.fn(() => new Promise<IndexedAsset>((_resolve, reject) => { failDuplicate = reject; }));
     docs.assetRegistry = { ...(docs.assetRegistry as object), duplicateAsset };
     render(<ContentBrowserWorkspace />);
-    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
     await waitFor(() => expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(true));
-    await act(async () => { failDuplicate(new Error("Asset already exists: assets/tex-0_1.babasset")); });
-    expect(await screen.findByText("Asset already exists: assets/tex-0_1.babasset")).toBeTruthy();
+    await act(async () => { failDuplicate(new Error("Asset already exists: assets/tex-0_1.hasset")); });
+    expect(await screen.findByText("Asset already exists: assets/tex-0_1.hasset")).toBeTruthy();
     expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
   });
   it("retries only the remaining items after a partially completed copy", async () => {
@@ -469,9 +469,9 @@ describe("ContentBrowserWorkspace grid window", () => {
       return texture(copied.length);
     } };
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
-    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.hasset"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.hasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy to Folder…" }));
     const destination = within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters");
     tapTreeRow(destination);
@@ -485,12 +485,12 @@ describe("ContentBrowserWorkspace grid window", () => {
     const asset = texture(0);
     installRegistry([asset], ["Characters"]);
     const moveAsset = vi.fn().mockRejectedValueOnce(new Error("Destination is locked")).mockImplementation(async () => {
-      asset.path = "assets/Characters/tex-0.babasset";
+      asset.path = "assets/Characters/tex-0.hasset";
       return asset;
     });
     docs.assetRegistry = { ...(docs.assetRegistry as object), moveAsset };
     render(<ContentBrowserWorkspace />);
-    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
     const destination = within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters");
     tapTreeRow(destination);
@@ -499,13 +499,13 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.getByTestId("content-browser-move-destination").textContent).toContain("assets/Characters");
     fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
     await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
-    expect(asset.path).toBe("assets/Characters/tex-0.babasset");
+    expect(asset.path).toBe("assets/Characters/tex-0.hasset");
   });
 
   it("repairs open paths and refreshes a successful rename even when the lock transfer fails", async () => {
     const asset = texture(0);
     installRegistry([asset]);
-    const renamed = { ...asset, path: "assets/Renamed.texture.babasset" };
+    const renamed = { ...asset, path: "assets/Renamed.texture.hasset" };
     docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset: vi.fn(async () => renamed) };
     docs.sourceControl.enabled = true;
     docs.sourceControl.lockStateForPath.mockReturnValue("mine");
@@ -528,8 +528,8 @@ describe("ContentBrowserWorkspace grid window", () => {
     installRegistry([texture(0), texture(1)], ["Characters"]);
     render(<ContentBrowserWorkspace />);
     fireEvent.click(screen.getByTestId("content-folder-assets/Characters"));
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"), { ctrlKey: true });
-    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.hasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     const list = screen.getByTestId("content-browser-delete-list");
     expect(list.textContent).toContain("tex-1");
@@ -542,7 +542,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     const moveFolder = vi.fn().mockResolvedValue(undefined);
     docs.assetRegistry = { ...(docs.assetRegistry as object), moveFolder };
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.contextMenu(screen.getByTestId("content-folder-assets/Characters"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
     const input = screen.getByTestId("content-browser-name-input");
@@ -583,7 +583,7 @@ describe("ContentBrowserWorkspace grid window", () => {
   it("renames an asset inline from a tree label double-tap", async () => {
     const asset = texture(0);
     installRegistry([asset]);
-    const renameAsset = vi.fn(async () => ({ ...asset, path: "assets/Renamed.babasset" }));
+    const renameAsset = vi.fn(async () => ({ ...asset, path: "assets/Renamed.hasset" }));
     docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
     render(<ContentBrowserWorkspace />);
     const tree = screen.getByTestId("content-browser-folder-tree");
@@ -615,19 +615,19 @@ describe("ContentBrowserWorkspace grid window", () => {
     installRegistry([texture(0)]);
     render(<ContentBrowserWorkspace />);
     expect(screen.queryByTestId("content-browser-open-selected")).toBeNull();
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     expect(screen.getByTestId("content-browser-deselect-all").textContent).toBe("Deselect");
     fireEvent.click(screen.getByTestId("content-browser-open-selected"));
     await waitFor(() =>
-      expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-0.babasset", label: "Tex 0" }),
+      expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-0.hasset", label: "Tex 0" }),
     );
   });
 
   it("rejects duplicate typed asset names before submitting a rename", () => {
     const assets = [texture(0), texture(1)];
-    assets[0]!.path = "assets/Hero.class.babasset";
+    assets[0]!.path = "assets/Hero.class.hasset";
     assets[0]!.header.name = "Hero.class";
-    assets[1]!.path = "assets/Villain.class.babasset";
+    assets[1]!.path = "assets/Villain.class.hasset";
     installRegistry(assets);
     const renameAsset = vi.fn();
     docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
@@ -666,10 +666,10 @@ describe("ContentBrowserWorkspace grid window", () => {
 
   it("refuses a Class name whose class id another Class uses, in New Asset and Rename", () => {
     const rain = texture(0);
-    rain.path = "assets/Weather/Rain_Weather.class.babasset";
+    rain.path = "assets/Weather/Rain_Weather.class.hasset";
     rain.header = { ...rain.header, type: "Class", name: "Rain_Weather", guid: "rain" };
     const hero = texture(1);
-    hero.path = "assets/Hero.class.babasset";
+    hero.path = "assets/Hero.class.hasset";
     hero.header = { ...hero.header, type: "Class", name: "Hero", guid: "hero" };
     installRegistry([rain, hero], ["Weather"]);
     const renameAsset = vi.fn();
@@ -735,7 +735,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     asset.header.dependencies = [dependency.header.guid];
     installRegistry([asset, dependency]);
     render(<ContentBrowserWorkspace />);
-    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Show References" }));
     const dialog = screen.getByTestId("content-browser-refs-dialog");
     const root = within(dialog).getByTestId("asset-reference-node-tex-0");
@@ -743,7 +743,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(within(dialog).queryByTestId("graph-add-node")).toBeNull();
     fireEvent.click(within(dialog).getByTestId("asset-reference-node-tex-1"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Open Asset" }));
-    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-1.babasset", label: "Tex 1" }));
+    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-1.hasset", label: "Tex 1" }));
   });
   it("preserves a folder name and explains a failed create so it can be retried", async () => {
     installRegistry([]);
@@ -788,7 +788,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     const plugin = {
       pluginGuid: "starter", source: "engine", folderName: "starter", readOnly: true,
       folderPath: "plugins/starter", contentPath: "plugins/starter/assets",
-      settingsPath: "plugins/starter/starter.plugin.babasset",
+      settingsPath: "plugins/starter/starter.plugin.hasset",
       settings: { ...createDefaultPluginSettings({ pluginGuid: "starter", displayName: "Starter" }), enabledByDefault: true },
     };
     docs.pluginDescriptors = [plugin];
@@ -812,7 +812,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.change(screen.getByTestId("content-browser-search"), { target: { value: "missing" } });
     fireEvent.click(await screen.findByRole("button", { name: "Clear Filters" }));
     expect((screen.getByTestId("content-browser-search") as HTMLInputElement).value).toBe("");
-    expect(await screen.findByTestId("content-item-assets/tex-1.babasset")).toBeTruthy();
+    expect(await screen.findByTestId("content-item-assets/tex-1.hasset")).toBeTruthy();
   });
 
   beforeEach(() => {
@@ -831,7 +831,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     Object.assign(docs.assetRegistry as object, { deleteAsset });
     docs.repairAfterAssetDelete.mockImplementation(() => repairing);
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
 
@@ -857,7 +857,7 @@ describe("ContentBrowserWorkspace grid window", () => {
       deleteAsset: async () => { throw new Error("Storage unavailable"); },
     });
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
     await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
@@ -892,8 +892,8 @@ describe("ContentBrowserWorkspace grid window", () => {
       },
     });
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.hasset"), { ctrlKey: true });
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
     await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
@@ -910,21 +910,21 @@ describe("ContentBrowserWorkspace grid window", () => {
       },
     });
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-2.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.hasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-2.hasset"), { ctrlKey: true });
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
     await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
     const closed = docs.closeDocumentsForPaths.mock.calls.flatMap(([paths]) => [...paths as Iterable<string>]);
-    expect(closed).toContain("assets/tex-0.babasset");
-    expect(closed).not.toContain("assets/tex-2.babasset");
+    expect(closed).toContain("assets/tex-0.hasset");
+    expect(closed).not.toContain("assets/tex-2.hasset");
   });
 
   it("repairs a deleted Class by its compile id, not its display name", async () => {
     docs.thumbnailsEnabled = false;
     const classAsset = texture(0);
-    classAsset.path = "assets/Rain-Weather.class.babasset";
+    classAsset.path = "assets/Rain-Weather.class.hasset";
     classAsset.header = { ...classAsset.header, type: "Class", name: "Actor", guid: "rain" };
     installRegistry([classAsset]);
     Object.assign(docs.assetRegistry as object, { deleteAsset: async () => {} });
@@ -958,16 +958,16 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(tiles()).toHaveLength(0);
 
     // A registry change while hidden appears once the browser is shown.
-    const added = { ...texture(0), path: "assets/added.babasset" };
+    const added = { ...texture(0), path: "assets/added.hasset" };
     added.header = { ...added.header, guid: "added", name: "added" };
     installRegistry([added, ...textures]);
     rerender(<ContentBrowserWorkspace hidden />);
     expect(tiles()).toHaveLength(0);
 
     rerender(<ContentBrowserWorkspace />);
-    expect(screen.getByTestId("content-item-assets/added.babasset")).toBeTruthy();
-    expect(screen.getByTestId("content-item-assets/tex-0.babasset")).toBeTruthy();
-    expect(screen.queryByTestId("content-item-assets/tex-299.babasset")).toBeNull();
+    expect(screen.getByTestId("content-item-assets/added.hasset")).toBeTruthy();
+    expect(screen.getByTestId("content-item-assets/tex-0.hasset")).toBeTruthy();
+    expect(screen.queryByTestId("content-item-assets/tex-299.hasset")).toBeNull();
   });
 
   it("badges a Texture as Encoding when its encode starts, though its indexed header did not change", () => {
@@ -998,12 +998,12 @@ describe("ContentBrowserWorkspace grid window", () => {
       return asset;
     };
     installRegistry([
-      named("guid-b", "Rock", "assets/Rock.babasset"),
-      named("guid-e", "Pebble", "assets/pebble.babasset"),
-      named("guid-f", "Rockface", "assets/Rockface.babasset"),
-      named("guid-a", "rock", "assets/rock-2.babasset"),
-      named("guid-c", "Rock.png", "assets/Rock-png.babasset"),
-      named("guid-d", "Boulder", "assets/boulder-rock.babasset"),
+      named("guid-b", "Rock", "assets/Rock.hasset"),
+      named("guid-e", "Pebble", "assets/pebble.hasset"),
+      named("guid-f", "Rockface", "assets/Rockface.hasset"),
+      named("guid-a", "rock", "assets/rock-2.hasset"),
+      named("guid-c", "Rock.png", "assets/Rock-png.hasset"),
+      named("guid-d", "Boulder", "assets/boulder-rock.hasset"),
     ]);
     render(<ContentBrowserWorkspace />);
     const order = () =>
@@ -1233,7 +1233,7 @@ describe("ContentBrowserWorkspace grid window", () => {
   it("uses an on-demand folder drawer on phones and returns to the chosen folder", async () => {
     layout.phone = true;
     docs.thumbnailsEnabled = false;
-    const nested = { ...texture(1), path: "assets/Textures/tex-1.babasset" };
+    const nested = { ...texture(1), path: "assets/Textures/tex-1.hasset" };
     installRegistry([texture(0), nested], ["Textures"]);
     render(<ContentBrowserWorkspace />);
 
@@ -1250,10 +1250,10 @@ describe("ContentBrowserWorkspace grid window", () => {
       screen.getByRole("button", { name: "Browse Folders" }).textContent,
     ).toContain("Textures");
     expect(
-      screen.getByTestId("content-item-assets/Textures/tex-1.babasset"),
+      screen.getByTestId("content-item-assets/Textures/tex-1.hasset"),
     ).toBeTruthy();
     expect(
-      screen.queryByTestId("content-item-assets/tex-0.babasset"),
+      screen.queryByTestId("content-item-assets/tex-0.hasset"),
     ).toBeNull();
   });
 
@@ -1262,12 +1262,12 @@ describe("ContentBrowserWorkspace grid window", () => {
     installRegistry([texture(0), texture(1), texture(2)]);
     render(<ContentBrowserWorkspace />);
     const tree = screen.getByTestId("content-browser-folder-tree");
-    tapTreeRow(screen.getByTestId("tree-row-assets/tex-1.babasset"));
+    tapTreeRow(screen.getByTestId("tree-row-assets/tex-1.hasset"));
     fireEvent.keyDown(tree, { key: "ArrowDown", shiftKey: true });
     fireEvent.keyDown(tree, { key: "ArrowUp", shiftKey: true });
 
     const selected = (index: number) =>
-      screen.getByTestId(`content-item-assets/tex-${index}.babasset`).getAttribute("data-selected");
+      screen.getByTestId(`content-item-assets/tex-${index}.hasset`).getAttribute("data-selected");
     expect([selected(0), selected(1), selected(2)]).toEqual(["false", "true", "false"]);
   });
 
@@ -1309,7 +1309,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     mesh.header.type = "Mesh";
     installRegistry([mesh]);
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     expect(screen.queryByRole("button", { name: "Open Selected Item" })).toBeNull();
     expect(screen.getByTestId("content-browser-delete-selected")).toBeTruthy();
   });
@@ -1323,13 +1323,13 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(
       screen.queryByRole("button", { name: "Open Selected Item" }),
     ).toBeNull();
-    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.click(screen.getByRole("button", { name: "Open Selected Item" }));
 
     await waitFor(() =>
       expect(docs.openDocument).toHaveBeenCalledWith({
         kind: "texture",
-        path: "assets/tex-0.babasset",
+        path: "assets/tex-0.hasset",
         label: "Tex 0",
       }),
     );
@@ -1348,7 +1348,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
    */
   async function mountProject() {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("test.babproject");
+    await storage.openDocumentsProject("test.hproject");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     docs.assetRegistry = registry;
@@ -1373,7 +1373,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
     await mountProject();
     await createAsset("Class", "Hero");
 
-    expect(await screen.findByTestId("content-item-assets/Hero.class.babasset")).toBeTruthy();
+    expect(await screen.findByTestId("content-item-assets/Hero.class.hasset")).toBeTruthy();
     fireEvent.click(screen.getByTestId("content-browser-new-asset"));
     fireEvent.click(screen.getByTestId("search-item-Class"));
     expect(screen.getByTestId("tree-row-Hero")).toBeTruthy();
@@ -1392,7 +1392,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
     expect(screen.getByTestId("new-asset-type-description").textContent).toMatch(/water appearance/);
     fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: "Lagoon" } });
     fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
-    expect(await screen.findByTestId("content-item-assets/Lagoon.water.babasset")).toBeTruthy();
+    expect(await screen.findByTestId("content-item-assets/Lagoon.water.hasset")).toBeTruthy();
   });
 
   it("opens a created Scene without remounting the registry", async () => {
@@ -1401,7 +1401,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
 
     await waitFor(() =>
       expect(docs.openDocument).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "scene", path: "assets/Level.scene.babasset" }),
+        expect.objectContaining({ kind: "scene", path: "assets/Level.scene.hasset" }),
       ),
     );
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();

@@ -3,8 +3,8 @@ import type {
   SerializedActor,
   SerializedScene,
   SerializedTransform,
-} from "@babylonslate/core";
-import { isSceneLayerAnchorActor } from "@babylonslate/core";
+} from "@haptic/core";
+import { isSceneLayerAnchorActor } from "@haptic/core";
 import {
   AddActorCommand,
   AddComponentCommand,

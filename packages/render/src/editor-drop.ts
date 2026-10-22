@@ -6,7 +6,7 @@ import {
   Vector3,
   type Node,
 } from "@babylonjs/core";
-import { DEFAULT_EDITOR_DROP_DISTANCE, type SerializedScene, type SerializedTransform } from "@babylonslate/core";
+import { DEFAULT_EDITOR_DROP_DISTANCE, type SerializedScene, type SerializedTransform } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isColliderVisualTree } from "./collider-visual";
 import {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Ray, Vector3 } from "@babylonjs/core";
-import { createActor, createDefaultScene, identitySerializedTransform } from "@babylonslate/core";
+import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { createEditorCamera } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";

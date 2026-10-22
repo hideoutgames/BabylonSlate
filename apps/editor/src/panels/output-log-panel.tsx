@@ -1,16 +1,16 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useState } from "react";
 import { CircleXIcon, TriangleAlertIcon } from "lucide-react";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { Button } from "@babylonslate/ui/components/button";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
+import { Button } from "@haptic/ui/components/button";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   PanelFrame,
   SelectableText,
   TREE_ROW_HEIGHT,
   WindowedList,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import { useOutputLog, useOutputLogWindow } from "../context/play-context";
 import { MessageDetails } from "../components/message-details";
 import { parseOutputLogLine } from "../lib/output-log-line";

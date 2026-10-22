@@ -70,7 +70,7 @@ function storedBlockCount(length: number): number {
   return Math.max(1, Math.ceil(length / STORED_BLOCK_BYTES));
 }
 
-/** Store-only zlib so we do not take a deflate dependency in `@babylonslate/render`. */
+/** Store-only zlib so we do not take a deflate dependency in `@haptic/render`. */
 function writeZlibStore(out: Uint8Array, offset: number, data: Uint8Array): void {
   out[offset] = 0x78;
   out[offset + 1] = 0x01;

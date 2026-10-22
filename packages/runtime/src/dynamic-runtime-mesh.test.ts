@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultSceneSettings, identityTransform } from "@babylonslate/core";
-import { dynamicMeshTransferables, isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createPhysicsBackend } from "@babylonslate/physics";
+import { createActor, createDefaultSceneSettings, identityTransform } from "@haptic/core";
+import { dynamicMeshTransferables, isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { createPhysicsBackend } from "@haptic/physics";
 import { createInProcessRuntime } from "./driver";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { PhysicsWorldSync } from "./physics-sync";

@@ -8,7 +8,7 @@ import {
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import {
   createDefaultNodeRegistry,
 } from "./index";

@@ -4,8 +4,8 @@ import {
   type SaveGameConfiguration,
   type SaveGameProjectSettings,
   type SaveGameStorage,
-} from "@babylonslate/core";
-import { createSaveGameStorage } from "@babylonslate/vfs";
+} from "@haptic/core";
+import { createSaveGameStorage } from "@haptic/vfs";
 
 /** Resolve the saved asset before launching either editor Play host. */
 export async function prepareSaveGameConfiguration(options: {

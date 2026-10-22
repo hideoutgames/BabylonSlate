@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMeshComponent, createText3DComponent } from "@babylonslate/core";
+import { createMeshComponent, createText3DComponent } from "@haptic/core";
 import { mergePrefabComponents } from "./prefab-preview";
 import { componentGraphMembers } from "./component-graph-members";
 

@@ -3,19 +3,19 @@ import {
   discoverEngineExtensions,
   encodeExtensionSettings,
   exportExtensionZip,
-  inspectBabextension,
+  inspectHextension,
   uniqueExtensionFolderName,
   unpackEngineExtensionZip,
   type ExtensionDescriptor,
-  type InspectedBabextension,
-} from "@babylonslate/assets";
-import { newGuid, type ProjectStorage } from "@babylonslate/core";
+  type InspectedHextension,
+} from "@haptic/assets";
+import { newGuid, type ProjectStorage } from "@haptic/core";
 import {
   createReadOnlyProjectStorage,
   createTemplateStorage,
   ENGINE_EXTENSION_LIBRARY_FOLDER,
   MemoryStorageAdapter,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import { ensureEngineExtensionStorage } from "./engine-extensions";
 
 export const ENGINE_EXTENSION_LIBRARY_ROOT = ENGINE_EXTENSION_LIBRARY_FOLDER;
@@ -99,12 +99,12 @@ export class EngineExtensionLibrary {
       append(extension, true);
     }
     const archives = (await this.libraryStorage.readdir("."))
-      .filter((file) => !file.isDir && file.name.endsWith(".babextension"))
+      .filter((file) => !file.isDir && file.name.endsWith(".hextension"))
       .sort((a, b) => a.name.localeCompare(b.name));
     for (const archive of archives) {
-      let incoming: InspectedBabextension;
+      let incoming: InspectedHextension;
       try {
-        incoming = await inspectBabextension(await this.libraryStorage.readBinary(archive.name));
+        incoming = await inspectHextension(await this.libraryStorage.readBinary(archive.name));
       } catch (cause) {
         const guid = `invalid-library:${encodeURIComponent(archive.name)}`;
         const folderName = uniqueExtensionFolderName(archive.name, folderNames);
@@ -212,7 +212,7 @@ export class EngineExtensionLibrary {
     options: { replaceGuid?: string } = {},
   ): Promise<EngineExtensionImportResult> {
     return this.serialize(async () => {
-      const incoming = await inspectBabextension(bytes);
+      const incoming = await inspectHextension(bytes);
       const { entries, archivePaths, defaults } = await this.readState();
       const conflicts = entries.filter((entry) =>
         entry.extensionGuid === incoming.settings.extensionGuid ||
@@ -232,7 +232,7 @@ export class EngineExtensionLibrary {
       }
       const archivePath = existing
         ? archivePaths.get(existing.extensionGuid)!
-        : `${newGuid()}.babextension`;
+        : `${newGuid()}.hextension`;
       const previousArchive = existing ? await this.libraryStorage.readBinary(archivePath) : null;
       const previousDefaults = await this.libraryStorage.exists(DEFAULTS_FILE)
         ? await this.libraryStorage.readBinary(DEFAULTS_FILE)

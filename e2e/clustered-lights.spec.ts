@@ -21,15 +21,15 @@ test("clustered point and spot contributions preserve native and graph PBR and C
   await page.waitForFunction(
     () =>
       typeof (
-        window as unknown as { __babylonslateClusteredLightProof?: unknown }
-      ).__babylonslateClusteredLightProof === "function",
+        window as unknown as { __hapticClusteredLightProof?: unknown }
+      ).__hapticClusteredLightProof === "function",
   );
   const result = await page.evaluate(() =>
     (
       window as unknown as {
-        __babylonslateClusteredLightProof: typeof runClusteredLightProof;
+        __hapticClusteredLightProof: typeof runClusteredLightProof;
       }
-    ).__babylonslateClusteredLightProof(),
+    ).__hapticClusteredLightProof(),
   );
   await testInfo.attach("clustered-light-proof", {
     body: JSON.stringify(result),

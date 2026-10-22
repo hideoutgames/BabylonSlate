@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { InputResolver, type InputMappings, type RawInputEvent } from "@babylonslate/input";
-import type { FocusNavigationSettings } from "@babylonslate/core";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { InputResolver, type InputMappings, type RawInputEvent } from "@haptic/input";
+import type { FocusNavigationSettings } from "@haptic/core";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 
 const key = (code: string, phase: "down" | "up"): RawInputEvent => ({ kind: "key", tick: 0, code, phase });

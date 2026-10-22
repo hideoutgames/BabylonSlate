@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, compileGraph, createUnavailableEditorDataApi, EXEC, pin, STRING, structRef, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
+import { BOOL, compileGraph, createUnavailableEditorDataApi, EXEC, pin, STRING, structRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 function graph() {

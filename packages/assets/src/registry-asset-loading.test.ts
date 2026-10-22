@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMountedProjectStorage, createReadOnlyProjectStorage, HttpCatalogStorageAdapter, MemoryStorageAdapter, type HttpStorageCatalog } from "@babylonslate/vfs";
-import { MAIN_CLASS_FILE, MAIN_SCENE_FILE, SourceRevisionChangedError, type StorageReadOptions } from "@babylonslate/core";
-import { BABASSET_PREFIX_BYTES, encodeBabasset, readBabassetHeaderLength } from "./babasset";
+import { createMountedProjectStorage, createReadOnlyProjectStorage, HttpCatalogStorageAdapter, MemoryStorageAdapter, type HttpStorageCatalog } from "@haptic/vfs";
+import { MAIN_CLASS_FILE, MAIN_SCENE_FILE, SourceRevisionChangedError, type StorageReadOptions } from "@haptic/core";
+import { HASSET_PREFIX_BYTES, encodeHasset, readHassetHeaderLength } from "./hasset";
 import { isAssetSourceRevisionChanged } from "./asset-loading-service";
 import { createVfsBlobStore } from "./blob-store";
 import { sha256Hex } from "./bytes";
@@ -28,7 +28,7 @@ describe("registry source loading", () => {
     const source = new Uint8Array([1, 2, 3, 4, 5, 6]);
     const objects = new Map<string, Uint8Array>([["source", source]]);
     const catalog: HttpStorageCatalog = { version: 1, files: [] };
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: { guid: "model", name: "Model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin",
         dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: {} },
       chunks: [{ id: "source", kind: "model", mime: "application/octet-stream", data: source }],
@@ -37,17 +37,17 @@ describe("registry source loading", () => {
           parts: [{ offset: 0, length: data.byteLength, file: "source", sha256: hash }] });
       } } : {}),
     });
-    const headerLength = readBabassetHeaderLength(bytes);
-    const payloadOffset = BABASSET_PREFIX_BYTES + headerLength;
-    objects.set("prefix", bytes.slice(0, BABASSET_PREFIX_BYTES));
-    objects.set("header", bytes.slice(BABASSET_PREFIX_BYTES, payloadOffset));
+    const headerLength = readHassetHeaderLength(bytes);
+    const payloadOffset = HASSET_PREFIX_BYTES + headerLength;
+    objects.set("prefix", bytes.slice(0, HASSET_PREFIX_BYTES));
+    objects.set("header", bytes.slice(HASSET_PREFIX_BYTES, payloadOffset));
     const segments: Array<readonly [string, number, number]> = [
-      ["prefix", 0, BABASSET_PREFIX_BYTES], ["header", BABASSET_PREFIX_BYTES, headerLength],
+      ["prefix", 0, HASSET_PREFIX_BYTES], ["header", HASSET_PREFIX_BYTES, headerLength],
       ...(location === "inline" ? [["source", payloadOffset, source.byteLength] as const] : []),
     ];
     const parts = await Promise.all(segments.map(async ([file, offset, length]) => ({ file, offset, length,
       sha256: await sha256Hex(objects.get(file)!) })));
-    catalog.files.push({ path: "assets/model.babasset", size: bytes.byteLength, revision: "model-revision", parts });
+    catalog.files.push({ path: "assets/model.hasset", size: bytes.byteLength, revision: "model-revision", parts });
     let stall = true;
     let transportSignal: AbortSignal | undefined;
     let started!: () => void;
@@ -120,7 +120,7 @@ describe("registry source loading", () => {
     const blobs = createVfsBlobStore(storage);
     const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])];
     // Same size on every save, so a weak adapter's metadata revision never moves.
-    const save = async (saved: number) => storage.writeBinary("assets/model.babasset", await encodeBabasset({
+    const save = async (saved: number) => storage.writeBinary("assets/model.hasset", await encodeHasset({
       header: { guid: "model", name: "Model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin",
         dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: { saved } },
       chunks: chunks.map((data, index) => ({ id: `part-${index}`, kind: "model", mime: "application/octet-stream", data })),
@@ -175,18 +175,18 @@ describe("registry source loading", () => {
       guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin" as const, payload,
       ...collectAssetDependencyMetadata(type, payload),
     });
-    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/scene.hasset", await encodeHasset({
       header: header("scene", "Scene", { actors: [{ id: "enemy", classId: "Goblin", components: [{ classId: "CameraComponent" }] }] }), chunks: [],
     }));
     const classDocument = new TextEncoder().encode(JSON.stringify({ nodes: [], edges: [], members: [] }));
-    await storage.writeBinary("assets/Goblin.class.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/Goblin.class.hasset", await encodeHasset({
       header: { ...header("custom-class", "Class", {}), parentClass: "Actor", dependencies: ["model"], requiredDependencies: ["model"], dependencyMetadataVersion: 1 },
       chunks: [{ id: "document", kind: "document", mime: "application/json", data: classDocument }],
     }));
-    await storage.writeBinary("assets/model.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/model.hasset", await encodeHasset({
       header: header("model", "Model", {}), chunks: [{ id: "source", kind: "model", mime: "application/octet-stream", data: new Uint8Array([1, 2, 3]) }],
     }));
-    await storage.writeBinary("assets/Later.class.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/Later.class.hasset", await encodeHasset({
       header: header("later-class", "Class", {}),
       chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify({ note: "x".repeat(100_000) })) }],
     }));
@@ -217,12 +217,12 @@ describe("registry source loading", () => {
       { id: "hunt", classId: "Hunt", decorators: [{ classId: "bt.decorator.cooldown" }],
         services: [{ classId: "bt.service.setBlackboard" }] },
     ] };
-    await storage.writeBinary("assets/patrol.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/patrol.hasset", await encodeHasset({
       header: { guid: "patrol", name: "Patrol", type: "BehaviourTree", version: 1, engineVersion: "0.0.0", mode: "thin",
         payload, ...collectAssetDependencyMetadata("BehaviourTree", payload) }, chunks: [],
     }));
     const classDocument = new TextEncoder().encode(JSON.stringify({ nodes: [], edges: [], members: [] }));
-    await storage.writeBinary("assets/Hunt.class.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/Hunt.class.hasset", await encodeHasset({
       header: { guid: "hunt", name: "Hunt", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin",
         parentClass: "BTTask", payload: {}, ...collectAssetDependencyMetadata("Class", {}, { parentClass: "BTTask" }) },
       chunks: [{ id: "document", kind: "document", mime: "application/json", data: classDocument }],
@@ -249,7 +249,7 @@ describe("registry source loading", () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
-    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/scene.hasset", await encodeHasset({
       header: { guid: "scene", name: "scene", type, version: 1, engineVersion: "0.0.0", mode: "thin",
         payload, ...collectAssetDependencyMetadata(type, payload) }, chunks: [],
     }));
@@ -266,7 +266,7 @@ describe("registry source loading", () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
-    const write = async (name: string) => storage.writeBinary("assets/document.babasset", await encodeBabasset({
+    const write = async (name: string) => storage.writeBinary("assets/document.hasset", await encodeHasset({
       header: {
         guid: "document", name, type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
         dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: { name, actors: [] },
@@ -292,7 +292,7 @@ describe("registry source loading", () => {
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
     const selected = new Uint8Array([1, 2, 3]);
-    await storage.writeBinary("assets/model.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/model.hasset", await encodeHasset({
       header: {
         guid: "model", name: "Model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin",
         dependencies: ["later"], requiredDependencies: [], dependencyMetadataVersion: 1, payload: { sourceChunkId: "compact" },
@@ -302,7 +302,7 @@ describe("registry source loading", () => {
         { id: "original", kind: "model", mime: "application/octet-stream", data: new Uint8Array(512 * 1024) },
       ],
     }));
-    await storage.writeBinary("assets/later.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/later.hasset", await encodeHasset({
       header: {
         guid: "later", name: "Later", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin",
         dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: {},

@@ -1,5 +1,5 @@
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
-import type { WaterStyle, WaterStylizedLook } from "@babylonslate/core";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
+import type { WaterStyle, WaterStylizedLook } from "@haptic/core";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { FileIcon, FolderIcon } from "lucide-react";
 import {
@@ -12,25 +12,25 @@ import {
   resolveTypeVisual,
   walkAncestry,
   type SearchDialogItem,
-} from "@babylonslate/editor-kit";
-import { contentEntryNameError } from "@babylonslate/assets";
-import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
-import { Button } from "@babylonslate/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+} from "@haptic/editor-kit";
+import { contentEntryNameError } from "@haptic/assets";
+import { MAX_CLASS_INHERITANCE_DEPTH } from "@haptic/object-model";
+import { Button } from "@haptic/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   CREATABLE_ASSET_TYPE_GROUPS,
   buildParentClassTreeRows,

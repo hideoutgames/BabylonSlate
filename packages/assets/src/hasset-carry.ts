@@ -1,10 +1,10 @@
-import type { ProjectStorageReader } from "@babylonslate/core";
+import type { ProjectStorageReader } from "@haptic/core";
 import {
   DEFAULT_BLOB_THRESHOLD,
-  readBabassetHeader,
+  readHassetHeader,
   type ChunkEntry,
   type EncodableChunk,
-} from "./babasset";
+} from "./hasset";
 import type { BlobStore } from "./blob-store";
 import { sha256Hex, stableStringify } from "./bytes";
 import { validateAssetSourceLocator, type AssetCatalogRead } from "./payload-loader";
@@ -31,7 +31,7 @@ function inlineSpan(entry: ChunkEntry): { offset: number; length: number } | nul
  * - An inline chunk is small (it is under the blob threshold), so its bytes
  *   come from one bounded range read and are checked against the table's
  *   sha256 before they are copied.
- * - Chunks selected by `load` are read and verified like `decodeBabasset`
+ * - Chunks selected by `load` are read and verified like `decodeHasset`
  *   does, for a caller that inspects them.
  *
  * Resolves null whenever carrying cannot be shown to be exactly what a full
@@ -110,12 +110,12 @@ export async function carryStoredChunks(
  * confirm the snapshot (the file changed, was deleted, or cannot be read) is
  * "does not match", so the caller writes.
  */
-export async function storedBabassetMatches(
+export async function storedHassetMatches(
   storage: ProjectStorageReader,
   stored: AssetCatalogRead,
   bytes: Uint8Array,
 ): Promise<boolean> {
-  if (stableStringify(stored.header) !== stableStringify(readBabassetHeader(bytes))) return false;
+  if (stableStringify(stored.header) !== stableStringify(readHassetHeader(bytes))) return false;
   try {
     await validateAssetSourceLocator(storage, stored.locator);
     return true;
@@ -175,7 +175,7 @@ export async function verifyChunksBeforeWrite(
   bytes: Uint8Array,
   replaced: readonly string[],
 ): Promise<boolean> {
-  const next = readBabassetHeader(bytes);
+  const next = readHassetHeader(bytes);
   for (const entry of next.chunks) {
     if ("blob" in entry.locator && !(await blobs.hasBlob(entry.locator.blob))) {
       throw new Error(`Blob ${entry.locator.blob} of chunk ${entry.id} is missing`);

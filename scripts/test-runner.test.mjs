@@ -18,10 +18,10 @@ test("a stricter host policy before launch rejects stale worker settings and rel
   });
   await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
   const env = {
-    BL_EXECUTION_POLICY: "local",
-    BL_TEST_PROFILE: "fast",
+    HAPTIC_EXECUTION_POLICY: "local",
+    HAPTIC_TEST_PROFILE: "fast",
     LOCALAPPDATA: directory,
-    BL_LOCAL_RESOURCE_CONFIG: config,
+    HAPTIC_LOCAL_RESOURCE_CONFIG: config,
   };
   lease = await acquireResources(
     { workers: 3, browsers: 1, memoryGiB: 6 },
@@ -46,7 +46,7 @@ test("a stricter host policy before launch rejects stale worker settings and rel
       {
         env: {
           ...env,
-          BL_TEST_LEASE: JSON.stringify({
+          HAPTIC_TEST_LEASE: JSON.stringify({
             ticket: lease.ticket,
             token: lease.token,
           }),
@@ -85,13 +85,13 @@ test("scoped lint and typecheck preserve the selected files and workspace", asyn
   });
   await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
   await writeFile(manager, "console.log(JSON.stringify(process.argv.slice(2)));\n");
-  const env = { BL_EXECUTION_POLICY: "local", BL_TEST_PROFILE: "shared", LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: config };
+  const env = { HAPTIC_EXECUTION_POLICY: "local", HAPTIC_TEST_PROFILE: "shared", LOCALAPPDATA: directory, HAPTIC_LOCAL_RESOURCE_CONFIG: config };
   lease = await acquireResources(
     { workers: 3, browsers: 0, memoryGiB: 2 },
     { directory, env, freeMemory: () => 16 * 1024 ** 3 },
   );
   process.env.npm_execpath = manager;
-  const options = { capture: true, env: { ...env, BL_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }) } };
+  const options = { capture: true, env: { ...env, HAPTIC_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }) } };
   const scoped = await runTests("lint", ["scripts/test-runner.mjs"], options);
   assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", "scripts/test-runner.mjs"]);
   const all = await runTests("lint", [], options);
@@ -118,20 +118,20 @@ test("one resolved policy reaches child worker settings regardless of local CI f
     { workers: 3, browsers: 1, memoryGiB: 6 },
     {
       directory,
-      env: { LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: config },
+      env: { LOCALAPPDATA: directory, HAPTIC_LOCAL_RESOURCE_CONFIG: config },
       freeMemory: () => 16 * 1024 ** 3,
     },
   );
   for (const [env, expected] of [
-    [{ BL_TEST_PROFILE: "fast", CI: "" }, ["2", "2"]],
-    [{ BL_TEST_PROFILE: "fast", CI: "true" }, ["2", "2"]],
+    [{ HAPTIC_TEST_PROFILE: "fast", CI: "" }, ["2", "2"]],
+    [{ HAPTIC_TEST_PROFILE: "fast", CI: "true" }, ["2", "2"]],
     [
-      { BL_TEST_PROFILE: "fast", CI: "true", BL_LOCAL_RESOURCE_CONFIG: low },
+      { HAPTIC_TEST_PROFILE: "fast", CI: "true", HAPTIC_LOCAL_RESOURCE_CONFIG: low },
       ["1", "1"],
     ],
     [
       {
-        BL_EXECUTION_POLICY: "hosted-ci",
+        HAPTIC_EXECUTION_POLICY: "hosted-ci",
         GITHUB_ACTIONS: "true",
         RUNNER_ENVIRONMENT: "github-hosted",
         GITHUB_RUN_ID: "123",
@@ -146,15 +146,15 @@ test("one resolved policy reaches child worker settings regardless of local CI f
       process.execPath,
       [
         "-e",
-        "console.log(JSON.stringify([process.env.VITEST_MAX_WORKERS,process.env.BL_TEST_BROWSER_WORKERS]))",
+        "console.log(JSON.stringify([process.env.VITEST_MAX_WORKERS,process.env.HAPTIC_TEST_BROWSER_WORKERS]))",
       ],
       {
         env: {
-          BL_EXECUTION_POLICY: "local",
+          HAPTIC_EXECUTION_POLICY: "local",
           LOCALAPPDATA: directory,
-          BL_LOCAL_RESOURCE_CONFIG: config,
+          HAPTIC_LOCAL_RESOURCE_CONFIG: config,
           ...env,
-          BL_TEST_LEASE: JSON.stringify({
+          HAPTIC_TEST_LEASE: JSON.stringify({
             ticket: lease.ticket,
             token: lease.token,
           }),

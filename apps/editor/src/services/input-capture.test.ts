@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { InputResolver, InputRingBuffer } from "@babylonslate/input";
+import { InputResolver, InputRingBuffer } from "@haptic/input";
 import { attachInputCapture } from "./input-capture";
 import { attachInputCapture as attachPlayerInputCapture } from "../../../player/src/input";
 

@@ -3,4 +3,4 @@
  * The in-process runtime is the source of truth; SAB/transferable hosts must
  * produce identical world state for the same seed and tick count.
  */
-export { createInProcessRuntime } from "@babylonslate/runtime";
+export { createInProcessRuntime } from "@haptic/runtime";

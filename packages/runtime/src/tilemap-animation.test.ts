@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultTilemapPayload, normalizeTilesetPayload } from "@babylonslate/assets";
-import { isPlayEngineCommandType } from "@babylonslate/bridge";
+import { createDefaultTilemapPayload, normalizeTilesetPayload } from "@haptic/assets";
+import { isPlayEngineCommandType } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("Tilemap animation clock", () => {

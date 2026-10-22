@@ -4,8 +4,8 @@ import {
 } from "@babylonjs/core";
 import {
   compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas, requestRenderPath,
-} from "@babylonslate/render";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/render";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 
 const WIDTH = 240, HEIGHT = 160;
 // Orthographic 6 × 4 world units: 40 px per unit, origin at the canvas centre.

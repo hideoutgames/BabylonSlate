@@ -9,7 +9,7 @@ import {
 import {
   createDefaultPluginSettings,
   type PluginDescriptor,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { PluginExportDialog } from "./plugin-export-dialog";
 
 const { install, download } = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ const plugin: PluginDescriptor = {
   pluginGuid: "plugin-a",
   folderName: "plugin-a",
   folderPath: "plugins/plugin-a",
-  settingsPath: "plugins/plugin-a/plugin.plugin.babasset",
+  settingsPath: "plugins/plugin-a/plugin.plugin.hasset",
   contentPath: "plugins/plugin-a/assets",
   source: "project",
   readOnly: false,

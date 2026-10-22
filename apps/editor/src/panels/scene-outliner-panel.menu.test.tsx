@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedScene } from "@babylonslate/core";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import type { SerializedScene } from "@haptic/core";
+import { createActor, createDefaultScene } from "@haptic/core";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 import { SceneEditingProvider } from "../context/scene-editing-context";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
@@ -29,7 +29,7 @@ const applySceneChange = vi.hoisted(() =>
 const openDocument = vi.hoisted(() => vi.fn());
 const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
-  documentPath: "assets/Main.scene.babasset",
+  documentPath: "assets/Main.scene.hasset",
   phone: false,
   assetListReads: 0,
   keybindReads: 0,
@@ -114,7 +114,7 @@ afterEach(() => {
   openDocument.mockClear();
   frameActor.mockClear();
   harness.assets = [];
-  harness.documentPath = "assets/Main.scene.babasset";
+  harness.documentPath = "assets/Main.scene.hasset";
   harness.phone = false;
   harness.assetListReads = 0;
   harness.keybindReads = 0;
@@ -132,7 +132,7 @@ describe("SceneOutlinerPanel menus", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(applySceneChange).not.toHaveBeenCalled();
-    harness.documentPath = "assets/Empty.scene.babasset";
+    harness.documentPath = "assets/Empty.scene.hasset";
     harness.scene = { ...createDefaultScene(), actors: [] };
     view.rerender(panel());
     const tree = screen.getByRole("tree");
@@ -140,7 +140,7 @@ describe("SceneOutlinerPanel menus", () => {
     fireEvent.keyDown(tree, { key: "v", code: "KeyV", ctrlKey: true });
     await waitFor(() => expect(applySceneChange).toHaveBeenCalledOnce());
     const [documentId, pasted] = applySceneChange.mock.calls[0]!;
-    expect(documentId).toBe("scene:assets/Empty.scene.babasset");
+    expect(documentId).toBe("scene:assets/Empty.scene.hasset");
     expect(pasted.actors).toEqual([expect.objectContaining({ name: "Copied Cube Copy" })]);
   });
 
@@ -225,7 +225,7 @@ describe("SceneOutlinerPanel menus", () => {
     scene.actors = [createActor("actor-1", "Cube")];
     harness.scene = scene;
     harness.assets = [
-      { path: "assets/Hero.sprite.babasset", header: { type: "Sprite", name: "Hero", guid: "hero-sprite" } },
+      { path: "assets/Hero.sprite.hasset", header: { type: "Sprite", name: "Hero", guid: "hero-sprite" } },
     ];
     const panel = () => (
       <SceneEditingProvider>
@@ -244,7 +244,7 @@ describe("SceneOutlinerPanel menus", () => {
 
     harness.assets = [
       ...harness.assets,
-      { path: "assets/Villain.sprite.babasset", header: { type: "Sprite", name: "Villain", guid: "villain-sprite" } },
+      { path: "assets/Villain.sprite.hasset", header: { type: "Sprite", name: "Villain", guid: "villain-sprite" } },
     ];
     harness.registryEpoch += 1;
     view.rerender(panel());
@@ -450,7 +450,7 @@ describe("SceneOutlinerPanel menus", () => {
     harness.scene = scene;
     harness.assets = [
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         header: { type: "Class", name: "Hero", guid: "hero-guid" },
       },
     ];
@@ -463,14 +463,14 @@ describe("SceneOutlinerPanel menus", () => {
     fireEvent.click(screen.getByTestId("outliner-open-actor-actor-1"));
     expect(openDocument).toHaveBeenCalledWith({
       kind: "graph",
-      path: "assets/Hero.class.babasset",
+      path: "assets/Hero.class.hasset",
       label: "Hero",
     });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 
     // Registry identity stays stable when entries are replaced or moved.
     harness.assets[0] = {
-      path: "assets/Characters/Hero.class.babasset",
+      path: "assets/Characters/Hero.class.hasset",
       header: { type: "Class", name: "Hero", guid: "hero-guid" },
     };
     harness.registryEpoch += 1;
@@ -483,7 +483,7 @@ describe("SceneOutlinerPanel menus", () => {
     fireEvent.click(screen.getByTestId("outliner-open-actor-actor-1"));
     expect(openDocument).toHaveBeenLastCalledWith({
       kind: "graph",
-      path: "assets/Characters/Hero.class.babasset",
+      path: "assets/Characters/Hero.class.hasset",
       label: "Hero",
     });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());

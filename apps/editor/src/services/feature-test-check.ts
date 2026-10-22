@@ -4,11 +4,11 @@ import { describeError } from "../lib/diagnostic-info";
 
 /** Scenes a Full check walks, in order; the heaviest runs last. */
 export const FEATURE_TEST_CHECK_SCENES = [
-  { name: "main", path: "assets/main.scene.babasset" },
-  { name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.babasset" },
-  { name: "FT_Clustered", path: "assets/FeatureTest/Scenes/FT_Clustered.scene.babasset" },
-  { name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.babasset" },
-  { name: "FT_Stress", path: "assets/FeatureTest/Scenes/FT_Stress.scene.babasset" },
+  { name: "main", path: "assets/main.scene.hasset" },
+  { name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset" },
+  { name: "FT_Clustered", path: "assets/FeatureTest/Scenes/FT_Clustered.scene.hasset" },
+  { name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset" },
+  { name: "FT_Stress", path: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset" },
 ] as const;
 
 /** Console commands each scene runs in Play; the main scene exercises the full set. */

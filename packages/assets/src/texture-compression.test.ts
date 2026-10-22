@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EncodeQueue, type EncodeJob, type EncodeJobResult } from "./encode-queue";
 import {
   clampDimension,
@@ -15,7 +15,7 @@ import {
   type TextureEncodeSettings,
 } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
-import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { encodeHasset, readHassetHeader } from "./hasset";
 import { resolveGpuTexture } from "./resolve-gpu-texture";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry } from "./registry";
@@ -404,7 +404,7 @@ describe("EncodeQueue requests for one asset", () => {
 
 describe("selectTextureChunk", () => {
   it("prefers KTX2 when transcoder is available", async () => {
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "t1",
@@ -432,7 +432,7 @@ describe("selectTextureChunk", () => {
         },
       ],
     });
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     expect(selectTextureChunk(header).kind).toBe("ktx2");
     expect(
       selectTextureChunk(header, { transcoderAvailable: false }).kind,
@@ -495,12 +495,12 @@ async function mountSingleTexture(
   } = {},
 ) {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject(`${name}.babproject`);
+  await storage.openDocumentsProject(`${name}.hproject`);
   await storage.mkdir("assets", true);
-  const path = `assets/${name}.babasset`;
+  const path = `assets/${name}.hasset`;
   await storage.writeBinary(
     path,
-    await encodeBabasset({
+    await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: `${name}-tex`,
@@ -664,7 +664,7 @@ describe("registry encode pipeline", () => {
 
   it("enqueues compressible imports and commits a KTX2 chunk", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("encode.babproject");
+    await storage.openDocumentsProject("encode.hproject");
     await storage.mkdir("assets", true);
 
     const registry = new AssetRegistry(storage);
@@ -695,9 +695,9 @@ describe("registry encode pipeline", () => {
 
   it("retries encode_failed textures", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("retry.babproject");
+    await storage.openDocumentsProject("retry.hproject");
     await storage.mkdir("assets", true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "fail-tex",
@@ -719,7 +719,7 @@ describe("registry encode pipeline", () => {
         },
       ],
     });
-    await storage.writeBinary("assets/fail.babasset", bytes);
+    await storage.writeBinary("assets/fail.hasset", bytes);
 
     const registry = new AssetRegistry(storage);
     let attempts = 0;
@@ -766,13 +766,13 @@ describe("registry encode pipeline", () => {
 
   it("retries pending and interrupted encoding textures", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("pending.babproject");
+    await storage.openDocumentsProject("pending.hproject");
     await storage.mkdir("assets", true);
     for (const [guid, name, state] of [
       ["pend-tex", "Pend", "pending"],
       ["enc-tex", "Enc", "encoding"],
     ] as const) {
-      const bytes = await encodeBabasset({
+      const bytes = await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid,
@@ -794,7 +794,7 @@ describe("registry encode pipeline", () => {
           },
         ],
       });
-      await storage.writeBinary(`assets/${name.toLowerCase()}.babasset`, bytes);
+      await storage.writeBinary(`assets/${name.toLowerCase()}.hasset`, bytes);
     }
 
     const registry = new AssetRegistry(storage);
@@ -820,9 +820,9 @@ describe("registry encode pipeline", () => {
 
   it("requeues pending and encoding textures on remount", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("requeue.babproject");
+    await storage.openDocumentsProject("requeue.hproject");
     await storage.mkdir("assets", true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "stuck-tex",
@@ -844,7 +844,7 @@ describe("registry encode pipeline", () => {
         },
       ],
     });
-    await storage.writeBinary("assets/stuck.babasset", bytes);
+    await storage.writeBinary("assets/stuck.hasset", bytes);
 
     const registry = new AssetRegistry(storage);
     const queue = new EncodeQueue({
@@ -865,9 +865,9 @@ describe("registry encode pipeline", () => {
 
   it("keeps source pixels when encode_failed is recorded with an error", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("pixels.babproject");
+    await storage.openDocumentsProject("pixels.hproject");
     await storage.mkdir("assets", true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "keep-tex",
@@ -889,7 +889,7 @@ describe("registry encode pipeline", () => {
         },
       ],
     });
-    await storage.writeBinary("assets/keep.babasset", bytes);
+    await storage.writeBinary("assets/keep.hasset", bytes);
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
 
@@ -917,9 +917,9 @@ describe("registry encode pipeline", () => {
 
   it("clears encodeError when a later encode commits KTX2", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("clear-err.babproject");
+    await storage.openDocumentsProject("clear-err.hproject");
     await storage.mkdir("assets", true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "clear-tex",
@@ -945,7 +945,7 @@ describe("registry encode pipeline", () => {
         },
       ],
     });
-    await storage.writeBinary("assets/clear.babasset", bytes);
+    await storage.writeBinary("assets/clear.hasset", bytes);
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await registry.commitCompressedTexture({
@@ -969,9 +969,9 @@ describe("registry encode pipeline", () => {
 
   it("does not let a slow encoding write clobber encode_failed", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("race.babproject");
+    await storage.openDocumentsProject("race.hproject");
     await storage.mkdir("assets", true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "race-tex",
@@ -993,7 +993,7 @@ describe("registry encode pipeline", () => {
         },
       ],
     });
-    await storage.writeBinary("assets/race.babasset", bytes);
+    await storage.writeBinary("assets/race.hasset", bytes);
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
 

@@ -41,14 +41,14 @@ test("H10: one Undo restores a deleted graph node and its edge", async ({
     await page.evaluate(async (next) => {
       return (
         globalThis as unknown as {
-          __babylonslateTest: {
+          __hapticTest: {
             setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
           };
         }
-      ).__babylonslateTest.setMainGraphContent(next);
+      ).__hapticTest.setMainGraphContent(next);
     }, graph),
   ).toBe(true);
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   const panel = page.getByTestId("graph-panel");
   const node = panel.locator('.react-flow__node[data-id="print"]');
   const edge = panel.locator('.react-flow__edge[data-id="tick-print"]');
@@ -94,11 +94,11 @@ test("M5: one Undo restores a deleted actor subtree", async ({ page }) => {
     await page.evaluate(async (next) => {
       return (
         globalThis as unknown as {
-          __babylonslateTest: {
+          __hapticTest: {
             setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
           };
         }
-      ).__babylonslateTest.setActiveSceneContent(next);
+      ).__hapticTest.setActiveSceneContent(next);
     }, scene),
   ).toBe(true);
   const parent = page.getByTestId("tree-row-actor:parent");

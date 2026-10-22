@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPreviewDiagnosticServer } from "@babylonslate/exporter";
-import { PerformanceRecorder } from "@babylonslate/debugger";
+import { createPreviewDiagnosticServer } from "@haptic/exporter";
+import { PerformanceRecorder } from "@haptic/debugger";
 import { createPreviewDiagnostics } from "./preview-diagnostics";
 
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
