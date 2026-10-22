@@ -1,3 +1,4 @@
+import type { TilesetPayload } from "./tileset-payload";
 import {
   chunkCoordForTile,
   getTile,
@@ -7,6 +8,12 @@ import {
   type TilemapPayload,
   type TileWrite,
 } from "./tilemap-payload";
+import {
+  paintTilemapTerrain,
+  tilemapTerrainKey,
+  tilemapTerrainKeyOf,
+  type TilemapTerrainBrush,
+} from "./tilemap-terrain";
 
 export const MIN_PAINT_CELL_SIZE = 8;
 export const MAX_PAINT_CELL_SIZE = 96;
@@ -41,6 +48,12 @@ export interface TilemapPaintStroke {
   end: TileCell;
   cells?: readonly TileCell[];
   stamp?: TileStamp;
+  /**
+   * Paint this terrain instead of `tileId`: every tool writes terrain cells and
+   * the Eraser clears cells, then painted cells and the terrain tiles around
+   * them take their variants (`paintTilemapTerrain`).
+   */
+  terrain?: TilemapTerrainBrush;
 }
 
 export function isTilemapPaintStrokeTool(
@@ -196,12 +209,17 @@ export function pickTileId(
 /**
  * Apply one stroke to `map`. The moves of a pointer gesture can share a
  * `TilemapChunkIndex` so each call looks up only the chunks it touches.
+ * A terrain stroke needs the map's loaded Tilesets and changes nothing without them.
  */
 export function applyTilemapPaint(
   map: TilemapPayload,
   stroke: TilemapPaintStroke,
   index?: TilemapChunkIndex,
+  tilesets?: ReadonlyMap<string, TilesetPayload>,
 ): TilemapPayload {
+  if (stroke.terrain) {
+    return tilesets ? applyTerrainStroke(map, stroke, stroke.terrain, tilesets, index) : map;
+  }
   switch (stroke.tool) {
     case "brush":
       return paintCells(
@@ -231,6 +249,41 @@ export function applyTilemapPaint(
       return floodFill(map, stroke.layerId, stroke.start, stroke.tileId, index);
     case "stamp":
       return stampTiles(map, stroke.layerId, stroke.start, stroke.stamp, index);
+  }
+}
+
+function applyTerrainStroke(
+  map: TilemapPayload,
+  stroke: TilemapPaintStroke,
+  terrain: TilemapTerrainBrush,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
+  index?: TilemapChunkIndex,
+): TilemapPayload {
+  const paint = (cells: Iterable<TileCell>, brush: TilemapTerrainBrush | null = terrain) =>
+    paintTilemapTerrain(map, { layerId: stroke.layerId, cells, terrain: brush, tilesets, index });
+  switch (stroke.tool) {
+    case "brush":
+      return paint(stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end));
+    case "eraser":
+      return paint(stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end), null);
+    case "rect":
+      return paint(rectCells(stroke.start, stroke.end));
+    case "stamp": {
+      const width = Math.max(1, stroke.stamp?.width ?? 1);
+      const height = Math.max(1, stroke.stamp?.height ?? 1);
+      return paint(rectCells(stroke.start, { x: stroke.start.x + width - 1, y: stroke.start.y + height - 1 }));
+    }
+    case "bucket": {
+      // A terrain region is every connected tile of the start cell's terrain,
+      // whatever its variant; outside a terrain it is the matching tile.
+      const tileAt = layerTileReader(map, stroke.layerId);
+      const source = tileAt(stroke.start.x, stroke.start.y);
+      const keyOf = tilemapTerrainKeyOf(map, tilesets);
+      const sourceKey = keyOf(source);
+      if (sourceKey === tilemapTerrainKey(terrain)) return map;
+      const same = sourceKey === null ? (gid: number) => gid === source : (gid: number) => keyOf(gid) === sourceKey;
+      return paint(floodCells(map, stroke.layerId, stroke.start, tileAt, same));
+    }
   }
 }
 
@@ -291,6 +344,17 @@ function floodFill(
   const tileAt = layerTileReader(map, layerId);
   const source = tileAt(start.x, start.y);
   if (source === tileId) return map;
+  return paintCells(map, layerId, floodCells(map, layerId, start, tileAt, (gid) => gid === source), tileId, index);
+}
+
+/** Cells connected to `start` whose tile satisfies `same`, within the layer's painted extent. */
+function floodCells(
+  map: TilemapPayload,
+  layerId: string,
+  start: TileCell,
+  tileAt: (x: number, y: number) => number,
+  same: (gid: number) => boolean,
+): TileCell[] {
   const bounds = fillBounds(map, layerId, start);
   const seen = new Set<string>();
   const queue: TileCell[] = [start];
@@ -308,7 +372,7 @@ function floodFill(
     ) {
       continue;
     }
-    if (tileAt(cell.x, cell.y) !== source) continue;
+    if (!same(tileAt(cell.x, cell.y))) continue;
     cells.push(cell);
     queue.push(
       { x: cell.x + 1, y: cell.y },
@@ -317,7 +381,7 @@ function floodFill(
       { x: cell.x, y: cell.y - 1 },
     );
   }
-  return paintCells(map, layerId, cells, tileId, index);
+  return cells;
 }
 
 /** One layer's tiles by cell, with its chunks indexed once for a per-cell scan. */

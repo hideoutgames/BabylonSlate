@@ -140,6 +140,8 @@ interface ScriptingTypes {
   itemsTree: string;
   pulseAction: string;
   nudgeAxis: string;
+  touchGestureAction: string;
+  touchTwistAxis: string;
   tags: { scripting: number; perfHeavy: number };
 }
 
@@ -220,6 +222,8 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
         bindings: [
           { id: "ft-script-pulse-key", device: "key", code: "KeyP" },
           { id: "ft-script-pulse-pad", device: "gamepadButton", code: "0:3" },
+          { id: "ft-script-pulse-swipe", device: "touch", code: "swipe-up" },
+          { id: "ft-script-pulse-double-tap", device: "touch", code: "double-tap" },
         ],
       }),
     });
@@ -232,6 +236,27 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
           { id: "ft-script-nudge-right", device: "key", code: "ArrowRight", component: "x", digitalValue: 1 },
           { id: "ft-script-nudge-down", device: "key", code: "ArrowDown", component: "y", digitalValue: -1 },
           { id: "ft-script-nudge-up", device: "key", code: "ArrowUp", component: "y", digitalValue: 1 },
+          // A drag across the whole view is about 50 nudges.
+          { id: "ft-script-nudge-drag-x", device: "touch", code: "two-finger-drag-x", component: "x", scale: 50 },
+          { id: "ft-script-nudge-drag-y", device: "touch", code: "two-finger-drag-y", component: "y", scale: 50 },
+        ],
+      }),
+    });
+  const touchGestureAction = await saveDocumentGuid(ctx, "input-action", INPUT_FOLDER,
+    newAssetFileName("InputAction", "FT_ScriptTouchGesture"), {
+      ...normalizeInputAssetPayload("InputAction", {
+        bindings: ["tap", "long-press", "swipe-down", "swipe-left", "swipe-right"].map((code) => ({
+          id: `ft-script-touch-gesture-${code}`, device: "touch", code,
+        })),
+      }),
+    });
+  const touchTwistAxis = await saveDocumentGuid(ctx, "input-axis", INPUT_FOLDER,
+    newAssetFileName("InputAxis", "FT_ScriptTouchTwist"), {
+      ...normalizeInputAssetPayload("InputAxis", {
+        valueType: "1d",
+        bindings: [
+          { id: "ft-script-touch-twist-pinch", device: "touch", code: "pinch" },
+          { id: "ft-script-touch-twist-rotate", device: "touch", code: "two-finger-rotate" },
         ],
       }),
     });
@@ -244,6 +269,8 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
     itemsTree,
     pulseAction,
     nudgeAxis,
+    touchGestureAction,
+    touchTwistAxis,
     tags: { scripting: tagId(tags, "FeatureTest.Scripting"), perfHeavy: tagId(tags, "FeatureTest.Perf.Heavy") },
   });
 }
@@ -271,7 +298,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveSceneWatcher(ctx);
   await saveGameInstance(ctx);
   const interfaceProbe = await saveInterfaceProbe(ctx, types, font, materials.surfaceInstance ?? null);
-  const touchProbe = await saveTouchProbe(ctx, font, materials.surfaceInstance ?? null);
+  const touchProbe = await saveTouchProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const dataProbe = await saveDataProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const saveProbe = await saveSaveProbe(ctx, font, materials.surfaceInstance ?? null);
   const streamLoader = await saveStreamLoader(ctx);
@@ -710,7 +737,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
         "default:binding": binding("FT_ScriptPulse", types.pulseAction),
       }),
       callEvent("input-pulse", 260, 1300, pulse, { "default:Strength": 1 }),
-      // Every Pulse press, from P or pad button 3, rumbles pad 0 briefly.
+      // Every Pulse press, from P, pad button 3 or a touch gesture, rumbles pad 0 briefly.
       gNode("pulse-rumble", "input.setGamepadRumble", 520, 1300, {
         "default:index": 0,
         "default:intensity": 0.6,
@@ -992,8 +1019,10 @@ async function saveInterfaceProbe(
 /**
  * Every touch node: a new touch casts into the scene and reports the touch list,
  * a moving touch is followed by its finger, and an ending touch says whether it was cancelled.
+ * The gesture inputs bind the gestures Pulse and Nudge do not.
  */
-async function saveTouchProbe(ctx: FeatureTestContext, font: string, materialGuid: string | null): Promise<PlacedClass> {
+async function saveTouchProbe(ctx: FeatureTestContext, types: ScriptingTypes, font: string, materialGuid: string | null): Promise<PlacedClass> {
+  const binding = (name: string, asset: string) => ({ Input: { Name: name, Asset: asset } });
   const components = [
     scaledMesh("prefab-mesh", "sphere", 0.7, materialGuid),
     textLabel("prefab-label", "Touch Probe", font, [0, 1, 0]),
@@ -1014,6 +1043,17 @@ async function saveTouchProbe(ctx: FeatureTestContext, font: string, materialGui
       gNode("ended", "input.onTouchEnded", 0, 1040),
       format("ended-text", 260, 1160, "Finger {finger} ended (cancelled {cancelled})"),
       printText("ended-print", 560, 1040, "ft-script-touch"),
+      gNode("gesture", "input.actionEvent", 0, 1420, {
+        valueType: "button",
+        "default:binding": binding("FT_ScriptTouchGesture", types.touchGestureAction),
+      }),
+      printText("gesture-print", 260, 1420, "ft-script-touch-gesture", "Tap, Long Press or Swipe"),
+      gNode("twist", "input.axisEvent", 0, 1660, {
+        valueType: "1d",
+        "default:binding": binding("FT_ScriptTouchTwist", types.touchTwistAxis),
+      }),
+      format("twist-text", 260, 1780, "Pinch or Rotate {value}"),
+      printText("twist-print", 560, 1660, "ft-script-touch-twist", undefined, 1),
     ],
     edges: [
       ...gChain("began", "project", "began-print"),
@@ -1033,6 +1073,10 @@ async function saveTouchProbe(ctx: FeatureTestContext, font: string, materialGui
       gWire("ended", "finger", "ended-text", fmtArg("finger")),
       gWire("ended", "cancelled", "ended-text", fmtArg("cancelled")),
       gWire("ended-text", "out", "ended-print", "inString"),
+      gWire("gesture", "started", "gesture-print", "execIn"),
+      gWire("twist", "held", "twist-print", "execIn"),
+      gWire("twist", "value", "twist-text", fmtArg("value")),
+      gWire("twist-text", "out", "twist-print", "inString"),
     ],
   });
   const ref = await saveClass(ctx, CLASS.touchProbe, "Actor", graph);

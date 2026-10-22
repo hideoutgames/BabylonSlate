@@ -55,7 +55,14 @@ A heavy asset can take a long time to draw on a slow device. A thumbnail that ta
 - Hold a row in the folder tree, then drag it onto a folder.
 - Or choose **Move…** and pick the destination.
 
-References to moved and renamed assets stay connected. You cannot move assets between your project's folders and a plugin's folders; use **Copy to Folder…** instead, which gives the copy a new identity.
+References to moved and renamed assets stay connected.
+
+You can also move assets and folders between your project's folders and a plugin's folders, in either direction. They keep their identity, so everything that uses them still does. Engine plugins are read-only: nothing moves into or out of them. **Copy to Folder…** copies only within the same project or plugin.
+
+When a move changes how a plugin behaves, **Move…** shows **Plugin Content Changes** before you confirm. A drag that would cause such a change opens **Move…** instead of moving at once. You see this when:
+
+- A plugin would use project content, or content of a plugin it does not list as a dependency. A copy of the plugin exported or installed in another project would be missing that content.
+- An export preset turns the plugin off. Exports from that preset would leave out what you moved.
 
 ## Delete assets
 
@@ -73,6 +80,6 @@ Deleting asks for confirmation and cannot be undone.
 
 ## Plugin content
 
-Plugin folders appear in the tree when **Project Settings > Plugins > Show Plugin Content** is on. Engine plugins are marked **(Read Only)**: you cannot create, import or delete there. See [Plugins](../projects/plugins.md).
+Plugin folders appear in the tree when **Project Settings > Plugins > Show Plugin Content** is on. Engine plugins are marked **(Read Only)**: you cannot create, import, move or delete there. See [Plugins](../projects/plugins.md).
 
 When [Source Control](../projects/source-control.md) is on, locked assets show a lock badge with the owner's name.

@@ -42,6 +42,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 import { createAppSettingsStore } from "@haptic/vfs";
 import {
   startPlaySession,
+  type PlayHudStats,
   type PlaySession,
   type PlaySessionResult,
   type PlaySceneSourceLoader,
@@ -352,6 +353,7 @@ function PlayOverlayView({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
+  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity">>({});
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -890,6 +892,7 @@ function PlayOverlayView({
               setScriptMs(stats.scriptMs);
               setPhysicsMs(stats.physicsMs);
               setPublishMs(stats.publishMs);
+              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity });
             }
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },
@@ -1114,6 +1117,7 @@ function PlayOverlayView({
           z: number;
         }[];
         visuals: () => ReturnType<PlaySession["handle"]["playVisualStates"]>;
+        text2dLayouts: () => ReturnType<PlaySession["handle"]["playText2DLayouts"]>;
         liveObjectCounts: () => { meshes: number; textures: number } | null;
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
@@ -1144,6 +1148,7 @@ function PlayOverlayView({
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
+      text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
       whenModelsReady: () =>
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
@@ -1270,6 +1275,7 @@ function PlayOverlayView({
             draws={draws}
             rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
+            {...threadStats}
             groups={statGroups}
             visible={statsVisible}
           />

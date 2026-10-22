@@ -1394,6 +1394,8 @@ class InProcessRuntime implements RuntimeDriver {
     safeAreaInsets?: Partial<OverlaySafeAreaInsets>,
   ): void {
     this.overlay.resize(frustumWidth, frustumHeight, canvasWidth, canvasHeight, safeAreaInsets);
+    // Two-finger drags are measured in the view's shorter side.
+    if (canvasWidth !== undefined && canvasHeight !== undefined) this.resolver.setViewSize(canvasWidth, canvasHeight);
   }
 
   applySceneLayerFocusNavigate(reverse: boolean): void {
@@ -1995,7 +1997,8 @@ class InProcessRuntime implements RuntimeDriver {
     // and drain() discarded the "future" events instead of deferring them.
     // Replay still works because it feeds one tick of events at a time.
     const pending = this.input.drain();
-    this.resolvedInput = this.resolver.resolve(pending, simDt);
+    // Gestures and touch velocity follow real time: the undilated step.
+    this.resolvedInput = this.resolver.resolve(pending, simDt, this.dt);
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
     this.ticks.clearPrints();
     for (const connection of this.resolvedInput.gamepadConnections) {

@@ -1,5 +1,6 @@
 import {
   addTilemapTileset,
+  applyTilemapPaint,
   createDefaultTilemapPayload,
   createTilemapLayer,
   emptyChunkTiles,
@@ -9,6 +10,14 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   spriteAnimationDurationMs,
+  TERRAIN_ALL,
+  TERRAIN_E,
+  TERRAIN_NE,
+  TERRAIN_NW,
+  TERRAIN_S,
+  TERRAIN_SE,
+  TERRAIN_SW,
+  TERRAIN_W,
   tilesetAtlasColumns,
   tilesetAtlasRows,
   type SpriteAnimationPayload,
@@ -17,6 +26,7 @@ import {
   type TilemapChunk,
   type TilemapPayload,
   type TilesetPayload,
+  type TilesetTerrain,
   type TilesetTile,
 } from "@haptic/assets";
 import {
@@ -189,8 +199,9 @@ const BODY_KINDS: ReadonlyArray<{ title: string; sprite: RobotSpriteKey; shape: 
  * 2D area: robot Sprites (whole Kenney frames with measured collision rects;
  * plus an authored colormap strip Sprite), four robot Sprite Animations
  * played by a 2D AnimationGraph, a terrain Tileset (full, chain, one-way and
- * animated tiles) and a decor Tileset on the same Kenney tilesheet, a chunked
- * Tilemap painted in code, and the `FT_2D` scene (2D physics world) where
+ * animated tiles, blob and 4-side autotile terrains) and a decor Tileset on
+ * the same Kenney tilesheet, a chunked Tilemap painted in code (partly with
+ * terrain brush strokes), and the `FT_2D` scene (2D physics world) where
  * robot bodies fall onto the tilemap collision. Queues the project sorting
  * layers FT_2D uses (PPU and pixel snap untouched).
  */
@@ -477,10 +488,11 @@ const CLOUDS: ReadonlyArray<readonly [number, number]> = [
 
 /**
  * Tilesets (terrain: full, chain slope, one-way platform and animated switch
- * tiles; decor: animated water and torch tiles, both on the 13 × 12 Kenney
- * sheet) and the Tilemap: Backdrop (Background, parallax 0.5, no collision),
- * Ground (collision) and Decor (Foreground, second Tileset) layers painted
- * chunk by chunk.
+ * tiles plus Grass and Ledge autotile terrains; decor: animated water and
+ * torch tiles, both on the 13 × 12 Kenney sheet) and the Tilemap: Backdrop
+ * (Background, parallax 0.5, no collision), Ground (collision) and Decor
+ * (Foreground, second Tileset) layers painted chunk by chunk, then terrain
+ * brush strokes for the ledge and a backdrop island.
  */
 async function buildTilemap(ctx: FeatureTestContext): Promise<string> {
   const tileset = terrainTileset(ctx);
@@ -539,9 +551,6 @@ async function buildTilemap(ctx: FeatureTestContext): Promise<string> {
   }
   ground.fill(13, 1, MAP_W - 1, 2, tile(CELL.dirt));
   ground.fill(13, 3, MAP_W - 1, 3, tile(CELL.grass));
-  ground.set(2, 4, tile(CELL.ledgeLeft));
-  ground.set(3, 4, tile(CELL.ledgeMid));
-  ground.set(4, 4, tile(CELL.ledgeRight));
   // Opposite phases, so the pair swaps orange and yellow.
   ground.set(9, 4, tile(CELL.lockOrange));
   ground.set(10, 4, tile(CELL.lockYellow));
@@ -578,6 +587,30 @@ async function buildTilemap(ctx: FeatureTestContext): Promise<string> {
       },
     ],
   };
+
+  // Terrain brush strokes through the Tilemap editor's paint path: the floating
+  // ledge resolves to its left, middle and right pieces (Ledge, 4-side), and a
+  // stepped island in the backdrop gets a grass top, an inner corner and fill
+  // (Grass, 8-neighbour blob). Each stroke also re-resolves the cells it touches.
+  const terrainStroke = (
+    layerId: string,
+    terrainId: string,
+    tool: "brush" | "rect",
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+  ) => {
+    const next = applyTilemapPaint(
+      map,
+      { tool, layerId, tileId: 0, start, end, terrain: { guid: tilesGuid, terrainId } },
+      undefined,
+      known,
+    );
+    if (next === map) throw new Error(`FeatureTest ${terrainId} terrain stroke painted nothing.`);
+    map = next;
+  };
+  terrainStroke("ground", "ledge", "brush", { x: 2, y: 4 }, { x: 4, y: 4 });
+  terrainStroke("backdrop", "grass", "rect", { x: 3, y: 5 }, { x: 5, y: 6 });
+  terrainStroke("backdrop", "grass", "brush", { x: 4, y: 7 }, { x: 5, y: 7 });
   return (
     await ctx.createAsset("Tilemap", FOLDER, NAMES.worldMap, { payload: payload(normalizeTilemapPayload(map)) })
   ).guid;
@@ -605,15 +638,47 @@ function platformerAtlas(ctx: FeatureTestContext): TilesetPayload {
 }
 
 /** Tile metadata by id; untouched cells keep the empty defaults. */
-function withTileData(base: TilesetPayload, data: ReadonlyMap<number, Partial<TilesetTile>>): TilesetPayload {
+function withTileData(
+  base: TilesetPayload,
+  data: ReadonlyMap<number, Partial<TilesetTile>>,
+  terrains: TilesetTerrain[] = [],
+): TilesetPayload {
   const tiles = base.tiles.map((entry): TilesetTile => ({ ...entry, ...data.get(entry.id), id: entry.id }));
-  return normalizeTilesetPayload({ ...base, tiles });
+  return normalizeTilesetPayload({ ...base, tiles, terrains });
 }
+
+/**
+ * Autotile terrains on the sheet's grass and ledge cells. The sheet has no
+ * bottom or side edges and no outer corners below the top row, so Grass relies
+ * on closest-match resolution; Ledge has every horizontal 4-side piece.
+ */
+const TERRAINS: TilesetTerrain[] = [
+  { id: "grass", name: "Grass", style: "blob" },
+  { id: "ledge", name: "Ledge", style: "sides" },
+];
+const GRASS_TERRAIN: ReadonlyArray<readonly [number, number]> = [
+  [CELL.grassBlock, 0],
+  [CELL.islandLeft, TERRAIN_E],
+  [CELL.islandRight, TERRAIN_W],
+  [CELL.grassLeft, TERRAIN_E | TERRAIN_SE | TERRAIN_S],
+  [CELL.grass, TERRAIN_E | TERRAIN_SE | TERRAIN_S | TERRAIN_SW | TERRAIN_W],
+  [CELL.grassRight, TERRAIN_S | TERRAIN_SW | TERRAIN_W],
+  [CELL.dirt, TERRAIN_ALL],
+  [CELL.grassCornerRight, TERRAIN_ALL & ~TERRAIN_NE],
+  [CELL.grassCornerLeft, TERRAIN_ALL & ~TERRAIN_NW],
+];
+const LEDGE_TERRAIN: ReadonlyArray<readonly [number, number]> = [
+  [CELL.ledge, 0],
+  [CELL.ledgeLeft, TERRAIN_E],
+  [CELL.ledgeMid, TERRAIN_E | TERRAIN_W],
+  [CELL.ledgeRight, TERRAIN_W],
+];
 
 /**
  * Terrain: full collision for dirt, grass tops, crates and switch blocks;
  * chain diagonals for the grass slopes; top-edge chains for the thin ledge
- * pieces; and two lock blocks that swap colors (animated, still solid).
+ * pieces; two lock blocks that swap colors (animated, still solid); and the
+ * Grass (8-neighbour blob) and Ledge (4-side) autotile terrains.
  */
 function terrainTileset(ctx: FeatureTestContext): TilesetPayload {
   const data = new Map<number, Partial<TilesetTile>>();
@@ -646,7 +711,10 @@ function terrainTileset(ctx: FeatureTestContext): TilesetPayload {
   });
   data.set(CELL.lockOrange, lock(CELL.lockOrange, CELL.lockYellow));
   data.set(CELL.lockYellow, lock(CELL.lockYellow, CELL.lockOrange));
-  return withTileData(platformerAtlas(ctx), data);
+  for (const [terrain, members] of [["grass", GRASS_TERRAIN], ["ledge", LEDGE_TERRAIN]] as const) {
+    for (const [id, mask] of members) data.set(id, { ...data.get(id), terrain: { id: terrain, mask } });
+  }
+  return withTileData(platformerAtlas(ctx), data, TERRAINS);
 }
 
 /**

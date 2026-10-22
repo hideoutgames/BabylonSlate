@@ -75,6 +75,7 @@ describe("packed player backend lifetime", () => {
       shadowDiagnostics: () => null,
       visuals: () => [],
       meshMaterialNames: () => [],
+      text2dLayouts: () => [],
       postProcessPassCount: () => 0,
       renderTasks: () => null,
       setRenderSettings: vi.fn(),

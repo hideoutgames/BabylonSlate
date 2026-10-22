@@ -29,7 +29,7 @@ When you disable a plugin, its assets leave the project: they disappear from the
 
 Haptic creates the plugin's folder and turns on **Show Plugin Content**. Add assets to the plugin by creating or importing them inside its folder in the Content Browser.
 
-You cannot move existing project assets into a plugin. Use **Copy to Folder…** to copy them; the copies get new identities, so update anything that should use them.
+To put existing project assets in a plugin, move them into its folder with **Move…** or by dragging them in the folder tree. Moved assets keep their identity, so everything that uses them still does. Haptic warns before a move that makes the plugin use content it would not carry with it, or that an export preset would leave out. See [Move assets](../editor/content-browser.md#move-assets).
 
 ## Plugin settings
 

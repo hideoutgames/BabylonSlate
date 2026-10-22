@@ -21,19 +21,29 @@ it("opens old results without collecting and enforces Simulation capability in d
   expect(session.captureFrame).not.toHaveBeenCalled();
   expect(store.getSnapshot().error).toContain("Use Play or Preview Build");
 });
-it("keeps one result and ignores a previous session's late collection", async () => {
+it("keeps the latest recording when a frame is captured, and ignores a previous session's late collection", async () => {
   const store = new DiagnosticResultsStore();
   const first = store.bindSession(ports());
   const profile = { kind: "haptic-performance" } as PerformanceProfile;
   first.publishProfile(profile);
   first.release();
-  expect(store.getSnapshot().result).toEqual({ kind: "profile", profile });
   const second = store.bindSession(ports());
   const report = { version: 1 } as RenderFrameReport;
   second.publishFrame(report);
-  first.publishProfile(profile);
+  const later = { kind: "haptic-performance", durationMs: 1 } as PerformanceProfile;
+  first.publishProfile(later);
   first.publishError("late failure");
-  expect(store.getSnapshot()).toMatchObject({ error: null, result: { kind: "frame", report } });
+  expect(store.getSnapshot()).toMatchObject({ error: null, view: "frame", profile, frame: report });
+  expect(store.getSnapshot().profile).toBe(profile);
+});
+
+it("opens a saved frame report beside the recording it does not replace", () => {
+  const store = new DiagnosticResultsStore();
+  const profile = { kind: "haptic-performance" } as PerformanceProfile;
+  const report = { version: 1 } as RenderFrameReport;
+  store.importResult({ kind: "profile", profile });
+  store.importResult({ kind: "frame", report });
+  expect(store.getSnapshot()).toMatchObject({ view: "frame", profile, frame: report });
 });
 it("rejects concurrent operations and restores the idle UI after a transport failure", async () => {
   const store = new DiagnosticResultsStore();

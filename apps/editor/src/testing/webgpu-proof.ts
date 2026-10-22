@@ -618,7 +618,7 @@ async function captureHelper(engine: AbstractEngine, kind: "grid" | "bounds" | "
       if (!(glyph.material instanceof ShaderMaterial)) throw new Error("MSDF shader fell back");
     } else {
       const grid = createEditorGrid(scene, {
-        mode: "2d", camera: { target: Vector3.Zero(), radius: 4, orthoTop: 2, orthoRight: 2 },
+        mode: "2d", camera: { target: Vector3.Zero(), radius: 4, alpha: -Math.PI / 2, beta: Math.PI / 2, orthoTop: 2, orthoRight: 2, maxZ: 100 },
       });
       disposeGrid = grid.dispose;
       grid.setVisible(kind === "grid");

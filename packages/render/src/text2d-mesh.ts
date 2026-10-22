@@ -627,6 +627,8 @@ export function createText2DMesh(
       text2dRenderer: renderer,
       text2dRich: rich,
       text2dFontStack: fontStack,
+      /** Laid-out width in pixels from the glyph cells actually drawn. */
+      text2dLayoutWidth: layout.width * ppu,
       text2dBitmapBytes: packedBitmap ? packedBitmap.width * packedBitmap.height * 8 : 0,
       visualBundle: bundle,
       text2dWrapWidth: parsed.wrapWidth > 0 ? parsed.wrapWidth : wrapW * ppu,

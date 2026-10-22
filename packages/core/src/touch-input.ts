@@ -16,6 +16,8 @@ export interface TouchInput {
   Position: { x: number; y: number };
   /** Movement this tick, or since the press for a contact that began this tick. */
   Delta: { x: number; y: number };
+  /** Pixels per second, smoothed over the last few ticks; a flick's speed at its lift. */
+  Velocity: { x: number; y: number };
   StartPosition: { x: number; y: number };
   /** 0 to 1; 0.5 on hardware without pressure. Kept from the last sample when the contact lifts. */
   Pressure: number;

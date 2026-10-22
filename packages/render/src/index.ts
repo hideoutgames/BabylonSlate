@@ -105,6 +105,7 @@ export * from "./convert-stl-to-glb";
 export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
 export { captureRenderFrame, activeRenderFrameCapture } from "./render-frame-report";
+export { parseRenderFrameReport, serializeRenderFrameReport } from "./render-frame-report-file";
 export type { RenderFrameReport, RenderFrameReportDraft, RenderFrameStage, RenderFrameTaskDescription, RenderFrameResource } from "./render-frame-report";
 export type { RenderPerformanceSample } from "./render-performance";
 
