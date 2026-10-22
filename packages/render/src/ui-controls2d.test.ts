@@ -49,6 +49,15 @@ describe("SceneLayer controls", () => {
     ]);
   });
 
+  it("drags through a moved, turned and zoomed layer camera", () => {
+    const { compositor, visual, input, hits } = setup();
+    // 50 px per unit; turned 90° counter-clockwise, the slider centre is 1 unit right of the view centre.
+    compositor.setCamera("controls", { x: 0, y: -1, rotation: 90, zoom: 2 });
+    expect(input.down(1, hits(450, 225), 450, 225)).toBe(true);
+    input.move(1, 450, 250); // half a unit down the view: layer +X, 62.5% of the track.
+    expect(visual.properties.value).toBe(6);
+  });
+
   it("retains capture across runtime state updates, rejects second-finger stealing and cancels hidden controls", () => {
     const { binding, visual, root, input, hits, events } = setup();
     input.down(1, hits(), 400, 225);
