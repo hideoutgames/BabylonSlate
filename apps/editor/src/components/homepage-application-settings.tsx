@@ -11,6 +11,7 @@ import {
 import { Switch } from "@babylonslate/ui/components/switch";
 import { useAppSettings } from "../context/app-settings-context";
 import { CompactModeField } from "./compact-mode-field";
+import { ThemeSettingsFields } from "./homepage-theme-settings";
 
 /** Application-wide preferences for the Account dialog's Application section. */
 export function ApplicationSettingsFields() {
@@ -18,6 +19,7 @@ export function ApplicationSettingsFields() {
   const desktop = getHostPlatform() === "electron";
   return (
     <FieldGroup>
+      <ThemeSettingsFields />
       <FieldSet>
         <FieldLegend>Interface</FieldLegend>
         <CompactModeField

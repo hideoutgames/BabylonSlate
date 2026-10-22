@@ -187,6 +187,25 @@ describe("app settings", () => {
     expect(recovered.undoHistoryLength).toBe(12);
   });
 
+  it("drops malformed custom themes one by one and keeps valid colors", () => {
+    const parsed = engineSettingsSchema.parse({
+      editorTheme: "custom-a",
+      customEditorThemes: [
+        { id: "custom-a", name: "Night", colors: { card: "#ABCDEF", border: "red" } },
+        { id: "", name: "No Id", colors: {} },
+        "nonsense",
+      ],
+    });
+    expect(parsed.editorTheme).toBe("custom-a");
+    expect(parsed.customEditorThemes).toEqual([
+      { id: "custom-a", name: "Night", colors: { card: "#abcdef" } },
+    ]);
+    expect(engineSettingsSchema.parse({ editorTheme: 4, customEditorThemes: {} })).toMatchObject({
+      editorTheme: "default",
+      customEditorThemes: [],
+    });
+  });
+
   it("accepts optional createdAt on recents", () => {
     const parsed = engineSettingsSchema.parse({
       recents: [
