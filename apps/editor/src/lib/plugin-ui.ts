@@ -1,4 +1,4 @@
-import { pluginFolderSlug, uniquePluginFolderName } from "@babylonslate/assets";
+import { pluginFolderSlug, resolvePluginEnabled, uniquePluginFolderName } from "@babylonslate/assets";
 
 export { pluginFolderSlug, uniquePluginFolderName };
 
@@ -158,6 +158,116 @@ export function inboundRefsFromOtherRoots(
     }
   }
   return names;
+}
+
+export interface ContentRootMovePlugin {
+  pluginGuid: string;
+  displayName: string;
+  enabledByDefault: boolean;
+  /** Guids of the plugins its settings list as dependencies. */
+  dependencyGuids: readonly string[];
+}
+
+/**
+ * Why moving `movedGuids` into the root `targetRootId` changes how the
+ * project and its plugins behave; empty when it does not. Two things change:
+ *
+ * - A plugin starts to reference content outside itself (the project, or a
+ *   plugin it does not list as a dependency): content moved into it keeps
+ *   its references, and a plugin's content keeps referencing content moved
+ *   out of it. A copy of the plugin exported or installed elsewhere then
+ *   misses that content.
+ * - An export preset turns the target plugin off while it includes the
+ *   moved content's current root, so its exports stop shipping that content.
+ *
+ * References follow the saved headers (`showReferences`). Items already in
+ * the target root, and missing placeholders, change nothing.
+ */
+export function contentRootMoveWarnings(input: {
+  movedGuids: readonly string[];
+  targetRootId: string;
+  assets: ReadonlyArray<{ rootId: string; placeholder?: boolean; header: { guid: string; name: string } }>;
+  showReferences: (guid: string) => { outbound: readonly string[]; inbound: readonly string[] };
+  plugins: readonly ContentRootMovePlugin[];
+  projectPluginOverrides?: Readonly<Record<string, { enabled: boolean } | undefined>>;
+  exportPresets?: ReadonlyArray<{ name: string; pluginOverrides: Readonly<Record<string, { enabled: boolean } | undefined>> }>;
+}): string[] {
+  const { targetRootId: target } = input;
+  const moved = new Set(input.movedGuids);
+  const byGuid = new Map(input.assets.map((asset) => [asset.header.guid, asset]));
+  const plugins = new Map(input.plugins.map((plugin) => [pluginRootId(plugin.pluginGuid), plugin]));
+  const present = (guid: string) => {
+    const asset = byGuid.get(guid);
+    return asset && !asset.placeholder ? asset : undefined;
+  };
+  /** Whether content of root `from` may use content of root `to` without a new outside reference. */
+  const reaches = (from: string, to: string) => {
+    if (from === to) return true;
+    const plugin = plugins.get(from);
+    if (!plugin) return true;
+    const dependency = plugins.get(to);
+    return dependency !== undefined && plugin.dependencyGuids.includes(dependency.pluginGuid);
+  };
+  const leaving = [...moved].flatMap((guid) => {
+    const asset = present(guid);
+    return asset && asset.rootId !== target ? [asset] : [];
+  });
+  /** Plugin root id -> guids of the outside content it will newly use. */
+  const outside = new Map<string, Set<string>>();
+  const note = (rootId: string, guid: string) => {
+    const guids = outside.get(rootId) ?? new Set<string>();
+    guids.add(guid);
+    outside.set(rootId, guids);
+  };
+  for (const asset of leaving) {
+    const { outbound, inbound } = input.showReferences(asset.header.guid);
+    for (const guid of outbound) {
+      const used = present(guid);
+      if (used && !moved.has(guid) && !reaches(target, used.rootId)) note(target, guid);
+    }
+    for (const guid of inbound) {
+      const referrer = present(guid);
+      if (!referrer || moved.has(guid)) continue;
+      if (reaches(referrer.rootId, asset.rootId) && !reaches(referrer.rootId, target)) note(referrer.rootId, asset.header.guid);
+    }
+  }
+  const nameOf = (rootId: string) => plugins.get(rootId)?.displayName ?? rootId;
+  const warnings = [...outside].map(([rootId, guids]) => {
+    const names = [...guids].map((guid) => byGuid.get(guid)?.header.name ?? guid).sort((a, b) => a.localeCompare(b));
+    return `${nameOf(rootId)} will use ${listNames(names)} from outside the plugin. A copy of the plugin exported or installed in another project will be missing ${names.length === 1 ? "it" : "them"}.`;
+  });
+
+  const targetPlugin = plugins.get(target);
+  if (targetPlugin && leaving.length > 0) {
+    const sources = new Set(leaving.map((asset) => asset.rootId));
+    const presets = (input.exportPresets ?? []).filter((preset) => {
+      const enabled = (plugin: ContentRootMovePlugin) => resolvePluginEnabled(
+        plugin.enabledByDefault,
+        input.projectPluginOverrides?.[plugin.pluginGuid]?.enabled,
+        preset.pluginOverrides[plugin.pluginGuid]?.enabled,
+      );
+      if (enabled(targetPlugin)) return false;
+      return [...sources].some((rootId) => {
+        const source = plugins.get(rootId);
+        return !source || enabled(source);
+      });
+    });
+    if (presets.length > 0) {
+      const names = listNames(presets.map((preset) => `"${preset.name}"`));
+      warnings.push(presets.length === 1
+        ? `Export preset ${names} turns off ${targetPlugin.displayName}, so its exports will not include the moved items.`
+        : `Export presets ${names} turn off ${targetPlugin.displayName}, so their exports will not include the moved items.`);
+    }
+  }
+  return warnings;
+}
+
+/** "A", "A and B", "A, B and C", "A, B, C and 2 more". */
+function listNames(names: readonly string[], limit = 3): string {
+  if (names.length <= 1) return names[0] ?? "";
+  const shown = names.length > limit ? names.slice(0, limit) : names.slice(0, -1);
+  const last = names.length > limit ? `${names.length - limit} more` : names.at(-1)!;
+  return `${shown.join(", ")} and ${last}`;
 }
 
 export function mergePluginEditorUtilityObjects(

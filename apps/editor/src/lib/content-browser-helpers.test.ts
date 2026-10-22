@@ -791,30 +791,54 @@ describe("content-browser-helpers", () => {
     ).toEqual([]);
   });
 
-  it("still moves the rest of the selection when a selected asset is in another content root", () => {
+  it("drops selected items from a writable plugin into the project, but leaves read-only plugin items where they are", () => {
     const lamp = asset({ guid: "lamp-guid", name: "lamp", path: "plugins/tools/assets/lamp.babasset" });
     const rows = [
       ...flattenContentBrowserTree(multiMoveTree, multiMoveAssets),
       ...flattenContentBrowserTree({ name: "assets", path: "plugins/tools/assets", assets: ["lamp-guid"], children: [] }, [lamp]),
     ];
-    expect(
-      contentBrowserTreeDropMoves({
-        dragId: "assets/hero.babasset",
-        targetId: "assets/textures",
-        rows,
-        selectedGuids: new Set(["hero-guid", "lamp-guid"]),
-        selectedFolderPaths: new Set(),
-        rootPaths: ["assets", "plugins/tools/assets"],
-      }),
-    ).toEqual([
-      {
-        kind: "asset",
-        sourcePath: "assets",
-        destinationPath: "assets/textures",
-        id: "assets/hero.babasset",
-        guid: "hero-guid",
-      },
-    ]);
+    const drop = (readOnlyRootPaths: string[]) => contentBrowserTreeDropMoves({
+      dragId: "assets/hero.babasset",
+      targetId: "assets/textures",
+      rows,
+      selectedGuids: new Set(["hero-guid", "lamp-guid"]),
+      selectedFolderPaths: new Set(),
+      rootPaths: ["assets", "plugins/tools/assets"],
+      readOnlyRootPaths,
+    });
+    const hero = {
+      kind: "asset",
+      sourcePath: "assets",
+      destinationPath: "assets/textures",
+      id: "assets/hero.babasset",
+      guid: "hero-guid",
+    };
+    expect(drop([])).toEqual([hero, {
+      kind: "asset",
+      sourcePath: "plugins/tools/assets",
+      destinationPath: "assets/textures",
+      id: "plugins/tools/assets/lamp.babasset",
+      guid: "lamp-guid",
+    }]);
+    expect(drop(["plugins/tools/assets"])).toEqual([hero]);
+  });
+
+  it("drops a project row into a writable plugin folder or root, never into read-only content", () => {
+    const pluginTree = { name: "assets", path: "plugins/tools/assets", assets: [], children: [
+      { name: "Props", path: "plugins/tools/assets/Props", assets: [], children: [] },
+    ] };
+    const rows = [
+      ...flattenContentBrowserTree(multiMoveTree, multiMoveAssets),
+      ...flattenContentBrowserTree(pluginTree, []),
+    ];
+    const rootPaths = ["assets", "plugins/tools/assets"];
+    const drop = (targetId: string, placement: "into" | "after", readOnlyRootPaths: string[] = []) =>
+      contentBrowserMoveFromDrop("assets/textures", targetId, rows, rootPaths, placement, readOnlyRootPaths);
+    expect(drop("plugins/tools/assets/Props", "into")).toEqual({
+      kind: "folder", sourcePath: "assets/textures", destinationPath: "plugins/tools/assets/Props", id: "assets/textures",
+    });
+    expect(drop("plugins/tools/assets", "after")?.destinationPath).toBe("plugins/tools/assets");
+    expect(drop("plugins/tools/assets/Props", "into", ["plugins/tools/assets"])).toBeNull();
   });
 
   it("still moves other selected items when the dragged row is already in the destination", () => {
@@ -1835,25 +1859,47 @@ describe("content-browser-helpers", () => {
     ]);
   });
 
-  it("leaves items in another content root where they are, as a tree drop does", () => {
+  it("copies only within a content root, but moves between writable roots", () => {
     const rootPaths = ["assets", "plugins/tools/assets"];
-    const plan = contentBrowserSelectionMoves({
+    const selection = {
       destinationPath: "assets/fx",
-      operation: "copy",
       folderPaths: ["plugins/tools/assets/Props"],
       assetPaths: ["assets/hero.babasset", "plugins/tools/assets/lamp.babasset"],
       rootPaths,
-    });
-    expect(plan).toEqual({
+    };
+    expect(contentBrowserSelectionMoves({ ...selection, operation: "copy" })).toEqual({
       moves: [{ kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.babasset" }],
       error: null,
     });
+    expect(contentBrowserSelectionMoves({ ...selection, assetPaths: ["plugins/tools/assets/lamp.babasset"], operation: "copy" }).error)
+      .toBe("Items in another content root cannot be copied here.");
+    expect(contentBrowserSelectionMoves(selection)).toEqual({
+      moves: [
+        { kind: "folder", sourcePath: "plugins/tools/assets/Props", destinationPath: "assets/fx", id: "plugins/tools/assets/Props" },
+        { kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.babasset" },
+        { kind: "asset", sourcePath: "plugins/tools/assets", destinationPath: "assets/fx", id: "plugins/tools/assets/lamp.babasset" },
+      ],
+      error: null,
+    });
+  });
+
+  it("never moves read-only content or moves anything into it", () => {
+    const rootPaths = ["assets", "plugins/starter/assets"];
+    const readOnlyRootPaths = ["plugins/starter/assets"];
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "plugins/starter/assets",
+      folderPaths: [],
+      assetPaths: ["assets/hero.babasset"],
+      rootPaths,
+      readOnlyRootPaths,
+    }).error).toBe("Items cannot be moved into read-only content.");
     expect(contentBrowserSelectionMoves({
       destinationPath: "assets/fx",
       folderPaths: [],
-      assetPaths: ["plugins/tools/assets/lamp.babasset"],
+      assetPaths: ["plugins/starter/assets/lamp.babasset"],
       rootPaths,
-    }).error).toBe("Items in another content root cannot be moved here.");
+      readOnlyRootPaths,
+    }).error).toBe("Read-only content cannot be moved.");
   });
 
   it("refuses a move onto an existing or shared name before anything moves", () => {

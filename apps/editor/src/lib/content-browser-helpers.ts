@@ -864,11 +864,12 @@ export function isValidMoveDestination(options: {
 
 /**
  * What Move… / Copy to Folder… does with a selection at `destinationPath`,
- * under the tree drop's rules: items in another content root stay where they
- * are, as do items already in the destination (Move). A folder never goes
- * into itself or a descendant, and a Move never lands on an existing or
- * already-claimed name, so it cannot fail after moving part of the
- * selection. `error` says why the destination cannot be used.
+ * under the tree drop's rules: a Move may change content root when neither
+ * root is read-only, a Copy stays in its own root, and items that cannot go
+ * stay where they are, as do items already in the destination (Move). A
+ * folder never goes into itself or a descendant, and a Move never lands on an
+ * existing or already-claimed name, so it cannot fail after moving part of
+ * the selection. `error` says why the destination cannot be used.
  */
 export function contentBrowserSelectionMoves(options: {
   destinationPath: string;
@@ -876,29 +877,43 @@ export function contentBrowserSelectionMoves(options: {
   assetPaths: readonly string[];
   folderPaths: readonly string[];
   rootPaths?: readonly string[];
+  /** Root prefixes of read-only content (engine plugins). */
+  readOnlyRootPaths?: readonly string[];
   /** Asset and folder paths that already exist, for the Move name check. */
   existingPaths?: ReadonlySet<string>;
 }): { moves: ContentBrowserDropMove[]; error: string | null } {
   const { destinationPath: destination, operation = "move" } = options;
   const rootPaths = options.rootPaths ?? [ASSETS_ROOT];
+  const readOnly = options.readOnlyRootPaths ?? [];
   const verb = operation === "copy" ? "copied" : "moved";
   if (options.folderPaths.some((path) => isFolderMoveCycle(path, destination))) {
     return { moves: [], error: `A folder cannot be ${verb} inside itself.` };
   }
   const destRoot = contentRootOfPath(destination, rootPaths);
-  const inRoot = (path: string) => contentRootOfPath(path, rootPaths) === destRoot;
-  const folders = options.folderPaths.filter(inRoot);
-  const assets = options.assetPaths.filter(inRoot);
+  if (readOnly.includes(destRoot)) {
+    return { moves: [], error: `Items cannot be ${verb} into read-only content.` };
+  }
+  const rootOf = (path: string) => contentRootOfPath(path, rootPaths);
+  const canGo = (path: string) => operation === "copy"
+    ? rootOf(path) === destRoot
+    : canMoveBetweenRoots(rootOf(path), destRoot, readOnly);
+  const folders = options.folderPaths.filter(canGo);
+  const assets = options.assetPaths.filter(canGo);
   if (folders.length + assets.length === 0) {
-    return { moves: [], error: `Items in another content root cannot be ${verb} here.` };
+    return {
+      moves: [],
+      error: operation === "copy"
+        ? "Items in another content root cannot be copied here."
+        : "Read-only content cannot be moved.",
+    };
   }
   const changesFolder = (from: string) => operation === "copy" || from !== destination;
   const moves: ContentBrowserDropMove[] = [
     ...folders
-      .filter((path) => changesFolder(parentFolderPath(path, destRoot)))
+      .filter((path) => changesFolder(parentFolderPath(path, rootOf(path))))
       .map((path) => ({ kind: "folder" as const, sourcePath: path, destinationPath: destination, id: path })),
     ...assets.flatMap((path) => {
-      const from = parentFolderPath(path, destRoot);
+      const from = parentFolderPath(path, rootOf(path));
       return changesFolder(from)
         ? [{ kind: "asset" as const, sourcePath: from, destinationPath: destination, id: path }]
         : [];
@@ -1260,12 +1275,32 @@ function isFolderMoveCycle(
   );
 }
 
+/** A move stays in its root, or changes root when neither side is read-only. */
+function canMoveBetweenRoots(
+  sourceRoot: string,
+  destRoot: string,
+  readOnlyRootPaths: readonly string[],
+): boolean {
+  return sourceRoot === destRoot ||
+    (!readOnlyRootPaths.includes(sourceRoot) && !readOnlyRootPaths.includes(destRoot));
+}
+
+/** Whether `path` lies in a different content root than `destinationPath`. */
+export function isCrossRootMove(
+  path: string,
+  destinationPath: string,
+  rootPaths: readonly string[],
+): boolean {
+  return contentRootOfPath(path, rootPaths) !== contentRootOfPath(destinationPath, rootPaths);
+}
+
 function contentBrowserDropDestination(
   dragId: string,
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
   rootPaths: readonly string[],
   placement: TreeDropPlacement = "into",
+  readOnlyRootPaths: readonly string[] = [],
 ): { destinationPath: string; destRoot: string; sourceRoot: string } | null {
   const source = rows.find((row) => row.id === dragId);
   if (!source) return null;
@@ -1277,16 +1312,19 @@ function contentBrowserDropDestination(
   if (targetId !== null) {
     const target = rows.find((row) => row.id === targetId);
     if (!target) return null;
-    const around = placement === "before" || placement === "after";
+    const targetRoot = contentRootOfPath(target.path, rootPaths);
+    // Beside a root row is still that root: a root has no parent folder.
+    const around = (placement === "before" || placement === "after") &&
+      !isFolderTreeRoot(target.path, rootPaths);
     destinationPath =
       target.kind === "folder"
         ? around
-          ? parentFolderPath(target.path, sourceRoot)
+          ? parentFolderPath(target.path, targetRoot)
           : target.path
-        : parentFolderPath(target.path, sourceRoot);
+        : parentFolderPath(target.path, targetRoot);
   }
   const destRoot = contentRootOfPath(destinationPath, rootPaths);
-  if (destRoot !== sourceRoot) return null;
+  if (!canMoveBetweenRoots(sourceRoot, destRoot, readOnlyRootPaths)) return null;
   return { destinationPath, destRoot, sourceRoot };
 }
 
@@ -1323,6 +1361,7 @@ export function contentBrowserMoveFromDrop(
   rows: ReadonlyArray<ContentBrowserTreeRow>,
   rootPaths: readonly string[] = [ASSETS_ROOT],
   placement: TreeDropPlacement = "into",
+  readOnlyRootPaths: readonly string[] = [],
 ): ContentBrowserDropMove | null {
   const source = rows.find((row) => row.id === dragId);
   const dest = contentBrowserDropDestination(
@@ -1331,6 +1370,7 @@ export function contentBrowserMoveFromDrop(
     rows,
     rootPaths,
     placement,
+    readOnlyRootPaths,
   );
   if (!source || !dest) return null;
   const move = contentBrowserDropMoveForRow(
@@ -1357,6 +1397,8 @@ export function contentBrowserTreeDropMoves(options: {
   selectedGuids: ReadonlySet<string>;
   selectedFolderPaths: ReadonlySet<string>;
   rootPaths?: readonly string[];
+  /** Root prefixes of read-only content; nothing moves into or out of them. */
+  readOnlyRootPaths?: readonly string[];
   resolvePath?: (guid: string) => string | undefined;
   placement?: TreeDropPlacement;
 }): ContentBrowserDropMove[] {
@@ -1367,6 +1409,7 @@ export function contentBrowserTreeDropMoves(options: {
     selectedGuids,
     selectedFolderPaths,
     rootPaths = [ASSETS_ROOT],
+    readOnlyRootPaths = [],
     placement = "into",
   } = options;
   const source = rows.find((row) => row.id === dragId);
@@ -1376,6 +1419,7 @@ export function contentBrowserTreeDropMoves(options: {
     rows,
     rootPaths,
     placement,
+    readOnlyRootPaths,
   );
   if (!source || !dest) return [];
   if (!treeRowInSelection(source, selectedGuids, selectedFolderPaths)) {
@@ -1385,6 +1429,7 @@ export function contentBrowserTreeDropMoves(options: {
       rows,
       rootPaths,
       placement,
+      readOnlyRootPaths,
     );
     return move ? [move] : [];
   }
@@ -1414,10 +1459,12 @@ export function contentBrowserTreeDropMoves(options: {
     }),
   );
   const moves: ContentBrowserDropMove[] = [];
-  // Selected items in another content root stay where they are, as items
-  // already in the destination do.
+  // Selected items that cannot leave their root (or enter the destination's)
+  // stay where they are, as items already in the destination do.
+  const canGo = (path: string) =>
+    canMoveBetweenRoots(contentRootOfPath(path, rootPaths), dest.destRoot, readOnlyRootPaths);
   for (const path of folders) {
-    if (contentRootOfPath(path, rootPaths) !== dest.destRoot) continue;
+    if (!canGo(path)) continue;
     moves.push({
       kind: "folder",
       sourcePath: path,
@@ -1428,9 +1475,8 @@ export function contentBrowserTreeDropMoves(options: {
   for (const guid of guids) {
     const path = pathOf(guid);
     if (!path) continue;
-    const sourceRoot = contentRootOfPath(path, rootPaths);
-    if (sourceRoot !== dest.destRoot) continue;
-    const sourcePath = parentFolderPath(path, sourceRoot);
+    if (!canGo(path)) continue;
+    const sourcePath = parentFolderPath(path, contentRootOfPath(path, rootPaths));
     if (
       !isValidMoveDestination({
         kind: "asset",

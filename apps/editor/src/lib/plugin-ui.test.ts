@@ -4,6 +4,7 @@ import {
   classAssetPaths,
   contentBrowserRootForPath,
   contentBrowserRoots,
+  contentRootMoveWarnings,
   createProjectPluginAndRevealContent,
   filterBabpluginFiles,
   inboundRefsFromOtherRoots,
@@ -190,6 +191,65 @@ describe("plugin enablement UI", () => {
       "plugin:pack",
     );
     expect(refs).toEqual([{ guid: "scene-1", name: "Main" }]);
+  });
+
+  describe("content root move warnings", () => {
+    const assets = [
+      { rootId: "project", header: { guid: "rock", name: "Rock" } },
+      { rootId: "project", header: { guid: "wood", name: "Wood" } },
+      { rootId: "project", header: { guid: "scene", name: "Main" } },
+      { rootId: "plugin:tools", header: { guid: "lamp", name: "Lamp" } },
+      { rootId: "plugin:tools", header: { guid: "desk", name: "Desk" } },
+      { rootId: "plugin:fx", header: { guid: "spark", name: "Spark" } },
+    ];
+    const edges: Record<string, string[]> = { wood: ["rock", "spark"], scene: ["wood", "lamp"], desk: ["lamp"] };
+    const showReferences = (guid: string) => ({
+      outbound: edges[guid] ?? [],
+      inbound: Object.keys(edges).filter((referrer) => edges[referrer]!.includes(guid)),
+    });
+    const plugin = (pluginGuid: string, displayName: string, dependencyGuids: string[] = []) =>
+      ({ pluginGuid, displayName, enabledByDefault: true, dependencyGuids });
+    const warn = (movedGuids: string[], targetRootId: string, options: Partial<Parameters<typeof contentRootMoveWarnings>[0]> = {}) =>
+      contentRootMoveWarnings({
+        movedGuids, targetRootId, assets, showReferences,
+        plugins: [plugin("tools", "Tool Pack"), plugin("fx", "FX Pack")],
+        ...options,
+      });
+
+    it("warns when content moved into a plugin uses content outside it, unless it moves along or is a dependency", () => {
+      expect(warn(["wood"], "plugin:tools")).toEqual([
+        "Tool Pack will use Rock and Spark from outside the plugin. A copy of the plugin exported or installed in another project will be missing them.",
+      ]);
+      expect(warn(["wood", "rock"], "plugin:tools", { plugins: [plugin("tools", "Tool Pack", ["fx"]), plugin("fx", "FX Pack")] }))
+        .toEqual([]);
+    });
+
+    it("warns when a plugin keeps using content moved out of it, but not when project content does", () => {
+      expect(warn(["lamp"], "project")).toEqual([
+        "Tool Pack will use Lamp from outside the plugin. A copy of the plugin exported or installed in another project will be missing it.",
+      ]);
+      expect(warn(["lamp", "desk"], "project")).toEqual([]);
+    });
+
+    it("warns when an export preset turns off the target plugin but includes the content's current root", () => {
+      const presets = [
+        { name: "Web", pluginOverrides: {} },
+        { name: "Mobile", pluginOverrides: { tools: { enabled: false } } },
+        { name: "Console", pluginOverrides: { tools: { enabled: false }, fx: { enabled: false } } },
+      ];
+      expect(warn(["rock"], "plugin:tools", { exportPresets: presets })).toEqual([
+        'Export presets "Mobile" and "Console" turn off Tool Pack, so their exports will not include the moved items.',
+      ]);
+      expect(warn(["spark"], "plugin:tools", { exportPresets: presets }))
+        .toEqual(['Export preset "Mobile" turns off Tool Pack, so its exports will not include the moved items.']);
+      // A preset without an override follows the project's own setting.
+      expect(warn(["rock"], "plugin:tools", {
+        exportPresets: [{ name: "Web", pluginOverrides: {} }],
+        plugins: [{ ...plugin("tools", "Tool Pack"), enabledByDefault: false }, plugin("fx", "FX Pack")],
+        projectPluginOverrides: { tools: { enabled: true } },
+      })).toEqual([]);
+      expect(warn(["lamp"], "plugin:tools", { exportPresets: presets })).toEqual([]);
+    });
   });
 
   it("summarizes plugin dependency diagnostics", () => {
