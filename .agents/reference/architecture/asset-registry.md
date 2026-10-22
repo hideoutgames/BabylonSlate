@@ -21,7 +21,9 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 `ContentRoot { id, kind: "project" | "plugin" | "synthetic", pathPrefix, readOnly?, storage? }`. Storage and blobs resolve as `root.storage ?? registry storage` and `{pathPrefix}/.blobs`.
 
 - Project root is `assets/`; enabled plugins mount as `plugin:<guid>` roots ([plugins](plugins.md)). `readOnly` roots refuse create/delete/move, encode writes and derived chunks.
-- Cross-root `moveAsset` throws ("Cross-root moves are not supported yet"); duplicate-then-delete (new guid) is the workaround.
+- Cross-root moves (`moveAsset` to another `rootId`, `moveFolder(..., targetRootId)`) need both roots writable: the source loses the file. Fix-up pass: decode the file with the source blob store (every chunk's length and sha256 verified; a missing or torn blob refuses the move before anything is written) → write each blob chunk to the target root's store under its locator name → copy the file bytes unchanged (blob locators name a sha256, not a root, so nothing is rewritten) → remove the source → re-index under the target root with the same guid, so inbound references and class ids (the file stem) survive. Source blobs stay as unreferenced files (no blob GC; another asset may share them).
+- A cross-root folder move does that blob step for every listed asset, then copies the whole tree (markers, empty folders, unlisted files) and removes the source; a failed copy removes the partial destination. It refuses a folder holding a guid conflict and a destination that exists on disk. Like same-root moves it is not crash-atomic: an interrupted move can leave a same-guid copy, which the next scan keeps unindexed.
+- Moves never touch `project.json`: the editor re-derives `scenes`/`graphs` from `listDocumentPaths({ rootId: "project" })` after every move, and plugin compatibility stamps change only on document saves.
 - `listDocumentPaths({ rootId: "project" })` feeds `project.json` scenes/graphs: plugin paths must never leak into the manifest. Play and search use `registry.list()`.
 
 ## File operations

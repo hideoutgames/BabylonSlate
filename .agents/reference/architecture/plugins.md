@@ -9,8 +9,9 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 - Enablement layers, later wins: PluginSettings `enabledByDefault` < `project.json` `pluginOverrides[guid].enabled` (editor uses these two) < export-preset `pluginOverrides` (export / Preview Build only).
 - Version differences (engine or dependency) are **warnings** and never block mounts, editor utilities, Play or export. Missing or disabled dependencies and cycles block the affected plugin and its dependents; independent plugins still mount.
 - A missing plugin never loses data: unresolved guids become guid-keeping `Unresolved` placeholders, replaced when the plugin mounts again.
-- Cross-root moves are rejected (`Cross-root moves are not supported yet`). A future move needs a fix-up pass (copy bytes and per-root blobs, keep the guid, rewrite blob locators, drop the asset from `project.json` lists, confirm inbound refs). Until then duplicate-then-delete, which assigns a new guid.
-- Out of scope: native plugins, a marketplace, Content Browser drag between roots.
+- Assets and folders move between the project and writable plugins (Content Browser **Move…** and tree drops) keeping their guids; the registry's fix-up pass copies blob chunks into the target root's store ([asset-registry](asset-registry.md#content-roots)). Engine plugin content never moves; Copy to Folder stays within one root.
+- A move that changes behaviour warns but never blocks (`contentRootMoveWarnings` in [`plugin-ui.ts`](../../../apps/editor/src/lib/plugin-ui.ts)): a plugin that starts to reference content outside itself (the project, or a plugin its settings do not list as a dependency), since a copy exported or installed elsewhere misses it; and an export preset that turns the target plugin off while it ships the content's current root. A tree drop with a warning opens **Move…** at that destination instead of moving. Moves never edit `pluginDependencies`.
+- Out of scope: native plugins, a marketplace.
 
 ## Ownership
 
@@ -42,7 +43,7 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 | `plugin.engine_unsatisfiable`, `plugin.unsatisfiable` (recorded vs installed version) | Warning |
 | `plugin.missing`, `plugin.cycle`, `plugin.dependency_blocked` (transitive) | Error |
 
-- Mounted plugins are `plugin:<guid>` content roots ([asset-registry.md](asset-registry.md)); engine roots are `readOnly` and skip New / Import / Delete. Disabling unmounts, so its assets leave the registry.
+- Mounted plugins are `plugin:<guid>` content roots ([asset-registry.md](asset-registry.md)); engine roots are `readOnly` and skip New / Import / Move / Delete. Disabling unmounts, so its assets leave the registry.
 - Toggling a discovered plugin reuses the last discovery and only changes mounts; a new override guid, new engine storage or a project rescan rediscovers.
 - `project.json` `scenes` / `graphs` stay project-root only (`listDocumentPaths({ rootId: "project" })` must not leak `plugins/…`). Play, compile and search iterate `registry.list()`.
 - **Show Plugin Content** (Project Settings → Plugins, persisted in `layout.json`, default off) only hides tree roots; pickers, Play and search still see enabled plugin assets.
