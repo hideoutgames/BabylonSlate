@@ -1,12 +1,31 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { parsePerformanceProfile, serializePerformanceProfile, summarizePerformanceColumn, summarizePerformanceColumns, type PerformanceProfile, type PerformanceStream } from "@babylonslate/debugger";
-import type { RenderFrameReport } from "@babylonslate/render";
-import { humanizePropertyLabel, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SelectableText, ToolbarStrip } from "@babylonslate/editor-kit";
+import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  parsePerformanceProfile,
+  serializePerformanceProfile,
+  summarizePerformanceColumn,
+  summarizePerformanceColumns,
+  TICK_BUDGET_MS,
+  type PerformanceProfile,
+  type PerformanceStream,
+} from "@babylonslate/debugger";
+import { parseRenderFrameReport, serializeRenderFrameReport, type RenderFrameReport } from "@babylonslate/render";
+import {
+  humanizePropertyLabel,
+  NumberField,
+  PanelFrame,
+  PropertySectionTitle,
+  SearchInput,
+  SelectableText,
+  ToolbarStrip,
+  useTouchUi,
+  WindowedList,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+} from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { CameraIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
+import { CameraIcon, ChevronsLeftIcon, ChevronsRightIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import { useAppSettings } from "../context/app-settings-context";
 import { downloadBlob } from "../lib/download";
@@ -133,7 +152,15 @@ function DistributionBar({ values, scale, budget }: { values: { median: number |
 }
 
 function serializeResult(result: DiagnosticResult) {
-  return result.kind === "profile" ? serializePerformanceProfile(result.profile) : JSON.stringify({ kind: "babylonslate-frame", version: 1, report: result.report });
+  return result.kind === "profile" ? serializePerformanceProfile(result.profile) : serializeRenderFrameReport(result.report);
+}
+
+/** A saved recording or frame report, or null when the file is neither in a version this build reads. */
+function parseResult(value: unknown): DiagnosticResult | null {
+  const profile = parsePerformanceProfile(value);
+  if (profile) return { kind: "profile", profile };
+  const report = parseRenderFrameReport(value);
+  return report ? { kind: "frame", report } : null;
 }
 
 type SummaryRow = readonly [label: string, values: ReturnType<typeof summarizePerformanceColumn>, budget?: number];
@@ -159,7 +186,7 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
       ["Presentation/Copy Wall Time", summarizePerformanceColumn(profile.frames, "copyMs")],
     ] as SummaryRow[] },
     { title: "Worker", unit: "per runtime tick", rows: [
-      ["Worker Script and Physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], 8), 8],
+      ["Worker Script and Physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], TICK_BUDGET_MS), TICK_BUDGET_MS],
       ["Worker Script Phase", summarizePerformanceColumn(profile.ticks, "scriptMs")],
       ["Worker Physics Phase", summarizePerformanceColumn(profile.ticks, "physicsMs")],
       ["Worker Snapshot Publish", summarizePerformanceColumn(profile.ticks, "publishMs")],
@@ -177,8 +204,20 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     </PropertySectionTitle>
     <dl className="grid text-xs">
       {[
-        { label: "Frame Pacing", over: frame.overBudgetCount ?? 0, text: frame.median == null ? "No completed frame intervals." : <>Median <b className="font-mono text-[11px] font-medium">{format(frame.median)} ms</b> ({(1000 / frame.median).toFixed(1)} FPS) · <span className={cn((frame.overBudgetCount ?? 0) && "text-destructive")}>{frame.overBudgetCount ?? 0} of {frame.count} frames ({percent(frame.overBudgetCount ?? 0, frame.count)})</span> slower than {budget.toFixed(2)} ms</> },
-        { label: "Worker Tick", over: worker.overBudgetCount ?? 0, text: worker.median == null ? "No runtime ticks." : <>Median <b className="font-mono text-[11px] font-medium">{format(worker.median)} ms</b> script and physics · <span className={cn((worker.overBudgetCount ?? 0) && "text-destructive")}>{worker.overBudgetCount ?? 0} of {worker.count} ticks ({percent(worker.overBudgetCount ?? 0, worker.count)})</span> slower than 8 ms</> },
+        { label: "Frame Pacing", over: frame.overBudgetCount ?? 0, text: frame.median == null ? "No completed frame intervals." : <>
+          Median <b className="font-mono text-[11px] font-medium">{format(frame.median)} ms</b> ({(1000 / frame.median).toFixed(1)} FPS) ·{" "}
+          <span className={cn((frame.overBudgetCount ?? 0) && "text-destructive")}>
+            {frame.overBudgetCount ?? 0} of {frame.count} frames ({percent(frame.overBudgetCount ?? 0, frame.count)})
+          </span>{" "}
+          slower than {budget.toFixed(2)} ms
+        </> },
+        { label: "Worker Tick", over: worker.overBudgetCount ?? 0, text: worker.median == null ? "No runtime ticks." : <>
+          Median <b className="font-mono text-[11px] font-medium">{format(worker.median)} ms</b> script and physics ·{" "}
+          <span className={cn((worker.overBudgetCount ?? 0) && "text-destructive")}>
+            {worker.overBudgetCount ?? 0} of {worker.count} ticks ({percent(worker.overBudgetCount ?? 0, worker.count)})
+          </span>{" "}
+          slower than {TICK_BUDGET_MS} ms
+        </> },
       ].map((row, index) => <div key={row.label} className={cn("flex min-h-7 items-center gap-2 px-2 py-1", index % 2 && "bg-list-stripe")}>
         <span className={cn("size-2 shrink-0 rounded-full", row.over ? "bg-destructive" : "bg-(--success)")} aria-hidden="true" />
         <dt className="w-28 shrink-0 text-muted-foreground">{row.label}</dt><dd>{row.text}</dd>
@@ -202,7 +241,7 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     </table></div>
     <PropertySectionTitle>Notes</PropertySectionTitle>
     <div className="flex flex-col gap-1 px-2 py-1.5 text-xs text-muted-foreground">
-      <p>Frame threshold {budget.toFixed(2)} ms. Combined Worker script and physics threshold 8 ms per tick. Submission includes driver waits; asynchronous copy latency can overlap submission. Concurrent host and Worker durations are not summed.</p>
+      <p>Frame threshold {budget.toFixed(2)} ms. Combined Worker script and physics threshold {TICK_BUDGET_MS} ms per tick. Submission includes driver waits; asynchronous copy latency can overlap submission. Concurrent host and Worker durations are not summed.</p>
       <p>GPU timing: {gpu ? `${profile.gpu.count} engine-aggregate query results, not aligned to frames` : profile.identity.gpuReason ?? profile.identity.gpuTiming}. Heap and physical VRAM: unavailable. These captures contain timing records and no world snapshots.</p>
       <p>Retained {(profile.retainedBytes / 1048576).toFixed(2)} MiB / {(profile.byteBudget / 1048576).toFixed(0)} MiB budget; {profile.droppedRecords} dropped records. Accounted buffers are not a browser heap limit.</p>
     </div>
@@ -210,17 +249,22 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
   </div>;
 }
 
+/** Sample number column, then one column per recorded value. */
+const sampleColumns = (count: number) => `4rem repeat(${count}, minmax(5.5rem, 1fr))`;
+const sampleCell = (value: number) => Number.isFinite(value)
+  ? Number.isInteger(value) ? value : value.toFixed(3)
+  : <span className="font-sans text-xs text-muted-foreground">Unavailable</span>;
+
 export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }) {
+  const touch = useTouchUi();
   const [population, setPopulation] = useState<keyof typeof STREAM_METRIC>("frames");
   const [selected, setSelected] = useState(0);
   const stream = profile[population];
   const metric = STREAM_METRIC[population];
   const index = Math.max(0, Math.min(Number.isFinite(selected) ? Math.floor(selected) : 0, Math.max(0, stream.count - 1)));
-  const page = Math.floor(index / 100) * 100;
-  const indices = Array.from({ length: Math.min(100, Math.max(0, stream.count - page)) }, (_, offset) => page + offset);
   const values = rowAt(stream, index);
   const series = useMemo(() => metric.segments.map(segment => columnSeries(stream, [segment.column])), [stream, metric]);
-  const threshold = population === "frames" ? frameBudget(profile) : population === "ticks" ? 8 : undefined;
+  const threshold = population === "frames" ? frameBudget(profile) : population === "ticks" ? TICK_BUDGET_MS : undefined;
   const totalAt = (row: number) => series.reduce((sum, values) => sum + (Number.isFinite(values[row]) ? values[row]! : 0), 0);
   const overBudget = useMemo(() => threshold === undefined ? [] : Array.from({ length: stream.count }, (_, row) => row).filter(row => totalAt(row) > threshold),
     // totalAt reads series only.
@@ -229,43 +273,74 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   const previousOver = overBudget.findLast(row => row < index);
   const nextOver = overBudget.find(row => row > index);
   const metricColumns = new Set(metric.segments.map(segment => segment.column));
-  const tableRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { tableRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" }); }, [index, population]);
+  const columns = sampleColumns(stream.columns.length);
+  // Wide enough for every column, so the rows scroll sideways together with the header.
+  const tableWidth = `calc(4rem + ${stream.columns.length} * 5.5rem)`;
+  const rowHeight = touch ? WINDOWED_LIST_TOUCH_ROW_HEIGHT : 28;
   return <div className="flex h-full min-h-0 flex-col">
     <ToolbarStrip className="gap-2 py-0.5">
-      <ToggleGroup value={[population]} onValueChange={next => { if (next[0] === "frames" || next[0] === "ticks" || next[0] === "gpu") { setPopulation(next[0]); setSelected(0); } }} size="sm" variant="outline">
+      <ToggleGroup value={[population]} onValueChange={next => {
+        if (next[0] === "frames" || next[0] === "ticks" || next[0] === "gpu") { setPopulation(next[0]); setSelected(0); }
+      }} size="sm" variant="outline">
         <ToggleGroupItem value="frames">Completed Frames</ToggleGroupItem><ToggleGroupItem value="ticks">Runtime Ticks</ToggleGroupItem>
         {profile.gpu.count ? <ToggleGroupItem value="gpu">GPU Queries</ToggleGroupItem> : null}
       </ToggleGroup>
       {stream.count ? <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
         {threshold !== undefined ? <>
           <span className={cn("tabular-nums", overBudget.length && "text-destructive")}>{overBudget.length} Over Budget</span>
-          <Button variant="ghost" size="icon-sm" aria-label="Previous Over Budget" title="Previous Over Budget" className="pointer-coarse:size-11" disabled={previousOver === undefined} onClick={() => { if (previousOver !== undefined) setSelected(previousOver); }}><ChevronsLeftIcon /></Button>
-          <Button variant="ghost" size="icon-sm" aria-label="Next Over Budget" title="Next Over Budget" className="pointer-coarse:size-11" disabled={nextOver === undefined} onClick={() => { if (nextOver !== undefined) setSelected(nextOver); }}><ChevronsRightIcon /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label="Previous Over Budget" title="Previous Over Budget" className="pointer-coarse:size-11"
+            disabled={previousOver === undefined} onClick={() => { if (previousOver !== undefined) setSelected(previousOver); }}><ChevronsLeftIcon /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label="Next Over Budget" title="Next Over Budget" className="pointer-coarse:size-11"
+            disabled={nextOver === undefined} onClick={() => { if (nextOver !== undefined) setSelected(nextOver); }}><ChevronsRightIcon /></Button>
           <Separator orientation="vertical" className="mx-1 h-4 self-center" />
         </> : null}
         <label htmlFor="diagnostic-sample-index">Sample</label>
         <div className="w-20"><NumberField id="diagnostic-sample-index" min={0} max={stream.count - 1} step={1} value={index} onChange={setSelected} /></div>
         <span className="tabular-nums">/ {stream.count - 1}</span>
-        <Button variant="ghost" size="icon-sm" aria-label="Previous 100" title="Previous 100" className="pointer-coarse:size-11" disabled={!index} onClick={() => setSelected(Math.max(0, page - 100))}><ChevronLeftIcon /></Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Next 100" title="Next 100" className="pointer-coarse:size-11" disabled={page + 100 >= stream.count} onClick={() => setSelected(page + 100)}><ChevronRightIcon /></Button>
       </div> : null}
     </ToolbarStrip>
     {stream.count ? <>
       <SampleChart segments={metric.segments} series={series} selected={index} threshold={threshold} onSelect={setSelected} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-2 py-1 text-[11px] text-muted-foreground">
         <span className="font-medium text-foreground">{metric.label}</span>
-        {metric.segments.length > 1 ? metric.segments.map(segment => <span key={segment.column} className="flex items-center gap-1"><span className={cn("size-2", segment.className)} />{segment.label}</span>) : null}
+        {metric.segments.length > 1 ? metric.segments.map(segment => <span key={segment.column} className="flex items-center gap-1">
+          <span className={cn("size-2", segment.className)} />{segment.label}
+        </span>) : null}
         <span className="flex items-center gap-1"><span className="size-2 bg-trace-selected" />Selected</span>
-        {threshold !== undefined ? <span className="flex items-center gap-1"><span className="w-3 border-t border-dashed border-destructive" />Budget {threshold.toFixed(2)} ms</span> : null}
+        {threshold !== undefined ? <span className="flex items-center gap-1">
+          <span className="w-3 border-t border-dashed border-destructive" />Budget {threshold.toFixed(2)} ms
+        </span> : null}
         <span className="ml-auto">Each stream uses its own recording-relative clock. Rows are not aligned by host/Worker timestamps. Loading samples are explicitly marked.</span>
       </div>
-      <div className="flex min-h-64 flex-1">
-        <div ref={tableRef} className="min-w-0 flex-1 overflow-auto"><table className={TABLE}><thead><tr><th className={TH}>Sample</th>{stream.columns.map(column => <th className={cn(TH, "text-right", metricColumns.has(column) && "text-foreground")} key={column}>{humanizePropertyLabel(column)}</th>)}</tr></thead>
-          <tbody>{indices.map(row => <tr key={row} aria-selected={row === index} className={cn(TR, row === index && "bg-accent even:bg-accent hover:bg-accent")}>
-            <td className="p-0"><Button variant="ghost" size="xs" className="h-7 w-full justify-start rounded-none font-mono text-[11px] tabular-nums pointer-coarse:min-h-11" onClick={() => setSelected(row)}>{row}</Button></td>
-            {rowAt(stream, row).map((value, column) => <td className={cn(TD, metricColumns.has(stream.columns[column]!) && threshold !== undefined && totalAt(row) > threshold && "text-destructive")} key={column}>{Number.isFinite(value) ? Number.isInteger(value) ? value : value.toFixed(3) : <span className="font-sans text-xs text-muted-foreground">Unavailable</span>}</td>)}</tr>)}</tbody></table></div>
-        <div className="hidden w-72 shrink-0 overflow-auto border-l lg:block">
+      {/* Narrow layouts put the sample's details under the table instead of beside it. */}
+      <div className="flex min-h-64 flex-1 flex-col lg:flex-row">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div role="table" aria-label="Samples" aria-rowcount={stream.count + 1} className="text-xs" style={{ minWidth: tableWidth }}>
+            <div role="row" className="sticky top-0 z-10 grid h-7 border-b bg-panel-header" style={{ gridTemplateColumns: columns }}>
+              <div role="columnheader" className="flex items-center px-2 font-medium text-muted-foreground">Sample</div>
+              {stream.columns.map(column => <div role="columnheader" key={column}
+                className={cn("flex items-center justify-end px-2 font-medium whitespace-nowrap text-muted-foreground", metricColumns.has(column) && "text-foreground")}>
+                {humanizePropertyLabel(column)}
+              </div>)}
+            </div>
+            <WindowedList itemCount={stream.count} rowHeight={rowHeight} activeIndex={index}>
+              {row => {
+                const overRow = threshold !== undefined && totalAt(row) > threshold;
+                return <div role="row" aria-rowindex={row + 2} aria-selected={row === index} style={{ gridTemplateColumns: columns }}
+                  className={cn("grid h-full items-center hover:bg-accent/50", row % 2 === 1 && "bg-list-stripe", row === index && "bg-accent hover:bg-accent")}>
+                  <div role="cell" className="h-full">
+                    <Button variant="ghost" size="xs" className="h-full w-full justify-start rounded-none font-mono text-[11px] tabular-nums" onClick={() => setSelected(row)}>{row}</Button>
+                  </div>
+                  {rowAt(stream, row).map((value, column) => <div role="cell" key={column}
+                    className={cn(TD, metricColumns.has(stream.columns[column]!) && overRow && "text-destructive")}>
+                    {sampleCell(value)}
+                  </div>)}
+                </div>;
+              }}
+            </WindowedList>
+          </div>
+        </div>
+        <div className="max-h-48 shrink-0 overflow-auto border-t lg:max-h-none lg:w-72 lg:border-t-0 lg:border-l">
           <Facts title={`Sample ${index}`} data={Object.fromEntries(stream.columns.map((column, offset) => [column, Number.isFinite(values[offset]) ? values[offset] : null]))} />
         </div>
       </div>
@@ -383,13 +458,17 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
   const input = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string | null>(null);
   const canRecord = state.mode !== null && state.mode !== "simulate" && !state.active && !state.busy;
+  // Summary and Timeline show the recording; Frame Report shows the capture. Copy and Export follow the view.
+  const shown: DiagnosticResult | null = state.view === "frame"
+    ? state.frame ? { kind: "frame", report: state.frame } : null
+    : state.profile ? { kind: "profile", profile: state.profile } : null;
   const exported = async (copy: boolean) => {
-    if (!state.result) return;
+    if (!shown) return;
     try {
-      const text = serializeResult(state.result);
+      const text = serializeResult(shown);
       if (copy) { await navigator.clipboard.writeText(text); setMessage("Copied diagnostic JSON."); }
       else {
-        downloadBlob(new Blob([text], { type: "application/json" }), state.result.kind === "profile" ? "performance.babprofile.json" : "frame.babframe.json");
+        downloadBlob(new Blob([text], { type: "application/json" }), shown.kind === "profile" ? "performance.babprofile.json" : "frame.babframe.json");
         setMessage("Exported diagnostic JSON.");
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
@@ -412,34 +491,39 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
           <ToggleGroupItem value="summary">Summary</ToggleGroupItem><ToggleGroupItem value="timeline">Timeline</ToggleGroupItem><ToggleGroupItem value="frame">Frame Report</ToggleGroupItem>
         </ToggleGroup>
         <div className="ml-auto flex items-center">
-          <Button size="icon-sm" variant="ghost" aria-label="Open Profile" title="Open Profile" className="pointer-coarse:size-11" disabled={!!state.active || state.busy} onClick={() => input.current?.click()}><FolderOpenIcon /></Button>
-          <Button size="icon-sm" variant="ghost" aria-label="Copy" title="Copy Diagnostic JSON" className="pointer-coarse:size-11" disabled={!state.result} onClick={() => void exported(true)}><CopyIcon /></Button>
-          <Button size="icon-sm" variant="ghost" aria-label="Export" title="Export Diagnostic JSON" className="pointer-coarse:size-11" disabled={!state.result} onClick={() => void exported(false)}><DownloadIcon /></Button>
+          <Button size="icon-sm" variant="ghost" aria-label="Open Saved Result" title="Open Saved Result" className="pointer-coarse:size-11"
+            disabled={!!state.active || state.busy} onClick={() => input.current?.click()}><FolderOpenIcon /></Button>
+          <Button size="icon-sm" variant="ghost" aria-label="Copy" title="Copy Diagnostic JSON" className="pointer-coarse:size-11"
+            disabled={!shown} onClick={() => void exported(true)}><CopyIcon /></Button>
+          <Button size="icon-sm" variant="ghost" aria-label="Export" title="Export Diagnostic JSON" className="pointer-coarse:size-11"
+            disabled={!shown} onClick={() => void exported(false)}><DownloadIcon /></Button>
         </div>
       </ToolbarStrip>
-      <input ref={input} type="file" accept=".json,application/json" className="hidden" aria-label="Open performance profile" onChange={event => {
-        const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
+      <input ref={input} type="file" accept=".json,application/json" className="hidden" aria-label="Open saved result" onChange={event => {
+        const file = event.currentTarget.files?.[0];
+        event.currentTarget.value = "";
         if (!file) return;
-        if (file.size > 128 * 1024 * 1024) { setMessage("Profile import exceeds the 128 MiB file limit."); return; }
+        if (file.size > 128 * 1024 * 1024) { setMessage("This file exceeds the 128 MiB limit for saved results."); return; }
         void file.text().then(text => {
-          const profile = parsePerformanceProfile(JSON.parse(text));
-          if (!profile) throw new Error("This is not a valid supported Performance profile.");
-          store.importResult({ kind: "profile", profile }); setMessage(null);
+          const result = parseResult(JSON.parse(text));
+          if (!result) throw new Error("This file is not a Performance recording or frame report this version can open.");
+          store.importResult(result);
+          setMessage(null);
         }).catch(error => setMessage(error instanceof Error ? error.message : String(error)));
       }} />
       <div className="min-h-0 flex-1"><PanelFrame data-testid="session-diagnostic-results">
-        {state.result?.kind === "profile" && state.view !== "frame" ? state.view === "summary" ? <PerformanceSummary profile={state.result.profile} /> : <PerformanceTimeline profile={state.result.profile} />
-          : state.result?.kind === "frame" && state.view === "frame" ? <FrameReportView report={state.result.report} />
+        {shown?.kind === "profile" ? state.view === "summary" ? <PerformanceSummary profile={shown.profile} /> : <PerformanceTimeline profile={shown.profile} />
+          : shown?.kind === "frame" ? <FrameReportView report={shown.report} />
             : <Empty>
               <EmptyHeader>
-                <EmptyTitle>{state.result ? state.result.kind === "frame" ? "No Performance Recording" : "No Frame Capture" : "No Capture Selected"}</EmptyTitle>
+                <EmptyTitle>{state.view === "frame" ? "No Frame Capture" : "No Performance Recording"}</EmptyTitle>
                 <EmptyDescription>{state.view === "frame" ? "Capture one frame to list every render stage in execution order." : "Record Performance to collect frame and tick timings."} Opening this surface does not collect data.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="flex-row justify-center">
                 {state.view === "frame"
                   ? <Button size="sm" variant="outline" disabled={!canRecord} onClick={() => void store.captureFrame()}><CameraIcon data-icon="inline-start" />Capture Frame</Button>
                   : <Button size="sm" variant="outline" disabled={!canRecord} onClick={() => void store.startProfile(profileDefaultsFromSettings(settings.debuggerDefaults))}><CircleIcon data-icon="inline-start" className="fill-destructive text-destructive" />Record Performance</Button>}
-                <Button size="sm" variant="ghost" disabled={!!state.active || state.busy} onClick={() => input.current?.click()}><FolderOpenIcon data-icon="inline-start" />Open Profile</Button>
+                <Button size="sm" variant="ghost" disabled={!!state.active || state.busy} onClick={() => input.current?.click()}><FolderOpenIcon data-icon="inline-start" />Open Saved Result</Button>
               </EmptyContent>
             </Empty>}
       </PanelFrame></div>

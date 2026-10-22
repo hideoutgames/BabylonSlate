@@ -15,12 +15,17 @@ export type DiagnosticSessionPorts = {
 };
 export type DiagnosticResultsSnapshot = {
   open: boolean; view: DiagnosticView; mode: DiagnosticSessionPorts["mode"] | null;
-  active: "profile" | "frame" | null; busy: boolean; error: string | null; result: DiagnosticResult | null;
+  active: "profile" | "frame" | null; busy: boolean; error: string | null;
+  /** The latest recording and the latest frame capture, kept apart so neither replaces the other. */
+  profile: PerformanceProfile | null;
+  frame: RenderFrameReport | null;
 };
 
-/** One recent result and event-driven UI state. No observer, timer or world polling. */
+/** The latest result of each kind and event-driven UI state. No observer, timer or world polling. */
 export class DiagnosticResultsStore {
-  private state: DiagnosticResultsSnapshot = { open: false, view: "summary", mode: null, active: null, busy: false, error: null, result: null };
+  private state: DiagnosticResultsSnapshot = {
+    open: false, view: "summary", mode: null, active: null, busy: false, error: null, profile: null, frame: null,
+  };
   private readonly listeners = new Set<() => void>();
   private session: { ports: DiagnosticSessionPorts; token: object } | null = null;
   private surfaceRevision = 0;
@@ -39,7 +44,8 @@ export class DiagnosticResultsStore {
   selectView(view: DiagnosticView): void { this.update({ view }); }
   importResult(result: DiagnosticResult): void {
     if (this.state.active || this.state.busy) throw new Error("Stop the active diagnostic operation before opening another result.");
-    this.update({ result, error: null, view: result.kind === "frame" ? "frame" : "summary" });
+    if (result.kind === "frame") this.update({ frame: result.report, error: null, view: "frame" });
+    else this.update({ profile: result.profile, error: null, view: "summary" });
   }
   bindSession(ports: DiagnosticSessionPorts) {
     const session = { ports, token: {} };
@@ -49,11 +55,11 @@ export class DiagnosticResultsStore {
     return {
       publishProfile: (profile: PerformanceProfile) => {
         if (this.session !== session) return;
-        this.update({ result: { kind: "profile", profile }, active: null, busy: false, error: null });
+        this.update({ profile, active: null, busy: false, error: null });
       },
       publishFrame: (report: RenderFrameReport) => {
         if (this.session !== session) return;
-        this.update({ result: { kind: "frame", report }, active: null, busy: false, error: null, view: "frame" });
+        this.update({ frame: report, active: null, busy: false, error: null, view: "frame" });
       },
       publishError: (reason: string) => this.fail(session, reason),
       release: () => {
@@ -78,7 +84,7 @@ export class DiagnosticResultsStore {
     this.update({ busy: true });
     try {
       const profile = await session.ports.stopProfile();
-      if (this.session === session) this.update({ active: null, busy: false, ...(profile ? { result: { kind: "profile", profile } as DiagnosticResult } : {}) });
+      if (this.session === session) this.update({ active: null, busy: false, ...(profile ? { profile } : {}) });
     } catch (error) { this.fail(session, error); }
   }
   async captureFrame(): Promise<void> {
@@ -88,7 +94,7 @@ export class DiagnosticResultsStore {
     this.update({ active: "frame", busy: true, error: null });
     try {
       const report = await session.ports.captureFrame();
-      if (this.session === session) this.update({ result: { kind: "frame", report }, active: null, busy: false });
+      if (this.session === session) this.update({ frame: report, active: null, busy: false });
     } catch (error) { this.fail(session, error); }
   }
   async stopSession(): Promise<void> {
