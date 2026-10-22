@@ -202,6 +202,22 @@ describe("NestedMenu dropdown", () => {
     fireEvent.click(getByTestId("context-menu-item-more"));
     expect(queryByTestId("context-menu-sub-more")).toBeNull();
   });
+
+  it("disables a submenu with no items", () => {
+    const { getByTestId, queryByTestId } = render(
+      <NestedMenu
+        items={[{ id: "columns", type: "submenu", label: "Columns", items: [] }]}
+        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        contentTestId="menu-content"
+      />,
+    );
+
+    fireEvent.click(getByTestId("menu-trigger"));
+    const trigger = getByTestId("context-menu-item-columns");
+    expect(trigger.hasAttribute("data-disabled")).toBe(true);
+    fireEvent.click(trigger);
+    expect(queryByTestId("context-menu-sub-columns")).toBeNull();
+  });
 });
 
 describe("NestedMenu context overlay", () => {
@@ -390,6 +406,20 @@ describe("NestedMenu context overlay", () => {
     fireEvent.click(getByTestId("context-menu-item-duplicate"));
     expect(onSelect).toHaveBeenCalledOnce();
     expect(queryByTestId("context-menu-panel")).toBeNull();
+  });
+
+  it("disables an overlay submenu with no items", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ContextMenuOverlay
+        menu={{ open: true, x: 40, y: 80, items: [{ id: "columns", type: "submenu", label: "Columns", items: [] }] }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const trigger = getByTestId("context-menu-item-columns") as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    fireEvent.click(trigger);
+    expect(queryByTestId("context-menu-sub-columns")).toBeNull();
   });
 
   it("selects a radio-group value on the overlay without closing when closeOnClick is false", () => {
