@@ -220,6 +220,12 @@ export function Probe(ctx) {
     { position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } }).actor);
   ctx.setVariable("overlap", ctx.sphereOverlap({ x: 2, y: 0, z: 0 }, 0.2).actors);
   ctx.setVariable("cursor", ctx.projectCursorToScene(undefined, { drawDebug: false }));
+}
+export function TurnLayerCamera(ctx) {
+  const layer = ctx.getOwningSceneLayer(ctx.self);
+  ctx.setSceneLayerCameraLocation(layer, { x: 2, y: 0 });
+  ctx.setSceneLayerCameraRotation(layer, 180);
+  ctx.setSceneLayerCameraZoom(layer, 2);
 }`;
 
 /**
@@ -236,7 +242,7 @@ async function queryRuntime(layer: SerializedSceneLayer) {
     { assetGuid: "main-probe", classId: "MainProbe", parentClassId: "Actor", source: PROBE_SOURCE, anchors: [],
       entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }] },
     { assetGuid: "layer-probe", classId: "LayerProbe", parentClassId: "SceneLayerActor", source: PROBE_SOURCE, anchors: [],
-      entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }] },
+      entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }, { name: "TurnLayerCamera", event: "TurnLayerCamera", isAsync: false }] },
   ]);
   runtime.realizePlayWorld();
   const instance = runtime.createSceneLayer("layer", 0);
@@ -308,6 +314,12 @@ describe("Scene Layer physics queries", () => {
       runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 300, y: 300, button: 0 }]);
       runtime.tick();
       expect(probe(layerProbe).cursor).toMatchObject({ hit: false, actor: null });
+      // x 300 px is view x -4: zoom 2 halves it, the half turn mirrors it and the centre at x 2 lands it on the target.
+      runtime.invokeScriptEvent(layerProbe!.classId, "TurnLayerCamera", layerProbe);
+      expect(probe(layerProbe).cursor).toMatchObject({
+        hit: true, actor: world.findActor(inLayer(instance, "target")),
+      });
+      expect((probe(layerProbe).cursor as { location: { x: number } }).location.x).toBeCloseTo(4);
     } finally { runtime.stop(); }
   });
 
@@ -547,7 +559,7 @@ describe("SceneLayer runtime compositor", () => {
       entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
     }]);
     runtime.realizePlayWorld();
-    runtime.spawnScriptedActor({ classId: "LayerScript" });
+    const actor = runtime.spawnScriptedActor({ classId: "LayerScript" });
     runtime.start();
     commands.length = 0;
     runtime.tick();
@@ -555,7 +567,7 @@ describe("SceneLayer runtime compositor", () => {
     const layerCommands = commands.flatMap((command) =>
       (command.type === "spawn" && command.sceneLayerId) || command.type === "despawn" || command.type === "sceneLayerRemove"
         ? [command.type === "sceneLayerRemove" ? command.type : `${command.type}:${command.slotId}`] : []);
-    return { runtime, layerCommands };
+    return { runtime, layerCommands, commands, actor };
   }
 
   it("keeps the render slots of a layer created during a tick, before its actors commit", async () => {
@@ -564,6 +576,35 @@ describe("SceneLayer runtime compositor", () => {
     expect(runtime.getWorld().findActor(inLayer(layer, "banner"))).toBeTruthy();
     expect(layerCommands).toEqual([expect.stringMatching(/^spawn:/)]);
     runtime.stop();
+  });
+
+  it("moves, turns and zooms a layer camera from a script, sending each change once", async () => {
+    const { runtime, commands, actor } = await tickLayerRuntime(`
+      const layer = ctx.createSceneLayer('hud', 0);
+      ctx.setSceneLayerCameraLocation(layer, { x: 3, y: -1 });
+      ctx.addSceneLayerCameraOffset(layer, { x: 1, y: 1 });
+      ctx.setSceneLayerCameraRotation(layer, 30);
+      ctx.setSceneLayerCameraZoom(layer, 2);
+      ctx.setSceneLayerCameraZoom(layer, 2);
+      ctx.setSceneLayerCameraLocation(layer, { x: Number.NaN, y: 5 });
+      ctx.setVariable("camera", [ctx.getSceneLayerCameraLocation(layer), ctx.getSceneLayerCameraRotation(layer), ctx.getSceneLayerCameraZoom(layer)]);
+      ctx.setVariable("owning", ctx.getOwningSceneLayer(ctx.self));
+      ctx.removeSceneLayer(layer);
+      ctx.setSceneLayerCameraZoom(layer, 3);
+      ctx.setVariable("removedZoom", ctx.getSceneLayerCameraZoom(layer));`);
+    try {
+      expect(commands.flatMap((command) => command.type === "sceneLayerCamera" ? [command.camera] : [])).toEqual([
+        { x: 3, y: -1, rotation: 0, zoom: 1 },
+        { x: 4, y: 0, rotation: 0, zoom: 1 },
+        { x: 4, y: 0, rotation: 30, zoom: 1 },
+        { x: 4, y: 0, rotation: 30, zoom: 2 },
+        { x: 4, y: 5, rotation: 30, zoom: 2 },
+      ]);
+      expect(actor!.getVariable("camera")).toEqual([{ x: 4, y: 5 }, 30, 2]);
+      // A world actor belongs to no layer; a removed layer reads the default camera.
+      expect(actor!.getVariable("owning")).toBeNull();
+      expect(actor!.getVariable("removedZoom")).toBe(1);
+    } finally { runtime.stop(); }
   });
 
   it("despawns the queued actors of a layer removed in the tick that created it", async () => {

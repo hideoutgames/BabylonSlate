@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, SceneLayerCamera } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
@@ -994,7 +994,9 @@ export type CommandMessage =
       type: "sceneLayerPostProcess";
       layerId: string;
       postProcessStack: ScenePostProcessEntry[];
-    };
+    }
+  /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; every layer is created with the default camera). */
+  | { type: "sceneLayerCamera"; layerId: string; camera: SceneLayerCamera };
 
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }

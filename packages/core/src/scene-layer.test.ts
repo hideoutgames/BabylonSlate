@@ -7,12 +7,16 @@ import {
   parseOverlayPanelProperties,
   parseSceneLayerAnchor,
   sceneLayerAnchorWorldPosition,
+  sceneLayerCanvasToLayer,
   sceneLayerFrustumSize,
   sceneLayerOrthoBounds,
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerViewBounds,
   sceneLayerToEditorScene,
+  updateSceneLayerCamera,
   walkOverlayPointerHits,
+  SCENE_LAYER_CAMERA_MIN_ZOOM,
+  SCENE_LAYER_DEFAULT_CAMERA,
 } from "./scene-layer";
 import { createActor, createDefaultSceneSettings, normalizeScene } from "./scene";
 import { createDefaultScene } from "./project";
@@ -259,6 +263,26 @@ describe("SceneLayer anchors and hit tests", () => {
     expect(sceneLayerViewBounds({ width: 16, height: 9 }, 32 / 9)).toEqual({ width: 32, height: 9 });
     expect(sceneLayerViewBounds({ width: 16, height: 9 }, 1)).toEqual({ width: 16, height: 16 });
     expect(sceneLayerViewBounds({ width: 16, height: 9 }, Number.NaN)).toEqual({ width: 16, height: 9 });
+  });
+
+  it("maps canvas pixels into layer space through the camera's centre, zoom and roll", () => {
+    const view = { width: 32, height: 18 };
+    expect(sceneLayerCanvasToLayer(0, 0, 1920, 1080, view)).toEqual({ x: -16, y: 9 });
+    expect(sceneLayerCanvasToLayer(1920, 1080, 1920, 1080, view)).toEqual({ x: 16, y: -9 });
+    const camera = { x: 5, y: -2, rotation: 0, zoom: 2 };
+    expect(sceneLayerCanvasToLayer(960, 540, 1920, 1080, view, camera)).toEqual({ x: 5, y: -2 });
+    expect(sceneLayerCanvasToLayer(1920, 0, 1920, 1080, view, camera)).toEqual({ x: 13, y: 2.5 });
+    // A camera turned 90° counter-clockwise has the canvas's right edge pointing along layer +Y.
+    const rolled = sceneLayerCanvasToLayer(1920, 540, 1920, 1080, view, { x: 1, y: 1, rotation: 90, zoom: 1 });
+    expect(rolled.x).toBeCloseTo(1);
+    expect(rolled.y).toBeCloseTo(17);
+  });
+
+  it("keeps the current camera value for non-finite changes and never zooms to 0", () => {
+    const camera = { x: 1, y: 2, rotation: 30, zoom: 1.5 };
+    expect(updateSceneLayerCamera(camera, { x: Number.NaN, y: null, rotation: "45", zoom: undefined }))
+      .toEqual({ x: 1, y: 2, rotation: 45, zoom: 1.5 });
+    expect(updateSceneLayerCamera(SCENE_LAYER_DEFAULT_CAMERA, { zoom: -3 }).zoom).toBe(SCENE_LAYER_CAMERA_MIN_ZOOM);
   });
 
   it("walks overlay hits high-to-low, skipping Ignore and stopping on Block", () => {

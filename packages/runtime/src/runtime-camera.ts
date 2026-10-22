@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@babylonslate/bridge";
-import { deprojectCursorRay, type SerializedScene } from "@babylonslate/core";
+import { deprojectCursorRay, sceneLayerCanvasToLayer, SCENE_LAYER_DEFAULT_CAMERA, type SerializedScene } from "@babylonslate/core";
 import type { ResolvedInputTick } from "@babylonslate/input";
 import type { Actor, World } from "@babylonslate/object-model";
 import { actorChainWorldTransform } from "./actor-world-transform";
@@ -219,19 +219,20 @@ export class RuntimeCamera implements RuntimeSubsystem {
 
   /**
    * `Project Cursor To Scene` from a Scene Layer's script: the cursor through
-   * that layer's orthographic camera (at z = -10 looking along +Z, Layer Width
-   * × Height widened to the Play canvas aspect, as the compositor draws and picks
-   * it) to a point on the layer plane, answered by the first collider of the
-   * layer's own 2D world there. No hit when the layer has no physics. It draws
-   * no debug line: debug draws render in the main Scene, not in layers.
+   * that layer's orthographic camera (z = -10 looking along +Z, Layer Width ×
+   * Height widened to the Play canvas aspect, then the camera's zoom, roll and
+   * centre, as the compositor draws and picks it) to a point on the layer
+   * plane, answered by the first collider of the layer's own 2D world there.
+   * No hit when the layer has no physics. It draws no debug line: debug draws
+   * render in the main Scene, not in layers.
    */
   projectCursorToSceneLayer(layerGuid: string, channel?: string) {
-    const bounds = this.host.overlay().viewBounds(this.host.world().findSceneLayer(layerGuid));
+    const layer = this.host.world().findSceneLayer(layerGuid);
+    const bounds = this.host.overlay().viewBounds(layer);
     const canvas = this.host.overlay().canvasSize();
     const cursor = this.host.cursor();
     const point = {
-      x: (cursor.x / Math.max(1, canvas.width) - 0.5) * bounds.width,
-      y: (0.5 - cursor.y / Math.max(1, canvas.height)) * bounds.height,
+      ...sceneLayerCanvasToLayer(cursor.x, cursor.y, canvas.width, canvas.height, bounds, layer?.camera ?? SCENE_LAYER_DEFAULT_CAMERA),
       z: 0,
     };
     const worldOrigin = { x: point.x, y: point.y, z: -SCENE_LAYER_CAMERA_DISTANCE };

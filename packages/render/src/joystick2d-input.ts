@@ -1,5 +1,5 @@
 import { Matrix, Vector3 } from "@babylonjs/core";
-import { joystick2DValue, type OverlayPointerHit } from "@babylonslate/core";
+import { joystick2DValue, sceneLayerCanvasToLayer, type OverlayPointerHit } from "@babylonslate/core";
 import { joystick2DMesh, type Joystick2DMesh } from "./joystick2d-mesh";
 import type { SceneLayerView } from "./scene-layer-compositor";
 
@@ -71,8 +71,9 @@ export class Joystick2DInput {
     if (Math.abs(matrix.determinant()) < 1e-12) { this.release(pointerId); return true; }
     // Layer XY and component-local XY can differ through layout, parenting, rotation and scale.
     Vector3.TransformCoordinatesFromFloatsToRef(0, 0, 0, matrix, scratchWorld);
-    scratchWorld.x = (x / Math.max(1, width) - 0.5) * capture.layer.viewBounds.width;
-    scratchWorld.y = (0.5 - y / Math.max(1, height)) * capture.layer.viewBounds.height;
+    const point = sceneLayerCanvasToLayer(x, y, width, height, capture.layer.viewBounds, capture.layer.cameraState);
+    scratchWorld.x = point.x;
+    scratchWorld.y = point.y;
     matrix.invertToRef(scratchInverse);
     const local = Vector3.TransformCoordinatesToRef(scratchWorld, scratchInverse, scratchLocal);
     const value = joystick2DValue(local.x, local.y, capture.visual.properties);

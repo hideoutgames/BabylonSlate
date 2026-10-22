@@ -1,5 +1,5 @@
 import { Matrix, Vector3, type Mesh } from "@babylonjs/core";
-import { clampUIControl2DValue, normalizeUIControl2DText, uiControl2DValueAt, type OverlayPointerHit } from "@babylonslate/core";
+import { clampUIControl2DValue, normalizeUIControl2DText, sceneLayerCanvasToLayer, uiControl2DValueAt, type OverlayPointerHit } from "@babylonslate/core";
 import { uiControl2DMesh, type UIControl2DMesh } from "./ui-controls2d-mesh";
 import type { SceneLayerView } from "./scene-layer-compositor";
 
@@ -60,8 +60,8 @@ export class UIControls2DInput {
     const size = this.size();
     const matrix = target.visual.mesh.computeWorldMatrix(true);
     if (Math.abs(matrix.determinant()) < 1e-12) return null;
-    const world = new Vector3((x / Math.max(1, size.width) - 0.5) * target.layer.viewBounds.width,
-      (0.5 - y / Math.max(1, size.height)) * target.layer.viewBounds.height, matrix.getTranslation().z);
+    const point = sceneLayerCanvasToLayer(x, y, size.width, size.height, target.layer.viewBounds, target.layer.cameraState);
+    const world = new Vector3(point.x, point.y, matrix.getTranslation().z);
     return Vector3.TransformCoordinates(world, Matrix.Invert(matrix));
   }
 

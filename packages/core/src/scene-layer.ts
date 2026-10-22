@@ -280,6 +280,66 @@ export function sceneLayerViewBounds(
     : { width: design.width, height: design.width / aspect };
 }
 
+/**
+ * A Scene Layer instance's Play camera, set by scripts: the layer-space point
+ * at the centre of the view, its roll in degrees (positive turns the camera
+ * counter-clockwise, so content turns clockwise on screen) and its zoom (2
+ * shows half the view bounds at twice the size). Session state, never saved.
+ */
+export interface SceneLayerCamera {
+  x: number;
+  y: number;
+  rotation: number;
+  zoom: number;
+}
+
+export const SCENE_LAYER_DEFAULT_CAMERA: Readonly<SceneLayerCamera> = Object.freeze({ x: 0, y: 0, rotation: 0, zoom: 1 });
+
+/** Zoom never reaches 0, where the view would have no size (an overshooting tween can ask for less). */
+export const SCENE_LAYER_CAMERA_MIN_ZOOM = 0.01;
+
+/**
+ * `camera` with `changes` applied: non-finite values keep the current one and
+ * zoom is raised to {@link SCENE_LAYER_CAMERA_MIN_ZOOM}.
+ */
+export function updateSceneLayerCamera(
+  camera: Readonly<SceneLayerCamera>,
+  changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown },
+): SceneLayerCamera {
+  const pick = (value: unknown, current: number) => {
+    const number = Number(value);
+    return value !== undefined && value !== null && Number.isFinite(number) ? number : current;
+  };
+  return {
+    x: pick(changes.x, camera.x),
+    y: pick(changes.y, camera.y),
+    rotation: pick(changes.rotation, camera.rotation),
+    zoom: Math.max(SCENE_LAYER_CAMERA_MIN_ZOOM, pick(changes.zoom, camera.zoom)),
+  };
+}
+
+/**
+ * A Play canvas pixel (Y down) in a Scene Layer's space (Y up): through the
+ * view bounds, then the camera's zoom, roll and centre, as the compositor
+ * draws and picks the layer.
+ */
+export function sceneLayerCanvasToLayer(
+  canvasX: number,
+  canvasY: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  view: { width: number; height: number },
+  camera: Readonly<SceneLayerCamera> = SCENE_LAYER_DEFAULT_CAMERA,
+): { x: number; y: number } {
+  const viewX = (canvasX / Math.max(1, canvasWidth) - 0.5) * view.width / camera.zoom;
+  const viewY = (0.5 - canvasY / Math.max(1, canvasHeight)) * view.height / camera.zoom;
+  if (camera.rotation === 0) return { x: camera.x + viewX, y: camera.y + viewY };
+  const radians = camera.rotation * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return { x: camera.x + viewX * cos - viewY * sin, y: camera.y + viewX * sin + viewY * cos };
+}
+
 export function sceneLayerAnchorOrigin(
   anchor: SceneLayerAnchor,
   width: number,
