@@ -310,7 +310,7 @@ interface CauseRecord {
   pipelines: number;
   /** After release the view drew within three frames and nothing stayed paused. */
   recovered: boolean;
-  /** Frames after release until the view drew unpaused (not asserted: graph preparation polls in real time). */
+  /** Frames after release until the view drew unpaused (recorded, not asserted: graph preparation polls on real 16 ms timers). */
   recoveryFrames: number;
   /** Why the view held, in the order first seen. */
   reasons: string[];
@@ -393,7 +393,7 @@ const MODELS: readonly Model[] = ["sync", "parallel", "webgpu"];
 
 /** Whether the world view held its image in none, some or all of the pending window's frames. */
 type Held = "none" | "some" | "all";
-type Expected = { held: Held; holdRaised: boolean; paused: boolean };
+type Expected = { held: Held; holdReported: boolean; holdRaised: boolean; paused: boolean };
 
 /** The states a later phase flips; compile counts are recorded in the failure message, not asserted. */
 function expectBaseline(record: CauseRecord, model: Model, expected: Expected): void {
@@ -402,18 +402,18 @@ function expectBaseline(record: CauseRecord, model: Model, expected: Expected): 
   // The cause really compiled a lit variant (and, on WebGPU, waited for its pipeline), so the states below mean something.
   expect(record.litEffects, detail).toBeGreaterThan(0);
   expect(record.pipelines > 0, detail).toBe(model === "webgpu" && expected.held !== "none");
-  expect({ held, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered }, detail)
+  expect({ held, holdReported: record.holdReported, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered }, detail)
     .toEqual({ ...expected, recovered: true });
 }
 
 /** Today's behaviour per driver model for a cause that changes an existing Material's variant. */
 const HELD_AND_PAUSED: Record<Model, Expected> = {
   // A link that completes inside the call blocks the thread instead; nothing is left to hold for.
-  sync: { held: "none", holdRaised: false, paused: false },
+  sync: { held: "none", holdReported: false, holdRaised: false, paused: false },
   // Strict readiness holds the image until the pending variant links, and Play pauses its game time meanwhile.
-  parallel: { held: "all", holdRaised: true, paused: true },
+  parallel: { held: "all", holdReported: true, holdRaised: true, paused: true },
   // The deferral skips the frame until the new pipeline exists, with the same pause.
-  webgpu: { held: "all", holdRaised: true, paused: true },
+  webgpu: { held: "all", holdReported: true, holdRaised: true, paused: true },
 };
 
 describe("compile-hold baseline", () => {
@@ -426,8 +426,9 @@ describe("compile-hold baseline", () => {
   it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
     const world = playWorld(model, [spot(10, [0, 5, 0])]);
     const record = await measure(world, () => world.place(spot(10, [0, 5, 0], { castShadows: true })));
-    // A new shadow map also re-prepares the graph, which holds the image for a frame even where links are synchronous.
-    expectBaseline(record, model, model === "sync" ? { held: "some", holdRaised: false, paused: false } : HELD_AND_PAUSED[model]);
+    // A new shadow map also re-prepares the graph, which holds the image for a frame even where links are synchronous;
+    // that wait compiles nothing pending, so it raises no hold signal and pauses nothing.
+    expectBaseline(record, model, model === "sync" ? { held: "some", holdReported: false, holdRaised: false, paused: false } : HELD_AND_PAUSED[model]);
   });
 
   it.each(MODELS)("a spot light stops casting shadows: %s", async (model) => {
@@ -473,6 +474,6 @@ describe("compile-hold baseline", () => {
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
     });
     // The whole frame waits for the new mesh, also for one frame where links are synchronous.
-    expectBaseline(record, model, model === "sync" ? { held: "some", holdRaised: false, paused: false } : HELD_AND_PAUSED[model]);
+    expectBaseline(record, model, model === "sync" ? { held: "some", holdReported: false, holdRaised: false, paused: false } : HELD_AND_PAUSED[model]);
   });
 });
