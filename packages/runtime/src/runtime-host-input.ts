@@ -14,6 +14,8 @@ interface WorldInputDeps {
   calibrateTilt(): void;
 }
 
+const MAX_VIBRATION_MS = 10_000;
+
 /** The World's input provider, which TickContext input reads go through. */
 export function createWorldInputProvider(deps: WorldInputDeps): WorldInputProvider {
   const { resolved, connections } = deps;
@@ -46,6 +48,14 @@ export function createWorldInputProvider(deps: WorldInputDeps): WorldInputProvid
     },
     get gamepadConnections() {
       return connections.current;
+    },
+    vibrateDevice: (durationMs) => {
+      deps.emit({
+        type: "vibrateDevice",
+        // Browsers cap a vibration at 10 s; a bad duration stops it.
+        durationMs: Number.isFinite(durationMs) ? Math.min(MAX_VIBRATION_MS, Math.max(0, durationMs)) : 0,
+        frameId: deps.frameId(),
+      });
     },
     setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
       // Only a real pad index can rumble; a bad intensity or duration stops it.

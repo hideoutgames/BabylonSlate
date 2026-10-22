@@ -632,6 +632,7 @@ export interface ScriptContext {
     intensity: number,
     durationMs: number,
   ): void;
+  vibrateDevice?(durationMs: number): void;
   gamepadConnections?: ReadonlyArray<{
     gamepadIndex: number;
     connected: boolean;
@@ -2335,6 +2336,7 @@ export class ScriptHost {
       context.setGamepadRumble = (gamepadIndex, intensity, durationMs) => {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       };
+      context.vibrateDevice = (durationMs) => tick?.vibrateDevice?.(durationMs);
       context.gamepadConnections = tick?.gamepadConnections ?? [];
       context.sampleWater = (position, waterActor) => {
         if (waterActor?.destroyed) return { ...emptyWaterSample(), actor: null };
