@@ -40,6 +40,7 @@ Contributor reference for Haptic's main-thread Babylon renderer: Engine ownershi
   - `maxSampledTexturesPerShaderStage` and `maxSamplersPerShaderStage` stay at their defaults (16). Plain lights cost no sampler, so extra slots need none; shadow maps, area-light tables and projection textures share `MATERIAL_SAMPLER_RESERVE` headroom (8). Raising only the texture limit would also let pipelines exceed the sampler limit unchecked (one sampler per texture, never read by Babylon's caps), and would admit more shadow maps.
   - Do not use `setMaximumLimits`: it raises every limit and changes budgets such as `forwardLightBudget` without a cap.
 - NodeMaterials and built-in helpers (grid, camera bounds, MSDF text) compile in the Engine's native language (GLSL or WGSL). Never depend on a downloaded GLSL→WGSL translator.
+- The editor grid is one shader plane under the 3D eye (2D: the camera target), snapped to the major spacing. Each level (minor, major, ×10 steps) fades in per fragment from its on-screen cell size, so zoom, distance and grazing angles blend without a global fade; the plane's distance fade scales with eye height and stays inside the far clip ([`editor-grid.ts`](../../../packages/render/src/editor-grid.ts)).
 - Large-world rendering on, context MSAA off; `adaptToDeviceRatio: false`, resolution via `setHardwareScalingLevel` ([`hardware-scaling.ts`](../../../packages/render/src/hardware-scaling.ts)). Engine Settings scaling is both initial level and floor; only the Engine's sole rendering view feeds the dynamic-resolution valve.
 
 ## Frame path

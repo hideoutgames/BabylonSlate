@@ -40,7 +40,8 @@ import {
   GRID_MESH_NAME,
   gridCoverageWorld,
   gridEdgeFadeRange,
-  gridViewFade,
+  gridHeightFadeRange,
+  gridMacroOffsets,
   snapGridOrigin,
 } from "./editor-grid";
 import {
@@ -1729,41 +1730,38 @@ describe("editor grid", () => {
     });
   });
 
-  it("sizes coverage from the ortho frustum in 2D and radius in 3D", () => {
+  it("sizes 2D coverage from the ortho frustum", () => {
     expect(
       gridCoverageWorld("2d", { radius: 8, orthoTop: 5, orthoRight: 8 }),
     ).toBe(32);
-    expect(
-      gridCoverageWorld("3d", { radius: 10, orthoTop: null, orthoRight: null }),
-    ).toBe(80);
   });
 
-  it("fades the grid out when the view shows too many major cells", () => {
-    const default2d = { radius: 8, orthoTop: 4, orthoRight: 7 };
-    const default3d = { radius: 8, orthoTop: null, orthoRight: null };
-    expect(gridViewFade("2d", default2d, 1)).toBe(1);
-    expect(gridViewFade("3d", default3d, 1)).toBe(1);
-    expect(
-      gridViewFade("2d", { radius: 8, orthoTop: 0.25, orthoRight: 0.4 }, 1),
-    ).toBe(1);
-    expect(
-      gridViewFade("2d", { radius: 8, orthoTop: 200, orthoRight: 350 }, 1),
-    ).toBe(0);
-    expect(
-      gridViewFade("3d", { radius: 400, orthoTop: null, orthoRight: null }, 1),
-    ).toBe(0);
-    expect(
-      gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 3),
-    ).toBe(1);
-    expect(
-      gridViewFade("3d", { radius: 40, orthoTop: null, orthoRight: null }, 1),
-    ).toBeCloseTo(1 - (40 - 28) / (100 - 28));
-    expect(
-      gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 1),
-    ).toBeCloseTo(0.5);
+  it("scales the 3D distance fade with the eye height, down to a floor of major cells", () => {
+    const low = gridHeightFadeRange(2, 1);
+    const high = gridHeightFadeRange(2000, 1);
+    expect(high.fadeStart / low.fadeStart).toBeCloseTo(1000);
+    expect(high.fadeEnd).toBeGreaterThan(high.fadeStart);
+    // Below the plane fades like above it.
+    expect(gridHeightFadeRange(-2000, 1)).toEqual(high);
+    // An eye resting on the plane still sees a grid, sized by the major spacing.
+    const grounded = gridHeightFadeRange(0, 1);
+    expect(grounded.fadeStart).toBeGreaterThan(10);
+    expect(gridHeightFadeRange(0, 4).fadeStart).toBeCloseTo(grounded.fadeStart * 4);
   });
 
-  it("writes planar edge fade and view fade uniforms on sync", () => {
+  it("keeps coarse grid levels world-aligned from a snapped plane origin", () => {
+    // Levels ×10, ×100, ×1000 and ×10000 of the major spacing, (u, v) per level.
+    const offsets = gridMacroOffsets({ u: 1234, v: -56 }, 1);
+    const expected = [0.4, 0.4, 0.34, 0.44, 0.234, 0.944, 0.1234, 0.9944];
+    offsets.forEach((offset, index) => expect(offset).toBeCloseTo(expected[index]!));
+    gridMacroOffsets({ u: 20, v: -300 }, 2).forEach((offset) => {
+      expect(offset).toBeGreaterThanOrEqual(0);
+      expect(offset).toBeLessThan(1);
+    });
+    expect(gridMacroOffsets({ u: 20, v: -300 }, 2).slice(0, 2)).toEqual([0, 0]);
+  });
+
+  it("writes planar edge fade and distance fade uniforms on sync", () => {
     const { scene } = createHandle();
     const twoD = createEditorCamera(scene, { mode: "2d", orthoHalfHeight: 0.25 });
     twoD.camera.getViewMatrix();
@@ -1785,10 +1783,10 @@ describe("editor grid", () => {
     expect(closeRange.fadeEnd).toBeLessThan(Math.abs(twoD.camera.position.z));
     expect(closeUniforms.floats.fadeStart).toBeCloseTo(closeRange.fadeStart);
     expect(closeUniforms.floats.fadeEnd).toBeCloseTo(closeRange.fadeEnd);
-    expect(closeUniforms.floats.viewFade).toBe(1);
     expect(closeUniforms.floats.gridExtent).toBeCloseTo(closeCoverage);
     closeGrid.dispose();
 
+    // Zoomed all the way out the grid stays drawn, and fades before the far clip plane.
     const threeD = createEditorCamera(scene, { mode: "3d" });
     threeD.camera.radius = MAX_CAMERA_RADIUS;
     const farGrid = createEditorGrid(scene, {
@@ -1798,7 +1796,10 @@ describe("editor grid", () => {
     });
     farGrid.sync();
     const farUniforms = (farGrid.mesh.material as ShaderMaterial).serialize();
-    expect(farUniforms.floats.viewFade).toBe(0);
+    expect(farUniforms.floats.gridVisible).toBe(1);
+    expect(farUniforms.floats.fadeStart).toBeGreaterThan(MAX_CAMERA_RADIUS);
+    expect(farUniforms.floats.fadeEnd).toBeLessThan(threeD.camera.maxZ);
+    expect(farUniforms.floats.gridExtent).toBeGreaterThan(farUniforms.floats.fadeEnd * 2);
     farGrid.dispose();
   });
 
@@ -1815,7 +1816,7 @@ describe("editor grid", () => {
     twoD.dispose();
   });
 
-  it("follows the editor camera so the plane covers the view", () => {
+  it("follows the editor camera's eye so the plane covers the view", () => {
     const { scene } = createHandle();
     const camera = createEditorCamera(scene, { mode: "3d" });
     camera.camera.setTarget(new Vector3(40, 2, 40));
@@ -1825,8 +1826,9 @@ describe("editor grid", () => {
       spacing: 1,
     });
     grid.sync();
-    expect(grid.mesh.position.x).toBe(40);
-    expect(grid.mesh.position.z).toBe(40);
+    camera.camera.getViewMatrix();
+    expect(grid.mesh.position.x).toBe(Math.round(camera.camera.position.x));
+    expect(grid.mesh.position.z).toBe(Math.round(camera.camera.position.z));
     expect(grid.mesh.scaling.x).toBeGreaterThan(8);
     grid.dispose();
   });
@@ -1845,23 +1847,29 @@ describe("editor grid", () => {
 
     camera.camera.setTarget(new Vector3(12, 0, -7));
     grid.sync();
-    expect(grid.mesh.position.x).toBe(12);
-    expect(grid.mesh.position.z).toBe(-7);
+    camera.camera.getViewMatrix();
+    const eyeX = Math.round(camera.camera.position.x);
+    const eyeZ = Math.round(camera.camera.position.z);
+    expect(grid.mesh.position.x).toBe(eyeX);
+    expect(grid.mesh.position.z).toBe(eyeZ);
 
-    const zoomed = Math.max(camera.camera.radius, 1) * 8 * 2;
-    camera.camera.radius = zoomed / 8;
+    // Zooming out raises the eye, and the plane grows with it.
+    camera.camera.radius *= 4;
     grid.sync();
-    expect(grid.mesh.scaling.x).toBeCloseTo(zoomed);
+    const zoomed = grid.mesh.scaling.x;
+    expect(zoomed).toBeGreaterThan(extent * 3);
     expect(material.serialize().floats.gridExtent).toBeCloseTo(zoomed);
+    camera.camera.getViewMatrix();
+    const zoomedX = Math.round(camera.camera.position.x);
 
     grid.mesh.position.x += 3;
     grid.mesh.scaling.setAll(1);
     grid.sync();
-    expect(grid.mesh.position.x).toBe(12);
+    expect(grid.mesh.position.x).toBe(zoomedX);
     expect(grid.mesh.scaling.x).toBeCloseTo(zoomed);
 
     grid.setMode("2d");
-    expect(grid.mesh.position.z).not.toBe(-7);
+    expect(grid.mesh.position.z).not.toBe(eyeZ);
     grid.dispose();
   });
 
