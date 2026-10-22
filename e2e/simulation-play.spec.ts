@@ -266,6 +266,11 @@ test("Simulation freezes real physics while Edit camera redraws and resumes with
   const imageAfter = await canvas.screenshot();
   expect(imageAfter.equals(imageBefore), "The paused camera must produce a new visible frame").toBe(false);
   await testInfo.attach("paused-edit-camera", { body: imageAfter, contentType: "image/png" });
+  // Step runs exactly one tick from the pause and leaves the Simulation paused.
+  await page.getByTestId("simulation-step").click();
+  await expect.poll(() => tick(page)).toBe(before.at(-1)!.tick + 1);
+  const stepped = await pauseSamples(page, 10);
+  expect(stepped.every(sample => sample.tick === before.at(-1)!.tick + 1)).toBe(true);
   await page.getByTestId("simulation-pause").click();
   await expect.poll(() => tick(page)).toBeGreaterThan(before.at(-1)!.tick);
   // Sample the first following browser frames: a pause interval must not become
