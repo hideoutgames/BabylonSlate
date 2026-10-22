@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { parseRagdollProperties } from "@babylonslate/core";
-import { NamedListEditor } from "@babylonslate/editor-kit";
-import { Field, FieldDescription, FieldError } from "@babylonslate/ui/components/field";
+import { parseRagdollProperties } from "@haptic/core";
+import { NamedListEditor } from "@haptic/editor-kit";
+import { Field, FieldDescription, FieldError } from "@haptic/ui/components/field";
 
 const ALL_BONES: string[] = [];
 

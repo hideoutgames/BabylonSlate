@@ -8,7 +8,7 @@ import {
   mapOf,
   type PinType,
   defaultValueLiteral,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const K: PinType = { kind: "resolvingWildcard", group: "K" };
 const V: PinType = { kind: "resolvingWildcard", group: "V" };

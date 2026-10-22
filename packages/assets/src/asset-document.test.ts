@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   decodeAssetDocument,
   DOCUMENT_CHUNK_ID,
@@ -9,8 +9,8 @@ import {
   readAssetDocumentHeader,
 } from "./asset-document";
 import { createMemoryBlobStore, createVfsBlobStore } from "./blob-store";
-import { decodeBabasset, encodeBabasset } from "./babasset";
-import { BLOBS_DIR } from "./babproject";
+import { decodeHasset, encodeHasset } from "./hasset";
+import { BLOBS_DIR } from "./hproject";
 import { sha256Hex } from "./bytes";
 
 const scene = {
@@ -22,7 +22,7 @@ const scene = {
 };
 
 describe("asset documents", () => {
-  it("round-trips an editor document through .babasset", async () => {
+  it("round-trips an editor document through .hasset", async () => {
     const bytes = await encodeAssetDocument(scene);
     const decoded = await decodeAssetDocument(bytes);
     expect(decoded).toEqual(scene);
@@ -46,7 +46,7 @@ describe("asset documents", () => {
   });
 
   it("rejects assets without a document chunk or header payload", async () => {
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "font-1",
@@ -75,7 +75,7 @@ describe("asset documents", () => {
 
   it("opens imported Audio with an empty header payload and no document chunk", async () => {
     const source = new Uint8Array([1, 2, 3, 4]);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "audio-1",
@@ -105,7 +105,7 @@ describe("asset documents", () => {
 
 
   it("opens imported assets that store payload in the header (no document chunk)", async () => {
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "font-1",
@@ -198,7 +198,7 @@ describe("asset documents", () => {
 
   it("keeps non-document chunks when re-encoding an imported font", async () => {
     const source = new Uint8Array([10, 11, 12]);
-    const imported = await encodeBabasset({
+    const imported = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "font-1",
@@ -215,7 +215,7 @@ describe("asset documents", () => {
         { id: "source", kind: "font", mime: "font/woff2", data: source },
       ],
     });
-    const decoded = await decodeBabasset(imported);
+    const decoded = await decodeHasset(imported);
     const extra = extraChunksFromDecoded(decoded);
     expect(extra).toHaveLength(1);
     expect(extra[0]!.id).toBe("source");
@@ -230,7 +230,7 @@ describe("asset documents", () => {
       },
       { extraChunks: extra },
     );
-    const roundTrip = await decodeBabasset(saved);
+    const roundTrip = await decodeHasset(saved);
     expect(roundTrip.chunks.get("source")).toEqual(source);
     const document = await decodeAssetDocument(saved);
     expect(document.payload.family).toBe("Ui Display");
@@ -252,7 +252,7 @@ describe("asset documents", () => {
   });
 
   it("recognises asset document paths", () => {
-    expect(isAssetDocumentPath("assets/main.scene.babasset")).toBe(true);
+    expect(isAssetDocumentPath("assets/main.scene.hasset")).toBe(true);
     expect(isAssetDocumentPath("scenes/main.scene.json")).toBe(false);
   });
 });
@@ -260,7 +260,7 @@ describe("asset documents", () => {
 describe("vfs blob store", () => {
   async function boundStorage() {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Blobs.babproject");
+    await storage.openDocumentsProject("Blobs.hproject");
     return storage;
   }
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   type GraphClassMemberPin,
   type SerializedGraph,
   type TagRegistry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   classDisplayNameForGraphPath,
   classIdForGraphPath,
@@ -94,7 +94,7 @@ describe("script compiler service", () => {
       members: [{ id: "match-function", name: "CheckTags", kind: "function" }],
       functionGraphs: { "match-function": tagMatchGraph("flow.function.input") },
     };
-    const documents = [{ path: "assets/Tags.class.babasset", content }];
+    const documents = [{ path: "assets/Tags.class.hasset", content }];
     const cache = new GraphScriptCompileCache();
     const first = compileGraphDocuments(documents, { cache, tagRegistry: stateTags });
     expect(first).toHaveLength(1);
@@ -114,7 +114,7 @@ describe("script compiler service", () => {
         { id: "state", kind: "variable", name: "State", typeId: "tag", defaultValue: 2 },
         { id: "states", kind: "variable", name: "States", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [1, 2] } },
       ],
-    }, { path: "assets/Tags.class.babasset", tagRegistry: stateTags });
+    }, { path: "assets/Tags.class.hasset", tagRegistry: stateTags });
     expect(script?.variables).toEqual([
       { name: "State", type: "tag", defaultValue: 2 },
       { name: "States", type: "struct:engine:TagContainer", typeClassId: "engine:TagContainer", defaultValue: { Tags: [1, 2] } },
@@ -122,10 +122,10 @@ describe("script compiler service", () => {
   });
 
   it("ships component-only classes and their empty child classes for runtime spawning", async () => {
-    const { createInProcessRuntime } = await import("@babylonslate/runtime");
+    const { createInProcessRuntime } = await import("@haptic/runtime");
     const scripts = compileGraphDocuments([
       {
-        path: "assets/Parent.class.babasset",
+        path: "assets/Parent.class.hasset",
         classId: "Parent",
         content: {
           nodes: [],
@@ -143,7 +143,7 @@ describe("script compiler service", () => {
         },
       },
       {
-        path: "assets/Child.class.babasset",
+        path: "assets/Child.class.hasset",
         classId: "Child",
         parentClassId: "Parent",
         content: { nodes: [], edges: [], components: [] },
@@ -190,21 +190,21 @@ describe("script compiler service", () => {
   });
 
   it("ships empty subsystem classes and their empty user bases so the runtime registers them", async () => {
-    const { createInProcessRuntime } = await import("@babylonslate/runtime");
-    const { instantiableSubsystemClassIds } = await import("@babylonslate/object-model");
+    const { createInProcessRuntime } = await import("@haptic/runtime");
+    const { instantiableSubsystemClassIds } = await import("@haptic/object-model");
     const empty: SerializedGraph = { nodes: [], edges: [] };
     const scripts = compileGraphDocuments([
-      { path: "assets/Weather.class.babasset", parentClassId: "SceneSubsystem", content: empty },
+      { path: "assets/Weather.class.hasset", parentClassId: "SceneSubsystem", content: empty },
       {
-        path: "assets/RainWeather.class.babasset",
+        path: "assets/RainWeather.class.hasset",
         parentClassId: "Weather",
         content: {
           ...empty,
           members: [{ id: "v", kind: "variable", name: "Intensity", typeId: "float", defaultValue: 0.5 }],
         },
       },
-      { path: "assets/Save.class.babasset", parentClassId: "GameSubsystem", content: empty },
-      { path: "assets/Notes.class.babasset", parentClassId: "BObject", content: empty },
+      { path: "assets/Save.class.hasset", parentClassId: "GameSubsystem", content: empty },
+      { path: "assets/Notes.class.hasset", parentClassId: "BObject", content: empty },
     ]);
     expect(scripts.map((script) => [script.classId, script.parentClassId])).toEqual([
       ["Weather", "SceneSubsystem"],
@@ -226,11 +226,11 @@ describe("script compiler service", () => {
   });
 
   it("ships variables-only Game Instance classes and their empty bases so the Game Instance gets its defaults", async () => {
-    const { createInProcessRuntime } = await import("@babylonslate/runtime");
+    const { createInProcessRuntime } = await import("@haptic/runtime");
     const scripts = compileGraphDocuments([
-      { path: "assets/MatchGI.class.babasset", parentClassId: "GameBase", content: { nodes: [], edges: [] } },
+      { path: "assets/MatchGI.class.hasset", parentClassId: "GameBase", content: { nodes: [], edges: [] } },
       {
-        path: "assets/GameBase.class.babasset",
+        path: "assets/GameBase.class.hasset",
         parentClassId: "GameInstance",
         content: {
           nodes: [],
@@ -262,9 +262,9 @@ describe("script compiler service", () => {
   it("recompiles a cached empty class once an ancestor joins a subsystem lineage", () => {
     const cache = new GraphScriptCompileCache();
     const empty: SerializedGraph = { nodes: [], edges: [] };
-    const leaf = { path: "assets/Leaf.class.babasset", parentClassId: "Base", content: empty };
+    const leaf = { path: "assets/Leaf.class.hasset", parentClassId: "Base", content: empty };
     const base = (parentClassId: string) => ({
-      path: "assets/Base.class.babasset",
+      path: "assets/Base.class.hasset",
       parentClassId,
       content: empty,
     });
@@ -280,7 +280,7 @@ describe("script compiler service", () => {
     ];
     const script = compileGraphDocument(
       { ...tickToLog, components },
-      { path: "assets/Hero.class.babasset" },
+      { path: "assets/Hero.class.hasset" },
     );
     expect(script).toHaveProperty("components", components);
   });
@@ -288,7 +288,7 @@ describe("script compiler service", () => {
   it("ships inherited prefab components alongside the child class's local components", () => {
     const scripts = compileGraphDocuments([
       {
-        path: "assets/Parent.class.babasset",
+        path: "assets/Parent.class.hasset",
         classId: "Parent",
         content: {
           ...tickToLog,
@@ -302,7 +302,7 @@ describe("script compiler service", () => {
         },
       },
       {
-        path: "assets/Child.class.babasset",
+        path: "assets/Child.class.hasset",
         classId: "Child",
         parentClassId: "Parent",
         content: {
@@ -328,7 +328,7 @@ describe("script compiler service", () => {
   it("refreshes cached spawn templates after a component property edit", () => {
     const cache = new GraphScriptCompileCache();
     const document = {
-      path: "assets/Hero.class.babasset",
+      path: "assets/Hero.class.hasset",
       content: {
         ...tickToLog,
         components: [
@@ -365,7 +365,7 @@ describe("script compiler service", () => {
   it("refreshes a cached child's inherited spawn template after the parent changes", () => {
     const cache = new GraphScriptCompileCache();
     const parent = {
-      path: "assets/Parent.class.babasset",
+      path: "assets/Parent.class.hasset",
       classId: "Parent",
       content: {
         ...tickToLog,
@@ -379,7 +379,7 @@ describe("script compiler service", () => {
       },
     };
     const child = {
-      path: "assets/Child.class.babasset",
+      path: "assets/Child.class.hasset",
       classId: "Child",
       parentClassId: "Parent",
       content: { ...tickToLog, components: [] },
@@ -405,10 +405,10 @@ describe("script compiler service", () => {
     ).toBe("sphere");
   });
   it("derives a stable class id from the graph path", () => {
-    expect(classIdForGraphPath("assets/main.class.babasset")).toBe("main");
-    expect(classIdForGraphPath("assets/hero.class.babasset")).toBe("hero");
+    expect(classIdForGraphPath("assets/main.class.hasset")).toBe("main");
+    expect(classIdForGraphPath("assets/hero.class.hasset")).toBe("hero");
     expect(classIdForGraphPath("")).toBe("Graph");
-    expect(classIdForGraphPath("assets/HUD.class.babasset")).toBe("HUD");
+    expect(classIdForGraphPath("assets/HUD.class.hasset")).toBe("HUD");
   });
 
   it("compiles a typed Input Axis event using its binding asset identity", () => {
@@ -445,7 +445,7 @@ describe("script compiler service", () => {
           },
         ],
       },
-      { path: "assets/main.class.babasset" },
+      { path: "assets/main.class.hasset" },
     );
     expect(script?.source).toContain("ctx.getInputState");
     expect(script?.source).toContain('"Asset":"move"');
@@ -453,7 +453,7 @@ describe("script compiler service", () => {
 
   it("compiles a serialized graph into a runtime script bundle", () => {
     const script = compileGraphDocument(tickToLog, {
-      path: "assets/main.class.babasset",
+      path: "assets/main.class.hasset",
     });
     expect(script).not.toBeNull();
     expect(script!.classId).toBe("main");
@@ -485,7 +485,7 @@ describe("script compiler service", () => {
           },
         ],
       },
-      { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
+      { path: "assets/Hero.class.hasset", parentClassId: "Actor" },
     );
     expect(script?.parentClassId).toBe("Actor");
     expect(script?.implementedInterfaces).toEqual(["iface-damageable"]);
@@ -509,7 +509,7 @@ describe("script compiler service", () => {
           },
         ],
       },
-      { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
+      { path: "assets/Hero.class.hasset", parentClassId: "Actor" },
     );
     expect(script?.variables).toEqual([
       { name: "cue", type: "asset", typeClassId: "Audio", defaultValue: "audio-1" },
@@ -539,7 +539,7 @@ describe("script compiler service", () => {
           },
         ],
       },
-      { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
+      { path: "assets/Hero.class.hasset", parentClassId: "Actor" },
     );
     expect(script?.variables).toEqual([
       { name: "hits", type: "rotator", container: "array", defaultValue: [] },
@@ -617,7 +617,7 @@ describe("script compiler service", () => {
           },
         },
       },
-      { path: "assets/Hero.class.babasset" },
+      { path: "assets/Hero.class.hasset" },
     );
     expect(script?.variables).toEqual([
       { name: "Health", type: "float", defaultValue: 80 },
@@ -807,7 +807,7 @@ describe("script compiler service", () => {
 
   it("awaits Call Function when the local Function contains Delay", () => {
     const script = compileGraphDocument(heroCallsWaitGraph(), {
-      path: "assets/Hero.class.babasset",
+      path: "assets/Hero.class.hasset",
       classId: "Hero",
     });
     expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
@@ -820,7 +820,7 @@ describe("script compiler service", () => {
 
   it("awaits a nested Call when the callee Function contains Delay", () => {
     const script = compileGraphDocument(heroCallsWaitGraph({ nestedCaller: true }), {
-      path: "assets/Hero.class.babasset",
+      path: "assets/Hero.class.hasset",
       classId: "Hero",
     });
     expect(script?.source).toMatch(
@@ -890,7 +890,7 @@ describe("script compiler service", () => {
           },
         },
       },
-      { path: "assets/Hero.class.babasset", classId: "Hero" },
+      { path: "assets/Hero.class.hasset", classId: "Hero" },
     );
     expect(script?.source).not.toMatch(/await\s+ctx\.invokeFunction/);
     expect(script?.source).toContain("export function onBeginPlay");
@@ -899,7 +899,7 @@ describe("script compiler service", () => {
 
   it("returns null for an empty graph", () => {
     expect(
-      compileGraphDocument({ nodes: [], edges: [] }, { path: "a.class.babasset" }),
+      compileGraphDocument({ nodes: [], edges: [] }, { path: "a.class.hasset" }),
     ).toBeNull();
   });
 
@@ -909,8 +909,8 @@ describe("script compiler service", () => {
       edges: [],
     } as unknown as SerializedGraph;
     const scripts = compileGraphDocuments([
-      { path: "broken.class.babasset", content: broken },
-      { path: "main.class.babasset", content: tickToLog },
+      { path: "broken.class.hasset", content: broken },
+      { path: "main.class.hasset", content: tickToLog },
     ]);
     expect(scripts.map((s) => s.classId)).toContain("main");
   });
@@ -955,18 +955,18 @@ describe("script compiler service", () => {
       ],
     };
     const play = compileGraphDocument(tickToPrint, {
-      path: "assets/main.class.babasset",
+      path: "assets/main.class.hasset",
     });
     expect(play?.source).toContain("ctx.print");
     expect(play?.source).toContain("ctx.log");
     expect(play?.source).toContain("ctx.checkInfiniteLoop(");
     const preview = compileGraphDocuments([
-      { path: "assets/main.class.babasset", content: tickToPrint },
+      { path: "assets/main.class.hasset", content: tickToPrint },
     ]);
     expect(preview[0]?.source).toContain("ctx.print");
     expect(preview[0]?.source).toContain("ctx.checkInfiniteLoop(");
     const exported = compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToPrint }],
+      [{ path: "assets/main.class.hasset", content: tickToPrint }],
       { stripDevelopmentOnly: true },
     );
     expect(exported[0]?.source).not.toContain("ctx.print");
@@ -980,14 +980,14 @@ describe("script compiler service", () => {
       members: [{ id: "fn-open", kind: "function", name: "Open Door", pins: [] }],
       functionGraphs: { "fn-open": { nodes: tickToLog.nodes, edges: tickToLog.edges } },
     } as SerializedGraph;
-    const path = "assets/main.class.babasset";
+    const path = "assets/main.class.hasset";
     const plain = compileGraphDocument(withFunction, { path });
     expect(plain?.source).not.toContain("__dbg");
 
     const traced = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true });
-    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.babasset", "event-graph")');
+    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.hasset", "event-graph")');
     // A function graph reports under its export name, which the editor maps from the member name.
-    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.babasset", "Open_Door")');
+    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.hasset", "Open_Door")');
 
     const released = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true, stripDevelopmentOnly: true });
     expect(released?.source).not.toContain("__dbg");
@@ -1025,7 +1025,7 @@ describe("script compiler service", () => {
       ],
     };
     const script = compileGraphDocument(graph, {
-      path: "assets/HealCommand.class.babasset",
+      path: "assets/HealCommand.class.hasset",
     });
     expect(script?.command).toEqual({
       name: "heal",
@@ -1069,7 +1069,7 @@ describe("script compiler service", () => {
         ],
       },
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         classId: "Hero",
         parentClassId: "Actor",
       },
@@ -1099,7 +1099,7 @@ describe("script compiler service", () => {
         ],
       },
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         classId: "Hero",
         parentClassId: "Actor",
       },
@@ -1113,7 +1113,7 @@ describe("script compiler service", () => {
         ...tickToLog,
         actorDefaults: { generateHitEvents: false, generateOverlapEvents: true },
       },
-      { path: "assets/Hero.class.babasset" },
+      { path: "assets/Hero.class.hasset" },
     );
     expect(script?.actorDefaults).toEqual({
       generateHitEvents: false,
@@ -1124,7 +1124,7 @@ describe("script compiler service", () => {
 
 describe("graphCompileSignature", () => {
   it("requires recompilation after tag changes but ignores registry order and allocation state", () => {
-    const documents = [{ path: "assets/Tags.class.babasset", content: tagMatchGraph() }];
+    const documents = [{ path: "assets/Tags.class.hasset", content: tagMatchGraph() }];
     const compiled = graphCompileSignature(documents, undefined, stateTags);
     expect(graphsNeedCompile(
       graphCompileSignature(documents, undefined, movedStateTags), compiled,
@@ -1145,9 +1145,9 @@ describe("graphCompileSignature", () => {
       })),
     };
     expect(
-      graphCompileSignature([{ path: "assets/main.class.babasset", content: tickToLog }]),
+      graphCompileSignature([{ path: "assets/main.class.hasset", content: tickToLog }]),
     ).toBe(
-      graphCompileSignature([{ path: "assets/main.class.babasset", content: moved }]),
+      graphCompileSignature([{ path: "assets/main.class.hasset", content: moved }]),
     );
   });
 
@@ -1164,23 +1164,23 @@ describe("graphCompileSignature", () => {
     // Actor Defaults are copied onto the compiled bundle, so they recompile too.
     const actorDefaults: SerializedGraph = { ...tickToLog, actorDefaults: { generateHitEvents: false } };
     const base = graphCompileSignature([
-      { path: "assets/main.class.babasset", content: tickToLog },
+      { path: "assets/main.class.hasset", content: tickToLog },
     ]);
     expect(
-      graphCompileSignature([{ path: "assets/main.class.babasset", content: edited }]),
+      graphCompileSignature([{ path: "assets/main.class.hasset", content: edited }]),
     ).not.toBe(base);
     expect(
       graphCompileSignature([
-        { path: "assets/main.class.babasset", content: disconnected },
+        { path: "assets/main.class.hasset", content: disconnected },
       ]),
     ).not.toBe(base);
     expect(
-      graphCompileSignature([{ path: "assets/main.class.babasset", content: actorDefaults }]),
+      graphCompileSignature([{ path: "assets/main.class.hasset", content: actorDefaults }]),
     ).not.toBe(base);
   });
 
   it("changes when a Class's saved parent changes", () => {
-    const document = { path: "assets/main.class.babasset", content: tickToLog };
+    const document = { path: "assets/main.class.hasset", content: tickToLog };
     expect(
       graphCompileSignature([{ ...document, parentClassId: "Pawn" }]),
     ).not.toBe(graphCompileSignature([{ ...document, parentClassId: "Actor" }]));
@@ -1188,8 +1188,8 @@ describe("graphCompileSignature", () => {
 
   it("is order-independent across documents", () => {
     const other: SerializedGraph = { nodes: [], edges: [] };
-    const a = { path: "assets/a.class.babasset", content: tickToLog };
-    const b = { path: "assets/b.class.babasset", content: other };
+    const a = { path: "assets/a.class.hasset", content: tickToLog };
+    const b = { path: "assets/b.class.hasset", content: other };
     expect(graphCompileSignature([a, b])).toBe(graphCompileSignature([b, a]));
   });
 
@@ -1211,11 +1211,11 @@ describe("graphCompileSignature", () => {
       },
     };
     const base = graphCompileSignature([
-      { path: "assets/hero.class.babasset", content: tickToLog },
+      { path: "assets/hero.class.hasset", content: tickToLog },
     ]);
     expect(
       graphCompileSignature([
-        { path: "assets/hero.class.babasset", content: withFn },
+        { path: "assets/hero.class.hasset", content: withFn },
       ]),
     ).not.toBe(base);
   });
@@ -1269,7 +1269,7 @@ describe("graphCompileSignature", () => {
         },
       },
     };
-    const path = "assets/hero.class.babasset";
+    const path = "assets/hero.class.hasset";
     expect(graphCompileSignature([{ path, content: functionGraph }])).toBe(
       graphCompileSignature([{ path, content: nudged }]),
     );
@@ -1295,7 +1295,7 @@ describe("graphCompileSignature", () => {
       ...withHealth,
       members: [{ ...withHealth.members![0]!, defaultValue: 50 }],
     };
-    const path = "assets/hero.class.babasset";
+    const path = "assets/hero.class.hasset";
     const base = graphCompileSignature([{ path, content: withHealth }]);
     expect(graphCompileSignature([{ path, content: tickToLog }])).not.toBe(base);
     expect(graphCompileSignature([{ path, content: lowered }])).not.toBe(base);
@@ -1305,7 +1305,7 @@ describe("graphCompileSignature", () => {
 describe("graphsNeedCompile", () => {
   it("is true before any compile and false when the signature matches", () => {
     const signature = graphCompileSignature([
-      { path: "assets/main.class.babasset", content: tickToLog },
+      { path: "assets/main.class.hasset", content: tickToLog },
     ]);
     expect(graphsNeedCompile(signature, null)).toBe(true);
     expect(graphsNeedCompile(signature, signature)).toBe(false);
@@ -1320,7 +1320,7 @@ describe("graphsNeedCompile", () => {
 describe("GraphScriptCompileCache", () => {
   it("evicts the least recently used editor compile without invalidating borrowed bundles", () => {
     const cache = new GraphScriptCompileCache({ maxEntries: 2 });
-    const document = (name: string) => ({ path: `assets/${name}.class.babasset`, content: tickToLog });
+    const document = (name: string) => ({ path: `assets/${name}.class.hasset`, content: tickToLog });
     const first = compileGraphDocuments([document("First")], { cache })[0]!;
     const oldSecond = compileGraphDocuments([document("Second")], { cache })[0]!;
     expect(compileGraphDocuments([document("First")], { cache })[0]).toBe(first);
@@ -1339,7 +1339,7 @@ describe("GraphScriptCompileCache", () => {
 
   it("keeps instrumented and plain compiles apart, and never splits a release compile on the flag", () => {
     const cache = new GraphScriptCompileCache();
-    const documents = [{ path: "assets/Door.class.babasset", content: tickToLog }];
+    const documents = [{ path: "assets/Door.class.hasset", content: tickToLog }];
     const plain = compileGraphDocuments(documents, { cache })[0]!;
     const traced = compileGraphDocuments(documents, { cache, instrumentExecutionTrace: true })[0]!;
     expect(cache.compiles).toBe(2);
@@ -1357,16 +1357,16 @@ describe("GraphScriptCompileCache", () => {
   });
 
   it("probes an Animation Object graph only for a Simulation compile, under the id the canvas reads", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const cache = new GraphScriptCompileCache();
-    const documents = [{ guid: "loco", path: "assets/Loco.anim.babasset", document: createDefaultAnimGraph() }];
+    const documents = [{ guid: "loco", path: "assets/Loco.anim.hasset", document: createDefaultAnimGraph() }];
     const objectGraph = (options: Parameters<typeof compileAnimGraphScripts>[1]) =>
       compileAnimGraphScripts(documents, { cache, ...options }).find((script) => script.classId === "AnimGraph:loco")!;
     const plain = objectGraph({});
     const traced = objectGraph({ instrumentExecutionTrace: true });
     expect(plain.source).not.toContain("__dbg");
-    expect(traced.source).toContain('ctx.debugTrace.graph("assets/Loco.anim.babasset", "animation-object")');
+    expect(traced.source).toContain('ctx.debugTrace.graph("assets/Loco.anim.hasset", "animation-object")');
     // Each is cached under its own key, and a release compile never carries the probes.
     expect(objectGraph({})).toBe(plain);
     expect(objectGraph({ instrumentExecutionTrace: true })).toBe(traced);
@@ -1374,10 +1374,10 @@ describe("GraphScriptCompileCache", () => {
   });
 
   it("bounds combined graph and animation retention by bytes and skips oversized results", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
-    const graph = [{ path: "assets/First.class.babasset", content: tickToLog }];
-    const animation = [{ guid: "animation", path: "assets/Animation.anim.babasset", document: createDefaultAnimGraph() }];
+    const graph = [{ path: "assets/First.class.hasset", content: tickToLog }];
+    const animation = [{ guid: "animation", path: "assets/Animation.anim.hasset", document: createDefaultAnimGraph() }];
     const measure = new GraphScriptCompileCache();
     compileGraphDocuments(graph, { cache: measure });
     const graphBytes = measure.retainedBytes;
@@ -1403,7 +1403,7 @@ describe("GraphScriptCompileCache", () => {
   });
 
   it("recompiles an inferred Data Entry read when its inherited Data Definition changes", async () => {
-    const { loadCompiledModule } = await import("@babylonslate/runtime");
+    const { loadCompiledModule } = await import("@haptic/runtime");
     const cache = new GraphScriptCompileCache();
     const graph: SerializedGraph = {
       nodes: [
@@ -1416,7 +1416,7 @@ describe("GraphScriptCompileCache", () => {
         { id: "value", source: "read", sourceHandle: "value", target: "log", targetHandle: "message" },
       ],
     };
-    const documents = [{ path: "assets/Reader.class.babasset", content: graph }];
+    const documents = [{ path: "assets/Reader.class.hasset", content: graph }];
     const structs = { first: { name: "First", fields: [] }, second: { name: "Second", fields: [] } };
     const readTypes: string[] = [];
     for (const definitionGuid of ["first", "second"]) {
@@ -1435,7 +1435,7 @@ describe("GraphScriptCompileCache", () => {
   it("Play-prepares many graphs without recompiling an unchanged graph", () => {
     const cache = new GraphScriptCompileCache();
     const documents = Array.from({ length: 24 }, (_, index) => ({
-      path: `assets/g${index}.class.babasset`,
+      path: `assets/g${index}.class.hasset`,
       content: tickToLog,
     }));
     const first = compileGraphDocuments(documents, { cache });
@@ -1480,11 +1480,11 @@ describe("GraphScriptCompileCache", () => {
   it("does not reuse a Play bundle for a Development Only export compile", () => {
     const cache = new GraphScriptCompileCache();
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       { cache },
     );
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       { cache, stripDevelopmentOnly: true },
     );
     expect(cache.compiles).toBe(2);
@@ -1593,12 +1593,12 @@ describe("GraphScriptCompileCache", () => {
     };
     const scripts = compileGraphDocuments([
       {
-        path: "assets/Guard.class.babasset",
+        path: "assets/Guard.class.hasset",
         content: guard,
         classId: "Guard",
       },
       {
-        path: "assets/Caller.class.babasset",
+        path: "assets/Caller.class.hasset",
         content: caller,
         classId: "Caller",
       },
@@ -1735,12 +1735,12 @@ describe("GraphScriptCompileCache", () => {
     const first = compileGraphDocuments(
       [
         {
-          path: "assets/Guard.class.babasset",
+          path: "assets/Guard.class.hasset",
           content: syncGuard,
           classId: "Guard",
         },
         {
-          path: "assets/Caller.class.babasset",
+          path: "assets/Caller.class.hasset",
           content: caller,
           classId: "Caller",
         },
@@ -1754,12 +1754,12 @@ describe("GraphScriptCompileCache", () => {
     const second = compileGraphDocuments(
       [
         {
-          path: "assets/Guard.class.babasset",
+          path: "assets/Guard.class.hasset",
           content: delayedGuard,
           classId: "Guard",
         },
         {
-          path: "assets/Caller.class.babasset",
+          path: "assets/Caller.class.hasset",
           content: caller,
           classId: "Caller",
         },
@@ -1784,19 +1784,19 @@ describe("GraphScriptCompileCache", () => {
       },
     };
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       { cache, enums },
     );
     const key = [...cache.graphs.keys()][0] ?? "";
     expect(key).not.toContain("Member79");
     expect(key.length).toBeLessThan(800);
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       { cache, enums: structuredClone(enums) },
     );
     expect(cache.compiles).toBe(1);
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       {
         cache,
         enums: {
@@ -1817,13 +1817,13 @@ describe("GraphScriptCompileCache", () => {
       edges: [],
     } as unknown as SerializedGraph;
     compileGraphDocuments(
-      [{ path: "broken.class.babasset", content: broken }],
+      [{ path: "broken.class.hasset", content: broken }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
     expect(cache.graphs.size).toBe(0);
     compileGraphDocuments(
-      [{ path: "broken.class.babasset", content: broken }],
+      [{ path: "broken.class.hasset", content: broken }],
       { cache },
     );
     expect(cache.compiles).toBe(2);
@@ -1832,12 +1832,12 @@ describe("GraphScriptCompileCache", () => {
   it("forgets compiled bundles when the project cache is cleared", () => {
     const cache = new GraphScriptCompileCache();
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       { cache },
     );
     cache.clear();
     compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      [{ path: "assets/main.class.hasset", content: tickToLog }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
@@ -1845,7 +1845,7 @@ describe("GraphScriptCompileCache", () => {
 
   it("treats classId and parentClassId as part of the cache key", () => {
     const cache = new GraphScriptCompileCache();
-    const doc = { path: "assets/main.class.babasset", content: tickToLog };
+    const doc = { path: "assets/main.class.hasset", content: tickToLog };
     compileGraphDocuments([{ ...doc, classId: "Hero" }], { cache });
     compileGraphDocuments([{ ...doc, classId: "Hero" }], { cache });
     expect(cache.compiles).toBe(1);
@@ -1892,7 +1892,7 @@ describe("GraphScriptCompileCache", () => {
         },
       },
     };
-    const doc = { path: "assets/hero.class.babasset", content: withFn };
+    const doc = { path: "assets/hero.class.hasset", content: withFn };
     compileGraphDocuments([doc], { cache });
     compileGraphDocuments([{ ...doc, content: nudged }], { cache });
     expect(cache.compiles).toBe(1);
@@ -1916,7 +1916,7 @@ describe("GraphScriptCompileCache", () => {
       ...withHealth,
       members: [{ ...withHealth.members![0]!, defaultValue: 1 }],
     };
-    const path = "assets/hero.class.babasset";
+    const path = "assets/hero.class.hasset";
     compileGraphDocuments([{ path, content: withHealth }], { cache });
     compileGraphDocuments([{ path, content: lowered }], { cache });
     expect(cache.compiles).toBe(2);
@@ -1927,14 +1927,14 @@ describe("GraphScriptCompileCache", () => {
     const empty: SerializedGraph = { nodes: [], edges: [] };
     expect(
       compileGraphDocuments(
-        [{ path: "assets/empty.class.babasset", content: empty }],
+        [{ path: "assets/empty.class.hasset", content: empty }],
         { cache },
       ),
     ).toEqual([]);
     expect(cache.compiles).toBe(1);
     expect([...cache.graphs.values()]).toEqual([null]);
     compileGraphDocuments(
-      [{ path: "assets/empty.class.babasset", content: empty }],
+      [{ path: "assets/empty.class.hasset", content: empty }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
@@ -1943,7 +1943,7 @@ describe("GraphScriptCompileCache", () => {
 
 describe("compileAnimGraphScripts", () => {
   it("refreshes cached animation objects and transition rules after tag hierarchy changes", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.animationObject = tagMatchGraph("anim.event.update");
@@ -1957,7 +1957,7 @@ describe("compileAnimGraphScripts", () => {
         edges: [{ id: "condition", source: "match", sourceHandle: "out", target: "enter", targetHandle: "value" }],
       },
     });
-    const documents = [{ guid: "tags", path: "assets/Tags.anim.babasset", document: doc }];
+    const documents = [{ guid: "tags", path: "assets/Tags.anim.hasset", document: doc }];
     const cache = new GraphScriptCompileCache();
     for (const [tagRegistry, expected, message] of [
       [stateTags, true, "matched"],
@@ -1977,7 +1977,7 @@ describe("compileAnimGraphScripts", () => {
   });
 
   it("compiles Animation Object lifecycle and each transition rule", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.transitions.push({
@@ -2005,7 +2005,7 @@ describe("compileAnimGraphScripts", () => {
       },
     });
     const scripts = compileAnimGraphScripts([
-      { guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc },
+      { guid: "graph-1", path: "assets/Loco.anim.hasset", document: doc },
     ]);
     expect(scripts.map((entry) => entry.classId)).toEqual([
       "AnimGraph:graph-1",
@@ -2019,7 +2019,7 @@ describe("compileAnimGraphScripts", () => {
   });
 
   it("reuses Animation Graph compiles when the document is unchanged", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
       "./script-compiler"
     );
@@ -2027,7 +2027,7 @@ describe("compileAnimGraphScripts", () => {
     const doc = createDefaultAnimGraph();
     const entry = {
       guid: "graph-1",
-      path: "assets/Loco.anim.babasset",
+      path: "assets/Loco.anim.hasset",
       document: doc,
     };
     const first = compileAnimGraphScripts([entry], { cache });
@@ -2039,7 +2039,7 @@ describe("compileAnimGraphScripts", () => {
   });
 
   it("does not recompile an Animation Graph after a position-only canvas nudge", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
       "./script-compiler"
     );
@@ -2047,7 +2047,7 @@ describe("compileAnimGraphScripts", () => {
     const doc = createDefaultAnimGraph();
     const entry = {
       guid: "graph-1",
-      path: "assets/Loco.anim.babasset",
+      path: "assets/Loco.anim.hasset",
       document: doc,
     };
     compileAnimGraphScripts([entry], { cache });
@@ -2065,21 +2065,21 @@ describe("compileAnimGraphScripts", () => {
       position: { x: 50, y: 80 },
     }));
     compileAnimGraphScripts(
-      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: nudged }],
+      [{ guid: "graph-1", path: "assets/Loco.anim.hasset", document: nudged }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
   });
 
   it("recompiles an Animation Graph when animation object data changes", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
       "./script-compiler"
     );
     const cache = new GraphScriptCompileCache();
     const doc = createDefaultAnimGraph();
     compileAnimGraphScripts(
-      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc }],
+      [{ guid: "graph-1", path: "assets/Loco.anim.hasset", document: doc }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
@@ -2093,21 +2093,21 @@ describe("compileAnimGraphScripts", () => {
       ),
     };
     compileAnimGraphScripts(
-      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: edited }],
+      [{ guid: "graph-1", path: "assets/Loco.anim.hasset", document: edited }],
       { cache },
     );
     expect(cache.compiles).toBe(2);
   });
 
   it("does not reuse a Play Animation Graph compile for a Development Only export", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
       "./script-compiler"
     );
     const cache = new GraphScriptCompileCache();
     const entry = {
       guid: "graph-1",
-      path: "assets/Loco.anim.babasset",
+      path: "assets/Loco.anim.hasset",
       document: createDefaultAnimGraph(),
     };
     compileAnimGraphScripts([entry], { cache });
@@ -2116,7 +2116,7 @@ describe("compileAnimGraphScripts", () => {
   });
 
   it("compiles a one-way Exit State as true even when a variable is wired to it", async () => {
-    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.states.push({
@@ -2170,7 +2170,7 @@ describe("compileAnimGraphScripts", () => {
       },
     });
     const scripts = compileAnimGraphScripts([
-      { guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc },
+      { guid: "graph-1", path: "assets/Loco.anim.hasset", document: doc },
     ]);
     const rule = scripts.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-run");
     expect(rule?.source).toContain("exit: (true)");
@@ -2193,15 +2193,15 @@ describe("class name in null-access errors", () => {
   };
 
   it.each([
-    ["assets/Gear/My Hero.class.babasset", "My Hero"],
-    ["assets/Hero.class.babasset", "Hero"],
-    ["Rig.babasset", "Rig"],
+    ["assets/Gear/My Hero.class.hasset", "My Hero"],
+    ["assets/Hero.class.hasset", "Hero"],
+    ["Rig.hasset", "Rig"],
   ])("shows %s as %s, the name the Content Browser lists", (path, name) => {
     expect(classDisplayNameForGraphPath(path)).toBe(name);
   });
 
   it("names a class with a space as the Content Browser shows it, not by its class id", () => {
-    const script = compileGraphDocument(destroysEmptyReference, { path: "assets/My Hero.class.babasset" });
+    const script = compileGraphDocument(destroysEmptyReference, { path: "assets/My Hero.class.hasset" });
     expect(script?.classId).toBe("My_Hero");
     expect(script?.source).toContain('"My Hero: Destroy Actor (Target) tried to access null."');
     expect(script?.source).not.toContain("My_Hero:");
@@ -2209,7 +2209,7 @@ describe("class name in null-access errors", () => {
 
   it("keeps the name when a packed export keys the document by guid", () => {
     const [script] = compileGraphDocuments([{
-      path: "guid-1234", classId: "My_Hero", className: classDisplayNameForGraphPath("assets/My Hero.class.babasset"),
+      path: "guid-1234", classId: "My_Hero", className: classDisplayNameForGraphPath("assets/My Hero.class.hasset"),
       content: destroysEmptyReference,
     }]);
     expect(script?.source).toContain('"My Hero: Destroy Actor (Target) tried to access null."');

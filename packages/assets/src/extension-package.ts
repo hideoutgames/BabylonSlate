@@ -1,6 +1,6 @@
-import { newGuid, type ProjectStorage } from "@babylonslate/core";
+import { newGuid, type ProjectStorage } from "@haptic/core";
 import { unzipSync } from "fflate";
-import { encodeProjectZip, readProjectTree, writeProjectTree, type ProjectTreeFile } from "./babproject";
+import { encodeProjectZip, readProjectTree, writeProjectTree, type ProjectTreeFile } from "./hproject";
 import { discoverEngineExtensions, discoverProjectExtensions, type ExtensionDescriptor } from "./extension-host";
 import { decodeExtensionSettings, encodeExtensionSettings, EXTENSIONS_DIR, EXTENSION_MANIFEST_FILE, EXTENSION_MANIFEST_MAX_BYTES, isExtensionPackagePath, type ExtensionSettings } from "./extension-settings";
 
@@ -9,7 +9,7 @@ const MAX_EXPANDED_BYTES = 256 * 1024 * 1024;
 const MAX_PACKAGE_FILES = 4096;
 const MAX_SOURCE_BYTES = 1024 * 1024;
 
-export interface InspectedBabextension {
+export interface InspectedHextension {
   settings: ExtensionSettings;
   settingsPath: typeof EXTENSION_MANIFEST_FILE;
   files: ProjectTreeFile[];
@@ -30,7 +30,7 @@ export function uniqueExtensionFolderName(displayName: string, existingFolderNam
   return `${base}-${index}`;
 }
 
-function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedBabextension {
+function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedHextension {
   const seen = new Set<string>();
   const regularFiles = files.filter((file) => !file.path.endsWith("/") || file.data.length > 0);
   if (regularFiles.length > MAX_PACKAGE_FILES ||
@@ -54,7 +54,7 @@ function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedBabextension 
     }
   }
   const manifest = regularFiles.find((file) => file.path === EXTENSION_MANIFEST_FILE);
-  if (!manifest) throw new Error("Not a .babextension: missing extension.json.");
+  if (!manifest) throw new Error("Not a .hextension: missing extension.json.");
   const settings = decodeExtensionSettings(manifest.data);
   if (!regularFiles.some((file) => file.path === settings.entryPoint)) {
     throw new Error(`Extension Entry Point is missing: ${settings.entryPoint}`);
@@ -65,7 +65,7 @@ function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedBabextension 
   return { settings, settingsPath: EXTENSION_MANIFEST_FILE, files: regularFiles };
 }
 
-export async function inspectBabextension(bytes: Uint8Array): Promise<InspectedBabextension> {
+export async function inspectHextension(bytes: Uint8Array): Promise<InspectedHextension> {
   if (bytes.byteLength > MAX_ARCHIVE_BYTES) throw new Error("Extension archive exceeds 64 MiB.");
   let expandedBytes = 0;
   let fileCount = 0;
@@ -99,7 +99,7 @@ export async function exportExtensionZip(storage: ProjectStorage, descriptor: Ex
 }
 
 export function planExtensionImport(options: {
-  incoming: InspectedBabextension;
+  incoming: InspectedHextension;
   existingExtensions: readonly ExtensionDescriptor[];
   occupiedGuids: ReadonlySet<string>;
   existingFolderNames: readonly string[];
@@ -131,7 +131,7 @@ async function writeExtensionFiles(storage: ProjectStorage, folderPath: string, 
 
 export async function applyExtensionImport(
   storage: ProjectStorage,
-  incoming: InspectedBabextension,
+  incoming: InspectedHextension,
   plan: ExtensionImportPlan,
 ): Promise<ExtensionDescriptor> {
   validateFolderName(plan.folderName);
@@ -168,7 +168,7 @@ export async function applyExtensionImport(
 
 export async function unpackEngineExtensionZip(storage: ProjectStorage, bytes: Uint8Array, folderName: string): Promise<ExtensionDescriptor> {
   validateFolderName(folderName);
-  const incoming = await inspectBabextension(bytes);
+  const incoming = await inspectHextension(bytes);
   if (await storage.exists(folderName)) throw new Error("The Engine Extension folder already exists.");
   await writeExtensionFiles(storage, folderName, incoming.files);
   const descriptor = (await discoverEngineExtensions(storage)).find((extension) => extension.folderName === folderName);
@@ -185,7 +185,7 @@ export async function installEngineExtensionDefaults(projectStorage: ProjectStor
   for (const extension of await discoverEngineExtensions(engineStorage)) {
     if (extension.invalid) continue;
     if (guids.has(extension.extensionGuid)) continue;
-    const incoming = await inspectBabextension(await exportExtensionZip(engineStorage, extension));
+    const incoming = await inspectHextension(await exportExtensionZip(engineStorage, extension));
     const folderName = uniqueExtensionFolderName(extension.folderName, folders);
     installed.push(await applyExtensionImport(projectStorage, incoming, { kind: "install", folderName }));
     guids.add(extension.extensionGuid);

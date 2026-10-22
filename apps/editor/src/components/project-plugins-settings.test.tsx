@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createEmptyProject, type PluginEnableOverride } from "@babylonslate/core";
-import { createDefaultPluginSettings, resolvePluginGraph, type PluginDescriptor } from "@babylonslate/assets";
+import { createEmptyProject, type PluginEnableOverride } from "@haptic/core";
+import { createDefaultPluginSettings, resolvePluginGraph, type PluginDescriptor } from "@haptic/assets";
 import { ProjectPluginsSettings } from "./project-plugins-settings";
 
 const harness = vi.hoisted(() => ({
@@ -39,7 +39,7 @@ function plugin(guid: string): PluginDescriptor {
     pluginGuid: guid,
     folderName: guid,
     folderPath: `plugins/${guid}`,
-    settingsPath: `plugins/${guid}/${guid}.plugin.babasset`,
+    settingsPath: `plugins/${guid}/${guid}.plugin.hasset`,
     contentPath: `plugins/${guid}/assets`,
     source: "project",
     readOnly: false,

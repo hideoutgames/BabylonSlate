@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
-import { defaultEngineSettings, type EngineSettings } from "@babylonslate/vfs";
+import { defaultEngineSettings, type EngineSettings } from "@haptic/vfs";
 import { KeybindSettings } from "./keybind-settings";
 
 afterEach(cleanup);

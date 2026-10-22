@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { CONTENT_BROWSER_ID } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID } from "@haptic/core";
 import {
   DOCUMENT_IDLE_UNMOUNT_MS,
   advanceTestIdleClock,
@@ -9,7 +9,7 @@ import {
   useDocumentWorkingSet,
 } from "./document-working-set";
 
-vi.mock("@babylonslate/vfs", () => ({
+vi.mock("@haptic/vfs", () => ({
   isTestModeEnabled: () => true,
 }));
 

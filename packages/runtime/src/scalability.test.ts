@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { compileGraph, validateGraphs, ENGINE_ENUMS, ENGINE_STRUCTS, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { compileGraph, validateGraphs, ENGINE_ENUMS, ENGINE_STRUCTS, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 
 const registry = createDefaultNodeRegistry();
 function node(id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode {

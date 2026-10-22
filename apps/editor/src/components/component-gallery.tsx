@@ -1,4 +1,4 @@
-import type { AssetLoadingPolicy } from "@babylonslate/core";
+import type { AssetLoadingPolicy } from "@haptic/core";
 import {
   EyeIcon,
   EyeOffIcon,
@@ -80,20 +80,20 @@ import {
   type PropertyRow,
   type TreeViewNode,
   type VariableTypeFieldsValue,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   PARTICLE_VALUE_SPECS,
   convertScalarValueMode,
   ensureTilesetTiles,
   normalizeTilesetPayload,
   type ParticleScalarValue,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   ASSET_COLOR_VAR,
   PIN_COLOR_VAR,
   basicParticleStageRole,
-} from "@babylonslate/ui/lib/data-types";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+} from "@haptic/ui/lib/data-types";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,52 +105,52 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/alert-dialog";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+} from "@haptic/ui/components/toggle-group";
+import { Toggle } from "@haptic/ui/components/toggle";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@babylonslate/ui/components/card";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
+} from "@haptic/ui/components/card";
+import { Checkbox } from "@haptic/ui/components/checkbox";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   Field,
   FieldGroup,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@babylonslate/ui/components/resizable";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@babylonslate/ui/components/dialog";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@babylonslate/ui/components/sheet";
-import { Skeleton } from "@babylonslate/ui/components/skeleton";
-import { Slider } from "@babylonslate/ui/components/slider";
-import { Switch } from "@babylonslate/ui/components/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@babylonslate/ui/components/tabs";
+} from "@haptic/ui/components/resizable";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
+import { Separator } from "@haptic/ui/components/separator";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@haptic/ui/components/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@haptic/ui/components/sheet";
+import { Skeleton } from "@haptic/ui/components/skeleton";
+import { Slider } from "@haptic/ui/components/slider";
+import { Switch } from "@haptic/ui/components/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@haptic/ui/components/tabs";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 
 const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
   { id: "rename", label: "Rename", shortcut: "F2", onSelect: () => {} },

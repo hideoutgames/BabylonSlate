@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   areaRectLightBindings,
   deformerBindings,
@@ -27,8 +27,8 @@ import {
   waterKindForClass,
   type SerializedScene,
   type Transform,
-} from "@babylonslate/core";
-import { MaterialObject, type Actor, type ActorComponent, type World } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { MaterialObject, type Actor, type ActorComponent, type World } from "@haptic/object-model";
 import { actorParentGuid } from "./actor-world-transform";
 import type { CableWorldSync } from "./cable-sync";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";

@@ -17,12 +17,12 @@ import {
   type Result,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   subsystemBaseClassIdOf,
   type SubsystemClassHierarchy,
-} from "@babylonslate/object-model";
-import { dataAssetDependencies, dataGraphAssetDependencies } from "@babylonslate/assets";
+} from "@haptic/object-model";
+import { dataAssetDependencies, dataGraphAssetDependencies } from "@haptic/assets";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type {
   ExportClosureInput,

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
+import { Button } from "@haptic/ui/components/button";
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import type { SimulationSession } from "../services/simulation-session";
 
 export function SimulationRetentionDialog({ session, onStop }: { session: SimulationSession; onStop: () => void }) {

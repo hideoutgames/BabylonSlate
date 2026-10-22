@@ -8,7 +8,7 @@ import {
   type SerializedScene,
   type SerializedTransform,
   type Transform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   mergeNavBakeMeshes,
   recastMeshesFromCollider2d,
@@ -19,13 +19,13 @@ import {
   type NavBakeBounds,
   type NavBakeMeshPart,
   type XyChain,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 import {
   bakeColliderLocal,
   multiplyQuat,
   parseColliderProperties,
   quatToPlanarAngle,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import type { EditorSceneSync } from "./editor-scene-sync";
 import { visualMeshes } from "./visual-meshes";
 import { isEditorCameraModel } from "./editor-camera-model";

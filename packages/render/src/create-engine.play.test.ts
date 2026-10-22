@@ -11,7 +11,7 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   areaRectLightBindings,
@@ -31,15 +31,15 @@ import {
   parseJoystick2DProperties,
   parseUIControl2DProperties,
   type RenderSettingsPatch,
-} from "@babylonslate/core";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/core";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@haptic/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { isFixedShapeLightingEnabled } from "./fixed-light-admission";
@@ -3331,7 +3331,7 @@ describe("Play createEngine view", () => {
     const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
       .map((material) => (material.getBlockByName("gain") as InputBlock).value);
     const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
-    const write = (owner: Extract<import("@babylonslate/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
+    const write = (owner: Extract<import("@haptic/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 });
     write(worldOwner, "first", 0.7);
@@ -4024,7 +4024,7 @@ describe("Play createEngine view", () => {
   });
 
   it("routes playSound through an injected audio backend after unlock", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const engine = sharedEngine();
@@ -4264,7 +4264,7 @@ describe("Play createEngine view", () => {
   });
 
   it("holds a spatial voice still after its emitter despawns and another actor reuses the slot", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     // The Fake keeps the reused pose row by reference; record each placement.
@@ -4314,7 +4314,7 @@ describe("Play createEngine view", () => {
   });
 
   it("places a spatial voice and moves the listener once per applied snapshot", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const placed: number[] = [];
@@ -4364,7 +4364,7 @@ describe("Play createEngine view", () => {
   });
 
   it("poses only the actors voices emit from, and places a voice starting on another actor at once", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const placed: number[] = [];

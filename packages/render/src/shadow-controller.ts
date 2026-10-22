@@ -26,7 +26,7 @@ import {
   effectiveShadowSettings,
   SHADOW_CAPACITY_PROFILES,
   type ShadowSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";

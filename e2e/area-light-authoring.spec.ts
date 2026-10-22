@@ -10,11 +10,11 @@ import { saveAllIfEnabled } from "./save-all";
 import { renderingEvidence } from "./rendering-evidence";
 
 type AuthoringHost = {
-  __babylonslateTest: { activeSceneContent(): SerializedScene };
-  __babylonslateViewportTest: { renderingBaseline(): { render: ReturnType<EngineHandle["renderDiagnostics"]> } | null };
+  __hapticTest: { activeSceneContent(): SerializedScene };
+  __hapticViewportTest: { renderingBaseline(): { render: ReturnType<EngineHandle["renderDiagnostics"]> } | null };
 };
-const scene = (page: Page) => page.evaluate(() => (window as unknown as AuthoringHost).__babylonslateTest.activeSceneContent());
-const areaBytes = (page: Page) => page.evaluate(() => (window as unknown as AuthoringHost).__babylonslateViewportTest.renderingBaseline()?.render.gpuReservations.categoryBytes.areaLight);
+const scene = (page: Page) => page.evaluate(() => (window as unknown as AuthoringHost).__hapticTest.activeSceneContent());
+const areaBytes = (page: Page) => page.evaluate(() => (window as unknown as AuthoringHost).__hapticViewportTest.renderingBaseline()?.render.gpuReservations.categoryBytes.areaLight);
 
 test("rectangular-light authoring, prepared Texture, history, duplication and reopen retain owned resources", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
@@ -24,7 +24,7 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   const payload = { width: 8, height: 8, usage: "emissive", colorSpace: "srgb" };
   const rgba = new Uint8Array(8 * 8 * 4);
   for (let index = 0; index < rgba.length; index += 4) rgba.set([64, 220, 90, 255], index);
-  files.set("assets/emission.babasset", await encodeAssetDocument({ guid: "emission", name: "Emission", type: "Texture", version: 1, payload }, {
+  files.set("assets/emission.hasset", await encodeAssetDocument({ guid: "emission", name: "Emission", type: "Texture", version: 1, payload }, {
     headerPayload: payload, extraChunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: await encodeRgbaPng(8, 8, rgba) }],
   }));
   await openMinimalTestProject(page, files);
@@ -44,7 +44,7 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   await page.getByTestId("redo-document").click(); await expect(width).toHaveValue("2.5");
   await expect.poll(() => areaBytes(page)).toBe(65_536);
 
-  await openAssetFromBrowser(page, "assets/emission.babasset");
+  await openAssetFromBrowser(page, "assets/emission.hasset");
   await page.getByRole("button", { name: "Prepare Emission", exact: true }).click();
   await expect(page.getByRole("button", { name: "Check Emission Data", exact: true })).toBeEnabled({ timeout: 30_000 });
   await expect(page.getByRole("status").filter({ hasText: /^Ready$/ })).toBeVisible();
@@ -75,7 +75,7 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   // Reopen materializes optional identity transforms and null attachments.
   expect(reopened).toEqual(normalizeScene({ actors: emitters }).actors);
   await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
-  await openAssetFromBrowser(page, "assets/emission.babasset");
+  await openAssetFromBrowser(page, "assets/emission.hasset");
   await expect(page.getByRole("button", { name: "Check Emission Data", exact: true })).toBeEnabled();
   expect(errors).toEqual([]);
   await testInfo.attach("area-authoring-evidence", { body: JSON.stringify({ evidence: renderingEvidence("e2e/area-light-authoring.spec.ts"), emitterCount: reopened.length }), contentType: "application/json" });

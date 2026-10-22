@@ -2,7 +2,7 @@ import {
   slimGlbEmbeddedImages,
   shouldSlimModelEmbeddedTextures,
   type PackedTextureSlimProof,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 const GLB_MAGIC = 0x46546c67;
 const CHUNK_JSON = 0x4e4f534a;
@@ -37,8 +37,8 @@ export function isGltfModelBytes(
 }
 
 /**
- * Copy a babasset / payload `subarray` into a packed buffer. Some glTF paths
- * read `bytes.buffer` without `byteOffset`, so a view into a .babasset file
+ * Copy a hasset / payload `subarray` into a packed buffer. Some glTF paths
+ * read `bytes.buffer` without `byteOffset`, so a view into a .hasset file
  * fails to parse.
  */
 export function packedGltfBytes(bytes: Uint8Array): Uint8Array {

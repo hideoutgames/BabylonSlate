@@ -15,17 +15,17 @@ import {
   richTextImageGuids,
   type GraphClassMember,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   materialDependencies,
   materialInstanceDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { animationAssetGuids } from "./animation-payload";
 import { audioAssetDependencies } from "./audio-payload";
-import { ASSET_DEPENDENCY_METADATA_VERSION } from "./babasset";
+import { ASSET_DEPENDENCY_METADATA_VERSION } from "./hasset";
 import { dataAssetDependencies, dataGraphAssetDependencies, type DataDefinitionFieldsResolver } from "./data-asset-refs";
 import { modelAssetGuids } from "./model-payload";
 import { particleAssetDependencies } from "./particle-payload";

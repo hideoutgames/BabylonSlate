@@ -1,25 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, MAIN_SCENE_FILE, type SerializedScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, MAIN_SCENE_FILE, type SerializedScene } from "@haptic/core";
 import {
   AUDIO_REVERB_CHUNK_ID,
   BLOBS_DIR,
   createVfsBlobStore,
   decodeAssetDocument,
-  decodeBabasset,
+  decodeHasset,
   DEFAULT_BLOB_THRESHOLD,
-  encodeBabasset,
+  encodeHasset,
   readAssetDocumentHeader,
   sha256Hex,
   type ChunkInput,
-} from "@babylonslate/assets";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { ProjectService } from "./project-service";
 
 async function scaffolded() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("Carry.babproject");
+  await storage.openDocumentsProject("Carry.hproject");
   await installMinimalProject(storage);
   const service = new ProjectService(storage);
   await service.loadCurrentProject();
@@ -31,14 +31,14 @@ const bigBytes = (seed: number) => new Uint8Array(DEFAULT_BLOB_THRESHOLD + 11).m
 const blobPath = async (bytes: Uint8Array) => `${BLOBS_DIR}/${await sha256Hex(bytes)}`;
 const asRecord = (scene: unknown) => scene as Record<string, unknown>;
 
-const TEXTURE_PATH = "assets/hero.babasset";
+const TEXTURE_PATH = "assets/hero.hasset";
 const PIXELS = bigBytes(1);
 const ENCODE = new Uint8Array([2, 3, 4]);
 
 /** A compressed Texture whose source pixels are a blob and whose encode is inline. */
 async function writeTexture(storage: MemoryStorageAdapter): Promise<void> {
   const blobs = createVfsBlobStore(storage);
-  await storage.writeBinary(TEXTURE_PATH, await encodeBabasset({
+  await storage.writeBinary(TEXTURE_PATH, await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [], dependencies: [],
       guid: "tex-hero", type: "Texture", name: "hero", engineVersion: "0.0.0", version: 1, mode: "thin", parentClass: null,
@@ -53,7 +53,7 @@ async function writeTexture(storage: MemoryStorageAdapter): Promise<void> {
 }
 
 describe("a document save reuses what it stores", () => {
-  const path = "assets/Hero.class.babasset";
+  const path = "assets/Hero.class.hasset";
   const content = { nodes: [], edges: [], properties: { label: "Hero" } };
 
   it("leaves the file, its index entry and the registry alone when nothing changed", async () => {
@@ -86,7 +86,7 @@ describe("a document save reuses what it stores", () => {
 
     await service.saveDocument("graph", path, { ...content, properties: { label: "Champion" } }, { parentClass: "Pawn" });
     expect(writes).toHaveBeenCalledTimes(2);
-    expect((await decodeBabasset(await storage.readBinary(path))).header.parentClass).toBe("Pawn");
+    expect((await decodeHasset(await storage.readBinary(path))).header.parentClass).toBe("Pawn");
   });
 
   it("saves a Texture's settings without reading its source pixels or encodes again", async () => {
@@ -104,7 +104,7 @@ describe("a document save reuses what it stores", () => {
 
     expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(pixelsBlob);
     reads.mockRestore();
-    const saved = await decodeBabasset(await storage.readBinary(TEXTURE_PATH), (sha256) => createVfsBlobStore(storage).readBlob(sha256));
+    const saved = await decodeHasset(await storage.readBinary(TEXTURE_PATH), (sha256) => createVfsBlobStore(storage).readBlob(sha256));
     expect(saved.header.payload).toMatchObject({ usage: "pixelArt", ktx2ChunkId: "ktx2:abc", ktx2Sha256: await sha256Hex(ENCODE) });
     expect(saved.header.chunks.map((entry) => entry.id)).toEqual(["pixels", "ktx2:abc"]);
     expect(saved.chunks.get("pixels")).toEqual(PIXELS);
@@ -125,7 +125,7 @@ describe("a document save reuses what it stores", () => {
 });
 
 describe("a document save over damaged or changing storage", () => {
-  const path = "assets/Hero.class.babasset";
+  const path = "assets/Hero.class.hasset";
   const content = { nodes: [], edges: [], properties: { label: "Hero" } };
   const bigLabel = (letter: string) => letter.repeat(DEFAULT_BLOB_THRESHOLD + 10);
 
@@ -144,7 +144,7 @@ describe("a document save over damaged or changing storage", () => {
     expect(writes).toHaveBeenCalledTimes(1);
     writes.mockRestore();
     expect(await storage.readBinary(path)).toEqual(good);
-    await expect(decodeBabasset(await storage.readBinary(path))).resolves.toBeDefined();
+    await expect(decodeHasset(await storage.readBinary(path))).resolves.toBeDefined();
   });
 
   it("refuses an identical save over a document blob damaged at the same length, yet still saves changed content", async () => {
@@ -366,10 +366,10 @@ describe("a Scene's navmesh bake", () => {
   /** The main Scene rewritten to hold, after its document, an old `navmesh`, a blob-sized `sidecar` and a small `note`. Resolves to its payload. */
   async function withSceneExtras(storage: MemoryStorageAdapter, inline = false): Promise<Record<string, unknown>> {
     const blobs = createVfsBlobStore(storage);
-    const decoded = await decodeBabasset(await storage.readBinary(MAIN_SCENE_FILE));
+    const decoded = await decodeHasset(await storage.readBinary(MAIN_SCENE_FILE));
     const document = decoded.header.chunks.find((entry) => entry.id === "document")!;
     const body = decoded.chunks.get("document")!;
-    await storage.writeBinary(MAIN_SCENE_FILE, await encodeBabasset({
+    await storage.writeBinary(MAIN_SCENE_FILE, await encodeHasset({
       header: decoded.header,
       chunks: [
         chunkOf("document", body, document.kind, document.mime),
@@ -525,7 +525,7 @@ describe("a Scene's navmesh bake", () => {
 });
 
 describe("an Audio asset's clip writes", () => {
-  const PATH = "assets/Jump.babasset";
+  const PATH = "assets/Jump.hasset";
   const CLIP_1 = bigBytes(11);
   const CLIP_2 = bigBytes(12);
   const CLIP_3 = new Uint8Array([3, 3, 3]);
@@ -536,7 +536,7 @@ describe("an Audio asset's clip writes", () => {
   /** An imported Audio asset: three clips, two of them large enough for the blob store. */
   async function audioAsset(storage: MemoryStorageAdapter, inline = false): Promise<void> {
     const blobs = createVfsBlobStore(storage);
-    await storage.writeBinary(PATH, await encodeBabasset({
+    await storage.writeBinary(PATH, await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [], dependencies: [],
         guid: "audio-guid", type: "Audio", name: "Jump", engineVersion: "0.0.0", version: 1, mode: "thin", parentClass: null,

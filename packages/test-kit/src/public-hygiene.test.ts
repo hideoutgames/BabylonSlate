@@ -104,7 +104,7 @@ describe("public repository hygiene", () => {
   });
 
   it("scans commit messages in only the requested range", () => {
-    const directory = mkdtempSync(join(tmpdir(), "babylonslate-hygiene-"));
+    const directory = mkdtempSync(join(tmpdir(), "haptic-hygiene-"));
     try {
       execFileSync("git", ["init", "--quiet"], { cwd: directory });
       execFileSync("git", ["config", "user.email", "test@example.com"], {

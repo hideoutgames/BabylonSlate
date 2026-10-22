@@ -1,4 +1,4 @@
-import type { ResolutionQuality } from "@babylonslate/core";
+import type { ResolutionQuality } from "@haptic/core";
 import type { AbstractEngine } from "@babylonjs/core";
 
 /**

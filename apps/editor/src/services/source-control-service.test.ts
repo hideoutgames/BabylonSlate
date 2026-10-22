@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, err } from "@babylonslate/core";
-import { FakeLockProvider } from "@babylonslate/source-control";
-import { MemorySecretStore } from "@babylonslate/vfs";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, err } from "@haptic/core";
+import { FakeLockProvider } from "@haptic/source-control";
+import { MemorySecretStore } from "@haptic/vfs";
 import {
   SourceControlService,
 } from "./source-control-service";
@@ -90,9 +90,9 @@ describe("SourceControlService", () => {
       service.pausePolling();
       finish(null);
       await pending;
-      await service.autoLock("assets/current.babasset");
+      await service.autoLock("assets/current.hasset");
       expect(first.snapshot()).toEqual([]);
-      expect(second.snapshot().map((lock) => lock.path)).toEqual(["assets/current.babasset"]);
+      expect(second.snapshot().map((lock) => lock.path)).toEqual(["assets/current.hasset"]);
     } finally { service.dispose(); }
   });
 
@@ -102,17 +102,17 @@ describe("SourceControlService", () => {
     try {
       await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
       service.pausePolling();
-      await service.autoLock("assets/old.babasset");
+      await service.autoLock("assets/old.hasset");
       const unlock = vi.spyOn(fake, "unlock");
       vi.spyOn(fake, "create").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
-      await expect(service.transferLock("assets/old.babasset", "assets/new.babasset")).rejects.toThrow("Connection lost");
+      await expect(service.transferLock("assets/old.hasset", "assets/new.hasset")).rejects.toThrow("Connection lost");
       expect(service.operationError).toContain("Connection lost");
-      expect(service.bannerFor("assets/new.babasset")?.kind).toBe("unlocked");
+      expect(service.bannerFor("assets/new.hasset")?.kind).toBe("unlocked");
       expect(unlock).not.toHaveBeenCalled();
-      expect(service.lockForPath("assets/old.babasset")?.ours).toBe(true);
-      await service.autoLock("assets/new.babasset");
-      expect(service.lockForPath("assets/new.babasset")?.ours).toBe(true);
-      expect(service.bannerFor("assets/new.babasset")).toBeNull();
+      expect(service.lockForPath("assets/old.hasset")?.ours).toBe(true);
+      await service.autoLock("assets/new.hasset");
+      expect(service.lockForPath("assets/new.hasset")?.ours).toBe(true);
+      expect(service.bannerFor("assets/new.hasset")).toBeNull();
     } finally { service.dispose(); }
   });
 
@@ -122,20 +122,20 @@ describe("SourceControlService", () => {
     try {
       await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
       service.pausePolling();
-      await service.autoLock("assets/old.babasset");
+      await service.autoLock("assets/old.hasset");
       vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
-      await expect(service.transferLock("assets/old.babasset", "assets/new.babasset")).rejects.toThrow("Connection lost");
-      expect(service.operationError).toContain("assets/old.babasset");
-      expect(service.lockForPath("assets/new.babasset")?.ours).toBe(true);
-      expect(service.bannerFor("assets/new.babasset")).toBeNull();
-      expect(service.lockForPath("assets/old.babasset")?.ours).toBe(true);
+      await expect(service.transferLock("assets/old.hasset", "assets/new.hasset")).rejects.toThrow("Connection lost");
+      expect(service.operationError).toContain("assets/old.hasset");
+      expect(service.lockForPath("assets/new.hasset")?.ours).toBe(true);
+      expect(service.bannerFor("assets/new.hasset")).toBeNull();
+      expect(service.lockForPath("assets/old.hasset")?.ours).toBe(true);
     } finally { service.dispose(); }
   });
 
   it("ignores an old unlock failure after switching projects", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
-    fake.addTheirs("assets/hero.scene.babasset", "Ada");
+    fake.addTheirs("assets/hero.scene.hasset", "Ada");
     const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
     await service.configure(config);
     service.pausePolling();
@@ -158,7 +158,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const first = new FakeLockProvider({ selfName: "First Project" });
     const second = new FakeLockProvider({ selfName: "Second Project" });
-    const path = "assets/hero.scene.babasset";
+    const path = "assets/hero.scene.hasset";
     const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake: first };
     const createFirstLock = first.create.bind(first);
     let finish!: () => void;
@@ -187,12 +187,12 @@ describe("SourceControlService", () => {
   it("explains a rejected unlock without removing the cached lock", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
-    fake.addTheirs("assets/hero.scene.babasset", "Ada");
+    fake.addTheirs("assets/hero.scene.hasset", "Ada");
     await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
     service.pausePolling();
     try {
       await service.refresh();
-      const lock = service.lockForPath("assets/hero.scene.babasset")!;
+      const lock = service.lockForPath("assets/hero.scene.hasset")!;
       service.onOpenDocument(lock.path);
       expect(service.isDocumentReadOnly(lock.path)).toBe(true);
       const unlock = vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "http", status: 403, message: "No permission to unlock" }));
@@ -212,20 +212,20 @@ describe("SourceControlService", () => {
   it("reports a failed refresh, preserves cached locks, and clears the error after retry", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
-    fake.addTheirs("assets/hero.scene.babasset", "Ada");
+    fake.addTheirs("assets/hero.scene.hasset", "Ada");
     await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
     service.pausePolling();
     try {
       await service.refresh();
       expect(service.refreshState.status).toBe("ready");
-      service.onOpenDocument("assets/hero.scene.babasset");
+      service.onOpenDocument("assets/hero.scene.hasset");
       const lastSuccess = service.refreshState.lastSuccessAt;
       const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "http", status: 401, message: "Token expired" }));
       await service.refresh();
       expect(service.refreshState).toEqual({ status: "error", error: "Token expired", lastSuccessAt: lastSuccess });
       expect(service.locks).toHaveLength(1);
-      expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
-      expect(service.bannerFor("assets/hero.scene.babasset")?.kind).toBe("theirs");
+      expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(true);
+      expect(service.bannerFor("assets/hero.scene.hasset")?.kind).toBe("theirs");
       await service.refresh();
       expect(service.refreshState.status).toBe("ready");
       expect(service.refreshState.error).toBeNull();
@@ -236,7 +236,7 @@ describe("SourceControlService", () => {
   it.each(["unlocked", "ours"] as const)("restores editing when refresh confirms a former owner's lock is %s", async (state) => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
-    const path = "assets/hero.scene.babasset";
+    const path = "assets/hero.scene.hasset";
     const oldLock = fake.addTheirs(path, "Ada");
     try {
       await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
@@ -267,8 +267,8 @@ describe("SourceControlService", () => {
       fake,
     });
     expect(service.enabled).toBe(false);
-    expect(service.lockStateForPath("assets/a.babasset")).toBeNull();
-    await service.autoLock("assets/a.babasset");
+    expect(service.lockStateForPath("assets/a.hasset")).toBeNull();
+    await service.autoLock("assets/a.hasset");
     expect(fake.snapshot()).toHaveLength(0);
   });
 
@@ -284,11 +284,11 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await service.autoLock("assets/hero.scene.babasset");
-    await service.autoLock("assets/hero.scene.babasset");
-    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
+    await service.autoLock("assets/hero.scene.hasset");
+    await service.autoLock("assets/hero.scene.hasset");
+    expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
     expect(fake.snapshot()).toHaveLength(1);
-    expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
+    expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
   });
 
   it("does not notify subscribers on later edits once the lock is already ours", async () => {
@@ -306,13 +306,13 @@ describe("SourceControlService", () => {
     service.pausePolling();
     try {
       await service.refresh();
-      await service.autoLock("assets/hero.scene.babasset");
+      await service.autoLock("assets/hero.scene.hasset");
       const listener = vi.fn();
       service.subscribe(listener);
-      await service.autoLock("assets/hero.scene.babasset");
-      await service.autoLock("assets/hero.scene.babasset");
+      await service.autoLock("assets/hero.scene.hasset");
+      await service.autoLock("assets/hero.scene.hasset");
       expect(listener).not.toHaveBeenCalled();
-      expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
+      expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
     } finally {
       service.dispose();
     }
@@ -335,15 +335,15 @@ describe("SourceControlService", () => {
       vi.spyOn(fake, "create").mockResolvedValueOnce(
         err({ kind: "http", status: 503, message: "Offline" }),
       );
-      await service.autoLock("assets/hero.scene.babasset");
-      expect(service.bannerFor("assets/hero.scene.babasset")?.kind).toBe("unlocked");
-      await fake.create("assets/hero.scene.babasset");
+      await service.autoLock("assets/hero.scene.hasset");
+      expect(service.bannerFor("assets/hero.scene.hasset")?.kind).toBe("unlocked");
+      await fake.create("assets/hero.scene.hasset");
       await service.refresh();
       const listener = vi.fn();
       service.subscribe(listener);
-      await service.autoLock("assets/hero.scene.babasset");
+      await service.autoLock("assets/hero.scene.hasset");
       expect(listener).toHaveBeenCalledOnce();
-      expect(service.bannerFor("assets/hero.scene.babasset")).toBeNull();
+      expect(service.bannerFor("assets/hero.scene.hasset")).toBeNull();
     } finally {
       service.dispose();
     }
@@ -352,7 +352,7 @@ describe("SourceControlService", () => {
   it("opens theirs read-only until Edit Anyway", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
-    fake.addTheirs("assets/hero.scene.babasset", "Bob");
+    fake.addTheirs("assets/hero.scene.hasset", "Bob");
     await service.configure({
       settings: enabled,
       projectGuid: "proj",
@@ -363,42 +363,42 @@ describe("SourceControlService", () => {
       fake,
     });
     await service.refresh();
-    service.onOpenDocument("assets/hero.scene.babasset");
-    expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
-    expect(service.bannerFor("assets/hero.scene.babasset")?.kind).toBe("theirs");
-    service.setEditAnyway("assets/hero.scene.babasset");
+    service.onOpenDocument("assets/hero.scene.hasset");
+    expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(true);
+    expect(service.bannerFor("assets/hero.scene.hasset")?.kind).toBe("theirs");
+    service.setEditAnyway("assets/hero.scene.hasset");
     await service.refresh();
-    expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(false);
-    expect(service.bannerFor("assets/hero.scene.babasset")).toMatchObject({ kind: "theirs", lock: { ownerName: "Bob" } });
+    expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(false);
+    expect(service.bannerFor("assets/hero.scene.hasset")).toMatchObject({ kind: "theirs", lock: { ownerName: "Bob" } });
     service.dispose();
   });
 
   it("lifts a read-only tab when the repository changes and the new provider cannot refresh", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
-    fake.addTheirs("assets/hero.scene.babasset", "Bob");
+    fake.addTheirs("assets/hero.scene.hasset", "Bob");
     const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
     try {
       await service.configure(config);
       service.pausePolling();
       await service.refresh();
-      service.onOpenDocument("assets/hero.scene.babasset");
-      expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
+      service.onOpenDocument("assets/hero.scene.hasset");
+      expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(true);
       // The new repository's provider never verifies, so no refresh reconciles the tab.
       await service.configure({
         settings: { ...enabled, repositoryUrl: "https://changed.example/repo" },
         projectGuid: "proj", platform: "web", testMode: false, secretStore: new MemorySecretStore(), nativeHttp: null,
       });
-      expect(service.lockForPath("assets/hero.scene.babasset")).toBeUndefined();
-      expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(false);
-      expect(service.bannerFor("assets/hero.scene.babasset")).toBeNull();
+      expect(service.lockForPath("assets/hero.scene.hasset")).toBeUndefined();
+      expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(false);
+      expect(service.bannerFor("assets/hero.scene.hasset")).toBeNull();
     } finally { service.dispose(); }
   });
 
   it.each(["conflicts", "is offline"] as const)("never blocks an edit when create %s", async (failure) => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
-    if (failure === "conflicts") fake.addTheirs("assets/a.babasset", "Bob");
+    if (failure === "conflicts") fake.addTheirs("assets/a.hasset", "Bob");
     else vi.spyOn(fake, "create").mockRejectedValue(new TypeError("Failed to fetch"));
     await service.configure({
       settings: enabled,
@@ -409,9 +409,9 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await service.autoLock("assets/a.babasset");
-    expect(service.isDocumentReadOnly("assets/a.babasset")).toBe(false);
-    expect(service.bannerFor("assets/a.babasset")?.kind).toBe("unlocked");
+    await service.autoLock("assets/a.hasset");
+    expect(service.isDocumentReadOnly("assets/a.hasset")).toBe(false);
+    expect(service.bannerFor("assets/a.hasset")?.kind).toBe("unlocked");
   });
 
   it("keeps a Git LFS 409 already-ours lock as held", async () => {
@@ -419,7 +419,7 @@ describe("SourceControlService", () => {
     await secrets.set("source-control:proj", JSON.stringify({ version: 1, origin: "https://github.com", token: "token" }));
     const lock = {
       id: "lock-1",
-      path: "assets/a.babasset",
+      path: "assets/a.hasset",
       locked_at: "2026-08-15T12:00:00Z",
       owner: { name: "Ada" },
     };
@@ -449,16 +449,16 @@ describe("SourceControlService", () => {
         return { status: 500, bodyText: "{}" };
       },
     });
-    await service.autoLock("assets/a.babasset");
-    expect(service.lockForPath("assets/a.babasset")?.ours).toBe(true);
-    expect(service.bannerFor("assets/a.babasset")).toBeNull();
+    await service.autoLock("assets/a.hasset");
+    expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
+    expect(service.bannerFor("assets/a.hasset")).toBeNull();
     service.dispose();
   });
 
   it("refuses moving someone else's lock and transfers ours", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
-    fake.addTheirs("assets/theirs.babasset", "Bob");
+    fake.addTheirs("assets/theirs.hasset", "Bob");
     await service.configure({
       settings: enabled,
       projectGuid: "proj",
@@ -469,14 +469,14 @@ describe("SourceControlService", () => {
       fake,
     });
     await service.refresh();
-    expect(service.refuseIfTheirs("assets/theirs.babasset")).toMatch(/Bob/);
-    await service.autoLock("assets/mine.babasset");
+    expect(service.refuseIfTheirs("assets/theirs.hasset")).toMatch(/Bob/);
+    await service.autoLock("assets/mine.hasset");
     await service.transferLock(
-      "assets/mine.babasset",
-      "assets/renamed.babasset",
+      "assets/mine.hasset",
+      "assets/renamed.hasset",
     );
-    expect(service.lockForPath("assets/mine.babasset")).toBeUndefined();
-    expect(service.lockForPath("assets/renamed.babasset")?.ours).toBe(true);
+    expect(service.lockForPath("assets/mine.hasset")).toBeUndefined();
+    expect(service.lockForPath("assets/renamed.hasset")?.ours).toBe(true);
   });
 
   it("stores the token outside project settings", async () => {
@@ -512,7 +512,7 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await service.autoLock("assets/a.babasset");
+    await service.autoLock("assets/a.hasset");
     await service.configure({
       settings: { ...enabled, autoLockOnEdit: false },
       projectGuid: "proj",
@@ -522,7 +522,7 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    expect(service.lockForPath("assets/a.babasset")?.ours).toBe(true);
+    expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
     expect(service.autoLockOnEdit).toBe(false);
   });
 
@@ -538,7 +538,7 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await first.autoLock("assets/a.babasset");
+    await first.autoLock("assets/a.hasset");
     fake.createCount = 0;
 
     const second = new SourceControlService();
@@ -552,16 +552,16 @@ describe("SourceControlService", () => {
       fake,
     });
     await second.refresh();
-    await second.autoLock("assets/a.babasset");
+    await second.autoLock("assets/a.hasset");
     expect(fake.createCount).toBe(0);
-    expect(second.lockForPath("assets/a.babasset")?.ours).toBe(true);
-    expect(second.bannerFor("assets/a.babasset")).toBeNull();
+    expect(second.lockForPath("assets/a.hasset")?.ours).toBe(true);
+    expect(second.bannerFor("assets/a.hasset")).toBeNull();
   });
 
   it("releases our lock for a deleted path and keeps theirs", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
-    fake.addTheirs("assets/theirs.babasset", "Bob");
+    fake.addTheirs("assets/theirs.hasset", "Bob");
     await service.configure({
       settings: enabled,
       projectGuid: "proj",
@@ -571,12 +571,12 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await service.autoLock("assets/mine.babasset");
+    await service.autoLock("assets/mine.hasset");
     await service.refresh();
-    await service.releasePath("assets/mine.babasset");
-    await service.releasePath("assets/theirs.babasset");
-    expect(service.lockForPath("assets/mine.babasset")).toBeUndefined();
-    expect(service.lockForPath("assets/theirs.babasset")?.ours).toBe(false);
+    await service.releasePath("assets/mine.hasset");
+    await service.releasePath("assets/theirs.hasset");
+    expect(service.lockForPath("assets/mine.hasset")).toBeUndefined();
+    expect(service.lockForPath("assets/theirs.hasset")?.ours).toBe(false);
   });
 
   it("releases all of our locks", async () => {
@@ -591,8 +591,8 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await service.autoLock("assets/a.babasset");
-    await service.autoLock("assets/b.babasset");
+    await service.autoLock("assets/a.hasset");
+    await service.autoLock("assets/b.hasset");
     expect(service.heldCount).toBe(2);
     await service.releaseAllMine();
     expect(service.heldCount).toBe(0);
@@ -611,8 +611,8 @@ describe("SourceControlService", () => {
       nativeHttp: null,
       fake,
     });
-    await service.autoLock("assets/hero.scene.babasset");
-    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
+    await service.autoLock("assets/hero.scene.hasset");
+    expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
 
     await service.configure({
       settings: { ...enabled, enabled: false },
@@ -624,7 +624,7 @@ describe("SourceControlService", () => {
       fake,
     });
     expect(service.enabled).toBe(false);
-    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
+    expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
 
     await service.configure({
       settings: enabled,
@@ -636,7 +636,7 @@ describe("SourceControlService", () => {
       fake,
     });
     expect(service.enabled).toBe(true);
-    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
-    expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
+    expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
+    expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
   });
 });

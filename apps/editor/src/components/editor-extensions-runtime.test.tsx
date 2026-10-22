@@ -40,12 +40,12 @@ it("refuses an Extension write to a document opened after the runtime last rende
   render(<EditorExtensionsRuntime />);
   const extensionWrite = (path: string) => harness.state.guard?.(path);
   expect(harness.state.guard).not.toBeNull();
-  expect(() => extensionWrite("assets/Hero.class.babasset")).not.toThrow();
+  expect(() => extensionWrite("assets/Hero.class.hasset")).not.toThrow();
 
   harness.state.open = [
-    { id: "graph:assets/Hero.class.babasset", ref: { kind: "graph", path: "assets/Hero.class.babasset" } },
+    { id: "graph:assets/Hero.class.hasset", ref: { kind: "graph", path: "assets/Hero.class.hasset" } },
   ];
 
-  expect(() => extensionWrite("assets/Hero.class.babasset")).toThrow(/editor tab/);
-  expect(() => extensionWrite("assets/Other.material.babasset")).not.toThrow();
+  expect(() => extensionWrite("assets/Hero.class.hasset")).toThrow(/editor tab/);
+  expect(() => extensionWrite("assets/Other.material.hasset")).not.toThrow();
 });

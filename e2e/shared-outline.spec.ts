@@ -3,7 +3,7 @@ import type { runSharedOutlineProof, SharedOutlineProofProgress } from "../apps/
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { renderingEvidence } from "./rendering-evidence";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2"] as const) {
@@ -31,7 +31,7 @@ for (const backend of ["webgl2"] as const) {
       if (message.type() === "error" || message.type() === "warning")
         recordDiagnostic({ kind: `console-${message.type()}`, text: message.text(), location: message.location() });
     });
-    await page.exposeFunction("__babylonslateSharedOutlineProgress", async (entry: SharedOutlineProofProgress) => {
+    await page.exposeFunction("__hapticSharedOutlineProgress", async (entry: SharedOutlineProofProgress) => {
       const { image, ...record } = entry;
       progress.push(record);
       if (image)
@@ -41,13 +41,13 @@ for (const backend of ["webgl2"] as const) {
       });
     });
     await page.goto("/?test=1&sharedOutlineProof=1");
-    await page.waitForFunction(() => "__babylonslateSharedOutlineProof" in window);
+    await page.waitForFunction(() => "__hapticSharedOutlineProof" in window);
     const report = await page.evaluate((backend) => {
       const host = window as unknown as {
-        __babylonslateSharedOutlineProof: typeof runSharedOutlineProof;
-        __babylonslateSharedOutlineProgress: (entry: SharedOutlineProofProgress) => Promise<void>;
+        __hapticSharedOutlineProof: typeof runSharedOutlineProof;
+        __hapticSharedOutlineProgress: (entry: SharedOutlineProofProgress) => Promise<void>;
       };
-      return host.__babylonslateSharedOutlineProof(backend, (entry) => host.__babylonslateSharedOutlineProgress(entry));
+      return host.__hapticSharedOutlineProof(backend, (entry) => host.__hapticSharedOutlineProgress(entry));
     }, backend).finally(async () => {
       await Promise.all(pendingDiagnostics);
       await testInfo.attach("shared-outline-progress", {

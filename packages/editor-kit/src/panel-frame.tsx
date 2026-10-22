@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface PanelFrameProps {
   title?: string;

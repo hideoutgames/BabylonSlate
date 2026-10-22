@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
+import { createActor, createDefaultSceneSettings } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 
 describe("runtime splines", () => {

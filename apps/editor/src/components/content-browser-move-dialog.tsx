@@ -1,16 +1,16 @@
 import { useCallback, useMemo, useRef } from "react";
 import { FolderIcon } from "lucide-react";
-import type { FolderNode } from "@babylonslate/assets";
-import { TypeVisualIcon, type TypeVisual } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import type { FolderNode } from "@haptic/assets";
+import { TypeVisualIcon, type TypeVisual } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   contentBrowserMoveDialogTitle,
   contentBrowserSelectionMoves,

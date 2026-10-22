@@ -1,5 +1,5 @@
-import { defaultValueForPinType, pinDefaultPropertyKey, type LiteralPinDefault } from "@babylonslate/scripting";
-import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { defaultValueForPinType, pinDefaultPropertyKey, type LiteralPinDefault } from "@haptic/scripting";
+import { humanizePropertyLabel } from "@haptic/editor-kit";
 import { graphDataLiteralField } from "../lib/graph-inspector";
 import { useDataCatalog } from "../lib/use-data-catalog";
 import { DataValueEditor } from "./data-value-editor";

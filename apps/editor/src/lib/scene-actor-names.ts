@@ -1,4 +1,4 @@
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene } from "@haptic/core";
 
 /**
  * Keep saved names intact while telling apart actors that share one. Place and

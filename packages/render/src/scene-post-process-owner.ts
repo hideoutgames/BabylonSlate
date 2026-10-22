@@ -1,5 +1,5 @@
-import { materialParameterDefaults } from "@babylonslate/shader-graph";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
+import { materialParameterDefaults } from "@haptic/shader-graph";
+import type { MaterialParameterValue } from "@haptic/bridge";
 import {
   normalizePostProcessStack,
   type AttachedPostProcessStack, type AttachPostProcessStackOptions,

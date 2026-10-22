@@ -8,7 +8,7 @@ import {
   type ParticleBillboardMode,
   type ParticleBlendMode,
   type ParticleLoopMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   PARTICLE_CONDITION_TESTS,
   PARTICLE_OUTPUT_NODE_TYPE,

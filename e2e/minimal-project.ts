@@ -48,11 +48,11 @@ export async function openMinimalTestProject(
         await writer.close();
       }
       localStorage.setItem(
-        "babylonslate:engine-settings",
+        "haptic:engine-settings",
         JSON.stringify(settings),
       );
       localStorage.setItem(
-        "babylonslate:opfs-meta",
+        "haptic:opfs-meta",
         JSON.stringify({
           currentId: null,
           projects: [{ id, name: "TestProject" }],

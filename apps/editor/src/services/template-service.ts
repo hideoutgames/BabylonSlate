@@ -4,8 +4,8 @@ import {
   encodeProjectZip,
   type ProjectTemplateCatalogEntry,
   type ProjectTreeFile,
-} from "@babylonslate/assets";
-import { createTemplateStorage, TEMPLATE_LIBRARY_FOLDER } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { createTemplateStorage, TEMPLATE_LIBRARY_FOLDER } from "@haptic/vfs";
 import { readProjectArchive } from "./project-import";
 
 const LIBRARY_ROOT = TEMPLATE_LIBRARY_FOLDER;

@@ -6,8 +6,8 @@ import {
   multiplyAffineTransforms,
   type AffineTransform,
   type Transform,
-} from "@babylonslate/core";
-import type { Actor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import type { Actor } from "@haptic/object-model";
 
 export type ActorTransformMap = ReadonlyMap<string, Transform>;
 

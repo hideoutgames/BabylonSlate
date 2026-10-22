@@ -1,4 +1,4 @@
-import { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries } from "@babylonslate/render/gl-error-trace";
+import { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries } from "@haptic/render/gl-error-trace";
 import { collectDiagnosticEnvironment, describeError, formatDiagnosticEnvironment, recentDiagnosticLog, type DiagnosticEnvironment } from "./diagnostic-info";
 
 /** Report lines for the WebGL call trace, or how to turn it on. */

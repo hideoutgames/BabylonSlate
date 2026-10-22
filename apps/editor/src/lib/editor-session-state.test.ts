@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EditorCameraSessionState } from "@babylonslate/render";
+import type { EditorCameraSessionState } from "@haptic/render";
 import { EditorSessionState } from "./editor-session-state";
 import type { ParticleModuleId } from "./particle-value-modes";
 
@@ -25,20 +25,20 @@ describe("EditorSessionState", () => {
 
   it("gives a renamed document its own view state, never a stale entry left at the new id", () => {
     const state = new EditorSessionState();
-    state.saveCameraPose("scene:assets/old.scene.babasset", orbit);
-    state.saveCameraPose("scene:assets/new.scene.babasset", topDown);
-    state.saveGraphViewport("scene:assets/new.scene.babasset", "default", { x: 1, y: 1, zoom: 1 });
+    state.saveCameraPose("scene:assets/old.scene.hasset", orbit);
+    state.saveCameraPose("scene:assets/new.scene.hasset", topDown);
+    state.saveGraphViewport("scene:assets/new.scene.hasset", "default", { x: 1, y: 1, zoom: 1 });
     state.saveClosedModules(
-      "scene:assets/new.scene.babasset",
+      "scene:assets/new.scene.hasset",
       new Set<ParticleModuleId>(["bursts"]),
     );
 
-    state.rekeyDocument("scene:assets/old.scene.babasset", "scene:assets/new.scene.babasset");
+    state.rekeyDocument("scene:assets/old.scene.hasset", "scene:assets/new.scene.hasset");
 
-    expect(state.loadCameraPose("scene:assets/new.scene.babasset")).toEqual(orbit);
-    expect(state.loadGraphViewport("scene:assets/new.scene.babasset", "default")).toBeNull();
-    expect(state.loadClosedModules("scene:assets/new.scene.babasset")).toBeNull();
-    expect(state.loadCameraPose("scene:assets/old.scene.babasset")).toBeNull();
+    expect(state.loadCameraPose("scene:assets/new.scene.hasset")).toEqual(orbit);
+    expect(state.loadGraphViewport("scene:assets/new.scene.hasset", "default")).toBeNull();
+    expect(state.loadClosedModules("scene:assets/new.scene.hasset")).toBeNull();
+    expect(state.loadCameraPose("scene:assets/old.scene.hasset")).toBeNull();
   });
 
   it("forwards late writes through consecutive renames to the current id", () => {

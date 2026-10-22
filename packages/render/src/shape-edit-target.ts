@@ -1,4 +1,4 @@
-import { DEFORMER_COMPONENT_CLASS_ID, waterKindForClass, type SerializedScene } from "@babylonslate/core";
+import { DEFORMER_COMPONENT_CLASS_ID, waterKindForClass, type SerializedScene } from "@haptic/core";
 
 /** Explicit component selection wins over the actor's first editable shape. */
 export function selectedShapeComponent(scene: SerializedScene | null, actorIds: readonly string[], componentIds: readonly string[]) {

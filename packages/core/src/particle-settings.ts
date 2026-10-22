@@ -1,7 +1,7 @@
 /**
  * Particle literals and budgets shared by the Basic Particle Emitter schema
- * (`@babylonslate/assets`) and the Babylon-free Particle Graph IR, which cannot
- * import assets. Documents store only these string ids; `@babylonslate/render`
+ * (`@haptic/assets`) and the Babylon-free Particle Graph IR, which cannot
+ * import assets. Documents store only these string ids; `@haptic/render`
  * maps them to Babylon constants by name (.agents/reference/architecture/particles.md, "Decisions").
  */
 

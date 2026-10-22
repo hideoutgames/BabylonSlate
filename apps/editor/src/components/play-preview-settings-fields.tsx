@@ -1,12 +1,12 @@
-import type { PlayPreviewProjectSettings } from "@babylonslate/core";
-import { NumberField } from "@babylonslate/editor-kit";
+import type { PlayPreviewProjectSettings } from "@haptic/core";
+import { NumberField } from "@haptic/editor-kit";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/field";
+import { Switch } from "@haptic/ui/components/switch";
 
 export function PlayPreviewSettingsFields({
   settings,

@@ -1,5 +1,5 @@
 import { NullEngine, Scene, Vector3 } from "@babylonjs/core";
-import { normalizeWaterRemoval } from "@babylonslate/core";
+import { normalizeWaterRemoval } from "@haptic/core";
 import { describe, expect, it } from "vitest";
 import { createWaterRemovalMesh, waterRemovalOutline } from "./water-removal-mesh";
 

@@ -1,4 +1,4 @@
-import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader } from "@haptic/core";
 
 const READ_ONLY_ERROR = "Storage is read-only";
 

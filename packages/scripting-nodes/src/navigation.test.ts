@@ -3,7 +3,7 @@ import {
   compileGraph,
   createEmptyLogicGraph,
   type CodegenContext,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import { navigationNodes } from "./navigation";
 

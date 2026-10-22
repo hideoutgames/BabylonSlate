@@ -3,7 +3,7 @@ import {
   burstParticlesInWindow,
   sampleScalarCurve,
   type BasicEmissionSchedule,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 export type EmissionTarget = Pick<IParticleSystem, "emitRate" | "minLifeTime" | "maxLifeTime" | "manualEmitCount">;
 

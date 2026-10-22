@@ -5,8 +5,8 @@ export {
   PREVIEW_ERROR_MESSAGE,
   PREVIEW_STOP_MESSAGE,
   filesFromPreviewPack,
-} from "@babylonslate/exporter";
-import { isPreviewPackMessage as isPackMessage, type PreviewPackMessage } from "@babylonslate/exporter";
+} from "@haptic/exporter";
+import { isPreviewPackMessage as isPackMessage, type PreviewPackMessage } from "@haptic/exporter";
 
 export function isExpectedPreviewHostMessage(
   event: Pick<MessageEvent, "source" | "origin">,

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import type { ControlMessage } from "@babylonslate/bridge";
-import { createDefaultSceneLayer, type InputAssetDefinition } from "@babylonslate/core";
+import type { ControlMessage } from "@haptic/bridge";
+import { createDefaultSceneLayer, type InputAssetDefinition } from "@haptic/core";
 import {
   loadedBackendModules,
   resetHavokModuleCache,
   resetLoadedBackendModules,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,

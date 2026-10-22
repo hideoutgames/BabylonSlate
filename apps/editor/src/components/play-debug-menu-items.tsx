@@ -10,7 +10,7 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import {
   ClipboardCheckIcon,
   LayersIcon,

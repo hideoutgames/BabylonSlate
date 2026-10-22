@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { fitContainedRect, playFramebufferSize } from "@babylonslate/core";
+import { fitContainedRect, playFramebufferSize } from "@haptic/core";
 import { applyPlayPreviewCanvasLayout } from "./play-preview-aspect";
 
 afterEach(() => {

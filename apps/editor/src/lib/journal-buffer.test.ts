@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   appendJournalLines,
   readJournalLines,
   truncateJournal,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   commandToJournalPayload,
   EditSession,
@@ -12,7 +12,7 @@ import {
   serializeJournalLine,
   SetAssetDocumentCommand,
   type EditCommand,
-} from "@babylonslate/edit";
+} from "@haptic/edit";
 import {
   attachJournalFlushOnHide,
   JOURNAL_FLUSH_DELAY_MS,
@@ -20,7 +20,7 @@ import {
 } from "./journal-buffer";
 
 const guid = "proj-1";
-const docId = "water:assets/Lake.water.babasset";
+const docId = "water:assets/Lake.water.hasset";
 
 async function derivedStorage() {
   const storage = new MemoryStorageAdapter("documents");

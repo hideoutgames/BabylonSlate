@@ -21,7 +21,7 @@ test("Save Game authoring preserves field identity and project defaults through 
   await page.getByTestId("new-asset-name").fill("PlayerProgress");
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-  await openAssetFromBrowser(page, "assets/PlayerProgress.savegame.babasset");
+  await openAssetFromBrowser(page, "assets/PlayerProgress.savegame.hasset");
   const workspace = page.getByTestId("document-workspace-save-game");
   await expect(workspace).toBeVisible();
   await expect(page.getByTestId("windows-menu")).toBeEnabled();
@@ -59,7 +59,7 @@ test("Save Game authoring preserves field identity and project defaults through 
 
   // A closed definition must still supply typed nodes from its saved document chunk.
   await page.locator('[data-testid="document-tab"][data-document-kind="save-game"]').getByTestId("document-tab-close").click();
-  await openAssetFromBrowser(page, "assets/main.class.babasset");
+  await openAssetFromBrowser(page, "assets/main.class.hasset");
   await page.getByTestId("graph-add-node").click();
   await page.getByTestId("node-palette-search").fill("Get Save Coins");
   const getter = page.getByTestId(`node-palette-item-saveGame.getField:${identity}`);
@@ -95,7 +95,7 @@ test("Save Game authoring preserves field identity and project defaults through 
 
   await page.reload();
   await openTestProject(page);
-  await openAssetFromBrowser(page, "assets/PlayerProgress.savegame.babasset");
+  await openAssetFromBrowser(page, "assets/PlayerProgress.savegame.hasset");
   const restored = page.getByTestId(`save-field-${identity}`);
   await expect(restored.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Coins");
   await expect(restored.getByTestId(`property-default-${identity}-Default Value`)).toHaveValue("25");

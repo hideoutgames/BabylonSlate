@@ -1,5 +1,5 @@
-import { isEditorOnlyAsset, type SerializedGraph } from "@babylonslate/core";
-import type { ScriptHost } from "@babylonslate/runtime";
+import { isEditorOnlyAsset, type SerializedGraph } from "@haptic/core";
+import type { ScriptHost } from "@haptic/runtime";
 import { classIdForGraphPath } from "../services/script-compiler";
 
 export const EDITOR_UTILITY_EVENTS = {
@@ -11,7 +11,7 @@ export const EDITOR_UTILITY_EVENTS = {
 } as const;
 
 export const EDITOR_UTILITY_LIFECYCLE_EVENT =
-  "babylonslate:editor-utility-lifecycle";
+  "haptic:editor-utility-lifecycle";
 
 export function emitEditorUtilityLifecycle(event: string): void {
   if (typeof window === "undefined") return;

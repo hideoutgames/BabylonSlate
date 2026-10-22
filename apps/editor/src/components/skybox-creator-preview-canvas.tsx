@@ -1,4 +1,4 @@
-import { installTextureBytes } from "@babylonslate/render";
+import { installTextureBytes } from "@haptic/render";
 import { useEffect, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
 import {
@@ -6,14 +6,14 @@ import {
   SKYBOX_FACE_KEYS,
   emptySkyboxFaces,
   type SkyboxFaceKey,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
   createSkyboxMeshForFaces,
   resourceCacheForEngine,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { useOptionalPlay } from "../context/play-context";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 

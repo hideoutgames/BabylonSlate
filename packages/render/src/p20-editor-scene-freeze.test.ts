@@ -15,8 +15,8 @@ import {
   DEFAULT_SCENE_SKYBOX_ACTOR_ID,
   DEFAULT_SCENE_SUN_ACTOR_ID,
   DEFAULT_SCENE_SUN_COMPONENT_ID,
-} from "@babylonslate/core";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/core";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine } from "./create-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";

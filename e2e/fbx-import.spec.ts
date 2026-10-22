@@ -12,9 +12,9 @@ test("FBX worker imports a canonical model and opens its preview", async ({
       path.join(process.cwd(), "packages/render/src/__fixtures__/fbx/box.fbx"),
     );
   await expect(
-    page.locator('[data-asset-path="assets/box.babasset"]'),
+    page.locator('[data-asset-path="assets/box.hasset"]'),
   ).toBeVisible({ timeout: 30000 });
-  await openAssetFromBrowser(page, "assets/box.babasset");
+  await openAssetFromBrowser(page, "assets/box.hasset");
   const canvas = page.getByTestId("model-preview-canvas");
   await expect(canvas).toBeVisible();
   const pixels = () =>

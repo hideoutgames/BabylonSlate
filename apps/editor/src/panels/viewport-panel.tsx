@@ -1,14 +1,14 @@
 import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
-import { attachSceneBrushInput, type SceneBrushState } from "@babylonslate/render";
+import { attachSceneBrushInput, type SceneBrushState } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
+import { ContextMenuOverlay, useContextMenu } from "@haptic/editor-kit";
 import { FocusIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -16,7 +16,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
@@ -36,9 +36,9 @@ import {
   engineAdapterInfo,
   type EngineHandle,
   type EditorSceneLoadOptions,
-} from "@babylonslate/render";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
+} from "@haptic/render";
+import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
+import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@haptic/core";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -62,7 +62,7 @@ import { useOptionalNavBake } from "../context/nav-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
-import { isTestModeEnabled } from "@babylonslate/vfs";
+import { isTestModeEnabled } from "@haptic/vfs";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
@@ -1226,7 +1226,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     if (!isTestModeEnabled()) return;
     type ViewportTestHost = {
-      __babylonslateViewportTest?: {
+      __hapticViewportTest?: {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
@@ -1284,7 +1284,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const measurements = new Set<() => void>();
     let releaseFrameHold: (() => void) | null = null;
 
-      host.__babylonslateViewportTest = {
+      host.__hapticViewportTest = {
       environmentLightingProof: async () => {
         if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
         return (await import("../lib/environment-lighting-proof")).runEnvironmentLightingProof();
@@ -1633,7 +1633,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       for (const cancel of measurements) cancel();
       unsubscribeSettings();
       releaseFrameHold?.();
-      delete host.__babylonslateViewportTest;
+      delete host.__hapticViewportTest;
     };
   }, [commitGizmoTransform, ensureSharedEngine]);
 

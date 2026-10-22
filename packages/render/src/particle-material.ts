@@ -1,5 +1,5 @@
 import { NodeMaterialModes, type NodeMaterial } from "@babylonjs/core";
-import type { MaterialDocument } from "@babylonslate/shader-graph";
+import type { MaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import type { ParticleMaterialOwner } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";

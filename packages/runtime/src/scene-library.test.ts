@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene, type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
+import { createDefaultScene, type SerializedScene, type SerializedSceneLayer } from "@haptic/core";
 import { indexSceneLibrary } from "./scene-library";
 
 function named(name: string): SerializedScene {

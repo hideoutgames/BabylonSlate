@@ -1,4 +1,4 @@
-import { createDefaultMaterialDocument, materialDependencies } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, materialDependencies } from "@haptic/shader-graph";
 import type { GlbBrowseMaterial } from "./glb-parse";
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};

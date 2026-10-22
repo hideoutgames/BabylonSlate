@@ -7,7 +7,7 @@ import {
   identitySerializedTransform,
   type SerializedScene,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { unfreezeActorWorldMatrix } from "./scene-loader";

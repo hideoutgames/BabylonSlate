@@ -13,8 +13,8 @@ import {
   ToolbarStrip,
   assetRowIdentity,
   selectedPickerIdentity,
-} from "@babylonslate/editor-kit";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+} from "@haptic/editor-kit";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,12 +24,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldError } from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/alert-dialog";
+import { Button } from "@haptic/ui/components/button";
+import { FieldError } from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
+import { Separator } from "@haptic/ui/components/separator";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   fontFamilyFromRepresentationFileName,
   glyphsFallingToFallback,
@@ -37,9 +37,9 @@ import {
   mergeFontAttachPayload,
   msdfAtlasPickError,
   normalizeFontPayload,
-} from "@babylonslate/assets";
-import { FontRegistry } from "@babylonslate/render";
-import { pickImportFiles } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { FontRegistry } from "@haptic/render";
+import { pickImportFiles } from "@haptic/vfs";
 import {
   useDocumentActions,
   useOpenDocument,

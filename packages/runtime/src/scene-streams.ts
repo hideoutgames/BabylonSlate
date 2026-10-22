@@ -1,11 +1,11 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   cloneSceneStreamingActorsSteps,
   type SceneStreamingState,
   type SerializedActor,
   type SerializedScene,
   type Transform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   Actor,
   ActorComponent,
@@ -16,8 +16,8 @@ import {
   type BObject,
   type LifecycleHooks,
   type World,
-} from "@babylonslate/object-model";
-import type { PhysicsWorldKind } from "@babylonslate/physics";
+} from "@haptic/object-model";
+import type { PhysicsWorldKind } from "@haptic/physics";
 import { composeParentChildTransform } from "./actor-world-transform";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";

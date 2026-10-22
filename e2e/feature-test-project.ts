@@ -9,11 +9,11 @@ export const FEATURE_TEST_PROJECT = "FeatureTest";
 
 /** FeatureTest scene documents that perf routes can open by name. */
 export const FEATURE_TEST_SCENES = {
-  main: "assets/main.scene.babasset",
-  stress: "assets/FeatureTest/Scenes/FT_Stress.scene.babasset",
-  clustered: "assets/FeatureTest/Scenes/FT_Clustered.scene.babasset",
-  "2d": "assets/FeatureTest/Scenes/FT_2D.scene.babasset",
-  world: "assets/FeatureTest/Scenes/FT_World.scene.babasset",
+  main: "assets/main.scene.hasset",
+  stress: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset",
+  clustered: "assets/FeatureTest/Scenes/FT_Clustered.scene.hasset",
+  "2d": "assets/FeatureTest/Scenes/FT_2D.scene.hasset",
+  world: "assets/FeatureTest/Scenes/FT_World.scene.hasset",
 } as const;
 
 export type FeatureTestSceneName = keyof typeof FEATURE_TEST_SCENES;
@@ -37,7 +37,7 @@ export async function seedEngineSettings(
   settings.debugMode = true;
   patch(settings);
   await page.evaluate(
-    (value) => localStorage.setItem("babylonslate:engine-settings", JSON.stringify(value)),
+    (value) => localStorage.setItem("haptic:engine-settings", JSON.stringify(value)),
     settings,
   );
 }
@@ -158,8 +158,8 @@ export async function waitForTextureEncodes(page: Page, timeout = LONG_MS): Prom
       () =>
         page.evaluate(
           () =>
-            (globalThis as unknown as { __babylonslateTest?: { pendingTextureEncodes: () => string[] } })
-              .__babylonslateTest?.pendingTextureEncodes().length ?? -1,
+            (globalThis as unknown as { __hapticTest?: { pendingTextureEncodes: () => string[] } })
+              .__hapticTest?.pendingTextureEncodes().length ?? -1,
         ),
       { timeout, intervals: [500, 1000, 2000] },
     )

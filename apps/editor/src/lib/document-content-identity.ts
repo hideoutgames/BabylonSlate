@@ -1,4 +1,4 @@
-import { stableStringify } from "@babylonslate/assets";
+import { stableStringify } from "@haptic/assets";
 
 /**
  * Identity of an open document's content, recorded when its tab closes with

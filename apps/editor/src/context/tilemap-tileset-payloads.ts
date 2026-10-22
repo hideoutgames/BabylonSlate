@@ -3,7 +3,7 @@ import {
   normalizeTilesetPayload,
   type IndexedAsset,
   type TilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 /**
  * Where a Tilemap's referenced Tileset payload comes from: the open tab's

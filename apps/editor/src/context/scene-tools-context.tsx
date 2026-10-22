@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { LandscapeBrush } from "@babylonslate/core";
+import type { LandscapeBrush } from "@haptic/core";
 
 type FoliageBrush = { radius: number; density: number; spacing: number; maxSlope: number; alignToNormal: boolean; randomYaw: boolean };
 function useSceneToolsState() {

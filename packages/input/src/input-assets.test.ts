@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeInputAssetPayload,
   type InputAssetDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { inputMappingsFromAssets } from "./input-assets";
 import { InputResolver } from "./resolver";
 import type { RawInputEvent } from "./ring-buffer";

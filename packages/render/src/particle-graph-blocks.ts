@@ -52,14 +52,14 @@ import {
   PARTICLE_UPDATE_SPEED,
   particlePrewarmSteps,
   type ParticleSpace,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   resizeParticleValue,
   type ParticleGradientStop,
   type ParticleGraphSettings,
   type ParticleNumericType,
   type ParticleOperation,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
 /**

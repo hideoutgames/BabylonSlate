@@ -6,7 +6,7 @@ import type {
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ASSET_DOCUMENT_KINDS,
   CONTENT_BROWSER_ID,
@@ -18,9 +18,9 @@ import {
   isContentBrowserId,
   isSceneWorkspaceKind,
   parseDocumentId,
-} from "@babylonslate/core";
-import type { ProjectDocument } from "@babylonslate/core";
-import type { AssetLoadScope } from "@babylonslate/assets";
+} from "@haptic/core";
+import type { ProjectDocument } from "@haptic/core";
+import type { AssetLoadScope } from "@haptic/assets";
 import { recordDocumentDirty } from "../lib/dirty-trace";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { editorTabContentForKind } from "../lib/scene-layer-document";

@@ -2,7 +2,7 @@ import {
   documentKindForAssetType,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_REVERB_CHUNK_ID,
@@ -23,10 +23,10 @@ import {
   selectTextureChunk,
   shouldCompressTexture,
   textureEncodeBlockAlign,
-  type BabassetHeader,
+  type HassetHeader,
   type IndexedAsset,
-} from "@babylonslate/assets";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation/chunk";
+} from "@haptic/assets";
+import { NAVMESH_CHUNK_ID } from "@haptic/navigation/chunk";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 
 const JSON_TYPES = new Set<string>([
@@ -71,12 +71,12 @@ const SCENE_EXPORT_CHUNK_IDS = [NAVMESH_CHUNK_ID, AUDIO_REVERB_CHUNK_ID] as cons
 const FONT_SIDECAR_CHUNK_IDS = [FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] as const;
 
 /** Chunks to read with a document: fixed ids, or chosen from the header of the version being read. */
-export type ExportChunkSelection = readonly string[] | ((header: BabassetHeader) => readonly string[]);
+export type ExportChunkSelection = readonly string[] | ((header: HassetHeader) => readonly string[]);
 
 /** A document with its header and selected chunks, all from one saved version. */
 export type ExportDocumentSnapshot = {
   document: unknown;
-  header: BabassetHeader;
+  header: HassetHeader;
   chunks: ReadonlyMap<string, Uint8Array>;
 };
 
@@ -127,7 +127,7 @@ function isAudioClipChunkId(id: string): boolean {
 }
 
 /** A Font's source (woff/ttf): its first chunk that is neither the document nor a sidecar. */
-function fontSourceChunkId(header: BabassetHeader): string | undefined {
+function fontSourceChunkId(header: HassetHeader): string | undefined {
   return header.chunks.find((chunk) => chunk.id !== DOCUMENT_CHUNK_ID &&
     !(FONT_SIDECAR_CHUNK_IDS as readonly string[]).includes(chunk.id))?.id;
 }
@@ -143,11 +143,11 @@ function exportChunkSelection(type: string): ExportChunkSelection | null {
   }
 }
 
-function texturePixelsChunk(header: BabassetHeader) {
+function texturePixelsChunk(header: HassetHeader) {
   return header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
 }
 
-function textureUsage(header: BabassetHeader): string {
+function textureUsage(header: HassetHeader): string {
   return String(header.payload.usage ?? "albedo");
 }
 
@@ -156,7 +156,7 @@ function textureUsage(header: BabassetHeader): string {
  * uncompressed Usage; for a stale Particle KTX2 once `withPixels`), and the
  * current area emission.
  */
-function textureChunkIds(header: BabassetHeader, transcoderAvailable: boolean, withPixels: boolean): string[] {
+function textureChunkIds(header: HassetHeader, transcoderAvailable: boolean, withPixels: boolean): string[] {
   const selected = selectTextureChunk(header, { transcoderAvailable });
   const pixels = texturePixelsChunk(header);
   const ids = [selected.chunk.id];

@@ -5,13 +5,13 @@ import {
   createDefaultScene,
   createMeshComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { createTestEngine } from "./create-null-engine";
 import { ResourceCache } from "./resource-cache";
 import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";

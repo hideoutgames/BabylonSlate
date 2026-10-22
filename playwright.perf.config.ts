@@ -2,18 +2,18 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Local performance-route configuration. Not used by CI. Run through the
- * owned test server (scripts/browser-session.mjs) so BL_TEST_BASE_URL and the
+ * owned test server (scripts/browser-session.mjs) so HAPTIC_TEST_BASE_URL and the
  * build identity are set, e.g.
- *   BL_PERF_ROUTE=1 node scripts/browser-session.mjs <test-build-dir> \
+ *   HAPTIC_PERF_ROUTE=1 node scripts/browser-session.mjs <test-build-dir> \
  *     --config playwright.perf.config.ts --project perf-gpu e2e/play-performance-route.spec.ts
  * The FeatureTest route (agents' default workload) is opt-in the same way:
- *   BL_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts \
+ *   HAPTIC_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
  * The FeatureTest fly-through route counts camera-motion events per frame:
- *   BL_PERF_FLYTHROUGH=1 pnpm run test:e2e e2e/feature-test-flythrough-route.spec.ts \
+ *   HAPTIC_PERF_FLYTHROUGH=1 pnpm run test:e2e e2e/feature-test-flythrough-route.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
  * The FeatureTest cold-load route counts shader programs, modules and pipelines per scene load:
- *   BL_PERF_LOAD=1 pnpm run test:e2e e2e/feature-test-load-route.spec.ts \
+ *   HAPTIC_PERF_LOAD=1 pnpm run test:e2e e2e/feature-test-load-route.spec.ts \
  *     --config playwright.perf.config.ts --project perf-gpu
  * The editor-edit profiling route also needs a React profiling build:
  *   VITE_REACT_PROFILING=true pnpm run test:e2e e2e/editor-edit-profile.spec.ts \
@@ -27,11 +27,11 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
-  metadata: { testRunNonce: process.env.BL_TEST_SERVER_NONCE },
+  metadata: { testRunNonce: process.env.HAPTIC_TEST_SERVER_NONCE },
   outputDir: "test-results/perf-route",
   globalSetup: "./e2e/verify-test-server.ts",
   use: {
-    baseURL: process.env.BL_TEST_BASE_URL,
+    baseURL: process.env.HAPTIC_TEST_BASE_URL,
     trace: "off",
     video: "off",
   },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultAudioPayload } from "@babylonslate/assets";
-import { FakeAudioPlaybackBackend } from "@babylonslate/render/audio-playback-backend";
+import { createDefaultAudioPayload } from "@haptic/assets";
+import { FakeAudioPlaybackBackend } from "@haptic/render/audio-playback-backend";
 import { createAudioPreviewSession } from "./audio-preview";
 
 describe("createAudioPreviewSession", () => {
@@ -78,15 +78,15 @@ describe("createAudioPreviewSession", () => {
   it("pauses preview through native interruptions and app backgrounding", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const session = createAudioPreviewSession({ backend, readChunk: async () => new Uint8Array([1]) });
-    window.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "began" } }));
+    window.dispatchEvent(new CustomEvent("haptic:audiointerruption", { detail: { type: "began" } }));
     expect(backend.paused).toBe(true);
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
-    window.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "ended", shouldResume: true } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } }));
+    window.dispatchEvent(new CustomEvent("haptic:audiointerruption", { detail: { type: "ended", shouldResume: true } }));
     expect(backend.paused).toBe(true);
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } }));
     expect(backend.paused).toBe(false);
     session.dispose();
-    window.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "began" } }));
+    window.dispatchEvent(new CustomEvent("haptic:audiointerruption", { detail: { type: "began" } }));
     expect(backend.paused).toBe(false);
   });
 

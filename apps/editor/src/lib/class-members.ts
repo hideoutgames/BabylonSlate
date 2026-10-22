@@ -6,23 +6,23 @@ import {
   type GraphClassMemberKind,
   type GraphClassMemberPin,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   engineParentOf,
   formatEventMemberName,
   formatEventTitle,
   walkAncestry,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
-} from "@babylonslate/object-model";
-import { flowNodes, SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
-import { defaultValueForMember } from "@babylonslate/scripting";
-import { nextCopyName } from "@babylonslate/assets";
-import { NODE_PLACEMENT_GAP, estimateGraphNodeSize } from "@babylonslate/graph-ui";
+} from "@haptic/object-model";
+import { flowNodes, SUBSYSTEM_GET_NODE_ID } from "@haptic/scripting-nodes";
+import { defaultValueForMember } from "@haptic/scripting";
+import { nextCopyName } from "@haptic/assets";
+import { NODE_PLACEMENT_GAP, estimateGraphNodeSize } from "@haptic/graph-ui";
 
 export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 

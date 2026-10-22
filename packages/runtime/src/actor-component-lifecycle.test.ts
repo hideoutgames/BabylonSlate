@@ -4,7 +4,7 @@ import {
   createDefaultSceneSettings,
   type SerializedActor,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

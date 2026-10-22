@@ -2,9 +2,9 @@ import {
   createSkyboxFaceTextureResult,
   newAssetGuid,
   normalizeAnimationPayload,
-} from "@babylonslate/assets";
-import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
-import { bundledAsciiTypeFace } from "@babylonslate/render/default-typeface";
+} from "@haptic/assets";
+import { SKYBOX_FACE_KEYS } from "@haptic/core";
+import { bundledAsciiTypeFace } from "@haptic/render/default-typeface";
 import { MANNEQUIN_ACTOR_ID, MANNEQUIN_ASSET_FOLDER, MANNEQUIN_CLASS_FILE, MANNEQUIN_CLASS_ID } from "../scaffold-empty-3d";
 import type { FeatureTestContext } from "./context";
 import {
@@ -66,7 +66,7 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     const guid = newAssetGuid();
     await ctx.createImportResult(
       SKY,
-      `FT_Sky_${key}.babasset`,
+      `FT_Sky_${key}.hasset`,
       createSkyboxFaceTextureResult({
         name: `FT_Sky_${key}`,
         guid,
@@ -78,7 +78,7 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
   const netGuid = newAssetGuid();
   await ctx.createImportResult(
     SKY,
-    "FT_Sky_Net.babasset",
+    "FT_Sky_Net.hasset",
     createSkyboxFaceTextureResult({ name: "FT_Sky_Net", guid: netGuid, pngBytes: await host.loadBytes(SKYBOX_NET_PATH) }),
   );
   assets.textures.skyboxNet = netGuid;

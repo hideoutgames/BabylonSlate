@@ -16,11 +16,11 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /**
  * FeatureTest fly-through route for camera-motion stutter. Opt-in:
- * BL_PERF_FLYTHROUGH=1, through playwright.perf.config.ts only.
+ * HAPTIC_PERF_FLYTHROUGH=1, through playwright.perf.config.ts only.
  *
  * Creates the Feature Test starter, optionally switches the project backend,
  * then for each scene flies the editor camera along a fixed path at fly speed
- * (static warm-up, then the same path BL_FLY_PASSES times) and records every
+ * (static warm-up, then the same path HAPTIC_FLY_PASSES times) and records every
  * rendered frame's discrete events: new Effects, shader programs or WebGPU
  * pipelines, bind groups, buffers, texture uploads, material and define
  * invalidations, readiness probes, held frames, shadow-map churn,
@@ -28,47 +28,47 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  * and the events they coincide with. Counts are hardware-independent; times
  * on software adapters are not device performance. Never asserts frame rates.
  *
- * Env: BL_PERF_SCENES (comma list of main|world|clustered|stress|2d; default main,world),
- *      BL_PERF_BACKEND (webgl2|webgpu; default: the project's WebGL2),
- *      BL_PERF_QUALITY (low|medium|high|ultra; default: the starter's Medium. Sets the project's Overall Quality in
+ * Env: HAPTIC_PERF_SCENES (comma list of main|world|clustered|stress|2d; default main,world),
+ *      HAPTIC_PERF_BACKEND (webgl2|webgpu; default: the project's WebGL2),
+ *      HAPTIC_PERF_QUALITY (low|medium|high|ultra; default: the starter's Medium. Sets the project's Overall Quality in
  *        Project Settings, with Dynamic Resolution off so the workload stays fixed. High and Ultra allow the starter's
  *        scene-wide Volumetric Lighting, which Medium skips),
- *      BL_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise
+ *      HAPTIC_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise
  *        WebGPU runs use the software adapter and every run adds --enable-precise-memory-info,
- *      BL_FLY_SPEED (m/s, default 8, the editor's default fly speed), BL_FLY_PASSES (default 2),
- *      BL_FLY_WARMUP_MS (static hold before the first pass, default 5000), BL_PERF_SETTLE_MS (default 5000),
- *      BL_FLY_PATH (JSON array of [x, y, z] eye waypoints, applied to every selected scene),
- *      BL_FLY_PROFILE=1 (CDP CPU profile of the passes; spike frames list their hottest functions),
- *      BL_FLY_PLAY (comma list of the selected scenes to fly again in overlay Play with the free camera,
+ *      HAPTIC_FLY_SPEED (m/s, default 8, the editor's default fly speed), HAPTIC_FLY_PASSES (default 2),
+ *      HAPTIC_FLY_WARMUP_MS (static hold before the first pass, default 5000), HAPTIC_PERF_SETTLE_MS (default 5000),
+ *      HAPTIC_FLY_PATH (JSON array of [x, y, z] eye waypoints, applied to every selected scene),
+ *      HAPTIC_FLY_PROFILE=1 (CDP CPU profile of the passes; spike frames list their hottest functions),
+ *      HAPTIC_FLY_PLAY (comma list of the selected scenes to fly again in overlay Play with the free camera,
  *        `freecam`; main-scene Play does not finish loading on software GL),
- *      BL_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 30),
- *      BL_PERF_SCALING (Engine Settings hardware scaling level, e.g. 2 to cut software fill cost),
- *      BL_PERF_FIXED_LIGHTS (multiply|branch: fixed-shape forward lighting from the Engine's first load, with that
+ *      HAPTIC_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 30),
+ *      HAPTIC_PERF_SCALING (Engine Settings hardware scaling level, e.g. 2 to cut software fill cost),
+ *      HAPTIC_PERF_FIXED_LIGHTS (multiply|branch: fixed-shape forward lighting from the Engine's first load, with that
  *        seat guard; default off),
- *      BL_PERF_LABEL, BL_PERF_OUT (absolute path that also receives the JSON report).
+ *      HAPTIC_PERF_LABEL, HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
  */
-const ENABLED = process.env.BL_PERF_FLYTHROUGH === "1";
+const ENABLED = process.env.HAPTIC_PERF_FLYTHROUGH === "1";
 const number = (name: string, fallback: number, min = 0) => {
   const value = Number(process.env[name]);
   return process.env[name] !== undefined && Number.isFinite(value) && value >= min ? value : fallback;
 };
-const BACKEND = process.env.BL_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.BL_PERF_BACKEND === "webgl2" ? "webgl2" : null;
+const BACKEND = process.env.HAPTIC_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.HAPTIC_PERF_BACKEND === "webgl2" ? "webgl2" : null;
 const QUALITIES = ["low", "medium", "high", "ultra"] as const;
-const QUALITY = QUALITIES.find((level) => level === process.env.BL_PERF_QUALITY) ?? null;
-const NATIVE_GPU = process.env.BL_RENDER_NATIVE_GPU === "1";
-const FIXED_LIGHTS = (["multiply", "branch"] as const).find((guard) => guard === process.env.BL_PERF_FIXED_LIGHTS) ?? null;
-const SPEED = number("BL_FLY_SPEED", 8, 0.5);
-const PASSES = number("BL_FLY_PASSES", 2, 1);
-const WARMUP_MS = number("BL_FLY_WARMUP_MS", 5_000);
-const SETTLE_MS = number("BL_PERF_SETTLE_MS", 5_000);
-const PROFILE = process.env.BL_FLY_PROFILE === "1";
+const QUALITY = QUALITIES.find((level) => level === process.env.HAPTIC_PERF_QUALITY) ?? null;
+const NATIVE_GPU = process.env.HAPTIC_RENDER_NATIVE_GPU === "1";
+const FIXED_LIGHTS = (["multiply", "branch"] as const).find((guard) => guard === process.env.HAPTIC_PERF_FIXED_LIGHTS) ?? null;
+const SPEED = number("HAPTIC_FLY_SPEED", 8, 0.5);
+const PASSES = number("HAPTIC_FLY_PASSES", 2, 1);
+const WARMUP_MS = number("HAPTIC_FLY_WARMUP_MS", 5_000);
+const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
+const PROFILE = process.env.HAPTIC_FLY_PROFILE === "1";
 const sceneList = (value: string) =>
   value
     .split(",")
     .map((scene) => scene.trim())
     .filter((scene): scene is FeatureTestSceneName => scene in FEATURE_TEST_SCENES);
-const SCENES = sceneList(process.env.BL_PERF_SCENES ?? "main,world");
-const PLAY_SCENES = sceneList(process.env.BL_FLY_PLAY ?? "");
+const SCENES = sceneList(process.env.HAPTIC_PERF_SCENES ?? "main,world");
+const PLAY_SCENES = sceneList(process.env.HAPTIC_FLY_PLAY ?? "");
 
 /**
  * Eye paths at about 4 to 13 m over the ground, each 25 to 30 s at 8 m/s.
@@ -85,7 +85,7 @@ const DEFAULT_PATHS: Partial<Record<FeatureTestSceneName, FlyVec3[]>> = {
 };
 
 function pathFor(scene: FeatureTestSceneName): FlyVec3[] | null {
-  if (process.env.BL_FLY_PATH) return JSON.parse(process.env.BL_FLY_PATH) as FlyVec3[];
+  if (process.env.HAPTIC_FLY_PATH) return JSON.parse(process.env.HAPTIC_FLY_PATH) as FlyVec3[];
   return DEFAULT_PATHS[scene] ?? null;
 }
 
@@ -97,13 +97,13 @@ if (!NATIVE_GPU)
   });
 
 type ViewportHost = {
-  __babylonslateViewportTest: {
+  __hapticViewportTest: {
     flyThrough: (options: FlyThroughOptions) => Promise<FlyThroughResult>;
     renderingBaseline: () => { backend: string } | null;
   };
 };
 type PlayHost = {
-  __babylonslatePlayTest?: {
+  __hapticPlayTest?: {
     flyThrough: (options: FlyThroughOptions) => Promise<FlyThroughResult>;
     tickIndex: () => number;
   };
@@ -132,7 +132,7 @@ async function applyProjectRendering(page: Page): Promise<void> {
 }
 
 async function viewportBackend(page: Page): Promise<string | null> {
-  return page.evaluate(() => (globalThis as unknown as Partial<ViewportHost>).__babylonslateViewportTest?.renderingBaseline()?.backend ?? null);
+  return page.evaluate(() => (globalThis as unknown as Partial<ViewportHost>).__hapticViewportTest?.renderingBaseline()?.backend ?? null);
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ function profileHotspots(profile: CpuProfile, markerPageMs: number, windows: Arr
 
 async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName, host: "editor" | "play") {
   const waypoints = pathFor(scene);
-  if (!waypoints) throw new Error(`No fly-through path for ${scene}; set BL_FLY_PATH.`);
+  if (!waypoints) throw new Error(`No fly-through path for ${scene}; set HAPTIC_FLY_PATH.`);
   const options: FlyThroughOptions = { waypoints, speed: SPEED, passes: PASSES, warmupMs: WARMUP_MS };
   let markerPageMs = 0;
   if (PROFILE) {
@@ -362,8 +362,8 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
   const result = await page.evaluate(
     ({ flight, play }) =>
       play
-        ? (globalThis as unknown as PlayHost).__babylonslatePlayTest!.flyThrough(flight)
-        : (globalThis as unknown as ViewportHost).__babylonslateViewportTest.flyThrough(flight),
+        ? (globalThis as unknown as PlayHost).__hapticPlayTest!.flyThrough(flight)
+        : (globalThis as unknown as ViewportHost).__hapticViewportTest.flyThrough(flight),
     { flight: options, play: host === "play" },
   );
   const profile = PROFILE ? ((await cdp.send("Profiler.stop")).profile as unknown as CpuProfile) : null;
@@ -412,7 +412,7 @@ async function flyPlay(page: Page, cdp: CDPSession, scene: FeatureTestSceneName)
   await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 300_000 });
   await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
   await expect
-    .poll(() => page.evaluate(() => (globalThis as unknown as PlayHost).__babylonslatePlayTest?.tickIndex() ?? -1), { timeout: 300_000 })
+    .poll(() => page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.tickIndex() ?? -1), { timeout: 300_000 })
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
   await runConsoleCommand(page, "freecam");
@@ -423,19 +423,19 @@ async function flyPlay(page: Page, cdp: CDPSession, scene: FeatureTestSceneName)
   return { playBootMs, ...flight };
 }
 
-test.skip(!ENABLED, "FeatureTest fly-through route; set BL_PERF_FLYTHROUGH=1 to run it.");
+test.skip(!ENABLED, "FeatureTest fly-through route; set HAPTIC_PERF_FLYTHROUGH=1 to run it.");
 
 test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   test.setTimeout(30 * 60_000 + (SCENES.length + PLAY_SCENES.length) * (PASSES * 60_000 + WARMUP_MS + SETTLE_MS + 300_000));
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await seedEngineSettings(page, (settings) => {
-    if (process.env.BL_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("BL_PERF_VIEWPORT_CAP", 30, 10);
-    if (process.env.BL_PERF_SCALING) settings.hardwareScalingLevel = number("BL_PERF_SCALING", 1, 0.25);
+    if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 30, 10);
+    if (process.env.HAPTIC_PERF_SCALING) settings.hardwareScalingLevel = number("HAPTIC_PERF_SCALING", 1, 0.25);
     if (PLAY_SCENES.length) settings.debuggerDefaults.overlayConsole = true;
   });
   // Read by test builds when the project Engine starts (TEST_FIXED_SHAPE_LIGHTING_KEY, apps/editor/src/lib/project-engine.ts).
-  if (FIXED_LIGHTS) await page.evaluate((guard) => localStorage.setItem("babylonslate:test-fixed-shape-lighting", guard), FIXED_LIGHTS);
+  if (FIXED_LIGHTS) await page.evaluate((guard) => localStorage.setItem("haptic:test-fixed-shape-lighting", guard), FIXED_LIGHTS);
   const cdp = await page.context().newCDPSession(page);
   const createToInteractiveMs = await createFeatureTestProject(page);
   await waitForTextureEncodes(page);
@@ -450,11 +450,11 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const report = () => ({
     qualification:
       "Per-frame event counts during a scripted editor fly-through. Counts are hardware-independent; times on software adapters are not device performance. Compare runs on the same machine, backend and build only. No frame-rate assertion.",
-    label: process.env.BL_PERF_LABEL ?? null,
+    label: process.env.HAPTIC_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
     env: { SCENES, PLAY_SCENES, BACKEND, QUALITY, NATIVE_GPU, FIXED_LIGHTS, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
-      VIEWPORT_CAP: process.env.BL_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.BL_PERF_SCALING ?? null },
+      VIEWPORT_CAP: process.env.HAPTIC_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.HAPTIC_PERF_SCALING ?? null },
     createToInteractiveMs,
     scenes,
     pageErrors,
@@ -463,9 +463,9 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const writeReport = () => {
     const body = JSON.stringify({ ...report(), raw }, null, 1);
     writeFileSync(testInfo.outputPath("feature-test-flythrough.json"), body);
-    if (process.env.BL_PERF_OUT) {
-      mkdirSync(path.dirname(process.env.BL_PERF_OUT), { recursive: true });
-      writeFileSync(process.env.BL_PERF_OUT, body);
+    if (process.env.HAPTIC_PERF_OUT) {
+      mkdirSync(path.dirname(process.env.HAPTIC_PERF_OUT), { recursive: true });
+      writeFileSync(process.env.HAPTIC_PERF_OUT, body);
     }
   };
   for (const scene of SCENES) {

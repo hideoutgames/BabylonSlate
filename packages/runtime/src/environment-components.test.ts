@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { createActor, createDefaultScene, identitySerializedTransform, parseLandscapeProperties } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, identitySerializedTransform, parseLandscapeProperties } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 it("transports authored terrain and a whole mixed foliage stroke as component parts for Play", async () => {

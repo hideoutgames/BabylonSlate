@@ -1,5 +1,5 @@
-import { BT_DEBUG_GRAPH_ID } from "@babylonslate/bridge";
-import type { GraphRunTrace } from "@babylonslate/graph-ui";
+import { BT_DEBUG_GRAPH_ID } from "@haptic/bridge";
+import type { GraphRunTrace } from "@haptic/graph-ui";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 
 /**

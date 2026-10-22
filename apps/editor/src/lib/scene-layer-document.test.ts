@@ -4,7 +4,7 @@ import {
   createDefaultSceneLayer,
   editorSceneToSceneLayer,
   sceneLayerToEditorScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   editorTabContentForKind,
   persistableDocumentContent,

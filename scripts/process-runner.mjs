@@ -34,10 +34,10 @@ export function runCommand(command, args, options = {}) {
     }
     const started = Date.now();
     const ownsGroup =
-      process.platform !== "win32" && !process.env.BL_TEST_PROCESS_GROUP;
+      process.platform !== "win32" && !process.env.HAPTIC_TEST_PROCESS_GROUP;
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
-      env: { ...(options.env ?? process.env), BL_TEST_PROCESS_GROUP: "1" },
+      env: { ...(options.env ?? process.env), HAPTIC_TEST_PROCESS_GROUP: "1" },
       windowsHide: true,
       detached: ownsGroup,
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",

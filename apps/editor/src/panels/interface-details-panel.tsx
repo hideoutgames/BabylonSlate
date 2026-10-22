@@ -5,7 +5,7 @@ import {
   PinListEditor,
   PropertyGrid,
   type PinListRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   useDocumentActions,
   useRegistryState,

@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/physics",
+  "name": "@haptic/physics",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/physics"
   },
   "dependencies": {
-    "@babylonslate/core": "workspace:*",
+    "@haptic/core": "workspace:*",
     "@babylonjs/core": "9.29.0",
     "@babylonjs/havok": "1.3.14",
     "@dimforge/rapier2d-deterministic-compat": "^0.21.0"

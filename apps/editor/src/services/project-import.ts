@@ -1,5 +1,5 @@
 import { unzipSync } from "fflate";
-import type { ProjectTreeFile } from "@babylonslate/assets";
+import type { ProjectTreeFile } from "@haptic/assets";
 
 export const PROJECT_IMPORT_LIMIT = 200 * 1024 * 1024;
 

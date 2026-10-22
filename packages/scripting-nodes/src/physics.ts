@@ -20,7 +20,7 @@ import {
   type Diagnostic,
   type TypeContext,
   type LogicGraph,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 import { enumGuidOf, enumValueOf } from "./enum";
 

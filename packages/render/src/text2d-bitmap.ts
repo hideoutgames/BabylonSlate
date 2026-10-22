@@ -1,4 +1,4 @@
-import type { RichTextStyle } from "@babylonslate/core";
+import type { RichTextStyle } from "@haptic/core";
 import {
   ASCII_BITMAP_COLS,
   ASCII_BITMAP_ROWS,

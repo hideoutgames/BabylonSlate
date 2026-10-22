@@ -14,14 +14,14 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: Number(process.env.BL_TEST_RETRIES ?? 0),
+  retries: Number(process.env.HAPTIC_TEST_RETRIES ?? 0),
   // One browser worker per admitted run keeps local memory and CPU use bounded.
-  workers: Number(process.env.BL_TEST_BROWSER_WORKERS ?? 1),
+  workers: Number(process.env.HAPTIC_TEST_BROWSER_WORKERS ?? 1),
   reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
-  metadata: { testRunNonce: process.env.BL_TEST_SERVER_NONCE },
+  metadata: { testRunNonce: process.env.HAPTIC_TEST_SERVER_NONCE },
   globalSetup: "./e2e/verify-test-server.ts",
   use: {
-    baseURL: process.env.BL_TEST_BASE_URL,
+    baseURL: process.env.HAPTIC_TEST_BASE_URL,
     trace: "on-first-retry",
   },
   projects: [

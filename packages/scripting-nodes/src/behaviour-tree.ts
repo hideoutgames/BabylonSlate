@@ -5,7 +5,7 @@ import {
   BOOL,
   STRING,
   BOXED_WILDCARD,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 /** Behaviour-tree task / decorator / service event entries, Finish Execute, Return Condition, and blackboard. */
 export const behaviourTreeNodes: NodeDefinition[] = [

@@ -11,7 +11,7 @@ import {
   type CubeTexture,
 } from "@babylonjs/core";
 import type { IImageProcessingConfigurationDefines } from "@babylonjs/core/Materials/imageProcessingConfiguration.defines";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@haptic/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
@@ -22,9 +22,9 @@ import { authoredMaterialInstancePreparation } from "./authored-material-instanc
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
-  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
-  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
-  waters?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
+  renderTargets?: ReadonlyMap<string, import("@haptic/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@haptic/core").RenderTargetTexturePayload>;
+  waters?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Validated native emission data, separate from original Texture bytes. */
@@ -91,7 +91,7 @@ export interface MeshAssetContext {
   ) => Material | null;
   /** Releases private component overrides without retiring shared authored materials. */
   releaseMaterialInstance?: (instanceKey: string, assetGuid?: string) => void;
-  validateMaterialParameter?: (guid: string, name: string, value: import("@babylonslate/core").MaterialParameterValue) => boolean;
+  validateMaterialParameter?: (guid: string, name: string, value: import("@haptic/core").MaterialParameterValue) => boolean;
 }
 
 function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
@@ -141,7 +141,7 @@ export class PayloadFingerprints {
   }
 }
 
-import { copyTextureBytesForUpload, environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@babylonslate/assets";
+import { copyTextureBytesForUpload, environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@haptic/assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 

@@ -8,12 +8,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SearchEntry, SearchOpenTarget } from "@babylonslate/assets";
+import type { SearchEntry, SearchOpenTarget } from "@haptic/assets";
 import {
   CONTENT_BROWSER_ID,
   documentId,
   labelFromPath,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { useDocumentActions, useRegistryState } from "./document-context";
 import { useValidation } from "./validation-context";
 import {

@@ -7,10 +7,10 @@ import {
   normalizeTilesetPayload,
   setTile,
   type TilemapPayload,
-} from "@babylonslate/assets";
-import { identityTransform } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
+} from "@haptic/assets";
+import { identityTransform } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { createSoftwarePhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 function createWorld() {

@@ -1,4 +1,4 @@
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 
 /**
  * The compression state to show for a Texture. A running encode is known only

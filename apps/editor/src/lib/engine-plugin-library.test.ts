@@ -3,11 +3,11 @@ import {
   createDefaultPluginSettings,
   discoverEnginePlugins,
   exportPluginZip,
-  inspectBabplugin,
+  inspectHplugin,
   unpackEnginePluginZip,
   writeProjectPlugin,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EnginePluginLibrary } from "./engine-plugin-library";
 
 async function storage(name: string) {
@@ -41,7 +41,7 @@ describe("EnginePluginLibrary", () => {
     const reloaded = new EnginePluginLibrary(bundled, saved);
     expect((await reloaded.list()).find((entry) => entry.pluginGuid === "user-guid"))
       .toMatchObject({ bundled: false, enabledByDefault: true });
-    const inspected = await inspectBabplugin(await reloaded.export("user-guid"));
+    const inspected = await inspectHplugin(await reloaded.export("user-guid"));
     expect(inspected.settings).toMatchObject({
       pluginGuid: "user-guid", displayName: "User Pack", iconKey: "Box", beta: true,
       enabledByDefault: true,
@@ -58,13 +58,13 @@ describe("EnginePluginLibrary", () => {
     expect(await store.import(incoming)).toMatchObject({
       status: "conflict", existing: { pluginGuid: "old-guid" },
     });
-    expect((await inspectBabplugin(await store.export("old-guid"))).settings.pluginGuid)
+    expect((await inspectHplugin(await store.export("old-guid"))).settings.pluginGuid)
       .toBe("old-guid");
     expect(await store.import(incoming, { replaceGuid: "old-guid" })).toMatchObject({
       status: "imported", entry: { pluginGuid: "new-guid", enabledByDefault: true },
     });
     await expect(store.export("old-guid")).rejects.toThrow(/no longer exists/i);
-    const replaced = await inspectBabplugin(await store.export("new-guid"));
+    const replaced = await inspectHplugin(await store.export("new-guid"));
     expect(new TextDecoder().decode(replaced.files.find((file) => file.path === "assets/data.txt")?.data))
       .toBe("replacement");
   });
@@ -87,7 +87,7 @@ describe("EnginePluginLibrary", () => {
     await expect(store.import(await archive("bundled-guid", "Different Name")))
       .rejects.toThrow(/bundled.*cannot be replaced/i);
     await store.setEnabledByDefault("bundled-guid", true);
-    expect((await inspectBabplugin(await store.export("bundled-guid"))).settings.enabledByDefault)
+    expect((await inspectHplugin(await store.export("bundled-guid"))).settings.enabledByDefault)
       .toBe(true);
   });
 
@@ -178,7 +178,7 @@ describe("EnginePluginLibrary", () => {
 
     expect(await store.list()).toEqual(before);
     if (replace) {
-      const restored = await inspectBabplugin(await store.export("original-guid"));
+      const restored = await inspectHplugin(await store.export("original-guid"));
       expect(restored.settings.enabledByDefault).toBe(true);
       expect(new TextDecoder().decode(restored.files.find((file) => file.path === "assets/data.txt")?.data)).toBe("original");
     }

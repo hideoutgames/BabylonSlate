@@ -6,8 +6,8 @@ import {
   scaleSkyboxCreatorSourcePlacement,
   type SkyboxCreatorSourcePlacement,
   type SkyboxCreatorSourcePlacementHandle,
-} from "@babylonslate/assets";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/assets";
+import { cn } from "@haptic/ui/lib/utils";
 
 const HANDLES = ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const;
 

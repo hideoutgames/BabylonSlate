@@ -2,7 +2,7 @@ import { materialTextureBindings, type ResourceLease } from "./resource-cache";
 import type { Material, NodeMaterial, Observer, Scene, Texture } from "@babylonjs/core";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
+import type { MaterialParameterValue } from "@haptic/bridge";
 import {
   lowerMaterialDocument,
   type MaterialBuildPlan,
@@ -10,7 +10,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialLowerResult,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";

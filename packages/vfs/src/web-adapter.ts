@@ -1,14 +1,14 @@
 import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
-import { isStorageNotFound, ProjectOpenElsewhereError, SourceRevisionChangedError, StorageNotFoundError } from "@babylonslate/core";
+import { isStorageNotFound, ProjectOpenElsewhereError, SourceRevisionChangedError, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "./test-mode";
 
-const META_KEY = "babylonslate:opfs-meta";
+const META_KEY = "haptic:opfs-meta";
 /** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
 const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
@@ -39,7 +39,7 @@ function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T>
   const previous = lifecycleQueues.get(id) ?? Promise.resolve();
   const next = previous.then(() => {
     const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-    return locks ? locks.request(`babylonslate:opfs:${id}`, work) : work();
+    return locks ? locks.request(`haptic:opfs:${id}`, work) : work();
   });
   const settled = next.then(() => undefined, () => undefined);
   lifecycleQueues.set(id, settled);
@@ -67,7 +67,7 @@ function claimSession(id: string): Promise<ProjectSession | null> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   if (!locks) return Promise.resolve({ id, release: async () => {} });
   return new Promise((resolve, reject) => {
-    const done = locks.request(`babylonslate:opfs-session:${id}`, { ifAvailable: true }, (lock) => {
+    const done = locks.request(`haptic:opfs-session:${id}`, { ifAvailable: true }, (lock) => {
       if (!lock) {
         resolve(null);
         return undefined;
@@ -107,7 +107,7 @@ function updateMeta(mutate: (meta: OpfsMeta) => void): Promise<void> {
     saveMeta(meta);
   };
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  return locks ? locks.request("babylonslate:opfs-meta", update) : Promise.resolve().then(update);
+  return locks ? locks.request("haptic:opfs-meta", update) : Promise.resolve().then(update);
 }
 
 export interface OpfsStorageOptions {

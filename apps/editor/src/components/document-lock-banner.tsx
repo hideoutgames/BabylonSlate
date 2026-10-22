@@ -1,5 +1,5 @@
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import { LockIcon } from "lucide-react";
 import {
   formatLockAge,

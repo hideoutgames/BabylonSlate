@@ -1,7 +1,7 @@
 import {
   arrayOf, assetRef, BOOL, classRef, ENGINE_ASSET_LOAD_HANDLE_STATE_ENUM_ID, ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID,
   ENGINE_ASSET_LOAD_STATE_ENUM_ID, enumRef, EXEC, FLOAT, pin, STRING, type NodeDefinition,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 /** The empty asset type is the wildcard: any Content Browser asset wires in and picks. */
 const ASSET = assetRef("");

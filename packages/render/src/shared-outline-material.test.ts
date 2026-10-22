@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { MeshBuilder, NullEngine, Scene, ShadowGenerator, SpotLight, Vector3, type AbstractMesh, type Effect } from "@babylonjs/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { acquireAuthoredMaterialVariant, acquireAuthoredOutlineVariant, compileMaterialPlan, ensureAuthoredShadowDepthWrapper } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./lattice-deformer-binding";

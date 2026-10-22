@@ -1,6 +1,6 @@
-import { DynamicRuntimeMeshGeometry, type DynamicMeshUpdate } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import { DynamicRuntimeMeshGeometry, type DynamicMeshUpdate } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
+import type { Actor, ActorComponent } from "@haptic/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 const geometryByComponent = new WeakMap<ActorComponent, DynamicRuntimeMeshGeometry>();

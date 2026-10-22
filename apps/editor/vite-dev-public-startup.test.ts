@@ -118,7 +118,7 @@ describe("dev server first-run public snapshot", () => {
 
       // The whitelist must not pretend arbitrary names are generated assets;
       // a miss falls through to the SPA fallback or a 404.
-      const missing = await get(base, "/engine-plugins/nope.babplugin");
+      const missing = await get(base, "/engine-plugins/nope.hplugin");
       expect(
         missing.status === 404 || missing.contentType.includes("text/html"),
       ).toBe(true);

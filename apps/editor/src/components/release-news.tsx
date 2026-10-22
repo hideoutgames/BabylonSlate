@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { isTestModeEnabled } from "@babylonslate/vfs";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { isTestModeEnabled } from "@haptic/vfs";
+import { SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/dialog";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
 import { useAppSettings } from "../context/app-settings-context";
 import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildIdentity } from "../lib/build-identity";

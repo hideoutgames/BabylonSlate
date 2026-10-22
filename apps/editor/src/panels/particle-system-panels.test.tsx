@@ -7,11 +7,11 @@ import {
   normalizeParticleSystemPayload,
   type ParticleLibrary,
   type ParticleSystemPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   createDefaultParticleGraphDocument,
   type ParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { ParticleSystemEditor, ParticleSystemPreview } from "./particle-system-panels";
 
 if (typeof window !== "undefined") {
@@ -27,7 +27,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-const GRAPH_PATH = "assets/Embers.particlegraph.babasset";
+const GRAPH_PATH = "assets/Embers.particlegraph.hasset";
 
 const harness = vi.hoisted(() => ({
   loadAssetDocument: vi.fn(),
@@ -38,7 +38,7 @@ const harness = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock("@babylonslate/render", () => {
+vi.mock("@haptic/render", () => {
   class ParticleService {
     private state: string | null = null;
     setPaused = vi.fn();
@@ -76,11 +76,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     list: () => [
       {
         header: { guid: "em-1", name: "Sparks", type: "ParticleEmitter" },
-        path: "assets/Sparks.emitter.babasset",
+        path: "assets/Sparks.emitter.hasset",
       },
       {
         header: { guid: "em-2", name: "Smoke", type: "ParticleEmitter" },
-        path: "assets/Smoke.emitter.babasset",
+        path: "assets/Smoke.emitter.hasset",
       },
       {
         header: { guid: "pg-1", name: "Embers", type: "ParticleGraph" },
@@ -88,7 +88,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       },
       {
         header: { guid: "mat-1", name: "SparksMat", type: "Material" },
-        path: "assets/SparksMat.material.babasset",
+        path: "assets/SparksMat.material.hasset",
       },
     ],
   },
@@ -221,13 +221,13 @@ describe("ParticleSystemPreview", () => {
     expect(screen.queryByText("Preview Failed")).toBeNull();
     expect(harness.loadAssetDocument).toHaveBeenCalledWith(
       "particle-emitter",
-      "assets/Sparks.emitter.babasset",
+      "assets/Sparks.emitter.hasset",
     );
   });
 
   it("keeps its emitters while an emitter outside its slots is edited", async () => {
     harness.loadAssetDocument.mockResolvedValue(withMaterial);
-    const smoke = (rate: number) => ({ ref: { kind: "particle-emitter", path: "assets/Smoke.emitter.babasset" },
+    const smoke = (rate: number) => ({ ref: { kind: "particle-emitter", path: "assets/Smoke.emitter.hasset" },
       content: { ...emitter, spawnRate: rate } });
     harness.openDocuments = [smoke(10)];
     const view = renderPreview(system);

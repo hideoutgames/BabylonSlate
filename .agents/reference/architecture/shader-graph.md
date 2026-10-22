@@ -34,9 +34,9 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 
 | Type | Kind | Suffix | Schema |
 | --- | --- | --- | --- |
-| `Material` | `material` | `.material.babasset` | `MaterialDocument` v3: `domain`, `shadingModel` (`pbr`/`unlit`), `blendMode` (`opaque`/`masked`/`translucent`/`additive`), `twoSided`, `defaultNormals` (`model`/`flat`), `alphaCutoff`, `preview`, graph |
-| `MaterialFunction` | `material-function` | `.matfunc.babasset` | v2: typed `inputs` / `outputs` with **stable pin ids** (renames never break callers), graph |
-| `MaterialInstance` | `material-instance` | `.matinst.babasset` | v1: `parentGuid`, cached `domain`, typed `overrides` by parameter name, `preview`; no graph |
+| `Material` | `material` | `.material.hasset` | `MaterialDocument` v3: `domain`, `shadingModel` (`pbr`/`unlit`), `blendMode` (`opaque`/`masked`/`translucent`/`additive`), `twoSided`, `defaultNormals` (`model`/`flat`), `alphaCutoff`, `preview`, graph |
+| `MaterialFunction` | `material-function` | `.matfunc.hasset` | v2: typed `inputs` / `outputs` with **stable pin ids** (renames never break callers), graph |
+| `MaterialInstance` | `material-instance` | `.matinst.hasset` | v1: `parentGuid`, cached `domain`, typed `overrides` by parameter name, `preview`; no graph |
 
 - Domains: `surface`, `landscape`, `postProcess`, `particle`, `text`. Unknown strings parse as `surface`. Imported `Material` stubs open as `material`.
 - `materialDependencies()` is the only source of `header.dependencies[]` (textures, called functions, inline Texture Sample guids, preview mesh) so references, delete guards and the export closure agree. Save also writes `domain` onto `header.payload`.
