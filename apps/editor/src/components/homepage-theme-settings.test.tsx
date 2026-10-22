@@ -31,24 +31,24 @@ describe("ThemeSettingsFields", () => {
     const preview = view.getByTestId("application-theme-preview");
     expect(preview.getAttribute("aria-hidden")).toBe("true");
     expect(preview.hasAttribute("inert")).toBe(true);
-    expect(view.getByTestId("application-theme-select").textContent).toContain("Default");
+    expect(view.getByTestId("application-theme-select").textContent).toContain("Haptic Dark");
     expect(view.queryByLabelText("Background")).toBeNull();
 
     fireEvent.click(view.getByRole("button", { name: "Style" }));
     await waitFor(() => expect(view.getByLabelText("Background Hex")).toBeTruthy());
   });
 
-  it("forks Default into a custom theme instead of editing it", async () => {
+  it("forks Haptic Dark into a custom theme instead of editing it", async () => {
     const { view, store } = renderThemeSettings();
     await waitFor(() => expect(view.getByTestId("application-theme-import").hasAttribute("disabled")).toBe(false));
     expect(view.queryByTestId("application-theme-delete")).toBeNull();
     fireEvent.click(view.getByRole("button", { name: "Style" }));
     fireEvent.change(view.getByLabelText("Background Hex"), { target: { value: "#102030" } });
 
-    await waitFor(() => expect(view.getByTestId("application-theme-select").textContent).toContain("Default Copy"));
+    await waitFor(() => expect(view.getByTestId("application-theme-select").textContent).toContain("Haptic Dark Copy"));
     const saved = await store.load();
     expect(saved.customEditorThemes).toEqual([
-      { id: saved.editorTheme, name: "Default Copy", colors: { background: "#102030" } },
+      { id: saved.editorTheme, name: "Haptic Dark Copy", colors: { background: "#102030" } },
     ]);
     expect(view.getByTestId("application-theme-preview").style.getPropertyValue("--background")).toBe("#102030");
     expect(view.getByTestId("application-theme-delete")).toBeTruthy();

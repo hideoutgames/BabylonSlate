@@ -15,6 +15,7 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 | DOM capture (Play and player) | [`packages/input/src/dom-input-capture.ts`](../../../packages/input/src/dom-input-capture.ts) (`@babylonslate/input/dom`) |
 | Tick wiring | [`packages/runtime/src/driver.ts`](../../../packages/runtime/src/driver.ts) |
 | `TickContext` input API | [`packages/object-model/src/objects.ts`](../../../packages/object-model/src/objects.ts) |
+| `TouchInput` (`engine:Touch`), `TOUCH_PHASES`, `TOUCH_TYPES` | [`packages/core/src/touch-input.ts`](../../../packages/core/src/touch-input.ts) |
 | Graph nodes | [`packages/scripting-nodes/src/input.ts`](../../../packages/scripting-nodes/src/input.ts), [`input-bindings.ts`](../../../packages/scripting-nodes/src/input-bindings.ts); event gating in [`packages/scripting/src/compile.ts`](../../../packages/scripting/src/compile.ts) |
 
 ## Decisions
@@ -23,6 +24,8 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 - Identity is the asset GUID. There are no name aliases or conversion markers; the name-keyed `actions` / `axes` views combine every asset sharing a display name (held if any is held; axis values add and clamp to ±1).
 - Loading a project never synthesizes input assets or recreates deleted ones. Only the 3D template ships Jump / Confirm / Move / Look; an explicit empty catalog means no defaults. A runtime started without `inputAssets` falls back to starter controls.
 - Primary touch is Mouse Left. `touch` bindings are authored with **Add Control > Touch**; their codes are the 2D Joystick's axes (`joystick-x`/`-y`, `dpad-x`/`-y`, read as analog axes like `gamepadAxis`). Synthetic touch controls are not in starter defaults.
+- Every contact is also a touch: a pointer holding button 0, so a finger, a pen tip or the left mouse button (touch games work with a mouse). Touches are `engine:Touch` struct values built by the resolver itself (the `InputValueState.input` precedent), so scripts read them without a mapping layer.
+- Engine UI owns its pointers: a finger that a SceneLayer 2D Joystick, a 2D control or an active scroll drag holds never reaches the ring (`EngineHandle.ownsGamePointer` → capture `ownsPointer`). Ownership is decided at the press and kept until the lift, because the engine releases it in its own pointerup listener first; a pointer taken over later (scroll past its 8 px slop) gets one `cancel`. Capture must attach after `createEngine` so the engine's canvas listeners run first. 2D Button presses are not owned: they still reach the game as Mouse Left.
 - The obsolete string-based input nodes, Input Control / Input Device types and capture-status workflow are removed; do not re-add them.
 - The resolver is pure with respect to the browser: test it with synthetic event streams and the deterministic harness, not by driving a browser.
 
@@ -33,7 +36,7 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 - `normalizeInputMappings()` drops empty codes (so a blank draft is never mouse button 0); a missing list is empty, never replaced by defaults.
 - Gamepad codes stay `padIndex:buttonIndex`; labels are layout-agnostic Standard Gamepad names.
 - Player rebinding export is version 2 `edits` keyed by asset GUID and binding id; import validates the whole profile and rejects other versions. Games own persistence and menu gating; the nodes never write browser storage or suppress gameplay input.
-- `encodeInputEvents` stores `pointerId` as signed 32-bit and `button` as signed 8-bit; the format is transient and shared by host and worker builds.
+- `encodeInputEvents` stores `pointerId` as signed 32-bit, `button` as signed 8-bit, then the pointer type (0 not given, 1 mouse, 2 touch, 3 pen) and pressure as float32 (NaN not given); decoding leaves absent fields out. The format is transient and shared by host and worker builds. New raw kinds take bytes 8 and up; 3 and 5 stay retired.
 
 ## Resolver semantics
 
@@ -42,11 +45,12 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 - Axes keep an internal `activeValue` (last nonzero sample in the tick) so SceneLayer focus sees quick taps.
 - Gamepad samples carry the whole pad state (omitted buttons count as released). Hosts push `gamepadDisconnect` when a pad disappears; the resolver reports one `connected: false` and drops its held state.
 - Primary pointer only drives the cursor; chorded mouse buttons are turned into per-button edges by DOM capture, and an `up` for a never-pressed button releases the whole contact.
+- Touches: a contact begins when its pointer starts holding button 0 and ends when it stops (Ended) or is cancelled (Cancelled, keeping its last position). Finger is the lowest slot not held by a live contact or one lifted this tick; lifted contacts stay in `touches` for that tick and free their slot on the next `resolve`. `Delta` is movement since the tick began (since the press for one that began this tick); `touchEvents` holds Began, at most one Moved per contact per tick (updated in place by later moves) and Ended/Cancelled, in input order. Phase in `touches` is Began over Moved over Stationary; Ended or Cancelled wins. Pressure keeps its last sample at the lift (browsers report 0 then) and is 0.5 when absent.
 - On Any Key Pressed emits each new Key press once in input order; repeats and held samples never retrigger. Gamepad axes trigger when |value| crosses 0.5.
 
 ## Runtime
 
-- Ring buffer → `InputResolver.resolve` → `TickContext` for script and physics phases. Each `tick()` consumes all events queued since the previous tick; event `tick` stamps are recorded in traces, not used to gate.
+- Ring buffer → `InputResolver.resolve` → `TickContext` for script and physics phases. `getTouches` / `getTouchEvents` expose the tick's touches; On Touch Began / Moved / Ended are gated `onTick` entries like On Any Key Pressed, and `projectTouchToScene` reuses the cursor's screen-point projection (main camera, or the caller's Scene Layer camera). Each `tick()` consumes all events queued since the previous tick; event `tick` stamps are recorded in traces, not used to gate.
 - Play's worker host stamps samples with the latest published snapshot `tickIndex`, never the throttled stats command or wall clock.
 - `InputRingBuffer(512)` in capture and runtime. At capacity it coalesces the oldest continuous sample only when no resolver threshold edge (0 and 0.5) is lost; edges may grow to 4× capacity; releases are never dropped.
 - `setGamepadRumble` clamps intensity to 0..1; Play and player use the pad's `vibrationActuator` `dual-rumble`.

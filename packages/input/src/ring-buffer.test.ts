@@ -51,6 +51,16 @@ describe("input ring buffer", () => {
     const events = [pointer(70000, "down", 0), pointer(1, "down", 0), pointer(65537, "down", 0), pointer(1, "move", -1)];
     expect(decodeInputEvents(encodeInputEvents(events))).toEqual(events);
   });
+
+  it("round-trips the pointer type and pressure, and leaves them out when not given", () => {
+    const events: RawInputEvent[] = [
+      { kind: "pointer", tick: 1, pointerId: 7, phase: "down", x: 1, y: 2, button: 0, pointerType: "pen", pressure: 0.25 },
+      { kind: "pointer", tick: 1, pointerId: 8, phase: "down", x: 3, y: 4, button: 0, pointerType: "touch", pressure: 0 },
+      { kind: "pointer", tick: 1, pointerId: 1, phase: "move", x: 5, y: 6, button: -1, pointerType: "mouse" },
+      { kind: "pointer", tick: 1, pointerId: 2, phase: "up", x: 7, y: 8, button: 0 },
+    ];
+    expect(decodeInputEvents(encodeInputEvents(events))).toEqual(events);
+  });
 });
 
 describe("input ring buffer overflow", () => {
