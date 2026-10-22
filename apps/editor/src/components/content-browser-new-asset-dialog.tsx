@@ -1,7 +1,8 @@
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import type { WaterStyle, WaterStylizedLook } from "@babylonslate/core";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { FileIcon, FolderIcon } from "lucide-react";
+import { ChevronRightIcon, FolderIcon } from "lucide-react";
+import type { FolderNode } from "@babylonslate/assets";
 import {
   SearchDropdown,
   SearchInput,
@@ -37,9 +38,9 @@ import {
   classParentLookup,
   creatableAssetTypeDescription,
   creatableAssetTypeLabel,
-  newAssetFileName,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
+import { FolderPickerDialog } from "./folder-picker-dialog";
 import { hasTouchInput } from "../lib/touch-input";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 
@@ -71,47 +72,80 @@ export interface ContentBrowserNewAssetDialogProps {
   takenNameError?: string | null;
   /** Content Browser folder the asset is written to (`assets/Characters`). */
   destinationFolder?: string;
+  /** Picks another folder from the Location button; without it Location is read-only. */
+  onDestinationFolderChange?: (folder: string) => void;
+  /** One tree per content root, for the Location picker. */
+  folderTrees?: readonly FolderNode[];
+  /** Folders the Location picker shows muted (read-only roots). */
+  isFolderDisabled?: (path: string) => boolean;
   busy?: boolean;
   error?: string | null;
   onCreate: () => void;
 }
 
-function NewAssetSummary({
-  type,
-  name,
-  destinationFolder,
+/** Where the asset is written; a button that opens the folder picker when the caller allows a change. */
+function NewAssetLocation({
+  folder,
+  busy,
+  onChange,
+  folderTrees,
+  isFolderDisabled,
 }: {
-  type: CreatableAssetType;
-  name: string;
-  destinationFolder?: string;
+  folder: string;
+  busy: boolean;
+  onChange?: (folder: string) => void;
+  folderTrees: readonly FolderNode[];
+  isFolderDisabled?: (path: string) => boolean;
 }) {
-  const fileName = newAssetFileName(type, name);
+  const [picking, setPicking] = useState(false);
+  const path = (
+    <>
+      <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-left" title={folder} data-testid="new-asset-location-path">{folder}</span>
+    </>
+  );
   return (
-    <dl
-      className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 rounded-md border bg-muted/30 px-3 py-2.5 text-sm"
-      data-testid="new-asset-summary"
-    >
-      {destinationFolder ? (
-        <>
-          <dt className="text-muted-foreground">Location</dt>
-          <dd className="flex min-w-0 items-center gap-1.5">
-            <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="truncate" title={destinationFolder}>{destinationFolder}</span>
-          </dd>
-        </>
-      ) : null}
-      <dt className="text-muted-foreground">File</dt>
-      <dd className="flex min-w-0 items-center gap-1.5" data-testid="new-asset-summary-file">
-        <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        {fileName ? (
-          <span className="truncate font-mono text-xs" title={fileName}>{fileName}</span>
+    <FieldGroup>
+      <Field>
+        <FieldLabel htmlFor={onChange ? "new-asset-location" : undefined}>Location</FieldLabel>
+        {onChange ? (
+          <Button
+            id="new-asset-location"
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-1.5 font-normal"
+            aria-label={`Location: ${folder}. Choose Location`}
+            disabled={busy}
+            onClick={() => setPicking(true)}
+            data-testid="new-asset-location"
+          >
+            {path}
+            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </Button>
         ) : (
-          <span className="text-muted-foreground">Enter a name</span>
+          <div className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1.5 text-sm" data-testid="new-asset-location">
+            {path}
+          </div>
         )}
-      </dd>
-      <dt className="text-muted-foreground">Then</dt>
-      <dd>{type === "Scene" || type === "DataDefinition" || type === "DataTree" ? "Opens in a new tab" : "Appears in this folder"}</dd>
-    </dl>
+      </Field>
+      {picking && onChange ? (
+        <FolderPickerDialog
+          open
+          onOpenChange={setPicking}
+          title="Choose Location"
+          confirmLabel="Choose"
+          folderTrees={folderTrees}
+          initialPath={folder}
+          isDisabled={isFolderDisabled}
+          onConfirm={(next) => {
+            onChange(next);
+            setPicking(false);
+          }}
+          data-testid="new-asset-location-picker"
+        />
+      ) : null}
+    </FieldGroup>
   );
 }
 
@@ -175,6 +209,9 @@ export function ContentBrowserNewAssetDialog({
   classAssets = [],
   takenNameError = null,
   destinationFolder,
+  onDestinationFolderChange,
+  folderTrees = [],
+  isFolderDisabled,
   busy = false,
   error = null,
   onCreate,
@@ -311,11 +348,15 @@ export function ContentBrowserNewAssetDialog({
                 <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone title="Choose Default Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
               </Field></FieldGroup>
             ) : null}
-            <NewAssetSummary
-              type={type}
-              name={name}
-              destinationFolder={destinationFolder}
-            />
+            {destinationFolder ? (
+              <NewAssetLocation
+                folder={destinationFolder}
+                busy={busy}
+                onChange={onDestinationFolderChange}
+                folderTrees={folderTrees}
+                isFolderDisabled={isFolderDisabled}
+              />
+            ) : null}
           </div>
           {type === "Class" ? (
             <div

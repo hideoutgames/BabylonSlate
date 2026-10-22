@@ -37,6 +37,20 @@ function renderDialog(
   };
 }
 
+/** jsdom has no PointerEvent; keep the fields the tree's row gestures read. */
+function tap(path: string) {
+  const row = screen.getByTestId(`tree-row-${path}`);
+  for (const type of ["pointerdown", "pointerup"]) {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 8, clientY: 8 });
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: "mouse" },
+      isPrimary: { value: true },
+    });
+    fireEvent(row, event);
+  }
+}
+
 describe("ContentBrowserNewAssetDialog", () => {
   it("lets a Water asset choose Stylized rendering before creation", () => {
     const onWaterStyleChange = vi.fn();
@@ -60,28 +74,36 @@ describe("ContentBrowserNewAssetDialog", () => {
     layout.phone = false;
   });
 
-  it("summarizes the destination folder and the file the name will create", () => {
-    const { rerender } = renderDialog({ destinationFolder: "assets/Levels" });
-    const summary = screen.getByTestId("new-asset-summary");
-    expect(summary.textContent).toContain("assets/Levels");
-    expect(screen.getByTestId("new-asset-summary-file").textContent).toBe("Enter a name");
-    expect(summary.textContent).toContain("Opens in a new tab");
+  it("shows the destination as a Location that opens a folder picker to choose another", () => {
+    const onDestinationFolderChange = vi.fn();
+    const folderTrees = [{
+      name: "assets",
+      path: "assets",
+      assets: [],
+      children: [
+        { name: "Levels", path: "assets/Levels", assets: [], children: [] },
+        { name: "Props", path: "assets/Props", assets: [], children: [] },
+      ],
+    }];
+    renderDialog({
+      destinationFolder: "assets/Levels",
+      onDestinationFolderChange,
+      folderTrees,
+      isFolderDisabled: (path) => path === "assets/Props",
+    });
+    expect(screen.getByTestId("new-asset-location-path").textContent).toBe("assets/Levels");
+    expect(screen.queryByText("File")).toBeNull();
+    expect(screen.queryByText("Then")).toBeNull();
 
-    rerender(
-      <ContentBrowserNewAssetDialog
-        open
-        onOpenChange={() => {}}
-        type={"Class" as CreatableAssetType}
-        name="My Hero"
-        onNameChange={() => {}}
-        parentClass="BObject"
-        onParentClassChange={() => {}}
-        destinationFolder="assets/Levels"
-        onCreate={() => {}}
-      />,
-    );
-    expect(screen.getByTestId("new-asset-summary-file").textContent).toBe("My_Hero.class.babasset");
-    expect(screen.getByTestId("new-asset-summary").textContent).toContain("Appears in this folder");
+    fireEvent.click(screen.getByTestId("new-asset-location"));
+    // Opens on the current location, so Choose is ready at once.
+    expect(screen.getByTestId("new-asset-location-picker-selection").textContent).toBe("Folder: assets/Levels");
+    tap("assets/Props");
+    expect(screen.getByTestId("new-asset-location-picker-selection").textContent).toBe("Folder: assets/Levels");
+    tap("assets");
+    fireEvent.click(screen.getByTestId("new-asset-location-picker-confirm"));
+    expect(onDestinationFolderChange).toHaveBeenCalledWith("assets");
+    expect(screen.queryByTestId("new-asset-location-picker")).toBeNull();
   });
 
   it("opens straight to the details of the chosen type on phones", () => {
