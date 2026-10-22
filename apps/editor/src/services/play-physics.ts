@@ -207,6 +207,8 @@ export function playLoadControl(options: {
   infiniteLoopDetection?: boolean;
   /** Simulation's Pause On Errors. */
   pauseOnErrors?: boolean;
+  /** Simulation: the enabled node breakpoints, checked from Begin Play on. */
+  breakpoints?: import("@haptic/bridge").BreakpointLocation[];
   loopCount?: number;
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
@@ -257,6 +259,7 @@ export function playLoadControl(options: {
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     ...(options.pauseOnErrors ? { pauseOnErrors: true } : {}),
+    ...(options.breakpoints?.length ? { breakpoints: options.breakpoints } : {}),
     loopCount: options.loopCount,
     audioAssetGuids: options.audioAssetGuids,
     materialParameterCatalog: options.materialParameterCatalog,

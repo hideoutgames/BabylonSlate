@@ -77,6 +77,7 @@ import {
   type DebugObserveTarget,
   type ScriptBundleEntry,
   type SessionPauseCause,
+  type BreakpointLocation,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
@@ -266,6 +267,18 @@ export function applyPlayGraphDebugObserve(
   else target.runtime?.applyDebugObserve(observe, instanceId);
 }
 
+/** Replace the session's node breakpoints: a worker control, or the in-process runtime directly. */
+export function applyPlayBreakpoints(
+  target: {
+    worker?: { postControl: (message: ControlMessage) => void } | null;
+    runtime?: { applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void } | null;
+  },
+  breakpoints: BreakpointLocation[],
+): void {
+  if (target.worker) target.worker.postControl({ type: "setBreakpoints", breakpoints });
+  else target.runtime?.applyBreakpoints(breakpoints);
+}
+
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   scripts?: readonly ScriptBundleEntry[];
@@ -409,6 +422,8 @@ export interface PlaySession {
    * only, `onExecutionTrace` each tick (and a Behaviour Tree's `onBtState`).
    */
   observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
+  /** Replace the node breakpoints a Simulation stops at (its scripts check them). */
+  setBreakpoints: (breakpoints: BreakpointLocation[]) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -702,6 +717,8 @@ export function startPlaySession(options: {
   infiniteLoopDetection?: boolean;
   /** Simulation: pause the first time each node reports an error (Engine Settings, Pause On Errors). */
   pauseOnErrors?: boolean;
+  /** Simulation: the enabled node breakpoints when it starts; `setBreakpoints` changes them. */
+  breakpoints?: BreakpointLocation[];
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
@@ -1595,6 +1612,7 @@ export function startPlaySession(options: {
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     pauseOnErrors: options.pauseOnErrors,
+    breakpoints: options.breakpoints,
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
     assetCatalog: options.assetCatalog,
@@ -1914,6 +1932,9 @@ export function startPlaySession(options: {
     },
     observeGraphDebug: (target, instanceId) => {
       if (!stopped) applyPlayGraphDebugObserve({ worker, runtime }, target, instanceId);
+    },
+    setBreakpoints: (breakpoints) => {
+      if (!stopped) applyPlayBreakpoints({ worker, runtime }, breakpoints);
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {

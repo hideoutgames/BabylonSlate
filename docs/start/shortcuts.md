@@ -34,6 +34,7 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | --- | --- |
 | Play | <kbd>Alt</kbd>+<kbd>P</kbd> |
 | Compile | <kbd>F7</kbd> |
+| Toggle Breakpoint | <kbd>F9</kbd> |
 
 ### Viewport
 

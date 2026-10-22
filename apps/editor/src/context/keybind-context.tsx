@@ -144,13 +144,15 @@ export function KeybindProvider({
   );
   const value = useMemo(() => ({ bindings, register }), [bindings, register]);
   // Graph canvases own their Copy, Paste, Duplicate and Delete keys, so they
-  // read the same bindings the Outliner and Content Browser register.
+  // read the same bindings the Outliner and Content Browser register. Toggle
+  // Breakpoint is the canvas's own, so it works while a Simulation runs.
   const graphKeybinds = useMemo(
     (): GraphKeybinds => ({
       copy: bindings.get("edit.copy") ?? [],
       paste: bindings.get("edit.paste") ?? [],
       duplicate: bindings.get("edit.duplicate") ?? [],
       delete: bindings.get("edit.delete") ?? [],
+      toggleBreakpoint: bindings.get("graph.toggleBreakpoint") ?? [],
     }),
     [bindings],
   );

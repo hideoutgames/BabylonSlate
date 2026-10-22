@@ -66,6 +66,7 @@ import { ConnectedDebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
+import { useBreakpointStore } from "../context/breakpoints-context";
 import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry, SessionPauseCause } from "@haptic/bridge";
@@ -207,8 +208,8 @@ export interface PlayOverlayProps {
   pauseOnPlay?: boolean;
   /** Simulation: pause the first time each node reports an error. */
   pauseOnErrors?: boolean;
-  /** A Simulation paused on an error: show its source. */
-  onPausedOnError?: (cause: SessionPauseCause) => void;
+  /** A Simulation paused itself, on an error or at a breakpoint: show where. */
+  onPausedAt?: (cause: SessionPauseCause) => void;
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
@@ -316,7 +317,7 @@ function PlayOverlayView({
   audioProjectSettings,
   pauseOnPlay = false,
   pauseOnErrors = false,
-  onPausedOnError,
+  onPausedAt,
   onClose,
 }: PlayOverlayProps) {
   const { appendLog, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
@@ -324,6 +325,7 @@ function PlayOverlayView({
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
   const graphDebug = useGraphDebugStore();
+  const breakpointStore = useBreakpointStore();
   const diagnosticStore = useDiagnosticResultsStore();
   const diagnosticDetachRef = useRef<(() => void) | null>(null);
   const inspectionDetachRef = useRef<(() => void) | null>(null);
@@ -665,8 +667,8 @@ function PlayOverlayView({
   const initialFrameCapRef = useRef(frameCap);
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialPauseOnErrorsRef = useRef(pauseOnErrors);
-  const onPausedOnErrorRef = useRef(onPausedOnError);
-  onPausedOnErrorRef.current = onPausedOnError;
+  const onPausedAtRef = useRef(onPausedAt);
+  onPausedAtRef.current = onPausedAt;
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
@@ -842,16 +844,17 @@ function PlayOverlayView({
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
           pauseOnErrors: simulating && initialPauseOnErrorsRef.current,
+          breakpoints: simulating ? breakpointStore?.enabledLocations() : undefined,
           onSceneLoading: setSceneLoading,
           onSceneLoadFailed: () => setSceneLoadFailed(true),
           onSessionPaused: (next, cause) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
             if (!simulating || !cause) return;
-            // The runtime paused itself on an error: take the user pause through the session
-            // boundary so Resume and Step treat it like Pause, then show the error's source.
+            // The runtime paused itself on an error or at a breakpoint: take the user pause through
+            // the session boundary so Resume and Step treat it like Pause, then show where it stopped.
             pauseRef.current("user", true);
-            onPausedOnErrorRef.current?.(cause);
+            onPausedAtRef.current?.(cause);
           },
           onShowFps: (enabled) => {
             setStatsOpen(enabled);
@@ -918,6 +921,10 @@ function PlayOverlayView({
       // The graph debugger asks the runtime to watch the focused graph's instances.
       const unsubscribeGraphDebug = simulating
         ? graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId))
+        : undefined;
+      // Breakpoints set, removed or switched off while the Simulation runs apply from its next run of the node.
+      const unsubscribeBreakpoints = simulating
+        ? breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()))
         : undefined;
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
@@ -1069,12 +1076,13 @@ function PlayOverlayView({
         window.clearInterval(movePoll);
         detachLifecycle();
         unsubscribeGraphDebug?.();
+        unsubscribeBreakpoints?.();
         if (simulating) graphDebug?.setTarget(null);
         finishSessionRef.current();
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, breakpointStore, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
