@@ -6,9 +6,9 @@ import {
   writeSnapshotHeader,
   type ActorSlot,
   type CommandMessage,
-} from "@babylonslate/bridge";
-import { isSceneLayerAnchorActor } from "@babylonslate/core";
-import type { Actor, World } from "@babylonslate/object-model";
+} from "@haptic/bridge";
+import { isSceneLayerAnchorActor } from "@haptic/core";
+import type { Actor, World } from "@haptic/object-model";
 import { actorLabel, WorldTransformComposer } from "./actor-world-transform";
 import type { LogSeverity } from "./log-ring";
 import type { RenderSlots } from "./render-slots";

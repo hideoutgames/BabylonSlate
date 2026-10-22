@@ -1,4 +1,4 @@
-import { err, isOk, ok } from "@babylonslate/core";
+import { err, isOk, ok } from "@haptic/core";
 import {
   lfsEndpointFromRepoUrl,
   lfsLocksUrl,

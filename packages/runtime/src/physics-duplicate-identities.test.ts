@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultSpritePayload } from "@babylonslate/assets";
+import { createDefaultSpritePayload } from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ClassRegistry,
   World,
   createActorFromSerialized,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import {
   createSoftwarePhysicsBackend,
   HavokPhysicsBackend,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 /** Unspawned actors from the per-actor factory the runtime driver uses. */

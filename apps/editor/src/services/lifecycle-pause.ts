@@ -1,1 +1,1 @@
-export { attachLifecyclePause, type LifecyclePauseHandler } from "@babylonslate/render/lifecycle-pause";
+export { attachLifecyclePause, type LifecyclePauseHandler } from "@haptic/render/lifecycle-pause";

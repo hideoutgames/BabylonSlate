@@ -12,7 +12,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import { SUBSYSTEM_GET_NODE_ID, subsystemGetProperties } from "./subsystem";
 

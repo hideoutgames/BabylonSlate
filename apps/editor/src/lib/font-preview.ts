@@ -1,4 +1,4 @@
-import { compileFontStack } from "@babylonslate/assets";
+import { compileFontStack } from "@haptic/assets";
 
 export function familyFromAssetPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;

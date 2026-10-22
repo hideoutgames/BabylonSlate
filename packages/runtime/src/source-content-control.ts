@@ -1,8 +1,8 @@
-import { normalizeWaterDefinition, type CollisionTriangleMesh } from "@babylonslate/core";
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
-import { parseBehaviourTreeDocument, parseBlackboardDocument } from "@babylonslate/behaviour-tree";
-import { normalizeModelPayload, normalizeTilemapPayload, normalizeTilesetPayload, parseSpriteAnimationPayload, type SpritePayload } from "@babylonslate/assets";
-import type { ControlMessage, CookedCollisionMeshEntry } from "@babylonslate/bridge";
+import { normalizeWaterDefinition, type CollisionTriangleMesh } from "@haptic/core";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
+import { parseBehaviourTreeDocument, parseBlackboardDocument } from "@haptic/behaviour-tree";
+import { normalizeModelPayload, normalizeTilemapPayload, normalizeTilesetPayload, parseSpriteAnimationPayload, type SpritePayload } from "@haptic/assets";
+import type { ControlMessage, CookedCollisionMeshEntry } from "@haptic/bridge";
 import type { RuntimeDriver } from "./driver";
 
 /** Apply the same prepared source controls in worker and in-process hosts. */

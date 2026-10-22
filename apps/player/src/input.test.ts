@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InputRingBuffer } from "@babylonslate/input";
+import { InputRingBuffer } from "@haptic/input";
 import { attachInputCapture, playInputStampTick } from "./input";
 
 class FakeCanvas {

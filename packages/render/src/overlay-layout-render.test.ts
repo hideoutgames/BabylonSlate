@@ -1,6 +1,6 @@
 import { Camera, Mesh, MeshBuilder, StandardMaterial, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform, resolveOverlayLayout } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform, resolveOverlayLayout } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyEditorLayoutClips, OverlayLayoutRenderer, overlayClipAllowsPoint } from "./overlay-layout-render";

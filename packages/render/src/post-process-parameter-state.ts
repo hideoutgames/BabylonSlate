@@ -2,7 +2,7 @@ import {
   normalizeMaterialParameterOverrides,
   type MaterialParameterValue,
   type ScenePostProcessEntry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Runtime replay belongs to the Scene/Layer owner, independently of live/disabled passes. */
 export class PostProcessParameterState {

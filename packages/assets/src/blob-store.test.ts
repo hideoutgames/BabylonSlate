@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createMemoryBlobStore, createVfsBlobStore } from "./blob-store";
 import { sha256Hex } from "./bytes";
 
 describe("createVfsBlobStore", () => {
   it("rewrites a torn blob at its hash path and leaves a complete one alone", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("blobs.babproject");
+    await storage.openDocumentsProject("blobs.hproject");
     const blobs = createVfsBlobStore(storage);
     const bytes = new Uint8Array([1, 2, 3, 4, 5, 6]);
     const hash = await sha256Hex(bytes);

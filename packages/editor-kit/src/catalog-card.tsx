@@ -4,9 +4,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@babylonslate/ui/components/card";
-import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/card";
+import { typeColorThumbAccent } from "@haptic/ui/lib/data-types";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,

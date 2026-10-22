@@ -2,7 +2,7 @@ import {
   fitContainedRect,
   playFramebufferSize,
   type RenderProjectSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export function applyPlayerLayout(options: {
   root: HTMLElement;

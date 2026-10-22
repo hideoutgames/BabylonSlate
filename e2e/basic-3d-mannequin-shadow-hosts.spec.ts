@@ -8,7 +8,7 @@ import { setPreviewScene } from "./preview-parity";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { captureMannequinPixels, mannequinContactCoverage, mannequinShadowMetrics, mannequinShadowSamples, posedMannequin, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 type Api = {
@@ -17,7 +17,7 @@ type Api = {
   rendering(): { presentation: { drawn: number } } | null;
 };
 type Host = "play" | "player";
-const apiName = (host: Host) => host === "play" ? "__babylonslatePlayTest" : "__babylonslatePlayerTest";
+const apiName = (host: Host) => host === "play" ? "__hapticPlayTest" : "__hapticPlayerTest";
 const diagnostics = (canvas: Locator, host: Host) => canvas.evaluate((_node, name) => (window as unknown as Record<string, Api>)[name]!.shadowDiagnostics(), apiName(host));
 // Scene render ids also advance for shadow and render-target passes, without a
 // new canvas frame. Captures must follow frames the host actually presented.
@@ -50,7 +50,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   await waitForEditorInteractive(page);
   await showOverlayButtons(page, ["console"]);
   await openMainScene(page);
-  const scene = await page.evaluate(() => (window as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
+  const scene = await page.evaluate(() => (window as unknown as { __hapticTest: { activeSceneContent(): SerializedScene } }).__hapticTest.activeSceneContent());
   const camera = scene.actors.find(actor => actor.id === scene.settings.mainCameraActorId)!;
   // The template Mannequin faces the default camera (-Z); frame its front, which the sun lights at a wide angle.
   camera.transform.position = [0, 1.9, -5.5];
@@ -58,10 +58,10 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   Object.assign(camera.components.find(component => component.classId === "CameraComponent")!.properties, { fieldOfView: 0.7 * 180 / Math.PI });
   // Preserve the real template's model, animation, light and clipping settings.
   await setPreviewScene(page, scene);
-  await expect.poll(() => page.evaluate(() => (window as unknown as { __babylonslateViewportTest: Api }).__babylonslateViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);
-  const geometry = await page.evaluate(() => (window as unknown as { __babylonslateViewportTest: { mannequinShadowProbe(): Promise<MannequinGeometry> } }).__babylonslateViewportTest.mannequinShadowProbe());
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __hapticViewportTest: Api }).__hapticViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);
+  const geometry = await page.evaluate(() => (window as unknown as { __hapticViewportTest: { mannequinShadowProbe(): Promise<MannequinGeometry> } }).__hapticViewportTest.mannequinShadowProbe());
   const sourceSha256 = await page.evaluate(async () => {
-    const bytes = await (window as unknown as { __babylonslateTest: { readAssetChunk(path: string, id: string): Promise<Uint8Array> } }).__babylonslateTest.readAssetChunk("assets/Mannequin/mannequin.babasset", "source");
+    const bytes = await (window as unknown as { __hapticTest: { readAssetChunk(path: string, id: string): Promise<Uint8Array> } }).__hapticTest.readAssetChunk("assets/Mannequin/mannequin.hasset", "source");
     if (!bytes?.byteLength) throw new Error("Missing imported mannequin source bytes");
     return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))), value => value.toString(16).padStart(2, "0")).join("");
   });
@@ -96,10 +96,10 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
       const shadowed = await captureMannequinPixels(canvas, points);
       if (host === "play") {
         const renderer = await canvas.evaluate(() => {
-          const api = (window as unknown as { __babylonslatePlayTest: Api & {
+          const api = (window as unknown as { __hapticPlayTest: Api & {
             materialDefines(): Array<{ mesh: string; material: string | null; defines: string }>;
             renderTasks(): string[];
-          } }).__babylonslatePlayTest;
+          } }).__hapticPlayTest;
           return { materialDefines: api.materialDefines(), rendering: api.rendering(), renderTasks: api.renderTasks() };
         });
         await testInfo.attach(`${host}-${mode}-shadow-renderer`, {

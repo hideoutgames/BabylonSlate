@@ -19,7 +19,7 @@ export async function openAudioTestProject(
   const attenuationGuid = "00000000-0000-4000-8000-000000000004";
   if (spatial) {
     files.set(
-      "assets/Near.atten.babasset",
+      "assets/Near.atten.hasset",
       await encodeAssetDocument({
         guid: attenuationGuid,
         type: "SoundAttenuation",
@@ -30,7 +30,7 @@ export async function openAudioTestProject(
     );
   }
   files.set(
-    "assets/beep.babasset",
+    "assets/beep.hasset",
     await encodeAssetDocument(
       {
         guid: "00000000-0000-4000-8000-000000000003",

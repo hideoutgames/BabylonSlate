@@ -48,7 +48,7 @@ describe("SetAssetDocumentCommand", () => {
   });
 
   it("skips a journaled edit without both documents instead of emptying the asset", () => {
-    const docId = "water:assets/Lake.water.babasset";
+    const docId = "water:assets/Lake.water.hasset";
     const water = { waveHeight: 1 };
     const line = JSON.stringify({
       v: 1, docId, at: "2026-10-11T00:00:00Z",

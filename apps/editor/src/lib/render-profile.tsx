@@ -4,7 +4,7 @@ import {
   type ProfilerOnRenderCallback,
   type ReactNode,
 } from "react";
-import { isTestModeEnabled } from "@babylonslate/vfs";
+import { isTestModeEnabled } from "@haptic/vfs";
 
 /**
  * React commits that rendered one profiled region, with React's own timings.

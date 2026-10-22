@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
-import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
+import { createDefaultAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 
 function setup(document: AnimGraphDocument, count = 1) {

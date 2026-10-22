@@ -18,7 +18,7 @@ async function selectMode(page: Page, label: string) {
   await waitForSceneViewportReady(page);
 }
 async function content(page: Page): Promise<SerializedScene> {
-  return page.evaluate(() => (globalThis as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
+  return page.evaluate(() => (globalThis as unknown as { __hapticTest: { activeSceneContent(): SerializedScene } }).__hapticTest.activeSceneContent());
 }
 async function landscapeProjectFiles() {
   const files = await minimalProjectFiles();
@@ -129,7 +129,7 @@ test.describe("Scene modes", () => {
     test.setTimeout(120_000);
     const files = await landscapeProjectFiles();
     const guid = "00000000-0000-4000-8000-000000000010";
-    files.set("assets/brush.model.babasset", await encodeAssetDocument({ guid, name: "Brush Model", type: "Model", version: 1, payload: {} }, {
+    files.set("assets/brush.model.hasset", await encodeAssetDocument({ guid, name: "Brush Model", type: "Model", version: 1, payload: {} }, {
       headerPayload: { ...normalizeModelPayload({}) },
       extraChunks: [{ id: "source", kind: "geometry", mime: "model/gltf-binary", data: encodeUvSphereGlb(4, 8) }],
     }));

@@ -1,9 +1,9 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
 import { derivedDataRoot } from "./derived-data";
 
 export const TRACE_ASSET_TYPE = "Trace";
-export const TRACE_FILE_EXTENSION = ".babtrace";
+export const TRACE_FILE_EXTENSION = ".htrace";
 
 export function isTracePath(path: string): boolean {
   return path.endsWith(TRACE_FILE_EXTENSION);
@@ -13,7 +13,7 @@ export function tracesDir(projectGuid: string): string {
   return `${derivedDataRoot(projectGuid)}/traces`;
 }
 
-/** `derived/{projectGuid}/traces/{fileName}.babtrace` */
+/** `derived/{projectGuid}/traces/{fileName}.htrace` */
 export function tracePath(projectGuid: string, fileName: string): string {
   const base = fileName.endsWith(TRACE_FILE_EXTENSION)
     ? fileName
@@ -21,7 +21,7 @@ export function tracePath(projectGuid: string, fileName: string): string {
   return `${tracesDir(projectGuid)}/${base}`;
 }
 
-/** Encode a recorded session as a Trace document in the .babasset container. */
+/** Encode a recorded session as a Trace document in the .hasset container. */
 export async function encodeTraceDocument(document: {
   name: string;
   guid: string;

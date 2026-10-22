@@ -10,13 +10,13 @@ import {
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
-} from "@babylonslate/core";
-import { diffGraphCommands, type EditCommand } from "@babylonslate/edit";
+} from "@haptic/core";
+import { diffGraphCommands, type EditCommand } from "@haptic/edit";
 import { pruneEventMembersToNodes } from "./class-members";
 import {
   animGraphMembersFromVariables,
   parseAnimGraphDocument,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   ENGINE_ENUMS,
   ENGINE_STRUCTS,
@@ -24,15 +24,15 @@ import {
   type EnumMember,
   type StructField,
   type TypeSchemas,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { asEnumAsset, asStructureAsset } from "./type-asset-payload";
-import { walkAncestry } from "@babylonslate/editor-kit";
+import { walkAncestry } from "@haptic/editor-kit";
 import {
   compareClassIds,
   isLockedEngineClassId,
   subsystemBaseClassIdOf,
   type SubsystemBaseClassId,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRightIcon, MailIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
   FieldGroup,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import {
   createNativeClerkClient,
   type NativeClerkChallenge,

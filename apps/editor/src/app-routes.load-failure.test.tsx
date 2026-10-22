@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { AppRoutes } from "./app-routes";
 
 const documentState = vi.hoisted(() => ({ route: "home" as "home" | "editor" }));
@@ -18,7 +18,7 @@ vi.mock("./routes/editor-route", () => {
 });
 
 beforeEach(() => {
-  vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
+  vi.stubGlobal("__HAPTIC_BUILD_LABEL__", "0.0.1 Development build");
   vi.stubGlobal("matchMedia", (media: string) => ({
     matches: false,
     media,

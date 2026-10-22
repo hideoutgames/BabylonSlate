@@ -1,4 +1,4 @@
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene } from "@haptic/core";
 import { isComponentValueOnlySceneEdit } from "./scene-transform-edit";
 
 /**

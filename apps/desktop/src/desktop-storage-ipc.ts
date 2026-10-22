@@ -1,8 +1,8 @@
 import { realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
-import { isLibraryFolder, type LibraryFolder } from "@babylonslate/vfs/library-folders";
-import { NodeStorageAdapter } from "@babylonslate/vfs/node";
+import { isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
+import { isLibraryFolder, type LibraryFolder } from "@haptic/vfs/library-folders";
+import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { LIBRARY_FILE_OPERATIONS, MAX_IPC_BYTES } from "./packaged-security";
 
 type FileOperation = (typeof LIBRARY_FILE_OPERATIONS)[number];

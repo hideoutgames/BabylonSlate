@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { DataDefinitionField, SerializedGraph } from "@babylonslate/core";
-import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
+import type { DataDefinitionField, SerializedGraph } from "@haptic/core";
+import { mergeEngineTypeSchemas } from "@haptic/scripting";
 import { patchDataGraphNode } from "../lib/data-graph";
 import { graphDataLiteralField, inspectorLiteralPinDefaults } from "../lib/graph-inspector";
 import type { useDataCatalog } from "../lib/use-data-catalog";
@@ -70,7 +70,7 @@ describe("Definition collection literals in the graph Inspector", () => {
     ]));
     expect(validateSerializedGraph(authored, { assetGuid: "tools", graphId: "graph", classId: "EditorUtilityObject", ...schemas })
       .filter((issue) => issue.severity === "error")).toEqual([]);
-    const compiled = compileGraphDocument(authored, { path: "assets/Tools.class.babasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, ...schemas });
+    const compiled = compileGraphDocument(authored, { path: "assets/Tools.class.hasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, ...schemas });
     expect(compiled).not.toBeNull();
     const js = compiled!.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
     const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;
@@ -134,7 +134,7 @@ describe("Definition collection literals in the graph Inspector", () => {
       expect.objectContaining({ id: "price", name: "Cost" }),
       expect.objectContaining({ id: "removed", name: "RemovedIcon", typeId: "asset" }),
     ]));
-    const compiled = compileGraphDocument(authored, { path: "assets/Tools.class.babasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, ...changedSchemas });
+    const compiled = compileGraphDocument(authored, { path: "assets/Tools.class.hasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, ...changedSchemas });
     expect(compiled).not.toBeNull();
     const js = compiled!.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
     const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;

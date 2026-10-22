@@ -12,8 +12,8 @@ import {
   blockerWorldMatrix,
   initNavigation,
   navMeshDebugPrimitives,
-} from "@babylonslate/navigation";
-import type { PhysicsWorldKind, SerializedActor } from "@babylonslate/core";
+} from "@haptic/navigation";
+import type { PhysicsWorldKind, SerializedActor } from "@haptic/core";
 import {
   createNavDebugBlockerMesh,
   type EditorVolumeKind,

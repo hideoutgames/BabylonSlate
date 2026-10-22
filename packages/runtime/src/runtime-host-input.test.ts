@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { ResolvedInputTick } from "@babylonslate/input";
+import type { CommandMessage } from "@haptic/bridge";
+import type { ResolvedInputTick } from "@haptic/input";
 import { createWorldInputProvider } from "./runtime-host-input";
 
 function provider() {

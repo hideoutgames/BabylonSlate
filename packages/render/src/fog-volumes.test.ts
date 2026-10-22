@@ -1,5 +1,5 @@
 import { BoundingBox, Camera, FreeCamera, Frustum, Matrix, NullEngine, Scene, TransformNode, Vector3 } from "@babylonjs/core";
-import { fogVolumeBindings, identitySerializedTransform, type SerializedComponent } from "@babylonslate/core";
+import { fogVolumeBindings, identitySerializedTransform, type SerializedComponent } from "@haptic/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   hasFogVolumes,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { emptySkyboxFaces } from "@babylonslate/core";
-import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
+import { emptySkyboxFaces } from "@haptic/core";
+import { SKYBOX_FACE_KEYS } from "@haptic/core";
 import {
   readTextureImageBytes,
   writeSkyboxCreatorFaceAssets,
@@ -24,7 +24,7 @@ describe("writeSkyboxCreatorFaceAssets", () => {
   it("creates six skybox Textures in the helper folder", async () => {
     const created: Array<{ relativePath: string; guid: string; name: string }> = [];
     const faces = await writeSkyboxCreatorFaceAssets({
-      helperPath: "assets/skies/Day.skyboxcreator.babasset",
+      helperPath: "assets/skies/Day.skyboxcreator.hasset",
       payload: {
         sourceTextureGuid: "src-1",
         sourcePlacement: null,
@@ -61,12 +61,12 @@ describe("writeSkyboxCreatorFaceAssets", () => {
       },
     });
     expect(created.map((row) => row.relativePath)).toEqual([
-      "skies/Day_px.babasset",
-      "skies/Day_py.babasset",
-      "skies/Day_pz.babasset",
-      "skies/Day_nx.babasset",
-      "skies/Day_ny.babasset",
-      "skies/Day_nz.babasset",
+      "skies/Day_px.hasset",
+      "skies/Day_py.hasset",
+      "skies/Day_pz.hasset",
+      "skies/Day_nx.hasset",
+      "skies/Day_ny.hasset",
+      "skies/Day_nz.hasset",
     ]);
     expect(faces).toEqual({
       px: "face-px",
@@ -82,7 +82,7 @@ describe("writeSkyboxCreatorFaceAssets", () => {
     const deleted: string[] = [];
     const created: string[] = [];
     await writeSkyboxCreatorFaceAssets({
-      helperPath: "assets/Day.skyboxcreator.babasset",
+      helperPath: "assets/Day.skyboxcreator.hasset",
       payload: {
         sourceTextureGuid: "src-1",
         sourcePlacement: null,
@@ -101,11 +101,11 @@ describe("writeSkyboxCreatorFaceAssets", () => {
       existingByGuid: new Map(
         SKYBOX_FACE_KEYS.map((key) => [
           `old-${key}`,
-          { path: `assets/Day_${key}.babasset` },
+          { path: `assets/Day_${key}.hasset` },
         ]),
       ),
       occupiedPaths: new Set(
-        SKYBOX_FACE_KEYS.map((key) => `assets/Day_${key}.babasset`),
+        SKYBOX_FACE_KEYS.map((key) => `assets/Day_${key}.hasset`),
       ),
       rootId: "project",
       pathPrefix: "assets",
@@ -127,12 +127,12 @@ describe("writeSkyboxCreatorFaceAssets", () => {
       "old-nz",
     ]);
     expect(created).toEqual([
-      "Day_px.babasset",
-      "Day_py.babasset",
-      "Day_pz.babasset",
-      "Day_nx.babasset",
-      "Day_ny.babasset",
-      "Day_nz.babasset",
+      "Day_px.hasset",
+      "Day_py.hasset",
+      "Day_pz.hasset",
+      "Day_nx.hasset",
+      "Day_ny.hasset",
+      "Day_nz.hasset",
     ]);
   });
 
@@ -145,7 +145,7 @@ describe("writeSkyboxCreatorFaceAssets", () => {
     }
     const encoded: Record<string, number[]> = {};
     await writeSkyboxCreatorFaceAssets({
-      helperPath: "assets/Day.skyboxcreator.babasset",
+      helperPath: "assets/Day.skyboxcreator.hasset",
       payload: {
         sourceTextureGuid: "src-1",
         sourcePlacement: { x: 0.25, y: 0, width: 0.25, height: 1 / 3 },
@@ -167,7 +167,7 @@ describe("writeSkyboxCreatorFaceAssets", () => {
         return () => `face-${SKYBOX_FACE_KEYS[n++]!}`;
       })(),
       createAsset: async (_rootId, relativePath, result) => {
-        const key = relativePath.replace("Day_", "").replace(".babasset", "");
+        const key = relativePath.replace("Day_", "").replace(".hasset", "");
         encoded[key] = [...(result.chunks[0]!.data as Uint8Array).slice(0, 4)];
       },
       deleteAsset: async () => {},
@@ -188,27 +188,27 @@ describe("readTextureImageBytes", () => {
   it("prefers image pixels and reports the sniffed MIME", async () => {
     const png = await readTextureImageBytes(async (_path, chunkId) => {
       return chunkId === "pixels" ? PNG_MAGIC : JPEG_MAGIC;
-    }, "assets/Sky.babasset");
+    }, "assets/Sky.hasset");
     expect(png).toEqual({ bytes: PNG_MAGIC, mime: "image/png" });
 
     const jpeg = await readTextureImageBytes(async (_path, chunkId) => {
       return chunkId === "source" ? JPEG_MAGIC : new Uint8Array();
-    }, "assets/Sky.babasset");
+    }, "assets/Sky.hasset");
     expect(jpeg).toEqual({ bytes: JPEG_MAGIC, mime: "image/jpeg" });
 
-    const missing = await readTextureImageBytes(async () => null, "assets/Sky.babasset");
+    const missing = await readTextureImageBytes(async () => null, "assets/Sky.hasset");
     expect(missing).toBeNull();
   });
 
   it("skips KTX2 and stub-encode pixels and uses the source image", async () => {
     const fromKtx2 = await readTextureImageBytes(async (_path, chunkId) => {
       return chunkId === "pixels" ? KTX2_PREFIX : PNG_MAGIC;
-    }, "assets/Sky.babasset");
+    }, "assets/Sky.hasset");
     expect(fromKtx2).toEqual({ bytes: PNG_MAGIC, mime: "image/png" });
 
     const fromStub = await readTextureImageBytes(async (_path, chunkId) => {
       return chunkId === "pixels" ? STUB_KTX2 : JPEG_MAGIC;
-    }, "assets/Sky.babasset");
+    }, "assets/Sky.hasset");
     expect(fromStub).toEqual({ bytes: JPEG_MAGIC, mime: "image/jpeg" });
   });
 });

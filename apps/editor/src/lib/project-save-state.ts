@@ -1,4 +1,4 @@
-import type { ProjectDocument } from "@babylonslate/core";
+import type { ProjectDocument } from "@haptic/core";
 
 type ProjectSaveToken = { owner: number; document: ProjectDocument };
 

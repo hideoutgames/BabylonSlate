@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ActorComponent } from "@babylonslate/object-model";
+import { ActorComponent } from "@haptic/object-model";
 import { ParsedComponentProperties } from "./parsed-component-properties";
 
 /** A component whose variables are a plain Map, so they carry no revision. */

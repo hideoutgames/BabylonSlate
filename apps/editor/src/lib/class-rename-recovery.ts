@@ -1,6 +1,6 @@
-import { documentId, parseDocumentId } from "@babylonslate/core";
-import { replaceClassAssetReferences, type AssetRegistry, type ClassAssetReference } from "@babylonslate/assets";
-import { JOURNAL_CHECKPOINT_TYPE, parseJournalLine, resolveJournalLines, serializeJournalLine } from "@babylonslate/edit";
+import { documentId, parseDocumentId } from "@haptic/core";
+import { replaceClassAssetReferences, type AssetRegistry, type ClassAssetReference } from "@haptic/assets";
+import { JOURNAL_CHECKPOINT_TYPE, parseJournalLine, resolveJournalLines, serializeJournalLine } from "@haptic/edit";
 import { classIdFromClassAsset } from "./class-asset-lookup";
 
 /** Checkpoints survive both completed and rolled-back Class file operations. */

@@ -1,11 +1,11 @@
 import { runtimeEditWorldTransform } from "./runtime-transform-edit";
-import type { SerializedTransform } from "@babylonslate/core";
+import type { SerializedTransform } from "@haptic/core";
 import type {
   RuntimeIdentityCursor, RuntimeIdentityRow, RuntimeInspectorAction, RuntimeInspectorPayload,
   RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeInspectorValue, RuntimeObjectIdentity,
   RuntimePropertyCapability, RuntimePropertyDescriptor,
-} from "@babylonslate/bridge";
-import { Actor, ActorComponent, BObject, MaterialObject, engineScriptApiFor, type World } from "@babylonslate/object-model";
+} from "@haptic/bridge";
+import { Actor, ActorComponent, BObject, MaterialObject, engineScriptApiFor, type World } from "@haptic/object-model";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 
 const MAX_BATCH_BYTES = 64 * 1024;
@@ -32,7 +32,7 @@ export interface RuntimeInspectorHost {
   boundary(): Boundary;
   applyProperty(target: Target, key: string, value: unknown): void;
   applyTransform(target: Target, transform: SerializedTransform, space?: "local" | "world"): void;
-  applyMaterial(component: ActorComponent, name: string, value: import("@babylonslate/core").MaterialParameterValue): boolean;
+  applyMaterial(component: ActorComponent, name: string, value: import("@haptic/core").MaterialParameterValue): boolean;
 }
 
 /** No subscriptions or hot-path collection. `RuntimeInspectorService` invokes requests at a completed tick boundary. */

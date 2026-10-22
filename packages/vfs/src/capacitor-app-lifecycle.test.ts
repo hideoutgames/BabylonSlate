@@ -32,13 +32,13 @@ describe("Capacitor app lifecycle bridge", () => {
     removeListener.mockClear();
   });
 
-  it("dispatches babylonslate:appstate with isActive false when the app backgrounds", async () => {
+  it("dispatches haptic:appstate with isActive false when the app backgrounds", async () => {
     initializeCapacitorLifecycle();
     await flushAsync();
 
     const handler = addListener.mock.calls[0][1];
     const listener = vi.fn();
-    window.addEventListener("babylonslate:appstate", listener);
+    window.addEventListener("haptic:appstate", listener);
 
     handler({ isActive: false });
 
@@ -49,13 +49,13 @@ describe("Capacitor app lifecycle bridge", () => {
     );
   });
 
-  it("dispatches babylonslate:appstate with isActive true when the app foregrounds", async () => {
+  it("dispatches haptic:appstate with isActive true when the app foregrounds", async () => {
     initializeCapacitorLifecycle();
     await flushAsync();
 
     const handler = addListener.mock.calls[0][1];
     const listener = vi.fn();
-    window.addEventListener("babylonslate:appstate", listener);
+    window.addEventListener("haptic:appstate", listener);
 
     handler({ isActive: true });
 
@@ -76,7 +76,7 @@ describe("Capacitor app lifecycle bridge", () => {
 
   it("does not register the Capacitor listener in Electron", async () => {
     getPlatform.mockReturnValue("web");
-    (globalThis as { babylonslate?: unknown }).babylonslate = { userData: {} };
+    (globalThis as { haptic?: unknown }).haptic = { userData: {} };
 
     initializeCapacitorLifecycle();
     await flushAsync();
@@ -96,13 +96,13 @@ describe("Capacitor app lifecycle bridge", () => {
 
   it("does not forward events after immediate cleanup, even when registration finishes later", async () => {
     const listener = vi.fn();
-    window.addEventListener("babylonslate:appstate", listener);
+    window.addEventListener("haptic:appstate", listener);
     const cleanup = initializeCapacitorLifecycle();
     cleanup();
     await flushAsync();
     addListener.mock.calls[0]?.[1]({ isActive: false });
     expect(listener).not.toHaveBeenCalled();
-    window.removeEventListener("babylonslate:appstate", listener);
+    window.removeEventListener("haptic:appstate", listener);
   });
 
   it("handles an unavailable native App plugin without an unhandled rejection", async () => {

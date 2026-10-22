@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { parsePerformanceProfile, serializePerformanceProfile, summarizePerformanceColumn, summarizePerformanceColumns, type PerformanceProfile, type PerformanceStream } from "@babylonslate/debugger";
-import type { RenderFrameReport } from "@babylonslate/render";
-import { humanizePropertyLabel, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SelectableText, ToolbarStrip } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { parsePerformanceProfile, serializePerformanceProfile, summarizePerformanceColumn, summarizePerformanceColumns, type PerformanceProfile, type PerformanceStream } from "@haptic/debugger";
+import type { RenderFrameReport } from "@haptic/render";
+import { humanizePropertyLabel, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SelectableText, ToolbarStrip } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
+import { Separator } from "@haptic/ui/components/separator";
+import { cn } from "@haptic/ui/lib/utils";
 import { CameraIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useAppSettings } from "../context/app-settings-context";
 import { downloadBlob } from "../lib/download";
 import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { DiagnosticResultsStore, type DiagnosticResult } from "../services/diagnostic-results-store";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
 import { TraceEmptyState } from "./trace-inspection-controls";
 
 const format = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "Unavailable" : value.toFixed(3);
@@ -133,7 +133,7 @@ function DistributionBar({ values, scale, budget }: { values: { median: number |
 }
 
 function serializeResult(result: DiagnosticResult) {
-  return result.kind === "profile" ? serializePerformanceProfile(result.profile) : JSON.stringify({ kind: "babylonslate-frame", version: 1, report: result.report });
+  return result.kind === "profile" ? serializePerformanceProfile(result.profile) : JSON.stringify({ kind: "haptic-frame", version: 1, report: result.report });
 }
 
 type SummaryRow = readonly [label: string, values: ReturnType<typeof summarizePerformanceColumn>, budget?: number];

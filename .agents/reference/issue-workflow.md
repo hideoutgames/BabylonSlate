@@ -33,7 +33,7 @@ Use the first source that exists.
 
 ## Standing guards
 
-- Do not re-add the game HUD / UserInterface system: no `@babylonslate/ui-runtime`, UserInterface assets, WidgetComponent, `ui.*` nodes, Interface-domain materials, Designer / Logic editors or Play/player Babylon GUI ([engine-plan.md](engine-plan.md)).
+- Do not re-add the game HUD / UserInterface system: no `@haptic/ui-runtime`, UserInterface assets, WidgetComponent, `ui.*` nodes, Interface-domain materials, Designer / Logic editors or Play/player Babylon GUI ([engine-plan.md](engine-plan.md)).
 - Do not rebuild shipped packages or systems to close a gap (`shader-graph`, `anim-graph`, `scripting`, `physics`, `debugger`, `behaviour-tree`, `navigation`, and the systems engine-plan lists as shipped). Wire hosts in `apps/editor` and bind the existing `render` / `runtime` helpers; additive work extends a system without reopening or replacing it.
 - Do not start parked polish unless asked: pin flash on tap-to-navigate, behaviour-tree collapse-inactive-subtree and capped auto-layout.
 - Do not change a performance-motivated default (for example sprite and tilemap alpha test vs blend) without on-device measurements on the baseline device.

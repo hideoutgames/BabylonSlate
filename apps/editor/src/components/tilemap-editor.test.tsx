@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
@@ -12,7 +12,7 @@ import {
   setTile,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import {
@@ -30,9 +30,9 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const GROUND_PATH = "assets/Ground.tileset.babasset";
-const PROPS_PATH = "assets/Props.tileset.babasset";
-const MAP_PATH = "assets/Level.tilemap.babasset";
+const GROUND_PATH = "assets/Ground.tileset.hasset";
+const PROPS_PATH = "assets/Props.tileset.hasset";
+const MAP_PATH = "assets/Level.tilemap.hasset";
 
 const twoTileTileset = () =>
   ensureTilesetTiles({
@@ -152,7 +152,7 @@ beforeEach(() => {
   documentApi.assets = [
     { header: { guid: "ts-ground", name: "Ground", type: "Tileset" }, path: GROUND_PATH },
     { header: { guid: "ts-props", name: "Props", type: "Tileset" }, path: PROPS_PATH },
-    { header: { guid: "tex-1", name: "Atlas", type: "Texture" }, path: "assets/Atlas.texture.babasset" },
+    { header: { guid: "tex-1", name: "Atlas", type: "Texture" }, path: "assets/Atlas.texture.hasset" },
   ];
   loadAssetDocument.mockImplementation(async (_kind: string, path: string) => {
     if (path === GROUND_PATH || path === PROPS_PATH) return twoTileTileset();
@@ -338,7 +338,7 @@ describe("TilemapPalette", () => {
       "2",
     );
     expect(loadAssetDocument).toHaveBeenCalledWith("tileset", GROUND_PATH);
-    expect(readAssetChunk).toHaveBeenCalledWith("assets/Atlas.texture.babasset", "pixels");
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/Atlas.texture.hasset", "pixels");
   });
 
   it("revokes every atlas URL when it closes while an atlas is still loading", async () => {

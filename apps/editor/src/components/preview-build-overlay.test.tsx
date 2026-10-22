@@ -36,7 +36,7 @@ describe("PreviewBuildOverlay", () => {
         ),
       );
     receive({
-      type: "babylonslate-preview-console-catalog",
+      type: "haptic-preview-console-catalog",
       commands: [
         {
           name: "heal",
@@ -58,7 +58,7 @@ describe("PreviewBuildOverlay", () => {
     });
     fireEvent.click(view.getByRole("button", { name: "Console" }));
     expect(post).toHaveBeenCalledWith(
-      { type: "babylonslate-preview-console-context" },
+      { type: "haptic-preview-console-context" },
       window.location.origin,
     );
     const input = view.getByRole("combobox", { name: /Console Command/i });
@@ -70,7 +70,7 @@ describe("PreviewBuildOverlay", () => {
       "Winning Heal",
     );
     receive({
-      type: "babylonslate-preview-console-catalog",
+      type: "haptic-preview-console-catalog",
       actors: ["New Scout"],
     });
     fireEvent.change(input, { target: { value: "inspect " } });
@@ -105,7 +105,7 @@ describe("PreviewBuildOverlay", () => {
       );
     receive(
       {
-        type: "babylonslate-preview-console-event",
+        type: "haptic-preview-console-event",
         command: {
           type: "log",
           severity: "warning",
@@ -115,7 +115,7 @@ describe("PreviewBuildOverlay", () => {
       window,
     );
     receive({
-      type: "babylonslate-preview-console-event",
+      type: "haptic-preview-console-event",
       command: { type: "log", severity: "warning", message: "Path is partial" },
     });
     fireEvent.click(view.getByRole("button", { name: "Console" }));
@@ -130,17 +130,17 @@ describe("PreviewBuildOverlay", () => {
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "babylonslate-preview-console-request",
+          type: "haptic-preview-console-request",
           line: "showpathfinding on",
         }),
         window.location.origin,
       ),
     );
     const request = post.mock.calls.find(
-      ([value]) => value.type === "babylonslate-preview-console-request",
+      ([value]) => value.type === "haptic-preview-console-request",
     )![0];
     receive({
-      type: "babylonslate-preview-console-result",
+      type: "haptic-preview-console-result",
       requestId: request.requestId,
       success: true,
       output: "Path Overlay Enabled",
@@ -150,7 +150,7 @@ describe("PreviewBuildOverlay", () => {
     );
     const trace = { version: 1, frames: [], logs: [] };
     receive({
-      type: "babylonslate-preview-console-event",
+      type: "haptic-preview-console-event",
       command: { type: "trace", payload: trace },
     });
     fireEvent.click(view.getByRole("button", { name: "Close" }));
@@ -177,7 +177,7 @@ describe("PreviewBuildOverlay", () => {
     render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef} onClose={() => undefined} onOutputLog={onOutputLog} />);
     const receive = (command: Record<string, unknown>) => act(() => window.dispatchEvent(new MessageEvent("message", {
       source: iframeRef.current!.contentWindow!, origin: window.location.origin,
-      data: { type: "babylonslate-preview-console-event", command } })));
+      data: { type: "haptic-preview-console-event", command } })));
     receive({ type: "log", severity: "error", category: "Fuel", message: "Empty" });
     receive({ type: "diagnostic", severity: "error", message: "Empty" });
     receive({ type: "print", message: "Hello" });
@@ -190,7 +190,7 @@ describe("PreviewBuildOverlay", () => {
     const onClose = vi.fn();
     render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef} onClose={onClose} />);
     act(() => window.dispatchEvent(new MessageEvent("message", { source: iframeRef.current!.contentWindow!,
-      origin: window.location.origin, data: { type: "babylonslate-preview-console-event", command: { type: "sessionEnded" } } })));
+      origin: window.location.origin, data: { type: "haptic-preview-console-event", command: { type: "sessionEnded" } } })));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
@@ -204,7 +204,7 @@ describe("PreviewBuildOverlay", () => {
       onTrace={onTrace} onClose={onClose} registerBeforeStop={(finalize) => { beforeStop = finalize; return unregister; }} />);
     const trace = { version: 1, frames: [], logs: [] };
     act(() => window.dispatchEvent(new MessageEvent("message", { source: iframeRef.current!.contentWindow!,
-      origin: window.location.origin, data: { type: "babylonslate-preview-console-event", command: { type: "trace", payload: trace } } })));
+      origin: window.location.origin, data: { type: "haptic-preview-console-event", command: { type: "trace", payload: trace } } })));
     await act(() => beforeStop());
     expect(onTrace).toHaveBeenCalledExactlyOnceWith(trace);
     expect(onClose).not.toHaveBeenCalled();

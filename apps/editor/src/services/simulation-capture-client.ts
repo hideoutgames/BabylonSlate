@@ -1,8 +1,8 @@
 import type {
   CommandMessage, SessionBoundaryResult, SimulationCaptureIdentity, SimulationCaptureRequest, SimulationQuiesceRequest,
-} from "@babylonslate/bridge";
-import type { SerializedScene } from "@babylonslate/core";
-import type { SimulationSceneCaptureResult } from "@babylonslate/runtime";
+} from "@haptic/bridge";
+import type { SerializedScene } from "@haptic/core";
+import type { SimulationSceneCaptureResult } from "@haptic/runtime";
 
 type CaptureCommand = Extract<CommandMessage, { type: "simulationQuiesced" | "simulationCaptureChunk" | "simulationCaptureResult" }>;
 type Pending = {

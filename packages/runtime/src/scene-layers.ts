@@ -1,6 +1,6 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, updateSceneLayerCamera, type SceneLayerCamera, type SerializedActor, type SerializedSceneLayer } from "@babylonslate/core";
-import { hydrateScenePropertyReferences, type Actor, type BObject, type SceneLayer, type World } from "@babylonslate/object-model";
+import type { CommandMessage } from "@haptic/bridge";
+import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, updateSceneLayerCamera, type SceneLayerCamera, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
+import { hydrateScenePropertyReferences, type Actor, type BObject, type SceneLayer, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
 import { callerSceneLayerId } from "./runtime-host-physics";

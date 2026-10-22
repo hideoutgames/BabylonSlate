@@ -11,8 +11,8 @@ vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "target", content: harness.content }], applyAssetDocumentChange: harness.commit,
   assetRegistry: { list: () => [
-    { header: { guid: "depth", name: "Depth Capture", type: "RenderTarget" }, path: "assets/depth.rendertarget.babasset" },
-    { header: { guid: "image", name: "Image", type: "Texture" }, path: "assets/image.texture.babasset" },
+    { header: { guid: "depth", name: "Depth Capture", type: "RenderTarget" }, path: "assets/depth.rendertarget.hasset" },
+    { header: { guid: "image", name: "Image", type: "Texture" }, path: "assets/image.texture.hasset" },
   ] },
 })));
 afterEach(() => { cleanup(); harness.commit.mockReset(); harness.content = {}; });

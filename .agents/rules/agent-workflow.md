@@ -10,7 +10,7 @@
 - Required GitHub CI owns exhaustive tests, coverage, workspace checks and browser suites; local success does not certify them.
 - Fix local failures before opening a PR. If verification cannot run, repair the setup where possible; otherwise report the blocker and open no PR.
 - Wait for local tests, CI and Verify slots with the [wait-efficiently](../skills/wait-efficiently/SKILL.md) helper.
-- Keep `BL_TEST_PROFILE=shared`: one root workload and one worker, at least 2 GiB host headroom, no smaller-job bypass; `CI=true` never changes local admission. Inspect `pnpm test:resources` before a reproduction and follow [local execution settings](../reference/testing.md#local-test-execution). Do not override reservations or bypass source and configuration validation.
+- Keep `HAPTIC_TEST_PROFILE=shared`: one root workload and one worker, at least 2 GiB host headroom, no smaller-job bypass; `CI=true` never changes local admission. Inspect `pnpm test:resources` before a reproduction and follow [local execution settings](../reference/testing.md#local-test-execution). Do not override reservations or bypass source and configuration validation.
 
 ## Testing
 
@@ -24,7 +24,7 @@
 ## Architecture and documentation
 
 - Product decisions: [engine-plan.md](../reference/engine-plan.md). Package map and coding standards: [architecture.md](../reference/architecture.md), with per-subsystem notes in [architecture/](../reference/architecture/). Package import boundaries are enforced by `no-restricted-imports` in `eslint.config.js`.
-- UI talks to Babylon through `engineCommandBus` in `@babylonslate/core`; graph execution emits commands and never touches Babylon; file access goes through `ProjectStorage` / `createStorage()` and platform detection through `getHostPlatform()` in `@babylonslate/vfs`. Never call Capacitor plugins from UI.
+- UI talks to Babylon through `engineCommandBus` in `@haptic/core`; graph execution emits commands and never touches Babylon; file access goes through `ProjectStorage` / `createStorage()` and platform detection through `getHostPlatform()` in `@haptic/vfs`. Never call Capacitor plugins from UI.
 - Update `docs/` and `.agents/reference/` in the same change as the behaviour they describe ([docs.md](docs.md)).
 
 ## Git: commit and push

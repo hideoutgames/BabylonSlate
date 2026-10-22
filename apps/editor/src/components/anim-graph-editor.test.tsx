@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@haptic/anim-graph";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
-import { TagProvider } from "@babylonslate/editor-kit";
+import { TagProvider } from "@haptic/editor-kit";
 import { ValidationProvider } from "../context/validation-context";
 import {
   AnimGraphDetailsPanel,
@@ -29,7 +29,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-const DOC_ID = "anim-graph:assets/Loco.anim.babasset";
+const DOC_ID = "anim-graph:assets/Loco.anim.hasset";
 
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
@@ -62,7 +62,7 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [
         {
           id: DOC_ID,
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
+          ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" },
           content,
         },
       ],
@@ -75,7 +75,7 @@ vi.mock("../context/document-context", async () => {
         list: () => [
           {
             header: { guid: "spr-1", name: "Hero", type: "Sprite" },
-            path: "assets/Hero.sprite.babasset",
+            path: "assets/Hero.sprite.hasset",
           },
           {
             header: {
@@ -84,7 +84,7 @@ vi.mock("../context/document-context", async () => {
               type: "SpriteAnimation",
               payload: { durationMs: 250 },
             },
-            path: "assets/Walk.spriteanim.babasset",
+            path: "assets/Walk.spriteanim.hasset",
           },
           {
             header: {
@@ -94,7 +94,7 @@ vi.mock("../context/document-context", async () => {
               payload: { clipNames: ["Idle", "Walk"] },
               dependencies: ["anim-1"],
             },
-            path: "assets/Hero.model.babasset",
+            path: "assets/Hero.model.hasset",
           },
           {
             header: {
@@ -103,7 +103,7 @@ vi.mock("../context/document-context", async () => {
               type: "Model",
               payload: { clipNames: [] },
             },
-            path: "assets/Empty.model.babasset",
+            path: "assets/Empty.model.hasset",
           },
           {
             header: {
@@ -112,29 +112,29 @@ vi.mock("../context/document-context", async () => {
               type: "Animation",
               payload: { clipName: "Walk" },
             },
-            path: "assets/Walk.animation.babasset",
+            path: "assets/Walk.animation.hasset",
           },
           {
             header: { guid: "tex-1", name: "Atlas", type: "Texture" },
-            path: "assets/Atlas.texture.babasset",
+            path: "assets/Atlas.texture.hasset",
           },
           {
             header: {
               guid: "stats", name: "Stats", type: "DataDefinition",
               payload: { fields: [{ id: "allowed", name: "Allowed", typeId: "bool", defaultValue: true }] },
             },
-            path: "assets/Stats.babasset",
+            path: "assets/Stats.hasset",
           },
           {
             header: {
               guid: "settings", name: "Settings", type: "DataTree",
               payload: { defaultDefinitionGuid: "stats", entries: [{ id: "primary", parentId: null, name: "Primary", values: { Allowed: true } }] },
             },
-            path: "assets/Settings.babasset",
+            path: "assets/Settings.hasset",
           },
         ],
         getByPath: (path: string) =>
-          path === "assets/Loco.anim.babasset"
+          path === "assets/Loco.anim.hasset"
             ? { header: { guid: "loco-graph", name: "Loco", type: "AnimationGraph" }, path }
             : undefined,
         getByGuid: (guid: string) =>

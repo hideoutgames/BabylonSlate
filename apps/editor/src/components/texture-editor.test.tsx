@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { AssetRegistry, projectContentRoot, type AreaEmissionProgress } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { AssetRegistry, projectContentRoot, type AreaEmissionProgress } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { TextureDetails, TextureDetailsPanel, TexturePreview } from "./texture-editor";
 
@@ -29,11 +29,11 @@ let assetRegistry: AssetRegistry;
 
 beforeAll(async () => {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("texture-details.babproject");
+  await storage.openDocumentsProject("texture-details.hproject");
   assetRegistry = new AssetRegistry(storage);
   await assetRegistry.mountRoot(projectContentRoot());
   for (const guid of ["tex-other", "tex-active"]) {
-    await assetRegistry.createAsset("project", `${guid}.babasset`, {
+    await assetRegistry.createAsset("project", `${guid}.hasset`, {
       guid, type: "Texture", name: guid, version: 1,
       dependencies: [], payload: {}, chunks: [],
     });
@@ -50,10 +50,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   registryEpoch: 0,
   encodingTextures: running.guids,
   openDocuments: [
-    { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
+    { id: "other", ref: { path: "assets/tex-other.hasset" }, content: {} },
     {
       id: "active",
-      ref: { path: "assets/tex-active.babasset" },
+      ref: { path: "assets/tex-active.hasset" },
       content: { usage: "albedo", compressionState: "encode_failed", encodeError: "Encoding failed" },
     },
   ],
@@ -106,7 +106,7 @@ describe("Texture editor", () => {
   });
 
   it("does not decode 2D pixels for an environment cube preview", () => {
-    render(<TexturePreview path="assets/environment.babasset" payload={ENVIRONMENT} />);
+    render(<TexturePreview path="assets/environment.hasset" payload={ENVIRONMENT} />);
     expect(screen.getByText("Environment Cube")).toBeTruthy();
     expect(screen.queryByTestId("texture-preview-image")).toBeNull();
     expect(readAssetChunk).not.toHaveBeenCalled();
@@ -229,17 +229,17 @@ describe("Texture editor", () => {
   });
 
   it("previews the decoded pixels", async () => {
-    render(<TexturePreview path="assets/albedo.babasset" payload={{ usage: "albedo", sourceWidth: 64, sourceHeight: 32 }} />);
+    render(<TexturePreview path="assets/albedo.hasset" payload={{ usage: "albedo", sourceWidth: 64, sourceHeight: 32 }} />);
     expect(await screen.findByTestId("texture-preview-image")).toBeTruthy();
     expect(screen.getByTestId("texture-preview-size").textContent).toBe("64 × 32");
-    expect(readAssetChunk).toHaveBeenCalledWith("assets/albedo.babasset", "pixels");
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/albedo.hasset", "pixels");
   });
 
   it("zooms the preview on the wheel and returns to the fitted view from Fit", async () => {
     const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(232);
     const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(232);
     try {
-      render(<TexturePreview path="assets/albedo.babasset" payload={{ usage: "albedo", sourceWidth: 100, sourceHeight: 100 }} />);
+      render(<TexturePreview path="assets/albedo.hasset" payload={{ usage: "albedo", sourceWidth: 100, sourceHeight: 100 }} />);
       await screen.findByTestId("texture-preview-image");
       const zoom = () => screen.getByTestId("texture-preview-zoom").textContent;
       await waitFor(() => expect(zoom()).toBe("200%"));
@@ -257,13 +257,13 @@ describe("Texture editor", () => {
 
   it("explains a Texture without decoded pixels", async () => {
     readAssetChunk.mockResolvedValueOnce(new Uint8Array());
-    render(<TexturePreview path="assets/empty.babasset" payload={{ usage: "albedo" }} />);
+    render(<TexturePreview path="assets/empty.hasset" payload={{ usage: "albedo" }} />);
     expect(await screen.findByText("No Image Data")).toBeTruthy();
   });
 
   it("reports a failed pixel read and previews the pixels on Retry", async () => {
     readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk changed during 3 read attempts"));
-    render(<TexturePreview path="assets/albedo.babasset" payload={{ usage: "albedo" }} />);
+    render(<TexturePreview path="assets/albedo.hasset" payload={{ usage: "albedo" }} />);
     expect(await screen.findByText("Texture Preview Failed")).toBeTruthy();
     expect(screen.getByText("Asset chunk changed during 3 read attempts")).toBeTruthy();
     expect(screen.queryByText("Loading Preview…")).toBeNull();

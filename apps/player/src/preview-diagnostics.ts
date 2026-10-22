@@ -1,7 +1,7 @@
-import { SessionDiagnostics, createDiagnosticOperationClient } from "@babylonslate/debugger";
-import { createPreviewDiagnosticServer, type PreviewDiagnosticEndpoint, type PreviewDiagnosticResult } from "@babylonslate/exporter";
-import type { DiagnosticOperationResult, PerformanceTickChunk } from "@babylonslate/bridge";
-import type { RenderFrameReport } from "@babylonslate/render";
+import { SessionDiagnostics, createDiagnosticOperationClient } from "@haptic/debugger";
+import { createPreviewDiagnosticServer, type PreviewDiagnosticEndpoint, type PreviewDiagnosticResult } from "@haptic/exporter";
+import type { DiagnosticOperationResult, PerformanceTickChunk } from "@haptic/bridge";
+import type { RenderFrameReport } from "@haptic/render";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 
 /** Separate Preview-only entry. No renderer/runtime substitute: all samples

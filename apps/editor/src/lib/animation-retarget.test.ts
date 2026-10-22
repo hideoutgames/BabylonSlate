@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAnimationPayload } from "@babylonslate/assets";
+import { normalizeAnimationPayload } from "@haptic/assets";
 import {
   retargetedAnimationImport,
   retargetedAnimationName,
@@ -132,7 +132,7 @@ describe("writeRetargetedAnimations", () => {
         });
       },
     });
-    expect(created).toEqual(["assets/Hero_Idle_Mannequin_Skeleton.babasset"]);
+    expect(created).toEqual(["assets/Hero_Idle_Mannequin_Skeleton.hasset"]);
     expect(result.skipped).toEqual([]);
     expect(result.created).toBe(1);
   });
@@ -159,8 +159,8 @@ describe("writeRetargetedAnimations", () => {
       },
     });
     expect(created).toEqual([
-      { path: "assets/Walk__Hero_1.babasset", name: "Walk!_Hero_1" },
-      { path: "assets/Walk__Hero_2.babasset", name: "Walk?_Hero_2" },
+      { path: "assets/Walk__Hero_1.hasset", name: "Walk!_Hero_1" },
+      { path: "assets/Walk__Hero_2.hasset", name: "Walk?_Hero_2" },
     ]);
   });
 });

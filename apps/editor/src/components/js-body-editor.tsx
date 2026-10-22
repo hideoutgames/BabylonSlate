@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
-import { useEditorReadOnly } from "@babylonslate/editor-kit";
+import { useEditorReadOnly } from "@haptic/editor-kit";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import { codeHighlight, glslLanguage } from "./code-highlighting";
 import { autocompletion, closeCompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
 import { codeCompletions } from "./code-completion";

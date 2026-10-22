@@ -14,7 +14,7 @@ const { getElectronHttpBridge, isElectronHost } = await import("./platform");
 
 describe("nativeHttp", () => {
   beforeEach(() => {
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
+    delete (globalThis as { haptic?: unknown }).haptic;
     request.mockReset();
     getPlatform.mockReturnValue("web");
   });
@@ -45,7 +45,7 @@ describe("nativeHttp", () => {
 
   it("forwards through the Electron HTTP bridge", async () => {
     const fetch = vi.fn(async () => ({ status: 200, bodyText: "{}" }));
-    (globalThis as { babylonslate?: unknown }).babylonslate = {
+    (globalThis as { haptic?: unknown }).haptic = {
       userData: {
         readSettings: async () => null,
         writeSettings: async () => {},

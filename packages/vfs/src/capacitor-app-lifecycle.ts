@@ -17,7 +17,7 @@ export function initializeCapacitorLifecycle(): () => void {
       (state: AppState) => {
         if (disposed) return;
         window.dispatchEvent(
-          new CustomEvent<{ isActive: boolean }>("babylonslate:appstate", {
+          new CustomEvent<{ isActive: boolean }>("haptic:appstate", {
             detail: { isActive: state.isActive },
           }),
         );

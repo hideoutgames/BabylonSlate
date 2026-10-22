@@ -2,7 +2,7 @@ import {
   normalizeClassMemberCategory,
   type GraphClassMember,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   mergePrefabComponents,

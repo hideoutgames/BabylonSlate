@@ -6,9 +6,9 @@ import {
   contentBrowserRoots,
   contentRootMoveWarnings,
   createProjectPluginAndRevealContent,
-  filterBabpluginFiles,
+  filterHpluginFiles,
   inboundRefsFromOtherRoots,
-  isBabpluginFile,
+  isHpluginFile,
   isPluginContentFolderPath,
   isPluginDocumentReadOnly,
   isPluginSettingsReadOnly,
@@ -36,7 +36,7 @@ describe("plugin identity helpers", () => {
     expect(uniquePluginFolderName("Pack", ["pack"])).toBe("pack-1");
     expect(uniquePluginFolderName("Pack", ["pack", "pack-1"])).toBe("pack-2");
     expect(pluginDownloadFileName("Starter Content")).toBe(
-      "starter-content.babplugin",
+      "starter-content.hplugin",
     );
   });
 });
@@ -123,15 +123,15 @@ describe("content browser plugin roots", () => {
     ).toBe(true);
   });
 
-  it("never treats .babplugin files as Content Browser items", () => {
-    expect(isBabpluginFile("Starter.babplugin")).toBe(true);
-    expect(isBabpluginFile("hero.class.babasset")).toBe(false);
+  it("never treats .hplugin files as Content Browser items", () => {
+    expect(isHpluginFile("Starter.hplugin")).toBe(true);
+    expect(isHpluginFile("hero.class.hasset")).toBe(false);
     expect(
-      filterBabpluginFiles([
-        { name: "Hero.class.babasset" },
-        { name: "Pack.babplugin" },
+      filterHpluginFiles([
+        { name: "Hero.class.hasset" },
+        { name: "Pack.hplugin" },
       ]).map((file) => file.name),
-    ).toEqual(["Hero.class.babasset"]);
+    ).toEqual(["Hero.class.hasset"]);
   });
 });
 
@@ -323,9 +323,9 @@ describe("plugin editor utilities and class paths", () => {
   it("lists Class assets from every mounted root for Play and compile", () => {
     expect(
       classAssetPaths([
-        { path: "assets/Hero.class.babasset", header: { type: "Class" } },
+        { path: "assets/Hero.class.hasset", header: { type: "Class" } },
         {
-          path: "plugins/pack/assets/PackActor.class.babasset",
+          path: "plugins/pack/assets/PackActor.class.hasset",
           header: { type: "Class" },
         },
         {
@@ -333,22 +333,22 @@ describe("plugin editor utilities and class paths", () => {
           placeholder: true,
           header: { type: "Unresolved" },
         },
-        { path: "assets/main.scene.babasset", header: { type: "Scene" } },
+        { path: "assets/main.scene.hasset", header: { type: "Scene" } },
       ]),
     ).toEqual([
-      "assets/Hero.class.babasset",
-      "plugins/pack/assets/PackActor.class.babasset",
+      "assets/Hero.class.hasset",
+      "plugins/pack/assets/PackActor.class.hasset",
     ]);
   });
 
   it("lists Scene assets from every mounted root for Play changescene", () => {
     expect(
       playSceneLibraryPaths(
-        ["assets/main.scene.babasset"],
+        ["assets/main.scene.hasset"],
         [
-          { path: "assets/main.scene.babasset", header: { type: "Scene" } },
+          { path: "assets/main.scene.hasset", header: { type: "Scene" } },
           {
-            path: "plugins/pack/assets/Arena.scene.babasset",
+            path: "plugins/pack/assets/Arena.scene.hasset",
             header: { type: "Scene" },
           },
           {
@@ -356,12 +356,12 @@ describe("plugin editor utilities and class paths", () => {
             placeholder: true,
             header: { type: "Scene" },
           },
-          { path: "assets/Hero.class.babasset", header: { type: "Class" } },
+          { path: "assets/Hero.class.hasset", header: { type: "Class" } },
         ],
       ),
     ).toEqual([
-      "assets/main.scene.babasset",
-      "plugins/pack/assets/Arena.scene.babasset",
+      "assets/main.scene.hasset",
+      "plugins/pack/assets/Arena.scene.hasset",
     ]);
   });
 
@@ -369,25 +369,25 @@ describe("plugin editor utilities and class paths", () => {
     const plugins = [
       {
         folderPath: "starter-content",
-        settingsPath: "starter-content/starter-content.plugin.babasset",
+        settingsPath: "starter-content/starter-content.plugin.hasset",
         readOnly: true,
       },
       {
         folderPath: "plugins/pack",
-        settingsPath: "plugins/pack/pack.plugin.babasset",
+        settingsPath: "plugins/pack/pack.plugin.hasset",
         readOnly: false,
       },
     ];
     expect(
       isPluginDocumentReadOnly(
         plugins,
-        "starter-content/assets/StarterActor.class.babasset",
+        "starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(true);
     expect(
       isPluginDocumentReadOnly(
         plugins,
-        "plugins/pack/assets/Hero.class.babasset",
+        "plugins/pack/assets/Hero.class.hasset",
       ),
     ).toBe(false);
   });

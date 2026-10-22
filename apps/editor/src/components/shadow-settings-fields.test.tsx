@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import {
   normalizeShadowSettings,
   type ShadowOverrides,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 
 // Base UI dispatches PointerEvent when activating its native switch input.

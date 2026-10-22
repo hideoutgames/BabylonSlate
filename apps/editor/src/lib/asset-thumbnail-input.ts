@@ -5,10 +5,10 @@ import {
   type AssetRegistry,
   type IndexedAsset,
   type ModelPayload,
-} from "@babylonslate/assets";
-import type { SerializedComponent, SerializedScene } from "@babylonslate/core";
-import { engineParentOf } from "@babylonslate/editor-kit";
-import type { AssetThumbnailRequest } from "@babylonslate/render";
+} from "@haptic/assets";
+import type { SerializedComponent, SerializedScene } from "@haptic/core";
+import { engineParentOf } from "@haptic/editor-kit";
+import type { AssetThumbnailRequest } from "@haptic/render";
 import {
   materialDependencies,
   materialInstanceDependencies,
@@ -19,7 +19,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { texturePixelSizesFromHeaders } from "./collect-gpu-texture-bytes";
 import {

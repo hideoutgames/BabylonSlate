@@ -1,5 +1,5 @@
 import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
-import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
+import { isStorageNotFound, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
@@ -7,7 +7,7 @@ import type {
   ProjectStorage,
   StorageReadOptions,
   StorageTier,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 interface MemoryNode {
   kind: "file";

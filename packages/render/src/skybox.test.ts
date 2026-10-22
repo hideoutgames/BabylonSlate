@@ -11,7 +11,7 @@ import {
   createActor,
   createDefaultScene,
   createSkyboxComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import {

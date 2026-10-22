@@ -34,12 +34,12 @@ import {
   ResourceCache,
   setSceneRenderSettings,
   text2DMeshLayout,
-} from "@babylonslate/render";
-import { normalizeShadowSettings } from "@babylonslate/core";
+} from "@haptic/render";
+import { normalizeShadowSettings } from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 
 export async function runWebGpuProof() {
   // Surface any optional vertex stream that still binds the dummy buffer.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 import { createInspectWorldStore, type InspectWorldStore } from "./inspect-world-store";
 
 const INSPECT_POLL_MS = 200;

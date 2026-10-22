@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, type InputAssetDefinition } from "@babylonslate/core";
-import { engineScriptApiFor } from "@babylonslate/object-model";
-import { compileGraph, type GraphNode } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createActor, createDefaultSceneSettings, type InputAssetDefinition } from "@haptic/core";
+import { engineScriptApiFor } from "@haptic/object-model";
+import { compileGraph, type GraphNode } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 
 const inputAssets: InputAssetDefinition[] = [{

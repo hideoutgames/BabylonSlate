@@ -5,7 +5,7 @@ import { findOpfsProjectDirectory } from "./opfs-project";
 import { saveAllIfEnabled } from "./save-all";
 
 type TestHost = {
-  __babylonslateTest: {
+  __hapticTest: {
     nudgeActiveGraphNode: () => Promise<boolean>;
     activeGraphNodePosition: () => { x: number; y: number } | null;
     cancelDebouncedSave: () => void;
@@ -24,7 +24,7 @@ async function recoverAfterReload(page: Page) {
 }
 
 async function journalCommands(page: Page) {
-  const directoryName = await findOpfsProjectDirectory(page, "opfs:__babylonslate_derived__");
+  const directoryName = await findOpfsProjectDirectory(page, "opfs:__haptic_derived__");
   // The first poll may precede creation of the derived store.
   if (directoryName === null) return [];
   return page.evaluate(async (storageDirectory) => {
@@ -73,31 +73,31 @@ async function journalCommands(page: Page) {
 
 test("H6/M4: recovery of an undone edit stays clean and clears its journal", async ({ page }) => {
   await openTestProject(page);
-  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
   await expect(
     page.getByTestId("graph-panel").locator(".react-flow__node").first(),
   ).toBeVisible();
   await saveAllIfEnabled(page);
   const before = await page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition());
+    (globalThis as unknown as TestHost).__hapticTest.activeGraphNodePosition());
   await page.evaluate(async () => {
-    const api = (globalThis as unknown as TestHost).__babylonslateTest;
+    const api = (globalThis as unknown as TestHost).__hapticTest;
     await api.nudgeActiveGraphNode();
     api.cancelDebouncedSave();
   });
   await page.getByTestId("undo-document").click();
   await expect.poll(() => page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).toEqual(before);
-  await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.cancelDebouncedSave());
+    (globalThis as unknown as TestHost).__hapticTest.activeGraphNodePosition())).toEqual(before);
+  await page.evaluate(() => (globalThis as unknown as TestHost).__hapticTest.cancelDebouncedSave());
   await expect.poll(async () => (await journalCommands(page))
     .filter((command) => command.type === "graph.moveNode").at(-1)?.to).toEqual(before);
   await recoverAfterReload(page);
   expect(await page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).toEqual(before);
+    (globalThis as unknown as TestHost).__hapticTest.activeGraphNodePosition())).toEqual(before);
   expect(await page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.dirtyDocuments())).toEqual([]);
+    (globalThis as unknown as TestHost).__hapticTest.dirtyDocuments())).toEqual([]);
   expect(await page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.hasRecoveryJournal())).toBe(false);
+    (globalThis as unknown as TestHost).__hapticTest.hasRecoveryJournal())).toBe(false);
   await page.reload();
   await page.getByTestId("open-listed-project-TestProject").click();
   await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
@@ -108,29 +108,29 @@ test("Class rename recovery keeps unsaved instances bound to the renamed Class",
   await openTestProject(page);
   await createContentBrowserAsset(page, "Class", "RecoverHero");
   await createContentBrowserAsset(page, "Scene", "RecoverScene");
-  await openAssetFromBrowser(page, "assets/RecoverScene.scene.babasset");
+  await openAssetFromBrowser(page, "assets/RecoverScene.scene.hasset");
   await saveAllIfEnabled(page);
   const scene: SerializedScene = { ...createDefaultScene(), actors: [createActor("unsaved-hero", "Unsaved Hero", { classId: "RecoverHero" })] };
   await page.evaluate(async (content) => {
-    const api = (globalThis as unknown as { __babylonslateTest: TestHost["__babylonslateTest"] & {
+    const api = (globalThis as unknown as { __hapticTest: TestHost["__hapticTest"] & {
       setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
-    } }).__babylonslateTest;
+    } }).__hapticTest;
     await api.setActiveSceneContent(content);
     api.cancelDebouncedSave();
   }, scene);
   await openContentBrowser(page);
   await page.getByTestId("content-browser-search").fill("RecoverHero");
-  await page.locator('[data-asset-path="assets/RecoverHero.class.babasset"]').click({ button: "right" });
+  await page.locator('[data-asset-path="assets/RecoverHero.class.hasset"]').click({ button: "right" });
   await page.getByTestId("context-menu-item-rename").click();
   await page.getByTestId("content-browser-name-input").fill("RecoveredHero");
   await page.getByTestId("content-browser-name-confirm").click();
   await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
-  await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.cancelDebouncedSave());
+  await page.evaluate(() => (globalThis as unknown as TestHost).__hapticTest.cancelDebouncedSave());
   await recoverAfterReload(page);
   await openMainScene(page);
   await expect(page.getByTestId("tree-row-actor:unsaved-hero")).toBeVisible();
-  expect(await page.evaluate(() => (globalThis as unknown as { __babylonslateTest: {
+  expect(await page.evaluate(() => (globalThis as unknown as { __hapticTest: {
     activeSceneContent: () => SerializedScene | null;
-  } }).__babylonslateTest.activeSceneContent()?.actors.find(actor => actor.id === "unsaved-hero")?.classId)).toBe("RecoveredHero");
-  expect(await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.dirtyDocuments().map(doc => doc.kind))).toContain("scene");
+  } }).__hapticTest.activeSceneContent()?.actors.find(actor => actor.id === "unsaved-hero")?.classId)).toBe("RecoveredHero");
+  expect(await page.evaluate(() => (globalThis as unknown as TestHost).__hapticTest.dirtyDocuments().map(doc => doc.kind))).toContain("scene");
 });

@@ -10,8 +10,8 @@ import {
   createDefaultParticleSystemPayload,
   type ParticleEmitterPayload,
   type ParticleLibraryEmitter,
-} from "@babylonslate/assets";
-import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
+} from "@haptic/assets";
+import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
 
 const basic = (payload: ParticleEmitterPayload): ParticleLibraryEmitter => ({
   kind: "basic",
@@ -62,11 +62,11 @@ describe("loadEmittersForPreview", () => {
   const assets = [
     {
       header: { guid: "em-1", type: "ParticleEmitter", payload: {} },
-      path: "assets/Sparks.emitter.babasset",
+      path: "assets/Sparks.emitter.hasset",
     },
     {
       header: { guid: "pg-1", type: "ParticleGraph", payload: {} },
-      path: "assets/Embers.particlegraph.babasset",
+      path: "assets/Embers.particlegraph.hasset",
     },
   ];
   const system = { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] };
@@ -84,7 +84,7 @@ describe("loadEmittersForPreview", () => {
     });
     expect(loadDocument).toHaveBeenCalledWith(
       "particle-emitter",
-      "assets/Sparks.emitter.babasset",
+      "assets/Sparks.emitter.hasset",
     );
     expect(basicPayload(emitters.get("em-1")).render.materialGuid).toBe("mat-1");
     expect(basicPayload(emitters.get("em-1")).emitter.capacity).toBe(64);
@@ -112,7 +112,7 @@ describe("loadEmittersForPreview", () => {
     });
     expect(loadDocument).toHaveBeenCalledWith(
       "particle-graph",
-      "assets/Embers.particlegraph.babasset",
+      "assets/Embers.particlegraph.hasset",
     );
     expect(graphDocument(emitters.get("pg-1")).materialGuid).toBe("mat-2");
   });

@@ -1,7 +1,7 @@
 import { hardLoadingProperty } from "./asset-loading-policy";
 import { newGuid } from "./guid-result";
 
-/** Persisted data assets. Identity and display names live in the .babasset header. */
+/** Persisted data assets. Identity and display names live in the .hasset header. */
 export interface DataFieldSnapshot {
   /** Stable field identity, retained across renames. */
   id?: string;

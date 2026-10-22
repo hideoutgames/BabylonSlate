@@ -12,18 +12,18 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   DEFAULT_UNDO_BYTE_BUDGET,
   MemorySecretStore,
   OpfsStorageAdapter,
   createAppSettingsStore,
   createDerivedStorage,
-} from "@babylonslate/vfs";
-import { FakeLockProvider } from "@babylonslate/source-control";
+} from "@haptic/vfs";
+import { FakeLockProvider } from "@haptic/source-control";
 import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
-import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@babylonslate/assets";
-import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
+import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
+import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@haptic/edit";
 import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
@@ -70,12 +70,12 @@ vi.mock("../lib/engine-extension-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extension-library")>()),
   ensureEngineExtensionLibrary: (await provider()).emptyEngineLibrary,
 }));
-vi.mock("@babylonslate/render/ktx2-transcoder", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/render/ktx2-transcoder")>()),
+vi.mock("@haptic/render/ktx2-transcoder", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/render/ktx2-transcoder")>()),
   probeKtx2TranscoderAvailable: async () => false,
 }));
-vi.mock("@babylonslate/render/scene-load-readiness", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/render/scene-load-readiness")>()),
+vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/render/scene-load-readiness")>()),
   waitForSceneLoadingPaint: async () => {},
 }));
 
@@ -251,7 +251,7 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.saveAll());
     const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
     expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
-    expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.babasset");
+    expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.hasset");
   });
 
   it("retitles an open Material's tab and payload name when its asset is renamed", async () => {
@@ -488,7 +488,7 @@ describe("DocumentProvider actions and route", () => {
     await act(async () => { await expect(actions.renameAsset(asset.header.guid, "Champion")).rejects.toThrow("Locked by Teammate"); });
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
     expect(await storage.readBinary(asset.path)).toEqual(classBytes);
-    expect(await storage.exists("assets/Champion.class.babasset")).toBe(false);
+    expect(await storage.exists("assets/Champion.class.hasset")).toBe(false);
     expect(documents().assetRegistry!.getByGuid(asset.header.guid)?.path).toBe(asset.path);
   });
 
@@ -542,7 +542,7 @@ describe("DocumentProvider actions and route", () => {
     act(() => { release = actions.lockAuthoring("Read-only during a session."); });
     expect(() => actions.closeDocument(MAIN_SCENE_ID)).toThrow("Read-only during a session.");
     expect(() => actions.closeDocumentsForPaths([MAIN_SCENE_FILE])).toThrow("Read-only during a session.");
-    expect(() => actions.repathDocument("scene", MAIN_SCENE_FILE, "assets/Renamed.babasset")).toThrow("Read-only during a session.");
+    expect(() => actions.repathDocument("scene", MAIN_SCENE_FILE, "assets/Renamed.hasset")).toThrow("Read-only during a session.");
     expect(documents().canUndoActiveDocument).toBe(false);
     expect(documents().canRedoActiveDocument).toBe(false);
     await act(async () => {
@@ -759,7 +759,7 @@ describe("DocumentProvider actions and route", () => {
     await createScene(actions, "Deferred");
     await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "DeferredClass" }));
     for (const type of ["Water", "RenderTarget", "InputAction", "Audio", "ParticleEmitter", "Font", "DataDefinition", "Model"]) {
-      await registry.createAsset("project", `Deferred-${type}.babasset`, {
+      await registry.createAsset("project", `Deferred-${type}.hasset`, {
         guid: `deferred-${type}`, type, name: `Deferred ${type}`, version: 1,
         dependencies: [], payload: {},
         chunks: [{ id: "source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(128 * 1024) }],
@@ -1446,7 +1446,7 @@ describe("DocumentProvider closed document history", () => {
     const guid = documents().projectGuid!;
     // An untouched file still waits for migration after the approved save.
     const pending = vi.spyOn(ProjectService.prototype, "pendingMigrations", "get").mockReturnValue([
-      { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.babasset" },
+      { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.hasset" },
     ]);
     try {
       expect(await act(() => actions.saveAll())).toBe(false);

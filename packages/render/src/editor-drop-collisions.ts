@@ -7,19 +7,19 @@ import {
   spriteCollisionToBox2d,
   DEFAULT_SPRITE_COLLISION,
   tilemapCollisionChains,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   identitySerializedTransform,
   landscapeCollisionMesh,
   springArmChildOffset,
   type SerializedScene,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   parseColliderProperties,
   scaleColliderShape,
   type ColliderShape,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import type { MeshAssetContext } from "./mesh-assets";
 
 const EPS = 1e-8;

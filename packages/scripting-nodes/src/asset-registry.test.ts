@@ -11,7 +11,7 @@ import {
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { ASSET_REGISTRY_BY_CLASS_NODE_ID } from "./asset-registry";
 import { createDefaultNodeRegistry } from "./index";
 
@@ -155,8 +155,8 @@ describe("Asset Registry codegen", () => {
   it.each([
     ["assetRegistry.getAssetData", { "default:asset": "g1" }, "assetData", [["getAssetData", ["g1"]]]],
     ["assetRegistry.getAssetData", { "default:asset": "g1" }, "found", [["hasAsset", ["g1"]]]],
-    ["assetRegistry.getAssetByPath", { "default:path": "assets/A.texture.babasset" }, "assetData", [["getAssetByPath", ["assets/A.texture.babasset"]]]],
-    ["assetRegistry.getAssetByPath", { "default:path": "assets/A.texture.babasset" }, "found", [["hasAssetPath", ["assets/A.texture.babasset"]]]],
+    ["assetRegistry.getAssetByPath", { "default:path": "assets/A.texture.hasset" }, "assetData", [["getAssetByPath", ["assets/A.texture.hasset"]]]],
+    ["assetRegistry.getAssetByPath", { "default:path": "assets/A.texture.hasset" }, "found", [["hasAssetPath", ["assets/A.texture.hasset"]]]],
     ["assetRegistry.getAssetsByPath", { "default:folder": "assets/A" }, "assets", [["getAssetsByPath", ["assets/A", false]]]],
     ["assetRegistry.getAssetsByType", { "default:type": "Texture", "default:folder": "assets" }, "assets", [["getAssetsByType", ["Texture", "assets", true]]]],
     ["assetRegistry.getAssetsByClass", { "default:class": "Rifle" }, "assets", [["getAssetsByClass", ["Rifle", true, "", true]]]],

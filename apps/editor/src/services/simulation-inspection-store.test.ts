@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeInspectorResult, RuntimeObjectIdentity } from "@babylonslate/bridge";
-import { identitySerializedTransform } from "@babylonslate/core";
+import type { RuntimeInspectorResult, RuntimeObjectIdentity } from "@haptic/bridge";
+import { identitySerializedTransform } from "@haptic/core";
 import { SimulationInspectionStore } from "./simulation-inspection-store";
 import type { RuntimeInspectionAction } from "./runtime-inspector-client";
 

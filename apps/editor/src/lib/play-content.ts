@@ -1,4 +1,4 @@
-import type { ControlMessage } from "@babylonslate/bridge";
+import type { ControlMessage } from "@haptic/bridge";
 import {
   modelMaterialGuids,
   normalizeAnimationPayload,
@@ -9,13 +9,13 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   AUDIO_REVERB_CHUNK_ID,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   tilemapTilesetGuids,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   UI_CONTROL_2D_CLASS_IDS,
   isEditorOnlyAsset,
@@ -27,7 +27,7 @@ import {
   type CollisionTriangleMesh,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   isMaterialInstanceContent,
   materialDependencies,
@@ -35,8 +35,8 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation/chunk";
+} from "@haptic/shader-graph";
+import { NAVMESH_CHUNK_ID } from "@haptic/navigation/chunk";
 
 export function filterPlayScriptDocuments<
   T extends { path: string; content: SerializedGraph },
@@ -615,4 +615,4 @@ export function playLoadTilemapsControl(
       : {}),
   };
 }
-import { parseFoliageProperties } from "@babylonslate/core";
+import { parseFoliageProperties } from "@haptic/core";

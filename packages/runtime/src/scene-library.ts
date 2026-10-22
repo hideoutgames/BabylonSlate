@@ -1,5 +1,5 @@
-import type { SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
-import { sceneAssetClassId, type ClassRegistry } from "@babylonslate/object-model";
+import type { SerializedScene, SerializedSceneLayer } from "@haptic/core";
+import { sceneAssetClassId, type ClassRegistry } from "@haptic/object-model";
 
 interface SceneLibrarySources {
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;

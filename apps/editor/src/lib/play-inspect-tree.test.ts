@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DebugInspectNode } from "@babylonslate/object-model";
+import type { DebugInspectNode } from "@haptic/object-model";
 import {
   flattenInspectTree,
   nextInspectSelection,

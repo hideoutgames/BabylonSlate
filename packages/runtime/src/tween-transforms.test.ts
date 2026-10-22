@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { identityTransform, quatRotateVector } from "@babylonslate/core";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { identityTransform, quatRotateVector } from "@haptic/core";
+import { Actor, ActorComponent } from "@haptic/object-model";
 import { applyTweenTransform, tweenWorldTransformDepth } from "./tween-transforms";
 
 function fixture() {

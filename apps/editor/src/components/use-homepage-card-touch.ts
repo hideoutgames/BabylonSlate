@@ -5,7 +5,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "@babylonslate/editor-kit";
+import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "@haptic/editor-kit";
 
 /** Native scrolling owns movement; only an uninterrupted contact may activate a card. */
 export function useHomepageCardTouch(enabled: boolean) {

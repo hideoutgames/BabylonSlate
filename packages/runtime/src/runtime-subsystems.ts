@@ -1,4 +1,4 @@
-import type { Actor } from "@babylonslate/object-model";
+import type { Actor } from "@haptic/object-model";
 
 /**
  * Lifecycle hooks of a subsystem the runtime driver owns. Construction is its

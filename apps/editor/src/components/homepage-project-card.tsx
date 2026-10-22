@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
 import { GitBranchIcon, HardDriveIcon, MoreHorizontalIcon } from "lucide-react";
-import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
+import { ContextMenuOverlay, useContextMenu } from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@babylonslate/ui/components/card";
+} from "@haptic/ui/components/card";
 import type { ListedProject } from "../lib/listed-projects";
 import {
   ProjectCover,

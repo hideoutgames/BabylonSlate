@@ -73,7 +73,7 @@ async function baseline(page: Page) {
   return page.evaluate(() =>
     (
       globalThis as unknown as {
-        __babylonslateViewportTest: {
+        __hapticViewportTest: {
           renderingBaseline(): {
             frameCount: number;
             engineScenes: number;
@@ -87,7 +87,7 @@ async function baseline(page: Page) {
           };
         };
       }
-    ).__babylonslateViewportTest.renderingBaseline(),
+    ).__hapticViewportTest.renderingBaseline(),
   );
 }
 
@@ -134,11 +134,11 @@ async function measure(page: Page): Promise<Measurement> {
   return page.evaluate(() =>
     (
       globalThis as unknown as {
-        __babylonslateViewportTest: {
+        __hapticViewportTest: {
           measureRenderingBaseline(durationMs: number): Promise<Measurement>;
         };
       }
-    ).__babylonslateViewportTest.measureRenderingBaseline(30_000),
+    ).__hapticViewportTest.measureRenderingBaseline(30_000),
   );
 }
 

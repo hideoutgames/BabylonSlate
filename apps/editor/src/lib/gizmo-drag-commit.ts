@@ -2,7 +2,7 @@ import {
   TEXT2D_COMPONENT_CLASS_IDS,
   patchComponentProperties,
   type SerializedActor,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /**
  * Live mesh TRS may be written back only for an in-progress gizmo drag.

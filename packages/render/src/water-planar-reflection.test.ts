@@ -6,7 +6,7 @@ import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOr
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel, type WaterDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { managedRenderReservations } from "./managed-render-resources";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { IndexedAsset } from "@babylonslate/assets";
-import { AssetRegistry, createDefaultMigrationRegistry, encodeAssetDocument, projectContentRoot } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { createSceneStreamingActor } from "@babylonslate/core";
-import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
+import type { IndexedAsset } from "@haptic/assets";
+import { AssetRegistry, createDefaultMigrationRegistry, encodeAssetDocument, projectContentRoot } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { createSceneStreamingActor } from "@haptic/core";
+import { mergeEngineTypeSchemas } from "@haptic/scripting";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import {
   CREATABLE_ASSET_TYPES,
   CREATABLE_ASSET_TYPE_GROUPS,
@@ -72,10 +72,10 @@ import {
   runWithContentBrowserImportBusy,
   type ContentBrowserTreeRow,
 } from "./content-browser-helpers";
-import { resolveTypeVisual } from "@babylonslate/editor-kit";
+import { resolveTypeVisual } from "@haptic/editor-kit";
 
 it("detects rename collisions with Unicode stems and compound asset suffixes", () => {
-  const paths = ["assets/Hero.class.babasset", "assets/Hero 🤖 Ünïcødé.class.babasset"];
+  const paths = ["assets/Hero.class.hasset", "assets/Hero 🤖 Ünïcødé.class.hasset"];
   expect(isRenameNameTaken(paths, paths[0]!, "Hero 🤖 Ünïcødé")).toBe(true);
   expect(isRenameNameTaken(paths, paths[0]!, "Hero")).toBe(false);
   expect(isRenameNameTaken(paths, paths[0]!, "Hero/Villain")).toBe(false);
@@ -107,7 +107,7 @@ function asset(
 ): IndexedAsset {
   return {
     rootId: "project",
-    path: overrides.path ?? "assets/tex.babasset",
+    path: overrides.path ?? "assets/tex.hasset",
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: overrides.guid ?? "guid-1",
@@ -153,29 +153,29 @@ const multiMoveTree = {
 };
 
 const multiMoveAssets = [
-  asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+  asset({ guid: "hero-guid", name: "hero", path: "assets/hero.hasset" }),
   asset({
     guid: "villain-guid",
     name: "villain",
-    path: "assets/villain.babasset",
+    path: "assets/villain.hasset",
   }),
   asset({
     guid: "dirt-guid",
     name: "dirt",
-    path: "assets/textures/dirt.babasset",
+    path: "assets/textures/dirt.hasset",
   }),
   asset({
     guid: "icon-guid",
     name: "icon",
-    path: "assets/textures/ui/icon.babasset",
+    path: "assets/textures/ui/icon.hasset",
   }),
 ];
 
 describe("content-browser-helpers", () => {
   it("filters by search, type, and folder guids", () => {
     const items = [
-      asset({ guid: "a", name: "Hero", type: "Texture", path: "assets/a.babasset" }),
-      asset({ guid: "b", name: "Main", type: "Scene", path: "assets/main.scene.babasset" }),
+      asset({ guid: "a", name: "Hero", type: "Texture", path: "assets/a.hasset" }),
+      asset({ guid: "b", name: "Main", type: "Scene", path: "assets/main.scene.hasset" }),
     ];
 
     expect(
@@ -221,7 +221,7 @@ describe("content-browser-helpers", () => {
 
   it("matches search across name, path, and type", () => {
     // Each needle occurs in exactly one field, so every field is checked.
-    const item = asset({ name: "Crate", type: "Model", path: "assets/props/box.babasset" });
+    const item = asset({ name: "Crate", type: "Model", path: "assets/props/box.hasset" });
     expect(matchesAssetSearch(item, "crate")).toBe(true);
     expect(matchesAssetSearch(item, "props")).toBe(true);
     expect(matchesAssetSearch(item, "model")).toBe(true);
@@ -416,17 +416,17 @@ describe("content-browser-helpers", () => {
       asset({
         guid: "hero-guid",
         name: "hero",
-        path: "assets/hero.babasset",
+        path: "assets/hero.hasset",
       }),
       asset({
         guid: "dirt-guid",
         name: "dirt",
-        path: "assets/textures/dirt.babasset",
+        path: "assets/textures/dirt.hasset",
       }),
       asset({
         guid: "icon-guid",
         name: "icon",
-        path: "assets/textures/ui/icon.babasset",
+        path: "assets/textures/ui/icon.hasset",
       }),
     ];
     const rows = flattenContentBrowserTree(tree, assets);
@@ -434,16 +434,16 @@ describe("content-browser-helpers", () => {
       { id: "assets", kind: "folder", depth: 0 },
       { id: "assets/textures", kind: "folder", depth: 1 },
       { id: "assets/textures/ui", kind: "folder", depth: 2 },
-      { id: "assets/textures/ui/icon.babasset", kind: "asset", depth: 3 },
-      { id: "assets/textures/dirt.babasset", kind: "asset", depth: 2 },
-      { id: "assets/hero.babasset", kind: "asset", depth: 1 },
+      { id: "assets/textures/ui/icon.hasset", kind: "asset", depth: 3 },
+      { id: "assets/textures/dirt.hasset", kind: "asset", depth: 2 },
+      { id: "assets/hero.hasset", kind: "asset", depth: 1 },
     ]);
     expect(rows[0]).toMatchObject({
       hasChildren: true,
       expanded: true,
       label: "assets",
     });
-    expect(rows.find((row) => row.id === "assets/hero.babasset")).toMatchObject({
+    expect(rows.find((row) => row.id === "assets/hero.hasset")).toMatchObject({
       kind: "asset",
       guid: "hero-guid",
       label: "hero",
@@ -457,7 +457,7 @@ describe("content-browser-helpers", () => {
     expect(collapsed.map((row) => row.id)).toEqual([
       "assets",
       "assets/textures",
-      "assets/hero.babasset",
+      "assets/hero.hasset",
     ]);
     expect(collapsed[1]).toMatchObject({
       hasChildren: true,
@@ -499,19 +499,19 @@ describe("content-browser-helpers", () => {
       asset({
         guid: "scene-guid",
         name: "main",
-        path: "assets/main.scene.babasset",
+        path: "assets/main.scene.hasset",
         type: "Scene",
       }),
       asset({
         guid: "idle-guid",
         name: "idle",
-        path: "assets/Mannequin/mannequin_idle.babasset",
+        path: "assets/Mannequin/mannequin_idle.hasset",
         type: "Animation",
       }),
       asset({
         guid: "starter-guid",
         name: "StarterActor",
-        path: "plugins/starter-content/assets/StarterActor.class.babasset",
+        path: "plugins/starter-content/assets/StarterActor.class.hasset",
         type: "Class",
       }),
     ];
@@ -519,7 +519,7 @@ describe("content-browser-helpers", () => {
     expect(rows.map((row) => row.id)).toEqual([
       "assets",
       "assets/Mannequin",
-      "assets/main.scene.babasset",
+      "assets/main.scene.hasset",
       "plugins/starter-content",
       "plugins/starter-content/assets",
     ]);
@@ -546,7 +546,7 @@ describe("content-browser-helpers", () => {
       children: [],
     };
     const rows = flattenContentBrowserTree(tree, [
-      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.hasset" }),
     ]);
     expect(rows[0]?.hasChildren).toBe(true);
   });
@@ -572,33 +572,33 @@ describe("content-browser-helpers", () => {
       ],
     };
     const rows = flattenContentBrowserTree(tree, [
-      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.hasset" }),
       asset({
         guid: "dirt-guid",
         name: "dirt",
-        path: "assets/textures/dirt.babasset",
+        path: "assets/textures/dirt.hasset",
       }),
     ]);
     expect(
-      contentBrowserMoveFromDrop("assets/hero.babasset", "assets/textures", rows),
+      contentBrowserMoveFromDrop("assets/hero.hasset", "assets/textures", rows),
     ).toEqual({
       kind: "asset",
       sourcePath: "assets",
       destinationPath: "assets/textures",
-      id: "assets/hero.babasset",
+      id: "assets/hero.hasset",
       guid: "hero-guid",
     });
     expect(
       contentBrowserMoveFromDrop(
-        "assets/hero.babasset",
-        "assets/textures/dirt.babasset",
+        "assets/hero.hasset",
+        "assets/textures/dirt.hasset",
         rows,
       ),
     ).toEqual({
       kind: "asset",
       sourcePath: "assets",
       destinationPath: "assets/textures",
-      id: "assets/hero.babasset",
+      id: "assets/hero.hasset",
       guid: "hero-guid",
     });
     expect(contentBrowserMoveFromDrop("assets/textures", "assets/fx", rows)).toEqual({
@@ -609,7 +609,7 @@ describe("content-browser-helpers", () => {
     });
     expect(
       contentBrowserMoveFromDrop(
-        "assets/textures/dirt.babasset",
+        "assets/textures/dirt.hasset",
         "assets/fx",
         rows,
         undefined,
@@ -619,7 +619,7 @@ describe("content-browser-helpers", () => {
       kind: "asset",
       sourcePath: "assets/textures",
       destinationPath: "assets",
-      id: "assets/textures/dirt.babasset",
+      id: "assets/textures/dirt.hasset",
       guid: "dirt-guid",
     });
   });
@@ -646,7 +646,7 @@ describe("content-browser-helpers", () => {
       ],
     };
     const rows = flattenContentBrowserTree(tree, [
-      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.hasset" }),
     ]);
     expect(contentBrowserMoveFromDrop("assets", "assets/textures", rows)).toBeNull();
     expect(contentBrowserMoveFromDrop("assets/textures", "assets", rows)).toBeNull();
@@ -654,10 +654,10 @@ describe("content-browser-helpers", () => {
       contentBrowserMoveFromDrop("assets/textures", "assets/textures/ui", rows),
     ).toBeNull();
     expect(
-      contentBrowserMoveFromDrop("assets/hero.babasset", "assets", rows),
+      contentBrowserMoveFromDrop("assets/hero.hasset", "assets", rows),
     ).toBeNull();
     expect(
-      contentBrowserMoveFromDrop("assets/hero.babasset", null, rows),
+      contentBrowserMoveFromDrop("assets/hero.hasset", null, rows),
     ).toBeNull();
     expect(contentBrowserMoveFromDrop("missing", "assets/textures", rows)).toBeNull();
   });
@@ -666,7 +666,7 @@ describe("content-browser-helpers", () => {
     const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
     expect(
       contentBrowserTreeDropMoves({
-        dragId: "assets/hero.babasset",
+        dragId: "assets/hero.hasset",
         targetId: "assets/textures",
         rows,
         selectedGuids: new Set(["hero-guid", "villain-guid"]),
@@ -677,14 +677,14 @@ describe("content-browser-helpers", () => {
         kind: "asset",
         sourcePath: "assets",
         destinationPath: "assets/textures",
-        id: "assets/hero.babasset",
+        id: "assets/hero.hasset",
         guid: "hero-guid",
       },
       {
         kind: "asset",
         sourcePath: "assets",
         destinationPath: "assets/textures",
-        id: "assets/villain.babasset",
+        id: "assets/villain.hasset",
         guid: "villain-guid",
       },
     ]);
@@ -734,7 +734,7 @@ describe("content-browser-helpers", () => {
     const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
     expect(
       contentBrowserTreeDropMoves({
-        dragId: "assets/textures/dirt.babasset",
+        dragId: "assets/textures/dirt.hasset",
         targetId: "assets/fx",
         rows,
         selectedGuids: new Set(["hero-guid"]),
@@ -745,7 +745,7 @@ describe("content-browser-helpers", () => {
         kind: "asset",
         sourcePath: "assets/textures",
         destinationPath: "assets/fx",
-        id: "assets/textures/dirt.babasset",
+        id: "assets/textures/dirt.hasset",
         guid: "dirt-guid",
       },
     ]);
@@ -772,7 +772,7 @@ describe("content-browser-helpers", () => {
         kind: "asset",
         sourcePath: "assets",
         destinationPath: "assets/fx",
-        id: "assets/hero.babasset",
+        id: "assets/hero.hasset",
         guid: "hero-guid",
       },
     ]);
@@ -792,13 +792,13 @@ describe("content-browser-helpers", () => {
   });
 
   it("drops selected items from a writable plugin into the project, but leaves read-only plugin items where they are", () => {
-    const lamp = asset({ guid: "lamp-guid", name: "lamp", path: "plugins/tools/assets/lamp.babasset" });
+    const lamp = asset({ guid: "lamp-guid", name: "lamp", path: "plugins/tools/assets/lamp.hasset" });
     const rows = [
       ...flattenContentBrowserTree(multiMoveTree, multiMoveAssets),
       ...flattenContentBrowserTree({ name: "assets", path: "plugins/tools/assets", assets: ["lamp-guid"], children: [] }, [lamp]),
     ];
     const drop = (readOnlyRootPaths: string[]) => contentBrowserTreeDropMoves({
-      dragId: "assets/hero.babasset",
+      dragId: "assets/hero.hasset",
       targetId: "assets/textures",
       rows,
       selectedGuids: new Set(["hero-guid", "lamp-guid"]),
@@ -810,14 +810,14 @@ describe("content-browser-helpers", () => {
       kind: "asset",
       sourcePath: "assets",
       destinationPath: "assets/textures",
-      id: "assets/hero.babasset",
+      id: "assets/hero.hasset",
       guid: "hero-guid",
     };
     expect(drop([])).toEqual([hero, {
       kind: "asset",
       sourcePath: "plugins/tools/assets",
       destinationPath: "assets/textures",
-      id: "plugins/tools/assets/lamp.babasset",
+      id: "plugins/tools/assets/lamp.hasset",
       guid: "lamp-guid",
     }]);
     expect(drop(["plugins/tools/assets"])).toEqual([hero]);
@@ -845,7 +845,7 @@ describe("content-browser-helpers", () => {
     const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
     expect(
       contentBrowserTreeDropMoves({
-        dragId: "assets/textures/dirt.babasset",
+        dragId: "assets/textures/dirt.hasset",
         targetId: "assets/textures",
         rows,
         selectedGuids: new Set(["dirt-guid", "hero-guid"]),
@@ -856,7 +856,7 @@ describe("content-browser-helpers", () => {
         kind: "asset",
         sourcePath: "assets",
         destinationPath: "assets/textures",
-        id: "assets/hero.babasset",
+        id: "assets/hero.hasset",
         guid: "hero-guid",
       },
     ]);
@@ -904,9 +904,9 @@ describe("content-browser-helpers", () => {
 
   it("detects a New Asset name that already exists in the folder", () => {
     const paths = [
-      "assets/main.scene.babasset",
-      "assets/hero.class.babasset",
-      "assets/classes/hero.class.babasset",
+      "assets/main.scene.hasset",
+      "assets/hero.class.hasset",
+      "assets/classes/hero.class.hasset",
     ];
     expect(isNewAssetNameTaken(paths, "assets", "Scene", "main")).toBe(true);
     expect(isNewAssetNameTaken(paths, "assets", "Class", "hero")).toBe(true);
@@ -1056,18 +1056,18 @@ describe("content-browser-helpers", () => {
   it("remaps contained paths after a folder move", () => {
     expect(
       remapPathAfterFolderMove(
-        "assets/textures/ui/hero.babasset",
+        "assets/textures/ui/hero.hasset",
         "assets/textures",
         "assets/fx/textures",
       ),
-    ).toBe("assets/fx/textures/ui/hero.babasset");
+    ).toBe("assets/fx/textures/ui/hero.hasset");
     expect(
       remapPathAfterFolderMove(
-        "assets/fx/boom.babasset",
+        "assets/fx/boom.hasset",
         "assets/textures",
         "assets/fx/textures",
       ),
-    ).toBe("assets/fx/boom.babasset");
+    ).toBe("assets/fx/boom.hasset");
     expect(
       remapPathAfterFolderMove(
         "assets/textures",
@@ -1100,7 +1100,7 @@ describe("content-browser-helpers", () => {
       type: "Class",
       name: "MyHero",
       guid: "c1",
-      path: "assets/my-hero.babasset",
+      path: "assets/my-hero.hasset",
       parentClass: "Actor",
     });
     const parentOf = classParentLookup([hero]);
@@ -1118,10 +1118,10 @@ describe("content-browser-helpers", () => {
 
   it("looks up Class parents by class id only, keeping the first Class for a shared id as the Parent Class tree does", () => {
     const assets = [
-      { path: "assets/A/Rain_Weather.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "Actor" } },
-      { path: "assets/Storm.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "BTTask" } },
-      { path: "assets/B/Rain-Weather.class.babasset", header: { type: "Class", name: "Rain-Weather", parentClass: "GameInstance" } },
-      { path: "assets/Hero.class.babasset", header: { type: "Class", name: "Actor", parentClass: "GameInstance" } },
+      { path: "assets/A/Rain_Weather.class.hasset", header: { type: "Class", name: "Rain_Weather", parentClass: "Actor" } },
+      { path: "assets/Storm.class.hasset", header: { type: "Class", name: "Rain_Weather", parentClass: "BTTask" } },
+      { path: "assets/B/Rain-Weather.class.hasset", header: { type: "Class", name: "Rain-Weather", parentClass: "GameInstance" } },
+      { path: "assets/Hero.class.hasset", header: { type: "Class", name: "Actor", parentClass: "GameInstance" } },
     ];
     const parentOf = classParentLookup(assets);
     expect(parentOf("Rain_Weather")).toBe("Actor");
@@ -1132,9 +1132,9 @@ describe("content-browser-helpers", () => {
 
   it("answers a registry's Class parents from its current catalog after the catalog changes", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Lookup.babproject");
+    await storage.openDocumentsProject("Lookup.hproject");
     await storage.mkdir("assets", true);
-    await storage.writeBinary("assets/Hero.class.babasset", await encodeAssetDocument(
+    await storage.writeBinary("assets/Hero.class.hasset", await encodeAssetDocument(
       { type: "Class", name: "Hero", guid: "hero", version: 1, payload: {} }, { parentClass: "Actor" },
     ));
     const registry = new AssetRegistry(storage);
@@ -1150,25 +1150,25 @@ describe("content-browser-helpers", () => {
 
   it("refuses a Class id that another Class or the engine already uses", () => {
     const assets = [
-      { path: "assets/Weather/Rain_Weather.class.babasset", header: { type: "Class" } },
-      { path: "assets/Snow.scene.babasset", header: { type: "Scene" } },
+      { path: "assets/Weather/Rain_Weather.class.hasset", header: { type: "Class" } },
+      { path: "assets/Snow.scene.hasset", header: { type: "Scene" } },
     ];
     const taken = 'Another Class already uses the class id "Rain_Weather".';
-    expect(classIdConflict(assets, "assets/Rain-Weather.class.babasset")).toBe(taken);
-    expect(classIdConflict(assets, "assets/Other/Rain_Weather.class.babasset")).toBe(taken);
-    expect(classIdConflict(assets, "assets/Weather/Rain-Weather.class.babasset", "assets/Weather/Rain_Weather.class.babasset")).toBeNull();
-    expect(classIdConflict(assets, "assets/Snow.class.babasset")).toBeNull();
-    expect(classIdConflict(assets, "assets/Actor.class.babasset")).toMatch(/"Actor" is an engine class name/);
+    expect(classIdConflict(assets, "assets/Rain-Weather.class.hasset")).toBe(taken);
+    expect(classIdConflict(assets, "assets/Other/Rain_Weather.class.hasset")).toBe(taken);
+    expect(classIdConflict(assets, "assets/Weather/Rain-Weather.class.hasset", "assets/Weather/Rain_Weather.class.hasset")).toBeNull();
+    expect(classIdConflict(assets, "assets/Snow.class.hasset")).toBeNull();
+    expect(classIdConflict(assets, "assets/Actor.class.hasset")).toMatch(/"Actor" is an engine class name/);
   });
 
   it("uses the file stem as the class id, or without a path the stem New Asset writes for the name", () => {
     expect(
       classIdFromClassAsset({
-        path: "assets/Rain-Weather.class.babasset",
+        path: "assets/Rain-Weather.class.hasset",
         header: { type: "Class", name: "Rain Weather" },
       }),
     ).toBe("Rain_Weather");
-    // New Asset writes `Rain-Weather.class.babasset` and `main.class.class.babasset`.
+    // New Asset writes `Rain-Weather.class.hasset` and `main.class.class.hasset`.
     expect(classIdFromClassAsset({ header: { type: "Class", name: "Rain-Weather" } })).toBe("Rain_Weather");
     expect(classIdFromClassAsset({ header: { type: "Class", name: "main.class" } })).toBe("main_class");
   });
@@ -1189,11 +1189,11 @@ describe("content-browser-helpers", () => {
   it("offers the subsystem bases under BObject and never the hidden Subsystem base", () => {
     const rows = buildParentClassTreeRows([
       {
-        path: "assets/Inventory.class.babasset",
+        path: "assets/Inventory.class.hasset",
         header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" },
       },
       {
-        path: "assets/Weather.class.babasset",
+        path: "assets/Weather.class.hasset",
         header: { type: "Class", name: "Weather", parentClass: "SceneSubsystem" },
       },
     ]);
@@ -1257,11 +1257,11 @@ describe("content-browser-helpers", () => {
   it("builds a searchable Parent Class tree with project Classes nested", () => {
     const rows = buildParentClassTreeRows([
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         header: { type: "Class", name: "Hero", parentClass: "Actor" },
       },
       {
-        path: "plugins/pack/assets/PackActor.class.babasset",
+        path: "plugins/pack/assets/PackActor.class.hasset",
         header: { type: "Class", name: "PackActor", parentClass: "Actor" },
       },
     ]);
@@ -1275,7 +1275,7 @@ describe("content-browser-helpers", () => {
     const filtered = buildParentClassTreeRows(
       [
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           header: { type: "Class", name: "Hero", parentClass: "Actor" },
         },
       ],
@@ -1288,50 +1288,50 @@ describe("content-browser-helpers", () => {
   });
 
   it("seeds P9 document assets with typed suffixes", () => {
-    expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
+    expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.hasset");
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
-      "Walk.spriteanim.babasset",
+      "Walk.spriteanim.hasset",
     );
-    expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
-    expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.babasset");
+    expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.hasset");
+    expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.hasset");
     expect(newAssetFileName("MaterialFunction", "Tint")).toBe(
-      "Tint.matfunc.babasset",
+      "Tint.matfunc.hasset",
     );
-    expect(newAssetFileName("Class", "Hero")).toBe("Hero.class.babasset");
+    expect(newAssetFileName("Class", "Hero")).toBe("Hero.class.hasset");
     expect(newAssetFileName("Tileset", "Ground")).toBe(
-      "Ground.tileset.babasset",
+      "Ground.tileset.hasset",
     );
     expect(newAssetFileName("Tilemap", "Overworld")).toBe(
-      "Overworld.tilemap.babasset",
+      "Overworld.tilemap.hasset",
     );
     expect(newAssetFileName("BehaviourTree", "Patrol")).toBe(
-      "Patrol.bt.babasset",
+      "Patrol.bt.hasset",
     );
     expect(newAssetFileName("Blackboard", "Guard")).toBe(
-      "Guard.blackboard.babasset",
+      "Guard.blackboard.hasset",
     );
     expect(newAssetFileName("AudioMixer", "Master")).toBe(
-      "Master.mixer.babasset",
+      "Master.mixer.hasset",
     );
-    expect(newAssetFileName("AudioChannel", "SFX")).toBe("SFX.channel.babasset");
+    expect(newAssetFileName("AudioChannel", "SFX")).toBe("SFX.channel.hasset");
     expect(newAssetFileName("SoundAttenuation", "Near")).toBe(
-      "Near.atten.babasset",
+      "Near.atten.hasset",
     );
     expect(newAssetFileName("ParticleEmitter", "Sparks")).toBe(
-      "Sparks.emitter.babasset",
+      "Sparks.emitter.hasset",
     );
     expect(newAssetFileName("ParticleGraph", "Embers")).toBe(
-      "Embers.particlegraph.babasset",
+      "Embers.particlegraph.hasset",
     );
     expect(newAssetFileName("ParticleSystem", "Fire")).toBe(
-      "Fire.particles.babasset",
+      "Fire.particles.hasset",
     );
     expect(newAssetFileName("SkyboxCreator", "Day")).toBe(
-      "Day.skyboxcreator.babasset",
+      "Day.skyboxcreator.hasset",
     );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
-    expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
+    expect(isNewAssetNameTaken(["assets/NewAsset.scene.hasset"], "assets", "Scene", "")).toBe(
       false,
     );
     const tileset = buildNewAssetResult({
@@ -1499,7 +1499,7 @@ describe("content-browser-helpers", () => {
       },
     });
     expect(newAssetFileName("SkyboxCreator", "Day")).toBe(
-      "Day.skyboxcreator.babasset",
+      "Day.skyboxcreator.hasset",
     );
   });
 
@@ -1519,7 +1519,7 @@ describe("content-browser-helpers", () => {
     document.body.innerHTML = `
       <div data-testid="content-browser-asset-grid">
         <p data-testid="content-browser-empty-copy">No assets</p>
-        <button data-asset-path="assets/main.scene.babasset">Scene</button>
+        <button data-asset-path="assets/main.scene.hasset">Scene</button>
         <button data-folder-path="assets/fx">Folder</button>
       </div>
       <div data-testid="outside">outside</div>
@@ -1606,7 +1606,7 @@ describe("content-browser-helpers", () => {
     expect(layer.payload.name).toBe("HUD");
     expect(layer.payload.actors).toEqual([]);
     expect(newAssetFileName("SceneLayer", "HUD")).toBe(
-      "HUD.scenelayer.babasset",
+      "HUD.scenelayer.hasset",
     );
   });
 
@@ -1614,25 +1614,25 @@ describe("content-browser-helpers", () => {
     const hero = asset({
       type: "Class",
       name: "MyHero",
-      path: "assets/MyHero.class.babasset",
+      path: "assets/MyHero.class.hasset",
       parentClass: "Actor",
     });
     const stats = asset({
       type: "Class",
       name: "GameStats",
-      path: "assets/GameStats.class.babasset",
+      path: "assets/GameStats.class.hasset",
       parentClass: "BObject",
     });
     const meshComp = asset({
       type: "Class",
       name: "MyMesh",
-      path: "assets/MyMesh.class.babasset",
+      path: "assets/MyMesh.class.hasset",
       parentClass: "ActorComponent",
     });
     const subclass = asset({
       type: "Class",
       name: "Boss",
-      path: "assets/Boss.class.babasset",
+      path: "assets/Boss.class.hasset",
       parentClass: "MyHero",
     });
     const parentOf = classParentLookup([hero, stats, meshComp, subclass]);
@@ -1837,7 +1837,7 @@ describe("content-browser-helpers", () => {
   });
 
   it("rejects a move or copy destination that is any selected folder or a descendant", () => {
-    const selection = { folderPaths: ["assets/textures", "assets/audio"], assetPaths: ["assets/hero.babasset"] };
+    const selection = { folderPaths: ["assets/textures", "assets/audio"], assetPaths: ["assets/hero.hasset"] };
     expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", ...selection }).error).toBeNull();
     expect(contentBrowserSelectionMoves({ destinationPath: "assets/textures", ...selection }).error)
       .toBe("A folder cannot be moved inside itself.");
@@ -1853,9 +1853,9 @@ describe("content-browser-helpers", () => {
     expect(contentBrowserSelectionMoves({
       destinationPath: "assets",
       folderPaths: [],
-      assetPaths: ["assets/hero.babasset", "assets/textures/dirt.babasset"],
+      assetPaths: ["assets/hero.hasset", "assets/textures/dirt.hasset"],
     }).moves).toEqual([
-      { kind: "asset", sourcePath: "assets/textures", destinationPath: "assets", id: "assets/textures/dirt.babasset" },
+      { kind: "asset", sourcePath: "assets/textures", destinationPath: "assets", id: "assets/textures/dirt.hasset" },
     ]);
   });
 
@@ -1864,20 +1864,20 @@ describe("content-browser-helpers", () => {
     const selection = {
       destinationPath: "assets/fx",
       folderPaths: ["plugins/tools/assets/Props"],
-      assetPaths: ["assets/hero.babasset", "plugins/tools/assets/lamp.babasset"],
+      assetPaths: ["assets/hero.hasset", "plugins/tools/assets/lamp.hasset"],
       rootPaths,
     };
     expect(contentBrowserSelectionMoves({ ...selection, operation: "copy" })).toEqual({
-      moves: [{ kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.babasset" }],
+      moves: [{ kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.hasset" }],
       error: null,
     });
-    expect(contentBrowserSelectionMoves({ ...selection, assetPaths: ["plugins/tools/assets/lamp.babasset"], operation: "copy" }).error)
+    expect(contentBrowserSelectionMoves({ ...selection, assetPaths: ["plugins/tools/assets/lamp.hasset"], operation: "copy" }).error)
       .toBe("Items in another content root cannot be copied here.");
     expect(contentBrowserSelectionMoves(selection)).toEqual({
       moves: [
         { kind: "folder", sourcePath: "plugins/tools/assets/Props", destinationPath: "assets/fx", id: "plugins/tools/assets/Props" },
-        { kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.babasset" },
-        { kind: "asset", sourcePath: "plugins/tools/assets", destinationPath: "assets/fx", id: "plugins/tools/assets/lamp.babasset" },
+        { kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.hasset" },
+        { kind: "asset", sourcePath: "plugins/tools/assets", destinationPath: "assets/fx", id: "plugins/tools/assets/lamp.hasset" },
       ],
       error: null,
     });
@@ -1889,27 +1889,27 @@ describe("content-browser-helpers", () => {
     expect(contentBrowserSelectionMoves({
       destinationPath: "plugins/starter/assets",
       folderPaths: [],
-      assetPaths: ["assets/hero.babasset"],
+      assetPaths: ["assets/hero.hasset"],
       rootPaths,
       readOnlyRootPaths,
     }).error).toBe("Items cannot be moved into read-only content.");
     expect(contentBrowserSelectionMoves({
       destinationPath: "assets/fx",
       folderPaths: [],
-      assetPaths: ["plugins/starter/assets/lamp.babasset"],
+      assetPaths: ["plugins/starter/assets/lamp.hasset"],
       rootPaths,
       readOnlyRootPaths,
     }).error).toBe("Read-only content cannot be moved.");
   });
 
   it("refuses a move onto an existing or shared name before anything moves", () => {
-    const selection = { folderPaths: ["assets/textures"], assetPaths: ["assets/a/hero.babasset", "assets/b/hero.babasset"] };
+    const selection = { folderPaths: ["assets/textures"], assetPaths: ["assets/a/hero.hasset", "assets/b/hero.hasset"] };
     expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", ...selection }).error)
-      .toBe('"hero.babasset" already exists in assets/fx.');
+      .toBe('"hero.hasset" already exists in assets/fx.');
     expect(contentBrowserSelectionMoves({
       destinationPath: "assets/fx",
       folderPaths: ["assets/textures"],
-      assetPaths: ["assets/a/hero.babasset"],
+      assetPaths: ["assets/a/hero.hasset"],
       existingPaths: new Set(["assets/fx/textures"]),
     }).error).toBe('"textures" already exists in assets/fx.');
     expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", operation: "copy", ...selection }).error).toBeNull();
@@ -1922,8 +1922,8 @@ describe("content-browser-helpers", () => {
         ["assets/textures"],
         (guid) =>
           guid === "tex-1"
-            ? "assets/textures/albedo.babasset"
-            : "assets/main.scene.babasset",
+            ? "assets/textures/albedo.hasset"
+            : "assets/main.scene.hasset",
       ),
     ).toEqual(["scene-1"]);
     expect(
@@ -1959,7 +1959,7 @@ describe("content-browser-helpers", () => {
 
   it("records Class variable references in Class header dependencies", () => {
     const classes = ["SpawnChild", "SpawnBase", "Unused"].map((name) => ({
-      path: `assets/${name}.class.babasset`,
+      path: `assets/${name}.class.hasset`,
       header: { type: "Class", name, guid: `guid-${name}` },
     }));
     expect(assetHeaderDependencies("Class", {
@@ -2108,7 +2108,7 @@ describe("content-browser-helpers", () => {
   it("prefers an open Material document domain over a stale header", () => {
     const bloom = asset({
       type: "Material",
-      path: "assets/Bloom.material.babasset",
+      path: "assets/Bloom.material.hasset",
       guid: "pp-bloom",
       name: "Bloom",
       payload: { domain: "surface" },
@@ -2116,7 +2116,7 @@ describe("content-browser-helpers", () => {
     expect(
       isPostProcessMaterialForPicker(bloom, [
         {
-          ref: { kind: "material", path: "assets/Bloom.material.babasset" },
+          ref: { kind: "material", path: "assets/Bloom.material.hasset" },
           content: { domain: "postProcess" },
         },
       ]),
@@ -2148,7 +2148,7 @@ describe("content-browser-helpers", () => {
   it("prefers an open particle Material document domain over a stale header", () => {
     const sparks = asset({
       type: "Material",
-      path: "assets/Sparks.material.babasset",
+      path: "assets/Sparks.material.hasset",
       guid: "mat-sparks",
       name: "Sparks",
       payload: { domain: "surface" },
@@ -2156,7 +2156,7 @@ describe("content-browser-helpers", () => {
     expect(
       isParticleMaterialForPicker(sparks, [
         {
-          ref: { kind: "material", path: "assets/Sparks.material.babasset" },
+          ref: { kind: "material", path: "assets/Sparks.material.hasset" },
           content: { domain: "particle" },
         },
       ]),
@@ -2168,13 +2168,13 @@ describe("content-browser-helpers", () => {
     const bloom = asset({
       guid: "bloom",
       type: "Material",
-      path: "assets/Bloom.material.babasset",
+      path: "assets/Bloom.material.hasset",
       payload: { domain: "surface" },
     });
     const dirt = asset({
       guid: "dirt",
       type: "Texture",
-      path: "assets/Dirt.texture.babasset",
+      path: "assets/Dirt.texture.hasset",
     });
     expect(materialDomainsFromAssets([bloom, dirt], [])).toEqual({
       bloom: "surface",
@@ -2182,7 +2182,7 @@ describe("content-browser-helpers", () => {
     expect(
       materialDomainsFromAssets([bloom, dirt], [
         {
-          ref: { kind: "material", path: "assets/Bloom.material.babasset" },
+          ref: { kind: "material", path: "assets/Bloom.material.hasset" },
           content: { domain: "postProcess" },
         },
       ]),
@@ -2194,14 +2194,14 @@ describe("content-browser-helpers", () => {
       guid: "bloom",
       type: "Material",
       name: "Bloom",
-      path: "assets/Bloom.material.babasset",
+      path: "assets/Bloom.material.hasset",
       payload: { domain: "postProcess" },
     });
     const albedo = asset({
       guid: "albedo",
       type: "Material",
       name: "Albedo",
-      path: "assets/Albedo.material.babasset",
+      path: "assets/Albedo.material.hasset",
       payload: { domain: "surface" },
     });
     const picker = [
@@ -2237,8 +2237,8 @@ describe("content-browser-helpers", () => {
 
   it("collects extra guids plus assets inside selected folders for last-Scene checks", () => {
     const assets = [
-      asset({ guid: "s1", type: "Scene", name: "Main", path: "assets/fx/Main.scene.babasset" }),
-      asset({ guid: "a1", type: "Enum", name: "qa1", path: "assets/qa1.babasset" }),
+      asset({ guid: "s1", type: "Scene", name: "Main", path: "assets/fx/Main.scene.hasset" }),
+      asset({ guid: "a1", type: "Enum", name: "qa1", path: "assets/qa1.hasset" }),
     ];
     expect(
       [...contentBrowserDeletingGuids({
@@ -2287,13 +2287,13 @@ describe("content-browser-helpers", () => {
         path: "assets",
       },
       {
-        id: "assets/Hero.class.babasset",
+        id: "assets/Hero.class.hasset",
         kind: "asset",
         label: "Hero",
         depth: 1,
         hasChildren: false,
         expanded: true,
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         guid: "hero-1",
       },
       {
@@ -2314,7 +2314,7 @@ describe("content-browser-helpers", () => {
         selectedGuids: new Set(["hero-1"]),
         selectedFolderPaths: new Set(),
         selectedFolderPath: "assets",
-        anchorId: "assets/Hero.class.babasset",
+        anchorId: "assets/Hero.class.hasset",
       },
     );
     expect([...added.selectedGuids]).toEqual(["hero-1"]);
@@ -2329,7 +2329,7 @@ describe("content-browser-helpers", () => {
         selectedGuids: new Set(["hero-1"]),
         selectedFolderPaths: new Set(),
         selectedFolderPath: "assets",
-        anchorId: "assets/Hero.class.babasset",
+        anchorId: "assets/Hero.class.hasset",
       },
     );
     expect([...ranged.selectedGuids]).toEqual(["hero-1"]);

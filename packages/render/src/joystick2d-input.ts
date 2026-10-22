@@ -1,5 +1,5 @@
 import { Matrix, Vector3 } from "@babylonjs/core";
-import { joystick2DValue, sceneLayerCanvasToLayer, type OverlayPointerHit } from "@babylonslate/core";
+import { joystick2DValue, sceneLayerCanvasToLayer, type OverlayPointerHit } from "@haptic/core";
 import { joystick2DMesh, type Joystick2DMesh } from "./joystick2d-mesh";
 import type { SceneLayerView } from "./scene-layer-compositor";
 

@@ -7,26 +7,26 @@ import {
   useState,
 } from "react";
 import { Loader2Icon, SearchIcon } from "lucide-react";
-import type { SearchEntry } from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Kbd } from "@babylonslate/ui/components/kbd";
+import type { SearchEntry } from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
+import { Badge } from "@haptic/ui/components/badge";
+import { Kbd } from "@haptic/ui/components/kbd";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { SearchInput, TypeVisualIcon } from "@babylonslate/editor-kit";
-import { Separator } from "@babylonslate/ui/components/separator";
+} from "@haptic/ui/components/empty";
+import { SearchInput, TypeVisualIcon } from "@haptic/editor-kit";
+import { Separator } from "@haptic/ui/components/separator";
 import { useProjectSearch } from "../context/project-search-context";
 import {
   groupSearchEntries,

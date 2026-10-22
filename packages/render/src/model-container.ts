@@ -13,7 +13,7 @@ import { GLTFLoaderAnimationStartMode } from "@babylonjs/loaders/glTF/glTFFileLo
 import {
   gltfAnimationClips,
   type GlbBrowseAnimation,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { gltfLoaderExtension, packedGltfBytes } from "./model-mesh";
 
 /**

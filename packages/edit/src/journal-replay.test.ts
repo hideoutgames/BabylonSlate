@@ -16,7 +16,7 @@ import { replayJournalLines, resolveJournalLines } from "./journal-replay";
 import { EditSession } from "./session";
 import { diffGraphCommands } from "./commands/graph-diff";
 import { planSceneChange } from "./commands/scene-diff";
-import { createActor, createDefaultScene, type SerializedGraph, type SerializedScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, type SerializedGraph, type SerializedScene } from "@haptic/core";
 
 function journalRecord(docId: string, command: EditCommand<unknown>): JournalLine {
   return { v: 1, docId, at: "2026-09-28T10:00:00Z", command: commandToJournalPayload(command) };
@@ -35,7 +35,7 @@ function fold(records: readonly JournalLine[]): JournalLine[] {
 }
 
 describe("journal coalescing", () => {
-  const docId = "water:assets/Lake.water.babasset";
+  const docId = "water:assets/Lake.water.hasset";
   const initial = { waveHeight: 1, opacity: 0.8 };
 
   it("recovers a folded scrub, then its Undo, to the same documents as the separate records", () => {
@@ -61,7 +61,7 @@ describe("journal coalescing", () => {
   });
 
   it("folds a node drag but keeps other nodes, other documents and discrete edits separate", () => {
-    const graphId = "graph:assets/Hero.class.babasset";
+    const graphId = "graph:assets/Hero.class.hasset";
     const drag = [
       new MoveNodeCommand("a", { x: 0, y: 0 }, { x: 4, y: 0 }),
       new MoveNodeCommand("a", { x: 4, y: 0 }, { x: 9, y: 2 }),
@@ -72,7 +72,7 @@ describe("journal coalescing", () => {
 
     const otherNode = journalRecord(graphId, new MoveNodeCommand("b", { x: 0, y: 0 }, { x: 1, y: 1 }));
     expect(coalesceJournalLines(drag[0]!, otherNode)).toBeNull();
-    expect(coalesceJournalLines(drag[0]!, { ...drag[1]!, docId: "graph:assets/Other.class.babasset" })).toBeNull();
+    expect(coalesceJournalLines(drag[0]!, { ...drag[1]!, docId: "graph:assets/Other.class.hasset" })).toBeNull();
 
     const discrete = [
       new SetAssetDocumentCommand(initial, { ...initial, opacity: 0.5 }),
@@ -88,7 +88,7 @@ describe("journal coalescing", () => {
   });
 
   it("folds a multi-select transform drag into one record that recovers the same scene", () => {
-    const sceneId = "scene:assets/Main.scene.babasset";
+    const sceneId = "scene:assets/Main.scene.hasset";
     const initial = createDefaultScene();
     initial.actors.push(createActor("a", "A"), createActor("b", "B"));
     const pose = (x: number) => ({ position: [x, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
@@ -114,7 +114,7 @@ describe("journal coalescing", () => {
 
 describe("journal replay", () => {
   it("recovers SceneLayer switcher entries, their coalesced edits and their Undo", () => {
-    const docId = "scene:assets/Main.scene.babasset";
+    const docId = "scene:assets/Main.scene.hasset";
     const initial = createDefaultScene();
     initial.actors.push(createActor("switcher", "Switcher", { classId: "SceneLayerActorSwitcher" }));
     const withEntries = (scene: SerializedScene, defaults: Record<string, unknown>): SerializedScene => ({
@@ -202,7 +202,7 @@ describe("journal replay", () => {
   });
 
   it("recovers batched deletion, Undo and Redo as complete graph changes", () => {
-    const docId = "graph:assets/history.class.babasset";
+    const docId = "graph:assets/history.class.hasset";
     const graph: SerializedGraph = {
       nodes: [
         { id: "start", type: "event", position: { x: 0, y: 0 }, data: {} },
@@ -232,8 +232,8 @@ describe("journal replay", () => {
   });
 
   it("replays an edit made before a rename and its Undo after it onto the renamed file", () => {
-    const oldId = "graph:assets/hero.class.babasset";
-    const newId = "graph:assets/player.class.babasset";
+    const oldId = "graph:assets/hero.class.hasset";
+    const newId = "graph:assets/player.class.hasset";
     // The file on disk: the deletion was never saved.
     const graph: SerializedGraph = {
       nodes: [
@@ -263,7 +263,7 @@ describe("journal replay", () => {
   });
 
   it("keeps a document later opened at a renamed path apart from the renamed one", () => {
-    const [a, b, c] = ["graph:assets/a.class.babasset", "graph:assets/b.class.babasset", "graph:assets/c.class.babasset"];
+    const [a, b, c] = ["graph:assets/a.class.hasset", "graph:assets/b.class.hasset", "graph:assets/c.class.hasset"];
     const at = "2026-09-28T12:00:00Z";
     const move = (docId: string, x: number) => serializeJournalLine({
       v: 1, docId, at,
@@ -279,7 +279,7 @@ describe("journal replay", () => {
   });
 
   it("replays lines onto open graph documents", () => {
-    const docId = "graph:assets/main.class.babasset";
+    const docId = "graph:assets/main.class.hasset";
     const graph = {
       nodes: [
         {
@@ -325,9 +325,9 @@ describe("journal replay", () => {
   });
 
   it("reports lines that are not journal records while replaying the rest", () => {
-    const docId = "graph:assets/main.class.babasset";
+    const docId = "graph:assets/main.class.hasset";
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
-    const torn = '{"v":1,"docId":"graph:assets/main.class.babasset","at":"2026-';
+    const torn = '{"v":1,"docId":"graph:assets/main.class.hasset","at":"2026-';
     const line = serializeJournalLine({
       v: 1, docId, at: "2026-10-11T00:00:00Z",
       command: commandToJournalPayload(new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x: 5, y: 0 })),
@@ -339,8 +339,8 @@ describe("journal replay", () => {
   });
 
   it("skips a record whose apply throws and still replays later documents", () => {
-    const sceneId = "scene:assets/Main.scene.babasset";
-    const graphId = "graph:assets/main.class.babasset";
+    const sceneId = "scene:assets/Main.scene.hasset";
+    const graphId = "graph:assets/main.class.hasset";
     const scene = createDefaultScene();
     scene.actors.push(createActor("a", "A"));
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
@@ -359,7 +359,7 @@ describe("journal replay", () => {
   });
 
   it("skips a whole batch when one child command cannot be recovered", () => {
-    const docId = "graph:assets/history.class.babasset";
+    const docId = "graph:assets/history.class.hasset";
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
     const line = serializeJournalLine({
       v: 1, docId, at: "2026-09-07T20:00:00Z",

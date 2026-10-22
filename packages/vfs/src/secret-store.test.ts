@@ -9,7 +9,7 @@ import { CapacitorSecretStore } from "./capacitor-secret-store";
 
 describe("SecretStore", () => {
   beforeEach(() => {
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
+    delete (globalThis as { haptic?: unknown }).haptic;
   });
 
   it("round-trips values in memory", async () => {
@@ -30,7 +30,7 @@ describe("SecretStore", () => {
 
   it("refuses the legacy desktop store when the secure account bridge is missing", async () => {
     const legacyWrite = vi.fn();
-    (globalThis as { babylonslate?: unknown }).babylonslate = {
+    (globalThis as { haptic?: unknown }).haptic = {
       userData: {
         readSettings: async () => null,
         writeSettings: async () => {},

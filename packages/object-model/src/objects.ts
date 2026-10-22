@@ -16,7 +16,7 @@ import {
   type TouchInput,
   type GuidFactory,
   type Transform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { sceneAssetClassId } from "./ids";
 
 export type TickContext = {

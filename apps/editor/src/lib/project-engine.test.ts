@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackendEngineSession, BackendEngineSessionOptions } from "@babylonslate/render";
+import type { BackendEngineSession, BackendEngineSessionOptions } from "@haptic/render";
 const { createSession } = vi.hoisted(() => ({ createSession: vi.fn() }));
-vi.mock("@babylonslate/render", () => ({ createBackendEngineSession: createSession }));
+vi.mock("@haptic/render", () => ({ createBackendEngineSession: createSession }));
 import { createProjectEngineController, createProjectEngineSession, type ProjectEngineRequest } from "./project-engine";
 
 function request(backend: ProjectEngineRequest["backend"] = "webgl2"): ProjectEngineRequest {

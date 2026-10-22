@@ -1,4 +1,4 @@
-import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
+import type { SerializedActor, SerializedComponent, SerializedScene } from "@haptic/core";
 
 /** Pose changes retain asset references and rendering topology. Parent edits
  * and component properties still take the structural reconciliation path.

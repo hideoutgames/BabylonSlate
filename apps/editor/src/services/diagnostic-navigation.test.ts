@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SessionReportEntry } from "@babylonslate/runtime";
-import type { Diagnostic } from "@babylonslate/scripting";
+import type { SessionReportEntry } from "@haptic/runtime";
+import type { Diagnostic } from "@haptic/scripting";
 import type { SessionReportAsset } from "../lib/session-report-locations";
 import {
   documentIdToRevealForDiagnostic,
@@ -13,30 +13,30 @@ describe("documentIdToRevealForDiagnostic", () => {
   it("returns the graph document id when that tab is already open", () => {
     expect(
       documentIdToRevealForDiagnostic(
-        { graphId: "graph:assets/main.class.babasset" },
-        ["content-browser", "graph:assets/main.class.babasset", "scene:assets/main.scene.babasset"],
+        { graphId: "graph:assets/main.class.hasset" },
+        ["content-browser", "graph:assets/main.class.hasset", "scene:assets/main.scene.hasset"],
       ),
-    ).toBe("graph:assets/main.class.babasset");
+    ).toBe("graph:assets/main.class.hasset");
   });
 
   it("returns null when the graph tab is not open", () => {
     expect(
       documentIdToRevealForDiagnostic(
-        { graphId: "graph:assets/main.class.babasset" },
-        ["content-browser", "scene:assets/main.scene.babasset"],
+        { graphId: "graph:assets/main.class.hasset" },
+        ["content-browser", "scene:assets/main.scene.hasset"],
       ),
     ).toBeNull();
   });
 });
 
 const ASSETS: SessionReportAsset[] = [
-  { guid: "hero-guid", path: "assets/Hero.class.babasset", name: "Hero", type: "Class" },
-  { guid: "patrol-guid", path: "assets/Patrol.bt.babasset", name: "Patrol", type: "BehaviourTree" },
-  { guid: "locomotion-guid", path: "assets/Locomotion.animgraph.babasset", name: "Locomotion", type: "AnimationGraph" },
-  { guid: "arena-guid", path: "assets/Arena.scene.babasset", name: "Arena", type: "Scene" },
-  { guid: "hud-guid", path: "assets/Hud.scenelayer.babasset", name: "Hud", type: "SceneLayer" },
-  { guid: "rock-guid", path: "assets/Rock.model.babasset", name: "Rock", type: "Model" },
-  { guid: "legacy-guid", path: "assets/Legacy.babasset", name: "Legacy", type: "Retired" },
+  { guid: "hero-guid", path: "assets/Hero.class.hasset", name: "Hero", type: "Class" },
+  { guid: "patrol-guid", path: "assets/Patrol.bt.hasset", name: "Patrol", type: "BehaviourTree" },
+  { guid: "locomotion-guid", path: "assets/Locomotion.animgraph.hasset", name: "Locomotion", type: "AnimationGraph" },
+  { guid: "arena-guid", path: "assets/Arena.scene.hasset", name: "Arena", type: "Scene" },
+  { guid: "hud-guid", path: "assets/Hud.scenelayer.hasset", name: "Hud", type: "SceneLayer" },
+  { guid: "rock-guid", path: "assets/Rock.model.hasset", name: "Rock", type: "Model" },
+  { guid: "legacy-guid", path: "assets/Legacy.hasset", name: "Legacy", type: "Retired" },
 ];
 
 /** Class scripts report their path, trees and physics their guid. */
@@ -66,7 +66,7 @@ describe("sessionReportNavigation", () => {
     expect(nav.focusedNodeId).toBe("wait");
     expect(nav.document).toEqual({
       kind: "behaviour-tree",
-      path: "assets/Patrol.bt.babasset",
+      path: "assets/Patrol.bt.hasset",
       label: "Patrol",
     });
   });
@@ -80,19 +80,19 @@ describe("sessionReportNavigation", () => {
     expect(nav.bodyLine).toBe(3);
     expect(nav.document).toEqual({
       kind: "graph",
-      path: "assets/Hero.class.babasset",
+      path: "assets/Hero.class.hasset",
       label: "Hero",
     });
   });
 
   // Every source the runtime can name for an entry opens its owning document.
   it.each([
-    ["a Class event graph node, reported by path", { assetGuid: "assets/Hero.class.babasset", nodeId: "print" }, "graph"],
-    ["a Class function graph node, reported by path", { assetGuid: "assets/Hero.class.babasset", nodeId: "fn-node", graphId: "jump" }, "graph"],
-    ["an Execute JavaScript body line", { assetGuid: "assets/Hero.class.babasset", nodeId: "js", bodyLine: 4 }, "graph"],
+    ["a Class event graph node, reported by path", { assetGuid: "assets/Hero.class.hasset", nodeId: "print" }, "graph"],
+    ["a Class function graph node, reported by path", { assetGuid: "assets/Hero.class.hasset", nodeId: "fn-node", graphId: "jump" }, "graph"],
+    ["an Execute JavaScript body line", { assetGuid: "assets/Hero.class.hasset", nodeId: "js", bodyLine: 4 }, "graph"],
     ["a Class node in an exported build, reported by guid", { assetGuid: "hero-guid", nodeId: "print" }, "graph"],
     ["a Behaviour Tree node", { assetGuid: "patrol-guid", btNodeId: "task" }, "behaviour-tree"],
-    ["an Animation Graph object", { assetGuid: "assets/Locomotion.animgraph.babasset", nodeId: "n", graphId: "animation-object" }, "anim-graph"],
+    ["an Animation Graph object", { assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }, "anim-graph"],
     ["a Scene that failed to load", { assetGuid: "arena-guid", code: "scene.loading.failed" }, "scene"],
     ["a Scene Layer with physics off", { assetGuid: "hud-guid", code: "physics.scene_layer_physics_disabled", severity: "warning" }, "scene-layer"],
     ["a Model without a collision mesh", { assetGuid: "rock-guid", code: "physics.complex_collision_unavailable", severity: "warning" }, "model"],
@@ -151,17 +151,17 @@ describe("navigateToSessionReportEntry", () => {
   it("opens the source, focuses the node and moves the keyboard into the document", async () => {
     const { host, calls, focusedNodes } = fakeHost();
     const result = await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Hero.class.babasset", nodeId: "print" }),
+      entry({ assetGuid: "assets/Hero.class.hasset", nodeId: "print" }),
       host,
     );
     expect(result).toEqual({ opened: true });
     expect(focusedNodes).toEqual(["print"]);
     // The focus is set for the destination before the tab exists, so it survives the switch.
     expect(calls.slice(0, 5)).toEqual([
-      "focus print in graph:assets/Hero.class.babasset",
-      "open graph:assets/Hero.class.babasset",
-      "activate graph:assets/Hero.class.babasset",
-      "keyboard graph:assets/Hero.class.babasset",
+      "focus print in graph:assets/Hero.class.hasset",
+      "open graph:assets/Hero.class.hasset",
+      "activate graph:assets/Hero.class.hasset",
+      "keyboard graph:assets/Hero.class.hasset",
       "log Navigate to node print",
     ]);
   });
@@ -211,16 +211,16 @@ describe("navigateToSessionReportEntry", () => {
     await navigateToSessionReportEntry(target, host);
     expect(calls.slice(0, 2)).toEqual([
       "clear focus",
-      "focus print in graph:assets/Hero.class.babasset",
+      "focus print in graph:assets/Hero.class.hasset",
     ]);
   });
 
   it("shows the Animation Object for an error from its lifecycle graph", async () => {
     const { host, calls } = fakeHost();
     await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Locomotion.animgraph.babasset", nodeId: "n", graphId: "animation-object" }),
+      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }),
       host,
     );
-    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.babasset animationObject");
+    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset animationObject");
   });
 });

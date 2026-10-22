@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RichTextStyle } from "@babylonslate/core";
+import type { RichTextStyle } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { createText2DMesh, text2DMeshLayout } from "./text2d-mesh";
 import {

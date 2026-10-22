@@ -1,6 +1,6 @@
-import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle, type WaterStylizedLook } from "@babylonslate/core";
-import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@babylonslate/core";
-import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
+import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle, type WaterStylizedLook } from "@haptic/core";
+import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@haptic/core";
+import type { ImportResult, IndexedAsset } from "@haptic/assets";
 import {
   DOCUMENT_CHUNK_ID,
   collectAssetDependencyMetadata,
@@ -32,7 +32,7 @@ import {
   isEnvironmentTexturePayload,
   contentEntryNameError,
   renamedAssetPath,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   classIdsFromVariableMembers,
   assetVariableGuidsFromGraph,
@@ -47,12 +47,12 @@ import {
   isSceneWorkspaceKind,
   type SerializedScene,
   type ViewportMode,
-} from "@babylonslate/core";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+} from "@haptic/core";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -64,8 +64,8 @@ import {
   normalizeMaterialInstanceDocument,
   parseMaterialDomain,
   type MaterialDomain,
-} from "@babylonslate/shader-graph";
-import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
+} from "@haptic/shader-graph";
+import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
 import {
   engineParentOf,
   rangeSelectTreeIds,
@@ -73,12 +73,12 @@ import {
   walkAncestry,
   type TypeVisual,
   type TreeDropPlacement,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   isLockedEngineClassId,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
@@ -1599,7 +1599,7 @@ export function buildNewAssetResult(options: {
   guid: string;
   parentClass: string | null;
   parentOf?: (id: string) => string | null | undefined;
-  parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
+  parentGraphs?: Record<string, import("@haptic/core").SerializedGraph>;
   /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
   materialDomain?: MaterialDomain;
   defaultDefinitionGuid?: string | null;
@@ -1945,8 +1945,8 @@ function legacyAssetHeaderDependencies(
       if (!field || typeof field !== "object" || field.type !== "asset") return [];
       return (Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue]).filter((value: unknown): value is string => typeof value === "string" && !!value);
     }) : []),
-    ...(assetType === "Class" ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
-    ...(assetType === "Class" ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
+    ...(assetType === "Class" ? assetVariableGuidsFromGraph(payload as unknown as import("@haptic/core").SerializedGraph) : []),
+    ...(assetType === "Class" ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@haptic/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classRefs, definitionFields),
     ...materialAssetDependencies(assetType, payload),
@@ -2032,7 +2032,7 @@ export function assetHeaderDependencyMetadata(
       requiredVariableNames: asset.header.requiredVariableNames,
       // Saved Class headers carry `classHeaderMeta` variables, not graph members.
       members: (asset.header.payload?.members ?? (Array.isArray(asset.header.payload?.variables)
-        ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@babylonslate/core").GraphClassMember[],
+        ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@haptic/core").GraphClassMember[],
     }] : []),
     definitionFields: guid => definitions.get(guid),
     graphPins: (type, properties) => defaultNodeRegistry.get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),

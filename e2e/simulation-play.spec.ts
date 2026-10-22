@@ -11,37 +11,37 @@ import { simulationParticleProject } from "./simulation-particle-fixture";
 
 type RuntimeVisual = { slotId: number; name: string; visible: boolean; position: number[] };
 type TestHost = typeof globalThis & {
-  __babylonslateSimulationTest: { start(): Promise<void>; state(): GameSessionState };
-  __babylonslatePlayTest: {
+  __hapticSimulationTest: { start(): Promise<void>; state(): GameSessionState };
+  __hapticPlayTest: {
     tickIndex(): number;
     runtimeMode(): string | null;
     actorPositions(): { slotId: number; x: number; y: number; z: number }[];
     visuals(): RuntimeVisual[];
   };
-  __babylonslateTest: {
+  __hapticTest: {
     activeSceneContent(): SerializedScene | null;
     readAssetChunk(path: string, chunkId: string): Promise<Uint8Array | null>;
     injectTestGamepad(pad: { index: number; axes: number[]; buttons: number[] } | null): void;
   };
-  __babylonslateViewportTest: { engineSceneDiagnostics(): Promise<EngineSceneDiagnostics | null> };
-  __babylonslateParticleStats?: { systems: number; playing: number; gpuSystems: number };
+  __hapticViewportTest: { engineSceneDiagnostics(): Promise<EngineSceneDiagnostics | null> };
+  __hapticParticleStats?: { systems: number; playing: number; gpuSystems: number };
 };
 
 async function state(page: Page) {
-  return page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.state());
+  return page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.state());
 }
 async function content(page: Page) {
-  return page.evaluate(() => (globalThis as TestHost).__babylonslateTest.activeSceneContent());
+  return page.evaluate(() => (globalThis as TestHost).__hapticTest.activeSceneContent());
 }
 async function tick(page: Page) {
-  return page.evaluate(() => (globalThis as TestHost).__babylonslatePlayTest.tickIndex());
+  return page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex());
 }
 async function visuals(page: Page) {
-  return page.evaluate(() => (globalThis as TestHost).__babylonslatePlayTest.visuals());
+  return page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.visuals());
 }
 async function savedSceneBytes(page: Page) {
   return page.evaluate(async path => {
-    const bytes = await (globalThis as TestHost).__babylonslateTest.readAssetChunk(path, "document");
+    const bytes = await (globalThis as TestHost).__hapticTest.readAssetChunk(path, "document");
     return bytes ? Array.from(bytes) : null;
   }, MAIN_SCENE_FILE);
 }
@@ -49,7 +49,7 @@ async function savedSceneBytes(page: Page) {
 /** Only launch uses the temporary test entry. Every subsequent action uses editor chrome. */
 async function startSimulation(page: Page) {
   const previous = await state(page);
-  await page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.start());
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
   await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
   await expect(page.getByTestId("play-overlay")).toHaveCount(1);
   await expect(page.getByTestId("play-canvas")).toBeVisible();
@@ -102,7 +102,7 @@ async function editRuntimePosition(page: Page, axis: "X" | "Y" | "Z", value: num
 }
 async function pauseSamples(page: Page, frames = 30) {
   return page.evaluate(async count => {
-    const api = (globalThis as TestHost).__babylonslatePlayTest;
+    const api = (globalThis as TestHost).__hapticPlayTest;
     const samples = [];
     for (let frame = 0; frame < count; frame++) {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -113,10 +113,10 @@ async function pauseSamples(page: Page, frames = 30) {
 }
 async function evidence(page: Page, testInfo: TestInfo, additional: unknown) {
   const owner = await state(page);
-  const engine = await page.evaluate(() => (globalThis as TestHost).__babylonslateViewportTest.engineSceneDiagnostics());
+  const engine = await page.evaluate(() => (globalThis as TestHost).__hapticViewportTest.engineSceneDiagnostics());
   await testInfo.attach("simulation-evidence", {
     body: JSON.stringify({ url: page.url(), browser: testInfo.project.name,
-      buildKey: process.env.BL_TEST_BUILD_KEY, owner, engine, additional }),
+      buildKey: process.env.HAPTIC_TEST_BUILD_KEY, owner, engine, additional }),
     contentType: "application/json",
   });
 }
@@ -206,7 +206,7 @@ test("Simulation Edit and Pause neutralize held gamepad input until a fresh tran
   await openTestProject(page);
   await openMainScene(page);
   const inject = (axis: number | null) => page.evaluate(value => {
-    (globalThis as TestHost).__babylonslateTest.injectTestGamepad(value === null ? null : { index: 0, axes: [value, 0, 0, 0], buttons: [0, 0, 0, 0] });
+    (globalThis as TestHost).__hapticTest.injectTestGamepad(value === null ? null : { index: 0, axes: [value, 0, 0, 0], buttons: [0, 0, 0, 0] });
   }, axis);
   const moveX = async () => Number(await page.getByTestId("play-move-x").getAttribute("data-move-x"));
   await inject(0);
@@ -277,13 +277,13 @@ test("Simulation freezes real physics while Edit camera redraws and resumes with
 });
 
 test("Simulation releases native scene owners across 20 sequential pause/edit/stop cycles", async ({ page }, testInfo) => {
-  test.skip(process.env.BL_SIMULATION_LIFETIME !== "1", "Explicit lifetime qualification; not a routine browser correctness workload.");
+  test.skip(process.env.HAPTIC_SIMULATION_LIFETIME !== "1", "Explicit lifetime qualification; not a routine browser correctness workload.");
   test.setTimeout(15 * 60_000);
   await openMinimalTestProject(page);
   await openMainScene(page);
   await setPreviewScene(page, previewPlacementScene());
   const nativeCounts = () => page.evaluate(async () => {
-    const diagnostics = await (globalThis as TestHost).__babylonslateViewportTest.engineSceneDiagnostics();
+    const diagnostics = await (globalThis as TestHost).__hapticViewportTest.engineSceneDiagnostics();
     if (!diagnostics) return null;
     return { backend: diagnostics.backend, scenes: diagnostics.scenes.length,
       meshes: diagnostics.scenes.reduce((sum, scene) => sum + scene.meshCount, 0),
@@ -319,7 +319,7 @@ test("Simulation redraws initialized GPU particles without advancing their visib
   await openMinimalTestProject(page, await simulationParticleProject());
   await openMainScene(page);
   await startSimulation(page);
-  const stats = () => page.evaluate(() => (globalThis as TestHost).__babylonslateParticleStats ?? null);
+  const stats = () => page.evaluate(() => (globalThis as TestHost).__hapticParticleStats ?? null);
   await expect.poll(stats, { timeout: 30_000 }).toMatchObject({ systems: 1, playing: 1 });
   const native = await stats();
   if (native?.gpuSystems !== 1) {

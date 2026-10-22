@@ -1,4 +1,4 @@
-import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
+import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
 
 /** Repair the bundled unlit model for the lit template, preserving its shape,
  * UVs and hierarchy. This preparation never changes general model imports.

@@ -1,5 +1,5 @@
-import type { InterfaceMethod } from "@babylonslate/scripting";
-import type { GraphDocument, SerializedPin } from "@babylonslate/graph-ui";
+import type { InterfaceMethod } from "@haptic/scripting";
+import type { GraphDocument, SerializedPin } from "@haptic/graph-ui";
 
 function pinTypeKind(typeId: string): string {
   if (typeId === "vec2" || typeId === "vec3") return "vector";

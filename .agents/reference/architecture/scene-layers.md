@@ -4,7 +4,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 
 ## Product decisions
 
-- A SceneLayer is a HUD overlay. It is not a second world scene, not additive streaming, and not the removed UserInterface / ADT HUD. Never re-add `@babylonslate/ui-runtime`, UserInterface, WidgetComponent or Babylon GUI.
+- A SceneLayer is a HUD overlay. It is not a second world scene, not additive streaming, and not the removed UserInterface / ADT HUD. Never re-add `@haptic/ui-runtime`, UserInterface, WidgetComponent or Babylon GUI.
 - Play loads one world Scene at a time; layers live on a session compositor drawn after the world camera and its post-process, so world PP never hits overlays.
 - Scene-owned layers spawn from `SceneSettings.sceneLayers` (`{ assetGuid, zOrder, enabled }[]`) and despawn with that world. Graph-created layers (`ownerSceneGuid === null`) survive world travel until Remove / Clear / Stop. One asset may run as several instances.
 - Widgets are actor components (`2D*`), not a separate widget asset system.

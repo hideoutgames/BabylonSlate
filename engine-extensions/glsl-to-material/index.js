@@ -24,7 +24,7 @@ export function activate(api) {
       if (!result.ok) {
         throw new Error(result.diagnostics.map((entry) => `${entry.line ? `Line ${entry.line}: ` : ""}${entry.message}`).join("\n"));
       }
-      await api.assets.create(`assets/${name}.material.babasset`, {
+      await api.assets.create(`assets/${name}.material.hasset`, {
         type: "Material", name, payload: result.document,
       });
       api.log(`Created Material: ${name}`);

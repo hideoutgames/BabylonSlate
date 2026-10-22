@@ -1,5 +1,5 @@
 import { Color3, CreateLines, LinesMesh, Vector3, type Mesh, type Scene } from "@babylonjs/core";
-import { parseSplineProperties, splineCentreline, type SplineProperties } from "@babylonslate/core";
+import { parseSplineProperties, splineCentreline, type SplineProperties } from "@haptic/core";
 
 const bodies = new WeakMap<Mesh, SplineProperties>();
 const COLOR = new Color3(0.42, 0.78, 1);

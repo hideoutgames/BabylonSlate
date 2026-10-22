@@ -16,7 +16,7 @@ import {
   type MaterialDefines,
   type Scene,
 } from "@babylonjs/core";
-import type { FixedLightKind, FixedLightLayout } from "@babylonslate/core";
+import type { FixedLightKind, FixedLightLayout } from "@haptic/core";
 import type { FixedLightSeat } from "./fixed-light-seats";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 

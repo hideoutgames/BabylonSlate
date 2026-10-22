@@ -21,7 +21,7 @@ A progress window shows each file. If some files fail, **Import Partially Comple
 | MP3, WAV, OGG | [Audio](../assets/audio.md) |
 | TTF, OTF, WOFF, WOFF2 | [Font](../assets/font.md) |
 | MSDF atlas (JSON with its PNG) | [Font](../assets/font.md) |
-| Haptic asset files (`.babasset`) | The same asset, copied from another project |
+| Haptic asset files (`.hasset`) | The same asset, copied from another project |
 
 To add an MSDF atlas to an existing Font, hold the Font and choose **Import MSDF Atlas…**.
 
@@ -63,5 +63,5 @@ The **Compression** section shows the current state. If compression fails, the I
 - Font files and MSDF atlases become Font assets. See [Font](../assets/font.md).
 
 ::: tip
-Plugins (`.babplugin`) are not imported here. Use **Project Settings > Plugins > Import Plugin**. See [Plugins](../projects/plugins.md).
+Plugins (`.hplugin`) are not imported here. Use **Project Settings > Plugins > Import Plugin**. See [Plugins](../projects/plugins.md).
 :::

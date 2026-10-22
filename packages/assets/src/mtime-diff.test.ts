@@ -9,13 +9,13 @@ describe("diffAssetMtimes", () => {
   it("reports changed, added, and removed paths", () => {
     expect(
       diffAssetMtimes(
-        { "assets/a.babasset": 1, "assets/b.babasset": 2 },
-        { "assets/a.babasset": 3, "assets/c.babasset": 4 },
+        { "assets/a.hasset": 1, "assets/b.hasset": 2 },
+        { "assets/a.hasset": 3, "assets/c.hasset": 4 },
       ),
     ).toEqual({
-      changedPaths: ["assets/a.babasset"],
-      addedPaths: ["assets/c.babasset"],
-      removedPaths: ["assets/b.babasset"],
+      changedPaths: ["assets/a.hasset"],
+      addedPaths: ["assets/c.hasset"],
+      removedPaths: ["assets/b.hasset"],
     });
   });
 });
@@ -23,56 +23,56 @@ describe("diffAssetMtimes", () => {
 describe("classifyExternalChanges", () => {
   it("returns none when mtimes are unchanged", () => {
     const result = classifyExternalChanges({
-      previousAssets: { "assets/a.babasset": 1 },
-      nextAssets: { "assets/a.babasset": 1 },
+      previousAssets: { "assets/a.hasset": 1 },
+      nextAssets: { "assets/a.hasset": 1 },
       previousProjectJsonMtime: 10,
       nextProjectJsonMtime: 10,
-      openDocs: [{ path: "assets/a.babasset", dirty: true }],
+      openDocs: [{ path: "assets/a.hasset", dirty: true }],
     });
     expect(result.kind).toBe("none");
   });
 
   it("asks to reload a clean open document whose file changed", () => {
     const result = classifyExternalChanges({
-      previousAssets: { "assets/a.babasset": 1 },
-      nextAssets: { "assets/a.babasset": 2 },
+      previousAssets: { "assets/a.hasset": 1 },
+      nextAssets: { "assets/a.hasset": 2 },
       previousProjectJsonMtime: 10,
       nextProjectJsonMtime: 10,
-      openDocs: [{ path: "assets/a.babasset", dirty: false }],
+      openDocs: [{ path: "assets/a.hasset", dirty: false }],
     });
     expect(result.kind).toBe("reload-clean");
-    expect(result.cleanChangedPaths).toEqual(["assets/a.babasset"]);
+    expect(result.cleanChangedPaths).toEqual(["assets/a.hasset"]);
   });
 
   it("warns when a dirty open document changed on disk", () => {
     const result = classifyExternalChanges({
-      previousAssets: { "assets/a.babasset": 1 },
-      nextAssets: { "assets/a.babasset": 2 },
+      previousAssets: { "assets/a.hasset": 1 },
+      nextAssets: { "assets/a.hasset": 2 },
       previousProjectJsonMtime: 10,
       nextProjectJsonMtime: 10,
-      openDocs: [{ path: "assets/a.babasset", dirty: true }],
+      openDocs: [{ path: "assets/a.hasset", dirty: true }],
     });
     expect(result.kind).toBe("dirty-disk");
-    expect(result.dirtyChangedPaths).toEqual(["assets/a.babasset"]);
+    expect(result.dirtyChangedPaths).toEqual(["assets/a.hasset"]);
   });
 
   it("reports open documents whose files were deleted on disk", () => {
     const deleted = (dirty: boolean) => classifyExternalChanges({
-      previousAssets: { "assets/a.babasset": 1, "assets/b.babasset": 1 },
-      nextAssets: { "assets/b.babasset": 1 },
+      previousAssets: { "assets/a.hasset": 1, "assets/b.hasset": 1 },
+      nextAssets: { "assets/b.hasset": 1 },
       previousProjectJsonMtime: 10,
       nextProjectJsonMtime: 10,
-      openDocs: [{ path: "assets/a.babasset", dirty }],
+      openDocs: [{ path: "assets/a.hasset", dirty }],
     });
-    expect(deleted(true)).toMatchObject({ kind: "dirty-disk", dirtyChangedPaths: ["assets/a.babasset"] });
-    expect(deleted(false)).toMatchObject({ kind: "reload-clean", cleanChangedPaths: ["assets/a.babasset"] });
+    expect(deleted(true)).toMatchObject({ kind: "dirty-disk", dirtyChangedPaths: ["assets/a.hasset"] });
+    expect(deleted(false)).toMatchObject({ kind: "reload-clean", cleanChangedPaths: ["assets/a.hasset"] });
   });
 
   it("prefers Reload Project when project.json or many assets change", () => {
     expect(
       classifyExternalChanges({
-        previousAssets: { "assets/a.babasset": 1 },
-        nextAssets: { "assets/a.babasset": 1 },
+        previousAssets: { "assets/a.hasset": 1 },
+        nextAssets: { "assets/a.hasset": 1 },
         previousProjectJsonMtime: 10,
         nextProjectJsonMtime: 11,
         openDocs: [],
@@ -82,8 +82,8 @@ describe("classifyExternalChanges", () => {
     const many: Record<string, number | null> = {};
     const next: Record<string, number | null> = {};
     for (let i = 0; i < MANY_EXTERNAL_CHANGES; i += 1) {
-      many[`assets/${i}.babasset`] = 1;
-      next[`assets/${i}.babasset`] = 2;
+      many[`assets/${i}.hasset`] = 1;
+      next[`assets/${i}.hasset`] = 2;
     }
     expect(
       classifyExternalChanges({

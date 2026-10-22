@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { ElectronLibraryStorageAdapter } from "./electron-storage-adapter";
 import type { LibraryFolder } from "./library-folders";

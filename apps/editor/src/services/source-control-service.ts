@@ -1,5 +1,5 @@
-import { isOk, type SourceControlProjectSettings } from "@babylonslate/core";
-import type { ProjectStorage } from "@babylonslate/core";
+import { isOk, type SourceControlProjectSettings } from "@haptic/core";
+import type { ProjectStorage } from "@haptic/core";
 import {
   FakeLockProvider,
   GitLfsLockProvider,
@@ -11,9 +11,9 @@ import {
   type FileLock,
   type GitConfigPrefill,
   type LockProvider,
-} from "@babylonslate/source-control";
-import type { NativeHttp } from "@babylonslate/vfs";
-import type { SecretStore } from "@babylonslate/vfs";
+} from "@haptic/source-control";
+import type { NativeHttp } from "@haptic/vfs";
+import type { SecretStore } from "@haptic/vfs";
 
 export type DocumentLockEditMode = "editable" | "readonly" | "edit-anyway";
 

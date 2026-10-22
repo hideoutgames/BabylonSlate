@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultScene, quatRotateVector, type SerializedGraph } from "@babylonslate/core";
-import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeBabasset, extractGltfPositions, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@babylonslate/assets";
-import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { createDefaultScene, quatRotateVector, type SerializedGraph } from "@haptic/core";
+import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeHasset, extractGltfPositions, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@haptic/assets";
+import { migrateLegacyShaderPayload } from "@haptic/shader-graph";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_ACTOR_ID,
@@ -20,7 +20,7 @@ function indexed(
 ): IndexedAsset {
   return {
     rootId: "project",
-    path: `Mannequin/${guid}.babasset`,
+    path: `Mannequin/${guid}.hasset`,
     header: {
       guid,
       type,
@@ -58,9 +58,9 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       async (_root: string, _path: string, result: ImportResult) => result,
     );
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("scaffold.babproject");
+    await storage.openDocumentsProject("scaffold.hproject");
     for (const asset of created) {
-      await storage.writeBinary(asset.path, await encodeBabasset({
+      await storage.writeBinary(asset.path, await encodeHasset({
         header: {
           ...asset.header,
           version: 1, engineVersion: "test", mode: "thin",

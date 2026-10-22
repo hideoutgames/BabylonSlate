@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   createActor,
   createDefaultSceneSettings,
   createMeshComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 
 async function execute(

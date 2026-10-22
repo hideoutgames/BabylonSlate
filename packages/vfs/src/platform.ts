@@ -3,14 +3,14 @@ import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { LibraryFolder } from "./library-folders";
 import type { NativeHttpImageUpload } from "./native-http-port";
 
 export type HostPlatform = "ios" | "android" | "electron" | "web";
 
 /**
- * Preload bridges the Electron host installs on `globalThis.babylonslate`.
+ * Preload bridges the Electron host installs on `globalThis.haptic`.
  * `userData` persists Engine Settings; `project` is the Node VFS IPC surface;
  * `library` reaches the app-owned user libraries under `userData/libraries`.
  */
@@ -34,8 +34,8 @@ export interface ElectronSaveGameBridge {
 }
 
 export function getElectronSaveGameBridge(): ElectronSaveGameBridge | null {
-  const host = globalThis as { babylonslate?: { saveGames?: ElectronSaveGameBridge } };
-  return host.babylonslate?.saveGames ?? null;
+  const host = globalThis as { haptic?: { saveGames?: ElectronSaveGameBridge } };
+  return host.haptic?.saveGames ?? null;
 }
 
 export interface ElectronSecretsBridge {
@@ -65,7 +65,7 @@ export interface ElectronProjectBridge {
   listProjects(): Promise<ProjectFolderHandle[]>;
   releaseFolder(): Promise<void>;
   readBinary(path: string): Promise<ArrayBuffer>;
-  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string): Promise<Omit<import("@babylonslate/core").StorageRangeRead, "bytes"> & { bytes: ArrayBuffer; error?: string; errorCode?: "source-revision-changed" | "not-found" }>;
+  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string): Promise<Omit<import("@haptic/core").StorageRangeRead, "bytes"> & { bytes: ArrayBuffer; error?: string; errorCode?: "source-revision-changed" | "not-found" }>;
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;
@@ -86,45 +86,45 @@ export type ElectronLibraryBridge = {
 
 export function getElectronLibraryBridge(): ElectronLibraryBridge | null {
   const host = globalThis as {
-    babylonslate?: { library?: ElectronLibraryBridge };
+    haptic?: { library?: ElectronLibraryBridge };
   };
-  return host.babylonslate?.library ?? null;
+  return host.haptic?.library ?? null;
 }
 
 export function getElectronUserDataBridge(): ElectronUserDataBridge | null {
   const host = globalThis as {
-    babylonslate?: { userData?: ElectronUserDataBridge };
+    haptic?: { userData?: ElectronUserDataBridge };
   };
-  return host.babylonslate?.userData ?? null;
+  return host.haptic?.userData ?? null;
 }
 
 export function getElectronProjectBridge(): ElectronProjectBridge | null {
   const host = globalThis as {
-    babylonslate?: { project?: ElectronProjectBridge };
+    haptic?: { project?: ElectronProjectBridge };
   };
-  return host.babylonslate?.project ?? null;
+  return host.haptic?.project ?? null;
 }
 
 export function getElectronSecretsBridge(): ElectronSecretsBridge | null {
   const host = globalThis as {
-    babylonslate?: { secrets?: ElectronSecretsBridge };
+    haptic?: { secrets?: ElectronSecretsBridge };
   };
-  return host.babylonslate?.secrets ?? null;
+  return host.haptic?.secrets ?? null;
 }
 
 /** Separate host store: account credentials must never use plaintext fallback. */
 export function getElectronAccountSecretsBridge(): ElectronSecretsBridge | null {
   const host = globalThis as {
-    babylonslate?: { accountSecrets?: ElectronSecretsBridge };
+    haptic?: { accountSecrets?: ElectronSecretsBridge };
   };
-  return host.babylonslate?.accountSecrets ?? null;
+  return host.haptic?.accountSecrets ?? null;
 }
 
 export function getElectronHttpBridge(): ElectronHttpBridge | null {
   const host = globalThis as {
-    babylonslate?: { http?: ElectronHttpBridge };
+    haptic?: { http?: ElectronHttpBridge };
   };
-  return host.babylonslate?.http ?? null;
+  return host.haptic?.http ?? null;
 }
 
 export function isElectronHost(): boolean {

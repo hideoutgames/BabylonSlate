@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ENGINE_VERSION } from "@babylonslate/core";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { ENGINE_VERSION } from "@haptic/core";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createExtensionSettings, discoverProjectExtensions, resolveExtensionGraph, writeProjectExtension, type ExtensionDescriptor } from "./extension-host";
 
 function extension(guid: string, dependencies: string[] = []): ExtensionDescriptor {

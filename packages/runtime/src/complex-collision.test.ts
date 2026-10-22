@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
-import { buildBoxGlbFixture, cookComplexCollisionMesh, normalizeModelPayload } from "@babylonslate/assets";
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import { buildBoxGlbFixture, cookComplexCollisionMesh, normalizeModelPayload } from "@haptic/assets";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { applyRuntimeSourceControl } from "./source-content-control";
 import type { CompiledScript } from "./script-host";

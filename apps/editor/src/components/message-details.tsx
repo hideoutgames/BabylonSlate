@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { XIcon } from "lucide-react";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import { IconActionButton } from "./icon-action-button";
 
 /** Full selected message beneath compact, windowed diagnostics and logs. */

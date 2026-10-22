@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { MemoryAppSettingsStore } from "@babylonslate/vfs";
+import { MemoryAppSettingsStore } from "@haptic/vfs";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { ThemeSettingsFields } from "./homepage-theme-settings";
 
 const picked = vi.hoisted(() => ({ files: [] as { name: string; bytes: Uint8Array }[] }));
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   pickImportFiles: vi.fn(async () => picked.files),
 }));
 

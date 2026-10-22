@@ -6,8 +6,8 @@ import {
   type RenderTargetCaptureProperties,
   type RenderTargetCaptureProperty,
   type Transform,
-} from "@babylonslate/core";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { Actor, ActorComponent } from "@haptic/object-model";
 import { composeParentChildTransform } from "./actor-world-transform";
 
 const keys = Object.keys(createDefaultRenderTargetCaptureProperties()) as RenderTargetCaptureProperty[];

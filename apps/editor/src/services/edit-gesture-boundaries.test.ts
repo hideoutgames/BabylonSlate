@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { DocumentEditStack, SetNodeDataCommand } from "@babylonslate/edit";
-import type { SerializedGraph } from "@babylonslate/core";
+import { DocumentEditStack, SetNodeDataCommand } from "@haptic/edit";
+import type { SerializedGraph } from "@haptic/core";
 import { attachEditGestureBoundaries } from "./edit-gesture-boundaries";
 
 it("separates pointer gestures while retaining all updates in a multitouch gesture", () => {

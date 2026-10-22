@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
+import { SKYBOX_FACE_KEYS } from "@haptic/core";
 import {
   copyEngineDefaultSkyboxFaces,
   ENGINE_DEFAULT_SKYBOX_FACE_FILES,

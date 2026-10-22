@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLOAT, compileGraph, objectRef } from "@babylonslate/scripting";
+import { FLOAT, compileGraph, objectRef } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import { gameInstanceNodes } from "./game-instance";
 

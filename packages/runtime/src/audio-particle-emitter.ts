@@ -1,5 +1,5 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { CommandMessage } from "@haptic/bridge";
+import type { Actor, ActorComponent } from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
 import type { ScriptHostServices } from "./script-host";
 

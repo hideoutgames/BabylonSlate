@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { OctagonAlertIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Switch } from "@babylonslate/ui/components/switch";
+import { Button } from "@haptic/ui/components/button";
+import { Badge } from "@haptic/ui/components/badge";
+import { Switch } from "@haptic/ui/components/switch";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@babylonslate/ui/components/alert";
+} from "@haptic/ui/components/alert";
 import {
   Field,
   FieldContent,
@@ -15,7 +15,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogMedia,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import {
   ensureEnginePluginLibrary,
   type EnginePluginEntry,

@@ -17,19 +17,19 @@ import {
 import {
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
   type MaterialDocument,
-} from "@babylonslate/shader-graph";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+} from "@haptic/shader-graph";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import {
   ResourceCache,
   setSceneRenderSettings,
   compileMaterialPlan,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import {
   applyEnvironmentLighting,
   isEnvironmentLightingReady,

@@ -37,9 +37,9 @@ async function observedPhases(host: Locator) {
 async function boxes(host: Locator) {
   return host.evaluate(() => {
     const global = globalThis as unknown as {
-      __babylonslatePlayTest?: { visuals: () => Array<{ visible: boolean }> };
+      __hapticPlayTest?: { visuals: () => Array<{ visible: boolean }> };
     };
-    return global.__babylonslatePlayTest?.visuals().filter((visual) => visual.visible).length ?? 0;
+    return global.__hapticPlayTest?.visuals().filter((visual) => visual.visible).length ?? 0;
   });
 }
 
@@ -90,7 +90,7 @@ for (const mode of ["Play"] as const) {
     const canvas = page.getByTestId("play-canvas");
     await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
     await expect.poll(() => boxes(host)).toBe(48);
-    const meshCount = await host.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest: { liveObjectCounts: () => { meshes: number } } }).__babylonslatePlayTest.liveObjectCounts().meshes);
+    const meshCount = await host.evaluate(() => (globalThis as unknown as { __hapticPlayTest: { liveObjectCounts: () => { meshes: number } } }).__hapticPlayTest.liveObjectCounts().meshes);
     await page.getByTestId("play-console-open").click();
     for (let reload = 0; reload < 2; reload++) {
       await trackLoading(host);
@@ -101,7 +101,7 @@ for (const mode of ["Play"] as const) {
       await expect.poll(() => observedPhases(host), { timeout: 30_000 }).toContain("Presenting First Frame");
       await expect.poll(() => boxes(host)).toBe(48);
       await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
-      await expect.poll(() => host.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest: { liveObjectCounts: () => { meshes: number } } }).__babylonslatePlayTest.liveObjectCounts().meshes)).toBe(meshCount);
+      await expect.poll(() => host.evaluate(() => (globalThis as unknown as { __hapticPlayTest: { liveObjectCounts: () => { meshes: number } } }).__hapticPlayTest.liveObjectCounts().meshes)).toBe(meshCount);
     }
     await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByTestId("debug-console")).toBeHidden();

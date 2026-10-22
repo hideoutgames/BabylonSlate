@@ -8,7 +8,7 @@ describe("memory storage adapter", () => {
 
   it("round-trips binary and text", async () => {
     const storage = new MemoryStorageAdapter();
-    await storage.openDocumentsProject("Demo.babproject");
+    await storage.openDocumentsProject("Demo.hproject");
     const bytes = new Uint8Array([1, 2, 3, 255]);
     await storage.writeBinary("assets/tex.bin", bytes);
     expect(await storage.readBinary("assets/tex.bin")).toEqual(bytes);
@@ -18,13 +18,13 @@ describe("memory storage adapter", () => {
 
   it("supports remove, stat, and listProjects", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("A.babproject");
+    await storage.openDocumentsProject("A.hproject");
     await storage.writeText("a.txt", "x");
     expect((await storage.stat("a.txt")).size).toBe(1);
     await storage.remove("a.txt");
     expect(await storage.exists("a.txt")).toBe(false);
     const listed = await storage.listProjects();
-    expect(listed.some((p) => p.name === "A.babproject")).toBe(true);
+    expect(listed.some((p) => p.name === "A.hproject")).toBe(true);
   });
 
   it("keeps returned ranges independent and invalidates equal-sized writes", async () => {
@@ -44,16 +44,16 @@ describe("memory storage adapter", () => {
   it("refuses to replace a directory with a file or to leave the project", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.openDocumentsProject("Paths");
-    await storage.writeText("assets/hero.babasset", "hero");
+    await storage.writeText("assets/hero.hasset", "hero");
     await expect(storage.writeText("assets", "file")).rejects.toThrow(/directory/);
-    expect(await storage.readText("assets/hero.babasset")).toBe("hero");
+    expect(await storage.readText("assets/hero.hasset")).toBe("hero");
     await expect(storage.writeText("assets/../escape.json", "{}")).rejects.toThrow(/escapes project root/);
     expect(await storage.readdir(".")).toEqual([expect.objectContaining({ name: "assets", isDir: true })]);
   });
 
   it("releases the current folder", async () => {
     const storage = new MemoryStorageAdapter();
-    await storage.pickProjectFolder("X.babproject");
+    await storage.pickProjectFolder("X.hproject");
     expect(storage.getCurrentFolder()).not.toBeNull();
     await storage.releaseFolder();
     expect(storage.getCurrentFolder()).toBeNull();

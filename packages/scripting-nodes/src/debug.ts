@@ -9,7 +9,7 @@ import {
   BOOL,
   defaultValueLiteral,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const RESERVED = new Set([
   "break",

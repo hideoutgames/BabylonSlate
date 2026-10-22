@@ -6,7 +6,7 @@ import {
   createTestEngine,
   editorComponentMeshName,
   editorMeshName,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import {
   createDefaultScene,
   createDefaultSceneSettings,
@@ -15,7 +15,7 @@ import {
   createSkyboxComponent,
   identitySerializedTransform,
   type SerializedComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   PREFAB_ROOT_ID,
   authoredPrefabComponents,

@@ -1,8 +1,8 @@
 import { createElement } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
-import { RenderScheduler } from "@babylonslate/render/render-scheduler";
+import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
+import { RenderScheduler } from "@haptic/render/render-scheduler";
 import {
   attachViewportRenderGate,
   applyLiveEngineSettings,

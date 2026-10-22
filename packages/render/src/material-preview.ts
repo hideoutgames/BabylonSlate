@@ -15,8 +15,8 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
-import type { MaterialDocument, MaterialPreviewMesh } from "@babylonslate/shader-graph";
+import type { MaterialParameterValue } from "@haptic/bridge";
+import type { MaterialDocument, MaterialPreviewMesh } from "@haptic/shader-graph";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
 import { addMissingFlatNormals } from "./model-container";

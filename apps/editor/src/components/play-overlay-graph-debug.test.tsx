@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import type { Engine } from "@babylonjs/core";
-import type { CommandMessage, DebugObserveTarget } from "@babylonslate/bridge";
+import type { CommandMessage, DebugObserveTarget } from "@haptic/bridge";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { startPlaySession, type PlaySession } from "../services/play-session";
@@ -17,8 +17,8 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   createAppSettingsStore: () => ({ load: () => new Promise(() => {}) }),
 }));
 vi.mock("../services/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));

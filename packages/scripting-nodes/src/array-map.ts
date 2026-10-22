@@ -7,7 +7,7 @@ import {
   RESOLVING_WILDCARD,
   arrayOf,
   defaultValueLiteral,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { VALUE_INDEX_OF, hasValueTypePin } from "./map";
 
 const T = RESOLVING_WILDCARD;

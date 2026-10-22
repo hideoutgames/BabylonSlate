@@ -3,7 +3,7 @@ import {
   actorRef, arrayOf, assetRef, compileGraph, enumRef, isAssignable,
   ENGINE_RENDER_TARGET_MODE_ENUM_ID,
   type GraphNode, type LogicGraph, type NodeRegistry,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 function node(registry: NodeRegistry, id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode {

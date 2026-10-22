@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
-import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { encodeHasset, readHassetHeader } from "./hasset";
 import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import {
@@ -11,12 +11,12 @@ import {
 import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry, RegistryGenerationClock } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
-import { ENGINE_VERSION, SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@babylonslate/core";
+import { ENGINE_VERSION, SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@haptic/core";
 import { createFontPayload } from "./font-payload";
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("test.babproject");
+  await storage.openDocumentsProject("test.hproject");
   return storage;
 }
 
@@ -55,7 +55,7 @@ async function writeAsset(
   const payload = options.payloadBytes ?? new Uint8Array([1, 2, 3, 4]);
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   if (dir) await storage.mkdir(dir, true);
-  const bytes = await encodeBabasset({
+  const bytes = await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
       guid: options.guid,
@@ -84,7 +84,7 @@ describe("AssetRegistry", () => {
   it("duplicates and renames data assets without changing entry identities, hierarchy, or sharing stored values", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
-    await storage.writeBinary("assets/Item.datadefinition.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/Item.datadefinition.hasset", await encodeAssetDocument({
       guid: "definition", type: "DataDefinition", name: "Item", version: 1,
       payload: { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float" }] },
     }));
@@ -92,18 +92,18 @@ describe("AssetRegistry", () => {
       { id: "weapons", parentId: null, name: "Weapons", values: {} },
       { id: "sword", parentId: "weapons", name: "Sword", values: { Damage: 12 } },
     ] };
-    await storage.writeBinary("assets/Items.datatree.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/Items.datatree.hasset", await encodeAssetDocument({
       guid: "items", type: "DataTree", name: "Items", version: 1, payload,
     }, { dependencies: ["definition"] }));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const definition = await registry.duplicateAsset("definition", "project", "");
-    expect(definition.path).toBe("assets/Item_1.datadefinition.babasset");
+    expect(definition.path).toBe("assets/Item_1.datadefinition.hasset");
     const copy = await registry.duplicateAsset("items", "project", "");
-    expect(copy.path).toBe("assets/Items_1.datatree.babasset");
+    expect(copy.path).toBe("assets/Items_1.datatree.hasset");
     expect(copy.header.guid).not.toBe("items");
     const renamed = await registry.renameAsset(copy.header.guid, "Equipment");
-    expect(renamed.path).toBe("assets/Equipment.datatree.babasset");
+    expect(renamed.path).toBe("assets/Equipment.datatree.hasset");
     await registry.deleteAsset("items");
     expect((await decodeAssetDocument(await storage.readBinary(renamed.path))).payload).toEqual(payload);
     expect(registry.showReferences("definition").inbound).toEqual([copy.header.guid]);
@@ -111,7 +111,7 @@ describe("AssetRegistry", () => {
   it("indexes the saved header when a save lands between a scan's header reads", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("SaveDuringScan");
-    const path = "assets/Wood.babasset";
+    const path = "assets/Wood.hasset";
     const document = (name: string) => encodeAssetDocument({ guid: "wood", type: "Material", name, version: 1, payload: {} });
     await storage.writeBinary(path, await document("Before"));
     const saved = await document("After saving");
@@ -132,41 +132,41 @@ describe("AssetRegistry", () => {
   it.each(["rename", "move"])("preserves an asset after a case-only %s on a case-insensitive filesystem", async (operation) => {
     const storage = new CaseInsensitiveStorage();
     await storage.openDocumentsProject("CaseSensitiveNames");
-    await storage.writeBinary("assets/Wood.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/Wood.hasset", await encodeAssetDocument({
       guid: "wood", type: "Material", name: "Wood", version: 1, payload: { roughness: 0.4 },
     }));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     if (operation === "rename") await registry.renameAsset("wood", "wood");
-    else await registry.moveAsset("wood", "project", "wood.babasset");
-    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["wood.babasset"]);
-    expect((await decodeAssetDocument(await storage.readBinary("assets/wood.babasset"))).payload).toEqual({ roughness: 0.4 });
+    else await registry.moveAsset("wood", "project", "wood.hasset");
+    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["wood.hasset"]);
+    expect((await decodeAssetDocument(await storage.readBinary("assets/wood.hasset"))).payload).toEqual({ roughness: 0.4 });
     const reopened = new AssetRegistry(storage);
     await reopened.mountRoot(projectContentRoot());
-    expect(reopened.getByGuid("wood")?.path).toBe("assets/wood.babasset");
+    expect(reopened.getByGuid("wood")?.path).toBe("assets/wood.hasset");
   });
 
   it("restores the original asset when a case-only rename cannot write its destination", async () => {
     const storage = new CaseInsensitiveStorage();
     await storage.openDocumentsProject("FailedRename");
-    await writeAsset(storage, "assets/Wood.babasset", { guid: "wood", name: "Wood", type: "Material" });
-    const original = await storage.readBinary("assets/Wood.babasset");
+    await writeAsset(storage, "assets/Wood.hasset", { guid: "wood", name: "Wood", type: "Material" });
+    const original = await storage.readBinary("assets/Wood.hasset");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const write = storage.writeBinary.bind(storage);
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path === "assets/wood.babasset") throw new Error("Disk full");
+      if (path === "assets/wood.hasset") throw new Error("Disk full");
       return write(path, bytes);
     });
     await expect(registry.renameAsset("wood", "wood")).rejects.toThrow("Disk full");
-    expect(await storage.readBinary("assets/Wood.babasset")).toEqual(original);
-    expect(registry.getByGuid("wood")?.path).toBe("assets/Wood.babasset");
+    expect(await storage.readBinary("assets/Wood.hasset")).toEqual(original);
+    expect(registry.getByGuid("wood")?.path).toBe("assets/Wood.hasset");
   });
 
   it.each(["case-only", "new-parent"])("moves unindexed files and empty folders along with assets (%s)", async (operation) => {
     const storage = new CaseInsensitiveStorage();
     await storage.openDocumentsProject("MoveTree");
-    await writeAsset(storage, "assets/Source/wood.babasset", { guid: "wood", name: "wood", type: "Material" });
+    await writeAsset(storage, "assets/Source/wood.hasset", { guid: "wood", name: "wood", type: "Material" });
     await storage.writeText("assets/Source/source.png", "original input");
     await storage.writeText("assets/Source/.hidden", "sidecar");
     await storage.mkdir("assets/Source/empty/nested", true);
@@ -178,11 +178,11 @@ describe("AssetRegistry", () => {
     expect(await storage.readText(`${destination}/source.png`)).toBe("original input");
     expect(await storage.readText(`${destination}/.hidden`)).toBe("sidecar");
     expect((await storage.stat(`${destination}/empty/nested`)).isDir).toBe(true);
-    expect(registry.getByGuid("wood")?.path).toBe(`${destination}/wood.babasset`);
+    expect(registry.getByGuid("wood")?.path).toBe(`${destination}/wood.hasset`);
     expect((await storage.readdir(`assets${parent ? `/${parent}` : ""}`)).map((entry) => entry.name)).toContain("source");
     const reopened = new AssetRegistry(storage);
     await reopened.mountRoot(projectContentRoot());
-    expect(reopened.getByGuid("wood")?.path).toBe(`${destination}/wood.babasset`);
+    expect(reopened.getByGuid("wood")?.path).toBe(`${destination}/wood.hasset`);
   });
 
   it("refuses a folder move into an aliased descendant on a case-insensitive volume", async () => {
@@ -212,7 +212,7 @@ describe("AssetRegistry", () => {
 
   it("includes a creation already writing when a folder move is requested", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/source/existing.babasset", { guid: "existing", name: "existing", type: "Material" });
+    await writeAsset(storage, "assets/source/existing.hasset", { guid: "existing", name: "existing", type: "Material" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     let entered!: () => void;
@@ -221,18 +221,18 @@ describe("AssetRegistry", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const write = storage.writeBinary.bind(storage);
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path === "assets/source/new.babasset") { entered(); await gate; }
+      if (path === "assets/source/new.hasset") { entered(); await gate; }
       return write(path, bytes);
     });
-    const creation = registry.createAsset("project", "source/new.babasset", {
+    const creation = registry.createAsset("project", "source/new.hasset", {
       guid: "new", type: "Material", name: "new", version: 1, dependencies: [], payload: { roughness: 0.5 }, chunks: [],
     });
     await writing;
     const moving = registry.moveFolder("project", "source", "", "moved");
     release();
     await Promise.all([creation, moving]);
-    expect(registry.getByGuid("new")?.path).toBe("assets/moved/new.babasset");
-    expect(await storage.exists("assets/moved/new.babasset")).toBe(true);
+    expect(registry.getByGuid("new")?.path).toBe("assets/moved/new.hasset");
+    expect(await storage.exists("assets/moved/new.hasset")).toBe(true);
     expect(await storage.exists("assets/source")).toBe(false);
   });
 
@@ -257,69 +257,69 @@ describe("AssetRegistry", () => {
     });
 
     async function guidOnDisk(storage: MemoryStorageAdapter, path: string): Promise<string> {
-      return readBabassetHeader(await storage.readBinary(path)).guid;
+      return readHassetHeader(await storage.readBinary(path)).guid;
     }
 
     it("lets exactly one of two creations at the same path succeed", async () => {
       const storage = await createStorage();
       const registry = new AssetRegistry(storage);
       await registry.mountRoot(projectContentRoot());
-      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock\.babasset$/);
-      const first = registry.createAsset("project", "Rock.babasset", material("first"));
+      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock\.hasset$/);
+      const first = registry.createAsset("project", "Rock.hasset", material("first"));
       await writing;
-      const second = registry.createAsset("project", "Rock.babasset", material("second"));
+      const second = registry.createAsset("project", "Rock.hasset", material("second"));
       release();
       const [firstResult, secondResult] = await Promise.allSettled([first, second]);
       expect(firstResult.status).toBe("fulfilled");
       expect(secondResult).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringMatching(/already exists/) }) });
-      expect(registry.getByGuid("first")?.path).toBe("assets/Rock.babasset");
+      expect(registry.getByGuid("first")?.path).toBe("assets/Rock.hasset");
       expect(registry.getByGuid("second")).toBeUndefined();
-      expect(await guidOnDisk(storage, "assets/Rock.babasset")).toBe("first");
+      expect(await guidOnDisk(storage, "assets/Rock.hasset")).toBe("first");
     });
 
     it("gives overlapping duplicates distinct names and keeps an unindexed file at a copy name", async () => {
       const storage = await createStorage();
-      await writeAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Material", name: "Rock" });
+      await writeAsset(storage, "assets/Rock.hasset", { guid: "rock", type: "Material", name: "Rock" });
       const registry = new AssetRegistry(storage);
       await registry.mountRoot(projectContentRoot());
-      await storage.writeText("assets/Rock_1.babasset", "not yet scanned");
-      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock_\d+\.babasset$/);
+      await storage.writeText("assets/Rock_1.hasset", "not yet scanned");
+      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock_\d+\.hasset$/);
       const first = registry.duplicateAsset("rock", "project");
       await writing;
       const second = registry.duplicateAsset("rock", "project");
       release();
       const copies = await Promise.all([first, second]);
-      expect(copies.map((copy) => copy.path).sort()).toEqual(["assets/Rock_2.babasset", "assets/Rock_3.babasset"]);
+      expect(copies.map((copy) => copy.path).sort()).toEqual(["assets/Rock_2.hasset", "assets/Rock_3.hasset"]);
       for (const copy of copies) {
         expect(registry.getByGuid(copy.header.guid)?.path).toBe(copy.path);
         expect(await guidOnDisk(storage, copy.path)).toBe(copy.header.guid);
       }
-      expect(await storage.readText("assets/Rock_1.babasset")).toBe("not yet scanned");
+      expect(await storage.readText("assets/Rock_1.hasset")).toBe("not yet scanned");
     });
 
     it("refuses a rename onto a path a creation is still writing", async () => {
       const storage = await createStorage();
-      await writeAsset(storage, "assets/Stone.babasset", { guid: "stone", type: "Material", name: "Stone" });
-      const stoneBytes = await storage.readBinary("assets/Stone.babasset");
+      await writeAsset(storage, "assets/Stone.hasset", { guid: "stone", type: "Material", name: "Stone" });
+      const stoneBytes = await storage.readBinary("assets/Stone.hasset");
       const registry = new AssetRegistry(storage);
       await registry.mountRoot(projectContentRoot());
-      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock\.babasset$/);
-      const creation = registry.createAsset("project", "Rock.babasset", material("rock"));
+      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock\.hasset$/);
+      const creation = registry.createAsset("project", "Rock.hasset", material("rock"));
       await writing;
       // The rename settles while the creation's file is not on disk yet.
       await expect(registry.renameAsset("stone", "Rock")).rejects.toThrow(/already exists/);
       release();
       await creation;
-      expect(registry.getByGuid("rock")?.path).toBe("assets/Rock.babasset");
-      expect(await guidOnDisk(storage, "assets/Rock.babasset")).toBe("rock");
-      expect(registry.getByGuid("stone")?.path).toBe("assets/Stone.babasset");
-      expect(await storage.readBinary("assets/Stone.babasset")).toEqual(stoneBytes);
+      expect(registry.getByGuid("rock")?.path).toBe("assets/Rock.hasset");
+      expect(await guidOnDisk(storage, "assets/Rock.hasset")).toBe("rock");
+      expect(registry.getByGuid("stone")?.path).toBe("assets/Stone.hasset");
+      expect(await storage.readBinary("assets/Stone.hasset")).toEqual(stoneBytes);
     });
   });
 
   it("preserves an in-flight Font representation attachment through a folder move", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/source/Ui.babasset", { guid: "font", name: "Ui", type: "Font" });
+    await writeAsset(storage, "assets/source/Ui.hasset", { guid: "font", name: "Ui", type: "Font" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     let entered!: () => void;
@@ -328,7 +328,7 @@ describe("AssetRegistry", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const write = storage.writeBinary.bind(storage);
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path === "assets/source/Ui.babasset") { entered(); await gate; }
+      if (path === "assets/source/Ui.hasset") { entered(); await gate; }
       return write(path, bytes);
     });
     const attaching = registry.importFile("project", "source", "Ui.facetype.json", new TextEncoder().encode('{"glyphs":[]}'), { attachToGuid: "font" });
@@ -336,7 +336,7 @@ describe("AssetRegistry", () => {
     const moving = registry.moveFolder("project", "source", "", "moved");
     release();
     await Promise.all([attaching, moving]);
-    expect(registry.getByGuid("font")?.path).toBe("assets/moved/Ui.babasset");
+    expect(registry.getByGuid("font")?.path).toBe("assets/moved/Ui.hasset");
     expect(registry.getByGuid("font")?.header.chunks.some((chunk) => chunk.id === "facetype-glyphs")).toBe(true);
     expect(await storage.exists("assets/source")).toBe(false);
   });
@@ -344,33 +344,33 @@ describe("AssetRegistry", () => {
   it("does not index a retained recovery folder after a successful case-only move", async () => {
     const storage = new CaseInsensitiveStorage();
     await storage.openDocumentsProject("RetainedBackup");
-    await writeAsset(storage, "assets/Source/item.babasset", { guid: "item", name: "item", type: "Material" });
+    await writeAsset(storage, "assets/Source/item.hasset", { guid: "item", name: "item", type: "Material" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const remove = storage.remove.bind(storage);
     vi.spyOn(storage, "remove").mockImplementation(async (path) => {
-      if (path.startsWith("assets/.babylonslate-move-")) throw new Error("Cleanup denied");
+      if (path.startsWith("assets/.haptic-move-")) throw new Error("Cleanup denied");
       return remove(path);
     });
     await registry.moveFolder("project", "Source", "", "source");
-    expect((await storage.readdir("assets")).some((entry) => entry.name.startsWith(".babylonslate-move-"))).toBe(true);
+    expect((await storage.readdir("assets")).some((entry) => entry.name.startsWith(".haptic-move-"))).toBe(true);
     const readdir = storage.readdir.bind(storage);
     // Filesystem enumeration order must not decide which copy of a GUID is live.
     vi.spyOn(storage, "readdir").mockImplementation(async (path) => (await readdir(path)).reverse());
     const reopened = new AssetRegistry(storage);
     await reopened.mountRoot(projectContentRoot());
-    expect(reopened.getByGuid("item")?.path).toBe("assets/source/item.babasset");
+    expect(reopened.getByGuid("item")?.path).toBe("assets/source/item.hasset");
     expect(reopened.folderTree("project").children.map((folder) => folder.name)).toEqual(["source"]);
   });
 
   it("retains incoming references while reindexing or renaming a referenced asset", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/material.babasset", { guid: "material", type: "Material", name: "material", dependencies: ["texture"] });
-    await writeAsset(storage, "assets/texture.babasset", { guid: "texture", type: "Texture", name: "texture", dependencies: ["old"] });
+    await writeAsset(storage, "assets/material.hasset", { guid: "material", type: "Material", name: "material", dependencies: ["texture"] });
+    await writeAsset(storage, "assets/texture.hasset", { guid: "texture", type: "Texture", name: "texture", dependencies: ["old"] });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    await writeAsset(storage, "assets/texture.babasset", { guid: "texture", type: "Texture", name: "texture", dependencies: ["new"] });
-    await registry.reindexPath("assets/texture.babasset");
+    await writeAsset(storage, "assets/texture.hasset", { guid: "texture", type: "Texture", name: "texture", dependencies: ["new"] });
+    await registry.reindexPath("assets/texture.hasset");
     expect(registry.showReferences("texture").inbound).toEqual(["material"]);
     expect(registry.showReferences("old").inbound).toEqual([]);
     expect(registry.showReferences("new").inbound).toEqual(["texture"]);
@@ -381,8 +381,8 @@ describe("AssetRegistry", () => {
 
   it("uses one read scope throughout recursive root indexing", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/a.babasset", { guid: "a", type: "Texture", name: "A" });
-    await writeAsset(storage, "assets/nested/b.babasset", { guid: "b", type: "Texture", name: "B" });
+    await writeAsset(storage, "assets/a.hasset", { guid: "a", type: "Texture", name: "A" });
+    await writeAsset(storage, "assets/nested/b.hasset", { guid: "b", type: "Texture", name: "B" });
     const paths: string[] = [];
     let closed = false;
     const scoped = Object.assign(storage, {
@@ -399,12 +399,12 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(scoped);
     await registry.mountRoot(projectContentRoot());
     expect(registry.list().map((entry) => entry.header.guid).sort()).toEqual(["a", "b"]);
-    expect(paths.sort()).toEqual(["dir:assets", "dir:assets/nested", "range:assets/a.babasset", "range:assets/a.babasset", "range:assets/nested/b.babasset", "range:assets/nested/b.babasset"]);
+    expect(paths.sort()).toEqual(["dir:assets", "dir:assets/nested", "range:assets/a.hasset", "range:assets/a.hasset", "range:assets/nested/b.hasset", "range:assets/nested/b.hasset"]);
     expect(closed).toBe(true);
   });
   it("mounts the project root and indexes headers only", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", {
+    await writeAsset(storage, "assets/tex.hasset", {
       guid: "tex-1",
       type: "Texture",
       name: "tex",
@@ -420,11 +420,11 @@ describe("AssetRegistry", () => {
 
   it("reindexes a saved header payload without remounting", async () => {
     const storage = await createStorage();
-    const path = "assets/hero.sprite.babasset";
+    const path = "assets/hero.sprite.hasset";
     const dir = "assets";
     await storage.mkdir(dir, true);
     const write = async (name: string) => {
-      const bytes = await encodeBabasset({
+      const bytes = await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "sprite-1",
@@ -459,13 +459,13 @@ describe("AssetRegistry", () => {
 
   it("mounts a second synthetic root and resolves references across roots", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/scene.babasset", {
+    await writeAsset(storage, "assets/scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
       dependencies: ["plugin-tex"],
     });
-    await writeAsset(storage, "synthetic-root/assets/tex.babasset", {
+    await writeAsset(storage, "synthetic-root/assets/tex.hasset", {
       guid: "plugin-tex",
       type: "Texture",
       name: "Shared",
@@ -491,7 +491,7 @@ describe("AssetRegistry", () => {
     await storage.mkdir("assets", true);
     const fat = new Uint8Array(256).fill(7);
     for (let i = 0; i < 200; i++) {
-      await writeAsset(storage, `assets/a${i}.babasset`, {
+      await writeAsset(storage, `assets/a${i}.hasset`, {
         guid: `guid-${i}`,
         type: "Texture",
         name: `a${i}`,
@@ -635,14 +635,14 @@ describe("AssetRegistry", () => {
     }
   });
 
-  it("remaps colliding guids when importing a .babasset", async () => {
+  it("remaps colliding guids when importing a .hasset", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/existing.babasset", {
+    await writeAsset(storage, "assets/existing.hasset", {
       guid: "shared-guid",
       type: "Texture",
       name: "Existing",
     });
-    const incoming = await encodeBabasset({
+    const incoming = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "shared-guid",
@@ -670,7 +670,7 @@ describe("AssetRegistry", () => {
     const created = await registry.importFile(
       "project",
       "",
-      "incoming.babasset",
+      "incoming.hasset",
       incoming,
     );
     expect(created).toHaveLength(1);
@@ -680,12 +680,12 @@ describe("AssetRegistry", () => {
 
   it("deletes assets and updates inbound references", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", {
+    await writeAsset(storage, "assets/tex.hasset", {
       guid: "tex-1",
       type: "Texture",
       name: "tex",
     });
-    await writeAsset(storage, "assets/mat.babasset", {
+    await writeAsset(storage, "assets/mat.hasset", {
       guid: "mat-1",
       type: "Material",
       name: "mat",
@@ -698,16 +698,16 @@ describe("AssetRegistry", () => {
 
     await registry.deleteAsset("tex-1");
     expect(registry.getByGuid("tex-1")).toBeUndefined();
-    expect(await storage.exists("assets/tex.babasset")).toBe(false);
+    expect(await storage.exists("assets/tex.hasset")).toBe(false);
     expect(registry.showReferences("tex-1").inbound).toEqual([]);
   });
 
   it("preserves folder assets and references when storage deletion fails, then permits retry", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", {
+    await writeAsset(storage, "assets/fx/spark.hasset", {
       guid: "spark-1", type: "Texture", name: "Spark",
     });
-    await writeAsset(storage, "assets/fx-extra/material.babasset", {
+    await writeAsset(storage, "assets/fx-extra/material.hasset", {
       guid: "mat-1", type: "Material", name: "Material", dependencies: ["spark-1"],
     });
     const registry = new AssetRegistry(storage);
@@ -717,10 +717,10 @@ describe("AssetRegistry", () => {
 
     await expect(registry.deleteFolder("project", "fx")).rejects.toThrow("Storage unavailable");
 
-    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
+    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.hasset");
     expect(registry.showReferences("spark-1").inbound).toEqual(["mat-1"]);
     expect(registry.folderTree("project").children.find((folder) => folder.name === "fx")?.children.some((folder) => folder.name === "empty")).toBe(true);
-    expect(await storage.exists("assets/fx/spark.babasset")).toBe(true);
+    expect(await storage.exists("assets/fx/spark.hasset")).toBe(true);
 
     remove.mockRestore();
     await registry.deleteFolder("project", "fx");
@@ -728,14 +728,14 @@ describe("AssetRegistry", () => {
     expect(registry.getByGuid("spark-1")).toBeUndefined();
     expect(registry.showReferences("spark-1").inbound).toEqual([]);
     expect(registry.folderTree("project").children.map((folder) => folder.name)).toEqual(["fx-extra"]);
-    expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
-    expect(registry.getByGuid("mat-1")?.path).toBe("assets/fx-extra/material.babasset");
+    expect(await storage.exists("assets/fx/spark.hasset")).toBe(false);
+    expect(registry.getByGuid("mat-1")?.path).toBe("assets/fx-extra/material.hasset");
   });
 
   it("fails the mount, leaving nothing of the root, when a folder cannot be listed", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/top.babasset", { guid: "top", type: "Material", name: "Top" });
-    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark-1", type: "Texture", name: "Spark" });
+    await writeAsset(storage, "assets/top.hasset", { guid: "top", type: "Material", name: "Top" });
+    await writeAsset(storage, "assets/fx/spark.hasset", { guid: "spark-1", type: "Texture", name: "Spark" });
     const readdir = storage.readdir.bind(storage);
     vi.spyOn(storage, "readdir").mockImplementation(async (path) => {
       if (path === "assets/fx") throw new Error("Permission denied");
@@ -747,36 +747,36 @@ describe("AssetRegistry", () => {
     expect(registry.listRoots()).toEqual([]);
     expect(registry.list()).toEqual([]);
     await expect(registry.deleteFolder("project", "fx")).rejects.toThrow(/Unknown content root/);
-    expect(await storage.exists("assets/fx/spark.babasset")).toBe(true);
+    expect(await storage.exists("assets/fx/spark.hasset")).toBe(true);
   });
 
   it("keeps the first file indexed when a copy made outside the editor has its guid, and will not delete the copy unseen", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/a/hero.babasset", { guid: "hero", type: "Material", name: "Hero" });
+    await writeAsset(storage, "assets/a/hero.hasset", { guid: "hero", type: "Material", name: "Hero" });
     await storage.mkdir("assets/b", true);
-    await storage.writeBinary("assets/b/hero.babasset", await storage.readBinary("assets/a/hero.babasset"));
+    await storage.writeBinary("assets/b/hero.hasset", await storage.readBinary("assets/a/hero.hasset"));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
 
-    expect(registry.getByGuid("hero")?.path).toBe("assets/a/hero.babasset");
-    expect(registry.getByPath("assets/a/hero.babasset")?.header.guid).toBe("hero");
+    expect(registry.getByGuid("hero")?.path).toBe("assets/a/hero.hasset");
+    expect(registry.getByPath("assets/a/hero.hasset")?.header.guid).toBe("hero");
     expect(registry.listGuidConflicts()).toEqual([
-      { rootId: "project", path: "assets/b/hero.babasset", guid: "hero", indexedPath: "assets/a/hero.babasset" },
+      { rootId: "project", path: "assets/b/hero.hasset", guid: "hero", indexedPath: "assets/a/hero.hasset" },
     ]);
-    await expect(registry.deleteFolder("project", "b")).rejects.toThrow(/assets\/b\/hero\.babasset/);
-    expect(await storage.exists("assets/b/hero.babasset")).toBe(true);
+    await expect(registry.deleteFolder("project", "b")).rejects.toThrow(/assets\/b\/hero\.hasset/);
+    expect(await storage.exists("assets/b/hero.hasset")).toBe(true);
 
     await registry.moveFolder("project", "b", "", "copies");
-    expect(registry.listGuidConflicts().map((conflict) => conflict.path)).toEqual(["assets/copies/hero.babasset"]);
-    await expect(registry.deleteFolder("project", "copies")).rejects.toThrow(/copies\/hero\.babasset/);
+    expect(registry.listGuidConflicts().map((conflict) => conflict.path)).toEqual(["assets/copies/hero.hasset"]);
+    await expect(registry.deleteFolder("project", "copies")).rejects.toThrow(/copies\/hero\.hasset/);
   });
 
   it("scans a folder's files concurrently within a bound yet resolves a shared guid in directory order", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/copy-a.babasset", { guid: "shared", type: "Material", name: "First" });
-    await writeAsset(storage, "assets/copy-b.babasset", { guid: "shared", type: "Material", name: "Second" });
+    await writeAsset(storage, "assets/copy-a.hasset", { guid: "shared", type: "Material", name: "First" });
+    await writeAsset(storage, "assets/copy-b.hasset", { guid: "shared", type: "Material", name: "Second" });
     for (let index = 0; index < 20; index++) {
-      await writeAsset(storage, `assets/item-${String(index).padStart(2, "0")}.babasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
+      await writeAsset(storage, `assets/item-${String(index).padStart(2, "0")}.hasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
     }
     const listed = (await storage.readdir("assets")).map((entry) => `assets/${entry.name}`);
     const firstCopy = listed.find((path) => path.includes("copy-"))!;
@@ -805,26 +805,26 @@ describe("AssetRegistry", () => {
   it("does not read headers ahead across a subfolder it has yet to walk", async () => {
     const storage = await createStorage();
     // Directory order: a1, a2, sub/, b1, b2.
-    await writeAsset(storage, "assets/a1.babasset", { guid: "a1", type: "Material", name: "A1" });
-    await writeAsset(storage, "assets/a2.babasset", { guid: "a2", type: "Material", name: "A2" });
-    await writeAsset(storage, "assets/sub/s1.babasset", { guid: "s1", type: "Material", name: "S1" });
-    await writeAsset(storage, "assets/b1.babasset", { guid: "b1", type: "Material", name: "B1" });
-    await writeAsset(storage, "assets/b2.babasset", { guid: "b2", type: "Material", name: "B2" });
-    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["a1.babasset", "a2.babasset", "sub", "b1.babasset", "b2.babasset"]);
+    await writeAsset(storage, "assets/a1.hasset", { guid: "a1", type: "Material", name: "A1" });
+    await writeAsset(storage, "assets/a2.hasset", { guid: "a2", type: "Material", name: "A2" });
+    await writeAsset(storage, "assets/sub/s1.hasset", { guid: "s1", type: "Material", name: "S1" });
+    await writeAsset(storage, "assets/b1.hasset", { guid: "b1", type: "Material", name: "B1" });
+    await writeAsset(storage, "assets/b2.hasset", { guid: "b2", type: "Material", name: "B2" });
+    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["a1.hasset", "a2.hasset", "sub", "b1.hasset", "b2.hasset"]);
     const read = storage.readBinaryRange.bind(storage);
     const events: string[] = [];
     vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
       events.push(`start ${path}`);
       // The subfolder's file answers slowly, so any read begun meanwhile would show.
-      if (path === "assets/sub/s1.babasset") await new Promise((resolve) => setTimeout(resolve, 30));
+      if (path === "assets/sub/s1.hasset") await new Promise((resolve) => setTimeout(resolve, 30));
       try { return await read(path, ...rest); } finally { events.push(`end ${path}`); }
     });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
 
     expect(registry.list().map((asset) => asset.header.guid).sort()).toEqual(["a1", "a2", "b1", "b2", "s1"]);
-    const firstStartOfB = events.findIndex((event) => event === "start assets/b1.babasset");
-    const lastEndInSub = events.map((event, index) => event === "end assets/sub/s1.babasset" ? index : -1).reduce((a, b) => Math.max(a, b));
+    const firstStartOfB = events.findIndex((event) => event === "start assets/b1.hasset");
+    const lastEndInSub = events.map((event, index) => event === "end assets/sub/s1.hasset" ? index : -1).reduce((a, b) => Math.max(a, b));
     expect(firstStartOfB).toBeGreaterThan(lastEndInSub);
   });
 
@@ -832,14 +832,14 @@ describe("AssetRegistry", () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     // The first file in directory order cannot be parsed; the files after it are read ahead of it and answer slowly.
-    await storage.writeBinary("assets/a-broken.babasset", new Uint8Array([1, 2, 3]));
-    for (let index = 0; index < 5; index++) await writeAsset(storage, `assets/item-${index}.babasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
+    await storage.writeBinary("assets/a-broken.hasset", new Uint8Array([1, 2, 3]));
+    for (let index = 0; index < 5; index++) await writeAsset(storage, `assets/item-${index}.hasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
     const read = storage.readBinaryRange.bind(storage);
     let inFlight = 0;
     vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
       inFlight++;
       try {
-        if (path !== "assets/a-broken.babasset") await new Promise((resolve) => setTimeout(resolve, 30));
+        if (path !== "assets/a-broken.hasset") await new Promise((resolve) => setTimeout(resolve, 30));
         return await read(path, ...rest);
       } finally { inFlight--; }
     });
@@ -863,12 +863,12 @@ describe("AssetRegistry", () => {
     const storage = new ContentRevisionStorage("documents");
     await storage.openDocumentsProject("MoveLocator");
     const payload = new Uint8Array([4, 3, 2, 1]);
-    await writeAsset(storage, "assets/tex.babasset", { guid: "tex", type: "Texture", name: "tex", payloadBytes: payload });
+    await writeAsset(storage, "assets/tex.hasset", { guid: "tex", type: "Texture", name: "tex", payloadBytes: payload });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(await registry.readChunk("tex", "payload")).toEqual(payload);
 
-    await registry.moveAsset("tex", "project", "moved/tex.babasset");
+    await registry.moveAsset("tex", "project", "moved/tex.hasset");
     expect(await registry.readChunk("tex", "payload")).toEqual(payload);
     await registry.moveFolder("project", "moved", "", "again");
     expect(await registry.readChunk("tex", "payload")).toEqual(payload);
@@ -876,20 +876,20 @@ describe("AssetRegistry", () => {
 
   it("copies a folder past a destination name already on disk but not indexed", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Material", name: "spark" });
+    await writeAsset(storage, "assets/fx/spark.hasset", { guid: "spark", type: "Material", name: "spark" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await storage.mkdir("assets/fx_1", true);
 
     const copied = await registry.copyFolder("project", "fx", "");
     expect(copied).toBe("fx_2");
-    expect(registry.list().some((asset) => asset.path === "assets/fx_2/spark.babasset")).toBe(true);
+    expect(registry.list().some((asset) => asset.path === "assets/fx_2/spark.hasset")).toBe(true);
   });
 
   it("stops a canceled folder copy between files and deletes the partial copy", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Material", name: "spark" });
-    await writeAsset(storage, "assets/fx/smoke.babasset", { guid: "smoke", type: "Material", name: "smoke" });
+    await writeAsset(storage, "assets/fx/spark.hasset", { guid: "spark", type: "Material", name: "spark" });
+    await writeAsset(storage, "assets/fx/smoke.hasset", { guid: "smoke", type: "Material", name: "smoke" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const controller = new AbortController();
@@ -904,13 +904,13 @@ describe("AssetRegistry", () => {
     });
     await expect(copying).rejects.toThrow();
     expect(progress).toEqual([0, 1]);
-    expect(registry.list().map((asset) => asset.path).sort()).toEqual(["assets/fx/smoke.babasset", "assets/fx/spark.babasset"]);
+    expect(registry.list().map((asset) => asset.path).sort()).toEqual(["assets/fx/smoke.hasset", "assets/fx/spark.hasset"]);
     expect(await storage.exists("assets/fx_1")).toBe(false);
   });
 
   it("writes nothing for an asset copy canceled before it starts", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/rock.babasset", { guid: "rock", type: "Material", name: "rock" });
+    await writeAsset(storage, "assets/rock.hasset", { guid: "rock", type: "Material", name: "rock" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
 
@@ -920,7 +920,7 @@ describe("AssetRegistry", () => {
 
   it("does not index a Texture rewrite that finishes after its root was unmounted", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "plugin/assets/tex.babasset", { guid: "plugin-tex", type: "Texture", name: "tex" });
+    await writeAsset(storage, "plugin/assets/tex.hasset", { guid: "plugin-tex", type: "Texture", name: "tex" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await registry.mountRoot({ id: "plugin:p", kind: "plugin", pathPrefix: "plugin/assets" });
@@ -931,7 +931,7 @@ describe("AssetRegistry", () => {
     // A state write reads only the header of the file it replaces.
     const read = storage.readBinaryRange.bind(storage);
     vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
-      if (args[0] === "plugin/assets/tex.babasset") { entered(); await gate; }
+      if (args[0] === "plugin/assets/tex.hasset") { entered(); await gate; }
       return read(...args);
     });
     const write = registry.setCompressionState("plugin-tex", "encode_failed", { error: "boom" });
@@ -947,8 +947,8 @@ describe("AssetRegistry", () => {
   it("refuses to attach a representation to a Font in a read-only root", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
-    await writeAsset(storage, "plugin/assets/ui.babasset", { guid: "font-ui", type: "Font", name: "Ui" });
-    const before = await storage.readBinary("plugin/assets/ui.babasset");
+    await writeAsset(storage, "plugin/assets/ui.hasset", { guid: "font-ui", type: "Font", name: "Ui" });
+    const before = await storage.readBinary("plugin/assets/ui.hasset");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await registry.mountRoot({ id: "plugin:fonts", kind: "plugin", pathPrefix: "plugin/assets", readOnly: true });
@@ -956,17 +956,17 @@ describe("AssetRegistry", () => {
     await expect(registry.importFile("project", "", "Ui.facetype.json", new TextEncoder().encode("{\"glyphs\":{}}"), {
       attachToGuid: "font-ui",
     })).rejects.toThrow(/read-only/i);
-    expect(await storage.readBinary("plugin/assets/ui.babasset")).toEqual(before);
+    expect(await storage.readBinary("plugin/assets/ui.hasset")).toEqual(before);
   });
 
   it("builds a folder tree with nested assets", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/root.babasset", {
+    await writeAsset(storage, "assets/root.hasset", {
       guid: "r1",
       type: "Texture",
       name: "root",
     });
-    await writeAsset(storage, "assets/fx/spark.babasset", {
+    await writeAsset(storage, "assets/fx/spark.hasset", {
       guid: "r2",
       type: "Texture",
       name: "spark",
@@ -982,17 +982,17 @@ describe("AssetRegistry", () => {
 
   it("lists Scene documents and Class assets as graph documents", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/main.scene.babasset", {
+    await writeAsset(storage, "assets/main.scene.hasset", {
       guid: "s1",
       type: "Scene",
       name: "Main",
     });
-    await writeAsset(storage, "assets/hero.class.babasset", {
+    await writeAsset(storage, "assets/hero.class.hasset", {
       guid: "c1",
       type: "Class",
       name: "Hero",
     });
-    await writeAsset(storage, "assets/main.class.babasset", {
+    await writeAsset(storage, "assets/main.class.hasset", {
       guid: "g1",
       type: "Class",
       name: "Main",
@@ -1001,8 +1001,8 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.listDocumentPaths()).toEqual({
-      scenes: ["assets/main.scene.babasset"],
-      graphs: ["assets/hero.class.babasset", "assets/main.class.babasset"],
+      scenes: ["assets/main.scene.hasset"],
+      graphs: ["assets/hero.class.hasset", "assets/main.class.hasset"],
     });
   });
 
@@ -1013,7 +1013,7 @@ describe("AssetRegistry", () => {
     await registry.mountRoot(projectContentRoot());
 
     await registry.createFolder("project", "fx/vfx");
-    expect(await storage.exists("assets/fx/vfx/.babylonslate-folder")).toBe(true);
+    expect(await storage.exists("assets/fx/vfx/.haptic-folder")).toBe(true);
 
     const remounted = new AssetRegistry(storage);
     await remounted.mountRoot(projectContentRoot());
@@ -1025,12 +1025,12 @@ describe("AssetRegistry", () => {
 
   it("moves an asset without changing its guid", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", {
+    await writeAsset(storage, "assets/tex.hasset", {
       guid: "tex-1",
       type: "Texture",
       name: "tex",
     });
-    await writeAsset(storage, "assets/mat.babasset", {
+    await writeAsset(storage, "assets/mat.hasset", {
       guid: "mat-1",
       type: "Material",
       name: "mat",
@@ -1039,17 +1039,17 @@ describe("AssetRegistry", () => {
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    const moved = await registry.moveAsset("tex-1", "project", "textures/tex.babasset");
+    const moved = await registry.moveAsset("tex-1", "project", "textures/tex.hasset");
     expect(moved.header.guid).toBe("tex-1");
-    expect(moved.path).toBe("assets/textures/tex.babasset");
-    expect(await storage.exists("assets/tex.babasset")).toBe(false);
-    expect(await storage.exists("assets/textures/tex.babasset")).toBe(true);
+    expect(moved.path).toBe("assets/textures/tex.hasset");
+    expect(await storage.exists("assets/tex.hasset")).toBe(false);
+    expect(await storage.exists("assets/textures/tex.hasset")).toBe(true);
     expect(registry.showReferences("tex-1").inbound).toEqual(["mat-1"]);
   });
 
   it("duplicates an asset with a new guid", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", {
+    await writeAsset(storage, "assets/tex.hasset", {
       guid: "tex-1",
       type: "Texture",
       name: "tex",
@@ -1059,7 +1059,7 @@ describe("AssetRegistry", () => {
     await registry.mountRoot(projectContentRoot());
     const copy = await registry.duplicateAsset("tex-1", "project", "copies");
     expect(copy.header.guid).not.toBe("tex-1");
-    expect(copy.path).toBe("assets/copies/tex.babasset");
+    expect(copy.path).toBe("assets/copies/tex.hasset");
     expect(registry.getByGuid("tex-1")).toBeDefined();
     expect(registry.getByGuid(copy.header.guid)).toBeDefined();
     expect(copy.header.name).toBe("tex");
@@ -1067,17 +1067,17 @@ describe("AssetRegistry", () => {
 
   it("duplicates in the same folder using stem_N and writes header.name", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/Duplicate_1.babasset", {
+    await writeAsset(storage, "assets/Duplicate_1.hasset", {
       guid: "dup-1",
       type: "Texture",
       name: "Duplicate_1",
     });
-    await writeAsset(storage, "assets/Duplicate_2.babasset", {
+    await writeAsset(storage, "assets/Duplicate_2.hasset", {
       guid: "dup-2",
       type: "Texture",
       name: "Duplicate_2",
     });
-    await writeAsset(storage, "assets/Duplicate.babasset", {
+    await writeAsset(storage, "assets/Duplicate.hasset", {
       guid: "dup-0",
       type: "Texture",
       name: "Duplicate",
@@ -1086,32 +1086,32 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const copy = await registry.duplicateAsset("dup-1", "project", "");
-    expect(copy.path).toBe("assets/Duplicate_3.babasset");
+    expect(copy.path).toBe("assets/Duplicate_3.hasset");
     expect(copy.header.name).toBe("Duplicate_3");
     expect(copy.header.guid).not.toBe("dup-1");
   });
 
   it("never gives a copied or duplicated Class another Class's class id", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/a/Hero.class.babasset", { guid: "hero", type: "Class", name: "Hero" });
-    await writeAsset(storage, "assets/b/Hero_1.class.babasset", { guid: "hero-1", type: "Class", name: "Hero_1" });
-    await writeAsset(storage, "assets/c/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
+    await writeAsset(storage, "assets/a/Hero.class.hasset", { guid: "hero", type: "Class", name: "Hero" });
+    await writeAsset(storage, "assets/b/Hero_1.class.hasset", { guid: "hero-1", type: "Class", name: "Hero_1" });
+    await writeAsset(storage, "assets/c/Rock.hasset", { guid: "rock", type: "Texture", name: "Rock" });
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     // Copy to Folder keeps a free stem for other types, but Hero and Hero_1 are taken class ids.
-    expect((await registry.copyAsset("rock", "project", "d")).path).toBe("assets/d/Rock.babasset");
+    expect((await registry.copyAsset("rock", "project", "d")).path).toBe("assets/d/Rock.hasset");
     const copy = await registry.copyAsset("hero", "project", "d");
-    expect(copy.path).toBe("assets/d/Hero_2.class.babasset");
+    expect(copy.path).toBe("assets/d/Hero_2.class.hasset");
     expect(copy.header.name).toBe("Hero_2");
-    expect((await registry.duplicateAsset("hero", "project", "a")).path).toBe("assets/a/Hero_3.class.babasset");
+    expect((await registry.duplicateAsset("hero", "project", "a")).path).toBe("assets/a/Hero_3.class.hasset");
   });
 
-  it("preserves .scene.babasset when duplicating a scene", async () => {
+  it("preserves .scene.hasset when duplicating a scene", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     await storage.writeBinary(
-      "assets/main.scene.babasset",
+      "assets/main.scene.hasset",
       await encodeAssetDocument({
         type: "Scene",
         name: "main",
@@ -1124,7 +1124,7 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const copy = await registry.duplicateAsset("scene-1", "project", "");
-    expect(copy.path).toBe("assets/main_1.scene.babasset");
+    expect(copy.path).toBe("assets/main_1.scene.hasset");
     expect(copy.header.name).toBe("main_1");
     const copyBytes = await storage.readBinary(copy.path);
     const copyDoc = await decodeAssetDocument(copyBytes);
@@ -1141,7 +1141,7 @@ describe("AssetRegistry", () => {
       version: 1,
       payload: { name: "Main", actors: [] },
     });
-    await storage.writeBinary("assets/main.scene.babasset", bytes);
+    await storage.writeBinary("assets/main.scene.hasset", bytes);
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
@@ -1154,8 +1154,8 @@ describe("AssetRegistry", () => {
   });
 
   it.each([
-    ["Material", ".material.babasset"],
-    ["Tileset", ".tileset.babasset"],
+    ["Material", ".material.hasset"],
+    ["Tileset", ".tileset.hasset"],
   ])("rewrites the payload name when renaming and duplicating a %s", async (type, suffix) => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
@@ -1186,7 +1186,7 @@ describe("AssetRegistry", () => {
 
   it("refuses to overwrite an existing asset path", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", {
+    await writeAsset(storage, "assets/tex.hasset", {
       guid: "tex-1",
       type: "Texture",
       name: "tex",
@@ -1195,7 +1195,7 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await expect(
-      registry.createAsset("project", "tex.babasset", {
+      registry.createAsset("project", "tex.hasset", {
         type: "Texture",
         name: "tex",
         guid: "tex-2",
@@ -1222,7 +1222,7 @@ describe("AssetRegistry", () => {
 
   it("renames an asset path while keeping the guid", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/old.babasset", {
+    await writeAsset(storage, "assets/old.hasset", {
       guid: "tex-1",
       type: "Texture",
       name: "old",
@@ -1232,16 +1232,16 @@ describe("AssetRegistry", () => {
     await registry.mountRoot(projectContentRoot());
     const renamed = await registry.renameAsset("tex-1", "shiny");
     expect(renamed.header.guid).toBe("tex-1");
-    expect(renamed.path).toBe("assets/shiny.babasset");
+    expect(renamed.path).toBe("assets/shiny.hasset");
     expect(renamed.header.name).toBe("shiny");
   });
 
   it.each([
-    ["SceneLayer", ".scenelayer.babasset"],
-    ["MaterialInstance", ".matinst.babasset"],
-    ["BehaviourTree", ".bt.babasset"],
-    ["Blackboard", ".blackboard.babasset"],
-    ["Water", ".water.babasset"],
+    ["SceneLayer", ".scenelayer.hasset"],
+    ["MaterialInstance", ".matinst.hasset"],
+    ["BehaviourTree", ".bt.hasset"],
+    ["Blackboard", ".blackboard.hasset"],
+    ["Water", ".water.hasset"],
   ])("retains the %s editor identity when renaming and duplicating", async (type, suffix) => {
     const storage = await createStorage();
     await writeAsset(storage, `assets/Original${suffix}`, { guid: "original", type, name: "Original" });
@@ -1256,25 +1256,25 @@ describe("AssetRegistry", () => {
 
   it("preserves Unicode names, Class suffixes, and the existing asset when a rename collides", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/Player.class.babasset", { guid: "player", type: "Class", name: "Player" });
-    await writeAsset(storage, "assets/Other.class.babasset", { guid: "other", type: "Class", name: "Other" });
+    await writeAsset(storage, "assets/Player.class.hasset", { guid: "player", type: "Class", name: "Player" });
+    await writeAsset(storage, "assets/Other.class.hasset", { guid: "other", type: "Class", name: "Other" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const renamed = await registry.renameAsset("player", "Hero 🤖 Ünïcødé");
-    expect(renamed.path).toBe("assets/Hero 🤖 Ünïcødé.class.babasset");
+    expect(renamed.path).toBe("assets/Hero 🤖 Ünïcødé.class.hasset");
     expect(renamed.header.name).toBe("Hero 🤖 Ünïcødé");
-    expect(await storage.exists("assets/Player.class.babasset")).toBe(false);
+    expect(await storage.exists("assets/Player.class.hasset")).toBe(false);
     await expect(registry.renameAsset("other", "Hero 🤖 Ünïcødé")).rejects.toThrow(/already exists/);
     await expect(registry.renameAsset("player", "../Other")).rejects.toThrow(/path separators/);
     const fresh = new AssetRegistry(storage);
     await fresh.mountRoot(projectContentRoot());
-    expect(fresh.getByGuid("player")?.path).toBe("assets/Hero 🤖 Ünïcødé.class.babasset");
-    expect(fresh.getByGuid("other")?.path).toBe("assets/Other.class.babasset");
+    expect(fresh.getByGuid("player")?.path).toBe("assets/Hero 🤖 Ünïcødé.class.hasset");
+    expect(fresh.getByGuid("other")?.path).toBe("assets/Other.class.hasset");
   });
 
   it("moves a folder and all assets under it", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", {
+    await writeAsset(storage, "assets/fx/spark.hasset", {
       guid: "spark-1",
       type: "Texture",
       name: "spark",
@@ -1284,14 +1284,14 @@ describe("AssetRegistry", () => {
     await registry.mountRoot(projectContentRoot());
     await registry.moveFolder("project", "fx", "effects");
     expect(registry.getByGuid("spark-1")?.path).toBe(
-      "assets/effects/fx/spark.babasset",
+      "assets/effects/fx/spark.hasset",
     );
-    expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
+    expect(await storage.exists("assets/fx/spark.hasset")).toBe(false);
   });
 
   it("duplicates a folder as a sibling with new asset guids", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", {
+    await writeAsset(storage, "assets/fx/spark.hasset", {
       guid: "spark-1",
       type: "Texture",
       name: "spark",
@@ -1305,11 +1305,11 @@ describe("AssetRegistry", () => {
     expect(registry.folderTree("project").children.map((c) => c.name).sort()).toEqual(
       ["fx", "fx_1"],
     );
-    const copyAsset = registry.list().find((a) => a.path === "assets/fx_1/spark.babasset");
+    const copyAsset = registry.list().find((a) => a.path === "assets/fx_1/spark.hasset");
     expect(copyAsset).toBeDefined();
     expect(copyAsset?.header.guid).not.toBe("spark-1");
     expect(copyAsset?.header.name).toBe("spark");
-    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
+    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.hasset");
     const nested = registry
       .folderTree("project")
       .children.find((c) => c.path === "assets/fx_1")
@@ -1325,7 +1325,7 @@ describe("AssetRegistry", () => {
       classReferences?: string[];
       headerMeta?: Record<string, unknown>;
     } = {}) => {
-      const name = path.slice(path.lastIndexOf("/") + 1).replace(/(\.class|\.scene|\.datadefinition|\.datatree)?\.babasset$/, "");
+      const name = path.slice(path.lastIndexOf("/") + 1).replace(/(\.class|\.scene|\.datadefinition|\.datatree)?\.hasset$/, "");
       await storage.mkdir(path.slice(0, path.lastIndexOf("/")), true);
       await storage.writeBinary(path, await encodeAssetDocument({ type, name, guid, version: 1, payload }, {
         parentClass: metadata.parentClass ?? null,
@@ -1340,25 +1340,25 @@ describe("AssetRegistry", () => {
       }));
     };
     // Outside the copied folder.
-    await writeAsset(storage, "assets/shared/stone.babasset", { guid: "tex-stone", type: "Texture", name: "stone" });
-    await writeAsset(storage, "assets/Base.class.babasset", { guid: "class-base", type: "Class", name: "Base" });
+    await writeAsset(storage, "assets/shared/stone.hasset", { guid: "tex-stone", type: "Texture", name: "stone" });
+    await writeAsset(storage, "assets/Base.class.hasset", { guid: "class-base", type: "Class", name: "Base" });
     const loot = { kind: "dataDefinition", fields: [{ id: "icon", name: "Icon", typeId: "asset" }] };
-    await writeDocument("assets/defs/Loot.datadefinition.babasset", "DataDefinition", "def-loot", loot, { headerMeta: loot });
+    await writeDocument("assets/defs/Loot.datadefinition.hasset", "DataDefinition", "def-loot", loot, { headerMeta: loot });
     // Inside: Texture -> Material -> Class prefab -> Scene, a Class deriving from a copied Class, and a nested Sprite.
-    await writeAsset(storage, "assets/kit/brick.babasset", { guid: "tex-brick", type: "Texture", name: "brick" });
-    await writeDocument("assets/kit/wall.babasset", "Material", "mat-wall", {
+    await writeAsset(storage, "assets/kit/brick.hasset", { guid: "tex-brick", type: "Texture", name: "brick" });
+    await writeDocument("assets/kit/wall.hasset", "Material", "mat-wall", {
       nodes: [
         { id: "albedo", type: "texture", properties: { texture: "tex-brick" } },
         { id: "detail", type: "texture", properties: { texture: "tex-stone" } },
       ],
     }, { dependencies: ["tex-brick", "tex-stone"] });
-    await writeDocument("assets/kit/Enemy.class.babasset", "Class", "class-enemy", {
+    await writeDocument("assets/kit/Enemy.class.hasset", "Class", "class-enemy", {
       prefab: { components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: "mat-wall" } }] },
     }, { parentClass: "Base", dependencies: ["mat-wall", "class-base"], classReferences: ["Base"] });
-    await writeDocument("assets/kit/Boss.class.babasset", "Class", "class-boss", { members: [] }, {
+    await writeDocument("assets/kit/Boss.class.hasset", "Class", "class-boss", { members: [] }, {
       parentClass: "Enemy", dependencies: ["class-enemy"], classReferences: ["Enemy"],
     });
-    await writeDocument("assets/kit/levels/arena.scene.babasset", "Scene", "scene-arena", {
+    await writeDocument("assets/kit/levels/arena.scene.hasset", "Scene", "scene-arena", {
       name: "arena",
       actors: [
         { id: "a1", classId: "Enemy", components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: "mat-wall" } }] },
@@ -1366,10 +1366,10 @@ describe("AssetRegistry", () => {
       ],
     }, { dependencies: ["class-enemy", "mat-wall", "class-base", "tex-stone"], classReferences: ["Enemy", "Base"] });
     // Its Definition is outside the folder: only that schema says Icon is an asset reference.
-    await writeDocument("assets/kit/drops.datatree.babasset", "DataTree", "tree-drops", {
+    await writeDocument("assets/kit/drops.datatree.hasset", "DataTree", "tree-drops", {
       kind: "dataTree", entries: [{ id: "coin", definitionGuid: "def-loot", values: { Icon: "tex-brick" } }],
     }, { dependencies: ["def-loot", "tex-brick"] });
-    await writeDocument("assets/kit/sprites/hero.babasset", "Sprite", "sprite-hero", { textureGuid: "tex-brick" }, { dependencies: ["tex-brick"] });
+    await writeDocument("assets/kit/sprites/hero.hasset", "Sprite", "sprite-hero", { textureGuid: "tex-brick" }, { dependencies: ["tex-brick"] });
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
@@ -1381,13 +1381,13 @@ describe("AssetRegistry", () => {
       return asset!;
     };
     const documentAt = async (path: string) => (await decodeAssetDocument(await storage.readBinary(path))).payload;
-    const brick = copyAt("assets/kit_1/brick.babasset").header.guid;
-    const wall = copyAt("assets/kit_1/wall.babasset");
+    const brick = copyAt("assets/kit_1/brick.hasset").header.guid;
+    const wall = copyAt("assets/kit_1/wall.hasset");
     // Class ids come from file stems and stay unique, so the copies are Enemy_1 and Boss_1.
-    const enemy = copyAt("assets/kit_1/Enemy_1.class.babasset");
-    const boss = copyAt("assets/kit_1/Boss_1.class.babasset");
-    const arena = copyAt("assets/kit_1/levels/arena.scene.babasset");
-    const hero = copyAt("assets/kit_1/sprites/hero.babasset");
+    const enemy = copyAt("assets/kit_1/Enemy_1.class.hasset");
+    const boss = copyAt("assets/kit_1/Boss_1.class.hasset");
+    const arena = copyAt("assets/kit_1/levels/arena.scene.hasset");
+    const hero = copyAt("assets/kit_1/sprites/hero.hasset");
 
     expect(await documentAt(wall.path)).toEqual({
       nodes: [
@@ -1418,25 +1418,25 @@ describe("AssetRegistry", () => {
     expect(arena.header.classReferences).toEqual(["Enemy_1", "Base"]);
 
     expect(await documentAt(hero.path)).toEqual({ textureGuid: brick });
-    expect(await documentAt(copyAt("assets/kit_1/drops.datatree.babasset").path)).toEqual({
+    expect(await documentAt(copyAt("assets/kit_1/drops.datatree.hasset").path)).toEqual({
       kind: "dataTree", entries: [{ id: "coin", definitionGuid: "def-loot", values: { Icon: brick } }],
     });
     expect(hero.header.payload.atlasTextures).toEqual([brick]);
 
     // The originals keep pointing at each other, and only the copies use the copied Texture.
-    expect(await documentAt("assets/kit/levels/arena.scene.babasset")).toMatchObject({
+    expect(await documentAt("assets/kit/levels/arena.scene.hasset")).toMatchObject({
       actors: [{ classId: "Enemy", components: [{ properties: { materialGuid: "mat-wall" } }] }, { classId: "Base" }],
     });
     expect(registry.getByGuid("class-boss")?.header.parentClass).toBe("Enemy");
     expect(registry.showReferences("tex-brick").inbound).toEqual(["mat-wall", "sprite-hero", "tree-drops"]);
     expect(registry.showReferences(brick).inbound).toEqual(
-      [hero.header.guid, wall.header.guid, copyAt("assets/kit_1/drops.datatree.babasset").header.guid].sort(),
+      [hero.header.guid, wall.header.guid, copyAt("assets/kit_1/drops.datatree.hasset").header.guid].sort(),
     );
   });
 
   it("renames a folder in place through moveFolder with a new name", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", {
+    await writeAsset(storage, "assets/fx/spark.hasset", {
       guid: "spark-1",
       type: "Texture",
       name: "spark",
@@ -1445,14 +1445,14 @@ describe("AssetRegistry", () => {
     await registry.mountRoot(projectContentRoot());
     await registry.moveFolder("project", "fx", "", "vfx");
     expect(registry.getByGuid("spark-1")?.path).toBe(
-      "assets/vfx/spark.babasset",
+      "assets/vfx/spark.hasset",
     );
-    expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
+    expect(await storage.exists("assets/fx/spark.hasset")).toBe(false);
   });
 
   it("copies a folder into another parent", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", {
+    await writeAsset(storage, "assets/fx/spark.hasset", {
       guid: "spark-1",
       type: "Texture",
       name: "spark",
@@ -1462,22 +1462,22 @@ describe("AssetRegistry", () => {
     await registry.createFolder("project", "effects");
     const copied = await registry.copyFolder("project", "fx", "effects");
     expect(copied).toBe("effects/fx");
-    expect(registry.list().some((a) => a.path === "assets/effects/fx/spark.babasset")).toBe(
+    expect(registry.list().some((a) => a.path === "assets/effects/fx/spark.hasset")).toBe(
       true,
     );
-    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
+    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.hasset");
   });
 
   it("uses a root's own storage and refuses writes on read-only roots", async () => {
     const project = await createStorage();
-    await writeAsset(project, "assets/main.scene.babasset", {
+    await writeAsset(project, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
     });
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
-    await writeAsset(engine, "starter/assets/hero.class.babasset", {
+    await writeAsset(engine, "starter/assets/hero.class.hasset", {
       guid: "hero-1",
       type: "Class",
       name: "StarterActor",
@@ -1497,11 +1497,11 @@ describe("AssetRegistry", () => {
     expect(registry.storageFor("plugin:engine-1")).toBe(engine);
     expect(registry.getByGuid("hero-1")?.rootId).toBe("plugin:engine-1");
     expect(registry.listDocumentPaths({ rootId: "project" })).toEqual({
-      scenes: ["assets/main.scene.babasset"],
+      scenes: ["assets/main.scene.hasset"],
       graphs: [],
     });
     await expect(
-      registry.createAsset("plugin:engine-1", "extra.class.babasset", {
+      registry.createAsset("plugin:engine-1", "extra.class.hasset", {
         guid: "extra-1",
         type: "Class",
         name: "Extra",
@@ -1516,12 +1516,12 @@ describe("AssetRegistry", () => {
 
   it("records DirEntry mtime on indexed assets", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", {
+    await writeAsset(storage, "assets/tex.hasset", {
       guid: "tex-mtime",
       type: "Texture",
       name: "tex",
     });
-    const expected = (await storage.stat("assets/tex.babasset")).mtime;
+    const expected = (await storage.stat("assets/tex.hasset")).mtime;
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.getByGuid("tex-mtime")?.mtime).toBe(expected);
@@ -1529,8 +1529,8 @@ describe("AssetRegistry", () => {
 
   it("records the written file's mtime after a rename, a duplicate and a Font attach", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", { guid: "tex", type: "Texture", name: "tex" });
-    await writeAsset(storage, "assets/Ui.babasset", { guid: "font", type: "Font", name: "Ui" });
+    await writeAsset(storage, "assets/tex.hasset", { guid: "tex", type: "Texture", name: "tex" });
+    await writeAsset(storage, "assets/Ui.hasset", { guid: "font", type: "Font", name: "Ui" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await registry.renameAsset("tex", "Renamed");
@@ -1546,8 +1546,8 @@ describe("AssetRegistry", () => {
 
   it("attaches a representation to the Font of its name in the import folder, and to no Font when the name is ambiguous", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/a/Ui.babasset", { guid: "font-a", type: "Font", name: "Ui" });
-    await writeAsset(storage, "assets/b/Ui.babasset", { guid: "font-b", type: "Font", name: "Ui" });
+    await writeAsset(storage, "assets/a/Ui.hasset", { guid: "font-a", type: "Font", name: "Ui" });
+    await writeAsset(storage, "assets/b/Ui.hasset", { guid: "font-b", type: "Font", name: "Ui" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const glyphs = () => new TextEncoder().encode('{"glyphs":{}}');
@@ -1557,7 +1557,7 @@ describe("AssetRegistry", () => {
     expect([hasGlyphs("font-a"), hasGlyphs("font-b")]).toEqual([true, false]);
     // Two Fonts named Ui and neither in this folder: the import makes its own.
     const created = await registry.importFile("project", "c", "Ui.facetype.json", glyphs());
-    expect(created.map((asset) => [asset.header.type, asset.path])).toEqual([["Font", "assets/c/Ui.babasset"]]);
+    expect(created.map((asset) => [asset.header.type, asset.path])).toEqual([["Font", "assets/c/Ui.hasset"]]);
     expect(hasGlyphs("font-b")).toBe(false);
   });
 
@@ -1565,7 +1565,7 @@ describe("AssetRegistry", () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     // Saved from the Font editor: the payload lives in the document chunk.
-    await storage.writeBinary("assets/Ui.babasset", await encodeAssetDocument({
+    await storage.writeBinary("assets/Ui.hasset", await encodeAssetDocument({
       type: "Font", name: "Ui", guid: "font", version: 1,
       payload: createFontPayload("Ui", { fallbackGuids: ["fallback"], representations: { source: true } }) as unknown as Record<string, unknown>,
     }, { extraChunks: [{ id: "source", kind: "font", mime: "font/ttf", data: new Uint8Array([1, 2, 3]) }] }));
@@ -1579,14 +1579,14 @@ describe("AssetRegistry", () => {
       fallbackGuids: ["fallback"],
       representations: { source: true, facetype: false, msdfJson: true, msdfPng: true, msdf: true },
     };
-    expect((await decodeAssetDocument(await storage.readBinary("assets/Ui.babasset"))).payload).toMatchObject(expected);
+    expect((await decodeAssetDocument(await storage.readBinary("assets/Ui.hasset"))).payload).toMatchObject(expected);
     expect(registry.getByGuid("font")!.header.payload).toMatchObject(expected);
   });
 
   it("fails a pending Texture's encode that has no source pixels instead of leaving it pending", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
-    await storage.writeBinary("assets/tex.babasset", await encodeBabasset({
+    await storage.writeBinary("assets/tex.hasset", await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex", type: "Texture", name: "tex", engineVersion: "0.0.0", version: 1, mode: "thin",
@@ -1607,13 +1607,13 @@ describe("AssetRegistry", () => {
 
   it("gives overlapping copies of one folder different names", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Texture", name: "spark" });
+    await writeAsset(storage, "assets/fx/spark.hasset", { guid: "spark", type: "Texture", name: "spark" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
 
     const copies = await Promise.all([registry.duplicateFolder("project", "fx"), registry.duplicateFolder("project", "fx")]);
     expect(copies.sort()).toEqual(["fx_1", "fx_2"]);
-    for (const copy of copies) expect(registry.getByPath(`assets/${copy}/spark.babasset`)).toBeDefined();
+    for (const copy of copies) expect(registry.getByPath(`assets/${copy}/spark.hasset`)).toBeDefined();
   });
 
   it("knows a created Tileset's atlas from its header payload without reading a document", async () => {
@@ -1621,7 +1621,7 @@ describe("AssetRegistry", () => {
     await storage.mkdir("assets", true);
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    const tileset = await registry.createAsset("project", "Ground.tileset.babasset", {
+    const tileset = await registry.createAsset("project", "Ground.tileset.hasset", {
       type: "Tileset", name: "Ground", guid: "ground", version: 1, dependencies: [], parentClass: null,
       payload: { textureGuid: "atlas", tileWidth: 16, tileHeight: 16 }, chunks: [],
     });
@@ -1637,7 +1637,7 @@ describe("AssetRegistry generation", () => {
     registry.list();
     registry.list({ type: "Texture" });
     registry.getByGuid("tex-1");
-    registry.getByPath("assets/tex.babasset");
+    registry.getByPath("assets/tex.hasset");
     registry.folderTree("project");
     registry.listRoots();
     registry.showReferences("tex-1");
@@ -1647,23 +1647,23 @@ describe("AssetRegistry generation", () => {
 
   it("advances on every index, folder, root and compression change, and never on reads", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", { guid: "tex-1", type: "Texture", name: "tex" });
-    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark-1", type: "Texture", name: "spark" });
+    await writeAsset(storage, "assets/tex.hasset", { guid: "tex-1", type: "Texture", name: "tex" });
+    await writeAsset(storage, "assets/fx/spark.hasset", { guid: "spark-1", type: "Texture", name: "spark" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const plugin: ContentRoot = { id: "plugin:p", kind: "plugin", pathPrefix: "plugin/assets", readOnly: true };
 
     const mutations: Array<[string, () => Promise<unknown> | unknown]> = [
-      ["create", () => registry.createAsset("project", "mat.babasset", {
+      ["create", () => registry.createAsset("project", "mat.hasset", {
         guid: "mat-1", type: "Material", name: "mat", version: 1, dependencies: ["tex-1"], payload: {}, chunks: [],
       })],
       ["reindex a saved file", async () => {
-        await writeAsset(storage, "assets/tex.babasset", { guid: "tex-1", type: "Texture", name: "saved" });
-        await registry.reindexPath("assets/tex.babasset");
+        await writeAsset(storage, "assets/tex.hasset", { guid: "tex-1", type: "Texture", name: "saved" });
+        await registry.reindexPath("assets/tex.hasset");
       }],
       ["compression state", () => registry.setCompressionState("tex-1", "encode_failed", { error: "boom" })],
       ["rename", () => registry.renameAsset("mat-1", "shiny")],
-      ["move", () => registry.moveAsset("mat-1", "project", "materials/shiny.babasset")],
+      ["move", () => registry.moveAsset("mat-1", "project", "materials/shiny.hasset")],
       ["create folder", () => registry.createFolder("project", "empty")],
       ["move folder", () => registry.moveFolder("project", "empty", "", "renamed")],
       ["delete folder", () => registry.deleteFolder("project", "renamed")],
@@ -1683,12 +1683,12 @@ describe("AssetRegistry generation", () => {
       previous = after;
     }
     expect(registry.getByGuid("tex-1")?.header.payload.compressionState).toBe("encode_failed");
-    expect(registry.getByGuid("mat-1")?.path).toBe("assets/materials/shiny.babasset");
+    expect(registry.getByGuid("mat-1")?.path).toBe("assets/materials/shiny.hasset");
   });
 
   it("never moves backwards or repeats when a remount replaces the registry", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/tex.babasset", { guid: "tex-1", type: "Texture", name: "tex" });
+    await writeAsset(storage, "assets/tex.hasset", { guid: "tex-1", type: "Texture", name: "tex" });
     const clock = new RegistryGenerationClock();
     const first = new AssetRegistry(storage, { generationClock: clock });
     await first.mountRoot(projectContentRoot());
@@ -1713,11 +1713,11 @@ describe("AssetRegistry generation", () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     const dependencyMetadata = { dependencyMetadataVersion: 1, dependencies: [], requiredDependencies: [], requiredVariableNames: [] };
-    await storage.writeBinary("assets/Goblin.class.babasset", await encodeAssetDocument(
+    await storage.writeBinary("assets/Goblin.class.hasset", await encodeAssetDocument(
       { type: "Class", name: "Goblin", guid: "class-goblin", version: 1, payload: { members: [] } },
       { parentClass: null, dependencyMetadata },
     ));
-    await storage.writeBinary("assets/level.scene.babasset", await encodeAssetDocument(
+    await storage.writeBinary("assets/level.scene.hasset", await encodeAssetDocument(
       { type: "Scene", name: "level", guid: "scene", version: 1, payload: { name: "level", actors: [{ id: "a", classId: "Goblin", components: [] }] } },
       { parentClass: null, dependencyMetadata: { ...dependencyMetadata, classReferences: ["Goblin"], requiredClassReferences: ["Goblin"] } },
     ));
@@ -1742,10 +1742,10 @@ describe("AssetRegistry generation", () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     const base = { dependencyMetadataVersion: 1, dependencies: [], requiredDependencies: [], requiredVariableNames: [] };
-    const writeClass = async (name: string, guid: string) => storage.writeBinary(`assets/${name}.class.babasset`, await encodeAssetDocument(
+    const writeClass = async (name: string, guid: string) => storage.writeBinary(`assets/${name}.class.hasset`, await encodeAssetDocument(
       { type: "Class", name, guid, version: 1, payload: { members: [] } }, { parentClass: null, dependencyMetadata: base },
     ));
-    const writeScene = async (guid: string, classes: string[]) => storage.writeBinary(`assets/${guid}.scene.babasset`, await encodeAssetDocument(
+    const writeScene = async (guid: string, classes: string[]) => storage.writeBinary(`assets/${guid}.scene.hasset`, await encodeAssetDocument(
       { type: "Scene", name: guid, guid, version: 1, payload: { name: guid, actors: classes.map((classId, index) => ({ id: `a${index}`, classId, components: [] })) } },
       { parentClass: null, dependencyMetadata: { ...base, classReferences: classes, requiredClassReferences: classes } },
     ));
@@ -1763,7 +1763,7 @@ describe("AssetRegistry generation", () => {
     expect(registry.showReferences("class-goblin").inbound).toEqual(["scene-b"]);
     expect(registry.showReferences("class-orc").inbound).toEqual([]);
     await writeScene("scene-c", ["Orc"]);
-    await registry.reindexPath("assets/scene-c.scene.babasset");
+    await registry.reindexPath("assets/scene-c.scene.hasset");
     expect(registry.showReferences("class-orc").inbound).toEqual(["scene-c"]);
   });
 });
@@ -1777,7 +1777,7 @@ describe("AssetRegistry moves between content roots", () => {
   async function writeBlobAsset(storage: MemoryStorageAdapter, path: string, options: { guid: string; type: string; name: string }): Promise<string> {
     await storage.mkdir(path.slice(0, path.lastIndexOf("/")), true);
     const blobs = createVfsBlobStore(storage, "assets/.blobs");
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: options.guid, type: options.type, name: options.name, engineVersion: "0.0.0",
@@ -1787,7 +1787,7 @@ describe("AssetRegistry moves between content roots", () => {
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     await storage.writeBinary(path, bytes);
-    const locator = readBabassetHeader(bytes).chunks[0]!.locator;
+    const locator = readHassetHeader(bytes).chunks[0]!.locator;
     if (!("blob" in locator)) throw new Error("The fixture chunk was stored inline");
     return locator.blob;
   }
@@ -1801,20 +1801,20 @@ describe("AssetRegistry moves between content roots", () => {
 
   it("moves an asset into a plugin with its blob chunks, keeping its guid and the references to it", async () => {
     const storage = await createStorage();
-    const blob = await writeBlobAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
-    await writeAsset(storage, "assets/main.scene.babasset", { guid: "scene", type: "Scene", name: "main", dependencies: ["rock"] });
+    const blob = await writeBlobAsset(storage, "assets/Rock.hasset", { guid: "rock", type: "Texture", name: "Rock" });
+    await writeAsset(storage, "assets/main.scene.hasset", { guid: "scene", type: "Scene", name: "main", dependencies: ["rock"] });
     const registry = await mountBoth(storage);
-    const original = await storage.readBinary("assets/Rock.babasset");
+    const original = await storage.readBinary("assets/Rock.hasset");
 
-    const moved = await registry.moveAsset("rock", "plugin:tools", "Textures/Rock.babasset");
+    const moved = await registry.moveAsset("rock", "plugin:tools", "Textures/Rock.hasset");
 
-    expect(moved).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Textures/Rock.babasset` });
+    expect(moved).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Textures/Rock.hasset` });
     expect(moved.header.guid).toBe("rock");
     expect(registry.getByGuid("rock")).toBe(moved);
     expect(registry.getByPath(moved.path)).toBe(moved);
-    expect(registry.getByPath("assets/Rock.babasset")).toBeUndefined();
+    expect(registry.getByPath("assets/Rock.hasset")).toBeUndefined();
     expect(registry.list({ rootId: "project" }).map((asset) => asset.header.guid)).toEqual(["scene"]);
-    expect(await storage.exists("assets/Rock.babasset")).toBe(false);
+    expect(await storage.exists("assets/Rock.hasset")).toBe(false);
     expect(await storage.readBinary(moved.path)).toEqual(original);
     expect(await storage.exists(`${PLUGIN}/.blobs/${blob}`)).toBe(true);
     expect(registry.showReferences("rock").inbound).toEqual(["scene"]);
@@ -1829,85 +1829,85 @@ describe("AssetRegistry moves between content roots", () => {
 
   it("moves a Scene out of the project's document list and back into it", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/Level.scene.babasset", { guid: "level", type: "Scene", name: "Level" });
+    await writeAsset(storage, "assets/Level.scene.hasset", { guid: "level", type: "Scene", name: "Level" });
     const registry = await mountBoth(storage);
 
-    await registry.moveAsset("level", "plugin:tools", "Level.scene.babasset");
+    await registry.moveAsset("level", "plugin:tools", "Level.scene.hasset");
     expect(registry.listDocumentPaths({ rootId: "project" }).scenes).toEqual([]);
 
-    const back = await registry.moveAsset("level", "project", "Levels/Level.scene.babasset");
+    const back = await registry.moveAsset("level", "project", "Levels/Level.scene.hasset");
     expect(back.rootId).toBe("project");
-    expect(registry.listDocumentPaths({ rootId: "project" }).scenes).toEqual(["assets/Levels/Level.scene.babasset"]);
-    expect(await storage.exists(`${PLUGIN}/Level.scene.babasset`)).toBe(false);
+    expect(registry.listDocumentPaths({ rootId: "project" }).scenes).toEqual(["assets/Levels/Level.scene.hasset"]);
+    expect(await storage.exists(`${PLUGIN}/Level.scene.hasset`)).toBe(false);
   });
 
   it("refuses to move into or out of a read-only root and leaves both roots as they were", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/Wood.babasset", { guid: "wood", type: "Material", name: "Wood" });
+    await writeAsset(storage, "assets/Wood.hasset", { guid: "wood", type: "Material", name: "Wood" });
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
-    await writeAsset(engine, "starter/assets/Hero.class.babasset", { guid: "hero", type: "Class", name: "Hero" });
+    await writeAsset(engine, "starter/assets/Hero.class.hasset", { guid: "hero", type: "Class", name: "Hero" });
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     await registry.mountRoot({ id: "plugin:starter", kind: "plugin", pathPrefix: "starter/assets", readOnly: true, storage: engine });
     await registry.createFolder("project", "Props");
 
-    await expect(registry.moveAsset("wood", "plugin:starter", "Wood.babasset")).rejects.toThrow(/read-only/i);
-    await expect(registry.moveAsset("hero", "project", "Hero.class.babasset")).rejects.toThrow(/read-only/i);
+    await expect(registry.moveAsset("wood", "plugin:starter", "Wood.hasset")).rejects.toThrow(/read-only/i);
+    await expect(registry.moveAsset("hero", "project", "Hero.class.hasset")).rejects.toThrow(/read-only/i);
     await expect(registry.moveFolder("project", "Props", "", undefined, "plugin:starter")).rejects.toThrow(/read-only/i);
 
-    expect(registry.getByGuid("wood")?.path).toBe("assets/Wood.babasset");
+    expect(registry.getByGuid("wood")?.path).toBe("assets/Wood.hasset");
     expect(registry.getByGuid("hero")?.rootId).toBe("plugin:starter");
-    expect(await storage.exists("assets/Wood.babasset")).toBe(true);
+    expect(await storage.exists("assets/Wood.hasset")).toBe(true);
     expect(await storage.exists("assets/Props")).toBe(true);
-    expect(await storage.exists("assets/Hero.class.babasset")).toBe(false);
-    expect(await engine.exists("starter/assets/Hero.class.babasset")).toBe(true);
-    expect(await engine.exists("starter/assets/Wood.babasset")).toBe(false);
+    expect(await storage.exists("assets/Hero.class.hasset")).toBe(false);
+    expect(await engine.exists("starter/assets/Hero.class.hasset")).toBe(true);
+    expect(await engine.exists("starter/assets/Wood.hasset")).toBe(false);
   });
 
   it("refuses to replace a file or folder already at the destination, even one the index does not list", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/Wood.babasset", { guid: "wood", type: "Material", name: "Wood" });
+    await writeAsset(storage, "assets/Wood.hasset", { guid: "wood", type: "Material", name: "Wood" });
     const registry = await mountBoth(storage);
     await storage.mkdir(PLUGIN, true);
-    await storage.writeBinary(`${PLUGIN}/Wood.babasset`, new Uint8Array([7]));
+    await storage.writeBinary(`${PLUGIN}/Wood.hasset`, new Uint8Array([7]));
     await registry.createFolder("project", "Props");
     await registry.createFolder("plugin:tools", "Props");
 
-    await expect(registry.moveAsset("wood", "plugin:tools", "Wood.babasset")).rejects.toThrow(`Target path already exists: ${PLUGIN}/Wood.babasset`);
+    await expect(registry.moveAsset("wood", "plugin:tools", "Wood.hasset")).rejects.toThrow(`Target path already exists: ${PLUGIN}/Wood.hasset`);
     await expect(registry.moveFolder("project", "Props", "", undefined, "plugin:tools")).rejects.toThrow(`Target path already exists: ${PLUGIN}/Props`);
 
-    expect(await storage.readBinary(`${PLUGIN}/Wood.babasset`)).toEqual(new Uint8Array([7]));
-    expect(registry.getByGuid("wood")).toMatchObject({ rootId: "project", path: "assets/Wood.babasset" });
-    expect(await storage.exists("assets/Wood.babasset")).toBe(true);
+    expect(await storage.readBinary(`${PLUGIN}/Wood.hasset`)).toEqual(new Uint8Array([7]));
+    expect(registry.getByGuid("wood")).toMatchObject({ rootId: "project", path: "assets/Wood.hasset" });
+    expect(await storage.exists("assets/Wood.hasset")).toBe(true);
     expect(await storage.exists("assets/Props")).toBe(true);
   });
 
   it("refuses to move an asset whose blob is missing and writes nothing into the target root", async () => {
     const storage = await createStorage();
-    const blob = await writeBlobAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
+    const blob = await writeBlobAsset(storage, "assets/Rock.hasset", { guid: "rock", type: "Texture", name: "Rock" });
     const registry = await mountBoth(storage);
     await storage.remove(`assets/.blobs/${blob}`);
 
-    await expect(registry.moveAsset("rock", "plugin:tools", "Rock.babasset")).rejects.toThrow(blob);
+    await expect(registry.moveAsset("rock", "plugin:tools", "Rock.hasset")).rejects.toThrow(blob);
 
-    expect(await storage.exists(`${PLUGIN}/Rock.babasset`)).toBe(false);
-    expect(await storage.exists("assets/Rock.babasset")).toBe(true);
-    expect(registry.getByGuid("rock")).toMatchObject({ rootId: "project", path: "assets/Rock.babasset" });
+    expect(await storage.exists(`${PLUGIN}/Rock.hasset`)).toBe(false);
+    expect(await storage.exists("assets/Rock.hasset")).toBe(true);
+    expect(registry.getByGuid("rock")).toMatchObject({ rootId: "project", path: "assets/Rock.hasset" });
   });
 
   it("moves a folder into a plugin with its subfolders, empty folders and blob chunks", async () => {
     const storage = await createStorage();
-    const blob = await writeBlobAsset(storage, "assets/Characters/Hero.babasset", { guid: "hero", type: "Texture", name: "Hero" });
-    await writeAsset(storage, "assets/Characters/Armor/Plate.babasset", { guid: "plate", type: "Material", name: "Plate", dependencies: ["hero"] });
-    await writeAsset(storage, "assets/main.scene.babasset", { guid: "scene", type: "Scene", name: "main", dependencies: ["plate"] });
+    const blob = await writeBlobAsset(storage, "assets/Characters/Hero.hasset", { guid: "hero", type: "Texture", name: "Hero" });
+    await writeAsset(storage, "assets/Characters/Armor/Plate.hasset", { guid: "plate", type: "Material", name: "Plate", dependencies: ["hero"] });
+    await writeAsset(storage, "assets/main.scene.hasset", { guid: "scene", type: "Scene", name: "main", dependencies: ["plate"] });
     const registry = await mountBoth(storage);
     await registry.createFolder("project", "Characters/Empty");
 
     await registry.moveFolder("project", "Characters", "", undefined, "plugin:tools");
 
-    expect(registry.getByGuid("hero")).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Characters/Hero.babasset` });
-    expect(registry.getByGuid("plate")).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Characters/Armor/Plate.babasset` });
+    expect(registry.getByGuid("hero")).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Characters/Hero.hasset` });
+    expect(registry.getByGuid("plate")).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Characters/Armor/Plate.hasset` });
     expect(registry.showReferences("plate").inbound).toEqual(["scene"]);
     expect(registry.showReferences("hero").inbound).toEqual(["plate"]);
     expect(await storage.exists("assets/Characters")).toBe(false);
@@ -1925,8 +1925,8 @@ describe("AssetRegistry moves between content roots", () => {
 
   it("moves an asset and a folder into a writable root that keeps its own storage", async () => {
     const storage = await createStorage();
-    const blob = await writeBlobAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
-    await writeAsset(storage, "assets/Props/Crate.babasset", { guid: "crate", type: "Material", name: "Crate" });
+    const blob = await writeBlobAsset(storage, "assets/Rock.hasset", { guid: "rock", type: "Texture", name: "Rock" });
+    await writeAsset(storage, "assets/Props/Crate.hasset", { guid: "crate", type: "Material", name: "Crate" });
     const other = new MemoryStorageAdapter("opfs");
     await other.openDocumentsProject("other");
     const registry = new AssetRegistry(storage);
@@ -1934,33 +1934,33 @@ describe("AssetRegistry moves between content roots", () => {
     await registry.mountRoot({ id: "extra", kind: "synthetic", pathPrefix: "extra/assets", storage: other });
     await registry.createFolder("project", "Props/Empty");
 
-    await registry.moveAsset("rock", "extra", "Rock.babasset");
+    await registry.moveAsset("rock", "extra", "Rock.hasset");
     await registry.moveFolder("project", "Props", "", undefined, "extra");
 
     expect(await other.exists(`extra/assets/.blobs/${blob}`)).toBe(true);
-    expect(await other.exists("extra/assets/Props/Crate.babasset")).toBe(true);
+    expect(await other.exists("extra/assets/Props/Crate.hasset")).toBe(true);
     expect(await other.exists("extra/assets/Props/Empty")).toBe(true);
-    expect(await storage.exists("assets/Rock.babasset")).toBe(false);
+    expect(await storage.exists("assets/Rock.hasset")).toBe(false);
     expect(await storage.exists("assets/Props")).toBe(false);
-    expect(registry.getByGuid("crate")).toMatchObject({ rootId: "extra", path: "extra/assets/Props/Crate.babasset" });
+    expect(registry.getByGuid("crate")).toMatchObject({ rootId: "extra", path: "extra/assets/Props/Crate.hasset" });
     expect(await registry.readChunk("rock", "payload")).toEqual(bigPayload);
   });
 
   it("will not carry a folder's unlisted copy of another file's guid to another root, and follows the listed file when it moves", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/a/hero.babasset", { guid: "hero", type: "Material", name: "Hero" });
+    await writeAsset(storage, "assets/a/hero.hasset", { guid: "hero", type: "Material", name: "Hero" });
     await storage.mkdir("assets/b", true);
-    await storage.writeBinary("assets/b/hero.babasset", await storage.readBinary("assets/a/hero.babasset"));
+    await storage.writeBinary("assets/b/hero.hasset", await storage.readBinary("assets/a/hero.hasset"));
     const registry = await mountBoth(storage);
-    expect(registry.listGuidConflicts().map((conflict) => conflict.path)).toEqual(["assets/b/hero.babasset"]);
+    expect(registry.listGuidConflicts().map((conflict) => conflict.path)).toEqual(["assets/b/hero.hasset"]);
 
-    await expect(registry.moveFolder("project", "b", "", undefined, "plugin:tools")).rejects.toThrow(/assets\/b\/hero\.babasset/);
-    expect(await storage.exists("assets/b/hero.babasset")).toBe(true);
+    await expect(registry.moveFolder("project", "b", "", undefined, "plugin:tools")).rejects.toThrow(/assets\/b\/hero\.hasset/);
+    expect(await storage.exists("assets/b/hero.hasset")).toBe(true);
     expect(await storage.exists(`${PLUGIN}/b`)).toBe(false);
 
     await registry.moveFolder("project", "a", "", undefined, "plugin:tools");
     expect(registry.listGuidConflicts()).toEqual([
-      { rootId: "project", path: "assets/b/hero.babasset", guid: "hero", indexedPath: `${PLUGIN}/a/hero.babasset` },
+      { rootId: "project", path: "assets/b/hero.hasset", guid: "hero", indexedPath: `${PLUGIN}/a/hero.hasset` },
     ]);
   });
 });

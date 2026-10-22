@@ -1,7 +1,7 @@
 import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import { graphNodeSize } from "./graph-virtualize";
 
 export type MarqueeNode = {

@@ -14,7 +14,7 @@ type Sample = { source: "engine" | "view"; minAlpha: number; spread: number; wid
 type Probe = { stop: () => Promise<Sample[]> };
 type Backend = "webgl2" | "webgpu";
 type ViewportHooks = {
-  __babylonslateViewportTest: {
+  __hapticViewportTest: {
     renderingBaseline: () => Baseline | null;
     sceneVisuals: () => Array<{ actorId: string }>;
     setRenderSettings: (settings: { mode: "cel" }) => void;
@@ -45,7 +45,7 @@ function boxScene(): SerializedScene {
 }
 
 async function baseline(page: Page): Promise<Baseline | null> {
-  return page.evaluate(() => (globalThis as unknown as ViewportHooks).__babylonslateViewportTest.renderingBaseline());
+  return page.evaluate(() => (globalThis as unknown as ViewportHooks).__hapticViewportTest.renderingBaseline());
 }
 
 async function presentation(page: Page): Promise<Presentation | undefined> {
@@ -163,7 +163,7 @@ function meanDifference(a: Screen, b: Screen): number {
 }
 
 async function holdFrames(page: Page, hold: boolean) {
-  await page.evaluate((value) => (globalThis as unknown as ViewportHooks).__babylonslateViewportTest.holdViewportFrames(value), hold);
+  await page.evaluate((value) => (globalThis as unknown as ViewportHooks).__hapticViewportTest.holdViewportFrames(value), hold);
 }
 
 /**
@@ -186,7 +186,7 @@ async function heldFramesStayOnScreen(page: Page, frames: { timeout: number }) {
 
   // Hold at the first held frame of a render mode change: that frame drew, but never acquired the canvas.
   const { before, atHold } = await page.evaluate(() => new Promise<{ before: Presentation; atHold: Presentation }>((resolve, reject) => {
-    const hooks = (globalThis as unknown as ViewportHooks).__babylonslateViewportTest;
+    const hooks = (globalThis as unknown as ViewportHooks).__hapticViewportTest;
     const before = hooks.renderingBaseline()!.render!.presentation!;
     const deadline = performance.now() + 30_000;
     const watch = () => {
@@ -252,9 +252,9 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
     (scene) =>
       (
         globalThis as unknown as {
-          __babylonslateTest: { setActiveSceneContent: (scene: SerializedScene) => Promise<boolean> };
+          __hapticTest: { setActiveSceneContent: (scene: SerializedScene) => Promise<boolean> };
         }
-      ).__babylonslateTest.setActiveSceneContent(scene),
+      ).__hapticTest.setActiveSceneContent(scene),
     boxScene(),
   );
   await expect(page.getByTestId("tree-row-actor:probe-box")).toBeVisible();
@@ -262,7 +262,7 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
   // A software adapter on a loaded host can take seconds per frame.
   const frames = { timeout: 30_000 };
   // The box scene is drawn: frames that realize it are held, and the screen keeps the previous scene meanwhile.
-  await expect.poll(() => page.evaluate(() => (globalThis as unknown as ViewportHooks).__babylonslateViewportTest
+  await expect.poll(() => page.evaluate(() => (globalThis as unknown as ViewportHooks).__hapticViewportTest
     .sceneVisuals().map((visual) => visual.actorId)), frames).toContain("probe-box");
   const realized = (await presentation(page))!;
   await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(realized.drawn + 2);
@@ -272,7 +272,7 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
   if (backend === "webgl2") {
     // A render mode change rebuilds the FrameGraph asynchronously; its frames are held.
     const before = (await presentation(page))!;
-    await page.evaluate(() => (globalThis as unknown as ViewportHooks).__babylonslateViewportTest.setRenderSettings({ mode: "cel" }));
+    await page.evaluate(() => (globalThis as unknown as ViewportHooks).__hapticViewportTest.setRenderSettings({ mode: "cel" }));
     await expect.poll(async () => (await presentation(page))!.held, frames).toBeGreaterThan(before.held);
     const afterHeld = (await presentation(page))!;
     await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(afterHeld.drawn);

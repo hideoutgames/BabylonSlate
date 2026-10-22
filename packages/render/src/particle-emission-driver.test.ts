@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BasicEmissionSchedule, ParticleBurst } from "@babylonslate/assets";
+import type { BasicEmissionSchedule, ParticleBurst } from "@haptic/assets";
 import { createBasicEmissionDriver, type EmissionTarget } from "./particle-emission-driver";
 
 function target(emitRate = 0): EmissionTarget {

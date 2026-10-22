@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { newCustomGlslProperties } from "@babylonslate/shader-graph";
+import { newCustomGlslProperties } from "@haptic/shader-graph";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 
 afterEach(cleanup);

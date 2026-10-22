@@ -3,7 +3,7 @@ import type { PinType } from "./types";
 import { pinTypeForMember, pinTypeForVariable } from "./member-pin-type";
 import { ENGINE_ENUMS, ENGINE_STRUCTS } from "./engine-types";
 import type { EnumMember, StructField } from "./type-assets";
-import type { DataFieldSnapshot } from "@babylonslate/core";
+import type { DataFieldSnapshot } from "@haptic/core";
 import { defaultFieldSnapshot, projectStoredDataDefault } from "./data-default-projection";
 
 export type EnumSchema = {
