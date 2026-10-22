@@ -175,6 +175,7 @@ async function launchLoaded(
     traceByteBudget,
     previewDiagnostics: previewHosted,
     onStopped: cleanupPage,
+    statsVisible: hud.visible,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
       // `quit` stops a standalone game here; a Preview host stops its player itself.

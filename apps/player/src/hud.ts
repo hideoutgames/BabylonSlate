@@ -1,5 +1,14 @@
 import { snapshotTickIndex } from "@haptic/bridge";
-import { isStatGroup, isTickOverBudget, nextStatGroups, STAT_GROUP_LABELS, TICK_BUDGET_MS, type StatGroup } from "@haptic/debugger";
+import {
+  isStatGroup,
+  nextStatGroups,
+  STAT_GROUP_LABELS,
+  statsHudModel,
+  TICK_BUDGET_MS,
+  type StatGroup,
+  type StatsHudMetric,
+  type StatsHudRendering,
+} from "@haptic/debugger";
 import {
   audioDebugOverlayText,
   audioStats,
@@ -19,6 +28,13 @@ export type PlayerHudStats = {
   publishMs?: number;
   draws: number;
   geometryBytes?: number;
+  /** Accounted texture bytes; sampled only while Stats shows. */
+  memoryBytes?: number;
+  meshCount?: number;
+  textureCount?: number;
+  /** Sampled only while Stats shows. */
+  rendering?: StatsHudRendering;
+  bridgeMessagesPerSec?: number;
   liveActors?: number;
   snapshotCapacity?: number;
   /** Real JS heap (Chromium/Electron); absent on WKWebView. */
@@ -103,10 +119,12 @@ export function mountPlayerHud(
 ): {
   setStats: (stats: PlayerHudStats) => void;
   applyCommand: (command: { type: string; enabled?: unknown; name?: unknown }) => boolean;
+  /** Whether Stats shows, so the host samples its detail rows only then. */
+  visible: () => boolean;
 } {
   if (!options.bundleDebugger) {
     element.hidden = true;
-    return { setStats: () => {}, applyCommand: () => false };
+    return { setStats: () => {}, applyCommand: () => false, visible: () => false };
   }
   element.hidden = options.visible === false;
   const doc = element.ownerDocument;
@@ -117,22 +135,23 @@ export function mountPlayerHud(
   let groups: readonly StatGroup[] = [];
   let latest: PlayerHudStats = { ticks: 0, fps: 0, scriptMs: 0, physicsMs: 0, draws: 0, liveActors: 0, snapshotCapacity: 0 };
   const history: number[] = [];
-  const metric = (label: string | null, value: string, warn = false) => {
+  const metric = ({ id, label, text, warn }: StatsHudMetric) => {
     const span = doc.createElement("span");
     span.style.whiteSpace = "nowrap";
+    span.dataset.metric = id;
     if (label) {
       const name = doc.createElement("span");
       name.style.cssText = MUTED;
       name.textContent = `${label} `;
       span.append(name);
     }
-    const text = doc.createElement("span");
-    if (warn) text.style.cssText = WARN;
-    text.textContent = value;
-    span.append(text);
+    const value = doc.createElement("span");
+    if (warn) value.style.cssText = WARN;
+    value.textContent = text;
+    span.append(value);
     return span;
   };
-  const row = (group: StatGroup | null, parts: (HTMLElement | null)[]) => {
+  const row = (group: StatGroup | null, parts: HTMLElement[]) => {
     const line = doc.createElement("div");
     line.style.cssText = "display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;";
     if (group) {
@@ -142,15 +161,24 @@ export function mountPlayerHud(
       name.textContent = STAT_GROUP_LABELS[group];
       line.append(name);
     }
-    line.append(...parts.filter((part): part is HTMLElement => part !== null));
+    line.append(...parts);
     return line;
   };
-  const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const unavailable = () => {
+    const span = doc.createElement("span");
+    span.style.cssText = MUTED;
+    span.textContent = "unavailable";
+    return span;
+  };
   // A hidden panel keeps sampling but builds nothing until it is shown.
   const render = () => {
     if (element.hidden) return;
     const stats = latest;
-    const over = isTickOverBudget(stats.scriptMs, stats.physicsMs);
+    const model = statsHudModel({
+      ...stats,
+      geometryHigh: stats.geometryBytes != null && geometryByteCeilingWarning(stats.geometryBytes) !== null,
+      drawsHigh: drawCallCeilingWarning(stats.draws) !== null,
+    }, groups);
     element.dataset.fps = String(Math.round(stats.fps));
     element.dataset.ticks = String(stats.ticks);
     element.dataset.groups = groups.join(" ");
@@ -161,50 +189,19 @@ export function mountPlayerHud(
     fpsValue.textContent = stats.fps.toFixed(0);
     fps.append(fpsValue, doc.createTextNode(" fps"));
     fps.dataset.stat = "fps";
-    const lines: HTMLElement[] = [row(null, [
-      fps,
-      metric(null, stats.fps > 0 ? `${(1000 / stats.fps).toFixed(1)} ms` : "— ms"),
-      metric("script", `${stats.scriptMs.toFixed(2)} ms`, over),
-      metric("physics", `${stats.physicsMs.toFixed(2)} ms`, over),
-      over ? metric(null, `over ${TICK_BUDGET_MS} ms budget`, true) : null,
-    ])];
-    if (groups.includes("unit")) {
-      const graph = doc.createElement("span");
-      graph.style.cssText = "display:flex;align-items:flex-end;gap:1px;height:20px;padding-left:68px;";
-      for (const total of history) {
-        const bar = doc.createElement("span");
-        bar.style.cssText = `width:2px;height:${Math.max(8, Math.min(100, (total / TICK_BUDGET_MS) * 100))}%;background:${total > TICK_BUDGET_MS ? "#f87171" : "rgba(238,238,238,0.55)"};`;
-        graph.append(bar);
+    const lines: HTMLElement[] = [row(null, [fps, ...model.frame.map(metric)])];
+    for (const { group, metrics } of model.rows) {
+      if (group === "unit") {
+        const graph = doc.createElement("span");
+        graph.style.cssText = "display:flex;align-items:flex-end;gap:1px;height:20px;padding-left:68px;";
+        for (const total of history) {
+          const bar = doc.createElement("span");
+          bar.style.cssText = `width:2px;height:${Math.max(8, Math.min(100, (total / TICK_BUDGET_MS) * 100))}%;background:${total > TICK_BUDGET_MS ? "#f87171" : "rgba(238,238,238,0.55)"};`;
+          graph.append(bar);
+        }
+        lines.push(graph);
       }
-      lines.push(graph);
-      lines.push(row("unit", [
-        metric("tick", `${(stats.scriptMs + stats.physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`, over),
-        metric("publish", `${(stats.publishMs ?? 0).toFixed(2)} ms`),
-      ]));
-    }
-    if (groups.includes("memory")) {
-      const parts = [
-        stats.jsHeapBytes != null ? metric("js", mb(stats.jsHeapBytes)) : null,
-        stats.appFootprintBytes != null ? metric("app", mb(stats.appFootprintBytes)) : null,
-        stats.appAvailableBytes != null ? metric("headroom", mb(stats.appAvailableBytes)) : null,
-        stats.systemAvailableBytes != null ? metric("free", mb(stats.systemAvailableBytes)) : null,
-        stats.geometryBytes != null ? metric("geo", mb(stats.geometryBytes), geometryByteCeilingWarning(stats.geometryBytes) !== null) : null,
-      ].filter((part) => part !== null);
-      lines.push(row("memory", parts.length ? parts : [metric(null, "unavailable")]));
-    }
-    if (groups.includes("draws")) {
-      const drawsHigh = drawCallCeilingWarning(stats.draws) !== null;
-      lines.push(row("draws", [
-        metric("draws", String(stats.draws), drawsHigh),
-        drawsHigh ? metric(null, "draws high", true) : null,
-        stats.geometryBytes != null && geometryByteCeilingWarning(stats.geometryBytes) !== null ? metric(null, "geo high", true) : null,
-      ]));
-    }
-    if (groups.includes("threads")) {
-      lines.push(row("threads", [
-        metric("actors", `${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}`),
-        metric("ticks", String(stats.ticks)),
-      ]));
+      lines.push(row(group, metrics.length ? metrics.map(metric) : [unavailable()]));
     }
     panel.replaceChildren(...lines);
   };
@@ -217,6 +214,7 @@ export function mountPlayerHud(
   render();
   return {
     setStats,
+    visible: () => !element.hidden,
     applyCommand(command) {
       if (command.type === "setShowFps") {
         element.hidden = command.enabled !== true;
