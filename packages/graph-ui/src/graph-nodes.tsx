@@ -22,7 +22,7 @@ import {
   useTags,
   useContextMenu,
 } from "@babylonslate/editor-kit";
-import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode } from "@babylonslate/scripting";
+import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
@@ -388,7 +388,7 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (nodeType === "interface.call" || data?.__interface === true) {
     return { Icon: PlugIcon, label: "Script Interface Function" };
   }
-  if (INPUT_EVENT_TYPE_IDS.has(nodeType)) {
+  if (INPUT_EVENT_TYPE_IDS.has(nodeType) || isTouchEventNodeType(nodeType)) {
     return { Icon: Gamepad2Icon, label: "Input Event" };
   }
   if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {

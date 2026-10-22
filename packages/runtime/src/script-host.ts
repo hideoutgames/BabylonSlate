@@ -6,7 +6,7 @@ import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
-import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState } from "@babylonslate/core";
+import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState, TouchInput } from "@babylonslate/core";
 import {
   combineRotators,
   createSeededRng,
@@ -219,6 +219,15 @@ export interface ScriptHostServices {
     worldOrigin: Vec3;
     worldDirection: Vec3;
   };
+  projectTouchToScene?(
+    finger: number,
+    channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+    caller?: BObject | null,
+  ): HitResult & {
+    worldOrigin: Vec3;
+    worldDirection: Vec3;
+  };
   sphereOverlap?(center: Vec3, radius: number, channel?: string, caller?: BObject | null): OverlapResult;
   shapeSweep?(
     shape: ColliderShape,
@@ -313,6 +322,17 @@ export interface ScriptHostServices {
   addObstacle?(kind: string, pose: Vec3, size: Vec3): string;
   removeObstacle?(id: string): void;
 }
+
+/** What is under a point of the game view: Project Cursor To Scene and Project Touch To Scene. */
+export type ScreenProjection = {
+  hit: boolean;
+  location: Vec3 | null;
+  normal: Vec3 | null;
+  distance: number;
+  actor: Actor | null;
+  worldOrigin: Vec3;
+  worldDirection: Vec3;
+};
 
 export interface ScriptContext {
   getSaveData<TData extends object = Record<string, SaveGameValue>>(): TData;
@@ -577,6 +597,10 @@ export interface ScriptContext {
   getAxis(axis: string): number;
   getAxis2D(axis: string): { x: number; y: number };
   getCursorPosition(): { x: number; y: number; pressed: boolean };
+  /** This tick's contacts in Finger order, including those lifted this tick. */
+  getTouches?(): readonly TouchInput[];
+  /** This tick's Began, Moved, Ended and Cancelled records in input order. */
+  getTouchEvents?(): readonly TouchInput[];
   setCursorVisible(visible: boolean): void;
   setGamepadRumble?(
     gamepadIndex: number,
@@ -603,15 +627,12 @@ export interface ScriptContext {
   projectCursorToScene(
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
-  ): {
-    hit: boolean;
-    location: Vec3 | null;
-    normal: Vec3 | null;
-    distance: number;
-    actor: Actor | null;
-    worldOrigin: Vec3;
-    worldDirection: Vec3;
-  };
+  ): ScreenProjection;
+  projectTouchToScene(
+    finger: number,
+    channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+  ): ScreenProjection;
   sphereOverlap(
     center: Vec3,
     radius: number,
@@ -2220,6 +2241,8 @@ export class ScriptHost {
       context.getAxis2D = (axis) => tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 };
       context.getCursorPosition = () =>
         tick?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false };
+      context.getTouches = () => tick?.getTouches?.() ?? [];
+      context.getTouchEvents = () => tick?.getTouchEvents?.() ?? [];
       context.setCursorVisible = (visible) => {
         if (services.setCursorVisible) {
           services.setCursorVisible(visible === true);
@@ -2283,27 +2306,19 @@ export class ScriptHost {
           actor: resolveLiveActor(services, hit.actorId),
         };
       };
-      context.projectCursorToScene = (channel, options) => {
-        const hit = services.projectCursorToScene?.(channel, options, contextOwner) ?? {
-          hit: false,
-          location: null,
-          normal: null,
-          distance: 0,
-          actorId: null,
-          bodyId: null,
-          worldOrigin: { x: 0, y: 0, z: 0 },
-          worldDirection: { x: 0, y: 0, z: 0 },
-        };
-        return {
-          hit: hit.hit === true,
-          location: hit.location ?? null,
-          normal: hit.normal ?? null,
-          distance: hit.distance ?? 0,
-          actor: resolveLiveActor(services, hit.actorId),
-          worldOrigin: hit.worldOrigin ?? { x: 0, y: 0, z: 0 },
-          worldDirection: hit.worldDirection ?? { x: 0, y: 0, z: 0 },
-        };
-      };
+      const screenProjection = (hit: ReturnType<NonNullable<ScriptHostServices["projectCursorToScene"]>> | undefined): ScreenProjection => ({
+        hit: hit?.hit === true,
+        location: hit?.location ?? null,
+        normal: hit?.normal ?? null,
+        distance: hit?.distance ?? 0,
+        actor: resolveLiveActor(services, hit?.actorId ?? null),
+        worldOrigin: hit?.worldOrigin ?? { x: 0, y: 0, z: 0 },
+        worldDirection: hit?.worldDirection ?? { x: 0, y: 0, z: 0 },
+      });
+      context.projectCursorToScene = (channel, options) =>
+        screenProjection(services.projectCursorToScene?.(channel, options, contextOwner));
+      context.projectTouchToScene = (finger, channel, options) =>
+        screenProjection(services.projectTouchToScene?.(finger, channel, options, contextOwner));
       context.sphereOverlap = (center, radius, channel) => {
         const overlap = services.sphereOverlap?.(center, radius, channel, contextOwner) ?? {
           actorIds: [],

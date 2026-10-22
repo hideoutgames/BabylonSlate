@@ -5,6 +5,7 @@ export { ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID } from "@babylo
 import {
   ASSET_LOAD_HANDLE_STATES, ASSET_LOAD_PRIORITIES, ASSET_LOAD_STATES,
   INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES,
+  TOUCH_PHASES, TOUCH_TYPES,
 } from "@babylonslate/core";
 import { ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
   TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_TRANSITIONS, TEXT2D_APPEAR_STARTS } from "@babylonslate/core";
@@ -21,6 +22,9 @@ export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
 export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
 export const ENGINE_KEY_ENUM_ID = "engine:Key";
 export const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
+export const ENGINE_TOUCH_STRUCT_ID = "engine:Touch";
+export const ENGINE_TOUCH_PHASE_ENUM_ID = "engine:TouchPhase";
+export const ENGINE_TOUCH_TYPE_ENUM_ID = "engine:TouchType";
 export const ENGINE_SCENE_STREAMING_STATE_ENUM_ID = "engine:SceneStreamingState";
 export const ENGINE_ASSET_LOAD_STATE_ENUM_ID = "engine:AssetLoadState";
 export const ENGINE_ASSET_LOAD_HANDLE_STATE_ENUM_ID = "engine:AssetLoadHandleState";
@@ -125,6 +129,16 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     name: "Input Component",
     members: ["X", "Y"].map((name, value) => ({ name, value })),
   },
+  {
+    id: ENGINE_TOUCH_PHASE_ENUM_ID,
+    name: "Touch Phase",
+    members: TOUCH_PHASES.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_TOUCH_TYPE_ENUM_ID,
+    name: "Touch Type",
+    members: TOUCH_TYPES.map((name, value) => ({ name, value })),
+  },
 ];
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
@@ -155,6 +169,21 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Normal", typeId: "vec3" },
       { name: "Actor", typeId: "actor" },
       { name: "Distance", typeId: "float" },
+    ],
+  },
+
+  {
+    // `TouchInput` in core; the input resolver produces this shape directly.
+    id: ENGINE_TOUCH_STRUCT_ID,
+    name: "Touch",
+    fields: [
+      { name: "Finger", typeId: "int", defaultValue: 0 },
+      { name: "Position", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
+      { name: "Delta", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
+      { name: "StartPosition", typeId: "vec2", defaultValue: { x: 0, y: 0 } },
+      { name: "Pressure", typeId: "float", defaultValue: 0 },
+      { name: "Phase", typeId: "enum", typeClassId: ENGINE_TOUCH_PHASE_ENUM_ID, defaultValue: "Began" },
+      { name: "Type", typeId: "enum", typeClassId: ENGINE_TOUCH_TYPE_ENUM_ID, defaultValue: "Finger" },
     ],
   },
 

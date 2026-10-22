@@ -26,6 +26,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
+import { isTouchEventNodeType } from "@babylonslate/scripting";
 import { nextCopyName } from "@babylonslate/assets";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -293,7 +294,8 @@ function inheritedMembers(
 
 function isClassTreeEventNode(type: string): boolean {
   if (isFlowEventCallNode(type)) return false;
-  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || type.startsWith("flow.event.") || type.startsWith("bt.event.");
+  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || isTouchEventNodeType(type)
+    || type.startsWith("flow.event.") || type.startsWith("bt.event.");
 }
 
 /**
