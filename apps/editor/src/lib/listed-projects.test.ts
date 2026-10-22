@@ -138,7 +138,7 @@ describe("filterListedProjects", () => {
       ),
     ).toEqual(["opfs:Alpha.hproject"]);
     expect(
-      filterListedProjects(mixed, { search: "Beta.bab", locationFilters: [] }).map(
+      filterListedProjects(mixed, { search: "Beta.hpro", locationFilters: [] }).map(
         (entry) => entry.id,
       ),
     ).toEqual(["external:Beta.hproject"]);
