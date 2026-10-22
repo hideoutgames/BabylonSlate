@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Separator } from "@babylonslate/ui/components/separator";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   AlertDialog,
@@ -68,6 +69,7 @@ import {
   applyTilemapPaint,
   applyWheelZoom,
   cellsAlongSegment,
+  createTerrainResolver,
   decodeTileGid,
   orderedTilemapLayers,
   DEFAULT_PAINT_CELL_SIZE,
@@ -82,12 +84,15 @@ import {
   resizeTilemap,
   TilemapChunkIndex,
   tilemapStrokeMergeKey,
+  tilemapTerrainKey,
   tilemapTilesetGuids,
   tilePlaceholderHsl,
+  tilesetTerrainById,
   tilesetTileRect,
   type TilemapPaintTool,
   type TilemapLayer,
   type TilemapPayload,
+  type TilemapTerrainBrush,
   type TilesetPayload,
 } from "@babylonslate/assets";
 import {
@@ -504,6 +509,7 @@ export function TilemapPalette({
   const atlases = useTilesetAtlases(payloads);
   const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
+  const selectedTerrain = editing?.selectedTerrain ?? null;
 
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
@@ -570,19 +576,13 @@ export function TilemapPalette({
           const tileset = payloads.get(ref.guid);
           const name =
             assets.find((asset) => asset.guid === ref.guid)?.name ?? "Tileset";
-          if (needle && !name.toLowerCase().includes(needle) && !needle.startsWith("tile")) {
-            const tileMatch = tileset?.tiles.some((tile) =>
-              `tile ${tile.id}`.includes(needle),
-            );
-            if (!tileMatch) return null;
-          }
+          const nameMatches = !needle || name.toLowerCase().includes(needle);
           const tiles = tileset?.tiles ?? [];
-          const visible = tiles.filter((tile) => {
-            if (!needle) return true;
-            if (name.toLowerCase().includes(needle)) return true;
-            return `tile ${tile.id}`.includes(needle);
-          });
-          if (visible.length === 0) return null;
+          const visible = tiles.filter((tile) => nameMatches || `tile ${tile.id}`.includes(needle));
+          const terrains = (tileset?.terrains ?? []).filter(
+            (terrain) => nameMatches || terrain.name.toLowerCase().includes(needle),
+          );
+          if (visible.length === 0 && terrains.length === 0) return null;
           return (
             <section key={ref.guid} className="flex flex-col" data-testid={`tilemap-palette-group-${ref.guid}`}>
               <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-sidebar px-2 py-1.5 text-xs font-semibold">
@@ -590,6 +590,44 @@ export function TilemapPalette({
                 <span className="min-w-0 flex-1 truncate">{name}</span>
                 <SectionCount value={visible.length} />
               </h3>
+              {tileset && terrains.length > 0 ? (
+                <div
+                  role="group"
+                  aria-label={`${name} Terrains`}
+                  className="flex flex-wrap gap-1 px-2 pb-2"
+                  data-testid={`tilemap-palette-terrains-${ref.guid}`}
+                >
+                  {terrains.map((terrain) => {
+                    const brush = { guid: ref.guid, terrainId: terrain.id };
+                    const pressed = selectedTerrain !== null
+                      && tilemapTerrainKey(selectedTerrain) === tilemapTerrainKey(brush);
+                    // How one painted cell on its own looks.
+                    const preview = createTerrainResolver(tileset, terrain.id, ref.tileCount)?.(0) ?? 0;
+                    return (
+                      <Toggle
+                        key={terrain.id}
+                        variant="outline"
+                        size="sm"
+                        className="max-w-full justify-start pl-1 pointer-coarse:min-h-11"
+                        pressed={pressed}
+                        disabled={preview === 0}
+                        title={preview === 0 ? "No tiles use this terrain yet." : undefined}
+                        onPressedChange={(next) => editing?.setSelectedTerrain(next ? brush : null)}
+                        data-testid={`tilemap-palette-terrain-${ref.guid}-${terrain.id}`}
+                      >
+                        <TileImage
+                          gid={encodeTileGid(ref.firstGid, preview)}
+                          localId={preview}
+                          tileset={tileset}
+                          atlas={atlases.get(ref.guid) ?? null}
+                          className="size-5 rounded-sm"
+                        />
+                        <span className="truncate">{terrain.name}</span>
+                      </Toggle>
+                    );
+                  })}
+                </div>
+              ) : null}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1 px-2 pb-3 pointer-coarse:grid-cols-[repeat(auto-fill,minmax(var(--touch-target,44px),1fr))]">
                 {visible.map((tile) => {
                   const gid = encodeTileGid(ref.firstGid, tile.id);
@@ -600,7 +638,7 @@ export function TilemapPalette({
                       localId={tile.id}
                       tileset={tileset}
                       atlas={atlases.get(ref.guid) ?? null}
-                      selected={selectedTileGid(tilemap, editing?.selectedTile ?? null) === gid}
+                      selected={!selectedTerrain && selectedTileGid(tilemap, editing?.selectedTile ?? null) === gid}
                       onSelect={() => editing?.setSelectedTile({ guid: ref.guid, localId: tile.id })}
                       testId={`tilemap-palette-tile-${gid}`}
                     />
@@ -668,6 +706,9 @@ export function TilemapPaint({
     /** `base` with the stroke so far; shown locally and committed on release. */
     painted: TilemapPayload;
     gid: number;
+    /** Terrain painted instead of `gid`; terrain strokes resolve variants with `tilesets`. */
+    terrain: TilemapTerrainBrush | undefined;
+    tilesets: ReadonlyMap<string, TilesetPayload>;
     start: { x: number; y: number };
     last: { x: number; y: number };
     cells: Array<{ x: number; y: number }>;
@@ -719,6 +760,16 @@ export function TilemapPaint({
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
   const localTileId = decoded?.localId ?? selectedGid;
+  // A terrain brush paints only while its Tileset is on the map and has tiles for it.
+  const terrainBrush = useMemo(() => {
+    const brush = editing?.selectedTerrain;
+    const ref = brush ? tilemap.tilesets.find((entry) => entry.guid === brush.guid) : undefined;
+    const tileset = brush ? payloads.get(brush.guid) : undefined;
+    const terrain = brush && tileset ? tilesetTerrainById(tileset, brush.terrainId) : null;
+    const preview = brush && tileset && ref ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.(0) : 0;
+    if (!brush || !ref || !tileset || !terrain || !preview) return null;
+    return { brush, terrain, tileset, gid: encodeTileGid(ref.firstGid, preview), localId: preview };
+  }, [editing?.selectedTerrain, payloads, tilemap.tilesets]);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -835,7 +886,7 @@ export function TilemapPaint({
     pointerType: "down" | "move",
   ) => {
     if (!layer || !isTilemapPaintStrokeTool(tool)) return;
-    if (tool !== "eraser" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
+    if (!terrainBrush && tool !== "eraser" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
     if (pointerType === "down") {
       // A stroke whose release never arrived (lost capture) still lands.
       finishStroke();
@@ -844,6 +895,8 @@ export function TilemapPaint({
         base: latestRef.current,
         painted: latestRef.current,
         gid: selectedGid,
+        terrain: terrainBrush?.brush,
+        tilesets: payloads,
         start: cell,
         last: cell,
         cells: [cell],
@@ -876,7 +929,8 @@ export function TilemapPaint({
         start: stroke.start,
         end: stroke.last,
         cells: fresh,
-      }, stroke.paintedChunks);
+        terrain: stroke.terrain,
+      }, stroke.paintedChunks, stroke.tilesets);
     } else {
       stroke.last = cell;
       if ((tool === "bucket" || tool === "stamp") && pointerType !== "down") return;
@@ -891,7 +945,8 @@ export function TilemapPaint({
           tool === "stamp"
             ? { width: 2, height: 2, tiles: [stroke.gid, stroke.gid, stroke.gid, stroke.gid] }
             : undefined,
-      }, stroke.baseChunks);
+        terrain: stroke.terrain,
+      }, stroke.baseChunks, stroke.tilesets);
     }
     stroke.painted = painted;
     latestRef.current = painted;
@@ -1013,26 +1068,41 @@ export function TilemapPaint({
         </SearchDropdown>
         <Separator orientation="vertical" className="my-1" />
         <div className="flex min-w-0 items-center gap-2">
-          <TileThumb
-            gid={selectedGid}
-            localId={localTileId}
-            tileset={decoded?.tileset}
-            atlas={decoded ? atlases.get(decoded.guid) ?? null : null}
-            selected={false}
-            onSelect={() => {}}
-            className="size-7 pointer-coarse:size-11"
-            testId="tilemap-selected-tile"
-          />
+          {terrainBrush ? (
+            <TileImage
+              gid={terrainBrush.gid}
+              localId={terrainBrush.localId}
+              tileset={terrainBrush.tileset}
+              atlas={atlases.get(terrainBrush.brush.guid) ?? null}
+              className="size-7 rounded-sm ring-1 ring-border pointer-coarse:size-11"
+            />
+          ) : (
+            <TileThumb
+              gid={selectedGid}
+              localId={localTileId}
+              tileset={decoded?.tileset}
+              atlas={decoded ? atlases.get(decoded.guid) ?? null : null}
+              selected={false}
+              onSelect={() => {}}
+              className="size-7 pointer-coarse:size-11"
+              testId="tilemap-selected-tile"
+            />
+          )}
           <span
             className="truncate text-xs text-muted-foreground"
             data-testid="tilemap-selected-label"
           >
-            {decoded
+            {terrainBrush
               ? `${
-                  assets.find((asset) => asset.guid === decoded.guid)?.name ??
+                  assets.find((asset) => asset.guid === terrainBrush.brush.guid)?.name ??
                   "Tileset"
-                } · Tile ${localTileId}`
-              : `GID ${selectedGid}`}
+                } · ${terrainBrush.terrain.name}`
+              : decoded
+                ? `${
+                    assets.find((asset) => asset.guid === decoded.guid)?.name ??
+                    "Tileset"
+                  } · Tile ${localTileId}`
+                : `GID ${selectedGid}`}
           </span>
         </div>
       </ToolbarStrip>
@@ -1044,6 +1114,7 @@ export function TilemapPaint({
           data-tool={tool}
           data-tile={String(localTileId)}
           data-gid={String(selectedGid)}
+          data-terrain={terrainBrush ? terrainBrush.terrain.id : undefined}
           data-cell-size={String(cellSize)}
           data-zoom={String(cellSize / DEFAULT_PAINT_CELL_SIZE)}
           data-pan-x={String(pan.x)}
@@ -1227,6 +1298,40 @@ function TileThumb({
   testId: string;
   className?: string;
 }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "aspect-square w-full min-w-0 overflow-hidden rounded-sm ring-1 ring-border outline-none hover:ring-foreground/40 focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:ring-2 data-[selected=true]:ring-(--graph-state-selected) data-[selected=true]:ring-offset-1 data-[selected=true]:ring-offset-sidebar",
+        className,
+      )}
+      data-testid={testId}
+      data-gid={String(gid)}
+      data-tile={String(localId)}
+      data-selected={selected ? "true" : "false"}
+      aria-label={`Tile ${localId}`}
+      aria-pressed={selected}
+      onClick={() => onSelect(gid)}
+    >
+      <TileImage gid={gid} localId={localId} tileset={tileset} atlas={atlas} className="size-full" />
+    </button>
+  );
+}
+
+/** One atlas cell drawn pixelated, or its placeholder colour while the atlas is missing. */
+function TileImage({
+  gid,
+  localId,
+  tileset,
+  atlas,
+  className,
+}: {
+  gid: number;
+  localId: number;
+  tileset?: TilesetPayload;
+  atlas: HTMLImageElement | null;
+  className?: string;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1255,28 +1360,14 @@ function TileThumb({
   }, [atlas, gid, localId, tileset]);
 
   return (
-    <button
-      type="button"
-      className={cn(
-        "aspect-square w-full min-w-0 overflow-hidden rounded-sm ring-1 ring-border outline-none hover:ring-foreground/40 focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:ring-2 data-[selected=true]:ring-(--graph-state-selected) data-[selected=true]:ring-offset-1 data-[selected=true]:ring-offset-sidebar",
-        className,
-      )}
-      data-testid={testId}
-      data-gid={String(gid)}
-      data-tile={String(localId)}
-      data-selected={selected ? "true" : "false"}
-      aria-label={`Tile ${localId}`}
-      aria-pressed={selected}
-      onClick={() => onSelect(gid)}
-    >
-      <canvas
-        ref={canvasRef}
-        width={tileset?.tileWidth ?? 16}
-        height={tileset?.tileHeight ?? 16}
-        className="size-full"
-        style={{ imageRendering: "pixelated" }}
-      />
-    </button>
+    <canvas
+      ref={canvasRef}
+      aria-hidden
+      width={tileset?.tileWidth ?? 16}
+      height={tileset?.tileHeight ?? 16}
+      className={cn("shrink-0", className)}
+      style={{ imageRendering: "pixelated" }}
+    />
   );
 }
 

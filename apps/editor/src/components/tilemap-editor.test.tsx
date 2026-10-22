@@ -9,7 +9,10 @@ import {
   encodeTileGid,
   getTile,
   normalizeTilemapPayload,
+  normalizeTilesetPayload,
   setTile,
+  TERRAIN_E,
+  TERRAIN_W,
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
@@ -408,6 +411,63 @@ describe("TilemapPaint", () => {
       ]);
       expect(getTile(painted, "layer-1", 1, 1)).toBe(0);
     }
+  });
+
+  it("paints and erases a Palette terrain with one edit per stroke, re-resolving neighbours", async () => {
+    // Ledge pieces by local id: 1 single, 2 left end, 3 middle, 4 right end.
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === GROUND_PATH
+        ? ensureTilesetTiles(normalizeTilesetPayload({
+            textureGuid: "tex-1",
+            atlasWidth: 64,
+            atlasHeight: 16,
+            tileWidth: 16,
+            tileHeight: 16,
+            terrains: [{ id: "ledge", name: "Ledge", style: "sides" }],
+            tiles: [0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W].map((mask, at) => ({
+              id: at + 1,
+              terrain: { id: "ledge", mask },
+            })),
+          }))
+        : null,
+    );
+    const onChange = vi.fn();
+    const initial = { ...createDefaultTilemapPayload(), tilesets: [{ guid: "ts-ground", firstGid: 1, tileCount: 4 }] };
+    render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.click(await screen.findByTestId("tilemap-palette-terrain-ts-ground-ledge"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    expect(canvas.getAttribute("data-terrain")).toBe("ledge");
+    expect(screen.getByTestId("tilemap-selected-label").textContent).toBe("Ground · Ledge");
+    const pointer = (type: "pointerdown" | "pointermove" | "pointerup", x: number) =>
+      dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: x * 32 + 16, clientY: 208 });
+    const row = () => [1, 2, 3, 4].map((x) => getTile(normalizeTilemapPayload(onChange.mock.lastCall![0]), "layer-1", x, 1));
+
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    pointer("pointerdown", 1);
+    pointer("pointermove", 3);
+    pointer("pointerup", 3);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap-stroke:/);
+    expect(row()).toEqual([2, 3, 4, 0]);
+
+    // The Eraser keeps the terrain brush and turns the new end into a right end.
+    fireEvent.click(screen.getByTestId("tilemap-tool-eraser"));
+    pointer("pointerdown", 3);
+    pointer("pointerup", 3);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(row()).toEqual([2, 4, 0, 0]);
+
+    // Repainting cells that already resolve this way commits nothing.
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    pointer("pointerdown", 1);
+    pointer("pointermove", 2);
+    pointer("pointerup", 2);
+    expect(onChange).toHaveBeenCalledTimes(2);
+
+    // Picking a single tile drops the terrain brush.
+    fireEvent.click(screen.getByTestId("tilemap-palette-tile-1"));
+    expect(canvas.hasAttribute("data-terrain")).toBe(false);
+    expect(canvas.getAttribute("data-gid")).toBe("1");
   });
 
   it("re-derives a rectangle from where it started on every move", async () => {

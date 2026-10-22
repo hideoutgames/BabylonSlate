@@ -8,7 +8,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
-import { createDefaultTilesetPayload } from "@babylonslate/assets";
+import {
+  createDefaultTilesetPayload,
+  normalizeTilesetPayload,
+  TERRAIN_E,
+  TERRAIN_N,
+  TERRAIN_NE,
+} from "@babylonslate/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetEditor, TilesetPreview } from "./tileset-editor";
@@ -163,6 +169,64 @@ describe("TilesetEditor", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       tiles: expect.arrayContaining([expect.objectContaining({ id: 1, animationFrameDurationMs: 250 })]),
     }), expect.any(String));
+  });
+
+  it("adds a terrain, sets it on the selected tiles and edits their neighbours together", async () => {
+    const onChange = vi.fn();
+    render(<TilesetHarness initial={twoTilePayload({ atlasWidth: 48, atlasHeight: 32 })} onChange={onChange} />);
+    const last = () => normalizeTilesetPayload(onChange.mock.lastCall![0]);
+    const pick = async (testId: string, option: string) => {
+      fireEvent.click(screen.getByTestId(testId));
+      const item = await screen.findByRole("option", { name: option });
+      fireEvent.pointerDown(item, { pointerType: "mouse" });
+      fireEvent.click(item);
+    };
+    const masks = () => last().tiles.flatMap((tile) => (tile.terrain ? [[tile.id, tile.terrain.mask]] : []));
+
+    fireEvent.click(screen.getByTestId("tileset-terrains-add"));
+    expect(last().terrains).toEqual([{ id: "terrain-1", name: "Terrain", style: "sides" }]);
+    await pick("property-terrain-style", "Blob (47)");
+    expect(last().terrains?.[0]?.style).toBe("blob");
+
+    // Select tiles 1 and 2 in the Preview, then put both in the terrain.
+    fireEvent.click(screen.getByTestId("tileset-tool-select"));
+    const surface = screen.getByTestId("tileset-preview-surface");
+    const first = screen.getByTestId("tileset-preview-cell-1");
+    first.parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 96, height: 64 }) as DOMRect;
+    act(() => {
+      dispatchPointerEvent(first, "pointerdown", { pointerId: 1, clientX: 4, clientY: 4 });
+      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 36, clientY: 4 });
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 36, clientY: 4 });
+    });
+    await pick("property-tile-terrain", "Terrain");
+    expect(masks()).toEqual([[1, 0], [2, 0]]);
+
+    // A corner needs both of its sides, and opening a side opens its corners.
+    const toggle = (label: string) => screen.getByTestId(`tileset-terrain-neighbour-${label}`);
+    expect((toggle("north-east") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(toggle("north"));
+    fireEvent.click(toggle("east"));
+    fireEvent.click(toggle("north-east"));
+    expect(masks()).toEqual([[1, TERRAIN_N | TERRAIN_E | TERRAIN_NE], [2, TERRAIN_N | TERRAIN_E | TERRAIN_NE]]);
+    expect(screen.getByTestId("tileset-terrain-coverage").textContent).toBe(
+      "2 tiles cover 1 of 47 variants; the rest paint the closest tile.",
+    );
+    fireEvent.click(toggle("north"));
+    expect(masks()).toEqual([[1, TERRAIN_E], [2, TERRAIN_E]]);
+
+    // A 4 Sides terrain shows no corners.
+    await pick("property-terrain-style", "4 Sides (16)");
+    expect(screen.queryByTestId("tileset-terrain-neighbour-north-east")).toBeNull();
+    expect(screen.getByTestId("tileset-terrain-coverage").textContent).toBe(
+      "2 tiles cover 1 of 16 variants; the rest paint the closest tile.",
+    );
+
+    // Removing the terrain takes its tiles out of it in the same edit.
+    const edits = onChange.mock.calls.length;
+    fireEvent.click(screen.getByTestId("tileset-terrains-0-remove"));
+    expect(onChange.mock.calls.length).toBe(edits + 1);
+    expect(last().terrains).toBeUndefined();
+    expect(masks()).toEqual([]);
   });
 
   it("keeps atlas size fields read-only", () => {
