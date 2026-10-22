@@ -349,7 +349,6 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## Open work
 
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
-- Fixed-shape forward lighting becomes the world-Scene lighting path outside Clustered Forward: move node and CEL materials, shadow-class seats and area seats onto the fixed layout, then turn the Engine switch on by default. Confirm its GPU cost on the A16 with `fixedlights`.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).
 
 ## Key risks
