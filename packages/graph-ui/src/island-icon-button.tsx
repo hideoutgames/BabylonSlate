@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
+import { Button } from "@haptic/ui/components/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 
 /** An icon-only toolbar island action whose label is its accessible name and tooltip. */
 export function IslandIconButton({

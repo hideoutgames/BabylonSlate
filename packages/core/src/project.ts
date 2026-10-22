@@ -28,8 +28,8 @@ import {
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
-export const MAIN_CLASS_FILE = "assets/main.class.babasset";
-export const MAIN_SCENE_FILE = "assets/main.scene.babasset";
+export const MAIN_CLASS_FILE = "assets/main.class.hasset";
+export const MAIN_SCENE_FILE = "assets/main.scene.hasset";
 
 export interface ProjectMetadata {
   name: string;
@@ -819,7 +819,7 @@ export function createEmptyProject(
 
 const DEFAULT_SCENE_CAMERA_ACTOR_ID = "actor-camera";
 const DEFAULT_SCENE_CAMERA_COMPONENT_ID = "component-camera";
-/** Matches the editor ArcRotate radius in `@babylonslate/render` (no render import). */
+/** Matches the editor ArcRotate radius in `@haptic/render` (no render import). */
 const DEFAULT_SCENE_CAMERA_RADIUS = 12;
 
 export const DEFAULT_CAMERA_FIELD_OF_VIEW = 60;

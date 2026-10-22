@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DebugInstance } from "@babylonslate/bridge";
+import type { DebugInstance } from "@haptic/bridge";
 import { classGraphDebugTarget, debugInstanceNames, documentGraphDebugTarget } from "./graph-debug-target";
 
 describe("classGraphDebugTarget", () => {
@@ -13,35 +13,35 @@ describe("classGraphDebugTarget", () => {
   const parentOf = (id: string) => parents[id] ?? null;
 
   it("debugs a Class graph against the class named by its file", () => {
-    expect(classGraphDebugTarget("assets/Door.class.babasset", parentOf)).toEqual({ kind: "class", classId: "Door" });
+    expect(classGraphDebugTarget("assets/Door.class.hasset", parentOf)).toEqual({ kind: "class", classId: "Door" });
   });
 
   it.each(["Helpers", "MoreHelpers", "Cheats", "Tooling"])("offers nothing for %s, which never has instances", (name) => {
-    expect(classGraphDebugTarget(`assets/${name}.class.babasset`, parentOf)).toBeNull();
+    expect(classGraphDebugTarget(`assets/${name}.class.hasset`, parentOf)).toBeNull();
   });
 });
 
 describe("documentGraphDebugTarget", () => {
   const registry = {
     generation: 1,
-    list: () => [{ path: "assets/Door.class.babasset", header: { type: "Class", name: "Door", parentClass: "Actor" } }],
+    list: () => [{ path: "assets/Door.class.hasset", header: { type: "Class", name: "Door", parentClass: "Actor" } }],
     getByPath: (path: string) => path.startsWith("assets/Guard") ? { header: { guid: `guid:${path}` } } : undefined,
   } as unknown as Parameters<typeof documentGraphDebugTarget>[1];
 
   it("debugs a Class graph against its class, and a tree or an Animation Graph against the asset's guid", () => {
-    expect(documentGraphDebugTarget({ kind: "graph", path: "assets/Door.class.babasset" }, registry))
+    expect(documentGraphDebugTarget({ kind: "graph", path: "assets/Door.class.hasset" }, registry))
       .toEqual({ kind: "class", classId: "Door" });
-    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.babasset" }, registry))
-      .toEqual({ kind: "behaviourTree", assetGuid: "guid:assets/Guard.bt.babasset" });
-    expect(documentGraphDebugTarget({ kind: "anim-graph", path: "assets/Guard.anim.babasset" }, registry))
-      .toEqual({ kind: "animationGraph", assetGuid: "guid:assets/Guard.anim.babasset" });
+    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.hasset" }, registry))
+      .toEqual({ kind: "behaviourTree", assetGuid: "guid:assets/Guard.bt.hasset" });
+    expect(documentGraphDebugTarget({ kind: "anim-graph", path: "assets/Guard.anim.hasset" }, registry))
+      .toEqual({ kind: "animationGraph", assetGuid: "guid:assets/Guard.anim.hasset" });
   });
 
   it("offers nothing for another document, an asset the registry does not know, or no document", () => {
-    expect(documentGraphDebugTarget({ kind: "scene", path: "assets/Main.scene.babasset" }, registry)).toBeNull();
-    expect(documentGraphDebugTarget({ kind: "blackboard", path: "assets/Guard.blackboard.babasset" }, registry)).toBeNull();
-    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Missing.bt.babasset" }, registry)).toBeNull();
-    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.babasset" }, null)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "scene", path: "assets/Main.scene.hasset" }, registry)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "blackboard", path: "assets/Guard.blackboard.hasset" }, registry)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Missing.bt.hasset" }, registry)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.hasset" }, null)).toBeNull();
     expect(documentGraphDebugTarget(undefined, registry)).toBeNull();
   });
 });

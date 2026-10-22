@@ -5,9 +5,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { Progress, ProgressLabel } from "@babylonslate/ui/components/progress";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/dialog";
+import { Progress, ProgressLabel } from "@haptic/ui/components/progress";
+import { cn } from "@haptic/ui/lib/utils";
 
 export type ProgressDialogContentProps = ComponentProps<typeof DialogContent> & {
   failed?: boolean;

@@ -19,15 +19,15 @@ import {
   selectedPickerIdentity,
   type PinListRow,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
-import { GraphEditor } from "@babylonslate/graph-ui";
+} from "@haptic/ui/components/toggle-group";
+import { GraphEditor } from "@haptic/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
 import {
@@ -60,7 +60,7 @@ import {
   type MaterialFunctionPin,
   type MaterialPreviewMesh,
   type MaterialPreviewSettings,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   BoxIcon,
   BoxSelectIcon,

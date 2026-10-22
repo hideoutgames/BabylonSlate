@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createDefaultScene, documentId } from "@babylonslate/core";
-import type { EditorCameraSessionState } from "@babylonslate/render";
+import { createDefaultScene, documentId } from "@haptic/core";
+import type { EditorCameraSessionState } from "@haptic/render";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
@@ -141,7 +141,7 @@ function view(id: string) {
   return within(screen.getByTestId(`view:${id}`));
 }
 
-const HERO = "assets/Hero.class.babasset";
+const HERO = "assets/Hero.class.hasset";
 const heroId = documentId({ kind: "graph", path: HERO });
 
 beforeEach(() => {
@@ -171,8 +171,8 @@ describe("document view state across workspace remounts", () => {
   });
 
   it("restores a Scene's camera after opening another Scene closed it", async () => {
-    const levelA = "assets/LevelA.scene.babasset";
-    const levelB = "assets/LevelB.scene.babasset";
+    const levelA = "assets/LevelA.scene.hasset";
+    const levelB = "assets/LevelB.scene.hasset";
     const levelAId = documentId({ kind: "scene", path: levelA });
     await open("scene", levelA);
     const { rerender } = render(editor());
@@ -205,7 +205,7 @@ describe("document view state across workspace remounts", () => {
   });
 
   it("moves view state with a renamed Class, including the old workspace's camera save as it unmounts", async () => {
-    const renamed = "assets/Characters/Hero.class.babasset";
+    const renamed = "assets/Characters/Hero.class.hasset";
     const renamedId = documentId({ kind: "graph", path: renamed });
     await open("graph", HERO);
     const { rerender } = render(editor());

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+import { Toggle } from "@haptic/ui/components/toggle";
 
 export const DEFAULT_FLAG_BIT_COUNT = 32;
 /** Masks are unsigned 32-bit integers; JavaScript bit operators stop at bit 31. */

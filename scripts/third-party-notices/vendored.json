@@ -1,0 +1,55 @@
+[
+  {
+    "name": "Basis Universal encoder",
+    "version": "1.16.3",
+    "license": "Apache-2.0",
+    "source": "https://github.com/BinomialLLC/basis_universal",
+    "scopes": ["editor"],
+    "copyright": "Copyright Binomial LLC",
+    "files": ["apache-2.0.txt"]
+  },
+  {
+    "name": "Babylon.js KTX2 Decoder",
+    "version": "9.29.0",
+    "license": "Apache-2.0 AND MIT AND BSD-3-Clause",
+    "source": "https://github.com/BabylonJS/Babylon.js",
+    "scopes": ["editor", "game"],
+    "files": ["ktx2-decoder-notice.txt", "apache-2.0.txt", "zstddec-license.txt"]
+  },
+  {
+    "name": "Draco glTF decoder",
+    "version": "1.5.6",
+    "license": "Apache-2.0",
+    "source": "https://github.com/google/draco",
+    "scopes": ["editor", "game"],
+    "copyright": "Copyright Google LLC",
+    "files": ["apache-2.0.txt"]
+  },
+  {
+    "name": "meshoptimizer decoder",
+    "version": "0.20",
+    "license": "MIT",
+    "source": "https://github.com/zeux/meshoptimizer",
+    "scopes": ["editor", "game"],
+    "files": ["meshoptimizer-license.txt"]
+  },
+  {
+    "name": "coi-serviceworker",
+    "version": "0.1.7",
+    "license": "MIT",
+    "source": "https://github.com/gzuidhof/coi-serviceworker",
+    "scopes": ["editor", "game"],
+    "files": ["coi-serviceworker-license.txt"]
+  },
+  {
+    "name": "Babylon.js area light data",
+    "version": "",
+    "license": "CC-BY-4.0",
+    "source": "https://github.com/BabylonJS/Assets/tree/master/core/areaLights",
+    "scopes": ["editor", "game"],
+    "files": [
+      "../../apps/editor/public/legal/BabylonJS-Area-Lights-Attribution.txt",
+      "../../apps/editor/public/legal/BabylonJS-Area-Lights-CC-BY-4.0.txt"
+    ]
+  }
+]

@@ -11,7 +11,7 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   areaRectLightBindings,
@@ -28,17 +28,18 @@ import {
   requestEditorDrop,
   parseCableProperties,
   parseText2DProperties,
+  parseJoystick2DProperties,
   parseUIControl2DProperties,
   type RenderSettingsPatch,
-} from "@babylonslate/core";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/core";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@haptic/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { isFixedShapeLightingEnabled } from "./fixed-light-admission";
@@ -3330,7 +3331,7 @@ describe("Play createEngine view", () => {
     const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
       .map((material) => (material.getBlockByName("gain") as InputBlock).value);
     const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
-    const write = (owner: Extract<import("@babylonslate/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
+    const write = (owner: Extract<import("@haptic/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 });
     write(worldOwner, "first", 0.7);
@@ -4023,7 +4024,7 @@ describe("Play createEngine view", () => {
   });
 
   it("routes playSound through an injected audio backend after unlock", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const engine = sharedEngine();
@@ -4263,7 +4264,7 @@ describe("Play createEngine view", () => {
   });
 
   it("holds a spatial voice still after its emitter despawns and another actor reuses the slot", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     // The Fake keeps the reused pose row by reference; record each placement.
@@ -4313,7 +4314,7 @@ describe("Play createEngine view", () => {
   });
 
   it("places a spatial voice and moves the listener once per applied snapshot", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const placed: number[] = [];
@@ -4363,7 +4364,7 @@ describe("Play createEngine view", () => {
   });
 
   it("poses only the actors voices emit from, and places a voice starting on another actor at once", async () => {
-    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const placed: number[] = [];
@@ -5449,8 +5450,12 @@ describe("Play createEngine view", () => {
     canvas.emit("pointerdown", pointerAt(x, y, { pointerType }));
     canvas.emit("pointermove", pointerAt(x, y - 4, { pointerType }));
     expect(scrolls).toEqual([]);
+    // Game input capture must not see a pointer the control, then the scroll drag, holds.
+    expect(handle.ownsGamePointer(1)).toBe(true);
     canvas.emit("pointermove", pointerAt(x, y - 28, { pointerType }));
+    expect(handle.ownsGamePointer(1)).toBe(true);
     canvas.emit("pointerup", pointerAt(x, y, { pointerType }));
+    expect(handle.ownsGamePointer(1)).toBe(false);
     expect(scrolls).toHaveLength(1);
     expect(scrolls[0]?.deltaY).toBeCloseTo(0.4921875);
     expect(controls.filter(event => event.action === "change" || event.action === "commit")).toEqual([]);
@@ -5463,6 +5468,31 @@ describe("Play createEngine view", () => {
     expect(scrolls).toHaveLength(1);
     if (classId === "2DDropdownComponent") expect(visual.expanded).toBe(true);
     else expect(controls.filter(event => event.action === "change")).toHaveLength(1);
+  });
+
+  it("reports a SceneLayer joystick's finger as owned until it lifts, and leaves other fingers to the game", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const axes = new Map<string, number>();
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onTouchAxis: (controlId, value) => axes.set(controlId, value) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2djoystick", meshAssetGuid: null, hitTest: "block",
+      parts: [{ componentId: "stick", meshKind: "2djoystick", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+        joystick: parseJoystick2DProperties({ radius: 2, joystickRadius: 1, deadZone: 0 }) }] });
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(150, 128));
+    expect(axes.get("joystick-x")).toBeGreaterThan(0);
+    expect(handle.ownsGamePointer(1)).toBe(true);
+    canvas.emit("pointerdown", pointerAt(4, 4, { pointerId: 2 }));
+    expect(handle.ownsGamePointer(2)).toBe(false);
+    canvas.emit("pointerup", pointerAt(150, 128));
+    expect(handle.ownsGamePointer(1)).toBe(false);
   });
 
   it.each(["2DSliderComponent", "2DRangeSliderComponent"])("keeps a touch drag on %s instead of scrolling its container", classId => {

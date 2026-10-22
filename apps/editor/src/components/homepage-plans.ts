@@ -1,5 +1,5 @@
 import { BuildingIcon, MonitorIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
-import type { HostPlatform } from "@babylonslate/vfs";
+import type { HostPlatform } from "@haptic/vfs";
 import type { HapticPlanId } from "./homepage-account-types";
 
 /** Public pricing, kept in step with https://haptic.no/pricing. */

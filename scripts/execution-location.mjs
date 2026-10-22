@@ -1,11 +1,11 @@
 /** CI assertions are independent from permission to bypass local admission. */
 export function hostedExecution(env = process.env) {
   if (
-    env.BL_EXECUTION_POLICY !== undefined &&
-    !["local", "hosted-ci"].includes(env.BL_EXECUTION_POLICY)
+    env.HAPTIC_EXECUTION_POLICY !== undefined &&
+    !["local", "hosted-ci"].includes(env.HAPTIC_EXECUTION_POLICY)
   )
-    throw new Error("BL_EXECUTION_POLICY must be local or hosted-ci");
-  if (env.BL_EXECUTION_POLICY !== "hosted-ci") return false;
+    throw new Error("HAPTIC_EXECUTION_POLICY must be local or hosted-ci");
+  if (env.HAPTIC_EXECUTION_POLICY !== "hosted-ci") return false;
   if (
     env.GITHUB_ACTIONS !== "true" ||
     env.RUNNER_ENVIRONMENT !== "github-hosted" ||

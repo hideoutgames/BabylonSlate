@@ -14,7 +14,7 @@ import {
 import {
   PREVIEW_SKYBOX_MESH_NAME,
   type EngineHandle,
-} from "@babylonslate/render";
+} from "@haptic/render";
 
 export interface ViewportProofSamplePoint {
   /** Normalized canvas coordinate, 0..1 left→right / top→bottom. */

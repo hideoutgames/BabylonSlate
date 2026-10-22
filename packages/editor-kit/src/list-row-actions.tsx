@@ -1,6 +1,6 @@
 import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 
 export type ListRowActionsProps = {
   index: number;

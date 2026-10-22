@@ -5,7 +5,7 @@ import type {
   ProjectStorage,
   ProjectStorageReader,
   StorageReadOptions,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 

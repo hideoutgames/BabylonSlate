@@ -5,8 +5,8 @@ import {
   createMeshComponent,
   identitySerializedTransform,
   type SerializedScene,
-} from "@babylonslate/core";
-import { generateNavMesh } from "@babylonslate/navigation";
+} from "@haptic/core";
+import { generateNavMesh } from "@haptic/navigation";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { collectNavBakeGeometry } from "./nav-bake-geometry";

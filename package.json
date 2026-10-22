@@ -1,5 +1,5 @@
 {
-  "name": "babylonslate",
+  "name": "haptic",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,7 +23,8 @@
     "test:resources": "node scripts/test-resources.mjs",
     "verify:local": "node scripts/verify-local.mjs",
     "test:build": "node scripts/run-tests.mjs build",
-    "test:benchmark": "node scripts/benchmark-tests.mjs"
+    "test:benchmark": "node scripts/benchmark-tests.mjs",
+    "notices": "node scripts/third-party-notices.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

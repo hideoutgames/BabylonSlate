@@ -1,4 +1,4 @@
-import { err, ok } from "@babylonslate/core";
+import { err, ok } from "@haptic/core";
 import type {
   FileLock,
   LockProvider,

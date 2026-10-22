@@ -3,10 +3,10 @@ import type {
   DebugGraphTrace,
   DebugInstance,
   DebugObserveTarget,
-} from "@babylonslate/bridge";
-import { sameDebugObserveTarget } from "@babylonslate/bridge";
-import { formatValue } from "@babylonslate/core";
-import { BObject, type Actor, type World } from "@babylonslate/object-model";
+} from "@haptic/bridge";
+import { sameDebugObserveTarget } from "@haptic/bridge";
+import { formatValue } from "@haptic/core";
+import { BObject, type Actor, type World } from "@haptic/object-model";
 import { animGraphGuidOf, behaviourTreeGuidOf, evaluatedBehaviourTreeComponent } from "./component-assets";
 import { componentOwners } from "./world-component-index";
 

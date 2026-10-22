@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/editor-kit",
+  "name": "@haptic/editor-kit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,10 +12,10 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/editor-kit"
   },
   "dependencies": {
-    "@babylonslate/assets": "workspace:*",
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/input": "workspace:*",
-    "@babylonslate/ui": "workspace:*",
+    "@haptic/assets": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/input": "workspace:*",
+    "@haptic/ui": "workspace:*",
     "lucide-react": "^0.552.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

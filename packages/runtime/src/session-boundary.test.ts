@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import type { CommandMessage, SessionBoundaryResult } from "@babylonslate/bridge";
+import { createActor, createDefaultScene } from "@haptic/core";
+import type { CommandMessage, SessionBoundaryRequest, SessionBoundaryResult } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 
 const makeRuntime = (options: Partial<Parameters<typeof createInProcessRuntime>[0]> = {}) =>
@@ -51,6 +51,26 @@ describe("runtime session boundaries", () => {
       expect(runtime.getWorld().clock.tickIndex).toBe(1);
       runtime.advance(0.1);
       expect(runtime.getWorld().clock.tickIndex).toBe(2);
+    } finally { runtime.stop(); }
+  });
+
+  it("steps one tick from a user pause, stays paused, and refuses to step otherwise", async () => {
+    const runtime = makeRuntime({ dt: 0.1 });
+    let requestId = 0;
+    const boundary = (action: SessionBoundaryRequest["action"]) =>
+      runtime.requestSessionBoundary({ sessionGeneration: 7, requestId: ++requestId, action });
+    try {
+      runtime.realizePlayWorld(); runtime.start(); runtime.advance(0.15);
+      expect(runtime.getWorld().clock.tickIndex).toBe(1);
+      expect(await boundary({ kind: "step" })).toMatchObject({ success: false, reason: "Pause the game before stepping.", tickIndex: 1 });
+      await boundary({ kind: "pause", reason: "user", paused: true });
+      expect(await boundary({ kind: "step" })).toMatchObject({ success: true, paused: true, pauseReasons: ["user"], tickIndex: 2 });
+      expect(await boundary({ kind: "step" })).toMatchObject({ success: true, paused: true, tickIndex: 3 });
+      runtime.advance(1);
+      expect(runtime.getWorld().clock.tickIndex).toBe(3);
+      await boundary({ kind: "pause", reason: "lifecycle", paused: true });
+      expect(await boundary({ kind: "step" })).toMatchObject({ success: false, paused: true, tickIndex: 3 });
+      expect((await boundary({ kind: "pause", reason: "lifecycle", paused: false })).pauseReasons).toEqual(["user"]);
     } finally { runtime.stop(); }
   });
 

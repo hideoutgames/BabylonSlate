@@ -15,7 +15,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
-import { installedAssetIdentity, normalizeModelImportScale, shouldSlimModelEmbeddedTextures, type PackedTextureSlimProof } from "@babylonslate/assets";
+import { installedAssetIdentity, normalizeModelImportScale, shouldSlimModelEmbeddedTextures, type PackedTextureSlimProof } from "@haptic/assets";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
@@ -65,8 +65,8 @@ export type ModelAnimLoadBinding = Pick<
 };
 
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
-const MODEL_INSTANCE_KEY = "babylonslateModelInstance";
-const MODEL_LOAD_KEY = "babylonslateModelLoadKey";
+const MODEL_INSTANCE_KEY = "hapticModelInstance";
+const MODEL_LOAD_KEY = "hapticModelLoadKey";
 export const MODEL_IMPORT_SCALE_NODE_NAME = "__importScale";
 
 type ModelPlaceholderMeta = {

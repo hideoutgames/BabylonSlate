@@ -1,4 +1,4 @@
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 
 /** Colored type swatch for pin / asset labels. Color comes from DataTypes tokens. */
 export function TypeColorMark({

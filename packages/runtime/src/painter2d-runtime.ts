@@ -1,6 +1,6 @@
 import { PAINTER_MAX_COMMANDS, PAINTER_MAX_MASK_DEPTH, PAINTER_MAX_PATH_SEGMENTS, PAINTER_MAX_TOTAL_SEGMENTS, painterPoint, parsePainter2DProperties,
-  type Painter2DProperties, type PainterCommand, type PainterPathSegment, type PainterPoint } from "@babylonslate/core";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+  type Painter2DProperties, type PainterCommand, type PainterPathSegment, type PainterPoint } from "@haptic/core";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import { componentOwners } from "./world-component-index";
 
 /** `revision` names the current command stream; `sentRevision` is the one the last flush sent to the renderer. */

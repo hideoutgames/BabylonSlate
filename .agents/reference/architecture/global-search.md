@@ -17,7 +17,7 @@ The asset registry is header-only and must never open payloads to scan a project
 
 | Layer | Reads | Answers |
 | --- | --- | --- |
-| `AssetRegistry` | `.babasset` headers | guid, type, name, path, parentClass, dependencies |
+| `AssetRegistry` | `.hasset` headers | guid, type, name, path, parentClass, dependencies |
 | `ProjectSearchIndex` | headers + Scene/Class `document` chunks | substring hits over assets, actors, components, graph nodes, classes, variables |
 
 ## Entry kinds and targets

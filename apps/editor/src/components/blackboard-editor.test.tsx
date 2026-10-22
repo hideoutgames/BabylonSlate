@@ -1,21 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import { createDefaultBlackboard } from "@babylonslate/behaviour-tree";
+import { createDefaultBlackboard } from "@haptic/behaviour-tree";
 import { BlackboardInspector, BlackboardKeys } from "./blackboard-editor";
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [],
-  assetRegistry: { list: () => [{ path: "assets/Item.datadefinition.babasset", header: {
+  assetRegistry: { list: () => [{ path: "assets/Item.datadefinition.hasset", header: {
     type: "DataDefinition", guid: "item", name: "Item", payload: { kind: "dataDefinition", fields: [
       { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
     ] },
-  } }, { path: "assets/Loadout.structure.babasset", header: {
+  } }, { path: "assets/Loadout.structure.hasset", header: {
     type: "Structure", guid: "struct-loadout", name: "Loadout", payload: { fields: [
       { name: "Cue", typeId: "asset", typeClassId: "Audio" },
       { name: "Count", typeId: "int" },
     ] },
-  } }, { path: "assets/Jump.audio.babasset", header: { type: "Audio", guid: "audio-1", name: "Jump", payload: {} } }] },
+  } }, { path: "assets/Jump.audio.hasset", header: { type: "Audio", guid: "audio-1", name: "Jump", payload: {} } }] },
 })));
 
 if (typeof window !== "undefined") {

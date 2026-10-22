@@ -57,7 +57,7 @@ import {
   type RenderTargetWrapper,
   type Scene,
 } from "@babylonjs/core";
-import { waterWaveSet, type WaterDefinition, type WaterWaveSet } from "@babylonslate/core";
+import { waterWaveSet, type WaterDefinition, type WaterWaveSet } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { createEngineDrawingState, restoreEngineDrawingState, saveEngineDrawingState } from "./engine-drawing-state";
 import {

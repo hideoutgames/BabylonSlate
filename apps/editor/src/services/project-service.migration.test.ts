@@ -4,15 +4,15 @@ import {
   PROJECT_FILE,
   SCENE_SCHEMA_VERSION,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createDefaultMigrationRegistry,
   decodeAssetDocument,
   encodeAssetDocument,
   readAssetDocumentHeader,
   type MigrationRegistry,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 
 const OLD_SCENE_VERSION = SCENE_SCHEMA_VERSION - 1;
@@ -42,7 +42,7 @@ async function projectWithScene(
   migrations?: MigrationRegistry,
 ) {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("Migrate.babproject");
+  await storage.openDocumentsProject("Migrate.hproject");
   const service = new ProjectService(storage, { migrations });
   const { document, layouts } = await service.loadCurrentProject();
 
@@ -168,7 +168,7 @@ describe("migrate-on-load and migrate-on-save approval", () => {
 
   it("gates project manifest saves on the same approval", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("ManifestMigrate.babproject");
+    await storage.openDocumentsProject("ManifestMigrate.hproject");
     const service = new ProjectService(storage, { migrations: registryWithSteps() });
     const { document, layouts } = await service.loadCurrentProject();
 

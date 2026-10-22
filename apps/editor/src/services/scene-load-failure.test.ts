@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import { createInProcessRuntime } from "@babylonslate/runtime";
-import { createSceneLoadReadiness, type SceneLoadProgress } from "@babylonslate/render";
+import { createActor, createDefaultScene } from "@haptic/core";
+import { createInProcessRuntime } from "@haptic/runtime";
+import { createSceneLoadReadiness, type SceneLoadProgress } from "@haptic/render";
 
 it("reports an invalid circle at the 20% realization phase and releases the stopped host", async () => {
   const scene = createDefaultScene("2d");

@@ -8,8 +8,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/alert-dialog";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { NumberField } from "./number-field";
 
 export interface NumberPromptDialogProps {

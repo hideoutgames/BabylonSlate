@@ -1,6 +1,6 @@
-import { Dialog } from "@babylonslate/ui/components/dialog";
-import { Button } from "@babylonslate/ui/components/button";
-import { SelectableText } from "@babylonslate/editor-kit";
+import { Dialog } from "@haptic/ui/components/dialog";
+import { Button } from "@haptic/ui/components/button";
+import { SelectableText } from "@haptic/editor-kit";
 import {
   ProgressDialogContent,
   ProgressDialogFailure,

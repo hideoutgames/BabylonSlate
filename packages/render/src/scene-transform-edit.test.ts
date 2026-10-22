@@ -5,7 +5,7 @@ import {
   createMeshComponent,
   type SerializedActor,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 
 const box = (id: string) => createActor(id, id, { components: [createMeshComponent(`${id}-mesh`, "box")] });

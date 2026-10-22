@@ -9,7 +9,7 @@ import {
   createPurchases,
   getHostPlatform,
   type EntitlementStatus,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import {
   unconfiguredBilling,
   type BillingButton,

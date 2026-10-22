@@ -1,8 +1,8 @@
-import type { SerializedScene } from "@babylonslate/core";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
-import { cn } from "@babylonslate/ui/lib/utils";
+import type { SerializedScene } from "@haptic/core";
+import { Separator } from "@haptic/ui/components/separator";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
+import { cn } from "@haptic/ui/lib/utils";
 import { MountainIcon, TreesIcon } from "lucide-react";
 import { useSceneTools } from "../context/scene-tools-context";
 import { FOLIAGE_TOOL_GROUPS, LANDSCAPE_TOOL_GROUPS, type FoliageTool, type LandscapeTool } from "../lib/scene-brush-tools";

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
-import { AssetOpenProvider } from "@babylonslate/editor-kit";
+import type { SerializedGraph } from "@haptic/core";
+import { AssetOpenProvider } from "@haptic/editor-kit";
 import { InspectorPanel } from "./inspector-panel";
 import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -28,17 +28,17 @@ const applyGraphChange = vi.hoisted(() =>
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
+    documentId: "graph:assets/Hero.class.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Hero.class.babasset",
+      id: "graph:assets/Hero.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
       content: {
@@ -206,14 +206,14 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         header: { guid: "item-definition", name: "Item", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
           { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
         ] } },
-        path: "assets/Item.datadefinition.babasset",
+        path: "assets/Item.datadefinition.hasset",
       },
       {
         header: { guid: "struct-loadout", name: "Loadout", type: "Structure", payload: { fields: [
           { name: "Cue", typeId: "asset", typeClassId: "Audio" },
           { name: "Count", typeId: "int" },
         ] } },
-        path: "assets/Loadout.structure.babasset",
+        path: "assets/Loadout.structure.hasset",
       },
       {
         header: {
@@ -222,7 +222,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Audio",
           parentClass: null,
         },
-        path: "assets/Jump.audio.babasset",
+        path: "assets/Jump.audio.hasset",
       },
       {
         header: {
@@ -231,7 +231,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Texture",
           parentClass: null,
         },
-        path: "assets/Atlas.texture.babasset",
+        path: "assets/Atlas.texture.hasset",
       },
     ],
   },

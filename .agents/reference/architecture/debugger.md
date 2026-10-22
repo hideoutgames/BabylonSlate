@@ -13,15 +13,15 @@ The command system is always present; only the debugger UI and debug-tier comman
 | Registry, parser, tiers, autocomplete, stats cadence, loop guard, `TraceRecorder`, performance/session diagnostics | [`packages/debugger/src/`](../../../packages/debugger/src/) |
 | `ConsoleCommandHost` implementation, tick/trace wiring | [`packages/runtime/src/`](../../../packages/runtime/src/) (`runtime-console.ts`, `driver.ts`) |
 | Inspect snapshot (`createDebugInspectSnapshot`) | [`packages/object-model/src/`](../../../packages/object-model/src/) |
-| Trace documents (`.babtrace` under `derived/{projectGuid}/traces/`, [containers.md](containers.md)) | [`packages/assets/src/trace.ts`](../../../packages/assets/src/trace.ts) |
+| Trace documents (`.htrace` under `derived/{projectGuid}/traces/`, [containers.md](containers.md)) | [`packages/assets/src/trace.ts`](../../../packages/assets/src/trace.ts) |
 | GL error trace (`installGlErrorTrace`) | [`packages/render/src/gl-error-trace.ts`](../../../packages/render/src/gl-error-trace.ts) |
 | Host memory (`getHostMemoryStats`) | [`packages/vfs/src/device-memory.ts`](../../../packages/vfs/src/device-memory.ts) |
 | Play overlay, console, Inspector, Stats HUD, probes, load reports | [`apps/editor/src/components/`](../../../apps/editor/src/components/), [`services/runtime-probes.ts`](../../../apps/editor/src/services/runtime-probes.ts), [`lib/scene-load-report.ts`](../../../apps/editor/src/lib/scene-load-report.ts) |
 
 ## Package boundary
 
-- `@babylonslate/debugger` imports nothing: no React, Babylon, Capacitor or scripting. New behavior goes through `ConsoleCommandHost` plus bridge commands; rendering, audio and camera stay in render / the Play overlay.
-- `@babylonslate/scripting` may import only `instrumentJsLoops` from it.
+- `@haptic/debugger` imports nothing: no React, Babylon, Capacitor or scripting. New behavior goes through `ConsoleCommandHost` plus bridge commands; rendering, audio and camera stay in render / the Play overlay.
+- `@haptic/scripting` may import only `instrumentJsLoops` from it.
 - `CommandRegistry.execute` never throws: parse/coercion failures, unknown names and stripped names return `{ success: false, output }`.
 
 ## Tiers
@@ -48,7 +48,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 - Worker emits `{ type: "stats" }` every `STATS_COMMAND_INTERVAL_MS` (200 ms), not per tick. `isTickOverBudget` sums script + physics against `TICK_BUDGET_MS` (8); `publishMs` is excluded.
 - Chrome must not React-update at 60 Hz. Stats HUD starts collapsed; while hidden, the overlay skips HUD-only reads (render diagnostics, memory, draw calls). Test-mode attributes are polled only when `isTestModeEnabled()`.
 - Draw calls come from Babylon `_drawCalls.current` after Play `scene.render()`, not `engine.drawCalls`.
-- Every runtime `log` command (Log nodes, driver and captured console logs; never `print` or the `diagnostic` an error log also raises) reaches the editor Output Log once through `onRuntimeLog` / `formatRuntimeLogLine` (`[Category] Warning: message`), in Play and Preview Build, besides the overlay console.
+- Every runtime `log` command (Log nodes, failed Assert nodes, driver and captured console logs; never `print` or the `diagnostic` an error log also raises) reaches the editor Output Log once through `onRuntimeLog` / `formatRuntimeLogLine` (`[Category] Warning: message`), in Play and Preview Build, besides the overlay console.
 - Output Log and live BT state live in an isolated diagnostics provider; log lines commit once per animation frame (250 ms timer while hidden). The console transcript caps at 500 rows.
 - Inspector is read-only (no `setVariable`); Use Camera / Destroy Actor send the debug commands with the selected GUID. Compose it from catalog components only.
 - Print HUD and Draw Debug are not debugger chrome: they apply even without `bundleDebugger`. Stats, console and inspect are debugger-bundled.
@@ -71,7 +71,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 - The Scene viewport registers a `SimulationViewport` ([`simulation-viewport.ts`](../../../apps/editor/src/services/simulation-viewport.ts)). Starting a Simulation calls `suspend()`: it abandons a blocking load in flight and closes its Scene Loading dialog (an abandoned load reports nothing more, so the dialog would stay modal over the game and hold background captures), then waits for the viewport's native release. Stop calls `restore()`, which reloads the authoring Scene behind a new Scene Loading dialog; a Simulation started while that load runs suspends it the same way.
 - Keep Simulation Changes (default off) applies one **Apply Simulation Changes** command from a complete capture or fails with Retry / Discard; never partial. Streamed Scenes, SceneLayers and generated resources cannot be kept.
 - Trace, performance recording and Frame Capture are refused in Simulation.
-- Session controls live in the global toolbar's Play island: Simulate becomes a red **Stop** (accessible name says keep or discard), with **Pause**, a **Game** / **Edit** input toggle (shows the current input; tooltip names the switch) and, when another document is active, **Return To Scene**. `PlayOverlay` owns pause and input mode and publishes them through `SimulationControlsProvider` (an external store, so a pause re-renders only its readers). Controls marked `data-simulation-control` act without first releasing game input. On a narrow toolbar (390 px phone) Return To Scene and the Debug Instance select collapse into the toolbar's More Actions menu before Pause, Stop or the input toggle, which are pinned ([`toolbar-overflow-priority.ts`](../../../apps/editor/src/lib/toolbar-overflow-priority.ts)). The viewport keeps only Stats / Console and, in Edit, the icon-only Move / Rotate / Scale island; authored documents show a one-line read-only strip.
+- Session controls live in the global toolbar's Play island: Simulate becomes a red **Stop** (accessible name says keep or discard), with **Pause**, **Step** while paused (a `step` session boundary request: one tick from a pause held only by `user`, refused while another hold or a blocking load is active, acknowledged after the tick's commands so the frozen view redraws it), a **Game** / **Edit** input toggle (shows the current input; tooltip names the switch) and, when another document is active, **Return To Scene**. `PlayOverlay` owns pause and input mode and publishes them through `SimulationControlsProvider` (an external store, so a pause re-renders only its readers). Controls marked `data-simulation-control` act without first releasing game input. On a narrow toolbar (390 px phone) Return To Scene, the Debug Instance select and Step collapse into the toolbar's More Actions menu before Pause, Stop or the input toggle, which are pinned ([`toolbar-overflow-priority.ts`](../../../apps/editor/src/lib/toolbar-overflow-priority.ts)). The viewport keeps only Stats / Console and, in Edit, the icon-only Move / Rotate / Scale island; authored documents show a one-line read-only strip.
 
 ## Simulation graph debugging
 

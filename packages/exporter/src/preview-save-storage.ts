@@ -5,9 +5,9 @@ import {
   type SaveGameStorage,
   type SaveStorageRequest,
   type SaveStorageResponse,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
-const CHANNEL = "babylonslate-preview-save-storage";
+const CHANNEL = "haptic-preview-save-storage";
 type PreviewSaveMessage = {
   type: typeof CHANNEL;
   session: string;

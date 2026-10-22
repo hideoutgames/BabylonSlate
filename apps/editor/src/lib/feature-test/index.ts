@@ -3,7 +3,7 @@ import {
   lookAtRotation,
   type ProjectSettings,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   actor,
   createFeatureTestContext,

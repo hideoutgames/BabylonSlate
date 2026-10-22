@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { InputResolver, InputRingBuffer } from "@babylonslate/input";
+import { InputResolver, InputRingBuffer } from "@haptic/input";
 import { attachInputCapture } from "./input-capture";
 import { attachInputCapture as attachPlayerInputCapture } from "../../../player/src/input";
 
@@ -130,7 +130,7 @@ describe.each([
     handles.push(handle);
     canvas.dispatchEvent(Object.assign(new Event("pointerdown", { cancelable: true }), { pointerId: 1, offsetX: 0, offsetY: 0, button: 0 }));
     expect(document.activeElement).toBe(input);
-    expect(handle.ring.drain()).toEqual([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 0, y: 0, button: 0 }]);
+    expect(handle.ring.drain()).toEqual([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 0, y: 0, button: 0, pointerType: "mouse" }]);
     input.dispatchEvent(key("keydown", "KeyA"));
     expect(handle.ring.drain()).toEqual([]);
   });
@@ -407,5 +407,56 @@ describe("exclusive game input ownership", () => {
       else Reflect.deleteProperty(document, "pointerLockElement");
       document.exitPointerLock = originalExit;
     }
+  });
+});
+
+describe("pointers engine UI owns", () => {
+  const handles: Array<{ dispose(): void }> = [];
+  afterEach(() => { for (const handle of handles.splice(0)) handle.dispose(); });
+
+  function fixture() {
+    const canvas = document.createElement("canvas");
+    canvas.setPointerCapture = () => {};
+    document.body.append(canvas);
+    // The engine's own listeners settle this before capture sees the event.
+    const owned = new Set<number>();
+    const handle = attachInputCapture(canvas, { ownsPointer: (pointerId) => owned.has(pointerId) });
+    handles.push(handle);
+    const pointer = (type: string, pointerId: number, extra: Record<string, unknown> = {}) => canvas.dispatchEvent(Object.assign(
+      new Event(type, { cancelable: true }), { pointerId, offsetX: 3, offsetY: 4, button: type === "pointermove" ? -1 : 0, buttons: 1, pointerType: "touch", pressure: 0.5, ...extra }));
+    return { owned, handle, pointer };
+  }
+
+  it("keeps a pointer owned at the press away from the game until it lifts, and reports other fingers with their type and pressure", () => {
+    const { owned, handle, pointer } = fixture();
+    owned.add(1);
+    pointer("pointerdown", 1);
+    // The joystick lets go during its own pointerup handling, before capture runs.
+    owned.delete(1);
+    pointer("pointermove", 1);
+    pointer("pointerup", 1);
+    pointer("pointerdown", 2, { pointerType: "pen", pressure: 0.4 });
+    expect(handle.ring.drain()).toEqual([
+      expect.objectContaining({ kind: "pointer", pointerId: 2, phase: "down", pointerType: "pen", pressure: 0.4 }),
+    ]);
+    pointer("pointerdown", 1);
+    expect(handle.ring.drain()).toEqual([expect.objectContaining({ pointerId: 1, phase: "down", pointerType: "touch" })]);
+  });
+
+  it("cancels a pointer for the game once engine UI takes it over, and ignores it until it lifts", () => {
+    const { owned, handle, pointer } = fixture();
+    const resolver = new InputResolver({ actions: [{ name: "Fire", bindings: [{ device: "mouseButton", code: "0" }] }], axes: [] });
+    pointer("pointerdown", 3);
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(true);
+    // A drag over a scroll view becomes a scroll once it passes the slop.
+    owned.add(3);
+    pointer("pointermove", 3, { offsetX: 3, offsetY: 40 });
+    const taken = resolver.resolve(handle.ring.drain());
+    expect(taken.actions.Fire).toMatchObject({ held: false, released: true });
+    expect(taken.touchEvents).toEqual([expect.objectContaining({ Phase: "Cancelled" })]);
+    owned.delete(3);
+    pointer("pointermove", 3, { offsetX: 3, offsetY: 60 });
+    pointer("pointerup", 3);
+    expect(handle.ring.drain()).toEqual([]);
   });
 });

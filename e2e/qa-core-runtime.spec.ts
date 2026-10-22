@@ -16,7 +16,7 @@ for (const mode of ["Preview Build"] as const) {
     await openTestProject(page);
     const confirmAsset = await guidForPath(
       page,
-      "assets/Input/Confirm.inputaction.babasset",
+      "assets/Input/Confirm.inputaction.hasset",
     );
     const spawnGraph: SerializedGraph = {
       components: [
@@ -103,13 +103,13 @@ for (const mode of ["Preview Build"] as const) {
         (next) =>
           (
             globalThis as unknown as {
-              __babylonslateTest: {
+              __hapticTest: {
                 setMainGraphContent: (
                   graph: SerializedGraph,
                 ) => Promise<boolean>;
               };
             }
-          ).__babylonslateTest.setMainGraphContent(next),
+          ).__hapticTest.setMainGraphContent(next),
         spawnGraph,
       ),
     ).toBe(true);
@@ -132,10 +132,10 @@ for (const mode of ["Preview Build"] as const) {
               visuals: () => Array<{ worldMatrixPosition: number[] }>;
             };
             const scope = globalThis as unknown as {
-              __babylonslatePlayerTest?: Visuals;
+              __hapticPlayerTest?: Visuals;
             };
             return (
-              scope.__babylonslatePlayerTest
+              scope.__hapticPlayerTest
                 ?.visuals()
                 .map((visual) => visual.worldMatrixPosition) ?? []
             );

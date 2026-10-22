@@ -29,7 +29,7 @@ import {
   type ActorSlot,
   type CommandMessage,
   type MaterialParameterValue,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   DEFAULT_SORTING_LAYERS,
   emptySkyboxFaces,
@@ -43,8 +43,8 @@ import {
   type Text2DProperties,
   type Text3DProperties,
   type Transform,
-} from "@babylonslate/core";
-import { parseColliderProperties, type ColliderShape } from "@babylonslate/physics";
+} from "@haptic/core";
+import { parseColliderProperties, type ColliderShape } from "@haptic/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import {
   applyAlbedoTexture,
@@ -152,9 +152,9 @@ const actorIllumination = new WeakMap<Mesh, ComponentIllumination[]>();
 export interface SnapshotSceneBinding extends MeshAssetContext {
   ragdoll?: import("./ragdoll-pose").RagdollPoseController;
   /** Runtime component records outlive asynchronous mesh realization. */
-  outlines: Map<number, { actorId: string; bindings: import("@babylonslate/core").OutlineBinding[] }>;
-  deformers: Map<number, { actorId: string; revision: number; bindings: import("@babylonslate/core").DeformerBinding[] }>;
-  fogVolumes: Map<number, { actorId: string; bindings: import("@babylonslate/core").FogVolumeBinding[] }>;
+  outlines: Map<number, { actorId: string; bindings: import("@haptic/core").OutlineBinding[] }>;
+  deformers: Map<number, { actorId: string; revision: number; bindings: import("@haptic/core").DeformerBinding[] }>;
+  fogVolumes: Map<number, { actorId: string; bindings: import("@haptic/core").FogVolumeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
   meshes: Map<number, Mesh>;
@@ -1280,7 +1280,7 @@ export function migratePlaySlotVisual(
   rebuilt.scaling.copyFrom(scaling);
   if (metadata && typeof metadata === "object") {
     const identity = { ...metadata };
-    for (const key of ["visualBundle", "babylonslateModelInstance", "babylonslateModelLoadKey", "disposeModelOnDespawn"]) delete identity[key];
+    for (const key of ["visualBundle", "hapticModelInstance", "hapticModelLoadKey", "disposeModelOnDespawn"]) delete identity[key];
     rebuilt.metadata = { ...identity, ...(rebuilt.metadata ?? {}) };
   }
   binding.meshes.set(slotId, rebuilt);
@@ -1854,13 +1854,13 @@ export function createPlayMesh(
   deferredModels?: DeferredModelLoad[],
   retainedBitmapBytes?: number,
   targets?: PlayVisualTargets,
-  landscape?: import("@babylonslate/core").LandscapeProperties,
-  foliage?: import("@babylonslate/core").FoliageProperties,
-  water?: import("@babylonslate/core").WaterBodyProperties,
-  waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
-  cable?: import("@babylonslate/core").CableProperties & { simulationId?: number },
-  dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate },
-  painter?: import("@babylonslate/core").Painter2DProperties,
+  landscape?: import("@haptic/core").LandscapeProperties,
+  foliage?: import("@haptic/core").FoliageProperties,
+  water?: import("@haptic/core").WaterBodyProperties,
+  waterRemoval?: import("@haptic/core").WaterRemovalProperties,
+  cable?: import("@haptic/core").CableProperties & { simulationId?: number },
+  dynamicMesh?: { meshId: number; update: import("@haptic/core").DynamicMeshUpdate },
+  painter?: import("@haptic/core").Painter2DProperties,
   illuminationPart?: AssignMeshPart,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;

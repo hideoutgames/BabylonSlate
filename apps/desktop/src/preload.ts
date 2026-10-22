@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-contextBridge.exposeInMainWorld("babylonslate", {
+contextBridge.exposeInMainWorld("haptic", {
   userData: {
     readSettings: () => ipcRenderer.invoke("settings:read"),
     writeSettings: (json: string) => ipcRenderer.invoke("settings:write", json),

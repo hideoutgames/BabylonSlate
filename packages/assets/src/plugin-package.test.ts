@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
-import { encodeBabasset, readBabassetHeader } from "./babasset";
-import { decodeProjectZip, encodeProjectZip, readProjectTree } from "./babproject";
+import { encodeHasset, readHassetHeader } from "./hasset";
+import { decodeProjectZip, encodeProjectZip, readProjectTree } from "./hproject";
 import { bytesEqual } from "./bytes";
 import {
   createDefaultPluginSettings,
@@ -15,7 +15,7 @@ import {
 import {
   applyPluginImport,
   exportPluginZip,
-  inspectBabplugin,
+  inspectHplugin,
   planPluginImport,
   pluginFolderSlug,
   uniquePluginFolderName,
@@ -59,7 +59,7 @@ async function vitePackedStarterContent(): Promise<Uint8Array> {
 
 async function projectStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("plugins.babproject");
+  await storage.openDocumentsProject("plugins.hproject");
   return storage;
 }
 
@@ -72,7 +72,7 @@ async function writeClass(
   await storage.mkdir(dir, true);
   await storage.writeBinary(
     path,
-    await encodeBabasset({
+    await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: options.guid,
@@ -105,7 +105,7 @@ describe("exportPluginZip", () => {
       displayName: "Pack",
     });
     const descriptor = await writeProjectPlugin(storage, "pack", settings);
-    await writeClass(storage, "plugins/pack/assets/Hero.class.babasset", {
+    await writeClass(storage, "plugins/pack/assets/Hero.class.hasset", {
       guid: "hero-1",
       name: "Hero",
     });
@@ -119,8 +119,8 @@ describe("exportPluginZip", () => {
     const files = decodeProjectZip(zip);
     const paths = files.map((file) => file.path).sort();
     expect(paths).toContain("plugin.json");
-    expect(paths).toContain("pack.plugin.babasset");
-    expect(paths).toContain("assets/Hero.class.babasset");
+    expect(paths).toContain("pack.plugin.hasset");
+    expect(paths).toContain("assets/Hero.class.hasset");
     expect(paths).toContain("assets/.blobs/deadbeef");
     expect(paths.some((path) => path.startsWith("plugins/"))).toBe(false);
 
@@ -131,7 +131,7 @@ describe("exportPluginZip", () => {
     expect(manifest.guid).toBe("pack-guid");
     expect(manifest.name).toBe("Pack");
 
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     expect(inspected.settings.pluginGuid).toBe("pack-guid");
     expect(inspected.settings.displayName).toBe("Pack");
   });
@@ -152,7 +152,7 @@ describe("exportPluginZip", () => {
     const fromZip = decodeProjectZip(zip);
     expect(bytesEqual(zip, encodeProjectZip(fromZip))).toBe(true);
 
-    const relative = "__fixtures__/pack.babplugin.zip";
+    const relative = "__fixtures__/pack.hplugin.zip";
     if (UPDATE) {
       writeGoldenBinary(FIXTURE_DIR, relative, zip);
     }
@@ -170,10 +170,10 @@ describe("importPluginZip", () => {
     await storage.writeText("plugins/pack/assets/original.txt", "keep original");
     await storage.mkdir("plugins/pack/assets/empty", true);
     const files = [
-      { path: "pack.plugin.babasset", data: await encodePluginSettingsDocument({ ...settings, version: "2" }) },
+      { path: "pack.plugin.hasset", data: await encodePluginSettingsDocument({ ...settings, version: "2" }) },
       { path: "assets/new.txt", data: new TextEncoder().encode("new content") },
     ];
-    const incoming = await inspectBabplugin(encodeProjectZip(files));
+    const incoming = await inspectHplugin(encodeProjectZip(files));
     const plan = { kind: "update" as const, folderName: "pack", existingGuid: "pack-guid" };
     return { storage, incoming, plan };
   }
@@ -229,7 +229,7 @@ describe("importPluginZip", () => {
       { path: "wrapped/assets/", data: new Uint8Array() },
       ...incoming.files.map((file) => ({ ...file, path: `wrapped/${file.path}` })),
     ]);
-    const imported = await applyPluginImport(storage, await inspectBabplugin(archive), plan);
+    const imported = await applyPluginImport(storage, await inspectHplugin(archive), plan);
     expect(imported.settings.version).toBe("2");
     expect(await storage.readText("plugins/pack/assets/new.txt")).toBe("new content");
     expect(await storage.exists("plugins/pack/assets/original.txt")).toBe(false);
@@ -237,7 +237,7 @@ describe("importPluginZip", () => {
 
   it.each(["../outside.txt", "assets/../outside.txt", "/absolute.txt", "assets\\outside.txt", "assets/file.txt.", "assets/file.txt ", "assets/CON.txt"])("rejects unsafe or ambiguous archive entry %s", async (path) => {
     const { incoming } = await replacementFixture();
-    await expect(inspectBabplugin(encodeProjectZip([...incoming.files, { path, data: new Uint8Array([1]) }]))).rejects.toThrow("Invalid plugin path");
+    await expect(inspectHplugin(encodeProjectZip([...incoming.files, { path, data: new Uint8Array([1]) }]))).rejects.toThrow("Invalid plugin path");
   });
 
   it.each([
@@ -247,7 +247,7 @@ describe("importPluginZip", () => {
     const { incoming } = await replacementFixture();
     const files = incoming.files.filter((file) => !file.path.startsWith("assets/"));
     files.push({ path: first, data: new Uint8Array([1]) }, { path: second, data: new Uint8Array([2]) });
-    await expect(inspectBabplugin(encodeProjectZip(files))).rejects.toThrow("Conflicting plugin path");
+    await expect(inspectHplugin(encodeProjectZip(files))).rejects.toThrow("Conflicting plugin path");
   });
 
   it("unpacks under plugins/<safeName>/ and keeps asset guids", async () => {
@@ -259,14 +259,14 @@ describe("importPluginZip", () => {
     settings.version = "2.7";
     settings.engineVersion = "older-engine";
     const descriptor = await writeProjectPlugin(source, "my-pack", settings);
-    await writeClass(source, "plugins/my-pack/assets/Hero.class.babasset", {
+    await writeClass(source, "plugins/my-pack/assets/Hero.class.hasset", {
       guid: "hero-1",
       name: "Hero",
     });
     const zip = await exportPluginZip(source, descriptor);
 
     const dest = await projectStorage();
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: [],
@@ -279,16 +279,16 @@ describe("importPluginZip", () => {
     expect(imported.settings.version).toBe("2.7");
     expect(imported.settings.engineVersion).toBe("older-engine");
     expect(imported.folderPath).toBe("plugins/my-pack");
-    expect(await dest.exists("plugins/my-pack/my-pack.plugin.babasset")).toBe(
+    expect(await dest.exists("plugins/my-pack/my-pack.plugin.hasset")).toBe(
       true,
     );
-    expect(await dest.exists("plugins/my-pack/assets/Hero.class.babasset")).toBe(
+    expect(await dest.exists("plugins/my-pack/assets/Hero.class.hasset")).toBe(
       true,
     );
     expect(await dest.exists("plugins/my-pack/plugin.json")).toBe(false);
     expect(
-      readBabassetHeader(
-        await dest.readBinary("plugins/my-pack/assets/Hero.class.babasset"),
+      readHassetHeader(
+        await dest.readBinary("plugins/my-pack/assets/Hero.class.hasset"),
       ).guid,
     ).toBe("hero-1");
   });
@@ -302,7 +302,7 @@ describe("importPluginZip", () => {
     settings.version = "1.2.0";
     const descriptor = await writeProjectPlugin(storage, "pack", settings);
     const zip = await exportPluginZip(storage, descriptor);
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     const existing = await discoverProjectPlugins(storage);
     const plan = planPluginImport({
       incoming: inspected,
@@ -326,7 +326,7 @@ describe("importPluginZip", () => {
     });
     settings.version = "1.0.0";
     await writeProjectPlugin(storage, "pack", settings);
-    await writeClass(storage, "plugins/pack/assets/Hero.class.babasset", {
+    await writeClass(storage, "plugins/pack/assets/Hero.class.hasset", {
       guid: "hero-1",
       name: "Hero",
     });
@@ -344,11 +344,11 @@ describe("importPluginZip", () => {
     );
     await writeClass(
       incomingStorage,
-      "plugins/pack/assets/Hero.class.babasset",
+      "plugins/pack/assets/Hero.class.hasset",
       { guid: "hero-1", name: "Hero" },
     );
     const zip = await exportPluginZip(incomingStorage, incomingDescriptor);
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: await discoverProjectPlugins(storage),
@@ -361,15 +361,15 @@ describe("importPluginZip", () => {
     expect(imported.settings.version).toBe("1.1.0");
     expect(imported.folderPath).toBe("plugins/pack");
     expect(
-      readBabassetHeader(
-        await storage.readBinary("plugins/pack/assets/Hero.class.babasset"),
+      readHassetHeader(
+        await storage.readBinary("plugins/pack/assets/Hero.class.hasset"),
       ).guid,
     ).toBe("hero-1");
   });
 
   it("remaps PluginSettings guid when it collides with a different plugin", async () => {
     const storage = await projectStorage();
-    await writeClass(storage, "assets/Taken.class.babasset", {
+    await writeClass(storage, "assets/Taken.class.hasset", {
       guid: "shared-guid",
       name: "Taken",
     });
@@ -386,11 +386,11 @@ describe("importPluginZip", () => {
     );
     await writeClass(
       incomingStorage,
-      "plugins/other-pack/assets/Other.class.babasset",
+      "plugins/other-pack/assets/Other.class.hasset",
       { guid: "other-class", name: "Other" },
     );
     const zip = await exportPluginZip(incomingStorage, incomingDescriptor);
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: await discoverProjectPlugins(storage),
@@ -406,12 +406,12 @@ describe("importPluginZip", () => {
     expect(imported.pluginGuid).toBe("remapped-guid");
     expect(imported.folderName).toBe("other-pack");
     expect(
-      readBabassetHeader(await storage.readBinary(imported.settingsPath)).guid,
+      readHassetHeader(await storage.readBinary(imported.settingsPath)).guid,
     ).toBe("remapped-guid");
     expect(
-      readBabassetHeader(
+      readHassetHeader(
         await storage.readBinary(
-          "plugins/other-pack/assets/Other.class.babasset",
+          "plugins/other-pack/assets/Other.class.hasset",
         ),
       ).guid,
     ).toBe("other-class");
@@ -419,7 +419,7 @@ describe("importPluginZip", () => {
 
   it("gives a new plugin's assets that the project already has new guids, and keeps the guids of placeholders it fills", async () => {
     const storage = await projectStorage();
-    await writeClass(storage, "assets/Taken.class.babasset", { guid: "tex-1", name: "Taken" });
+    await writeClass(storage, "assets/Taken.class.hasset", { guid: "tex-1", name: "Taken" });
 
     const incomingStorage = await projectStorage();
     const descriptor = await writeProjectPlugin(
@@ -427,7 +427,7 @@ describe("importPluginZip", () => {
       "pack",
       createDefaultPluginSettings({ pluginGuid: "pack-guid", displayName: "Pack" }),
     );
-    await incomingStorage.writeBinary("plugins/pack/assets/Hero.babasset", await encodeBabasset({
+    await incomingStorage.writeBinary("plugins/pack/assets/Hero.hasset", await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-1", type: "Texture", name: "Hero", engineVersion: "0.0.0", version: 1, mode: "thin",
@@ -435,10 +435,10 @@ describe("importPluginZip", () => {
       },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
-    await incomingStorage.writeBinary("plugins/pack/assets/Hero.sprite.babasset", await encodeAssetDocument({
+    await incomingStorage.writeBinary("plugins/pack/assets/Hero.sprite.hasset", await encodeAssetDocument({
       type: "Sprite", name: "Hero", guid: "sprite-1", version: 1, payload: { textureGuid: "tex-1" },
     }, { dependencies: ["tex-1"] }));
-    const inspected = await inspectBabplugin(await exportPluginZip(incomingStorage, descriptor));
+    const inspected = await inspectHplugin(await exportPluginZip(incomingStorage, descriptor));
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: [],
@@ -455,11 +455,11 @@ describe("importPluginZip", () => {
 
     const imported = await applyPluginImport(storage, inspected, plan);
     expect(imported.pluginGuid).toBe("pack-guid");
-    expect(readBabassetHeader(await storage.readBinary("plugins/pack/assets/Hero.babasset")).guid).toBe("tex-2");
-    const sprite = await storage.readBinary("plugins/pack/assets/Hero.sprite.babasset");
-    expect(readBabassetHeader(sprite)).toMatchObject({ guid: "sprite-1", dependencies: ["tex-2"], payload: { atlasTextures: ["tex-2"] } });
+    expect(readHassetHeader(await storage.readBinary("plugins/pack/assets/Hero.hasset")).guid).toBe("tex-2");
+    const sprite = await storage.readBinary("plugins/pack/assets/Hero.sprite.hasset");
+    expect(readHassetHeader(sprite)).toMatchObject({ guid: "sprite-1", dependencies: ["tex-2"], payload: { atlasTextures: ["tex-2"] } });
     expect((await decodeAssetDocument(sprite)).payload).toEqual({ textureGuid: "tex-2" });
-    expect(readBabassetHeader(await storage.readBinary("assets/Taken.class.babasset")).guid).toBe("tex-1");
+    expect(readHassetHeader(await storage.readBinary("assets/Taken.class.hasset")).guid).toBe("tex-1");
   });
 });
 
@@ -471,7 +471,7 @@ describe("replace conflict", () => {
       displayName: "Pack",
     });
     await writeProjectPlugin(storage, "pack", settings);
-    await writeClass(storage, "plugins/pack/assets/Old.class.babasset", {
+    await writeClass(storage, "plugins/pack/assets/Old.class.hasset", {
       guid: "old-class",
       name: "Old",
     });
@@ -488,11 +488,11 @@ describe("replace conflict", () => {
     );
     await writeClass(
       incomingStorage,
-      "plugins/pack/assets/New.class.babasset",
+      "plugins/pack/assets/New.class.hasset",
       { guid: "new-class", name: "New" },
     );
     const zip = await exportPluginZip(incomingStorage, incomingDescriptor);
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     const imported = await applyPluginImport(storage, inspected, {
       kind: "conflict",
       existingGuid: "pack-guid",
@@ -501,17 +501,17 @@ describe("replace conflict", () => {
       replace: true,
     });
     expect(imported.pluginGuid).toBe("pack-guid");
-    expect(await storage.exists("plugins/pack/assets/New.class.babasset")).toBe(
+    expect(await storage.exists("plugins/pack/assets/New.class.hasset")).toBe(
       true,
     );
-    expect(await storage.exists("plugins/pack/assets/Old.class.babasset")).toBe(
+    expect(await storage.exists("plugins/pack/assets/Old.class.hasset")).toBe(
       false,
     );
   });
 });
 
 describe("engine plugin pack and unpack", () => {
-  it("unpacks a .babplugin at the engine storage root, not under plugins/", async () => {
+  it("unpacks a .hplugin at the engine storage root, not under plugins/", async () => {
     const storage = new MemoryStorageAdapter("opfs");
     await storage.openDocumentsProject("engine-plugins");
     const descriptor = await unpackEnginePluginZip(
@@ -524,14 +524,14 @@ describe("engine plugin pack and unpack", () => {
     expect(descriptor.readOnly).toBe(true);
     expect(
       await storage.exists(
-        "starter-content/assets/StarterActor.class.babasset",
+        "starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(true);
     expect(await storage.exists("plugins/starter-content")).toBe(false);
     expect(
-      readBabassetHeader(
+      readHassetHeader(
         await storage.readBinary(
-          "starter-content/assets/StarterActor.class.babasset",
+          "starter-content/assets/StarterActor.class.hasset",
         ),
       ).guid,
     ).toBe(STARTER_ACTOR_GUID);
@@ -543,7 +543,7 @@ describe("engine plugin pack and unpack", () => {
 
   it("inspects a fflate zip packed the same way as the Vite plugin", async () => {
     const zip = await vitePackedStarterContent();
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
     const storage = new MemoryStorageAdapter("opfs");
     await storage.openDocumentsProject("engine-plugins");
@@ -580,13 +580,13 @@ describe("installEnginePluginDefaults", () => {
     expect(installed[0]!.folderPath).toBe("plugins/starter-content");
     expect(
       await project.exists(
-        "plugins/starter-content/assets/StarterActor.class.babasset",
+        "plugins/starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(true);
     expect(
-      readBabassetHeader(
+      readHassetHeader(
         await project.readBinary(
-          "plugins/starter-content/assets/StarterActor.class.babasset",
+          "plugins/starter-content/assets/StarterActor.class.hasset",
         ),
       ).guid,
     ).toBe(STARTER_ACTOR_GUID);
@@ -607,7 +607,7 @@ describe("installEnginePluginDefaults", () => {
     expect(discovered[0]!.settings.displayName).toBe("Mine");
     expect(
       await project.exists(
-        "plugins/starter-content/assets/StarterActor.class.babasset",
+        "plugins/starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(false);
   });
@@ -631,7 +631,7 @@ describe("installEnginePluginDefaults", () => {
     settings.enabledByDefault = true;
     await engine.mkdir("on-by-default/assets", true);
     await engine.writeBinary(
-      "on-by-default/on-by-default.plugin.babasset",
+      "on-by-default/on-by-default.plugin.hasset",
       await encodePluginSettingsDocument(settings),
     );
     const project = await projectStorage();
@@ -640,7 +640,7 @@ describe("installEnginePluginDefaults", () => {
     expect(installed[0]!.settings.enabledByDefault).toBe(true);
     const copied = await decodeAssetDocument(
       await project.readBinary(
-        "plugins/on-by-default/on-by-default.plugin.babasset",
+        "plugins/on-by-default/on-by-default.plugin.hasset",
       ),
     );
     expect(copied.payload.enabledByDefault).toBe(true);

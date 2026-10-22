@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDataDefinitionAsset, createDataTreeAsset, createDataTreeEntry, type DataTreeEntry, type DataFieldSnapshot } from "@babylonslate/core";
+import { createDataDefinitionAsset, createDataTreeAsset, createDataTreeEntry, type DataTreeEntry, type DataFieldSnapshot } from "@haptic/core";
 import {
   createDataEntryForDefinition,
   reconcileDataEntry,

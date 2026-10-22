@@ -1,4 +1,4 @@
-import { isInfiniteLoopError } from "@babylonslate/debugger";
+import { isInfiniteLoopError } from "@haptic/debugger";
 import {
   Actor,
   ActorComponent,
@@ -11,7 +11,7 @@ import {
   SceneSubsystem,
   type BObject,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type { SceneLayers } from "./scene-layers";
 import type { SceneStreams } from "./scene-streams";
 import type { SimulationBlocks } from "./simulation-blocks";

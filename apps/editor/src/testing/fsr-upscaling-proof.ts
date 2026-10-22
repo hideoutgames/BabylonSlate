@@ -1,9 +1,9 @@
 import {
   Color3, Color4, Engine, FreeCamera, MeshBuilder, PBRMaterial, Scene, Vector3,
 } from "@babylonjs/core";
-import { normalizeRenderEffectsSettings } from "@babylonslate/core";
-import { createAppWebGpuEngine, setSceneRenderSettings } from "@babylonslate/render";
-import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import { normalizeRenderEffectsSettings } from "@haptic/core";
+import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 
 const WIDTH = 128;
 const HEIGHT = 64;

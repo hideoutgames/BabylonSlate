@@ -17,7 +17,7 @@ import {
   type SpringArmPose,
   type SpringArmProperties,
   type Transform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
 
 /** Play part mesh kind the runtime emits for a `SpringArmComponent`. */

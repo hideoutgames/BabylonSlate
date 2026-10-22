@@ -44,12 +44,12 @@ test.describe("3D Empty Kenney Mannequin", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.hasset");
     await expect(page.getByTestId("model-preview-canvas")).toBeVisible();
     await openContentBrowser(page);
     for (const path of [
-      "assets/Mannequin/mannequin.babasset",
-      "assets/Mannequin/mannequin_idle.babasset",
+      "assets/Mannequin/mannequin.hasset",
+      "assets/Mannequin/mannequin_idle.hasset",
     ]) {
       const tile = page.locator(`[data-asset-path="${path}"]`);
       await tile.click();
@@ -77,7 +77,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
 
     await openAssetFromBrowser(
       page,
-      "assets/Mannequin/mannequin_Skeleton.babasset",
+      "assets/Mannequin/mannequin_Skeleton.hasset",
     );
     await expect(page.getByTestId("document-workspace-skeleton")).toBeVisible();
     await expect(page.getByTestId("skeleton-preview")).toBeVisible();
@@ -101,7 +101,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
 
     await openAssetFromBrowser(
       page,
-      "assets/Mannequin/mannequin_idle.babasset",
+      "assets/Mannequin/mannequin_idle.hasset",
     );
     await expect(
       page.getByTestId("document-workspace-animation"),

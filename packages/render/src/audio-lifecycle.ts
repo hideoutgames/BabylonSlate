@@ -35,9 +35,9 @@ export function attachAudioLifecycle(
     recover();
   };
   const onRouteChange = () => { if (!paused()) backend.resumeContext(); };
-  target?.addEventListener("babylonslate:audiointerruption", onInterruption);
-  target?.addEventListener("babylonslate:audioroutechange", onRouteChange);
-  target?.addEventListener("babylonslate:appstate", onAppState);
+  target?.addEventListener("haptic:audiointerruption", onInterruption);
+  target?.addEventListener("haptic:audioroutechange", onRouteChange);
+  target?.addEventListener("haptic:appstate", onAppState);
   visibility?.addEventListener("visibilitychange", recover);
   apply();
 
@@ -51,9 +51,9 @@ export function attachAudioLifecycle(
       apply();
     },
     dispose() {
-      target?.removeEventListener("babylonslate:audiointerruption", onInterruption);
-      target?.removeEventListener("babylonslate:audioroutechange", onRouteChange);
-      target?.removeEventListener("babylonslate:appstate", onAppState);
+      target?.removeEventListener("haptic:audiointerruption", onInterruption);
+      target?.removeEventListener("haptic:audioroutechange", onRouteChange);
+      target?.removeEventListener("haptic:appstate", onAppState);
       visibility?.removeEventListener("visibilitychange", recover);
     },
   };

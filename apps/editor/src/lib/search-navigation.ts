@@ -1,15 +1,15 @@
-import type { SearchEntry, SearchEntryKind, SearchOpenTarget } from "@babylonslate/assets";
+import type { SearchEntry, SearchEntryKind, SearchOpenTarget } from "@haptic/assets";
 import {
   documentKindForAssetType,
   type AssetDocumentKind,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   engineParentOf,
   resolveActorTypeVisual,
   resolveTypeVisual,
   walkAncestry,
   type TypeVisual,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 
 export const SEARCH_RESULT_GROUPS: Array<{ kind: SearchEntryKind; label: string }> = [
   { kind: "asset", label: "Assets" },

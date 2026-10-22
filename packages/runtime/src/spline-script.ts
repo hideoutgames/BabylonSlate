@@ -6,8 +6,8 @@ import {
   SPLINE_DISTANCE_SUBDIVISIONS,
   type SplineArcPath,
   type SplinePoint,
-} from "@babylonslate/core";
-import { World, type ActorComponent } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { World, type ActorComponent } from "@haptic/object-model";
 import { rotateVector } from "./actor-world-transform";
 import { runtimeEditWorldTransform } from "./runtime-transform-edit";
 

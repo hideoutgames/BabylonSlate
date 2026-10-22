@@ -3,7 +3,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Scene } from "@babylonjs/core/scene";
-import { CableSimulation, cablePropertiesEqual, parseCableProperties, writeCableRestShape, type CableProperties } from "@babylonslate/core";
+import { CableSimulation, cablePropertiesEqual, parseCableProperties, writeCableRestShape, type CableProperties } from "@haptic/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 
 const HISTORY_SIZE = 16;

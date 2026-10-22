@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { parseRagdollProperties, type RagdollBonePose } from "@babylonslate/core";
+import { parseRagdollProperties, type RagdollBonePose } from "@haptic/core";
 import { HavokPhysicsBackend } from "./havok-backend";
 import { RagdollPhysics } from "./ragdoll";
 

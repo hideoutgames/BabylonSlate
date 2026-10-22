@@ -1,6 +1,6 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 
-/** Pin metadata embedded in node data by @babylonslate/scripting serialize. */
+/** Pin metadata embedded in node data by @haptic/scripting serialize. */
 export type SerializedPin = {
   /** Optional compact display hint supplied by a typed graph host. */
   typeLabel?: string;

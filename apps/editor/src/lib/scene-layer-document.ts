@@ -3,7 +3,7 @@ import {
   normalizeSceneLayer,
   sceneLayerToEditorScene,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Open tab payload. SceneLayer tabs host a locked 2D SerializedScene. */
 export function editorTabContentForKind(

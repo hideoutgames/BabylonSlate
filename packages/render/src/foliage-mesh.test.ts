@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createActor, createDefaultScene, identitySerializedTransform } from "@babylonslate/core";
-import { installAssetBytes, normalizeModelPayload } from "@babylonslate/assets";
+import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
+import { installAssetBytes, normalizeModelPayload } from "@haptic/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createTestEngine } from "./create-null-engine";
 import { encodeTriangleGlb } from "./glb-test-fixtures";

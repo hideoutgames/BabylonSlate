@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, rename, stat, symlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isStorageNotFound } from "@babylonslate/core";
+import { isStorageNotFound } from "@haptic/core";
 import { NodeStorageAdapter } from "./node-adapter";
 
 // Root ignores permission bits, so permission failures are injected at the fs boundary.
@@ -19,36 +19,36 @@ describe("node storage adapter", () => {
   });
 
   it("round-trips binary files on disk", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
-    await storage.openDocumentsProject("Game.babproject");
+    await storage.openDocumentsProject("Game.hproject");
     const bytes = new Uint8Array([9, 8, 7]);
     await storage.writeBinary("assets/.blobs/abc", bytes);
     expect(await storage.readBinary("assets/.blobs/abc")).toEqual(bytes);
-    expect((await storage.listProjects())[0]?.name).toBe("Game.babproject");
+    expect((await storage.listProjects())[0]?.name).toBe("Game.hproject");
   });
 
   it("reads only the requested bytes and rejects a replaced source revision", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-range-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-range-"));
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game");
     const bytes = new Uint8Array(1024 * 1024);
     bytes.set([4, 5, 6], 32);
-    await storage.writeBinary("large.babasset", bytes);
-    const prefix = await storage.readBinaryRange("large.babasset", 32, 3);
+    await storage.writeBinary("large.hasset", bytes);
+    const prefix = await storage.readBinaryRange("large.hasset", 32, 3);
     expect(prefix.bytes).toEqual(new Uint8Array([4, 5, 6]));
     expect(prefix.totalSize).toBe(1024 * 1024);
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 3, fullReads: 0 });
     await writeFile(join(dir, "Game", "replacement"), bytes);
-    await rename(join(dir, "Game", "replacement"), join(dir, "Game", "large.babasset"));
-    await expect(storage.readBinaryRange("large.babasset", 32, 3, prefix.revision)).rejects.toThrow(/revision/i);
-    await expect(storage.readBinaryRange("large.babasset", bytes.length, 1)).rejects.toThrow(/range/i);
-    await expect(storage.readBinaryRange("large.babasset", -1, 1)).rejects.toThrow(/range/i);
+    await rename(join(dir, "Game", "replacement"), join(dir, "Game", "large.hasset"));
+    await expect(storage.readBinaryRange("large.hasset", 32, 3, prefix.revision)).rejects.toThrow(/revision/i);
+    await expect(storage.readBinaryRange("large.hasset", bytes.length, 1)).rejects.toThrow(/range/i);
+    await expect(storage.readBinaryRange("large.hasset", -1, 1)).rejects.toThrow(/range/i);
     expect(storage.getReadMetrics().actualBytesRead).toBe(3);
   });
 
   it("reports only a missing path as absent and keeps permission and confinement failures", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game");
     await storage.writeText("project.json", "{}");
@@ -72,9 +72,9 @@ describe("node storage adapter", () => {
   });
 
   it("opens an absolute folder outside the documents base", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
-    const external = await mkdtemp(join(tmpdir(), "babylonslate-ext-"));
+    const external = await mkdtemp(join(tmpdir(), "haptic-ext-"));
     const handle = await storage.openAbsoluteFolder(external, "Picked");
     expect(handle.tier).toBe("external");
     await storage.writeText("project.json", "{}");
@@ -83,7 +83,7 @@ describe("node storage adapter", () => {
   });
 
   it("keeps the previous file when a staged write cannot replace it", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game");
     await storage.writeText("project.json", "saved");
@@ -94,13 +94,13 @@ describe("node storage adapter", () => {
   });
 
   it("refuses symbolic links that leave the project and lists links inside it", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const outside = join(dir, "outside");
     await mkdir(outside);
     await writeFile(join(outside, "secret.txt"), "secret");
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game");
-    await storage.writeText("assets/hero.babasset", "hero");
+    await storage.writeText("assets/hero.hasset", "hero");
     const project = join(dir, "Game");
     await symlink(outside, join(project, "out"));
     await symlink(join(outside, "secret.txt"), join(project, "secret.json"));
@@ -116,17 +116,17 @@ describe("node storage adapter", () => {
       ["assets", true],
       ["shared", true],
     ]);
-    await storage.writeText("shared/hero.babasset", "linked");
-    expect(await storage.readText("assets/hero.babasset")).toBe("linked");
+    await storage.writeText("shared/hero.hasset", "linked");
+    expect(await storage.readText("assets/hero.hasset")).toBe("linked");
     await storage.remove("out");
     expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe("secret");
   });
 
   it("leaves out links back up the listed path so a recursive walk ends", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game");
-    await storage.writeText("assets/hero.babasset", "hero");
+    await storage.writeText("assets/hero.hasset", "hero");
     await storage.mkdir("levels");
     const project = join(dir, "Game");
     await symlink(project, join(project, "assets", "up"));
@@ -141,11 +141,11 @@ describe("node storage adapter", () => {
       }
       return files;
     };
-    expect((await walk(".")).sort()).toEqual(["assets/hero.babasset", "levels/art/hero.babasset"]);
+    expect((await walk(".")).sort()).toEqual(["assets/hero.hasset", "levels/art/hero.hasset"]);
   });
 
   it("reopens an existing Documents project by id only", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game");
     await storage.writeText("project.json", "game");
@@ -161,7 +161,7 @@ describe("node storage adapter", () => {
   });
 
   it("confines direct reads, writes and removals even when a sibling shares the project prefix", async () => {
-    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
     const storage = new NodeStorageAdapter(dir);
     await storage.openDocumentsProject("Game-copy");
     await storage.writeText("notes.txt", "private sibling");

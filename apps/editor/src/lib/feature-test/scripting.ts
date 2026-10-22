@@ -16,7 +16,7 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { newAssetFileName } from "../content-browser-helpers";
 import { instanceOverrideKeys } from "../prefab-instance-sync";
 import {
@@ -93,6 +93,7 @@ const CLASS = {
   spinner: "FT_ScriptSpinner",
   spinnerFast: "FT_ScriptSpinnerFast",
   interfaceProbe: "FT_ScriptInterfaceProbe",
+  touchProbe: "FT_ScriptTouchProbe",
   statsCommand: "FT_ScriptStatsCommand",
   spawnCommand: "FT_ScriptSpawnCommand",
   streamCommand: "FT_ScriptStreamCommand",
@@ -151,6 +152,7 @@ interface PlacedClass {
 interface ScriptingRefs {
   spinner: PlacedClass;
   interfaceProbe: PlacedClass;
+  touchProbe: PlacedClass;
   dataProbe: PlacedClass;
   saveProbe: PlacedClass;
   streamLoader: PlacedClass;
@@ -269,6 +271,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveSceneWatcher(ctx);
   await saveGameInstance(ctx);
   const interfaceProbe = await saveInterfaceProbe(ctx, types, font, materials.surfaceInstance ?? null);
+  const touchProbe = await saveTouchProbe(ctx, font, materials.surfaceInstance ?? null);
   const dataProbe = await saveDataProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const saveProbe = await saveSaveProbe(ctx, font, materials.surfaceInstance ?? null);
   const streamLoader = await saveStreamLoader(ctx);
@@ -284,7 +287,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
     gameInstanceClass: CLASS.gameInstance,
     editorUtilityObjects: [...new Set([...settings.editorUtilityObjects, CLASS.editorProbe])],
   }));
-  refsByContext.set(ctx, { spinner, interfaceProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });
+  refsByContext.set(ctx, { spinner, interfaceProbe, touchProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });
 }
 
 /** Scripting zone (Spinner grid, Fast Spinner, probes, Prefab instances) and the Stream Loader. */
@@ -957,6 +960,7 @@ async function saveInterfaceProbe(
       delay("settle", 220, 0, 1),
       gNode("find-fast", "actor.getOfClass", 220, 180, { "default:classId": CLASS.spinnerFast }),
       gNode("find-base", "actor.getOfClass", 220, 300, { "default:classId": CLASS.spinner }),
+      gNode("assert-fast", "debug.assertIsValid", 340, 0, { "default:message": "Interface Probe found no Fast Spinner" }),
       gNode("describe-fast", "interface.call", 460, 0, describeCall(types.describable)),
       gNode("describe-base", "interface.call", 700, 0, describeCall(types.describable)),
       gNode("game-instance", "gameInstance.get", 700, 220),
@@ -967,7 +971,8 @@ async function saveInterfaceProbe(
       printText("report", 1640, 0, "ft-script-interface", undefined, 8),
     ],
     edges: [
-      ...gChain("begin", "settle", "describe-fast", "describe-base", "as-game-instance", "report"),
+      ...gChain("begin", "settle", "assert-fast", "describe-fast", "describe-base", "as-game-instance", "report"),
+      gWire("find-fast", "out", "assert-fast", "object"),
       gWire("find-fast", "out", "describe-fast", "target"),
       gWire("find-base", "out", "describe-base", "target"),
       gWire("game-instance", "gameInstance", "as-game-instance", "object"),
@@ -984,7 +989,57 @@ async function saveInterfaceProbe(
   return { ref, components };
 }
 
-/** Read Data Entry `Weapons/Sword` + Break, and Get Data Children of `Weapons`. */
+/**
+ * Every touch node: a new touch casts into the scene and reports the touch list,
+ * a moving touch is followed by its finger, and an ending touch says whether it was cancelled.
+ */
+async function saveTouchProbe(ctx: FeatureTestContext, font: string, materialGuid: string | null): Promise<PlacedClass> {
+  const components = [
+    scaledMesh("prefab-mesh", "sphere", 0.7, materialGuid),
+    textLabel("prefab-label", "Touch Probe", font, [0, 1, 0]),
+  ];
+  const graph = classGraph({
+    components,
+    nodes: [
+      gNode("began", "input.onTouchBegan", 0, 0),
+      gNode("project", "input.projectTouchToScene", 260, 0, { "default:drawDebug": true, "default:duration": 1 }),
+      gNode("count", "input.getTouchCount", 260, 260),
+      gNode("first", "input.getTouch", 260, 380, { "default:index": 0 }),
+      format("began-text", 560, 260, "Finger {finger} began (hit {hit}), {count} down, first is finger {first}"),
+      printText("began-print", 820, 0, "ft-script-touch"),
+      gNode("moved", "input.onTouchMoved", 0, 640),
+      gNode("follow", "input.findTouch", 260, 760),
+      format("moved-text", 560, 760, "Finger {finger} at {position}, pressure {pressure}"),
+      printText("moved-print", 820, 640, "ft-script-touch-move", undefined, 1),
+      gNode("ended", "input.onTouchEnded", 0, 1040),
+      format("ended-text", 260, 1160, "Finger {finger} ended (cancelled {cancelled})"),
+      printText("ended-print", 560, 1040, "ft-script-touch"),
+    ],
+    edges: [
+      ...gChain("began", "project", "began-print"),
+      gWire("began", "finger", "project", "finger"),
+      gWire("began", "finger", "began-text", fmtArg("finger")),
+      gWire("project", "hit", "began-text", fmtArg("hit")),
+      gWire("count", "count", "began-text", fmtArg("count")),
+      gWire("first", "finger", "began-text", fmtArg("first")),
+      gWire("began-text", "out", "began-print", "inString"),
+      gExec("moved", "moved-print"),
+      gWire("moved", "finger", "follow", "finger"),
+      gWire("moved", "finger", "moved-text", fmtArg("finger")),
+      gWire("follow", "position", "moved-text", fmtArg("position")),
+      gWire("follow", "pressure", "moved-text", fmtArg("pressure")),
+      gWire("moved-text", "out", "moved-print", "inString"),
+      gExec("ended", "ended-print"),
+      gWire("ended", "finger", "ended-text", fmtArg("finger")),
+      gWire("ended", "cancelled", "ended-text", fmtArg("cancelled")),
+      gWire("ended-text", "out", "ended-print", "inString"),
+    ],
+  });
+  const ref = await saveClass(ctx, CLASS.touchProbe, "Actor", graph);
+  return { ref, components };
+}
+
+/** Read Data Entry `Weapons/Sword` + Break and Get Data Children of `Weapons`; Asserts check both reads. */
 async function saveDataProbe(
   ctx: FeatureTestContext,
   types: ScriptingTypes,
@@ -1008,10 +1063,14 @@ async function saveDataProbe(
       gNode("children", "data.getChildren", 220, 400, { "default:tree": types.itemsTree, "default:entryPath": "Weapons" }),
       gNode("child-count", "array.length", 460, 400),
       format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
+      gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
+      gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
       printText("print", 940, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      gExec("begin", "print"),
+      ...gChain("begin", "assert-found", "assert-weapons", "print"),
+      gWire("read", "found", "assert-found", "condition"),
+      gWire("child-count", "out", "assert-weapons", "actual"),
       gWire("read", "value", "fields", "in"),
       gWire("fields", "Label", "text", fmtArg("label")),
       gWire("fields", "Damage", "text", fmtArg("damage")),
@@ -1397,6 +1456,7 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
   });
 
   placeClass("ft-scripting-interface-probe", "Interface Probe", refs.interfaceProbe, zone.at(4.5, 0.6, -9), probesFolder);
+  placeClass("ft-scripting-touch-probe", "Touch Probe", refs.touchProbe, zone.at(4.5, 0.6, -6), probesFolder);
   placeClass("ft-scripting-data-probe", "Data Probe", refs.dataProbe, zone.at(7, 0.45, -9), probesFolder);
   placeClass("ft-scripting-save-probe", "Save Probe", refs.saveProbe, zone.at(9.5, 0.45, -9), probesFolder);
 

@@ -1,6 +1,6 @@
 import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderLanguage, ShaderMaterial, ShaderStore, Vector2, Vector4, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
-import type { ViewportMode } from "@babylonslate/core";
+import type { ViewportMode } from "@haptic/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME, markEditorHelperMesh } from "./helper-mesh";
 

@@ -29,8 +29,8 @@ import {
   type WaterReflectionMode,
   type WaterShadingDetail,
   type PostProcessingEffectField,
-} from "@babylonslate/core";
-import { NumberField } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import { NumberField } from "@haptic/editor-kit";
 import {
   Field,
   FieldLabel,
@@ -38,7 +38,7 @@ import {
   FieldSet,
   FieldLegend,
   FieldGroup,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -46,8 +46,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/ui/components/select";
+import { Switch } from "@haptic/ui/components/switch";
 
 const labels = {
   shadows: "Shadows",

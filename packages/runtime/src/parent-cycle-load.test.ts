@@ -5,9 +5,9 @@ import {
   createDefaultSceneLayer,
   type SerializedComponent,
   type SerializedScene,
-} from "@babylonslate/core";
-import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
-import type { Actor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import type { Actor } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 
 function at(x: number, y: number, z: number) {

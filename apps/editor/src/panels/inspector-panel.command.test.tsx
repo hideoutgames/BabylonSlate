@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
@@ -26,17 +26,17 @@ const applyGraphChange = vi.hoisted(() =>
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Heal.class.babasset",
+    documentId: "graph:assets/Heal.class.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Heal.class.babasset",
+      id: "graph:assets/Heal.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Heal.class.babasset",
+        path: "assets/Heal.class.hasset",
         label: "Heal Class",
       },
       content: {

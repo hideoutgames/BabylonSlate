@@ -1,4 +1,4 @@
-import type { DebugInspectNode } from "@babylonslate/object-model";
+import type { DebugInspectNode } from "@haptic/object-model";
 
 export type FlattenedInspectNode = DebugInspectNode & {
   depth: number;

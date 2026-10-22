@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
   sceneLayerToEditorScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   buildBoxGlbFixture,
   cookComplexCollisionMeshes,
@@ -14,7 +14,7 @@ import {
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
   normalizeTilemapPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   collectPlayScriptDocuments,
   overlayTextureGuidsFromScenes,
@@ -55,12 +55,12 @@ describe("collectPlayScriptDocuments", () => {
     };
     const documents = collectPlayScriptDocuments(
       [
-        { path: "assets/Hero.class.babasset", content: graph },
-        { path: "assets/Tools.euo.babasset", content: graph },
+        { path: "assets/Hero.class.hasset", content: graph },
+        { path: "assets/Tools.euo.hasset", content: graph },
       ],
       {
-        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
-        "assets/Tools.euo.babasset": {
+        "assets/Hero.class.hasset": { type: "Class", parentClass: "Actor" },
+        "assets/Tools.euo.hasset": {
           type: "Class",
           parentClass: "EditorUtilityObject",
         },
@@ -69,7 +69,7 @@ describe("collectPlayScriptDocuments", () => {
         id === "EditorUtilityObject" ? "BObject" : id === "Actor" ? "BObject" : null,
     );
     expect(documents.map((entry) => entry.path)).toEqual([
-      "assets/Hero.class.babasset",
+      "assets/Hero.class.hasset",
     ]);
     expect(documents[0]?.parentClassId).toBe("Actor");
   });
@@ -82,12 +82,12 @@ describe("collectAnimGraphCompileDocuments", () => {
       collectAnimGraphCompileDocuments(
         [{ guid: "graph-guid", document: graph }],
         (guid) =>
-          guid === "graph-guid" ? "assets/Loco.anim.babasset" : null,
+          guid === "graph-guid" ? "assets/Loco.anim.hasset" : null,
       ),
     ).toEqual([
       {
         guid: "graph-guid",
-        path: "assets/Loco.anim.babasset",
+        path: "assets/Loco.anim.hasset",
         document: graph,
       },
     ]);
@@ -533,8 +533,8 @@ describe("readPlayNavmeshBytes", () => {
     const reads: string[] = [];
     const errors: string[] = [];
     const result = await readPlaySceneBakes([
-      { guid: "one", path: "one.scene.babasset" }, { guid: "two", path: "two.scene.babasset" },
-      { guid: "one", path: "one.scene.babasset" }, { guid: "unsaved" },
+      { guid: "one", path: "one.scene.hasset" }, { guid: "two", path: "two.scene.hasset" },
+      { guid: "one", path: "one.scene.hasset" }, { guid: "unsaved" },
     ], async (path, chunkId) => {
       reads.push(`${path}:${chunkId}`);
       if (path.startsWith("one")) return chunkId === "navmesh" ? new Uint8Array([1]) : null;
@@ -549,19 +549,19 @@ describe("readPlayNavmeshBytes", () => {
   it("reads the Scene navmesh extra chunk and never invents bytes", async () => {
     const bytes = new Uint8Array([9, 8, 7]);
     const readChunk = async (path: string, chunkId: string) => {
-      expect(path).toBe("assets/Main.scene.babasset");
+      expect(path).toBe("assets/Main.scene.hasset");
       expect(chunkId).toBe("navmesh");
       return bytes;
     };
     expect(
-      await readPlayNavmeshBytes("assets/Main.scene.babasset", readChunk),
+      await readPlayNavmeshBytes("assets/Main.scene.hasset", readChunk),
     ).toEqual(bytes);
   });
 
   it("returns null when the scene path or chunk is missing", async () => {
     expect(await readPlayNavmeshBytes(undefined, async () => new Uint8Array([1]))).toBeNull();
     expect(
-      await readPlayNavmeshBytes("assets/Main.scene.babasset", async () => null),
+      await readPlayNavmeshBytes("assets/Main.scene.hasset", async () => null),
     ).toBeNull();
   });
 });
@@ -615,12 +615,12 @@ describe("readPlayAudioReverbBytes", () => {
   it("reads the Scene audioReverb extra chunk and never invents bytes", async () => {
     const bytes = new Uint8Array([4, 5, 6]);
     const readChunk = async (path: string, chunkId: string) => {
-      expect(path).toBe("assets/Main.scene.babasset");
+      expect(path).toBe("assets/Main.scene.hasset");
       expect(chunkId).toBe("audioReverb");
       return bytes;
     };
     expect(
-      await readPlayAudioReverbBytes("assets/Main.scene.babasset", readChunk),
+      await readPlayAudioReverbBytes("assets/Main.scene.hasset", readChunk),
     ).toEqual(bytes);
   });
 
@@ -629,7 +629,7 @@ describe("readPlayAudioReverbBytes", () => {
       await readPlayAudioReverbBytes(undefined, async () => new Uint8Array([1])),
     ).toBeNull();
     expect(
-      await readPlayAudioReverbBytes("assets/Main.scene.babasset", async () => null),
+      await readPlayAudioReverbBytes("assets/Main.scene.hasset", async () => null),
     ).toBeNull();
   });
 });

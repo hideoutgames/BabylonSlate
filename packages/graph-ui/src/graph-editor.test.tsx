@@ -2,7 +2,7 @@ import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-libra
 import { useReactFlow, useStore } from "@xyflow/react";
 import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
+import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@haptic/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MIN_ZOOM,
@@ -10,14 +10,14 @@ import {
   GraphEditor,
 } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
-import { isAssignable, type PinType } from "@babylonslate/scripting";
+import { isAssignable, type PinType } from "@haptic/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import type { PinCompatibilityRule } from "./graph-connect";
 import { estimateGraphNodeSize } from "./graph-virtualize";
 import { treeNodeTypes } from "./tree-node";
 import { animGraphEdgeTypes } from "./anim-graph-nodes";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
-import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
+import { basicParticleStageRole } from "@haptic/ui/lib/data-types";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { useGraphEditorContext } from "./graph-editor-context";
 

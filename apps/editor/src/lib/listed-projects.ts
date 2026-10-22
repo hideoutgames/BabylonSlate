@@ -3,8 +3,8 @@ import type {
   ProjectFolderHandle,
   ProjectMetadata,
   StorageTier,
-} from "@babylonslate/core";
-import type { EngineSettings } from "@babylonslate/vfs";
+} from "@haptic/core";
+import type { EngineSettings } from "@haptic/vfs";
 
 export type ListedProject = ProjectFolderHandle & {
   /** Display name from recents / metadata; folder `name` stays the I/O identity. */

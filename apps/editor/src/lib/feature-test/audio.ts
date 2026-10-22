@@ -10,8 +10,8 @@ import {
   type AudioMixerPayload,
   type AudioPayload,
   type SoundAttenuationPayload,
-} from "@babylonslate/assets";
-import { lookAtRotation, type SerializedActor } from "@babylonslate/core";
+} from "@haptic/assets";
+import { lookAtRotation, type SerializedActor } from "@haptic/core";
 import { actor, comp, meshComp, tf, type FeatureTestContext, type Vec3 } from "./context";
 import { FEATURE_TEST_OPTIONAL_SLOTS } from "./engine-content-files";
 

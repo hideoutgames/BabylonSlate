@@ -11,12 +11,12 @@ import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
-import { instrumentJsLoops } from "@babylonslate/debugger";
+import { instrumentJsLoops } from "@haptic/debugger";
 import { entryNodes } from "./compiled-nodes";
 import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
-import { humanizePropertyLabel, normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
+import { humanizePropertyLabel, normalizeTag, normalizeTagContainer, type TagRegistry } from "@haptic/core";
 import { tagCasesConstant, tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
 import {
   isFlowSwitchMeta,
@@ -103,7 +103,22 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "input.onAnyKeyPressed": "onTick",
   "input.onGamepadConnected": "onTick",
   "input.onGamepadDisconnected": "onTick",
+  "input.onTouchBegan": "onTick",
+  "input.onTouchMoved": "onTick",
+  "input.onTouchEnded": "onTick",
 };
+
+/** Touch event nodes and the `engine:TouchPhase` records each one runs for. */
+const TOUCH_EVENT_PHASES: Readonly<Record<string, readonly string[]>> = {
+  "input.onTouchBegan": ["Began"],
+  "input.onTouchMoved": ["Moved"],
+  "input.onTouchEnded": ["Ended", "Cancelled"],
+};
+
+/** On Touch Began, On Touch Moved and On Touch Ended. */
+export function isTouchEventNodeType(typeId: string): boolean {
+  return Object.hasOwn(TOUCH_EVENT_PHASES, typeId);
+}
 
 /** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */
 export function eventNameForEntry(
@@ -294,6 +309,7 @@ const GATED_EVENT_TYPE_IDS: ReadonlySet<string> = new Set([
   "input.onAnyKeyPressed",
   "input.onGamepadConnected",
   "input.onGamepadDisconnected",
+  ...Object.keys(TOUCH_EVENT_PHASES),
 ]);
 
 /** An exec wire followed to its target; `GraphEdge` fits. */
@@ -481,7 +497,7 @@ export function compileGraph(
   graph = withResolvedPinTypes(graph);
   const index = indexGraph(graph);
   const exportName = options.exportName ?? "run";
-  const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
+  const preamble = [`//# sourceURL=haptic:///${options.assetGuid}.js`];
   // `var` stays valid when a document concatenates its graphs' modules.
   if (options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true) {
     preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
@@ -1431,6 +1447,44 @@ export function compileGraph(
         break;
       }
 
+      const touchPhases = TOUCH_EVENT_PHASES[node.typeId];
+      if (touchPhases) {
+        const ctx = makeCtx(node);
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
+        declareDataOuts(node, ctx);
+        const touch = `__touch_${jsIdent(node.id)}`;
+        const matches = touchPhases.map((phase) => `${touch}.Phase === ${JSON.stringify(phase)}`).join(" || ");
+        emitBody(
+          `  for (const ${touch} of (ctx.getTouchEvents?.() ?? [])) {`,
+          anchor,
+        );
+        emitBody(`    if (!(${matches})) continue;`, anchor);
+        if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
+        const outputs: Record<string, string> = {
+          touch,
+          finger: `${touch}.Finger`,
+          position: `${touch}.Position`,
+          delta: `${touch}.Delta`,
+          cancelled: `${touch}.Phase === "Cancelled"`,
+        };
+        for (const pin of node.pins) {
+          const value = pin.kind === "data" && pin.direction === "out" ? outputs[pin.id] : undefined;
+          if (value) emitBody(`    ${ctx.output(pin.id)} = ${value};`, anchor);
+        }
+        if (traceExecution) {
+          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
+          emitOutputProbe(node, ctx);
+        }
+        emitAlong(execSuccessorEdges(index, node.id, "execOut"), visited);
+        emitBody("  }", anchor);
+        break;
+      }
+
       // Input event entries gate their then-chain on the resolved tick state.
       if (
         node.typeId === "input.onGamepadConnected" ||
@@ -1813,7 +1867,7 @@ export function compileTransitionRuleGraph(
     ? tagRuntimeSource(options.tagRegistry).split("\n") : [];
   const hoistedLines = hoisted.flatMap((chunk) => chunk.split("\n"));
   const source = [
-    `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
+    `//# sourceURL=haptic:///${options.assetGuid}.js`,
     ...tagPreamble,
     ...hoistedLines,
     `export function evaluate(ctx) {`,

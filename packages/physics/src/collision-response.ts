@@ -1,4 +1,4 @@
-import { collisionPairResponse, type CollisionResponse } from "@babylonslate/core";
+import { collisionPairResponse, type CollisionResponse } from "@haptic/core";
 import type { ColliderDesc } from "./types";
 
 /**

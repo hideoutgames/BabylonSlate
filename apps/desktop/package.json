@@ -14,8 +14,8 @@
     "smoke:linux": "node scripts/smoke-desktop.mjs linux"
   },
   "devDependencies": {
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/vfs": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/vfs": "workspace:*",
     "@electron/asar": "4.3.0",
     "@types/node": "^22.13.10",
     "electron": "44.6.0",

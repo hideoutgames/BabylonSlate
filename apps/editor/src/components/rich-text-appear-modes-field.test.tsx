@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import type { Text2DAppearMode } from "@babylonslate/core";
+import type { Text2DAppearMode } from "@haptic/core";
 import { RichTextAppearModesField } from "./rich-text-appear-modes-field";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 

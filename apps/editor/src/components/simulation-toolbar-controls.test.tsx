@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import type { SimulationControls } from "../context/simulation-controls-context";
 import { SimulationToolbarControls } from "./simulation-toolbar-controls";
 
@@ -12,10 +12,12 @@ function controls(overrides: Partial<SimulationControls> = {}): SimulationContro
   return {
     paused: false,
     pausePending: false,
+    stepPending: false,
     inputMode: "game",
     inputPending: false,
     keepChanges: false,
     togglePause: vi.fn(),
+    step: vi.fn(),
     setInputMode: vi.fn(),
     ...overrides,
   };
@@ -39,6 +41,19 @@ describe("SimulationToolbarControls", () => {
     expect(pause.getAttribute("aria-label")).toBe("Resume");
     fireEvent.click(screen.getByTestId("simulation-session-stop"));
     expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("offers Step only while paused, and not while a step is still running", () => {
+    renderControls();
+    expect(screen.queryByTestId("simulation-step")).toBeNull();
+    cleanup();
+    const paused = controls({ paused: true });
+    renderControls({ controls: paused });
+    fireEvent.click(screen.getByTestId("simulation-step"));
+    expect(paused.step).toHaveBeenCalledOnce();
+    cleanup();
+    renderControls({ controls: controls({ paused: true, stepPending: true }) });
+    expect((screen.getByTestId("simulation-step") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("names what Stop does with Simulation changes", () => {

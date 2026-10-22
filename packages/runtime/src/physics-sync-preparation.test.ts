@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as assets from "@babylonslate/assets";
-import * as physics from "@babylonslate/physics";
-import { identityTransform } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
+import * as assets from "@haptic/assets";
+import * as physics from "@haptic/physics";
+import { identityTransform } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 
 afterEach(() => vi.restoreAllMocks());

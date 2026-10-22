@@ -6,12 +6,12 @@ import {
   type ReactNode,
 } from "react";
 import { SquareArrowOutUpRightIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 
 export type AssetOpenApi = {
   canOpen: (guid: string) => boolean;

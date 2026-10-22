@@ -30,13 +30,13 @@ import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
 import { requestRenderPath, retainPlayRenderPathSession, subscribeRenderPathSession } from "./render-path-session";
-import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
+import type { RenderPath, ResolvedRenderingPipeline } from "@haptic/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
@@ -59,7 +59,7 @@ import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera, EngineView } from "@babylonjs/core";
-import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@babylonslate/core";
+import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt, type RenderPerformanceSample } from "./render-performance";
@@ -77,8 +77,8 @@ import type {
   PhysicsWorldKind,
   SerializedScene,
   ViewportMode,
-} from "@babylonslate/core";
-import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
+} from "@haptic/core";
+import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
@@ -87,18 +87,18 @@ import type {
   SpritePayload,
   TilemapPayload,
   TilesetPayload,
-} from "@babylonslate/assets";
-import { environmentTextureContainer } from "@babylonslate/assets";
+} from "@haptic/assets";
+import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
   readSnapshotHeader,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   materialDependencies,
   type MaterialDocument,
   type MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   createEditorCamera,
   type EditorCameraController,
@@ -154,7 +154,7 @@ import {
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
-import { waterKindForClass, DEFORMER_COMPONENT_CLASS_ID, deformerTargetMesh, parseDeformerProperties } from "@babylonslate/core";
+import { waterKindForClass, DEFORMER_COMPONENT_CLASS_ID, deformerTargetMesh, parseDeformerProperties } from "@haptic/core";
 import {
   accountedGeometryBytesForScene,
   holdSceneInstanceCompiles,
@@ -249,7 +249,7 @@ import {
 import {
   sceneLayerFrustumSize,
   walkOverlayPointerHits,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { updateSceneTilemapAnimations } from "./tilemap-mesh";
@@ -322,6 +322,12 @@ export interface EngineHandle {
   setGameTimePaused: (paused: boolean) => void;
   /** SceneLayer input gate, independent of Simulation Edit and pause ownership. */
   setGameInputEnabled: (enabled: boolean) => void;
+  /**
+   * True while a SceneLayer joystick, 2D control or active scroll drag owns
+   * the pointer, so game input capture must not report it. Settled by the
+   * engine's own canvas listeners, which run before a later-attached capture.
+   */
+  ownsGamePointer: (pointerId: number) => boolean;
   /** Use the existing debug camera while preserving the possessed game camera/listener. */
   setSimulationEditMode: (enabled: boolean) => void;
   /** Request one supported render-only frame; unsupported owners retain the last image. */
@@ -424,7 +430,7 @@ export interface EngineHandle {
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
   /** Explicit local quality preferences; runtime commands take precedence. */
-  setLocalQualityOverrides: (overrides: import("@babylonslate/core").QualityOverrides) => void;
+  setLocalQualityOverrides: (overrides: import("@haptic/core").QualityOverrides) => void;
   /** Live Engine Settings texture LRU budget. */
   setTextureBudget: (bytes: number, enabled: boolean) => void;
   /** Live Engine Settings decoded-PCM LRU (Play only). */
@@ -549,7 +555,7 @@ export interface CreateEngineOptions {
   onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
-  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
+  waterPayloads?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
@@ -584,14 +590,14 @@ export interface CreateEngineOptions {
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
   modelPayloads?: ReadonlyMap<
     string,
-    import("@babylonslate/assets").ModelPayload
+    import("@haptic/assets").ModelPayload
   >;
   /** Native clipName → Animation guid, keyed by Model guid. */
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */
   retargetAnimationLoads?: ReadonlyMap<
     string,
-    readonly import("@babylonslate/assets").RetargetAnimationLoad[]
+    readonly import("@haptic/assets").RetargetAnimationLoad[]
   >;
   /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
   ktx2BasePath?: string;
@@ -1307,7 +1313,7 @@ function initializeEngine(
   // Full Quality captures draw the scene's gameplay outlines, never the editor selection.
   renderTargetCaptures.setOutlines((renderer, includes) => outlineHost.attachCaptureView(renderer, includes));
   const captureActorSlots = new Map<number, string>();
-  const runtimeActorIdentities = new Map<number, import("@babylonslate/bridge").RuntimeObjectIdentity>();
+  const runtimeActorIdentities = new Map<number, import("@haptic/bridge").RuntimeObjectIdentity>();
   const runtimeComponentTokens = new Map<number, Map<string, number>>();
   binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
@@ -3129,6 +3135,8 @@ function initializeEngine(
   let scrollDrag: { pointerId: number; startX: number; startY: number; x: number; y: number; active: boolean; target: NonNullable<ReturnType<typeof scrollTargetAt>> } | null = null;
   const activeGamePointers = new Set<number>();
   const activeControlKeys = new Set<string>();
+  const ownsGamePointer = (pointerId: number) =>
+    joysticks.owns(pointerId) || uiControls.owns(pointerId) || (scrollDrag?.pointerId === pointerId && scrollDrag.active);
   const onOverlayWheel = (event: WheelEvent) => {
     if (!acceptsGameInput()) return;
     const rect = canvas.getBoundingClientRect();
@@ -3956,6 +3964,7 @@ function initializeEngine(
       resetJoysticks();
       gameInputEnabled = enabled;
     },
+    ownsGamePointer: (pointerId: number) => !disposed && ownsGamePointer(pointerId),
     setSimulationEditMode: (enabled: boolean) => {
       if (disposed || !playFreeCam || simulationEditMode === enabled) return;
       resetJoysticks();

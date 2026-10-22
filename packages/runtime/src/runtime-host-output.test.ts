@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { compileGraph, type GraphNode, type LogicGraph, type NodeRegistry } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import type { CommandMessage } from "@haptic/bridge";
+import { compileGraph, type GraphNode, type LogicGraph, type NodeRegistry } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import { createOutputHostBindings } from "./runtime-host-output";
 

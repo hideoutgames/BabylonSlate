@@ -9,13 +9,13 @@ test("H17: referenced Class deletion confirms twice and clears open scene usages
   await openTestProject(page);
   await openMainScene(page);
   await page.evaluate(async (scene) => {
-    await (globalThis as unknown as { __babylonslateTest: { setActiveSceneContent(value: SerializedScene): Promise<boolean> } })
-      .__babylonslateTest.setActiveSceneContent(scene);
+    await (globalThis as unknown as { __hapticTest: { setActiveSceneContent(value: SerializedScene): Promise<boolean> } })
+      .__hapticTest.setActiveSceneContent(scene);
   }, { ...createDefaultScene(), actors: [createActor("one", "First", { classId: "Mannequin" }), createActor("two", "Second", { classId: "Mannequin" })] });
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   const tile = page.locator(
-    '[data-asset-path="assets/Mannequin.class.babasset"]',
+    '[data-asset-path="assets/Mannequin.class.hasset"]',
   );
   await tile.click();
   await page.getByTestId("content-browser-delete-selected").click();
@@ -36,8 +36,8 @@ test("H17: referenced Class deletion confirms twice and clears open scene usages
   await expect(tile).toHaveCount(0);
   await saveAllIfEnabled(page);
   const actors = await page.evaluate(async () => {
-    const bytes = await (globalThis as unknown as { __babylonslateTest: { readAssetChunk(path: string, chunk: string): Promise<Uint8Array> } })
-      .__babylonslateTest.readAssetChunk("assets/main.scene.babasset", "document");
+    const bytes = await (globalThis as unknown as { __hapticTest: { readAssetChunk(path: string, chunk: string): Promise<Uint8Array> } })
+      .__hapticTest.readAssetChunk("assets/main.scene.hasset", "document");
     return (JSON.parse(new TextDecoder().decode(bytes)) as SerializedScene).actors;
   });
   expect(actors.map((actor) => [actor.id, actor.classId])).toEqual([["one", "Actor"], ["two", "Actor"]]);

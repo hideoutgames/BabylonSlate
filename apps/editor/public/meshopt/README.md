@@ -22,7 +22,7 @@ Verified 2026-10-07: the file is that commit's blob
 npm `meshoptimizer@0.20.0` copy differs only in the copyright year and that
 newline. A byte match with the Babylon CDN copy is **unverified** (the CDN was
 not reachable from the checking session). This decoder is independent of the
-workspace `meshoptimizer` dependency (`@babylonslate/render` Model LOD
+workspace `meshoptimizer` dependency (`@haptic/render` Model LOD
 simplifier).
 
 ## Refresh

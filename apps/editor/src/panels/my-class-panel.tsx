@@ -19,16 +19,17 @@ import {
   type ContextMenuItem,
   type TreeSelectOptions,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   classMemberCategoryPath,
   type GraphClassMemberKind,
   type SerializedGraph,
-} from "@babylonslate/core";
-import { isLockedEngineClassId } from "@babylonslate/object-model";
-import { nextCopyName } from "@babylonslate/assets";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Badge } from "@babylonslate/ui/components/badge";
+} from "@haptic/core";
+import { isLockedEngineClassId } from "@haptic/object-model";
+import { isTouchEventNodeType } from "@haptic/scripting";
+import { nextCopyName } from "@haptic/assets";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Badge } from "@haptic/ui/components/badge";
 import {
   addClassMember,
   addVariableAccessNode,
@@ -61,7 +62,7 @@ import {
 } from "../lib/class-member-clipboard";
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { FolderIcon, PlusIcon } from "lucide-react";
-import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
+import { GraphDropHint, type GraphDropHintState } from "@haptic/graph-ui";
 import {
   useDocumentActions,
   useRegistryState,
@@ -110,7 +111,7 @@ export type MyClassMember = {
   container?: string;
   functionId?: string;
   assetGuid?: string;
-  pins?: import("@babylonslate/core").GraphClassMemberPin[];
+  pins?: import("@haptic/core").GraphClassMemberPin[];
   hasError?: boolean;
   componentId?: string;
   /** Class tree folder path; `|` separates subcategories. */
@@ -165,7 +166,7 @@ export type MembersForGraphOptions = {
     name: string;
     methods: Array<{
       name: string;
-      pins?: import("@babylonslate/core").GraphClassMemberPin[];
+      pins?: import("@haptic/core").GraphClassMemberPin[];
     }>;
   }>;
 };
@@ -293,7 +294,8 @@ function inheritedMembers(
 
 function isClassTreeEventNode(type: string): boolean {
   if (isFlowEventCallNode(type)) return false;
-  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || type.startsWith("flow.event.") || type.startsWith("bt.event.");
+  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || isTouchEventNodeType(type)
+    || type.startsWith("flow.event.") || type.startsWith("bt.event.");
 }
 
 /**

@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/object-model",
+  "name": "@haptic/object-model",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/object-model"
   },
   "dependencies": {
-    "@babylonslate/core": "workspace:*"
+    "@haptic/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~6.0.3"

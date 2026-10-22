@@ -16,9 +16,9 @@ import {
   resolveCompactMode,
   type AppSettingsStore,
   type EngineSettings,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 
-import { GraphInteractionSettingsContext } from "@babylonslate/graph-ui";
+import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
 
 export type AppSettingsSnapshot = {
   settings: EngineSettings;

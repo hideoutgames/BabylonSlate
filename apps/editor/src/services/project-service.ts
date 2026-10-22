@@ -1,16 +1,16 @@
-import { createDefaultInputAssets, isProjectOpenElsewhere, SourceRevisionChangedError } from "@babylonslate/core";
-import { isLockedEngineClassId } from "@babylonslate/object-model";
-import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
+import { createDefaultInputAssets, isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
+import { isLockedEngineClassId } from "@haptic/object-model";
+import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
-import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles, TEMPLATE_LIBRARY_FOLDER } from "@babylonslate/vfs";
+import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles, TEMPLATE_LIBRARY_FOLDER } from "@haptic/vfs";
 import type { DockviewApi } from "dockview-react";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
-import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
+import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry, guardProjectEncodeQueue } from "./project-authoring-ports";
 import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
-import { installEngineExtensionDefaults, isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@babylonslate/assets";
+import { installEngineExtensionDefaults, isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@haptic/assets";
 import type {
   DocumentKind,
   PluginEnableOverride,
@@ -18,7 +18,7 @@ import type {
   SerializedGraph,
   SerializedScene,
   SerializedSceneLayer,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   isInputAssetType,
   ENGINE_VERSION,
@@ -45,8 +45,8 @@ import {
   type ProjectMetadata,
   type ProjectAppearance,
   type RenderProjectSettings,
-} from "@babylonslate/core";
-import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
+} from "@haptic/core";
+import type { ProjectFolderHandle, ProjectStorage } from "@haptic/core";
 import {
   AssetRegistry,
   createRegistryAssetLoadingService,
@@ -69,10 +69,10 @@ import {
   encodePluginSettingsDocument,
   normalizePluginSettings,
   stableStringify,
-  decodeBabasset,
-  encodeBabasset,
+  decodeHasset,
+  encodeHasset,
   carryStoredChunks,
-  storedBabassetMatches,
+  storedHassetMatches,
   verifyChunksBeforeWrite,
   audioReverbChunk,
   isCarriedChunk,
@@ -103,7 +103,7 @@ import {
   writeThumbnail,
   ProjectSearchIndex,
   type AssetCatalogRead,
-  type BabassetHeader,
+  type HassetHeader,
   type ChunkInput,
   type EncodableChunk,
   type BlobStore,
@@ -121,7 +121,7 @@ import {
   discoverProjectPlugins,
   exportPluginZip,
   indexUnresolvedPlaceholders,
-  inspectBabplugin,
+  inspectHplugin,
   applyPluginImport,
   installEnginePluginDefaults,
   mountEnabledPlugins,
@@ -138,15 +138,15 @@ import {
   atlasTextureGuids,
   type ImageSize,
   type OwnAssetWrite,
-  type InspectedBabplugin,
+  type InspectedHplugin,
   type PluginImportPlan,
-} from "@babylonslate/assets";
-import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
+} from "@haptic/assets";
+import { processAreaEmissionInWorker } from "@haptic/assets/area-emission-client";
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
-import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
-import { NAVMESH_CHUNK_ID, navmeshChunk } from "@babylonslate/navigation/chunk";
-import type { NavMeshGenerateInput } from "@babylonslate/navigation";
+import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
+import { NAVMESH_CHUNK_ID, navmeshChunk } from "@haptic/navigation/chunk";
+import type { NavMeshGenerateInput } from "@haptic/navigation";
 import {
   newAssetFileName,
   classIdFromClassAsset,
@@ -291,7 +291,7 @@ function withSavedTextureEncodeState(
 }
 
 /** sha256 of the KTX2 chunk a Texture's header commits to (`ktx2ChunkId`), if any. */
-function committedKtx2Sha256(header: Pick<BabassetHeader, "payload" | "chunks"> | undefined): string | null {
+function committedKtx2Sha256(header: Pick<HassetHeader, "payload" | "chunks"> | undefined): string | null {
   const id = header?.payload.ktx2ChunkId;
   return header?.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
 }
@@ -315,7 +315,7 @@ export type PluginImportResult =
   | { status: "kept" }
   | {
       status: "conflict";
-      incoming: InspectedBabplugin;
+      incoming: InspectedHplugin;
       plan: Extract<PluginImportPlan, { kind: "conflict" }>;
     };
 
@@ -332,7 +332,7 @@ const DELETE_REPAIR_READS = 4;
  * Chunks `loadDocumentWithChunks` reads with a document: fixed ids, or a choice
  * made from the header of the version being read.
  */
-export type DocumentChunkSelection = readonly string[] | ((header: BabassetHeader) => readonly string[]);
+export type DocumentChunkSelection = readonly string[] | ((header: HassetHeader) => readonly string[]);
 
 function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser">): string {
   return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
@@ -349,7 +349,7 @@ async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<
       worker.terminate();
     }
   }
-  const { generateNavMesh } = await import("@babylonslate/navigation");
+  const { generateNavMesh } = await import("@haptic/navigation");
   return generateNavMesh(input);
 }
 
@@ -362,7 +362,7 @@ function newGuid(): string {
 
 function assetName(path: string): string {
   const file = path.split("/").pop() ?? path;
-  return stripAssetFileSuffix(file) || file.replace(/\.babasset$/, "");
+  return stripAssetFileSuffix(file) || file.replace(/\.hasset$/, "");
 }
 
 function parentDir(path: string): string {
@@ -371,7 +371,7 @@ function parentDir(path: string): string {
 
 type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
 
-const PROJECT_CREATION_MARKER = ".babylonslate-creating";
+const PROJECT_CREATION_MARKER = ".haptic-creating";
 /** Entries that do not make a folder "non-empty": our own marker and OS file-browser metadata. */
 const IGNORED_PROJECT_FOLDER_ENTRIES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
 
@@ -456,7 +456,7 @@ export class ProjectService {
   /**
    * Texture guid -> sha256 of the KTX2 chunk this project session last wrote
    * for it: an encode it committed, or the one a file it created carries (a
-   * `.babasset` import, Duplicate or Copy). It exempts the Texture only while
+   * `.hasset` import, Duplicate or Copy). It exempts the Texture only while
    * that encode is still the committed one in the file on disk: a git revert
    * or pull that replaces it ends the exemption, even for a job queued before.
    */
@@ -487,8 +487,8 @@ export class ProjectService {
     this.storage = storage;
     this.publicStorage = guardProjectStorage(storage, this.writeAdmission);
     const assetPath = (path: string) => {
-      if (!isExtensionPackagePath(path) || !path.startsWith("assets/") || !path.endsWith(".babasset")) {
-        throw new Error("Extension asset writes require a project assets/*.babasset path.");
+      if (!isExtensionPackagePath(path) || !path.startsWith("assets/") || !path.endsWith(".hasset")) {
+        throw new Error("Extension asset writes require a project assets/*.hasset path.");
       }
     };
     const codePath = (path: string) => {
@@ -952,7 +952,7 @@ export class ProjectService {
    * starts, and before its commit with `current`, the file on disk the commit
    * would replace, which the index may not describe yet.
    */
-  private alignmentMayWrite(guid: string, current?: BabassetHeader): boolean {
+  private alignmentMayWrite(guid: string, current?: HassetHeader): boolean {
     const registry = this.assetRegistry;
     const asset = registry?.getByGuid(guid);
     if (!registry || !asset) return false;
@@ -1821,7 +1821,7 @@ export class ProjectService {
     bytes: Uint8Array,
     decision?: "keep" | "replace",
   ): Promise<PluginImportResult> {
-    const incoming = await inspectBabplugin(bytes);
+    const incoming = await inspectHplugin(bytes);
     const plan = planPluginImport({
       incoming,
       existingPlugins: this.pluginDescriptors,
@@ -2325,7 +2325,7 @@ export class ProjectService {
     path: string,
     options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .hasset document.`);
     return this.readAssetDocument(path, fallbackDocumentType(kind), options);
   }
 
@@ -2344,10 +2344,10 @@ export class ProjectService {
     options: { signal?: AbortSignal } = {},
   ): Promise<{
     document: Awaited<ReturnType<ProjectService["loadDocument"]>>;
-    header: BabassetHeader;
+    header: HassetHeader;
     chunks: ReadonlyMap<string, Uint8Array>;
   }> {
-    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .hasset document.`);
     const snapshot = await this.readSourceSnapshot(`Document ${path}`, options.signal,
       () => this.readAssetDocumentWithChunksAttempt(path, chunks, options.signal));
     const { document } = snapshot;
@@ -2367,8 +2367,8 @@ export class ProjectService {
     path: string,
     selection: DocumentChunkSelection,
     signal: AbortSignal | undefined,
-  ): Promise<{ document: AssetDocument; header: BabassetHeader; chunks: Map<string, Uint8Array> }> {
-    const select = (header: BabassetHeader) => {
+  ): Promise<{ document: AssetDocument; header: HassetHeader; chunks: Map<string, Uint8Array> }> {
+    const select = (header: HassetHeader) => {
       const ids = typeof selection === "function" ? selection(header) : selection;
       return ids.filter((id) => header.chunks.some((chunk) => chunk.id === id));
     };
@@ -2377,7 +2377,7 @@ export class ProjectService {
     if (!registry || !indexed) {
       // One read of the whole container is one version.
       const blobs = this.blobsForPath(path);
-      const decoded = await decodeBabasset(await this.storageForPath(path).readBinary(path), (hash) => blobs.readBlob(hash));
+      const decoded = await decodeHasset(await this.storageForPath(path).readBinary(path), (hash) => blobs.readBlob(hash));
       const { header } = decoded;
       const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
       return {
@@ -2394,7 +2394,7 @@ export class ProjectService {
     }
     const guid = indexed.header.guid;
     // Selection runs once, on the catalog header the representation resolved.
-    let selected: { header: BabassetHeader; revision: string | undefined; ids: readonly string[] } | undefined;
+    let selected: { header: HassetHeader; revision: string | undefined; ids: readonly string[] } | undefined;
     // The representation reads its document and chunks at the revision it
     // resolved, and fails with SourceRevisionChangedError if the file changes.
     const representation = await registryAssetRepresentation(registry, guid, {
@@ -2531,7 +2531,7 @@ export class ProjectService {
     return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
-  /** Writes a `.babasset` document in its asset's write queue. */
+  /** Writes a `.hasset` document in its asset's write queue. */
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
@@ -2583,7 +2583,7 @@ export class ProjectService {
       const diagnostic = validateMaterialParameterNames(graph)[0];
       if (diagnostic) throw new Error(diagnostic.message);
     }
-    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .hasset document.`);
     this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
@@ -2836,7 +2836,7 @@ export class ProjectService {
       } catch (cause) {
         throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
       }
-      if (intact && await storedBabassetMatches(storage, stored, bytes)) {
+      if (intact && await storedHassetMatches(storage, stored, bytes)) {
         const indexed = registry?.getByPath(path);
         if (!registry || (indexed && stableStringify(indexed.header) === stableStringify(stored.header))) return;
         await registry.reindexPath(path);
@@ -2923,14 +2923,14 @@ export class ProjectService {
       } catch {
         // `kept` stays unset, so everything is decoded below.
       }
-      let header: BabassetHeader;
+      let header: HassetHeader;
       let body: Uint8Array | undefined;
       if (stored && kept) {
         header = stored.header;
         body = kept.find((chunk): chunk is ChunkInput => chunk.id === DOCUMENT_CHUNK_ID && !isCarriedChunk(chunk))?.data;
       } else {
         stored = null;
-        const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
+        const decoded = await decodeHasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
         header = decoded.header;
         body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
         kept = header.chunks.filter((entry) => entry.id !== AUDIO_REVERB_CHUNK_ID).map((entry) => ({
@@ -2943,7 +2943,7 @@ export class ProjectService {
       if (staticAudioGeometryFingerprint(normalizeScene(persisted)) !== baked.fingerprint) return;
       // Re-encode the persisted container under the same queue as Save. Preserve
       // authored JSON, schema/header metadata, dependencies, and every other chunk.
-      const encoded = await encodeBabasset({
+      const encoded = await encodeHasset({
         header,
         chunks: [...kept, audioReverbChunk(baked.bytes)],
         writeBlob: (hash, data) => blobs.writeBlob(hash, data),
@@ -3082,7 +3082,7 @@ export class ProjectService {
     const blobs = this.blobsForPath(path);
     if (!(await storage.exists(path))) return [];
     try {
-      const decoded = await decodeBabasset(
+      const decoded = await decodeHasset(
         await storage.readBinary(path),
         (hash) => blobs.readBlob(hash),
       );

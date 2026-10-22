@@ -3,7 +3,7 @@ import {
   normalizeProjectSettings,
   normalizeRenderingQuality,
   type ProjectSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { FEATURE_TEST_ROOT, type FeatureTestContext } from "./context";
 
 /** Tag categories every area may use (`FeatureTest.<Area>`). */

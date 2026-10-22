@@ -15,10 +15,10 @@ export function attachLifecyclePause(
     publish();
   };
   visibility.addEventListener("visibilitychange", publish);
-  host.addEventListener("babylonslate:appstate", onAppState);
+  host.addEventListener("haptic:appstate", onAppState);
   const release = () => {
     visibility.removeEventListener("visibilitychange", publish);
-    host.removeEventListener("babylonslate:appstate", onAppState);
+    host.removeEventListener("haptic:appstate", onAppState);
   };
   try { publish(); } catch (error) { release(); throw error; }
   return release;

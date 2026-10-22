@@ -1,13 +1,13 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, SceneLayerCamera } from "@babylonslate/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, SceneLayerCamera } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 
 /** Serializable runtime override of one named Material Graph parameter. */
-export type { MaterialParameterValue } from "@babylonslate/core";
+export type { MaterialParameterValue } from "@haptic/core";
 
 export type GameSessionMode = "play" | "simulate" | "preview";
 /** `rendering`: the view holds its last image while WebGPU render pipelines it needs compile. */
@@ -16,7 +16,8 @@ export type SessionBoundaryRequest = {
   sessionGeneration: number;
   /** Strictly increasing within this session; acknowledgments never use FIFO correlation. */
   requestId: number;
-  action: { kind: "pause"; reason: SessionPauseReason; paused: boolean } | { kind: "resetInput" };
+  /** `step` runs one tick of a session paused only by the user, which stays paused after it. */
+  action: { kind: "pause"; reason: SessionPauseReason; paused: boolean } | { kind: "resetInput" } | { kind: "step" };
 };
 export type SessionBoundaryResult = {
   sessionGeneration: number;
@@ -121,12 +122,12 @@ export interface RuntimeSceneContent {
   assetGuids: string[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
-  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: string[];
-  renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
-  renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
+  renderTargets?: Record<string, import("@haptic/core").RenderTargetPayload>;
+  renderTargetTextures?: Record<string, import("@haptic/core").RenderTargetTexturePayload>;
   animClipCatalog?: Array<{ guid: string; type: string; name: string; clipName?: string; durationMs?: number; skeletonGuid?: string | null; modelGuid?: string }>;
 }
 
@@ -139,18 +140,18 @@ export type ControlMessage =
   | { type: "cancelRuntimeInspector"; sessionGeneration: number; requestId: number }
   | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | ({ type: "loadSceneContent" } & RuntimeSceneContent)
-  | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
-  | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
+  | { type: "saveStorageResponse"; response: import("@haptic/core").SaveStorageResponse }
+  | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@haptic/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
       sessionGeneration?: number;
       sessionMode?: GameSessionMode;
       deferMaterialEdits?: boolean;
       simulationAssetGuids?: string[];
-      saveGame?: import("@babylonslate/core").SaveGameConfiguration;
-      dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+      saveGame?: import("@haptic/core").SaveGameConfiguration;
+      dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
       /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
-      assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
+      assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Serialized trace retention budget in bytes for this session. */
@@ -159,8 +160,8 @@ export type ControlMessage =
       project?: { name: string; version: string };
       sceneAssetGuid: string;
       /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
-      inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-      focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+      inputAssets?: import("@haptic/core").InputAssetDefinition[];
+      focusNavigation?: import("@haptic/core").FocusNavigationSettings;
       pixelsPerUnit?: number;
       texturePixelSizes?: Record<string, { width: number; height: number }>;
       /** Authored scene document. When present, Play instantiates these actors. */
@@ -170,7 +171,7 @@ export type ControlMessage =
       physicsWorld?: "3d" | "2d";
       gravity?: [number, number, number];
       /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
-      collisionPresets?: import("@babylonslate/core").CollisionPreset[];
+      collisionPresets?: import("@haptic/core").CollisionPreset[];
       /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
       havokWasmUrl?: string;
       /** Session GameInstance class id from the scene/project picker. */
@@ -180,7 +181,7 @@ export type ControlMessage =
       /** Metadata-only scene catalog. Documents and dependencies are acquired from the host on demand. */
       sceneCatalog?: Array<{ guid: string; name: string }>;
       classAssetGuids?: Record<string, string>;
-      consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
+      consoleCommands?: Array<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
       /** Baked navigation by canonical scene guid, selected before Begin Play. */
       sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
@@ -197,8 +198,8 @@ export type ControlMessage =
       materialParameterCatalog?: MaterialParameterCatalog;
       /** Loaded 2D Texture assets; environment containers are excluded. */
       materialTextureAssetGuids?: string[];
-      renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
-      renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
+      renderTargets?: Record<string, import("@haptic/core").RenderTargetPayload>;
+      renderTargetTextures?: Record<string, import("@haptic/core").RenderTargetTexturePayload>;
       /** Animation / Sprite Animation clip metadata for BT Play Animation. */
       animClipCatalog?: Array<{
         guid: string;
@@ -322,11 +323,11 @@ export type ControlMessage =
       canvasWidth?: number;
       canvasHeight?: number;
       /** Browser safe-area insets in CSS pixels. */
-      safeAreaInsets?: Partial<import("@babylonslate/core").OverlaySafeAreaInsets>;
+      safeAreaInsets?: Partial<import("@haptic/core").OverlaySafeAreaInsets>;
     }
   | { type: "audioVoiceEnded"; voiceId: string }
   | { type: "assetPreloadResult"; preloadId: string; success: boolean; error?: string; progress?: number }
-  | { type: "assetLoadStates"; states: Array<{ guid: string; state: import("@babylonslate/core").RuntimeAssetLoadState }> }
+  | { type: "assetLoadStates"; states: Array<{ guid: string; state: import("@haptic/core").RuntimeAssetLoadState }> }
   | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneLayerLoadingPainted"; layerId: string; layerLoadId: number }
   | { type: "sceneLayerReady"; layerId: string; layerLoadId: number }
@@ -494,10 +495,10 @@ export type CommandMessage =
   | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
   | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
   | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
-  | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
-  | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
-  | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
-  | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
+  | { type: "saveStorageRequest"; request: import("@haptic/core").SaveStorageRequest }
+  | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@haptic/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
+  | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@haptic/core").Painter2DProperties }
+  | { type: "dynamicMeshUpdate"; meshId: number; update: import("@haptic/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
   | { type: "cableFrame"; frameId: number; data: Float32Array }
   | { type: "captureRenderTarget"; actorGuid: string }
@@ -505,18 +506,18 @@ export type CommandMessage =
       type: "configureRenderTargetCapture";
       actorGuid: string;
       slotId: number;
-      settings: import("@babylonslate/core").RenderTargetCaptureProperties | null;
-      transform?: import("@babylonslate/core").Transform;
+      settings: import("@haptic/core").RenderTargetCaptureProperties | null;
+      transform?: import("@haptic/core").Transform;
     }
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
-  | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
+  | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@haptic/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
   /** Simulated water time the main physics step evaluated, for the snapshot frame that step publishes. */
   | { type: "waterTime"; seconds: number; frameId: number }
-  | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
-  | { type: "setActorDeformers"; slotId: number; actorId: string; revision: number; deformers: import("@babylonslate/core").DeformerBinding[] }
-  | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@babylonslate/core").FogVolumeBinding[] }
-  | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
+  | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@haptic/core").OutlineBinding[] }
+  | { type: "setActorDeformers"; slotId: number; actorId: string; revision: number; deformers: import("@haptic/core").DeformerBinding[] }
+  | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@haptic/core").FogVolumeBinding[] }
+  | { type: "setAreaLights"; slotId: number; lights: import("@haptic/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";
@@ -538,9 +539,9 @@ export type CommandMessage =
       parts: Array<{
         componentId: string;
         parentId?: string | null;
-        transform: import("@babylonslate/core").Transform;
+        transform: import("@haptic/core").Transform;
         /** Nonvisual ancestors, nearest first, as in assignMesh. */
-        parentTransforms?: import("@babylonslate/core").Transform[];
+        parentTransforms?: import("@haptic/core").Transform[];
       }>;
     }
   | {
@@ -561,7 +562,7 @@ export type CommandMessage =
       actorGuid?: string | null;
       /** Stable component identity when one visual uses the optimized actor mesh. */
       primaryComponentId?: string;
-      overlayStyle?: import("@babylonslate/core").OverlayVisualStyle;
+      overlayStyle?: import("@haptic/core").OverlayVisualStyle;
       /** Overlay HitTest for the actor visual (`ignore` is not pickable). */
       hitTest?: "ignore" | "block" | "passThrough";
       /** Overlay actor has a `2DButtonComponent`. */
@@ -580,20 +581,20 @@ export type CommandMessage =
       parts?: Array<{
         light?: PlayLightProperties;
         camera?: PlayCameraProperties;
-        joystick?: import("@babylonslate/core").Joystick2DProperties;
-        uiControl?: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties };
-        painter?: import("@babylonslate/core").Painter2DProperties;
-        dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
+        joystick?: import("@haptic/core").Joystick2DProperties;
+        uiControl?: { classId: string; properties: import("@haptic/core").UIControl2DProperties };
+        painter?: import("@haptic/core").Painter2DProperties;
+        dynamicMesh?: { meshId: number; update: import("@haptic/core").DynamicMeshUpdate };
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
-        parentTransforms?: import("@babylonslate/core").Transform[];
-        cable?: import("@babylonslate/core").CableProperties & { simulationId?: number };
-        water?: import("@babylonslate/core").WaterBodyProperties;
+        parentTransforms?: import("@haptic/core").Transform[];
+        cable?: import("@haptic/core").CableProperties & { simulationId?: number };
+        water?: import("@haptic/core").WaterBodyProperties;
         /** Water Removal Volume shape; Play keeps an invisible mesh that cuts water. */
-        waterRemoval?: import("@babylonslate/core").WaterRemovalProperties;
-        landscape?: import("@babylonslate/core").LandscapeProperties;
-        foliage?: import("@babylonslate/core").FoliageProperties;
+        waterRemoval?: import("@haptic/core").WaterRemovalProperties;
+        landscape?: import("@haptic/core").LandscapeProperties;
+        foliage?: import("@haptic/core").FoliageProperties;
         componentId: string;
-        overlayStyle?: import("@babylonslate/core").OverlayVisualStyle;
+        overlayStyle?: import("@haptic/core").OverlayVisualStyle;
         castShadows?: boolean;
         receiveShadows?: boolean;
         meshKind?: string | null;
@@ -621,11 +622,11 @@ export type CommandMessage =
           alignment: "left" | "center" | "right";
         };
         text2d?: {
-          appearModes?: import("@babylonslate/core").Text2DProperties["appearModes"];
-          appearTransition?: import("@babylonslate/core").Text2DProperties["appearTransition"];
+          appearModes?: import("@haptic/core").Text2DProperties["appearModes"];
+          appearTransition?: import("@haptic/core").Text2DProperties["appearTransition"];
           appearInterval?: number;
           appearDuration?: number;
-          appearStart?: import("@babylonslate/core").Text2DProperties["appearStart"];
+          appearStart?: import("@haptic/core").Text2DProperties["appearStart"];
           appearProgress?: number;
           text: string;
           materialGuid?: string | null;
@@ -666,11 +667,11 @@ export type CommandMessage =
         alignment: "left" | "center" | "right";
       };
       text2d?: {
-        appearModes?: import("@babylonslate/core").Text2DProperties["appearModes"];
-        appearTransition?: import("@babylonslate/core").Text2DProperties["appearTransition"];
+        appearModes?: import("@haptic/core").Text2DProperties["appearModes"];
+        appearTransition?: import("@haptic/core").Text2DProperties["appearTransition"];
         appearInterval?: number;
         appearDuration?: number;
-        appearStart?: import("@babylonslate/core").Text2DProperties["appearStart"];
+        appearStart?: import("@haptic/core").Text2DProperties["appearStart"];
         appearProgress?: number;
         text: string;
         materialGuid?: string | null;
@@ -708,7 +709,7 @@ export type CommandMessage =
   /** A blocking Scene load or asset load holds the simulation; the host pauses render game time to match. */
   | { type: "simulationBlocking"; blocking: boolean }
   /** `priority` orders the host's source and native preparation work. */
-  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[]; priority: import("@babylonslate/core").RuntimeAssetSchedulerPriority }
+  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[]; priority: import("@haptic/core").RuntimeAssetSchedulerPriority }
   | { type: "assetPreloadRelease"; preloadId: string }
   | { type: "assetSourcesReady"; requestId: number; success: boolean; error?: string }
   /** A Complex Collision Model had no cooked mesh; the host answers with `loadComplexCollision`. */
@@ -861,7 +862,7 @@ export type CommandMessage =
       type: "setOverlayVisualStyle";
       slotId: number;
       componentId: string;
-      style: import("@babylonslate/core").OverlayVisualStyle;
+      style: import("@haptic/core").OverlayVisualStyle;
     }
   | {
       type: "tilemapAnimationTime";
@@ -989,7 +990,7 @@ export type CommandMessage =
     }
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
-  | { type: "sceneLayerLayout"; layerId: string; entries: Array<import("@babylonslate/core").OverlayLayoutEntry & { slotId: number; transform?: import("@babylonslate/core").SerializedTransform }> }
+  | { type: "sceneLayerLayout"; layerId: string; entries: Array<import("@haptic/core").OverlayLayoutEntry & { slotId: number; transform?: import("@haptic/core").SerializedTransform }> }
   | {
       type: "sceneLayerPostProcess";
       layerId: string;

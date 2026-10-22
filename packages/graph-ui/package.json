@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/graph-ui",
+  "name": "@haptic/graph-ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,10 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/graph-ui"
   },
   "dependencies": {
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/editor-kit": "workspace:*",
-    "@babylonslate/scripting": "workspace:*",
-    "@babylonslate/ui": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/editor-kit": "workspace:*",
+    "@haptic/scripting": "workspace:*",
+    "@haptic/ui": "workspace:*",
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^0.552.0",
     "react": "^19.0.0",

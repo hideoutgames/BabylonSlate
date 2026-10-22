@@ -15,7 +15,7 @@ export async function enableTouchLayout(page: Page): Promise<void> {
     } catch {
       // Frames without storage (about:blank) keep their defaults.
     }
-  }, "babylonslate:engine-settings");
+  }, "haptic:engine-settings");
 }
 
 /** The editor mounts beneath the splash before it accepts input. */
@@ -192,7 +192,7 @@ export async function openAssetFromBrowser(
     }
   }
   const fileName = assetPath.split("/").pop() ?? assetPath;
-  const searchNeedle = fileName.replace(/\.babasset$/, "").split(".")[0];
+  const searchNeedle = fileName.replace(/\.hasset$/, "").split(".")[0];
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
   await revealAssetTile(page, `[data-asset-path="${assetPath}"]`, searchNeedle);
   await tile.dblclick();
@@ -219,7 +219,7 @@ export async function openMainScene(page: Page): Promise<void> {
       await select.click();
     }
   } else {
-    await openAssetFromBrowser(page, "assets/main.scene.babasset");
+    await openAssetFromBrowser(page, "assets/main.scene.hasset");
   }
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
   await waitForSceneViewportReady(page);

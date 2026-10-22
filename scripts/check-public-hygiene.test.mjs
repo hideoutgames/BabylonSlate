@@ -18,7 +18,7 @@ const sessionLink = `https://app.${"devin"}.ai/sessions/0123456789abcdef`;
 const team = ["DEVELOPMENT", "TEAM"].join("_");
 
 function repository(t) {
-  const directory = mkdtempSync(join(tmpdir(), "babylonslate-hygiene-"));
+  const directory = mkdtempSync(join(tmpdir(), "haptic-hygiene-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const git = (...args) =>
     execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
@@ -123,7 +123,7 @@ test("SVG and NUL-containing text are scanned in the tree and in each branch com
 });
 
 test("the command line runs the scan when started through a differently named path", (t) => {
-  const directory = mkdtempSync(join(tmpdir(), "babylonslate-hygiene-entry-"));
+  const directory = mkdtempSync(join(tmpdir(), "haptic-hygiene-entry-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const entry = join(directory, "hygiene-entry.mjs");
   try {

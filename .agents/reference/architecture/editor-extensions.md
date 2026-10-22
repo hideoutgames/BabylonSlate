@@ -4,11 +4,11 @@ Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with a
 
 ## Decisions
 
-- Two separate mechanisms. **Extensions** are editor-only JavaScript/TypeScript packages with their own manifest, archive (`.babextension`) and activation host. **Editor utility types** are ordinary graph assets run by the editor ScriptHost. Content plugins (`.babplugin`, [plugins.md](plugins.md)) are a third, content-only format.
+- Two separate mechanisms. **Extensions** are editor-only JavaScript/TypeScript packages with their own manifest, archive (`.hextension`) and activation host. **Editor utility types** are ordinary graph assets run by the editor ScriptHost. Content plugins (`.hplugin`, [plugins.md](plugins.md)) are a third, content-only format.
 - Extensions execute as **trusted editor code**; the host is not a security sandbox. Imported Project Extensions stay disabled until enabled, and replacing imported executable code requires confirmation.
 - Extension folders never mount as content roots and their modules never reach Play or packed games. Assets an extension creates under `assets/` are ordinary project assets.
 - Editor-only assets and graphs are stripped from Play and export by one set of helpers; runtime graphs never see editor utility classes, their functions or editor-only nodes, even with Context Sensitive off.
-- The removed EditorUtilityInterface type (`.eui.babasset`) is not a document kind and not creatable; its header type stays editor-only so leftovers never enter Play or export. The game HUD / UserInterface is removed and must not return through this path.
+- The removed EditorUtilityInterface type (`.eui.hasset`) is not a document kind and not creatable; its header type stays editor-only so leftovers never enter Play or export. The game HUD / UserInterface is removed and must not return through this path.
 
 ## Ownership
 
@@ -16,7 +16,7 @@ Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with a
 | --- | --- |
 | Manifest (`extension.json`, `extensions/` dir, 256 KiB cap) | [`extension-settings.ts`](../../../packages/assets/src/extension-settings.ts) |
 | Discovery, shadowing, dependency resolution | [`extension-host.ts`](../../../packages/assets/src/extension-host.ts) |
-| `.babextension` inspect / import / export and limits | [`extension-package.ts`](../../../packages/assets/src/extension-package.ts) |
+| `.hextension` inspect / import / export and limits | [`extension-package.ts`](../../../packages/assets/src/extension-package.ts) |
 | Activation, transpile, command registry, API lifetime | [`apps/editor/src/lib/editor-extension-host.ts`](../../../apps/editor/src/lib/editor-extension-host.ts) |
 | Project lifetime, refresh, diagnostics | [`apps/editor/src/services/editor-extension-service.ts`](../../../apps/editor/src/services/editor-extension-service.ts) |
 | Engine library and bundled catalog | [`engine-extension-library.ts`](../../../apps/editor/src/lib/engine-extension-library.ts), [`engine-extensions.ts`](../../../apps/editor/src/lib/engine-extensions.ts), [`engine-extensions/`](../../../engine-extensions/) |
@@ -39,20 +39,20 @@ Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with a
 
 - The entry exports `activate(api)` (ESM or CommonJS), may be async and may return a cleanup function. TypeScript is transpiled with `ts.transpileModule` without type checking.
 - One module only: imports, re-exports, `require`, dynamic imports and type-only imports are rejected. Extensions use the `api` object, never repository modules.
-- API surface: `registerCommand` (fields are `text`/`multiline` strings), `assets.list/read/create/update` (JSON `.babasset` under `assets/`; updates to open documents are refused), `code.read/write` (`.ts`/`.js` under `code/`; writing never compiles or loads into the game), `materials.convertGlsl` (no save), `log`. The type lives in `editor-extension-host.ts`.
+- API surface: `registerCommand` (fields are `text`/`multiline` strings), `assets.list/read/create/update` (JSON `.hasset` under `assets/`; updates to open documents are refused), `code.read/write` (`.ts`/`.js` under `code/`; writing never compiles or loads into the game), `materials.convertGlsl` (no save), `log`. The type lives in `editor-extension-host.ts`.
 - The project owns activation and commands. Disable, reload or project close removes commands, runs cleanup and invalidates old API references; the host drains outstanding API calls before releasing storage. A refresh with unchanged packages keeps running extensions and retries only failed ones and their dependents. Failures surface as extension diagnostics.
 
 ### GLSL to Material
 
-The bundled Experimental extension ([`engine-extensions/glsl-to-material/`](../../../engine-extensions/glsl-to-material/)), disabled by default, calls `materials.convertGlsl` and saves `assets/<name>.material.babasset` only on success; an existing filename or failed conversion leaves the destination unchanged. The result is ordinary Material nodes with no extension or Custom GLSL dependency ([shader-graph.md](shader-graph.md)).
+The bundled Experimental extension ([`engine-extensions/glsl-to-material/`](../../../engine-extensions/glsl-to-material/)), disabled by default, calls `materials.convertGlsl` and saves `assets/<name>.material.hasset` only on success; an existing filename or failed conversion leaves the destination unchanged. The result is ordinary Material nodes with no extension or Custom GLSL dependency ([shader-graph.md](shader-graph.md)).
 
 ## Editor utility types
 
 | Type | Kind | Notes |
 | --- | --- | --- |
-| EditorUtilityObject | Class parent (`BObject`), `*.class.babasset` | Events: Editor On Begin Play, On Editor Startup, On Scene Open, On Scene Saved, On Editor Shutdown. Never game Begin Play / Tick |
-| EditorFunctionLibrary | Class parent (`FunctionLibrary`), `*.class.babasset` | Static Call Function rows only on editor graph hosts |
-| SkyboxCreator | `*.skyboxcreator.babasset` helper | Slices a Texture into six skybox faces; the generated Textures are runtime assets and ship when a `SkyboxComponent` references them |
+| EditorUtilityObject | Class parent (`BObject`), `*.class.hasset` | Events: Editor On Begin Play, On Editor Startup, On Scene Open, On Scene Saved, On Editor Shutdown. Never game Begin Play / Tick |
+| EditorFunctionLibrary | Class parent (`FunctionLibrary`), `*.class.hasset` | Static Call Function rows only on editor graph hosts |
+| SkyboxCreator | `*.skyboxcreator.hasset` helper | Slices a Texture into six skybox faces; the generated Textures are runtime assets and ship when a `SkyboxComponent` references them |
 
 - `isEditorOnlyAssetType` / `isEditorOnlyAsset` / `isEditorUtilityObjectClass` / `isEditorFunctionLibraryClass` / `isEditorGraphClass` / `isEditorGraphHost` walk the parent chain; Play compile (`collectPlayScriptDocuments`) and export reuse them. Editor-only types: PluginSettings, SkyboxCreator, EditorUtilityInterface. Export Project keeps editor tools.
 - `NodeDefinition.editorOnly` marks catalog nodes (editor lifecycle events), not a user flag. Hydrate stamps `data.__editorOnly`; GraphEditor draws the Editor Only hazard-tape footer.

@@ -13,7 +13,7 @@ describe("model thumbnail queue", () => {
     enqueueModelThumbnailJobs([
       {
         guid: "model-1",
-        path: "assets/hero.babasset",
+        path: "assets/hero.hasset",
         payload: { materialSlots: [], clipNames: [] },
       },
     ]);
@@ -22,7 +22,7 @@ describe("model thumbnail queue", () => {
     enqueueModelThumbnailJobs([
       {
         guid: "model-2",
-        path: "assets/rock.babasset",
+        path: "assets/rock.hasset",
         payload: { materialSlots: [], clipNames: [] },
       },
     ]);

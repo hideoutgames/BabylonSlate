@@ -1,32 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import { createInProcessRuntime } from "./driver";
-
-const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
+import { createActor } from "@haptic/core";
+import { startGraphScenario } from "./testing/graph-scenario";
 
 describe("script Delay", () => {
   it("ends a counting Delay's graph quietly when its owner is destroyed instead of leaving it pending", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Delayed" })] },
-      onCommand: (command) => commands.push(command),
-    });
-    await runtime.loadScripts([{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
-      source: `export async function begin(ctx) {
+    const scenario = await startGraphScenario({
+      actors: [createActor("actor", "Actor", { classId: "Delayed" })],
+      scripts: [{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
+        source: `export async function begin(ctx) {
         try { await ctx.delay(10); } catch (error) { ctx.log("log", "test", "ended " + error.name); throw error; }
         ctx.log("log", "test", "continued");
       }`,
-      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }],
+    });
     try {
-      runtime.realizePlayWorld(); runtime.start(); runtime.tick();
-      expect(runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
-      runtime.tick();
-      await flush();
-      const logs = commands.flatMap((command) => command.type === "log" && command.category === "test" ? [command.message] : []);
-      expect(logs).toEqual(["ended AbortError"]);
-      expect(commands.filter((command) => command.type === "diagnostic")).toEqual([]);
-    } finally { runtime.stop(); }
+      await scenario.tick();
+      expect(scenario.runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
+      await scenario.tick();
+      expect(scenario.logs("test")).toEqual(["ended AbortError"]);
+      expect(scenario.diagnostics()).toEqual([]);
+    } finally { scenario.stop(); }
   });
 });

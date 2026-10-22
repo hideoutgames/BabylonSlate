@@ -1,4 +1,4 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import type { NodeRegistry } from "./node-registry";
 
 /** Same ident rules as Call Function / compileGraph export names. */

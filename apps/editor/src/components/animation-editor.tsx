@@ -6,21 +6,21 @@ import {
   ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { isGltfModelBytes } from "@babylonslate/render";
+} from "@haptic/editor-kit";
+import { isGltfModelBytes } from "@haptic/render";
 import {
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
   type AnimationPayload,
   type SkeletonKind,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+} from "@haptic/ui/components/empty";
+import { Toggle } from "@haptic/ui/components/toggle";
 import {
   useDocumentActions,
   useOpenDocument,

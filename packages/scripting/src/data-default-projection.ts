@@ -1,4 +1,4 @@
-import { hardLoadingProperty, type DataFieldSnapshot } from "@babylonslate/core";
+import { hardLoadingProperty, type DataFieldSnapshot } from "@haptic/core";
 import type { StructField } from "./type-assets";
 import type { TypeSchemas } from "./type-defaults";
 

@@ -6,8 +6,8 @@ import {
   type ProjectStorage,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
-import { discardSealedJournal, readSealedJournalLines, unsealJournal } from "@babylonslate/assets";
+} from "@haptic/core";
+import { discardSealedJournal, readSealedJournalLines, unsealJournal } from "@haptic/assets";
 import {
   commandToJournalPayload,
   diffGraphCommands,
@@ -20,7 +20,7 @@ import {
   type EditCommand,
   type EditSession,
   type HistoryAdmissionResult,
-} from "@babylonslate/edit";
+} from "@haptic/edit";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { resolveClassRenameRecovery } from "../lib/class-rename-recovery";
 import { classParentLookup } from "../lib/class-asset-lookup";

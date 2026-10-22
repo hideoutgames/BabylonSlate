@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RenderDiagnostics } from "@babylonslate/render";
+import type { RenderDiagnostics } from "@haptic/render";
 import type { FeatureTestBenchmarkSample, FeatureTestCheckReport, FeatureTestCheckSceneResult } from "../services/feature-test-check";
 import { formatFeatureTestCheckReport, type FeatureTestCheckEnvironment } from "./feature-test-check-report";
 
@@ -18,14 +18,14 @@ describe("formatFeatureTestCheckReport", () => {
     const report: FeatureTestCheckReport = {
       mode: "full", startedAt: Date.UTC(2026, 9, 10, 12), durationMs: 95_000, cancelled: false, pageErrors: ["TypeError: x is undefined"],
       scenes: [{
-        name: "main", path: "assets/main.scene.babasset", passed: false,
+        name: "main", path: "assets/main.scene.hasset", passed: false,
         problems: ["Play did not finish loading in 120 s (stuck at Loading Models 45%)."],
         editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, p95Ms: 18, maxMs: 40, stalls: 0 }, error: null, gpu: null },
         play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [],
           logs: [{ severity: "error", message: "Material FT_Glass failed to compile" }] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 55, after: 55, leak: false, quarantined: false } },
       }, {
-        name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.babasset", passed: true, problems: [],
+        name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
@@ -53,7 +53,7 @@ describe("formatFeatureTestCheckReport", () => {
       cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1280x720@1.00", renderPath, failed: [],
     });
     const scene = (name: string, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
-      name, path: `assets/${name}.scene.babasset`, passed: true, problems: [],
+      name, path: `assets/${name}.scene.hasset`, passed: true, problems: [],
       editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
       play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark, logs: [] },
       session: null,
@@ -77,7 +77,7 @@ describe("formatFeatureTestCheckReport", () => {
     const report: FeatureTestCheckReport = {
       mode: "quick", startedAt: 0, durationMs: 15_400, cancelled: false, pageErrors: [],
       scenes: [{
-        name: "main", path: "assets/main.scene.babasset", passed: false,
+        name: "main", path: "assets/main.scene.hasset", passed: false,
         problems: ["Editor viewport reported Scene Loading Failed at Presenting First Frame."],
         editor: { status: "failed", ms: 15_300, phase: "Presenting First Frame", frames: null,
           error: ["Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false."],

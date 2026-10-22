@@ -6,7 +6,7 @@ import {
   type Observer,
   type Scene,
 } from "@babylonjs/core";
-import type { CelShadingOverrides, ShadowOverrides } from "@babylonslate/core";
+import type { CelShadingOverrides, ShadowOverrides } from "@haptic/core";
 import { CelMaterial, canUseCelMaterial } from "./cel-material";
 import {
   sceneRenderingSettings,

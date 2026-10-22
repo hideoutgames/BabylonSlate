@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { SessionReportEntry } from "@babylonslate/runtime";
+import type { SessionReportEntry } from "@haptic/runtime";
 import { FEATURE_TEST_BENCHMARK_PROFILES, runFeatureTestCheck, type FeatureTestCheckDeps } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe } from "./runtime-probes";
-import type { RenderDiagnostics } from "@babylonslate/render";
+import type { RenderDiagnostics } from "@haptic/render";
 
 type SceneBehavior = {
   open?: "ready" | "failed" | "blocked";
@@ -97,11 +97,11 @@ function fakeEditor(
   return { deps, started, stopped, commands, sampled };
 }
 
-const scene = (name: string) => ({ name, path: `assets/${name}.scene.babasset` });
+const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
 
 describe("runFeatureTestCheck", () => {
   it("stops a Play that never finishes loading, records where it stuck, and checks the next scene", async () => {
-    const editor = fakeEditor({ "assets/stuck.scene.babasset": { play: "stuck" } });
+    const editor = fakeEditor({ "assets/stuck.scene.hasset": { play: "stuck" } });
     const report = await runFeatureTestCheck({
       mode: "full", scenes: [scene("stuck"), scene("fine")], deps: editor.deps, signal: new AbortController().signal,
     });
@@ -109,7 +109,7 @@ describe("runFeatureTestCheck", () => {
     expect(stuck.passed).toBe(false);
     expect(stuck.play).toMatchObject({ status: "timeout", phase: "Loading Models 45%" });
     expect(stuck.problems.join(" ")).toContain("did not finish loading");
-    expect(editor.stopped).toEqual(["scene:assets/stuck.scene.babasset", "scene:assets/fine.scene.babasset"]);
+    expect(editor.stopped).toEqual(["scene:assets/stuck.scene.hasset", "scene:assets/fine.scene.hasset"]);
     expect(fine.passed).toBe(true);
     expect(fine.play.commands).toMatchObject([{ line: "ft_stats", success: true, output: "ft_stats ok" }]);
     expect(report.cancelled).toBe(false);
@@ -117,9 +117,9 @@ describe("runFeatureTestCheck", () => {
 
   it("fails a scene on a failed command or a session error, but not on warnings", async () => {
     const editor = fakeEditor({
-      "assets/command.scene.babasset": { commands: { ft_stats: { success: false, output: "Unknown command" } } },
-      "assets/error.scene.babasset": { diagnostics: [diagnostic("error", "Boom")] },
-      "assets/warning.scene.babasset": { diagnostics: [diagnostic("warning", "Slow")] },
+      "assets/command.scene.hasset": { commands: { ft_stats: { success: false, output: "Unknown command" } } },
+      "assets/error.scene.hasset": { diagnostics: [diagnostic("error", "Boom")] },
+      "assets/warning.scene.hasset": { diagnostics: [diagnostic("warning", "Slow")] },
     });
     const report = await runFeatureTestCheck({
       mode: "quick", scenes: [scene("command"), scene("error"), scene("warning")], deps: editor.deps, signal: new AbortController().signal,
@@ -130,7 +130,7 @@ describe("runFeatureTestCheck", () => {
   });
 
   it("reports a scene the editor never opened without starting Play", async () => {
-    const editor = fakeEditor({ "assets/blocked.scene.babasset": { open: "blocked" }, "assets/broken.scene.babasset": { open: "failed" } });
+    const editor = fakeEditor({ "assets/blocked.scene.hasset": { open: "blocked" }, "assets/broken.scene.hasset": { open: "failed" } });
     const report = await runFeatureTestCheck({
       mode: "full", scenes: [scene("blocked"), scene("broken")], deps: editor.deps, signal: new AbortController().signal,
     });
@@ -145,7 +145,7 @@ describe("runFeatureTestCheck", () => {
 
   it("stops Play and returns the partial report when cancelled", async () => {
     const controller = new AbortController();
-    const editor = fakeEditor({ "assets/stuck.scene.babasset": { play: "stuck" } }, (now) => { if (now >= 10_000) controller.abort(); });
+    const editor = fakeEditor({ "assets/stuck.scene.hasset": { play: "stuck" } }, (now) => { if (now >= 10_000) controller.abort(); });
     const report = await runFeatureTestCheck({
       mode: "full", scenes: [scene("stuck"), scene("never")], deps: editor.deps, signal: controller.signal,
     });
@@ -153,8 +153,8 @@ describe("runFeatureTestCheck", () => {
     expect(report.scenes.map((entry) => [entry.name, entry.passed, entry.problems])).toEqual([
       ["stuck", false, ["Cancelled while checking this scene."]],
     ]);
-    expect(editor.stopped).toEqual(["scene:assets/stuck.scene.babasset"]);
-    expect(editor.started).toEqual(["scene:assets/stuck.scene.babasset"]);
+    expect(editor.stopped).toEqual(["scene:assets/stuck.scene.hasset"]);
+    expect(editor.started).toEqual(["scene:assets/stuck.scene.hasset"]);
   });
 
   it("benchmarks every profile with the frame cap lifted, then restores the session settings", async () => {

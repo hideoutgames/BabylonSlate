@@ -3,7 +3,7 @@ import {
   type FixedLightKind,
   type FixedLightLayout,
   type FixedLightShadowKind,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** One light the fixed layout may seat, as admission sees it. */
 export interface FixedSeatCandidate<L> {

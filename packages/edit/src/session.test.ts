@@ -5,7 +5,7 @@ import {
   createActor,
   createDefaultScene,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { diffGraphCommands } from "./commands/graph-diff";
 import { diffSceneCommands } from "./commands/scene-diff";
 import { SetAssetDocumentCommand } from "./commands/asset-document";

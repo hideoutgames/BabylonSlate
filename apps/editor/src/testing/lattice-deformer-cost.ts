@@ -5,8 +5,8 @@ import {
 } from "@babylonjs/core";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
-import { createAppWebGpuEngine, disposeMeshLatticeDeformer, requestRenderPath, setMeshLatticeDeformer } from "@babylonslate/render";
-import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
+import { createAppWebGpuEngine, disposeMeshLatticeDeformer, requestRenderPath, setMeshLatticeDeformer } from "@haptic/render";
+import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 
 export interface LatticeDeformerCostOptions {
   vertexCounts?: readonly (16384 | 65536)[];
@@ -40,7 +40,7 @@ class StockLatticeReferenceMaterial extends StandardMaterial {
 }
 
 /**
- * Caller must opt in (the e2e host uses BL_PERF_LATTICE=1). Defaults are one
+ * Caller must opt in (the e2e host uses HAPTIC_PERF_LATTICE=1). Defaults are one
  * 16,384-vertex mesh, three cage sizes, five modes, two repeats, 10s warmup +
  * 30s measurement per case: about twenty minutes per backend. Smaller explicit
  * options are useful for harness smoke checks, not hardware qualification.

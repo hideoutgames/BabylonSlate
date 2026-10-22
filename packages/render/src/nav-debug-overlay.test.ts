@@ -5,10 +5,10 @@ import {
   initNavigation,
   navMeshDebugPrimitives,
   staticBlockerBakeParts,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 
-vi.mock("@babylonslate/navigation", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/navigation")>();
+vi.mock("@haptic/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/navigation")>();
   return { ...actual, navMeshDebugPrimitives: vi.fn(actual.navMeshDebugPrimitives) };
 });
 import { createTestEngine } from "./create-null-engine";
@@ -17,7 +17,7 @@ import {
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
 } from "./nav-debug-overlay";
-import { createActor } from "@babylonslate/core";
+import { createActor } from "@haptic/core";
 
 function groundPrism(): { positions: number[]; indices: number[] } {
   const half = 10;

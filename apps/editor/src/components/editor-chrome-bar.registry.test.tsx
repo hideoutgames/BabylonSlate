@@ -8,15 +8,15 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
-import type { Diagnostic } from "@babylonslate/scripting";
+import { AssetRegistry, projectContentRoot } from "@haptic/assets";
+import type { Diagnostic } from "@haptic/scripting";
 import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
-} from "@babylonslate/core";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/core";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
 import type { OpenDocument } from "../services/document-service";
@@ -87,7 +87,7 @@ function openDocument(id: string, ref: OpenDocument["ref"]): OpenDocument {
 
 async function createRegistry() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("test.babproject");
+  await storage.openDocumentsProject("test.hproject");
   const registry = new AssetRegistry(storage);
   await registry.mountRoot(projectContentRoot());
   state.registry = registry;
@@ -183,7 +183,7 @@ describe("chrome graph debugger", () => {
   const simulate = () => {
     state.sessionState = { generation: 1, mode: "simulate", lifecycle: "running", quarantined: false, error: null };
   };
-  const classGraph = (id: string, name: string) => openDocument(id, createDocumentRef("graph", `assets/${name}.class.babasset`));
+  const classGraph = (id: string, name: string) => openDocument(id, createDocumentRef("graph", `assets/${name}.class.hasset`));
   const instance = (id: string, label: string) => ({ id, kind: "actor" as const, label });
 
   afterEach(() => { store = null; });
@@ -250,7 +250,7 @@ describe("chrome graph debugger", () => {
     await createRegistry();
     simulate();
     state.activeId = "asset";
-    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument("asset", createDocumentRef(kind, "assets/Guard.babasset"))];
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument("asset", createDocumentRef(kind, "assets/Guard.hasset"))];
     vi.spyOn(state.registry!, "getByPath").mockReturnValue({ header: { guid: "asset-guid" } } as unknown as ReturnType<AssetRegistry["getByPath"]>);
     render(<DebugChrome />);
     expect(store!.getSnapshot().target).toEqual(target);
@@ -265,7 +265,7 @@ describe("chrome graph debugger", () => {
     state.activeId = "helpers";
     state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), classGraph("helpers", "Helpers")];
     vi.spyOn(state.registry!, "list").mockReturnValue([
-      { path: "assets/Helpers.class.babasset", header: { type: "Class", name: "Helpers", parentClass: "FunctionLibrary" } },
+      { path: "assets/Helpers.class.hasset", header: { type: "Class", name: "Helpers", parentClass: "FunctionLibrary" } },
     ] as unknown as ReturnType<AssetRegistry["list"]>);
     render(<DebugChrome />);
     expect(store!.getSnapshot().target).toBeNull();
@@ -287,29 +287,29 @@ describe("chrome Compile", () => {
     state.activeId = "hero";
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      openDocument("hero", createDocumentRef("graph", "assets/Hero.class.babasset")),
-      openDocument("villain", createDocumentRef("graph", "assets/Villain.class.babasset")),
+      openDocument("hero", createDocumentRef("graph", "assets/Hero.class.hasset")),
+      openDocument("villain", createDocumentRef("graph", "assets/Villain.class.hasset")),
     ];
     // Compile covers the project, so it returns every class's validation.
     state.compileDiagnostics = [
-      issue("assets/Villain.class.babasset", "villain problem"),
-      issue("assets/Hero.class.babasset", "hero problem"),
+      issue("assets/Villain.class.hasset", "villain problem"),
+      issue("assets/Hero.class.hasset", "hero problem"),
     ];
     render(<Chrome />);
 
     fireEvent.click(screen.getByTestId("compile-graph"));
 
     await waitFor(() => expect(state.setDiagnostics).toHaveBeenCalledOnce());
-    expect(state.setDiagnostics.mock.calls[0]![0]).toEqual([issue("assets/Hero.class.babasset", "hero problem")]);
+    expect(state.setDiagnostics.mock.calls[0]![0]).toEqual([issue("assets/Hero.class.hasset", "hero problem")]);
   });
 
   it("reports no errors for a clean focused class while another class has some", async () => {
     state.activeId = "hero";
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      openDocument("hero", createDocumentRef("graph", "assets/Hero.class.babasset")),
+      openDocument("hero", createDocumentRef("graph", "assets/Hero.class.hasset")),
     ];
-    state.compileDiagnostics = [issue("assets/Villain.class.babasset", "villain problem")];
+    state.compileDiagnostics = [issue("assets/Villain.class.hasset", "villain problem")];
     render(<Chrome />);
 
     fireEvent.click(screen.getByTestId("compile-graph"));
@@ -324,7 +324,7 @@ describe("chrome document icons", () => {
     state.activeId = CONTENT_BROWSER_ID;
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      { ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")), background: true, dirty: true },
+      { ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.hasset")), background: true, dirty: true },
     ];
     const closeAll = vi.fn();
     render(<Chrome onCloseAllDocuments={closeAll} />);
@@ -338,13 +338,13 @@ describe("chrome document icons", () => {
   it.each([false, true])("keeps background sheet edits out of navigation until revealed, while Save includes them (phone=%s)", (phone) => {
     state.phone = phone;
     const object = {
-      ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")),
+      ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.hasset")),
       background: true,
       dirty: true,
     };
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      openDocument("first", createDocumentRef("data-tree", "assets/Weapons.datatree.babasset")),
+      openDocument("first", createDocumentRef("data-tree", "assets/Weapons.datatree.hasset")),
       object,
     ];
     const view = render(<Chrome />);
@@ -372,7 +372,7 @@ describe("chrome document icons", () => {
         ["first", "First", "base"],
         ["second", "Second", "base"],
       ]) {
-        await registry.createAsset("project", `${id}.class.babasset`, {
+        await registry.createAsset("project", `${id}.class.hasset`, {
           guid: id!,
           name: name!,
           type: "Class",
@@ -387,15 +387,15 @@ describe("chrome document icons", () => {
         openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
         openDocument(
           "scene",
-          createDocumentRef("scene", "assets/main.scene.babasset"),
+          createDocumentRef("scene", "assets/main.scene.hasset"),
         ),
         openDocument(
           "first",
-          createDocumentRef("graph", "assets/first.class.babasset"),
+          createDocumentRef("graph", "assets/first.class.hasset"),
         ),
         openDocument(
           "second",
-          createDocumentRef("graph", "assets/second.class.babasset"),
+          createDocumentRef("graph", "assets/second.class.hasset"),
         ),
       ];
       const list = vi.spyOn(registry, "list");
@@ -416,7 +416,7 @@ describe("chrome document icons", () => {
 
       // Resaved with another parent: the registry reindexes a new header.
       await registry.deleteAsset("base");
-      await registry.createAsset("project", "base.class.babasset", {
+      await registry.createAsset("project", "base.class.hasset", {
         guid: "base",
         name: "Shared Base",
         type: "Class",
@@ -447,7 +447,7 @@ describe("chrome document icons", () => {
 
   it("uses indexed asset types and missing-asset fallbacks without enumerating non-Class assets", async () => {
     const registry = await createRegistry();
-    await registry.createAsset("project", "sheet.texture.babasset", {
+    await registry.createAsset("project", "sheet.texture.hasset", {
       guid: "sheet",
       name: "Sheet",
       type: "Sprite",
@@ -459,11 +459,11 @@ describe("chrome document icons", () => {
     state.documents = [
       openDocument(
         "sheet",
-        createDocumentRef("texture", "assets/sheet.texture.babasset"),
+        createDocumentRef("texture", "assets/sheet.texture.hasset"),
       ),
       openDocument(
         "missing",
-        createDocumentRef("texture", "assets/missing.texture.babasset"),
+        createDocumentRef("texture", "assets/missing.texture.hasset"),
       ),
     ];
     const list = vi.spyOn(registry, "list");

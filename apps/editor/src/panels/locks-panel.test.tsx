@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
-import { FakeLockProvider } from "@babylonslate/source-control";
-import { MemorySecretStore } from "@babylonslate/vfs";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
+import { FakeLockProvider } from "@haptic/source-control";
+import { MemorySecretStore } from "@haptic/vfs";
 import { SourceControlService } from "../services/source-control-service";
 import { LocksPanelContents } from "./locks-panel";
 
@@ -15,7 +15,7 @@ const enabled = {
 async function serviceWithLocks(): Promise<SourceControlService> {
   const service = new SourceControlService();
   const fake = new FakeLockProvider({ selfName: "Ada" });
-  fake.addTheirs("assets/theirs.babasset", "Bob");
+  fake.addTheirs("assets/theirs.hasset", "Bob");
   await service.configure({
     settings: enabled,
     projectGuid: "proj",
@@ -25,7 +25,7 @@ async function serviceWithLocks(): Promise<SourceControlService> {
     nativeHttp: null,
     fake,
   });
-  await service.autoLock("assets/mine.babasset");
+  await service.autoLock("assets/mine.hasset");
   await service.refresh();
   return service;
 }
@@ -35,13 +35,13 @@ describe("LocksPanelContents", () => {
     const service = await serviceWithLocks();
     try {
       render(<LocksPanelContents sourceControl={service} />);
-      fireEvent.click(screen.getByTestId("locks-force-unlock-assets/theirs.babasset"));
+      fireEvent.click(screen.getByTestId("locks-force-unlock-assets/theirs.hasset"));
       expect(screen.getByTestId("locks-force-unlock-confirm")).toBeTruthy();
-      expect(service.lockForPath("assets/theirs.babasset")).toBeTruthy();
+      expect(service.lockForPath("assets/theirs.hasset")).toBeTruthy();
       await act(async () => {
         fireEvent.click(screen.getByTestId("locks-force-unlock-confirm-action"));
       });
-      expect(service.lockForPath("assets/theirs.babasset")).toBeUndefined();
+      expect(service.lockForPath("assets/theirs.hasset")).toBeUndefined();
     } finally {
       service.dispose();
     }
@@ -58,8 +58,8 @@ describe("LocksPanelContents", () => {
       "Release All My Locks",
     );
     expect(screen.getByTestId("locks-release-all").textContent).toContain("(1)");
-    expect(screen.getByTestId("locks-row-assets/mine.babasset")).toBeTruthy();
-    expect(screen.getByTestId("locks-row-assets/theirs.babasset")).toBeTruthy();
+    expect(screen.getByTestId("locks-row-assets/mine.hasset")).toBeTruthy();
+    expect(screen.getByTestId("locks-row-assets/theirs.hasset")).toBeTruthy();
     fireEvent.click(screen.getByTestId("locks-release-all"));
     expect(screen.getByTestId("locks-release-all-confirm")).toBeTruthy();
     expect(screen.getByText("Unpushed work becomes editable by others.")).toBeTruthy();

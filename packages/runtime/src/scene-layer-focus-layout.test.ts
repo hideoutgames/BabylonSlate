@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { overlayLayoutKey } from "@babylonslate/core";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { overlayLayoutKey } from "@haptic/core";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";

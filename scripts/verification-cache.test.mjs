@@ -148,7 +148,7 @@ test("CI and explicit cache bypass always execute, and repository contracts inva
   const f = await fixture(t);
   const phase = { id: "unit", command: ["test"] };
   await cachedVerificationPhase(phase, async () => {}, f);
-  for (const env of [{ CI: "true" }, { BL_VERIFY_CACHE: "0" }]) {
+  for (const env of [{ CI: "true" }, { HAPTIC_VERIFY_CACHE: "0" }]) {
     assert.equal(
       (await cachedVerificationPhase(phase, async () => {}, { ...f, env }))
         .cached,

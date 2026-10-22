@@ -4,22 +4,22 @@ import {
   ShortcutKeys,
   ariaKeyShortcuts,
   type NestedMenuItem,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Separator } from "@haptic/ui/components/separator";
+import { Toggle } from "@haptic/ui/components/toggle";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
-import type { SerializedScene } from "@babylonslate/core";
-import { isSceneWorkspaceKind } from "@babylonslate/core";
-import type { GizmoTool, ViewportShadingMode } from "@babylonslate/render";
+} from "@haptic/ui/components/tooltip";
+import type { SerializedScene } from "@haptic/core";
+import { isSceneWorkspaceKind } from "@haptic/core";
+import type { GizmoTool, ViewportShadingMode } from "@haptic/render";
 import {
   ArrowDownToLineIcon,
   BoxIcon,

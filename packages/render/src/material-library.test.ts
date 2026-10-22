@@ -6,7 +6,7 @@ import {
   materializeMaterialInstance,
   type MaterialDocument,
   type MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { acquireAuthoredMaterialVariant, MaterialCompileStalled } from "./material-compiler";
 import { syncSceneLighting } from "./scene-lighting";

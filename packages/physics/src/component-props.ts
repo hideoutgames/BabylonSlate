@@ -1,4 +1,4 @@
-import { packCollisionTriangleMesh } from "@babylonslate/core";
+import { packCollisionTriangleMesh } from "@haptic/core";
 import { validateColliderShape } from "./collider-validation";
 import type { ColliderShape, ConstraintDesc, MotionType, Quat, Vec3 } from "./types";
 

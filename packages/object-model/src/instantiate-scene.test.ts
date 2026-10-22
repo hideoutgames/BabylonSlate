@@ -7,7 +7,7 @@ import {
   createMeshComponent,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { ClassRegistry } from "./class-registry";
 import { attachSerializedComponents, createActorFromSerialized } from "./instantiate-scene";
 import { World } from "./world";

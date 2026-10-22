@@ -9,7 +9,7 @@ import {
   STRING,
   type NodeDefinition,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 const TARGET = actorRef("SceneStreamingActor");

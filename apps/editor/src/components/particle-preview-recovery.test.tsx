@@ -7,8 +7,8 @@ import {
   type IndexedAsset,
   type ParticleEmitterPayload,
   type ParticleLibrary,
-} from "@babylonslate/assets";
-import type { ParticleServiceDiagnostic } from "@babylonslate/render";
+} from "@haptic/assets";
+import type { ParticleServiceDiagnostic } from "@haptic/render";
 import { ParticlePreviewCanvas } from "./particle-preview-canvas";
 import { systemPreviewLibrary } from "../lib/play-particles";
 
@@ -48,7 +48,7 @@ const harness = vi.hoisted(() => ({
   removeContextRestored: vi.fn(),
 }));
 
-vi.mock("@babylonslate/render", () => {
+vi.mock("@haptic/render", () => {
   class ParticleService {
     private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
     systems = 0;
@@ -190,7 +190,7 @@ function preview(emitter: ParticleEmitterPayload = withMaterial) {
 function savedTexture(payload: Record<string, unknown>, ktx2ChunkIds: string[]): IndexedAsset {
   return {
     rootId: "project",
-    path: "assets/albedo.babasset",
+    path: "assets/albedo.hasset",
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       chunks: ktx2ChunkIds.map((id) => ({

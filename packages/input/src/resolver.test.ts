@@ -512,3 +512,86 @@ describe("InputResolver", () => {
     expect(idle.cursor).toEqual({ x: 131, y: 51, pressed: false });
   });
 });
+
+describe("InputResolver touches", () => {
+  type PointerEvent = Extract<RawInputEvent, { kind: "pointer" }>;
+  const finger = (
+    pointerId: number,
+    phase: PointerEvent["phase"],
+    x: number,
+    y: number,
+    extra: Partial<PointerEvent> = {},
+  ): RawInputEvent => ({ kind: "pointer", tick: 0, pointerId, phase, x, y, button: phase === "move" ? -1 : 0, pointerType: "touch", ...extra });
+  const summary = (touches: readonly { Finger: number; Phase: string }[]) => touches.map((touch) => `${touch.Finger}:${touch.Phase}`);
+
+  it("gives each contact the lowest free finger, keeps it while held and frees it the tick after the lift", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    const both = resolver.resolve([finger(11, "down", 10, 10), finger(12, "down", 50, 50)]);
+    expect(summary(both.touches)).toEqual(["0:Began", "1:Began"]);
+    expect(summary(both.touchEvents)).toEqual(["0:Began", "1:Began"]);
+
+    // The lifted finger is still listed this tick, so a new contact cannot take its slot yet.
+    const lift = resolver.resolve([finger(11, "up", 12, 10), finger(13, "down", 90, 90)]);
+    expect(summary(lift.touches)).toEqual(["0:Ended", "1:Stationary", "2:Began"]);
+    expect(lift.touches[0]).toMatchObject({ Position: { x: 12, y: 10 }, Delta: { x: 2, y: 0 }, StartPosition: { x: 10, y: 10 } });
+
+    const next = resolver.resolve([finger(14, "down", 5, 5)]);
+    expect(summary(next.touches)).toEqual(["0:Began", "1:Stationary", "2:Stationary"]);
+    expect(next.touches[0]).toMatchObject({ Position: { x: 5, y: 5 }, Type: "Finger" });
+  });
+
+  it("reports one Moved record per contact per tick with the movement since the tick began", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    resolver.resolve([finger(1, "down", 0, 0)]);
+    const moved = resolver.resolve([finger(1, "move", 5, 0), finger(1, "move", 8, 4)]);
+    expect(moved.touchEvents).toEqual([expect.objectContaining({ Finger: 0, Phase: "Moved", Position: { x: 8, y: 4 }, Delta: { x: 8, y: 4 } })]);
+    expect(moved.touches).toEqual([expect.objectContaining({ Phase: "Moved", Delta: { x: 8, y: 4 } })]);
+
+    const still = resolver.resolve([]);
+    expect(still.touchEvents).toEqual([]);
+    expect(still.touches).toEqual([expect.objectContaining({ Phase: "Stationary", Position: { x: 8, y: 4 }, Delta: { x: 0, y: 0 } })]);
+
+    // A contact that begins and moves in one tick stays Began, with its movement since the press.
+    const fresh = resolver.resolve([finger(2, "down", 100, 100), finger(2, "move", 103, 100)]);
+    expect(summary(fresh.touchEvents)).toEqual(["1:Began", "1:Moved"]);
+    expect(fresh.touches[1]).toMatchObject({ Phase: "Began", Delta: { x: 3, y: 0 } });
+  });
+
+  it("lists a tap inside one tick once, as Ended, after its Began record", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    const tap = resolver.resolve([finger(1, "down", 20, 30), finger(1, "up", 20, 30)]);
+    expect(summary(tap.touchEvents)).toEqual(["0:Began", "0:Ended"]);
+    expect(summary(tap.touches)).toEqual(["0:Ended"]);
+    expect(resolver.resolve([]).touches).toEqual([]);
+  });
+
+  it("ends a cancelled contact as Cancelled at its last reported position", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    resolver.resolve([finger(1, "down", 20, 30), finger(1, "move", 25, 30)]);
+    const cancelled = resolver.resolve([finger(1, "cancel", 0, 0)]);
+    expect(cancelled.touchEvents).toEqual([expect.objectContaining({ Phase: "Cancelled", Position: { x: 25, y: 30 }, Delta: { x: 0, y: 0 } })]);
+  });
+
+  it("counts a pen tip and the left mouse button as contacts, not other mouse buttons, and keeps pressure from the last sample", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    const pen = resolver.resolve([finger(5, "down", 1, 1, { pointerType: "pen", pressure: 0.3 })]);
+    expect(pen.touches).toEqual([expect.objectContaining({ Type: "Pen", Pressure: 0.3 })]);
+    resolver.resolve([finger(5, "move", 2, 1, { pointerType: "pen", pressure: 0.6 })]);
+    const lifted = resolver.resolve([finger(5, "up", 2, 1, { pointerType: "pen", pressure: 0 })]);
+    expect(lifted.touchEvents).toEqual([expect.objectContaining({ Phase: "Ended", Pressure: 0.6 })]);
+
+    const right = resolver.resolve([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 4, y: 4, button: 2 }]);
+    expect(right.touches).toEqual([]);
+    // Pressing left during the right-button chord makes the mouse a contact; a mouse without a type is still a mouse.
+    const left = resolver.resolve([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 4, y: 4, button: 0 }]);
+    expect(left.touches).toEqual([expect.objectContaining({ Finger: 0, Type: "Mouse", Pressure: 0.5 })]);
+    expect(summary(resolver.resolve([{ kind: "pointer", tick: 0, pointerId: 1, phase: "up", x: 4, y: 4, button: 0 }]).touches)).toEqual(["0:Ended"]);
+  });
+
+  it("drops every contact on reset", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    resolver.resolve([finger(1, "down", 0, 0), finger(2, "down", 9, 9)]);
+    expect(resolver.reset().touches).toEqual([]);
+    expect(summary(resolver.resolve([finger(3, "down", 1, 1)]).touches)).toEqual(["0:Began"]);
+  });
+});

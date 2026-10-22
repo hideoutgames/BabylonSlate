@@ -9,7 +9,7 @@ import {
   Vector3,
   type Light,
 } from "@babylonjs/core";
-import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
+import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fixedLightSlotTable,

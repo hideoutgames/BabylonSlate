@@ -1,4 +1,4 @@
-import { ENGINE_VERSION, newGuid, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, newGuid, type ProjectStorage } from "@haptic/core";
 import { resolvePluginGraph, type PluginDiagnostic, type PluginGraphInput } from "./plugin-host";
 import {
   createDefaultExtensionSettings,

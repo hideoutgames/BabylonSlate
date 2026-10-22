@@ -1,4 +1,4 @@
-import { Actor, SceneLayerActorSwitcher, type ClassRegistry } from "@babylonslate/object-model";
+import { Actor, SceneLayerActorSwitcher, type ClassRegistry } from "@haptic/object-model";
 
 export type SceneLayerActorEntry = { classId: string; defaults: Record<string, unknown> };
 

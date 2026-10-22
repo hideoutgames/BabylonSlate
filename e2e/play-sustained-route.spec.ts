@@ -16,33 +16,33 @@ import {
 } from "./play-performance-fixture";
 
 /**
- * Sustained renderer qualification route. Opt-in: set BL_PERF_SUSTAINED=1.
+ * Sustained renderer qualification route. Opt-in: set HAPTIC_PERF_SUSTAINED=1.
  * Runs the shared performance room through overlay Play and then through a
- * Preview Build (the packed player host), sampling every BL_PERF_SAMPLE_MS
- * window after a 60 s warm-up for BL_PERF_SUSTAINED_MINUTES minutes. Each
+ * Preview Build (the packed player host), sampling every HAPTIC_PERF_SAMPLE_MS
+ * window after a 60 s warm-up for HAPTIC_PERF_SUSTAINED_MINUTES minutes. Each
  * window records rAF cadence (fps, interval median/p95/p99, stalls over
  * 33 ms), long-task time, canvas/backbuffer dimensions and the render
  * diagnostics snapshot (draw calls, scene resource counts, accounted GPU
  * reservations, hardware-scaling level, pressure sample, adapter identity).
  * It asserts only that the route ran; it never asserts a frame rate.
  *
- * Env: BL_PERF_SUSTAINED_MINUTES (default 20),
- *      BL_PERF_SUSTAINED_WARMUP_MS (default 60000, applied per host),
- *      BL_PERF_SAMPLE_MS (default 30000),
- *      BL_PERF_QUALITY (low|medium|high|ultra, default low),
- *      BL_PERF_RENDER_MODE (cel) sets project.settings.render.mode,
- *      BL_PERF_BACKEND (webgl2|webgpu) sets project.settings.render.gpuBackend.
+ * Env: HAPTIC_PERF_SUSTAINED_MINUTES (default 20),
+ *      HAPTIC_PERF_SUSTAINED_WARMUP_MS (default 60000, applied per host),
+ *      HAPTIC_PERF_SAMPLE_MS (default 30000),
+ *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, default low),
+ *      HAPTIC_PERF_RENDER_MODE (cel) sets project.settings.render.mode,
+ *      HAPTIC_PERF_BACKEND (webgl2|webgpu) sets project.settings.render.gpuBackend.
  */
-const ROUTE_ENABLED = process.env.BL_PERF_SUSTAINED === "1";
-const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.BL_PERF_QUALITY ?? "")
-  ? (process.env.BL_PERF_QUALITY as QualityLevel)
+const ROUTE_ENABLED = process.env.HAPTIC_PERF_SUSTAINED === "1";
+const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.HAPTIC_PERF_QUALITY ?? "")
+  ? (process.env.HAPTIC_PERF_QUALITY as QualityLevel)
   : "low";
-const MINUTES = Number(process.env.BL_PERF_SUSTAINED_MINUTES ?? 20);
-const WARMUP_MS = Number(process.env.BL_PERF_SUSTAINED_WARMUP_MS ?? 60_000);
-const SAMPLE_MS = Number(process.env.BL_PERF_SAMPLE_MS ?? 30_000);
+const MINUTES = Number(process.env.HAPTIC_PERF_SUSTAINED_MINUTES ?? 20);
+const WARMUP_MS = Number(process.env.HAPTIC_PERF_SUSTAINED_WARMUP_MS ?? 60_000);
+const SAMPLE_MS = Number(process.env.HAPTIC_PERF_SAMPLE_MS ?? 30_000);
 const BACKEND =
-  process.env.BL_PERF_BACKEND === "webgl2" || process.env.BL_PERF_BACKEND === "webgpu"
-    ? process.env.BL_PERF_BACKEND
+  process.env.HAPTIC_PERF_BACKEND === "webgl2" || process.env.HAPTIC_PERF_BACKEND === "webgpu"
+    ? process.env.HAPTIC_PERF_BACKEND
     : null;
 
 type Diagnostics = Record<string, unknown> | null;
@@ -73,17 +73,17 @@ async function sampleWindow(
   return host.evaluate(
     async ({ durationMs, canvasTestId }) => {
       const global = globalThis as unknown as {
-        __babylonslatePlayTest?: {
+        __hapticPlayTest?: {
           rendering?: () => unknown;
           tickIndex?: () => number;
         };
-        __babylonslatePlayerTest?: {
+        __hapticPlayerTest?: {
           rendering?: () => unknown;
           tickIndex?: () => number;
         };
       };
       const hooks =
-        global.__babylonslatePlayTest ?? global.__babylonslatePlayerTest ?? null;
+        global.__hapticPlayTest ?? global.__hapticPlayerTest ?? null;
       const rendering = () => {
         try {
           return (hooks?.rendering?.() ?? null) as Record<string, unknown> | null;
@@ -198,7 +198,7 @@ function summaryLine(host: string, index: number, window: ReturnType<typeof summ
   );
 }
 
-test.skip(!ROUTE_ENABLED, "Sustained qualification route; set BL_PERF_SUSTAINED=1 to run it.");
+test.skip(!ROUTE_ENABLED, "Sustained qualification route; set HAPTIC_PERF_SUSTAINED=1 to run it.");
 
 test(`sustained route (${QUALITY}, ${MINUTES}min, play + preview build)`, async ({ page }, testInfo) => {
   const durationMs = Math.max(SAMPLE_MS, MINUTES * 60_000);
@@ -247,9 +247,9 @@ test(`sustained route (${QUALITY}, ${MINUTES}min, play + preview build)`, async 
           () =>
             (
               globalThis as unknown as {
-                __babylonslatePlayTest?: { tickIndex: () => number | null };
+                __hapticPlayTest?: { tickIndex: () => number | null };
               }
-            ).__babylonslatePlayTest?.tickIndex() ?? -1,
+            ).__hapticPlayTest?.tickIndex() ?? -1,
         ),
       { timeout: 120_000 },
     )
@@ -283,10 +283,10 @@ test(`sustained route (${QUALITY}, ${MINUTES}min, play + preview build)`, async 
   const report = {
     qualification:
       "Sustained local browser observation of requestAnimationFrame cadence and render diagnostics across overlay Play and Preview Build; a presentation proxy on this machine's adapter, not device, Safari, thermal, or A16 qualification. No frame-rate assertion.",
-    label: process.env.BL_PERF_LABEL ?? null,
+    label: process.env.HAPTIC_PERF_LABEL ?? null,
     quality: QUALITY,
     qualityProfile: RENDER_QUALITY_PROFILES[QUALITY],
-    renderMode: process.env.BL_PERF_RENDER_MODE === "cel" ? "cel" : "pbr",
+    renderMode: process.env.HAPTIC_PERF_RENDER_MODE === "cel" ? "cel" : "pbr",
     requestedBackend: BACKEND,
     warmupMs: WARMUP_MS,
     sampleMs: SAMPLE_MS,

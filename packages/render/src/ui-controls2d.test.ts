@@ -1,6 +1,6 @@
 import { NullEngine, RawTexture, StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, parseUIControl2DProperties, walkOverlayPointerHits } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseUIControl2DProperties, walkOverlayPointerHits } from "@haptic/core";
 import { UIControls2DInput, type SceneLayerControlEvent } from "./ui-controls2d-input";
 import { createUIControl2DMesh, refreshUIControl2DMaterials, uiControl2DMesh } from "./ui-controls2d-mesh";
 import { SceneLayerCompositor } from "./scene-layer-compositor";

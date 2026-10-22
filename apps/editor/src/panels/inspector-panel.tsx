@@ -5,12 +5,12 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { carriesLoadingPolicy, declaredValueUnit, normalizeClassMemberCategory, parseUIControl2DProperties, type CollisionPreset } from "@babylonslate/core";
+import { carriesLoadingPolicy, declaredValueUnit, normalizeClassMemberCategory, parseUIControl2DProperties, type CollisionPreset } from "@haptic/core";
 import { useMemo, useState } from "react";
-import { normalizeModelPayload } from "@babylonslate/assets";
+import { normalizeModelPayload } from "@haptic/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
-import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { normalizeRenderTargetCaptureProperties } from "@haptic/core";
 import { ClassCaptureActorsField } from "../components/class-capture-actors-field";
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import {
@@ -43,15 +43,15 @@ import {
   type ClassPickerEntry,
   type PinListRow,
   type VariableTypeFieldsValue,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
+import { Button } from "@haptic/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   DEFAULT_COLLISION_LAYERS,
@@ -69,7 +69,7 @@ import {
   type SerializedTransform,
   type ViewportMode,
   parseMapDefaultEntries,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   animGraphMembersFromVariables,
   decorateTransitionRuleGraph,
@@ -77,7 +77,7 @@ import {
   findReverseTransition,
   parseAnimGraphDocument,
   patchTransition,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   useDocumentActions,
   useProjectState,
@@ -116,8 +116,8 @@ import { JsBodyEditor } from "../components/js-body-editor";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
-import { executeJavaScriptNameError } from "@babylonslate/scripting-nodes";
-import { isReservedConsoleCommandName } from "@babylonslate/debugger";
+import { executeJavaScriptNameError } from "@haptic/scripting-nodes";
+import { isReservedConsoleCommandName } from "@haptic/debugger";
 import {
   assetPickerAllowedTypes,
   collectEnumMemberNames,
@@ -145,7 +145,7 @@ import {
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
 import { unitPatchForType, valueUnitRow } from "../lib/value-unit-row";
-import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
+import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@haptic/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
 import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-component-catalog";

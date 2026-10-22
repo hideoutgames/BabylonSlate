@@ -1,14 +1,14 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import type { ExtensionDescriptor } from "@babylonslate/assets";
-import { NamePromptDialog } from "@babylonslate/editor-kit";
-import { pickImportFiles } from "@babylonslate/vfs";
-import { Button } from "@babylonslate/ui/components/button";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Switch } from "@babylonslate/ui/components/switch";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
+import type { ExtensionDescriptor } from "@haptic/assets";
+import { NamePromptDialog } from "@haptic/editor-kit";
+import { pickImportFiles } from "@haptic/vfs";
+import { Button } from "@haptic/ui/components/button";
+import { Badge } from "@haptic/ui/components/badge";
+import { Switch } from "@haptic/ui/components/switch";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import {
   useDocumentActions,
   useProjectState,
@@ -97,10 +97,10 @@ export function ProjectExtensionsSettings() {
           {commands.length ? <div className="flex flex-wrap gap-2">{commands.map((value) => <Button key={value.id} variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => setCommand(value)}>{value.title}</Button>)}</div> : null}
         </Field>;
       })}
-      {snapshot.entries.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Extensions</EmptyTitle><EmptyDescription>Create an editor tool or import a .babextension package.</EmptyDescription></EmptyHeader></Empty> : null}
+      {snapshot.entries.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Extensions</EmptyTitle><EmptyDescription>Create an editor tool or import a .hextension package.</EmptyDescription></EmptyHeader></Empty> : null}
       <div className="flex flex-wrap gap-2">
         <Button id="settings-extension-new" variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => setNewOpen(true)}>New Extension</Button>
-        <Button id="settings-extension-import" variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("Importing Extension", async () => { const [file] = await pickImportFiles({ multiple: false, accept: ".babextension" }); if (file) await importArchive(file.bytes); })}>Import Extension</Button>
+        <Button id="settings-extension-import" variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("Importing Extension", async () => { const [file] = await pickImportFiles({ multiple: false, accept: ".hextension" }); if (file) await importArchive(file.bytes); })}>Import Extension</Button>
       </div>
     </FieldSet>
     <NamePromptDialog open={newOpen} onOpenChange={setNewOpen} title="New Extension" label="Display Name" confirmLabel="Create" onSubmit={(name) => void run("Creating Extension", async () => { await edit(await service.create(name)); })} />

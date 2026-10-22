@@ -80,7 +80,7 @@ function GridHarness({
       {Array.from({ length: slice.lastIndex - slice.firstIndex }, (_, offset) => {
         const index = slice.firstIndex + offset;
         return (
-          <div key={index} data-testid={`content-item-assets/tex-${index}.babasset`} />
+          <div key={index} data-testid={`content-item-assets/tex-${index}.hasset`} />
         );
       })}
     </div>
@@ -111,11 +111,11 @@ describe("useContentBrowserGridWindow", () => {
     expect(mounted).toBeGreaterThan(0);
     expect(mounted).toBeLessThan(80);
     expect(
-      document.querySelector('[data-testid="content-item-assets/tex-0.babasset"]'),
+      document.querySelector('[data-testid="content-item-assets/tex-0.hasset"]'),
     ).toBeTruthy();
     expect(
       document.querySelector(
-        '[data-testid="content-item-assets/tex-299.babasset"]',
+        '[data-testid="content-item-assets/tex-299.hasset"]',
       ),
     ).toBeNull();
   });

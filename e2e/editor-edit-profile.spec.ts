@@ -31,15 +31,15 @@ import { setPreviewScene } from "./preview-parity";
  * mounts the test-mode Profiler regions (`editor-route`, `editor-layout`,
  * `editor-chrome-bar`, `document-workspace`, `editor-status-bar`,
  * `document:<id>`, `panel:<component>`). Each scenario resets
- * `__babylonslateTest.renderProfile()`, performs a burst of real edits, waits
+ * `__hapticTest.renderProfile()`, performs a burst of real edits, waits
  * for commits to settle, and attaches per-region commit counts and Profiler
  * durations. It asserts only that the edits applied; it never asserts timing.
  *
- * Env: BL_PERF_SCENARIOS (comma-separated subset of idle, scene, graph,
+ * Env: HAPTIC_PERF_SCENARIOS (comma-separated subset of idle, scene, graph,
  *      content-browser, tilemap; default all, always run in that order),
- *      BL_PERF_EDITS (edits per burst, default 12), BL_PERF_SEARCH (Content
- *      Browser query, default PerfClass1), BL_PERF_QUIET_MS (commit-free time
- *      that ends a measurement, default 750), BL_PERF_LABEL (recorded label).
+ *      HAPTIC_PERF_EDITS (edits per burst, default 12), HAPTIC_PERF_SEARCH (Content
+ *      Browser query, default PerfClass1), HAPTIC_PERF_QUIET_MS (commit-free time
+ *      that ends a measurement, default 750), HAPTIC_PERF_LABEL (recorded label).
  *      Unset, non-numeric or out-of-range numeric values use the default; an
  *      unknown scenario name fails the run before the project opens.
  */
@@ -49,7 +49,7 @@ function envInteger(name: string, fallback: number, min: number): number {
   return Number.isFinite(parsed) && parsed >= min ? Math.floor(parsed) : fallback;
 }
 
-/** Scenario ids accepted by BL_PERF_SCENARIOS, in run order. */
+/** Scenario ids accepted by HAPTIC_PERF_SCENARIOS, in run order. */
 const SCENARIO_IDS = ["idle", "scene", "graph", "content-browser", "tilemap"] as const;
 type ScenarioId = (typeof SCENARIO_IDS)[number];
 
@@ -69,10 +69,10 @@ function scenarioSelection(raw: string | undefined) {
 }
 
 const PROFILING_BUILD = process.env.VITE_REACT_PROFILING === "true";
-const SCENARIOS = scenarioSelection(process.env.BL_PERF_SCENARIOS);
-const EDITS = envInteger("BL_PERF_EDITS", 12, 1);
-const SEARCH = process.env.BL_PERF_SEARCH ?? "PerfClass1";
-const QUIET_MS = envInteger("BL_PERF_QUIET_MS", 750, 0);
+const SCENARIOS = scenarioSelection(process.env.HAPTIC_PERF_SCENARIOS);
+const EDITS = envInteger("HAPTIC_PERF_EDITS", 12, 1);
+const SEARCH = process.env.HAPTIC_PERF_SEARCH ?? "PerfClass1";
+const QUIET_MS = envInteger("HAPTIC_PERF_QUIET_MS", 750, 0);
 const SETTLE_TIMEOUT_MS = 20_000;
 // Opening the project and loading the Play performance room (two 120 s waits).
 const SETUP_TIMEOUT_MS = 300_000;
@@ -100,9 +100,9 @@ const guid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0
 const MAIN_CLASS_GUID = guid(2);
 const TILESET_GUID = guid(900);
 const TILEMAP_GUID = guid(901);
-const TILEMAP_FILE = "assets/PerfMap.tilemap.babasset";
+const TILEMAP_FILE = "assets/PerfMap.tilemap.hasset";
 const classFile = (index: number) =>
-  `assets/PerfClass${String(index).padStart(2, "0")}.class.babasset`;
+  `assets/PerfClass${String(index).padStart(2, "0")}.class.hasset`;
 
 /**
  * Main Class event graph: Begin Play and a row of Print nodes above a 6 x 5
@@ -197,7 +197,7 @@ async function profileProjectFiles() {
         {
           guid: guid(1000 + index),
           type: "Class",
-          name: path.slice("assets/".length, -".class.babasset".length),
+          name: path.slice("assets/".length, -".class.hasset".length),
           version: migrations.currentVersion("Class"),
           payload: { nodes: [], edges: [], members: [], components: [] },
         },
@@ -207,7 +207,7 @@ async function profileProjectFiles() {
   }
   const tileset = ensureTilesetTiles({ ...createDefaultTilesetPayload(), atlasWidth: 64 });
   files.set(
-    "assets/PerfTiles.tileset.babasset",
+    "assets/PerfTiles.tileset.hasset",
     await encodeAssetDocument({
       guid: TILESET_GUID,
       type: "Tileset",
@@ -237,7 +237,7 @@ async function profileProjectFiles() {
 }
 
 type ProfileHost = {
-  __babylonslateTest: {
+  __hapticTest: {
     renderProfile: () => RenderProfile;
     resetRenderProfile: () => void;
     activeSceneContent: () => SerializedScene | null;
@@ -249,7 +249,7 @@ type ProfileHost = {
 async function settle(page: Page) {
   return page.evaluate(
     async ({ quietMs, timeoutMs }) => {
-      const host = (globalThis as unknown as ProfileHost).__babylonslateTest;
+      const host = (globalThis as unknown as ProfileHost).__hapticTest;
       const started = performance.now();
       let last = host.renderProfile().commits;
       let quietSince = started;
@@ -305,7 +305,7 @@ async function measure(
 ) {
   const before = await settle(page);
   const startedAt = await page.evaluate(() => {
-    (globalThis as unknown as ProfileHost).__babylonslateTest.resetRenderProfile();
+    (globalThis as unknown as ProfileHost).__hapticTest.resetRenderProfile();
     return performance.now();
   });
   const actionStarted = Date.now();
@@ -313,7 +313,7 @@ async function measure(
   const actionMs = Date.now() - actionStarted;
   const after = await settle(page);
   const { profile, endedAt } = await page.evaluate(() => ({
-    profile: (globalThis as unknown as ProfileHost).__babylonslateTest.renderProfile(),
+    profile: (globalThis as unknown as ProfileHost).__hapticTest.renderProfile(),
     endedAt: performance.now(),
   }));
   return {
@@ -335,7 +335,7 @@ function scenarioSummary({ profile, ...measurement }: Measurement) {
 
 async function tileAt(page: Page, gx: number, gy: number) {
   return page.evaluate(
-    ([x, y]) => (globalThis as unknown as ProfileHost).__babylonslateTest.activeTilemapTile(x, y),
+    ([x, y]) => (globalThis as unknown as ProfileHost).__hapticTest.activeTilemapTile(x, y),
     [gx, gy] as const,
   );
 }
@@ -373,7 +373,7 @@ test.skip(
 test("editor-edit profiling route", async ({ page }, testInfo) => {
   expect(
     SCENARIOS.unknown,
-    `BL_PERF_SCENARIOS accepts a comma-separated subset of ${SCENARIO_IDS.join(", ")}`,
+    `HAPTIC_PERF_SCENARIOS accepts a comma-separated subset of ${SCENARIO_IDS.join(", ")}`,
   ).toEqual([]);
   test.setTimeout(SETUP_TIMEOUT_MS + SCENARIOS.selected.length * SCENARIO_TIMEOUT_MS + 60_000);
   const errors: string[] = [];
@@ -396,7 +396,7 @@ test("editor-edit profiling route", async ({ page }, testInfo) => {
       );
       expect(
         await page.evaluate(
-          () => (globalThis as unknown as ProfileHost).__babylonslateTest.renderProfile().enabled,
+          () => (globalThis as unknown as ProfileHost).__hapticTest.renderProfile().enabled,
         ),
         "The artifact must be built with VITE_REACT_PROFILING=true so test-mode Profilers mount",
       ).toBe(true);
@@ -405,7 +405,7 @@ test("editor-edit profiling route", async ({ page }, testInfo) => {
       expect(
         await page.evaluate(
           () =>
-            (globalThis as unknown as ProfileHost).__babylonslateTest.renderProfile()
+            (globalThis as unknown as ProfileHost).__hapticTest.renderProfile()
               .regions["panel:viewport"]?.commits ?? 0,
         ),
         "Dock panels must report panel:<component> Profiler regions",
@@ -456,7 +456,7 @@ test("editor-edit profiling route", async ({ page }, testInfo) => {
       );
       const floorX = await page.evaluate(
         () =>
-          (globalThis as unknown as ProfileHost).__babylonslateTest
+          (globalThis as unknown as ProfileHost).__hapticTest
             .activeSceneContent()
             ?.actors.find((actor) => actor.id === "Floor")?.transform.position[0] ?? null,
       );
@@ -557,7 +557,7 @@ test("editor-edit profiling route", async ({ page }, testInfo) => {
   const report = {
     qualification:
       "React commit counts and Profiler durations per editor edit in a React profiling build on this machine. A comparison aid between revisions, not a device measurement; no thresholds.",
-    label: process.env.BL_PERF_LABEL ?? null,
+    label: process.env.HAPTIC_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),

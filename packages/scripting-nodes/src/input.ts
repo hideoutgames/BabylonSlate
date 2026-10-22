@@ -12,11 +12,53 @@ import {
   structRef,
   ENGINE_COLLISION_CHANNEL_ENUM_ID,
   ENGINE_HIT_RESULT_STRUCT_ID,
-} from "@babylonslate/scripting";
+  ENGINE_TOUCH_PHASE_ENUM_ID,
+  ENGINE_TOUCH_STRUCT_ID,
+} from "@haptic/scripting";
 import { inputBindingNodes } from "./input-bindings";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
 const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
+const TOUCH = structRef(ENGINE_TOUCH_STRUCT_ID);
+const TOUCH_PHASE = enumRef(ENGINE_TOUCH_PHASE_ENUM_ID);
+
+/** On Touch Began / Moved / Ended: compiled as one gated run per matching touch record this tick. */
+function touchEventPins(extra: ReturnType<typeof pin>[] = []) {
+  return [
+    pin("execOut", "Then", "out", EXEC),
+    pin("touch", "Touch", "out", TOUCH),
+    pin("finger", "Finger", "out", INT),
+    pin("position", "Position", "out", VEC2),
+    ...extra,
+  ];
+}
+
+/** What Get Touch and Find Touch report when no touch matches. */
+const NO_TOUCH = `{ Finger: -1, Position: { x: 0, y: 0 }, Delta: { x: 0, y: 0 }, StartPosition: { x: 0, y: 0 }, Pressure: 0, Phase: "Ended", Type: "Finger" }`;
+
+/**
+ * Outputs of a touch lookup: `lookup` yields the matching touch or undefined
+ * and is read once per statement. Find Touch takes Finger as its input, so
+ * only Get Touch outputs it.
+ */
+function touchLookupOutputs(
+  ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
+  lookup: string,
+  foundPin: string,
+  withFinger: boolean,
+): Record<string, string> {
+  const found = ctx.shared?.(lookup) ?? lookup;
+  const touch = `(${found} ?? ${NO_TOUCH})`;
+  return {
+    [foundPin]: `(${found} !== undefined)`,
+    touch,
+    ...(withFinger ? { finger: `${touch}.Finger` } : {}),
+    position: `${touch}.Position`,
+    delta: `${touch}.Delta`,
+    pressure: `${touch}.Pressure`,
+    phase: `${touch}.Phase`,
+  };
+}
 
 function assetInputEventPins(valueType: unknown) {
   return [
@@ -132,6 +174,102 @@ export const inputNodes: NodeDefinition[] = [
       out: `(ctx.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false })`,
       pressed: `(ctx.getCursorPosition?.()?.pressed ?? false)`,
     }),
+  },
+  {
+    id: "input.onTouchBegan",
+    title: "On Touch Began",
+    category: "input",
+    pins: () => touchEventPins(),
+    codegen: () => {},
+  },
+  {
+    id: "input.onTouchMoved",
+    title: "On Touch Moved",
+    category: "input",
+    pins: () => touchEventPins([pin("delta", "Delta", "out", VEC2)]),
+    codegen: () => {},
+  },
+  {
+    id: "input.onTouchEnded",
+    title: "On Touch Ended",
+    category: "input",
+    pins: () => touchEventPins([pin("cancelled", "Cancelled", "out", BOOL)]),
+    codegen: () => {},
+  },
+  {
+    id: "input.getTouchCount",
+    title: "Get Touch Count",
+    category: "input",
+    pure: true,
+    pins: () => [pin("count", "Count", "out", INT)],
+    codegen: () => ({ count: `(ctx.getTouches?.() ?? []).length` }),
+  },
+  {
+    id: "input.getTouch",
+    title: "Get Touch",
+    category: "input",
+    pure: true,
+    pins: () => [
+      pin("index", "Index", "in", INT, "data", true, 0),
+      pin("valid", "Valid", "out", BOOL),
+      pin("touch", "Touch", "out", TOUCH),
+      pin("finger", "Finger", "out", INT),
+      pin("position", "Position", "out", VEC2),
+      pin("delta", "Delta", "out", VEC2),
+      pin("pressure", "Pressure", "out", FLOAT),
+      pin("phase", "Phase", "out", TOUCH_PHASE),
+    ],
+    codegen: (ctx) =>
+      touchLookupOutputs(ctx, `(ctx.getTouches?.() ?? [])[${ctx.input("index")}]`, "valid", true),
+  },
+  {
+    id: "input.findTouch",
+    title: "Find Touch",
+    category: "input",
+    pure: true,
+    pins: () => [
+      pin("finger", "Finger", "in", INT, "data", true, 0),
+      pin("found", "Found", "out", BOOL),
+      pin("touch", "Touch", "out", TOUCH),
+      pin("position", "Position", "out", VEC2),
+      pin("delta", "Delta", "out", VEC2),
+      pin("pressure", "Pressure", "out", FLOAT),
+      pin("phase", "Phase", "out", TOUCH_PHASE),
+    ],
+    codegen: (ctx) =>
+      touchLookupOutputs(
+        ctx,
+        `((f) => (ctx.getTouches?.() ?? []).find((t) => t.Finger === f))(${ctx.input("finger")})`,
+        "found",
+        false,
+      ),
+  },
+  {
+    id: "input.projectTouchToScene",
+    title: "Project Touch To Scene",
+    category: "input",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("finger", "Finger", "in", INT, "data", true, 0),
+      pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
+      pin("drawDebug", "Draw Debug", "in", BOOL, "data", true, true),
+      pin("duration", "Duration", "in", FLOAT, "data", true, 0),
+      pin("hitResult", "Hit Result", "out", HIT_RESULT),
+      pin("hit", "Hit", "out", BOOL),
+      pin("location", "Location", "out", VEC3),
+      pin("normal", "Normal", "out", VEC3),
+      pin("distance", "Distance", "out", FLOAT),
+      pin("actor", "Actor", "out", actorRef("Actor")),
+      pin("worldOrigin", "World Origin", "out", VEC3),
+      pin("worldDirection", "World Direction", "out", VEC3),
+    ],
+    codegen: (ctx) => {
+      emitMappedHit(
+        ctx,
+        `ctx.projectTouchToScene(${ctx.input("finger")}, ${ctx.input("channel")}, { drawDebug: ${ctx.input("drawDebug")}, duration: ${ctx.input("duration")} })`,
+      );
+    },
   },
   {
     id: "input.projectCursorToScene",

@@ -3,8 +3,8 @@ import {
   createUserCommand,
   type ConsoleCompletionContext,
   type RegisteredCommand,
-} from "@babylonslate/debugger";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+} from "@haptic/debugger";
+import type { ScriptBundleEntry } from "@haptic/bridge";
 
 /** Built-in registry plus user commands compiled from OnCommandRun graphs. */
 export function playConsoleCommands(

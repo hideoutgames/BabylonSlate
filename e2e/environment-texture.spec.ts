@@ -6,9 +6,9 @@ import {
   decodeAssetDocument,
 } from "../packages/assets/src/asset-document";
 import {
-  encodeBabasset,
-  readBabassetHeader,
-} from "../packages/assets/src/babasset";
+  encodeHasset,
+  readHassetHeader,
+} from "../packages/assets/src/hasset";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { buildFloatDdsCubeFixture } from "../packages/test-kit/src/environment-fixtures";
 import { MAIN_SCENE_FILE } from "../packages/core/src/index";
@@ -90,8 +90,8 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     });
     const files = await minimalProjectFiles();
     files.set(
-      "assets/Studio.babasset",
-      await encodeBabasset({
+      "assets/Studio.hasset",
+      await encodeHasset({
         header: {
           ...imported!,
           ...collectAssetDependencyMetadata(imported!.type, imported!.payload),
@@ -112,7 +112,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
         { ...decoded, payload: scene },
         {
           dependencies: [
-            ...readBabassetHeader(files.get(MAIN_SCENE_FILE)!).dependencies,
+            ...readHassetHeader(files.get(MAIN_SCENE_FILE)!).dependencies,
             imported!.guid,
           ],
         },
@@ -122,7 +122,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     await openMainScene(page);
     const samples = await page.evaluate(async () => {
       const host = window as unknown as {
-        __babylonslateViewportTest: {
+        __hapticViewportTest: {
           environmentTextureSamples(): Promise<{
             isCube: boolean;
             gammaSpace: boolean;
@@ -136,7 +136,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
           }>;
         };
       };
-      return host.__babylonslateViewportTest.environmentTextureSamples();
+      return host.__hapticViewportTest.environmentTextureSamples();
     });
     await testInfo.attach(`${container}-upload`, {
       body: JSON.stringify({ samples, errors }),
@@ -161,7 +161,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     await clickPlayAndWaitForOverlay(page);
     await expectGreenIllumination(page.getByTestId("play-canvas"));
     await page.getByTestId("play-overlay-close").click();
-    await openAssetFromBrowser(page, "assets/Studio.babasset");
+    await openAssetFromBrowser(page, "assets/Studio.hasset");
     await expect(
       page.getByTestId("texture-details").getByText("Environment Cube", { exact: true }),
     ).toBeVisible();

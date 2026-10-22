@@ -3,10 +3,10 @@ import {
   resolveCelShadingSettings,
   type CelShadingOverrides,
   type CelShadingSettings,
-} from "@babylonslate/core";
-import { ColorField, colorToHex, NumberField } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/core";
+import { ColorField, colorToHex, NumberField } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Switch } from "@haptic/ui/components/switch";
 import {
   Field,
   FieldDescription,
@@ -14,7 +14,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -22,7 +22,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 
 const lightMixingLabels = {
   strongest: "Strongest Light",

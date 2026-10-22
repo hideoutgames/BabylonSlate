@@ -1,5 +1,7 @@
 export type PointerPhase = "down" | "move" | "up" | "cancel";
 export type KeyPhase = "down" | "up";
+/** `PointerEvent.pointerType` for the devices the game distinguishes. */
+export type PointerKind = "mouse" | "touch" | "pen";
 
 export type RawInputEvent =
   | {
@@ -10,6 +12,10 @@ export type RawInputEvent =
       x: number;
       y: number;
       button: number;
+      /** Absent reads as a mouse. */
+      pointerType?: PointerKind;
+      /** `PointerEvent.pressure`, 0 to 1; absent reads as 0.5 while pressed. */
+      pressure?: number;
     }
   | {
       kind: "key";
@@ -48,6 +54,9 @@ const KIND = {
 } as const;
 const PHASE = { down: 1, move: 2, up: 3, cancel: 4 } as const;
 const PHASE_NAME = ["", "down", "move", "up", "cancel"] as const;
+// Byte 0 means the pointer type was not given.
+const POINTER_KIND = { mouse: 1, touch: 2, pen: 3 } as const;
+const POINTER_KIND_NAME = [undefined, "mouse", "touch", "pen"] as const;
 
 // Whole-buffer, non-streaming use only: neither keeps state between calls.
 const textEncoder = new TextEncoder();
@@ -79,7 +88,7 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
   for (const event of events) {
     size += 5;
     switch (event.kind) {
-      case "pointer": size += 14; break;
+      case "pointer": size += 19; break;
       case "key": size += 3 + textEncoder.encode(event.code).length; break;
       case "gamepad": size += 3 + 4 * (event.axes.length + event.buttons.length); break;
       case "touchAxis": size += 6 + textEncoder.encode(event.controlId).length; break;
@@ -109,6 +118,11 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       // Signed so a hover move's button -1 survives the transfer.
       view.setInt8(o, event.button);
       o += 1;
+      view.setUint8(o, event.pointerType ? POINTER_KIND[event.pointerType] : 0);
+      o += 1;
+      // NaN marks a missing pressure; a real one is finite.
+      view.setFloat32(o, event.pressure ?? Number.NaN, true);
+      o += 4;
     } else if (event.kind === "key") {
       view.setUint8(o, PHASE[event.phase]);
       o += 1;
@@ -167,7 +181,15 @@ export function decodeInputEvents(
       o += 4;
       const button = view.getInt8(o);
       o += 1;
-      events.push({ kind: "pointer", tick, pointerId, phase, x, y, button });
+      const pointerType = POINTER_KIND_NAME[view.getUint8(o)];
+      o += 1;
+      const pressure = view.getFloat32(o, true);
+      o += 4;
+      events.push({
+        kind: "pointer", tick, pointerId, phase, x, y, button,
+        ...(pointerType ? { pointerType } : {}),
+        ...(Number.isNaN(pressure) ? {} : { pressure }),
+      });
     } else if (kindByte === KIND.key) {
       const phase = PHASE_NAME[view.getUint8(o)] as KeyPhase;
       o += 1;

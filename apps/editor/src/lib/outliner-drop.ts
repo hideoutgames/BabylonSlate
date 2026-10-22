@@ -1,4 +1,4 @@
-import { rangeSelectTreeIds, type TreeDropPlacement, type TreeSelectOptions } from "@babylonslate/editor-kit";
+import { rangeSelectTreeIds, type TreeDropPlacement, type TreeSelectOptions } from "@haptic/editor-kit";
 import {
   actorSubtree,
   findActor,
@@ -7,7 +7,7 @@ import {
   wouldCreateCycle,
   wouldCreateFolderCycle,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 const FOLDER_ROW_PREFIX = "folder:";
 const ACTOR_ROW_PREFIX = "actor:";

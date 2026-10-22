@@ -4,7 +4,7 @@ import {
   type GuidFactory,
   type Rng,
   type ScenePostProcessEntry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
 import { InterfaceRegistry } from "./interfaces";
 import {
@@ -40,6 +40,8 @@ export type WorldInputProvider = Pick<
   | "getAxis"
   | "getAxis2D"
   | "getCursorPosition"
+  | "getTouches"
+  | "getTouchEvents"
   | "setCursorVisible"
   | "setGamepadRumble"
   | "gamepadConnections"

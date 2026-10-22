@@ -10,7 +10,7 @@ import {
   type SerializedOutlinerFolder,
   type SerializedScene,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   AddActorCommand,
   AddComponentCommand,

@@ -1,5 +1,5 @@
 import { ParticleSystem } from "@babylonjs/core";
-import type { ParticleBillboardMode, ParticleBlendMode } from "@babylonslate/core";
+import type { ParticleBillboardMode, ParticleBlendMode } from "@haptic/core";
 
 /**
  * The one numeric mapping for particle Blend Mode and Billboard ids. Documents store

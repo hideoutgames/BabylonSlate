@@ -1,5 +1,5 @@
 import { Mesh, type Material, type NodeMaterial } from "@babylonjs/core";
-import type { CommandMessage, MaterialParameterValue, RuntimeMaterialEditPreparation } from "@babylonslate/bridge";
+import type { CommandMessage, MaterialParameterValue, RuntimeMaterialEditPreparation } from "@haptic/bridge";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { applyMaterialBounds } from "./material-bounds";

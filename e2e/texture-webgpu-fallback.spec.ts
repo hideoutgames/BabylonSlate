@@ -44,13 +44,13 @@ test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 const TEXTURE_GUID = "00000000-0000-4000-8000-000000000071";
 const SURFACE_GUID = "00000000-0000-4000-8000-000000000072";
 const PARTICLE_GUID = "00000000-0000-4000-8000-000000000073";
-const TEXTURE_PATH = "assets/albedo.babasset";
-const EMITTER_PATH = "assets/OddSparks.emitter.babasset";
+const TEXTURE_PATH = "assets/albedo.hasset";
+const EMITTER_PATH = "assets/OddSparks.emitter.hasset";
 /** A Tileset saved before atlas meta existed: it keeps `TEXTURE_GUID` an atlas, off the grid. */
 const ODD_TILESET_GUID = "00000000-0000-4000-8000-000000000077";
 /** The same 1×1 encode with no atlas: stale until explicitly re-encoded. */
 const LEGACY_TEXTURE_GUID = "00000000-0000-4000-8000-000000000078";
-const LEGACY_TEXTURE_PATH = "assets/legacy-odd.babasset";
+const LEGACY_TEXTURE_PATH = "assets/legacy-odd.hasset";
 /** Samples the texture through its surface Material. */
 const TEXTURED_BOX = "actor-1";
 /** No Material: the engine default material under the same light. */
@@ -115,11 +115,11 @@ async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
   const textures: [string, string][] = [[TEXTURE_GUID, TEXTURE_PATH], [LEGACY_TEXTURE_GUID, LEGACY_TEXTURE_PATH]];
   for (const [guid, assetPath] of textures) {
     files.set(assetPath, await encodeAssetDocument(
-      { guid, type: "Texture", name: path.basename(assetPath, ".babasset"), version: texture!.version, payload },
+      { guid, type: "Texture", name: path.basename(assetPath, ".hasset"), version: texture!.version, payload },
       { headerPayload: payload, extraChunks: [...texture!.chunks, { id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 }] },
     ));
   }
-  files.set("assets/odd.tileset.babasset", await encodeAssetDocument({
+  files.set("assets/odd.tileset.hasset", await encodeAssetDocument({
     guid: ODD_TILESET_GUID, type: "Tileset", name: "Odd", version: 1,
     payload: { ...createDefaultTilesetPayload(), textureGuid: TEXTURE_GUID, atlasWidth: 1, atlasHeight: 1, tileWidth: 1, tileHeight: 1 },
   }, { dependencies: [TEXTURE_GUID] }));
@@ -128,7 +128,7 @@ async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
     material.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: TEXTURE_GUID } });
     material.edges = [{ id: "sample-output", sourceNodeId: "sample", sourcePinId: domain === "particle" ? "rgba" : "rgb",
       targetNodeId: "output", targetPinId: domain === "particle" ? "color" : "baseColor" }];
-    files.set(`assets/${name}.material.babasset`, await encodeAssetDocument({
+    files.set(`assets/${name}.material.hasset`, await encodeAssetDocument({
       guid, type: "Material", name, version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown>,
     }, { dependencies: [TEXTURE_GUID] }));
   }
@@ -167,11 +167,11 @@ async function committedKtx2(page: Page, assetPath: string): Promise<{
 }> {
   const state = await page.evaluate(async (assetPath) => {
     const api = (globalThis as {
-      __babylonslateTest?: {
+      __hapticTest?: {
         textureEncodeState?: (path: string) => { compressionState: string | null; ktx2ChunkId: string | null } | null;
         readAssetChunk?: (path: string, chunkId: string) => Promise<Uint8Array | null>;
       };
-    }).__babylonslateTest;
+    }).__hapticTest;
     const current = api?.textureEncodeState?.(assetPath) ?? null;
     const bytes = current?.ktx2ChunkId ? await api?.readAssetChunk?.(assetPath, current.ktx2ChunkId).catch(() => null) : null;
     return { compressionState: current?.compressionState ?? null, header: bytes ? Array.from(bytes.subarray(0, 32)) : null };
@@ -186,7 +186,7 @@ async function viewportProof(
   options: { trackedActorIds?: string[]; skyboxPoints?: ViewportProofSamplePoint[] },
 ): Promise<ViewportProofResult> {
   const proof = await page.evaluate((options) => (globalThis as unknown as {
-    __babylonslateViewportTest: {
+    __hapticViewportTest: {
       webgpuPreviewsProof: (options: {
         frames: number;
         timeoutMs: number;
@@ -194,7 +194,7 @@ async function viewportProof(
         skyboxPoints?: ViewportProofSamplePoint[];
       }) => Promise<ViewportProofResult>;
     };
-  }).__babylonslateViewportTest.webgpuPreviewsProof({ frames: 30, timeoutMs: 30_000, ...options }), options);
+  }).__hapticViewportTest.webgpuPreviewsProof({ frames: 30, timeoutMs: 30_000, ...options }), options);
   await testInfo.attach(label, { body: JSON.stringify({ ...proof, frames: undefined }), contentType: "application/json" });
   return proof;
 }
@@ -269,7 +269,7 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   // Play loads the scene and runs on with nothing to report about the texture.
   await openMainScene(page);
   await clickPlayAndWaitForOverlay(page);
-  const tick = () => page.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest?: { tickIndex(): number } }).__babylonslatePlayTest?.tickIndex() ?? 0);
+  const tick = () => page.evaluate(() => (globalThis as unknown as { __hapticPlayTest?: { tickIndex(): number } }).__hapticPlayTest?.tickIndex() ?? 0);
   const started = await tick();
   await expect.poll(tick, { timeout: 30_000 }).toBeGreaterThan(started + 30);
   await expect(page.getByTestId("play-overlay")).toBeVisible();
@@ -335,7 +335,7 @@ async function addTwoToneTexture(
     extraChunks.push({ id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 });
     texture.ktx2ChunkId = chunkId;
   }
-  files.set("assets/atlas.babasset", await encodeAssetDocument(
+  files.set("assets/atlas.hasset", await encodeAssetDocument(
     { guid: TEXTURE_GUID, type: "Texture", name: "Atlas", version: 1, payload: texture },
     { headerPayload: texture, extraChunks },
   ));

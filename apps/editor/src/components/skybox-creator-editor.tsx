@@ -9,7 +9,7 @@ import {
   assetRowIdentity,
   usePanZoomSurface,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   decodeSourceToRgba,
   defaultSkyboxCreatorSourcePlacement,
@@ -25,14 +25,14 @@ import {
   type SkyboxCreatorCompassFace,
   type SkyboxCreatorPayload,
   type SkyboxCreatorSourcePlacement,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   SKYBOX_FACE_KEYS,
   type SkyboxFaceKey,
-} from "@babylonslate/core";
-import { encodePngRgba } from "@babylonslate/render";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/core";
+import { encodePngRgba } from "@haptic/render";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -40,9 +40,9 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { BoxIcon, ImageIcon, Maximize2Icon } from "lucide-react";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   useDocumentActions,
   useOpenDocument,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppWindowIcon, ChevronDownIcon } from "lucide-react";
-import { NestedMenu, useToolbarOverflowEntry, type NestedMenuItem } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { NestedMenu, useToolbarOverflowEntry, type NestedMenuItem } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   useActiveDocumentState,
   useDockWindowTick,

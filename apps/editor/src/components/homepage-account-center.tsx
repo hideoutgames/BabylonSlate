@@ -11,15 +11,15 @@ import {
   UserPlusIcon,
   UserRoundCogIcon,
 } from "lucide-react";
-import { CatalogDialog } from "@babylonslate/editor-kit";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
+import { CatalogDialog } from "@haptic/editor-kit";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { ApplicationSettingsFields } from "./homepage-application-settings";
 import type {
   AccountDetails,
@@ -39,7 +39,7 @@ import {
 const SECTIONS = [
   { id: "account", label: "Account", keywords: "account profile name picture photo avatar email security sign in out create delete" },
   { id: "subscription", label: "Subscription", keywords: "subscription plan pro free enterprise billing payment invoice" },
-  { id: "application", label: "Application", keywords: "application updates automatic theme style color colors appearance import export interface compact mode density touch" },
+  { id: "application", label: "Application", keywords: "application updates automatic theme style color colors appearance import export interface compact mode density touch legal third-party notices licenses licences open source" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];

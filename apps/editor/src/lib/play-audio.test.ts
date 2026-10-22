@@ -31,20 +31,20 @@ describe("createPlayAudioSourceLoader", () => {
   it("does not read unused Audio source chunks until that guid plays", async () => {
     const reads: string[] = [];
     const chunks = new Map<string, Uint8Array>([
-      ["assets/jump.audio.babasset:source", new Uint8Array([1, 2])],
-      ["assets/bed.audio.babasset:source", new Uint8Array([9])],
+      ["assets/jump.audio.hasset:source", new Uint8Array([1, 2])],
+      ["assets/bed.audio.hasset:source", new Uint8Array([9])],
     ]);
     const loader = createPlayAudioSourceLoader({
       assets: [
         {
           guid: "jump",
-          path: "assets/jump.audio.babasset",
+          path: "assets/jump.audio.hasset",
           type: "Audio",
           payload: { clips: [{ chunkId: "source", weight: 1 }] },
         },
         {
           guid: "bed",
-          path: "assets/bed.audio.babasset",
+          path: "assets/bed.audio.hasset",
           type: "Audio",
           payload: { clips: [{ chunkId: "source", weight: 1 }] },
         },
@@ -58,13 +58,13 @@ describe("createPlayAudioSourceLoader", () => {
     await expect(
       loader({ assetGuid: "jump", chunkId: "source" }),
     ).resolves.toEqual(new Uint8Array([1, 2]));
-    expect(reads).toEqual(["assets/jump.audio.babasset:source"]);
+    expect(reads).toEqual(["assets/jump.audio.hasset:source"]);
     await expect(
       loader({ assetGuid: "bed", chunkId: "source" }),
     ).resolves.toEqual(new Uint8Array([9]));
     expect(reads).toEqual([
-      "assets/jump.audio.babasset:source",
-      "assets/bed.audio.babasset:source",
+      "assets/jump.audio.hasset:source",
+      "assets/bed.audio.hasset:source",
     ]);
   });
 
@@ -74,7 +74,7 @@ describe("createPlayAudioSourceLoader", () => {
       assets: [
         {
           guid: "jump",
-          path: "assets/jump.audio.babasset",
+          path: "assets/jump.audio.hasset",
           type: "Audio",
           payload: {},
         },

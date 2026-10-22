@@ -41,6 +41,6 @@ function loadViaFunctionShim(source: string, label: string): CompiledModuleExpor
   const members = names.map((name) => `[${JSON.stringify(name)}]: ${name}`).join(",");
   // A final real directive supersedes previous source labels without rewriting
   // authored text that happens to contain a sourceURL-looking template line.
-  const fn = new Function(`"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=babylonslate:///${label}.js\n`);
+  const fn = new Function(`"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=haptic:///${label}.js\n`);
   return fn() as CompiledModuleExports;
 }

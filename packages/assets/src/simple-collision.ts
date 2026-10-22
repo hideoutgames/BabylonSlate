@@ -1,4 +1,4 @@
-import type { CollisionTriangleMesh } from "@babylonslate/core";
+import type { CollisionTriangleMesh } from "@haptic/core";
 import { newAssetGuid } from "./guid";
 import { convexHull3d, type HullVec3 } from "./convex-hull";
 import { extractGltfPositions } from "./glb-geometry";
