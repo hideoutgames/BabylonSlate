@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DockviewReact,
   themeAbyss,
@@ -76,6 +76,34 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
     return () => observer.disconnect();
   }, []);
 
+  // React Flow measures pin positions with getBoundingClientRect, which includes
+  // our scale and any ancestor transform such as the dialog's open animation.
+  // Lay the graph out at full size until fonts load and nothing above is
+  // transformed, then shrink it; pin positions stay correct since nodes don't resize.
+  const [measured, setMeasured] = useState(false);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    let cancelled = false;
+    let frameId = 0;
+    let settledFrames = 0;
+    const deadline = performance.now() + 2000;
+    const settle = () => {
+      if (cancelled) return;
+      const untransformed = Math.abs(frame.getBoundingClientRect().width - frame.offsetWidth) < 0.5;
+      settledFrames = untransformed ? settledFrames + 1 : 0;
+      if (settledFrames >= 3 || performance.now() > deadline) setMeasured(true);
+      else frameId = requestAnimationFrame(settle);
+    };
+    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
+      if (!cancelled) frameId = requestAnimationFrame(settle);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, []);
+
   return (
     <div
       ref={frameRef}
@@ -90,7 +118,12 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
     >
       <div
         className="absolute left-0 top-0 flex origin-top-left flex-col bg-background text-foreground"
-        style={{ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT, transform: `scale(${scale})` }}
+        style={{
+          width: PREVIEW_WIDTH,
+          height: PREVIEW_HEIGHT,
+          transform: measured ? `scale(${scale})` : undefined,
+          visibility: measured ? undefined : "hidden",
+        }}
       >
         <PreviewChrome />
         <div className="dockview-frame min-h-0 flex-1">
