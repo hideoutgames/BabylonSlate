@@ -124,8 +124,6 @@ export interface TreeViewProps {
   /** Rename finished; `name` is null when cancelled, empty, or unchanged. */
   onRenameDone?: (id: string, name: string | null) => void;
   rowHeight?: number;
-  /** Shade every other row (`--list-stripe`) so long lists are easier to scan. */
-  striped?: boolean;
   emptyLabel?: string;
   "data-testid"?: string;
   "aria-label"?: string;
@@ -187,7 +185,6 @@ export function TreeView({
   onRenameRequest,
   onRenameDone,
   rowHeight = TREE_ROW_HEIGHT,
-  striped = false,
   emptyLabel = "Nothing here yet",
   "data-testid": testId,
   "aria-label": accessibleName = "Tree",
@@ -725,7 +722,12 @@ export function TreeView({
       aria-multiselectable={selectedIds ? true : undefined}
       aria-activedescendant={activeNode ? rowId(activeNode.id) : undefined}
       tabIndex={0}
-      className="group/tree text-foreground h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+      // Keyboard focus outlines the active row, not the whole scrollport; an
+      // empty tree has no row, so it keeps the ring.
+      className={cn(
+        "group/tree text-foreground h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none",
+        nodes.length === 0 && "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+      )}
       data-testid={testId}
       onKeyDown={onKeyDown}
       onScroll={(event) => {
@@ -785,10 +787,7 @@ export function TreeView({
                   "group/tree-row absolute right-1 left-1 flex items-center gap-1 rounded-sm pr-1 text-[13px] transition-colors motion-reduce:transition-none",
                   selected
                     ? "bg-accent text-accent-foreground"
-                    : cn(
-                        striped && index % 2 === 1 && "bg-list-stripe",
-                        "group-data-[pointer=mouse]/tree:hover:bg-accent/50 group-data-[pointer=pen]/tree:hover:bg-accent/50",
-                      ),
+                    : "group-data-[pointer=mouse]/tree:hover:bg-accent/50 group-data-[pointer=pen]/tree:hover:bg-accent/50",
                   dropInto
                     ? "bg-accent/50 outline outline-1 -outline-offset-1 outline-ring"
                     : "",
