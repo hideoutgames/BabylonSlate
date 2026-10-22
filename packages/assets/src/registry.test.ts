@@ -885,6 +885,38 @@ describe("AssetRegistry", () => {
     expect(registry.list().some((asset) => asset.path === "assets/fx_2/spark.babasset")).toBe(true);
   });
 
+  it("stops a canceled folder copy between files and deletes the partial copy", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Material", name: "spark" });
+    await writeAsset(storage, "assets/fx/smoke.babasset", { guid: "smoke", type: "Material", name: "smoke" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const controller = new AbortController();
+    const progress: number[] = [];
+
+    const copying = registry.copyFolder("project", "fx", "", {
+      signal: controller.signal,
+      onProgress: (copied) => {
+        progress.push(copied);
+        if (copied === 1) controller.abort();
+      },
+    });
+    await expect(copying).rejects.toThrow();
+    expect(progress).toEqual([0, 1]);
+    expect(registry.list().map((asset) => asset.path).sort()).toEqual(["assets/fx/smoke.babasset", "assets/fx/spark.babasset"]);
+    expect(await storage.exists("assets/fx_1")).toBe(false);
+  });
+
+  it("writes nothing for an asset copy canceled before it starts", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/rock.babasset", { guid: "rock", type: "Material", name: "rock" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    await expect(registry.duplicateAsset("rock", "project", "", { signal: AbortSignal.abort() })).rejects.toThrow();
+    expect(registry.list()).toHaveLength(1);
+  });
+
   it("does not index a Texture rewrite that finishes after its root was unmounted", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "plugin/assets/tex.babasset", { guid: "plugin-tex", type: "Texture", name: "tex" });

@@ -32,7 +32,7 @@ import {
   UploadIcon,
   WaypointsIcon,
 } from "lucide-react";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { AssetCopyOptions, IndexedAsset } from "@babylonslate/assets";
 import {
   isThumbnailableAssetType,
   newAssetGuid,
@@ -237,6 +237,7 @@ import {
   type ContentBrowserTileLock,
 } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
+import { ContentBrowserCopyProgressDialog, type ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
 import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
@@ -246,6 +247,15 @@ type DeleteTarget =
   | { kind: "assets"; guids: string[] }
   | { kind: "folder"; path: string; guids: string[] }
   | { kind: "selection"; folders: string[]; guids: string[] };
+
+/** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
+type CopyStep = {
+  name: string;
+  /** Files the step writes, for the progress total. */
+  units: number;
+  run: (options: AssetCopyOptions) => Promise<() => Promise<void>>;
+  onDone?: () => void;
+};
 
 type MoveTarget = {
   operation: "move" | "copy";
@@ -415,6 +425,8 @@ function ContentBrowserWorkspaceBody({
   } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [copyProgress, setCopyProgress] = useState<ContentBrowserCopyProgress | null>(null);
+  const copyAbortRef = useRef<AbortController | null>(null);
   const [nameDialog, setNameDialog] = useState<NameEntry | null>(null);
   const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
@@ -1105,6 +1117,55 @@ function ContentBrowserWorkspaceBody({
     [repathDocument],
   );
 
+  /**
+   * Runs Copy to Folder or Duplicate behind the cancelable progress dialog.
+   * Cancel aborts the copy in progress and deletes the copies already made, so
+   * a canceled operation leaves the content as it was. Returns false then.
+   */
+  const runCopySteps = useCallback(async (
+    operation: ContentBrowserCopyProgress["operation"],
+    steps: readonly CopyStep[],
+  ): Promise<boolean> => {
+    const controller = new AbortController();
+    copyAbortRef.current = controller;
+    const total = steps.reduce((sum, step) => sum + step.units, 0);
+    const undo: Array<() => Promise<void>> = [];
+    let completed = 0;
+    setCopyProgress({ operation, name: steps[0]?.name ?? "", completed, total, canceling: false });
+    try {
+      for (const step of steps) {
+        controller.signal.throwIfAborted();
+        const base = completed;
+        setCopyProgress((current) => current && { ...current, name: step.name, completed: base });
+        undo.push(await step.run({
+          signal: controller.signal,
+          onProgress: (copied) => setCopyProgress((current) => current && { ...current, completed: base + copied }),
+        }));
+        completed = base + step.units;
+        setCopyProgress((current) => current && { ...current, completed });
+        step.onDone?.();
+      }
+      return true;
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+      for (const revert of undo.reverse()) await revert();
+      return false;
+    } finally {
+      copyAbortRef.current = null;
+      setCopyProgress(null);
+    }
+  }, []);
+
+  const cancelCopy = useCallback(() => {
+    copyAbortRef.current?.abort();
+    setCopyProgress((current) => current && { ...current, canceling: true });
+  }, []);
+
+  /** Files a folder copy writes, for the progress total. */
+  const folderAssetCount = useCallback((path: string) =>
+    assetRegistry?.list().filter((asset) => asset.path.startsWith(`${path}/`)).length ?? 0,
+  [assetRegistry]);
+
   const openMoveForSnapshot = useCallback(
     (operation: "move" | "copy") => {
       if (!assetRegistry) return;
@@ -1293,10 +1354,10 @@ function ContentBrowserWorkspaceBody({
           );
           // Each copy is written beside its source, as folder duplicates are.
           const sources = [
-            ...folders.map((path) => ({ guid: null, from: contentBrowserFolderOps(path, browserRoots) })),
+            ...folders.map((path) => ({ guid: null, path, from: contentBrowserFolderOps(path, browserRoots) })),
             ...guids.flatMap((guid) => {
               const path = assetRegistry.getByGuid(guid)?.path;
-              return path ? [{ guid, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
+              return path ? [{ guid, path, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
             }),
           ];
           const readOnly = sources.find(({ from }) => from.readOnly);
@@ -1304,15 +1365,29 @@ function ContentBrowserWorkspaceBody({
             setOperationError(`${readOnly.from.pathPrefix} is read-only.`);
             return;
           }
+          const steps: CopyStep[] = sources.map(({ guid, path, from }) => guid
+            ? {
+              name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
+              units: 1,
+              run: async (options) => {
+                const copy = await assetRegistry.duplicateAsset(guid, from.rootId, from.relative, options);
+                return () => assetRegistry.deleteAsset(copy.header.guid);
+              },
+            }
+            : {
+              name: path.slice(path.lastIndexOf("/") + 1),
+              units: folderAssetCount(path),
+              run: async (options) => {
+                const copy = await assetRegistry.duplicateFolder(from.rootId, from.relative, options);
+                return () => assetRegistry.deleteFolder(from.rootId, copy);
+              },
+            });
           void (async () => {
             setBusy(true);
             setOperationError(null);
             try {
               try {
-                for (const { guid, from } of sources) {
-                  if (guid) await assetRegistry.duplicateAsset(guid, from.rootId, from.relative);
-                  else await assetRegistry.duplicateFolder(from.rootId, from.relative);
-                }
+                await runCopySteps("duplicate", steps);
               } finally {
                 await refreshAssetRegistry();
               }
@@ -1413,6 +1488,8 @@ function ContentBrowserWorkspaceBody({
       projectGuid,
       projectDocument,
       thumbnailsEnabled,
+      folderAssetCount,
+      runCopySteps,
       openMoveForSnapshot,
       openOrFocusDocument,
       noteAssetsCreated,
@@ -2004,15 +2081,36 @@ function ContentBrowserWorkspaceBody({
     const total = remainingGuids.size + remainingFolders.size;
     try {
       if (moveTarget.operation === "copy") {
-        for (const move of moves) {
+        const steps = moves.flatMap((move): CopyStep[] => {
           if (move.kind === "folder") {
             const from = contentBrowserFolderOps(move.sourcePath, browserRoots);
-            await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative);
-            remainingFolders.delete(move.sourcePath);
-          } else if (move.guid) {
-            await assetRegistry.copyAsset(move.guid, dest.rootId, dest.relative);
-            remainingGuids.delete(move.guid);
+            return [{
+              name: move.sourcePath.slice(move.sourcePath.lastIndexOf("/") + 1),
+              units: folderAssetCount(move.sourcePath),
+              run: async (options) => {
+                const copy = await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative, options);
+                return () => assetRegistry.deleteFolder(from.rootId, copy);
+              },
+              onDone: () => remainingFolders.delete(move.sourcePath),
+            }];
           }
+          const guid = move.guid;
+          if (!guid) return [];
+          return [{
+            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
+            units: 1,
+            run: async (options) => {
+              const copy = await assetRegistry.copyAsset(guid, dest.rootId, dest.relative, options);
+              return () => assetRegistry.deleteAsset(copy.header.guid);
+            },
+            onDone: () => remainingGuids.delete(guid),
+          }];
+        });
+        if (!(await runCopySteps("copy", steps))) {
+          // Canceled: every copy was removed again, so nothing remains to retry.
+          await refreshAssetRegistry();
+          setMoveTarget(null);
+          return;
         }
       } else {
         await applyRegistryMoves(moves, (move) => {
@@ -2060,6 +2158,8 @@ function ContentBrowserWorkspaceBody({
     refreshAssetRegistry,
     rootPrefixes,
     browserRoots,
+    folderAssetCount,
+    runCopySteps,
   ]);
 
   const handleImport = useCallback(async () => {
@@ -3293,6 +3393,8 @@ function ContentBrowserWorkspaceBody({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ContentBrowserCopyProgressDialog progress={copyProgress} onCancel={cancelCopy} />
 
       <ContentBrowserMoveDialog
         key={
