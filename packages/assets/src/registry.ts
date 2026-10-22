@@ -53,7 +53,7 @@ import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-textur
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex, stableStringify } from "./bytes";
-import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
+import { copyStorageTree, moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
 import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAliasIndex } from "./catalog-class-dependencies";
 
@@ -837,9 +837,7 @@ export class AssetRegistry {
   private async moveAssetUnlocked(guid: string, rootId: string, newRelativePath: string): Promise<IndexedAsset> {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
-    if (asset.rootId !== rootId) {
-      throw new Error("Cross-root moves are not supported yet");
-    }
+    if (asset.rootId !== rootId) return this.moveAssetAcrossRoots(asset, rootId, newRelativePath);
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
     const storage = this.storageOf(root);
@@ -859,6 +857,42 @@ export class AssetRegistry {
       this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
       this.changed();
       return moved;
+    });
+  }
+
+  /**
+   * Move a file into another writable content root, keeping its guid so every
+   * reference to it still resolves. The bytes are copied as they are; first
+   * every chunk is verified and each blob chunk is written to the target
+   * root's blob store, so no blob locator dangles there. Then the copy is
+   * written, the source removed and the index entry moved to the new root.
+   * Blobs stay in the source store, where other assets may share them.
+   */
+  private async moveAssetAcrossRoots(asset: IndexedAsset, rootId: string, newRelativePath: string): Promise<IndexedAsset> {
+    if (asset.placeholder) throw new Error(`A missing asset cannot be moved: ${asset.header.guid}`);
+    const source = this.getRootOrThrow(asset.rootId);
+    const target = this.getRootOrThrow(rootId);
+    // A move removes the source file, so both roots must take writes.
+    this.assertWritable(source);
+    this.assertWritable(target);
+    const newPath = joinRootPath(target, newRelativePath);
+    const conflict = `Target path already exists: ${newPath}`;
+    return this.withReservedPath(newPath, conflict, async () => {
+      const sourceStorage = this.storageOf(source);
+      const targetStorage = this.storageOf(target);
+      if (await targetStorage.exists(newPath)) throw new Error(conflict);
+      const bytes = await sourceStorage.readBinary(asset.path);
+      const header = await copyBlobChunks(bytes, this.blobsOf(source), this.blobsOf(target));
+      if (header.guid !== asset.header.guid) {
+        throw new SourceRevisionChangedError(`Asset changed on disk before it could be moved: ${asset.path}`);
+      }
+      const dir = parentPath(newPath);
+      if (dir) await targetStorage.mkdir(dir, true);
+      await targetStorage.writeBinary(newPath, bytes);
+      // If removal fails, the complete copy remains for recovery.
+      await sourceStorage.remove(asset.path);
+      this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
+      return this.indexHeader(target.id, newPath, header, false, await this.statMtime(targetStorage, newPath));
     });
   }
 
@@ -1260,18 +1294,26 @@ export class AssetRegistry {
     return this.copyFolder(rootId, relativeFolder, parent, options);
   }
 
+  /**
+   * Move a folder of `rootId` under `newParentRelative` of `targetRootId`
+   * (the same root unless given), optionally renaming it.
+   */
   async moveFolder(
     rootId: string,
     relativeFolder: string,
     newParentRelative: string,
     newName?: string,
+    targetRootId = rootId,
   ): Promise<void> {
-    return this.withFolderWrite(() => this.moveFolderUnlocked(rootId, relativeFolder, newParentRelative, newName));
+    return this.withFolderWrite(() => this.moveFolderUnlocked(rootId, relativeFolder, newParentRelative, newName, targetRootId));
   }
 
-  private async moveFolderUnlocked(rootId: string, relativeFolder: string, newParentRelative: string, newName?: string): Promise<void> {
+  private async moveFolderUnlocked(rootId: string, relativeFolder: string, newParentRelative: string, newName: string | undefined, targetRootId: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
+    if (targetRootId !== rootId) {
+      return this.moveFolderAcrossRoots(root, this.getRootOrThrow(targetRootId), relativeFolder, newParentRelative, newName);
+    }
     const storage = this.storageOf(root);
     const fromPath = joinRootPath(root, relativeFolder);
     const currentName = relativeFolder.includes("/")
@@ -1301,6 +1343,68 @@ export class AssetRegistry {
     }
     this.repathGuidConflicts(relocate);
     if (assets.length > 0) this.changed();
+    for (const folder of [...this.knownFolders]) {
+      if (isWithinFolder(folder, fromPath)) this.removeKnownFolder(folder);
+    }
+    for (const folder of folders) this.addKnownFolder(folder ? `${toPath}/${folder}` : toPath);
+  }
+
+  /**
+   * A folder move into another root: the blob chunks of every listed asset
+   * in the folder are verified and written to the target root's blob store,
+   * then the whole tree (markers and unlisted files included) is copied and
+   * the source removed. Guids stay unchanged. A failed copy removes the
+   * partial destination and leaves the source as it was.
+   */
+  private async moveFolderAcrossRoots(source: ContentRoot, target: ContentRoot, relativeFolder: string, newParentRelative: string, newName?: string): Promise<void> {
+    this.assertWritable(target);
+    const relative = relativeFolder.replace(/^\/+|\/+$/g, "");
+    if (!relative) throw new Error("Cannot move the assets root folder");
+    const fromPath = joinRootPath(source, relative);
+    const folderName = newName?.trim() || relative.slice(relative.lastIndexOf("/") + 1);
+    const toPath = joinRootPath(target, joinRelative(newParentRelative, folderName));
+    // The copy would carry an unlisted file whose guid another file holds.
+    const hidden = [...this.guidConflicts.values()].find((conflict) =>
+      conflict.rootId === source.id && isWithinFolder(conflict.path, fromPath));
+    if (hidden) {
+      throw new Error(`Cannot move ${fromPath} to another content root: it holds ${hidden.path}, which is not listed because ${hidden.indexedPath} has the same asset id. Remove that file outside the editor first.`);
+    }
+    const sourceStorage = this.storageOf(source);
+    const targetStorage = this.storageOf(target);
+    if (!this.knownFolders.has(fromPath) && !(await sourceStorage.exists(fromPath))) {
+      throw new Error(`Unknown folder ${relativeFolder}`);
+    }
+    if (this.isPathReserved(toPath) || this.knownFolders.has(toPath) || await targetStorage.exists(toPath)) {
+      throw new Error(`Target path already exists: ${toPath}`);
+    }
+    const assets = [...this.byGuid.values()].filter(
+      (asset) => asset.rootId === source.id && isWithinFolder(asset.path, fromPath),
+    );
+    const sourceBlobs = this.blobsOf(source);
+    const targetBlobs = this.blobsOf(target);
+    const headers = new Map<string, HassetHeader>();
+    for (const asset of assets) {
+      const header = await copyBlobChunks(await sourceStorage.readBinary(asset.path), sourceBlobs, targetBlobs);
+      if (header.guid !== asset.header.guid) {
+        throw new SourceRevisionChangedError(`Asset changed on disk before it could be moved: ${asset.path}`);
+      }
+      headers.set(asset.path, header);
+    }
+    let folders: string[];
+    try {
+      folders = await copyStorageTree(sourceStorage, fromPath, toPath, targetStorage);
+    } catch (error) {
+      try { await targetStorage.remove(toPath); } catch { /* The source is intact; a leftover copy is only clutter. */ }
+      throw error;
+    }
+    // If removal fails, the complete copy remains for recovery.
+    await sourceStorage.remove(fromPath);
+    const relocate = (path: string) => isWithinFolder(path, fromPath) ? `${toPath}${path.slice(fromPath.length)}` : path;
+    for (const asset of assets) {
+      const path = relocate(asset.path);
+      this.indexHeader(target.id, path, headers.get(asset.path)!, false, await this.statMtime(targetStorage, path));
+    }
+    this.repathGuidConflicts(relocate);
     for (const folder of [...this.knownFolders]) {
       if (isWithinFolder(folder, fromPath)) this.removeKnownFolder(folder);
     }
@@ -2299,6 +2403,20 @@ export class AssetRegistry {
     // Creator replace deletes then recreates the same guid.
     if (!preserveInbound) this.inbound.delete(asset.header.guid);
   }
+}
+
+/**
+ * Verify every chunk of an asset file read from a root using `from` and write
+ * each blob chunk to `to`, so the same bytes read in full from a root using
+ * `to`. Returns the file's header. Throws, before any file is written, when a
+ * chunk is missing or does not match its recorded length and sha256.
+ */
+async function copyBlobChunks(bytes: Uint8Array, from: BlobStore, to: BlobStore): Promise<HassetHeader> {
+  const decoded = await decodeHasset(bytes, (sha256) => from.readBlob(sha256));
+  for (const entry of decoded.header.chunks) {
+    if ("blob" in entry.locator) await to.writeBlob(entry.locator.blob, decoded.chunks.get(entry.id)!);
+  }
+  return decoded.header;
 }
 
 function isOnBlockGrid(size: ImageSize | null): boolean {
