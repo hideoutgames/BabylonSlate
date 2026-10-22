@@ -43,6 +43,8 @@ it("snapshots Simulation preferences and bounds explicit recording defaults", ()
   const launch = simulationDefaultsFromSettings(saved);
   saved.keepSimulationChanges = false;
   expect(launch.keepChanges).toBe(true);
+  expect(simulationDefaultsFromSettings({}).pauseOnErrors).toBe(true);
+  expect(simulationDefaultsFromSettings({ pauseSimulationOnErrors: false }).pauseOnErrors).toBe(false);
   expect(profileDefaultsFromSettings({ profileDurationSeconds: Infinity, profileByteBudget: 1 })).toMatchObject({ durationMs: 10_000, byteBudget: 4 * 1024 * 1024 });
 });
 

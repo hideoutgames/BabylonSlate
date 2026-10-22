@@ -76,6 +76,7 @@ import {
   type ControlMessage,
   type DebugObserveTarget,
   type ScriptBundleEntry,
+  type SessionPauseCause,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
@@ -146,13 +147,13 @@ export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
 }
 
-/** Apply worker sessionPaused onto Play overlay chrome. */
+/** Apply worker sessionPaused onto Play overlay chrome, with the error it paused on, if any. */
 export function applyPlaySessionPausedCommand(
   command: CommandMessage,
-  onSessionPaused?: (paused: boolean) => void,
+  onSessionPaused?: (paused: boolean, cause?: SessionPauseCause) => void,
 ): boolean {
   if (command.type !== "sessionPaused") return false;
-  onSessionPaused?.(command.paused);
+  onSessionPaused?.(command.paused, command.cause);
   return true;
 }
 
@@ -699,6 +700,8 @@ export function startPlaySession(options: {
   sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
   audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   infiniteLoopDetection?: boolean;
+  /** Simulation: pause the first time each node reports an error (Engine Settings, Pause On Errors). */
+  pauseOnErrors?: boolean;
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
@@ -714,7 +717,7 @@ export function startPlaySession(options: {
   onSceneLoading?: (state: SceneLoadProgress | null) => void;
   /** A scene load failed; it stays pending until the session stops, and the session reports a fatal diagnostic next. */
   onSceneLoadFailed?: () => void;
-  onSessionPaused?: (paused: boolean) => void;
+  onSessionPaused?: (paused: boolean, cause?: SessionPauseCause) => void;
   onShowFps?: (enabled: boolean) => void;
   onStatHighlight?: (name: string, enabled: boolean) => void;
   onFreeCam?: (enabled: boolean) => void;
@@ -1591,6 +1594,7 @@ export function startPlaySession(options: {
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
+    pauseOnErrors: options.pauseOnErrors,
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
     assetCatalog: options.assetCatalog,

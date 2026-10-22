@@ -447,14 +447,21 @@ describe("applyPlaySessionPausedCommand", () => {
         onSessionPaused,
       ),
     ).toBe(true);
-    expect(onSessionPaused).toHaveBeenCalledWith(true);
+    expect(onSessionPaused).toHaveBeenCalledWith(true, undefined);
     expect(
       applyPlaySessionPausedCommand(
         { type: "sessionPaused", paused: false },
         onSessionPaused,
       ),
     ).toBe(true);
-    expect(onSessionPaused).toHaveBeenCalledWith(false);
+    expect(onSessionPaused).toHaveBeenCalledWith(false, undefined);
+  });
+
+  it("forwards the error a Simulation paused on", () => {
+    const onSessionPaused = vi.fn();
+    const cause = { code: "runtime.assert", message: "Assertion failed", assetGuid: "Hero.class", graphId: "event-graph", nodeId: "check" };
+    applyPlaySessionPausedCommand({ type: "sessionPaused", paused: true, cause }, onSessionPaused);
+    expect(onSessionPaused).toHaveBeenCalledWith(true, cause);
   });
 
   it("ignores other commands", () => {

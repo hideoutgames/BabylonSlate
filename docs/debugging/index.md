@@ -45,6 +45,12 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 
 The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
 
+### Pause on errors
+
+When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time.
+
+Each node pauses the Simulation only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
+
 ## Watch a graph run
 
 While a Simulation runs, open a Class, a Behaviour Tree or an Animation Graph to see it run for one object, the way a debugger would.
