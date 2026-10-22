@@ -4,7 +4,7 @@ import { FilesInputStore } from "@babylonjs/core/Misc/filesInputStore";
 import { Scene } from "@babylonjs/core/scene";
 import { OBJFileLoader } from "@babylonjs/loaders/OBJ/objFileLoader";
 import { GLTF2Export } from "@babylonjs/serializers/glTF/2.0";
-import { groupObjImportSidecars } from "@babylonslate/assets";
+import { groupObjImportSidecars } from "@haptic/assets";
 
 /** Node tests have Blob/File but no FileReader; Babylon MTL/OBJ file IO needs it. */
 function installFileReaderPolyfill(): void {

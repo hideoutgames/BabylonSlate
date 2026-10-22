@@ -1,5 +1,5 @@
-import type { AssetDocument } from "@babylonslate/assets";
-import type { GlslToMaterialOptions, GlslToMaterialResult } from "@babylonslate/shader-graph";
+import type { AssetDocument } from "@haptic/assets";
+import type { GlslToMaterialOptions, GlslToMaterialResult } from "@haptic/shader-graph";
 
 export interface EditorExtensionEntry {
   id: string;

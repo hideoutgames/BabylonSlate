@@ -18,7 +18,7 @@ import {
   mapOf,
   RESOLVING_WILDCARD,
   ENGINE_HIT_RESULT_STRUCT_ID,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import {
   CALL_PIN_IDS,
   EXEC_PIN_IDS,

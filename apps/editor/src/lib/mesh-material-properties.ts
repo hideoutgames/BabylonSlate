@@ -1,4 +1,4 @@
-import { patchComponentProperties, updateDeformerProperties, type SerializedComponent } from "@babylonslate/core";
+import { patchComponentProperties, updateDeformerProperties, type SerializedComponent } from "@haptic/core";
 import { retargetCableProperties } from "./cable-property-rows";
 
 /** Picker-only value; persisted components store a source and an optional guid. */

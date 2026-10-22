@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { installGlErrorTrace } from "@babylonslate/render/gl-error-trace";
+import { installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { useDebugMode, useGraphicsErrorTrace } from "../context/app-settings-context";
 import { installDiagnosticLog } from "../lib/diagnostic-info";
 

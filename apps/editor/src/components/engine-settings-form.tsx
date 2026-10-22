@@ -4,7 +4,7 @@ import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { CompactModeField } from "./compact-mode-field";
-import { NumberField, SelectableText } from "@babylonslate/editor-kit";
+import { NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
@@ -17,10 +17,10 @@ import {
   MIN_VIEWPORT_FRAME_CAP,
   resolveCompactMode,
   type EngineSettings,
-} from "@babylonslate/vfs";
-import { Button } from "@babylonslate/ui/components/button";
-import { Slider } from "@babylonslate/ui/components/slider";
-import { Switch } from "@babylonslate/ui/components/switch";
+} from "@haptic/vfs";
+import { Button } from "@haptic/ui/components/button";
+import { Slider } from "@haptic/ui/components/slider";
+import { Switch } from "@haptic/ui/components/switch";
 import {
   Field,
   FieldContent,
@@ -29,14 +29,14 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
 import {
   focusKeepCandidates,

@@ -22,7 +22,7 @@ it("renders asset identities and missing references in a selectable, immutable g
             data: {
               title: "Stone",
               assetType: "Texture",
-              path: "assets/Stone.babasset",
+              path: "assets/Stone.hasset",
             },
           },
           {
@@ -50,7 +50,7 @@ it("renders asset identities and missing references in a selectable, immutable g
   );
   expect(texture.textContent).toContain("Stone");
   expect(texture.textContent).toContain("Texture");
-  expect(texture.title).toContain("assets/Stone.babasset");
+  expect(texture.title).toContain("assets/Stone.hasset");
   expect(getByText("Missing Asset")).toBeTruthy();
   expect(queryByTestId("graph-add-node")).toBeNull();
   const missing = getByTestId("asset-reference-node-missing");

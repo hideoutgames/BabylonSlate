@@ -8,10 +8,10 @@ const asset = (type: string, path: string, payload: unknown, placeholder = false
 
 const registry = {
   getByGuid: (guid: string) => ({
-    shapeless: asset("Model", "assets/Shapeless.model.babasset", { simpleColliders: [] }),
-    boxed: asset("Model", "assets/Boxed.model.babasset", { simpleColliders: [box, { ...box, id: "box-2" }] }),
-    texture: asset("Texture", "assets/Wood.texture.babasset", {}),
-    lost: asset("Model", "assets/Lost.model.babasset", { simpleColliders: [] }, true),
+    shapeless: asset("Model", "assets/Shapeless.model.hasset", { simpleColliders: [] }),
+    boxed: asset("Model", "assets/Boxed.model.hasset", { simpleColliders: [box, { ...box, id: "box-2" }] }),
+    texture: asset("Texture", "assets/Wood.texture.hasset", {}),
+    lost: asset("Model", "assets/Lost.model.hasset", { simpleColliders: [] }, true),
   } as Record<string, ReturnType<typeof asset>>)[guid],
 } as unknown as Parameters<typeof modelSimpleColliderCounter>[0];
 
@@ -24,7 +24,7 @@ describe("modelSimpleColliderCounter", () => {
 
   it("prefers the open tab's unsaved shapes over the saved ones", () => {
     const count = modelSimpleColliderCounter(registry, [
-      { ref: { path: "assets/Shapeless.model.babasset" }, content: { simpleColliders: [box] } },
+      { ref: { path: "assets/Shapeless.model.hasset" }, content: { simpleColliders: [box] } },
     ]);
     expect(count("shapeless")).toBe(1);
     expect(count("boxed")).toBe(2);
@@ -40,7 +40,7 @@ describe("modelSimpleColliderCounter", () => {
 });
 
 describe("physicsPairingDiagnostics", () => {
-  const options = { assetGuid: "assets/Main.scene.babasset", graphId: "scene:main" };
+  const options = { assetGuid: "assets/Main.scene.hasset", graphId: "scene:main" };
   const statue = { id: "statue", components: [{ id: "mesh", classId: "MeshComponent", properties: { collisionMode: "simple", assetGuid: "shapeless" } }] };
 
   it("locates a Model without simple shapes on the Mesh component", () => {

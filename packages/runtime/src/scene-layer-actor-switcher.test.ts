@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
-import { Actor, ClassRegistry, SceneLayerActorSwitcher, World } from "@babylonslate/object-model";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, createDefaultSceneLayer } from "@haptic/core";
+import { Actor, ClassRegistry, SceneLayerActorSwitcher, World } from "@haptic/object-model";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 

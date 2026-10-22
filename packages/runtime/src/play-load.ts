@@ -1,6 +1,6 @@
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import { type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
-import { isSceneAssetClassId } from "@babylonslate/object-model";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
+import { type SerializedScene, type SerializedSceneLayer } from "@haptic/core";
+import { isSceneAssetClassId } from "@haptic/object-model";
 import {
   createInProcessRuntime,
   type RuntimeDriver,
@@ -141,7 +141,7 @@ export function runtimeOptionsFromLoadControl(
 export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
-  saveGameStorage?: import("@babylonslate/core").SaveGameStorage,
+  saveGameStorage?: import("@haptic/core").SaveGameStorage,
   sourceHost?: { acquireScene?: AcquireRuntimeScene },
 ): RuntimeDriver {
   const runtime = createInProcessRuntime({

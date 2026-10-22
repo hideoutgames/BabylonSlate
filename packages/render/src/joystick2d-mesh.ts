@@ -1,5 +1,5 @@
 import { Color3, MeshBuilder, type AbstractMesh, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
-import { parseJoystick2DProperties, type Joystick2DProperties } from "@babylonslate/core";
+import { parseJoystick2DProperties, type Joystick2DProperties } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { VisualBundle } from "./visual-bundle";

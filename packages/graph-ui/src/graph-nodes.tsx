@@ -21,9 +21,9 @@ import {
   tagDisplayName,
   useTags,
   useContextMenu,
-} from "@babylonslate/editor-kit";
-import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@babylonslate/scripting";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@haptic/scripting";
+import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";

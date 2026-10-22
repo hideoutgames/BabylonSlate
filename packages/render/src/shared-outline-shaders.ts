@@ -12,8 +12,8 @@ import { checkedShader } from "./checked-shader";
 import { latticeShaderDeclarations, latticeShaderFunctions, LATTICE_WORLD_POSITION_PATTERN, latticeWorldPositionCode } from "./lattice-deformer-shader";
 import { waterOutlineVertexSource } from "./water-material";
 
-export const SHARED_OUTLINE_MASK_SHADER = "babylonSlateSharedOutlineMask";
-export const SHARED_OUTLINE_COMPOSE_SHADER = "babylonSlateSharedOutlineCompose";
+export const SHARED_OUTLINE_MASK_SHADER = "hapticSharedOutlineMask";
+export const SHARED_OUTLINE_COMPOSE_SHADER = "hapticSharedOutlineCompose";
 
 /** Replaces the one occurrence of `anchor`, failing loudly if a Babylon upgrade moved it. */
 function replaceAnchor(source: string, anchor: string, replacement: string): string {

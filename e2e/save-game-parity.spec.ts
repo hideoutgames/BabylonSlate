@@ -53,8 +53,8 @@ test("editor Play and Preview Build share persistent preview progress", async ({
   project.settings.gameInstanceClass = "SaveFlow";
   project.settings.saveGame = { definitionGuid: "save-parity-definition", defaultSlot: "default", defaultProfile: "default", wipeOnPlay: false };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
-  files.set("assets/Progress.savegame.babasset", await encodeAssetDocument({ guid: definition.id, name: "Progress", type: "SaveGame", version: 1, payload: { ...definition } }));
-  files.set("assets/SaveFlow.class.babasset", await encodeAssetDocument({ guid: "save-flow-class", name: "SaveFlow", type: "Class", version: createDefaultMigrationRegistry().currentVersion("Class"), payload: { ...graph } }, { parentClass: "GameInstance" }));
+  files.set("assets/Progress.savegame.hasset", await encodeAssetDocument({ guid: definition.id, name: "Progress", type: "SaveGame", version: 1, payload: { ...definition } }));
+  files.set("assets/SaveFlow.class.hasset", await encodeAssetDocument({ guid: "save-flow-class", name: "SaveFlow", type: "Class", version: createDefaultMigrationRegistry().currentVersion("Class"), payload: { ...graph } }, { parentClass: "GameInstance" }));
   await openMinimalTestProject(page, files);
   await openMainScene(page);
   await clickPlayAndWaitForOverlay(page);
@@ -77,7 +77,7 @@ test("editor Play and Preview Build share persistent preview progress", async ({
 async function savedGenerations(page: Page, projectId: string, corruptNewest = false) {
   return page.evaluate(async ({ projectId, corruptNewest }) => {
     const encode = (part: string) => `k${Array.from(new TextEncoder().encode(part), byte => byte.toString(16).padStart(2, "0")).join("")}`;
-    let directory = await (await navigator.storage.getDirectory()).getDirectoryHandle("babylonslate-game-saves");
+    let directory = await (await navigator.storage.getDirectory()).getDirectoryHandle("haptic-game-saves");
     for (const part of ["save-games", encodeURIComponent(projectId), "game", "default", "default"]) {
       directory = await directory.getDirectoryHandle(encode(part));
     }
@@ -103,7 +103,7 @@ async function savedGenerations(page: Page, projectId: string, corruptNewest = f
 }
 
 async function verifyCrossTabRecovery(page: Page, url: string, projectId: string) {
-  const lockName = `babylonslate:game-saves:save-games/${encodeURIComponent(projectId)}/game`;
+  const lockName = `haptic:game-saves:save-games/${encodeURIComponent(projectId)}/game`;
   // Queue both real browser contexts behind the same public Web Lock before releasing them.
   await page.evaluate(name => new Promise<void>((held, reject) => {
     void navigator.locks.request(name, { mode: "exclusive" }, () => new Promise<void>(release => {

@@ -1,4 +1,4 @@
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene } from "@haptic/core";
 import { sceneActorDisplayNames } from "./scene-actor-names";
 
 /** Authorable body candidates; runtime diagnostics report missing or invalid collision. */

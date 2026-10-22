@@ -16,7 +16,7 @@ import {
   tilesetTileRect,
   type TilesetCollision,
   type TilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   Empty,
   EmptyContent,
@@ -24,8 +24,8 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/empty";
+import { cn } from "@haptic/ui/lib/utils";
 
 export type AtlasTileGridTool = "move" | "select";
 

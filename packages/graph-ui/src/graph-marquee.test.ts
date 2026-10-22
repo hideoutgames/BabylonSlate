@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
+import { DRAG_ARM_MS } from "@haptic/editor-kit";
 import {
   attachGraphPaneMarquee,
   clientPointFromEvent,

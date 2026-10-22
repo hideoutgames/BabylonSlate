@@ -10,7 +10,7 @@ import {
   type NestedMenuItem,
   type PropertyRow,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   SIMPLE_COLLIDER_KIND_LABELS,
   cookGeneratedCollisionFromGltf,
@@ -20,19 +20,19 @@ import {
   type ModelPayload,
   type ModelSimpleCollider,
   type ModelSimpleColliderKind,
-} from "@babylonslate/assets";
-import { isGltfModelBytes } from "@babylonslate/render";
+} from "@haptic/assets";
+import { isGltfModelBytes } from "@haptic/render";
 import {
   eulerDegreesToQuaternion,
   quaternionToEulerDegrees,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/empty";
+import { Button } from "@haptic/ui/components/button";
 import {
   useDocumentActions,
   useOpenDocument,

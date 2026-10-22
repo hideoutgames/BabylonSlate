@@ -1,6 +1,6 @@
 import { NullEngine, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, parseJoystick2DProperties, walkOverlayPointerHits } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseJoystick2DProperties, walkOverlayPointerHits } from "@haptic/core";
 import { Joystick2DInput } from "./joystick2d-input";
 import { createJoystick2DMesh, joystick2DMesh, refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { SceneLayerCompositor } from "./scene-layer-compositor";

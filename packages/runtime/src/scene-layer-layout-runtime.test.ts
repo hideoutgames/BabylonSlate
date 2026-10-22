@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, createDefaultSceneLayer } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("SceneLayer layout runtime", () => {

@@ -31,7 +31,7 @@ for (const mode of ["Play"] as const) {
       const material = createDefaultMaterialDocument(name);
       material.shadingModel = "unlit";
       material.nodes[0]!.properties.value = [...color];
-      files.set(`assets/${name}.material.babasset`, await encodeAssetDocument({ guid, type: "Material", name,
+      files.set(`assets/${name}.material.hasset`, await encodeAssetDocument({ guid, type: "Material", name,
         version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown> }));
     }
     const layer = createDefaultSceneLayer();
@@ -48,7 +48,7 @@ for (const mode of ["Play"] as const) {
         id: "text-control", classId: "2DTextInputComponent", properties: { width: 8, height: 1, text: "Initial", maxLength: 12 },
       }] }),
     ];
-    files.set("assets/Controls.scenelayer.babasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "Controls",
+    files.set("assets/Controls.scenelayer.hasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "Controls",
       version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }));
     const scene = createDefaultScene();
     scene.actors = scene.actors.filter(actor => actor.id === scene.settings.mainCameraActorId);

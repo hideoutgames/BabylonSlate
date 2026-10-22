@@ -1,11 +1,11 @@
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import type { PropertyRow } from "@haptic/editor-kit";
 import {
   eulerDegreesToQuaternion,
   identitySerializedTransform,
   quaternionToEulerDegrees,
   type SerializedTransform,
   type ViewportMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /**
  * `layer3d` is Scene Layer 3D geometry: placed like 2D (Position XY plus

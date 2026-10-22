@@ -1,5 +1,5 @@
 import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type Skeleton, type TransformNode } from "@babylonjs/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import { isRigJointNode } from "./skeleton-preview";
 import type { SampledAudioPose } from "./snapshot-sync";
 

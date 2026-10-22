@@ -15,19 +15,19 @@ import {
   suggestConsoleCompletions,
   type ConsoleCompletionContext,
   type RegisteredCommand,
-} from "@babylonslate/debugger";
-import { SelectableText, isCoarsePointerEnvironment } from "@babylonslate/editor-kit";
-import { Button, buttonVariants } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+} from "@haptic/debugger";
+import { SelectableText, isCoarsePointerEnvironment } from "@haptic/editor-kit";
+import { Button, buttonVariants } from "@haptic/ui/components/button";
+import { Input } from "@haptic/ui/components/input";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import {
   Sheet,
   SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@babylonslate/ui/components/sheet";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/sheet";
+import { cn } from "@haptic/ui/lib/utils";
 import { XIcon } from "lucide-react";
 import {
   mergeDebugConsoleTranscript,

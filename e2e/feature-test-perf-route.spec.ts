@@ -13,39 +13,39 @@ import {
 } from "./feature-test-project";
 
 /**
- * Local FeatureTest performance route for agents. Opt-in: BL_PERF_FEATURE_TEST=1.
+ * Local FeatureTest performance route for agents. Opt-in: HAPTIC_PERF_FEATURE_TEST=1.
  * Creates the Feature Test starter through the real Create dialog, then for
  * each selected scene measures editor viewport frames and overlay Play
  * frames. It records one JSON report and asserts only that the route ran
  * cleanly; it never asserts a frame rate.
  *
- * Env: BL_PERF_SCENES (comma list of main|stress|world|clustered|2d, default main,stress),
- *      BL_PERF_SAMPLE_MS (default 15000), BL_PERF_SAMPLES (default 2),
- *      BL_PERF_WARMUP_MS (default 10000), BL_PERF_SETTLE_MS (default 5000),
- *      BL_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
- *      BL_PERF_FRAMECAP (Play console `framecap`), BL_PERF_VIEWPORT_CAP (Engine Settings),
- *      BL_PERF_REOPEN (default 1: also time reload + reopen), BL_PERF_LABEL,
- *      BL_PERF_OUT (absolute path that also receives the JSON report).
+ * Env: HAPTIC_PERF_SCENES (comma list of main|stress|world|clustered|2d, default main,stress),
+ *      HAPTIC_PERF_SAMPLE_MS (default 15000), HAPTIC_PERF_SAMPLES (default 2),
+ *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
+ *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
+ *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
+ *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
+ *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
  */
-const ENABLED = process.env.BL_PERF_FEATURE_TEST === "1";
+const ENABLED = process.env.HAPTIC_PERF_FEATURE_TEST === "1";
 const number = (name: string, fallback: number, min = 0) => {
   const value = Number(process.env[name]);
   return process.env[name] !== undefined && Number.isFinite(value) && value >= min ? value : fallback;
 };
-const SAMPLE_MS = number("BL_PERF_SAMPLE_MS", 15_000, 1_000);
-const SAMPLES = number("BL_PERF_SAMPLES", 2, 1);
-const WARMUP_MS = number("BL_PERF_WARMUP_MS", 10_000);
-const SETTLE_MS = number("BL_PERF_SETTLE_MS", 5_000);
-const QUALITY = process.env.BL_PERF_QUALITY ?? null;
-const FRAMECAP = process.env.BL_PERF_FRAMECAP ?? null;
-const REOPEN = process.env.BL_PERF_REOPEN !== "0";
-const SCENES = (process.env.BL_PERF_SCENES ?? "main,stress")
+const SAMPLE_MS = number("HAPTIC_PERF_SAMPLE_MS", 15_000, 1_000);
+const SAMPLES = number("HAPTIC_PERF_SAMPLES", 2, 1);
+const WARMUP_MS = number("HAPTIC_PERF_WARMUP_MS", 10_000);
+const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
+const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
+const FRAMECAP = process.env.HAPTIC_PERF_FRAMECAP ?? null;
+const REOPEN = process.env.HAPTIC_PERF_REOPEN !== "0";
+const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
   .filter((scene): scene is FeatureTestSceneName => scene in FEATURE_TEST_SCENES);
 
 type PlayHost = {
-  __babylonslatePlayTest?: {
+  __hapticPlayTest?: {
     tickIndex: () => number | null;
     rendering: () => Record<string, unknown>;
     liveObjectCounts: () => Record<string, number>;
@@ -104,8 +104,8 @@ async function measureViewport(page: Page, durationMs: number) {
   const measurement = await page.evaluate(
     (ms) =>
       (globalThis as unknown as {
-        __babylonslateViewportTest: { measureRenderingBaseline: (ms: number) => Promise<unknown> };
-      }).__babylonslateViewportTest.measureRenderingBaseline(ms),
+        __hapticViewportTest: { measureRenderingBaseline: (ms: number) => Promise<unknown> };
+      }).__hapticViewportTest.measureRenderingBaseline(ms),
     Math.min(durationMs, 30_000),
   ) as ViewportMeasurement;
   const frames = measurement.frameSamples;
@@ -128,7 +128,7 @@ async function samplePlay(page: Page, durationMs: number) {
   const sample = await page.evaluate(async (ms) => {
     const host = globalThis as unknown as PlayHost;
     const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
-    const tickStart = host.__babylonslatePlayTest?.tickIndex() ?? null;
+    const tickStart = host.__hapticPlayTest?.tickIndex() ?? null;
     const first = await frame();
     let previous = first;
     const intervals: number[] = [];
@@ -138,13 +138,13 @@ async function samplePlay(page: Page, durationMs: number) {
       previous = now;
       if (now - first >= ms) break;
     }
-    const tickEnd = host.__babylonslatePlayTest?.tickIndex() ?? null;
+    const tickEnd = host.__hapticPlayTest?.tickIndex() ?? null;
     return {
       elapsedMs: previous - first,
       intervals,
       ticks: tickStart !== null && tickEnd !== null ? tickEnd - tickStart : null,
       visibility: document.visibilityState,
-      rendering: host.__babylonslatePlayTest?.rendering() ?? null,
+      rendering: host.__hapticPlayTest?.rendering() ?? null,
     };
   }, durationMs);
   const intervals = distribution(sample.intervals);
@@ -186,7 +186,7 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
   await expect
     .poll(
-      () => page.evaluate(() => (globalThis as unknown as PlayHost).__babylonslatePlayTest?.tickIndex() ?? -1),
+      () => page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.tickIndex() ?? -1),
       { timeout: 180_000 },
     )
     .toBeGreaterThan(30);
@@ -205,7 +205,7 @@ async function measurePlay(page: Page, cdp: CDPSession) {
     windows.push({ ...result, mainThreadBusy: busy, longTasks: await longTasksSince(page, since) });
   }
   const liveObjects = await page.evaluate(
-    () => (globalThis as unknown as PlayHost).__babylonslatePlayTest?.liveObjectCounts() ?? null,
+    () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
@@ -213,7 +213,7 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   return { playBootMs, windows, liveObjects };
 }
 
-test.skip(!ENABLED, "FeatureTest performance route; set BL_PERF_FEATURE_TEST=1 to run it.");
+test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
 
 test("FeatureTest performance route", async ({ page }, testInfo) => {
   test.setTimeout(20 * 60_000 + SCENES.length * (SAMPLES * SAMPLE_MS * 2 + WARMUP_MS + SETTLE_MS));
@@ -222,7 +222,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await recordLongTasks(page);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
-    if (process.env.BL_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("BL_PERF_VIEWPORT_CAP", 30, 10);
+    if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 30, 10);
   });
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
@@ -250,7 +250,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   const report = {
     qualification:
       "Local browser observation of the Feature Test starter on this machine's adapter; compare runs on the same machine and build only. Not device, Safari, thermal or A16 qualification. No frame-rate assertion.",
-    label: process.env.BL_PERF_LABEL ?? null,
+    label: process.env.HAPTIC_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),
@@ -262,7 +262,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   };
   const body = JSON.stringify(report, null, 2);
   writeFileSync(testInfo.outputPath("feature-test-perf.json"), body);
-  if (process.env.BL_PERF_OUT) writeFileSync(process.env.BL_PERF_OUT, body);
+  if (process.env.HAPTIC_PERF_OUT) writeFileSync(process.env.HAPTIC_PERF_OUT, body);
   await testInfo.attach("feature-test-perf", { body, contentType: "application/json" });
   console.log(`[feature-test-perf] ${JSON.stringify(report)}`);
 

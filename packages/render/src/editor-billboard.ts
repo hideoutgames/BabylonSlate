@@ -12,7 +12,7 @@ import {
   type AbstractEngine,
   type Light,
 } from "@babylonjs/core";
-import type { SerializedActor } from "@babylonslate/core";
+import type { SerializedActor } from "@haptic/core";
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { shareHelperProgram } from "./helper-program";
 import { createEngineTextureFromUrl } from "./resource-cache";

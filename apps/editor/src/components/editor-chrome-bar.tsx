@@ -37,7 +37,7 @@ import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   ShortcutKeys,
   ToolbarOverflow,
@@ -48,14 +48,14 @@ import {
   ariaKeyShortcuts,
   useTouchUi,
   type NestedMenuItem,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Toggle } from "@haptic/ui/components/toggle";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,15 +63,15 @@ import {
   DropdownMenuGroup,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@babylonslate/ui/components/sheet";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/sheet";
+import { cn } from "@haptic/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import { ProjectIdentityMark } from "./project-identity-mark";

@@ -1,4 +1,4 @@
-import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@babylonslate/bridge";
+import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@haptic/bridge";
 import {
   TraceRecorder,
   isInfiniteLoopError,
@@ -6,9 +6,9 @@ import {
   type CommandResult,
   type TraceFrame,
   type TracePayload,
-} from "@babylonslate/debugger";
-import type { RawInputEvent } from "@babylonslate/input";
-import { createWorldSnapshot, stringifyWorldSnapshot, type TickPhase, type World } from "@babylonslate/object-model";
+} from "@haptic/debugger";
+import type { RawInputEvent } from "@haptic/input";
+import { createWorldSnapshot, stringifyWorldSnapshot, type TickPhase, type World } from "@haptic/object-model";
 import type { LogRingBuffer, LogSeverity } from "./log-ring";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import type { SnapshotPublisher } from "./snapshot-publisher";

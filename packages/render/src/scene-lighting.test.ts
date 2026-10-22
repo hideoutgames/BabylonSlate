@@ -1,4 +1,4 @@
-import { installAssetBytes } from "@babylonslate/assets";
+import { installAssetBytes } from "@haptic/assets";
 import {
   isForwardLightExcluded,
   setAuthoredLightEnabled,
@@ -36,7 +36,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { setupDefaultViewport } from "./viewport";
 import { sceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
@@ -45,7 +45,7 @@ import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
 import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
-import { normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
+import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 
 const engines: NullEngine[] = [];

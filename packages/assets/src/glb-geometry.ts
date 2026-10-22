@@ -1,5 +1,5 @@
 import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
-import type { CollisionTriangleMesh } from "@babylonslate/core";
+import type { CollisionTriangleMesh } from "@haptic/core";
 import type { HullVec3 } from "./convex-hull";
 
 const textDecoder = new TextDecoder();
@@ -338,7 +338,7 @@ export function buildBoxGlbFixture(size = 1): Uint8Array {
   bin.set(new Uint8Array(positions.buffer), 0);
   bin.set(new Uint8Array(indices.buffer), positions.byteLength);
   const json = {
-    asset: { version: "2.0", generator: "babylonslate-test" },
+    asset: { version: "2.0", generator: "haptic-test" },
     buffers: [{ byteLength: bin.byteLength }],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: positions.byteLength },

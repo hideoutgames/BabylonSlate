@@ -3,8 +3,8 @@ import {
   isFolderWithin,
   normalizeAssetFolderPath,
   type RuntimeAssetCatalogEntry,
-} from "@babylonslate/core";
-import { ClassRegistry } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { ClassRegistry } from "@haptic/object-model";
 
 /**
  * Runtime value of the `engine:AssetData` struct. Break/Make Structure read

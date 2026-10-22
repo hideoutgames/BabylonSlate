@@ -13,7 +13,7 @@ import {
   normalizeProjectSettings,
   normalizeShadowSettings,
   qualityPresetPatch,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { RenderQualityFields } from "./render-quality-fields";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 

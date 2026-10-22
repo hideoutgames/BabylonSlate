@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Constants, EffectRenderer, FreeCamera, NullEngine, PBRMaterial, Scene, Vector3, Viewport } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, normalizeWaterDefinition, waterWaveSet, type WaterDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
 import { WATER_FFT_IDLE_RUNS, WATER_FFT_MAX_SIMULATIONS, waterFftDiagnostics, waterFftForSurface } from "./water-fft";

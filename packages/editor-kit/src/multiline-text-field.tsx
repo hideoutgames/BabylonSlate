@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -7,9 +7,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { Textarea } from "@babylonslate/ui/components/textarea";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/dialog";
+import { Textarea } from "@haptic/ui/components/textarea";
+import { cn } from "@haptic/ui/lib/utils";
 import { MarkupAutocompleteTextarea } from "./markup-autocomplete";
 
 export type MultilineTextFieldProps = {

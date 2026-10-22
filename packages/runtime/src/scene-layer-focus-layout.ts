@@ -1,5 +1,5 @@
-import { isOverlayLayoutClass, isUIControl2DClass, UI_CONTROL_2D_CLASS_IDS, overlayLayoutKey, type OverlayLayoutEntry, type OverlayLayoutRect } from "@babylonslate/core";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+import { isOverlayLayoutClass, isUIControl2DClass, UI_CONTROL_2D_CLASS_IDS, overlayLayoutKey, type OverlayLayoutEntry, type OverlayLayoutRect } from "@haptic/core";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import type { SceneLayerLayout } from "./scene-layer-layout";
 import { actorParentGuid } from "./actor-world-transform";
 

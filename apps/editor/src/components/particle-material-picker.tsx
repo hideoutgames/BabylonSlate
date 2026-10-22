@@ -1,4 +1,4 @@
-import { AssetPicker } from "@babylonslate/editor-kit";
+import { AssetPicker } from "@haptic/editor-kit";
 import { useRegistryState } from "../context/document-context";
 import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
 import {

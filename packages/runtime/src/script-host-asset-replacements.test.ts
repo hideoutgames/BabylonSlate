@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Actor, ActorComponent, MaterialObject } from "@babylonslate/object-model";
+import { Actor, ActorComponent, MaterialObject } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
 function services(extra: Partial<ScriptHostServices>): ScriptHostServices {

@@ -32,7 +32,7 @@ import {
   UploadIcon,
   WaypointsIcon,
 } from "lucide-react";
-import type { AssetCopyOptions, IndexedAsset } from "@babylonslate/assets";
+import type { AssetCopyOptions, IndexedAsset } from "@haptic/assets";
 import {
   isThumbnailableAssetType,
   newAssetGuid,
@@ -45,13 +45,13 @@ import {
   contentEntryNameError,
   renamedAssetPath,
   stripAssetFileSuffix,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   convertObjImportBatch,
   convertStlImportBatch,
   animationRetargetHasMatches,
-} from "@babylonslate/render";
-import { convertFbxImportBatch } from "@babylonslate/render/fbx-import";
+} from "@haptic/render";
+import { convertFbxImportBatch } from "@haptic/render/fbx-import";
 import {
   ContextMenuOverlay,
   FolderBreadcrumbs,
@@ -69,7 +69,7 @@ import {
   PickerIdentity,
   type TypeVisual,
   type TreeDropPlacement,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import { enqueueModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
 import { createAssetThumbnailRevisionIndex } from "../lib/asset-thumbnail-revision";
 import { AssetReferenceDialog } from "./asset-reference-dialog";
@@ -81,20 +81,20 @@ import {
   documentKindForAssetType,
   CONTENT_BROWSER_ID,
   type DocumentKind,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createAppSettingsStore,
   isMobilePlatform,
   pickImportFiles,
-} from "@babylonslate/vfs";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/vfs";
+import { Button } from "@haptic/ui/components/button";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@babylonslate/ui/components/resizable";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@babylonslate/ui/components/empty";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/resizable";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@haptic/ui/components/empty";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   Sheet,
   SheetContent,
@@ -102,7 +102,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@babylonslate/ui/components/sheet";
+} from "@haptic/ui/components/sheet";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -112,23 +112,23 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
-import { Input } from "@babylonslate/ui/components/input";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Badge } from "@babylonslate/ui/components/badge";
+} from "@haptic/ui/components/dropdown-menu";
+import { Input } from "@haptic/ui/components/input";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Badge } from "@haptic/ui/components/badge";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
-} from "@babylonslate/ui/components/progress";
+} from "@haptic/ui/components/progress";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -139,7 +139,7 @@ import {
   AlertDialogHeader,
   AlertDialogMedia,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -160,7 +160,7 @@ import {
   refuseTheirsPaths,
 } from "../lib/source-control-file-ops";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -215,7 +215,7 @@ import {
   canMutateContentBrowserRoot,
   contentBrowserFolderOps,
   contentBrowserRoots,
-  filterBabpluginFiles,
+  filterHpluginFiles,
   isPluginContentFolderPath,
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
@@ -415,8 +415,8 @@ function ContentBrowserWorkspaceBody({
   const [newAssetFolder, setNewAssetFolder] = useState(ASSETS_ROOT);
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
-  const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
-  const [newWaterLook, setNewWaterLook] = useState<import("@babylonslate/core").WaterStylizedLook>("painted");
+  const [newWaterStyle, setNewWaterStyle] = useState<import("@haptic/core").WaterStyle>("realistic");
+  const [newWaterLook, setNewWaterLook] = useState<import("@haptic/core").WaterStylizedLook>("painted");
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
     done: number;
@@ -1760,7 +1760,7 @@ function ContentBrowserWorkspaceBody({
       if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
       const errors: string[] = [];
       let importedCount = 0;
-      const incoming = filterBabpluginFiles(files);
+      const incoming = filterHpluginFiles(files);
       if (incoming.length === 0) return;
       const createdModels: Array<{
         guid: string;

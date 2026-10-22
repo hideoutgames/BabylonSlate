@@ -114,7 +114,7 @@ export function preflightPhases(selection, workspace, lint) {
 }
 
 export async function verifyLocal(options = {}) {
-  const directory = await mkdtemp(join(tmpdir(), "babylonslate-verify-local-"));
+  const directory = await mkdtemp(join(tmpdir(), "haptic-verify-local-"));
   const initial = await sourceState(repoRoot);
   let base;
   for (const ref of ["origin/main", "main"]) {

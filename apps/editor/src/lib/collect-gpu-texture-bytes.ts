@@ -1,13 +1,13 @@
 import {
   resolveGpuTexture,
-  type BabassetHeader,
+  type HassetHeader,
   type EditorTextureLod,
-} from "@babylonslate/assets";
-import { materialParameterTextureGuidsFromGraph, type SerializedGraph } from "@babylonslate/core";
+} from "@haptic/assets";
+import { materialParameterTextureGuidsFromGraph, type SerializedGraph } from "@haptic/core";
 
 export type GpuTextureAsset = {
   path: string;
-  header: BabassetHeader;
+  header: HassetHeader;
 };
 
 export async function collectGpuTextureBytes(options: {

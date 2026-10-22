@@ -45,8 +45,8 @@ export type TextureAlignmentState = { runs: number; pending: number; requeued: s
 /** The alignment pass test hook's state; null before the editor installs it. */
 export async function textureAlignment(page: Page): Promise<TextureAlignmentState | null> {
   return page.evaluate(() => (globalThis as {
-    __babylonslateTest?: { textureAlignment?: () => TextureAlignmentState };
-  }).__babylonslateTest?.textureAlignment?.() ?? null);
+    __hapticTest?: { textureAlignment?: () => TextureAlignmentState };
+  }).__hapticTest?.textureAlignment?.() ?? null);
 }
 
 /** Recorded textures off the 4-texel grid: WebGPU rejects such a block-compressed upload. */

@@ -14,7 +14,7 @@
     "components": "@/components",
     "hooks": "@/hooks",
     "lib": "@/lib",
-    "utils": "@babylonslate/ui/lib/utils",
-    "ui": "@babylonslate/ui/components"
+    "utils": "@haptic/ui/lib/utils",
+    "ui": "@haptic/ui/components"
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import type { SerializedGraph } from "@babylonslate/core";
-import type { TypeSchemas } from "@babylonslate/scripting";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import type { SerializedGraph } from "@haptic/core";
+import type { TypeSchemas } from "@haptic/scripting";
 import { compileAnimGraphScripts, GraphScriptCompileCache } from "./script-compiler";
 
 const node = (id: string, type: string, data: Record<string, unknown> = {}): SerializedGraph["nodes"][number] => ({
@@ -26,7 +26,7 @@ function animationWithData(value: SerializedGraph["nodes"][number], rule: Serial
   document.transitions.push({
     id: "data-rule", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: rule,
   });
-  return [{ guid: "data-animation", path: "assets/Data.anim.babasset", document }];
+  return [{ guid: "data-animation", path: "assets/Data.anim.hasset", document }];
 }
 
 describe("Animation data graph compilation", () => {

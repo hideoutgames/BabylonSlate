@@ -49,8 +49,8 @@ const editable = {
   deleteSelfEnabled: true,
 };
 
-vi.mock("@babylonslate/vfs", async (original) => ({
-  ...(await original<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (original) => ({
+  ...(await original<typeof import("@haptic/vfs")>()),
   getHostPlatform: () => "electron",
 }));
 vi.mock("../services/native-clerk", () => ({

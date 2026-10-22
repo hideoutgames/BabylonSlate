@@ -3,9 +3,9 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
-import { SelectableText } from "@babylonslate/editor-kit";
+} from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
+import { SelectableText } from "@haptic/editor-kit";
 
 interface RouteErrorBoundaryState {
   error: Error | null;

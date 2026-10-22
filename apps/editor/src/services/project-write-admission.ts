@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 
 /** Passed explicitly through admitted bake/save work; never installed globally. */
 export interface ProjectSceneWriter {

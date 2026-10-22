@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
-import { ContextMenuOverlay } from "@babylonslate/editor-kit";
+import { ContextMenuOverlay } from "@haptic/editor-kit";
 import * as appearanceHelpers from "./homepage-project-appearance";
 
 afterEach(() => {

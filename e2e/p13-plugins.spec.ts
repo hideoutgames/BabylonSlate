@@ -4,7 +4,7 @@ import { openContentBrowser, openMainScene, openTestProject } from "./open-test-
 
 const STARTER_CONTENT_PLUGIN_GUID = "c0ffee00-0000-4000-8000-000000000001";
 const STARTER_ACTOR_PATH =
-  "plugins/starter-content/assets/StarterActor.class.babasset";
+  "plugins/starter-content/assets/StarterActor.class.hasset";
 
 test.describe.configure({ mode: "serial" });
 
@@ -35,9 +35,9 @@ async function returnToHomepage(page: Page): Promise<void> {
 async function guidForPath(page: Page, path: string): Promise<string> {
   return page.evaluate(async (assetPath) => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath(assetPath) ?? "";
+    return host.__hapticTest?.guidForPath(assetPath) ?? "";
   }, path);
 }
 
@@ -50,7 +50,7 @@ test.describe("P13 plugins", () => {
     await openPluginsSettings(page);
     const pluginGuids = await page.evaluate(() => {
       const host = globalThis as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           pluginGuids: () => string[];
           enginePluginLoad: () => {
             entries: number;
@@ -59,8 +59,8 @@ test.describe("P13 plugins", () => {
         };
       };
       return {
-        guids: host.__babylonslateTest?.pluginGuids() ?? [],
-        load: host.__babylonslateTest?.enginePluginLoad() ?? null,
+        guids: host.__hapticTest?.pluginGuids() ?? [],
+        load: host.__hapticTest?.enginePluginLoad() ?? null,
       };
     });
     const indexProbe = await page.evaluate(async () => {
@@ -109,7 +109,7 @@ test.describe("P13 plugins", () => {
       page.getByTestId("tree-row-plugins/starter-content/assets"),
     ).toHaveCount(0);
     await expect(
-      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+      page.locator('[data-asset-path="assets/main.scene.hasset"]'),
     ).toBeVisible();
 
     await openPluginsSettings(page);
@@ -168,14 +168,14 @@ test.describe("P13 plugins", () => {
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(
       0,
     );
-    const classPath = "plugins/shared-pack/assets/Hero.class.babasset";
+    const classPath = "plugins/shared-pack/assets/Hero.class.hasset";
     await expect(page.locator(`[data-asset-path="${classPath}"]`)).toBeVisible();
     const classGuid = await guidForPath(page, classPath);
     expect(classGuid).not.toBe("");
 
     await page.getByTestId("tree-row-assets").click();
     await expect(
-      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+      page.locator('[data-asset-path="assets/main.scene.hasset"]'),
     ).toBeVisible();
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -189,7 +189,7 @@ test.describe("P13 plugins", () => {
     await expect(page.getByTestId("plugin-export-dialog")).toBeVisible();
     await page.getByRole("button", { name: "Export To Download", exact: true }).click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe("shared-pack.babplugin");
+    expect(download.suggestedFilename()).toBe("shared-pack.hplugin");
     const pluginFile = await download.path();
     expect(pluginFile).toBeTruthy();
     await closeSettings(page);

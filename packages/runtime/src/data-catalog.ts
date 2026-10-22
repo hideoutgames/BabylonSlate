@@ -1,7 +1,7 @@
-import { buildDataTreeIndex, isDataDefinitionAsset, isDataTreeEntry, type DataAssetCatalogEntry, type DataTreeAsset } from "@babylonslate/core";
-import { dataTypeSchemas, resolveDataEntryValues, validateDataDefinition, type TypeSchemas } from "@babylonslate/scripting";
+import { buildDataTreeIndex, isDataDefinitionAsset, isDataTreeEntry, type DataAssetCatalogEntry, type DataTreeAsset } from "@haptic/core";
+import { dataTypeSchemas, resolveDataEntryValues, validateDataDefinition, type TypeSchemas } from "@haptic/scripting";
 
-export { dataTypeSchemas } from "@babylonslate/scripting";
+export { dataTypeSchemas } from "@haptic/scripting";
 
 /** Read-only tree data. All paths match exact names, with no leading slash. */
 export interface RuntimeDataApi {

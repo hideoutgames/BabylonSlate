@@ -2,8 +2,8 @@ import {
   animGraphMembersFromVariables,
   type AnimGraphDocument,
   type AnimGraphVariable,
-} from "@babylonslate/anim-graph";
-import type { SerializedGraph } from "@babylonslate/core";
+} from "@haptic/anim-graph";
+import type { SerializedGraph } from "@haptic/core";
 import { syncVariableAccessNodes } from "./class-members";
 
 function syncGraph(

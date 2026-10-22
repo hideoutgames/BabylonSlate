@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import {
   createMeshComponent,
   createText3DComponent,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { ensureEventNodeOnGraph } from "../lib/class-members";
 import {
   blueprintTreeNodes,

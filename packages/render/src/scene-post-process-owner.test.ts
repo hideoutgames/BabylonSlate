@@ -1,6 +1,6 @@
 import { NullEngine, Scene, FreeCamera, Vector3 } from "@babylonjs/core";
 import { expect, it, vi } from "vitest";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 

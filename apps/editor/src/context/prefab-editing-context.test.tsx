@@ -4,7 +4,7 @@ import {
   createMeshComponent,
   type SerializedGraph,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   PrefabEditingProvider,
   usePrefabEditing,
@@ -16,7 +16,7 @@ const documentOverrides = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
 const workspace = vi.hoisted(() => ({
-  documentId: "graph:assets/Hero.class.babasset",
+  documentId: "graph:assets/Hero.class.hasset",
 }));
 
 vi.mock("./document-workspace-context", () => ({
@@ -26,10 +26,10 @@ vi.mock("./document-workspace-context", () => ({
 vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Hero.class.babasset",
+      id: "graph:assets/Hero.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
       content: {
@@ -159,7 +159,7 @@ afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
   documentOverrides.value = {};
-  workspace.documentId = "graph:assets/Hero.class.babasset";
+  workspace.documentId = "graph:assets/Hero.class.hasset";
 });
 
 function ComponentsProbe({ seen }: { seen: PrefabComponentView[][] }) {
@@ -179,8 +179,8 @@ function ValueProbe({ seen }: { seen: ReturnType<typeof usePrefabEditing>[] }) {
 
 describe("PrefabEditingContext inherited components", () => {
   const baseGraph = {
-    id: "graph:assets/Base.class.babasset",
-    ref: { kind: "graph", path: "assets/Base.class.babasset" },
+    id: "graph:assets/Base.class.hasset",
+    ref: { kind: "graph", path: "assets/Base.class.hasset" },
     content: {
       nodes: [],
       edges: [],
@@ -191,8 +191,8 @@ describe("PrefabEditingContext inherited components", () => {
 
   it("follows a Class reparented in place in the registry", () => {
     const heroGraph = {
-      id: "graph:assets/Hero.class.babasset",
-      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      id: "graph:assets/Hero.class.hasset",
+      ref: { kind: "graph", path: "assets/Hero.class.hasset" },
       content: {
         nodes: [],
         edges: [],
@@ -201,14 +201,14 @@ describe("PrefabEditingContext inherited components", () => {
       },
     };
     const hero = {
-      path: "assets/Hero.class.babasset",
+      path: "assets/Hero.class.hasset",
       header: { type: "Class", name: "Hero", parentClass: "Actor" },
     };
     const registry = {
       list: () => [
         hero,
         {
-          path: "assets/Base.class.babasset",
+          path: "assets/Base.class.hasset",
           header: { type: "Class", name: "Base", parentClass: "Actor" },
         },
       ],
@@ -239,8 +239,8 @@ describe("PrefabEditingContext inherited components", () => {
 
   it("follows an open ancestor Class edited in place", () => {
     const heroGraph = {
-      id: "graph:assets/Hero.class.babasset",
-      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      id: "graph:assets/Hero.class.hasset",
+      ref: { kind: "graph", path: "assets/Hero.class.hasset" },
       content: {
         nodes: [],
         edges: [],
@@ -254,11 +254,11 @@ describe("PrefabEditingContext inherited components", () => {
       assetRegistry: {
         list: () => [
           {
-            path: "assets/Hero.class.babasset",
+            path: "assets/Hero.class.hasset",
             header: { type: "Class", name: "Hero", parentClass: "Base" },
           },
           {
-            path: "assets/Base.class.babasset",
+            path: "assets/Base.class.hasset",
             header: { type: "Class", name: "Base", parentClass: "Actor" },
           },
         ],
@@ -297,8 +297,8 @@ describe("PrefabEditingContext inherited components", () => {
 
   it("keeps the published components when an unrelated edit re-renders the editor", () => {
     const heroGraph = {
-      id: "graph:assets/Hero.class.babasset",
-      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      id: "graph:assets/Hero.class.hasset",
+      ref: { kind: "graph", path: "assets/Hero.class.hasset" },
       content: {
         nodes: [],
         edges: [],
@@ -308,11 +308,11 @@ describe("PrefabEditingContext inherited components", () => {
     };
     const assets = [
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         header: { type: "Class", name: "Hero", parentClass: "Base" },
       },
       {
-        path: "assets/Base.class.babasset",
+        path: "assets/Base.class.hasset",
         header: {
           type: "Class",
           name: "Base",
@@ -333,7 +333,7 @@ describe("PrefabEditingContext inherited components", () => {
     );
     documentOverrides.value = {
       ...documentOverrides.value,
-      openDocuments: [heroGraph, { ...baseGraph, id: "sprite:assets/Other.sprite.babasset", ref: { kind: "sprite", path: "assets/Other.sprite.babasset" } }],
+      openDocuments: [heroGraph, { ...baseGraph, id: "sprite:assets/Other.sprite.hasset", ref: { kind: "sprite", path: "assets/Other.sprite.hasset" } }],
     };
     view.rerender(
       <PrefabEditingProvider>
@@ -348,10 +348,10 @@ describe("PrefabEditingContext inherited components", () => {
   });
 
   it("keeps the published value for a Scene workspace while scene and Class documents change", () => {
-    workspace.documentId = "scene:assets/Main.scene.babasset";
+    workspace.documentId = "scene:assets/Main.scene.hasset";
     const scene = {
-      id: "scene:assets/Main.scene.babasset",
-      ref: { kind: "scene", path: "assets/Main.scene.babasset" },
+      id: "scene:assets/Main.scene.hasset",
+      ref: { kind: "scene", path: "assets/Main.scene.hasset" },
       content: { name: "Main", actors: [], settings: {} },
     };
     const seen: ReturnType<typeof usePrefabEditing>[] = [];
@@ -360,7 +360,7 @@ describe("PrefabEditingContext inherited components", () => {
       assetRegistry: {
         list: () => [
           {
-            path: "assets/Base.class.babasset",
+            path: "assets/Base.class.hasset",
             header: { type: "Class", name: "Base", parentClass: "Actor" },
           },
         ],
@@ -420,8 +420,8 @@ it("persists a spline gesture in one graph edit while retaining its transform an
     properties: { points: [[0, 0, 0], [0, 0, 5]], curvature: 0.5, closed: false } };
   const mesh = createMeshComponent("prefab-mesh", "box");
   documentOverrides.value = { openDocuments: [{
-    id: "graph:assets/Hero.class.babasset",
-    ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+    id: "graph:assets/Hero.class.hasset",
+    ref: { kind: "graph", path: "assets/Hero.class.hasset" },
     content: { nodes: [], edges: [], members: [], components: [mesh, path] },
   }] };
   render(<PrefabEditingProvider><ShapeEditProbe /></PrefabEditingProvider>);
@@ -446,8 +446,8 @@ describe("PrefabEditingContext batch transforms", () => {
     documentOverrides.value = {
       openDocuments: [
         {
-          id: "graph:assets/Hero.class.babasset",
-          ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+          id: "graph:assets/Hero.class.hasset",
+          ref: { kind: "graph", path: "assets/Hero.class.hasset" },
           content: {
             nodes: [],
             edges: [],
@@ -456,8 +456,8 @@ describe("PrefabEditingContext batch transforms", () => {
           },
         },
         {
-          id: "graph:assets/Base.class.babasset",
-          ref: { kind: "graph", path: "assets/Base.class.babasset" },
+          id: "graph:assets/Base.class.hasset",
+          ref: { kind: "graph", path: "assets/Base.class.hasset" },
           content: {
             nodes: [],
             edges: [],
@@ -469,11 +469,11 @@ describe("PrefabEditingContext batch transforms", () => {
       assetRegistry: {
         list: () => [
           {
-            path: "assets/Hero.class.babasset",
+            path: "assets/Hero.class.hasset",
             header: { type: "Class", name: "Hero", parentClass: "Base" },
           },
           {
-            path: "assets/Base.class.babasset",
+            path: "assets/Base.class.hasset",
             header: { type: "Class", name: "Base", parentClass: "Actor" },
           },
         ],
@@ -506,7 +506,7 @@ describe("PrefabEditingContext batch transforms", () => {
     fireEvent.click(screen.getByRole("button", { name: "Commit Transforms" }));
     expect(applyGraphChange).toHaveBeenCalledTimes(1);
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         components: [
           {
@@ -560,7 +560,7 @@ describe("PrefabEditingContext updateComponent", () => {
     );
     fireEvent.click(screen.getByTestId("update-mesh-kind"));
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         components: [
           expect.objectContaining({
@@ -580,7 +580,7 @@ describe("PrefabEditingContext updateComponent", () => {
     );
     fireEvent.click(screen.getByTestId("update-mesh-transform"));
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         components: [
           expect.objectContaining({
@@ -605,7 +605,7 @@ describe("PrefabEditingContext updateComponent", () => {
     fireEvent.click(screen.getByTestId("commit-text-gizmo"));
     expect(applyGraphChange).toHaveBeenCalledTimes(1);
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         components: [
           expect.objectContaining({
@@ -667,7 +667,7 @@ describe("PrefabEditingContext selection", () => {
     applyGraphChange.mockClear();
     fireEvent.click(screen.getByTestId("remove-selected"));
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         components: [],
       }),
@@ -687,7 +687,7 @@ describe("PrefabEditingContext selection", () => {
     applyGraphChange.mockClear();
     fireEvent.click(screen.getByTestId("add-model-mesh"));
     expect(applyGraphChange).toHaveBeenCalledWith(
-      "graph:assets/Hero.class.babasset",
+      "graph:assets/Hero.class.hasset",
       expect.objectContaining({
         components: expect.arrayContaining([
           expect.objectContaining({

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 
 const picker = vi.hoisted(() => ({ files: [] as Array<{ name: string; bytes: Uint8Array }> }));
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   pickImportFiles: async () => picker.files,
 }));
 

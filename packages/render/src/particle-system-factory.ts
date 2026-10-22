@@ -19,7 +19,7 @@ import type {
   ParticleEmitterShape,
   ParticleSimBackend,
   ParticleVec3Tuple,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";

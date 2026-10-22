@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TagRegistry } from "@babylonslate/core";
+import type { TagRegistry } from "@haptic/core";
 import {
   BOXED_WILDCARD,
   EXEC,
@@ -11,7 +11,7 @@ import {
   type GraphNode,
   type LogicGraph,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 const tagRegistry: TagRegistry = {

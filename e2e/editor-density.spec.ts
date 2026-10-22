@@ -36,18 +36,18 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("content-browser-filter-menu")).toBeVisible();
     await page.getByTestId("content-browser-filter-Scene").click();
     await expect(
-      page.locator('[data-asset-path="assets/main.class.babasset"]'),
+      page.locator('[data-asset-path="assets/main.class.hasset"]'),
     ).toHaveCount(0);
     await expect(
-      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+      page.locator('[data-asset-path="assets/main.scene.hasset"]'),
     ).toBeVisible();
   });
 
   test("Content Browser Sort menu orders asset tiles", async ({ page }) => {
     await openTestProject(page);
     const grid = page.getByTestId("content-browser-asset-grid");
-    const classPath = "assets/main.class.babasset";
-    const scenePath = "assets/main.scene.babasset";
+    const classPath = "assets/main.class.hasset";
+    const scenePath = "assets/main.scene.hasset";
     await expect(
       grid.locator(`[data-asset-path="${classPath}"]`),
     ).toBeVisible();
@@ -111,14 +111,14 @@ test.describe("Editor density and IA", () => {
     async ({ page }) => {
       await openTestProject(page);
       await page
-        .locator('[data-asset-path="assets/main.scene.babasset"]')
+        .locator('[data-asset-path="assets/main.scene.hasset"]')
         .dblclick();
       await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
         timeout: 15_000,
       });
 
       const dockTab = page
-        .locator(".dockview-theme-babylonslate .dv-tab")
+        .locator(".dockview-theme-haptic .dv-tab")
         .first();
       await expect(dockTab).toBeVisible();
       const dockBox = await dockTab.boundingBox();
@@ -247,7 +247,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("save-all-dirty")).toHaveCount(0);
 
     await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .locator('[data-asset-path="assets/main.scene.hasset"]')
       .dblclick();
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 15_000,
@@ -278,7 +278,7 @@ test.describe("Editor density and IA", () => {
       await page.getByTestId("tree-row-assets").click();
       const folderTile = page.getByTestId("content-folder-assets/qa-folder");
       const sceneTile = page.locator(
-        '[data-asset-path="assets/main.scene.babasset"]',
+        '[data-asset-path="assets/main.scene.hasset"]',
       );
       await expect(folderTile).toBeVisible({ timeout: 15_000 });
       await folderTile.click();
@@ -302,7 +302,7 @@ test.describe("Editor density and IA", () => {
         /^qa-folder\s*assets\/qa-folder\s*0 Assets$/,
       );
       await expect(rows.nth(1)).toHaveText(
-        /^Main\s*assets\/main\.scene\.babasset$/,
+        /^Main\s*assets\/main\.scene\.hasset$/,
       );
       await page.getByTestId("content-browser-delete-cancel").click();
     },
@@ -330,12 +330,12 @@ test.describe("Editor density and IA", () => {
     await page.getByRole("button", { name: "Cancel" }).click();
 
     const sceneTile = page.locator(
-      '[data-asset-path="assets/main.scene.babasset"]',
+      '[data-asset-path="assets/main.scene.hasset"]',
     );
     await sceneTile.click({ button: "right" });
     await page.getByTestId("context-menu-item-duplicate").click();
     await expect(
-      page.locator('[data-asset-path="assets/main_1.scene.babasset"]'),
+      page.locator('[data-asset-path="assets/main_1.scene.hasset"]'),
     ).toBeVisible();
   });
 
@@ -346,21 +346,21 @@ test.describe("Editor density and IA", () => {
 
     await createContentBrowserAsset(page, "Enum", "Alpha");
     await expect(
-      page.locator('[data-asset-path="assets/Alpha.babasset"]'),
+      page.locator('[data-asset-path="assets/Alpha.hasset"]'),
     ).toBeVisible();
 
     await createContentBrowserAsset(page, "Enum", "Beta");
     await expect(
-      page.locator('[data-asset-path="assets/Beta.babasset"]'),
+      page.locator('[data-asset-path="assets/Beta.hasset"]'),
     ).toBeVisible();
 
     await paintSelectContentTiles(
       page,
-      page.locator('[data-asset-path="assets/Alpha.babasset"]'),
-      page.locator('[data-asset-path="assets/Beta.babasset"]'),
+      page.locator('[data-asset-path="assets/Alpha.hasset"]'),
+      page.locator('[data-asset-path="assets/Beta.hasset"]'),
     );
     await page
-      .locator('[data-asset-path="assets/Beta.babasset"]')
+      .locator('[data-asset-path="assets/Beta.hasset"]')
       .click({ button: "right" });
     await expect(
       page.getByTestId("context-menu-item-show-references"),
@@ -370,10 +370,10 @@ test.describe("Editor density and IA", () => {
     ).toHaveCount(0);
     await page.getByTestId("context-menu-item-duplicate").click();
     await expect(
-      page.locator('[data-asset-path="assets/Alpha_1.babasset"]'),
+      page.locator('[data-asset-path="assets/Alpha_1.hasset"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-asset-path="assets/Beta_1.babasset"]'),
+      page.locator('[data-asset-path="assets/Beta_1.hasset"]'),
     ).toBeVisible();
 
     await page.getByTestId("content-browser-new-folder").click();
@@ -387,7 +387,7 @@ test.describe("Editor density and IA", () => {
     await paintSelectContentTiles(
       page,
       page.getByTestId("content-folder-assets/fx"),
-      page.locator('[data-asset-path="assets/Alpha.babasset"]'),
+      page.locator('[data-asset-path="assets/Alpha.hasset"]'),
     );
     await page
       .getByTestId("content-folder-assets/fx")

@@ -1,10 +1,10 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 import {
   decodeProjectZip,
   PROJECT_MANIFEST_FILE,
   readProjectTree,
   type ProjectTreeFile,
-} from "./babproject";
+} from "./hproject";
 
 export interface ProjectTemplateCatalogEntry {
   /** Folder or zip entry name, e.g. `Platformer` or `TopDown.zip`. */

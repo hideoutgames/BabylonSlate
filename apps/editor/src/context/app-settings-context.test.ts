@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   defaultEngineSettings,
   type AppSettingsStore,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import { AppSettingsOwner } from "./app-settings-context";
 
 describe("AppSettingsOwner", () => {

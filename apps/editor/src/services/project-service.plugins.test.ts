@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { PROJECT_FILE, createDefaultScene, ENGINE_VERSION, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
+import { PROJECT_FILE, createDefaultScene, ENGINE_VERSION, SCENE_SCHEMA_VERSION } from "@haptic/core";
 import {
   createDefaultPluginSettings,
   createVfsBlobStore,
   createEmptyProjectFiles,
-  encodeBabasset,
+  encodeHasset,
   encodeAssetDocument,
   encodePluginSettingsDocument,
-  inspectBabplugin,
+  inspectHplugin,
   writeProjectPlugin,
   buildStarterContentFiles,
   encodeProjectZip,
@@ -15,14 +15,14 @@ import {
   STARTER_ACTOR_GUID,
   STARTER_CONTENT_FOLDER,
   STARTER_CONTENT_PLUGIN_GUID,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { EnginePluginLibrary } from "../lib/engine-plugin-library";
 
 async function scaffolded() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("Plugins.babproject");
+  await storage.openDocumentsProject("Plugins.hproject");
   const service = new ProjectService(storage);
   await service.loadCurrentProject();
   return { storage, service };
@@ -37,7 +37,7 @@ async function writeClassAsset(
   await storage.mkdir(dir, true);
   await storage.writeBinary(
     path,
-    await encodeBabasset({
+    await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: options.guid,
@@ -69,10 +69,10 @@ describe("ProjectService plugin roots", () => {
     settings.engineVersion = "older";
     await writeProjectPlugin(storage, "pack", settings);
     const scene = createDefaultScene();
-    const path = "plugins/pack/assets/Scene.scene.babasset";
+    const path = "plugins/pack/assets/Scene.scene.hasset";
     await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Scene", guid: "scene", version: SCENE_SCHEMA_VERSION, payload: scene as unknown as Record<string, unknown> }));
     await service.remountRegistry();
-    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, displayName: "Renamed" });
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.hasset", { ...settings, displayName: "Renamed" });
     expect(service.plugins[0]!.settings.engineVersion).toBe("older");
     await service.saveDocument("scene", path, scene);
     expect(service.plugins[0]!.settings.engineVersion).toBe("older");
@@ -80,7 +80,7 @@ describe("ProjectService plugin roots", () => {
     expect(service.plugins[0]!.settings.engineVersion).toBe(ENGINE_VERSION);
     expect(service.plugins[0]!.settings.displayName).toBe("Renamed");
     // A stale open settings tab must not undo the newer authoring stamp.
-    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, description: "Edited Description" });
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.hasset", { ...settings, description: "Edited Description" });
     expect(service.plugins[0]!.settings.engineVersion).toBe(ENGINE_VERSION);
   });
 
@@ -90,8 +90,8 @@ describe("ProjectService plugin roots", () => {
     settings.engineVersion = "older";
     await writeProjectPlugin(storage, "pack", settings);
     const scene = createDefaultScene();
-    const path = "plugins/pack/assets/Scene.scene.babasset";
-    const settingsPath = "plugins/pack/pack.plugin.babasset";
+    const path = "plugins/pack/assets/Scene.scene.hasset";
+    const settingsPath = "plugins/pack/pack.plugin.hasset";
     await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Scene", guid: "scene", version: SCENE_SCHEMA_VERSION, payload: scene as unknown as Record<string, unknown> }));
     await service.remountRegistry();
     const write = storage.writeBinary.bind(storage);
@@ -125,12 +125,12 @@ describe("ProjectService plugin roots", () => {
     await writeProjectPlugin(storage, "base", base);
     await writeProjectPlugin(storage, "pack", settings);
     await service.remountRegistry();
-    const opened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.babasset");
+    const opened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.hasset");
     expect(opened).toMatchObject({ version: "0.1", engineVersion: "older" });
-    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...opened, displayName: "Renamed" });
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.hasset", { ...opened, displayName: "Renamed" });
     expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.1", engineVersion: "older", pluginDependencies: [{ guid: "base", version: "0.1" }] });
-    const reopened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.babasset");
-    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...reopened, version: "0.2" });
+    const reopened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.hasset");
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.hasset", { ...reopened, version: "0.2" });
     expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.2", engineVersion: ENGINE_VERSION, pluginDependencies: [{ guid: "base", version: "2.7" }] });
   });
 
@@ -144,7 +144,7 @@ describe("ProjectService plugin roots", () => {
     pack.pluginDependencies = [{ guid: "base", version: "0.1" }];
     await writeProjectPlugin(storage, "base", base);
     await writeProjectPlugin(storage, "pack", pack);
-    await writeClassAsset(storage, "plugins/pack/assets/Hero.class.babasset", { guid: "hero", name: "Hero" });
+    await writeClassAsset(storage, "plugins/pack/assets/Hero.class.hasset", { guid: "hero", name: "Hero" });
     await service.remountRegistry();
     const overrides = { pack: { enabled: true } };
     await service.applyPluginOverrides(overrides);
@@ -152,7 +152,7 @@ describe("ProjectService plugin roots", () => {
     await service.remountRegistry();
     expect(service.registry?.getRoot("plugin:pack")).toBeTruthy();
     expect((await service.listExportAssets(new Set(["base", "pack"]))).some((asset) => asset.header.guid === "hero")).toBe(true);
-    await service.saveDocument("plugin-settings", "plugins/base/base.plugin.babasset", { ...base, version: "2.8" });
+    await service.saveDocument("plugin-settings", "plugins/base/base.plugin.hasset", { ...base, version: "2.8" });
     expect(service.registry?.getByGuid("hero")?.rootId).toBe("plugin:pack");
     expect((await service.listExportAssets(new Set(["base", "pack"]))).some((asset) => asset.header.guid === "hero")).toBe(true);
     expect(service.pluginGraphDiagnostics).toContainEqual(expect.objectContaining({ code: "plugin.unsatisfiable", severity: "warning", pluginGuid: "pack", foundVersion: "2.8" }));
@@ -173,7 +173,7 @@ describe("ProjectService plugin roots", () => {
     await writeProjectPlugin(storage, "extra", dependent);
     await writeClassAsset(
       storage,
-      "plugins/extra/assets/Extra.class.babasset",
+      "plugins/extra/assets/Extra.class.hasset",
       { guid: "extra-class", name: "Extra" },
     );
     await service.remountRegistry();
@@ -200,14 +200,14 @@ describe("ProjectService plugin roots", () => {
     });
     await pluginStorage.mkdir(`${folderPath}/assets`, true);
     await pluginStorage.writeBinary(
-      `${folderPath}/export-pack.plugin.babasset`,
+      `${folderPath}/export-pack.plugin.hasset`,
       await encodePluginSettingsDocument(settings),
     );
     const blobs = createVfsBlobStore(pluginStorage, `${folderPath}/assets/.blobs`);
     const payload = new Uint8Array([3, 5, 8]);
     await pluginStorage.writeBinary(
-      `${folderPath}/assets/Texture.texture.babasset`,
-      await encodeBabasset({
+      `${folderPath}/assets/Texture.texture.hasset`,
+      await encodeHasset({
         header: {
           dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "export-texture",
@@ -250,7 +250,7 @@ describe("ProjectService plugin roots", () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("__slate_engine_plugins__");
     await storage.openDocumentsProject("__slate_templates__");
-    await storage.openDocumentsProject("__babylonslate_derived__");
+    await storage.openDocumentsProject("__haptic_derived__");
     await storage.openDocumentsProject("My Project");
     expect((await new ProjectService(storage).listProjects()).map((folder) => folder.name))
       .toEqual(["My Project"]);
@@ -264,7 +264,7 @@ describe("ProjectService plugin roots", () => {
     });
     settings.enabledByDefault = true;
     await writeProjectPlugin(storage, "pack", settings);
-    await writeClassAsset(storage, "plugins/pack/assets/PackActor.class.babasset", {
+    await writeClassAsset(storage, "plugins/pack/assets/PackActor.class.hasset", {
       guid: "pack-actor",
       name: "PackActor",
     });
@@ -276,7 +276,7 @@ describe("ProjectService plugin roots", () => {
     );
     expect(
       service.registry?.listDocumentPaths({ rootId: "project" }).graphs,
-    ).not.toContain("plugins/pack/assets/PackActor.class.babasset");
+    ).not.toContain("plugins/pack/assets/PackActor.class.hasset");
   });
 
   it("leaves disabled plugins unmounted", async () => {
@@ -287,7 +287,7 @@ describe("ProjectService plugin roots", () => {
     });
     settings.enabledByDefault = false;
     await writeProjectPlugin(storage, "off", settings);
-    await writeClassAsset(storage, "plugins/off/assets/Hidden.class.babasset", {
+    await writeClassAsset(storage, "plugins/off/assets/Hidden.class.hasset", {
       guid: "hidden-class",
       name: "Hidden",
     });
@@ -301,7 +301,7 @@ describe("ProjectService plugin roots", () => {
     const { storage, service } = await scaffolded();
     const created = await service.createProjectPlugin("My Pack");
     expect(created.settings.displayName).toBe("My Pack");
-    expect(await storage.exists("plugins/my-pack/my-pack.plugin.babasset")).toBe(
+    expect(await storage.exists("plugins/my-pack/my-pack.plugin.hasset")).toBe(
       true,
     );
     expect(await storage.exists("plugins/my-pack/assets")).toBe(true);
@@ -349,22 +349,22 @@ describe("ProjectService plugin roots", () => {
     expect(service.pluginGraphDiagnostics).toEqual([]);
   });
 
-  it("exports a project plugin as a self-contained .babplugin zip", async () => {
+  it("exports a project plugin as a self-contained .hplugin zip", async () => {
     const { service } = await scaffolded();
     const created = await service.createProjectPlugin("My Pack");
     const zip = await service.exportPlugin(created.pluginGuid);
-    const inspected = await inspectBabplugin(zip);
+    const inspected = await inspectHplugin(zip);
     expect(inspected.manifest.kind).toBe("plugin");
     expect(inspected.settings.displayName).toBe("My Pack");
     expect(inspected.settings.pluginGuid).toBe(created.pluginGuid);
   });
 
-  it("imports a .babplugin into plugins/<safeName>/ and keeps guids", async () => {
+  it("imports a .hplugin into plugins/<safeName>/ and keeps guids", async () => {
     const source = await scaffolded();
     const created = await source.service.createProjectPlugin("Shared Pack");
     await writeClassAsset(
       source.storage,
-      "plugins/shared-pack/assets/Hero.class.babasset",
+      "plugins/shared-pack/assets/Hero.class.hasset",
       { guid: "hero-1", name: "Hero" },
     );
     const zip = await source.service.exportPlugin(created.pluginGuid);
@@ -376,7 +376,7 @@ describe("ProjectService plugin roots", () => {
     expect(result.descriptor.pluginGuid).toBe(created.pluginGuid);
     expect(
       await dest.storage.exists(
-        "plugins/shared-pack/assets/Hero.class.babasset",
+        "plugins/shared-pack/assets/Hero.class.hasset",
       ),
     ).toBe(true);
   });
@@ -458,10 +458,10 @@ describe("ProjectService plugin roots", () => {
     const storage = new MemoryStorageAdapter("documents");
     const service = new ProjectService(storage);
     service.setEnginePluginStorage(await engineStarterStorage());
-    await service.createEmptyProject("Copy.babproject");
+    await service.createEmptyProject("Copy.hproject");
     expect(
       await storage.exists(
-        "plugins/starter-content/assets/StarterActor.class.babasset",
+        "plugins/starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(true);
     const row = service.plugins.find(
@@ -485,7 +485,7 @@ describe("ProjectService plugin roots", () => {
     expect(root?.pathPrefix).toBe("plugins/starter-content/assets");
     const created = await service.registry?.createAsset(
       `plugin:${STARTER_CONTENT_PLUGIN_GUID}`,
-      "Extra.class.babasset",
+      "Extra.class.hasset",
       {
         guid: "bbbb0000-0000-4000-8000-000000000001",
         type: "Class",
@@ -498,7 +498,7 @@ describe("ProjectService plugin roots", () => {
       },
     );
     expect(created?.path).toBe(
-      "plugins/starter-content/assets/Extra.class.babasset",
+      "plugins/starter-content/assets/Extra.class.hasset",
     );
   });
 
@@ -508,7 +508,7 @@ describe("ProjectService plugin roots", () => {
     await service.loadCurrentProject();
     await expect(
       service.writeSceneNavmeshChunk(
-        "starter-content/assets/Main.scene.babasset",
+        "starter-content/assets/Main.scene.hasset",
         new Uint8Array([1, 2, 3]),
         {},
       ),
@@ -521,7 +521,7 @@ describe("ProjectService plugin roots", () => {
     await service.loadCurrentProject();
     expect(
       await storage.exists(
-        "plugins/starter-content/assets/StarterActor.class.babasset",
+        "plugins/starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(false);
     expect(
@@ -542,7 +542,7 @@ describe("ProjectService plugin roots", () => {
     const templateFiles = [
       ...createEmptyProjectFiles({ guid: "tpl", name: "HasPlugin" }),
       {
-        path: "plugins/mine/mine.plugin.babasset",
+        path: "plugins/mine/mine.plugin.hasset",
         data: await encodePluginSettingsDocument(settings),
       },
     ];
@@ -558,7 +558,7 @@ describe("ProjectService plugin roots", () => {
     expect(row?.source).toBe("project");
     expect(
       await storage.exists(
-        "plugins/starter-content/assets/StarterActor.class.babasset",
+        "plugins/starter-content/assets/StarterActor.class.hasset",
       ),
     ).toBe(false);
   });
@@ -595,7 +595,7 @@ describe("ProjectService plugin roots", () => {
       await service.loadCurrentProject();
       expect(service.plugins.find((plugin) => plugin.pluginGuid === created.pluginGuid))
         .toMatchObject({ source: "project", settings: { enabledByDefault: true } });
-      expect(await destination.exists("plugins/global-pack/global-pack.plugin.babasset")).toBe(true);
+      expect(await destination.exists("plugins/global-pack/global-pack.plugin.hasset")).toBe(true);
     },
   );
 });

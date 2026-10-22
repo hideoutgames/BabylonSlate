@@ -5,7 +5,7 @@ import {
   normalizeAnimationPayload,
   type AnimationPayload,
   type ImportResult,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 export function retargetedAnimationPayload(options: {
   source: AnimationPayload;
@@ -122,7 +122,7 @@ export async function writeRetargetedAnimations(options: {
     });
     await options.createAsset(
       options.rootId,
-      joinRelative(options.folderRelative, `${sanitizeFileName(name)}.babasset`),
+      joinRelative(options.folderRelative, `${sanitizeFileName(name)}.hasset`),
       retargetedAnimationImport({
         name,
         guid: newAssetGuid(),

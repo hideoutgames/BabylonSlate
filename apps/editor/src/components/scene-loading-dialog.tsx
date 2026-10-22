@@ -1,8 +1,8 @@
 import { useEffect, useState, type ComponentProps, type RefObject } from "react";
-import { Dialog } from "@babylonslate/ui/components/dialog";
-import { Button } from "@babylonslate/ui/components/button";
+import { Dialog } from "@haptic/ui/components/dialog";
+import { Button } from "@haptic/ui/components/button";
 import type { SceneViewportLoadPhase } from "../lib/scene-viewport-load";
-import type { SceneLoadPhase } from "@babylonslate/render";
+import type { SceneLoadPhase } from "@haptic/render";
 import {
   ProgressDialogContent,
   ProgressDialogFailure,

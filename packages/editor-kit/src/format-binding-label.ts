@@ -2,7 +2,7 @@ import {
   bindingCodeLabel,
   type BindingModifiers,
   type InputDevice,
-} from "@babylonslate/input";
+} from "@haptic/input";
 
 function modifierPrefix(modifiers?: BindingModifiers): string {
   if (!modifiers) return "";

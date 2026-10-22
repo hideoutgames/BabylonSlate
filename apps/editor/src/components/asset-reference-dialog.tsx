@@ -1,16 +1,16 @@
 import { useMemo, useState } from "react";
-import type { IndexedAsset } from "@babylonslate/assets";
-import { documentKindForAssetType } from "@babylonslate/core";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { GraphEditor, assetReferenceNodeTypes, assetReferenceEdgeTypes } from "@babylonslate/graph-ui";
-import { Button } from "@babylonslate/ui/components/button";
+import type { IndexedAsset } from "@haptic/assets";
+import { documentKindForAssetType } from "@haptic/core";
+import { SelectableText } from "@haptic/editor-kit";
+import { GraphEditor, assetReferenceNodeTypes, assetReferenceEdgeTypes } from "@haptic/graph-ui";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import { buildAssetReferenceGraph } from "../lib/asset-reference-graph";
 
 /** Links only follow node selection; unselectable edges let a drag that starts on a link pan the graph. */

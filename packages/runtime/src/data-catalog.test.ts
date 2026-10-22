@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createDataTreeAsset, createDataTreeEntry, type DataAssetCatalogEntry, type DataDefinitionAsset, type DataTreeEntry } from "@babylonslate/core";
-import { clearDeletedAssetRefs } from "@babylonslate/assets";
-import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createDataTreeAsset, createDataTreeEntry, type DataAssetCatalogEntry, type DataDefinitionAsset, type DataTreeEntry } from "@haptic/core";
+import { clearDeletedAssetRefs } from "@haptic/assets";
+import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { RuntimeDataCatalog } from "./data-catalog";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 import { loadCompiledModule } from "./module-loader";

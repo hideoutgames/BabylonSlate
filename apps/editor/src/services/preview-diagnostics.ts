@@ -1,6 +1,6 @@
-import { createPreviewDiagnosticClient, type PreviewDiagnosticResult } from "@babylonslate/exporter";
-import { parsePerformanceProfile, type PerformanceProfile } from "@babylonslate/debugger";
-import type { RenderFrameReport } from "@babylonslate/render";
+import { createPreviewDiagnosticClient, type PreviewDiagnosticResult } from "@haptic/exporter";
+import { parsePerformanceProfile, type PerformanceProfile } from "@haptic/debugger";
+import type { RenderFrameReport } from "@haptic/render";
 
 /** One owner per iframe. Destroy it when the iframe/source is replaced; the
  * transport additionally verifies its player session and request identities. */

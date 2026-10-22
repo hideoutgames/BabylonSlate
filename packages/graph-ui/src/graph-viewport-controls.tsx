@@ -1,6 +1,6 @@
 import { useReactFlow, useStore } from "@xyflow/react";
 import { MaximizeIcon, MinusIcon, PlusIcon } from "lucide-react";
-import { Separator } from "@babylonslate/ui/components/separator";
+import { Separator } from "@haptic/ui/components/separator";
 import { IslandIconButton } from "./island-icon-button";
 
 /** Canvas sibling so transformed or elevated nodes cannot cover navigation. */

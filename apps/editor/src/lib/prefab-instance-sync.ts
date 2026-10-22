@@ -7,8 +7,8 @@ import {
   type SerializedComponent,
   type SerializedScene,
   type SerializedTransform,
-} from "@babylonslate/core";
-import { stableStringify } from "@babylonslate/assets";
+} from "@haptic/core";
+import { stableStringify } from "@haptic/assets";
 import { mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";

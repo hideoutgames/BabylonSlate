@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
+import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 const registry = createDefaultNodeRegistry();

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { defaultEngineSettings } from "@babylonslate/vfs";
+import { defaultEngineSettings } from "@haptic/vfs";
 import {
   BUILT_IN_EDITOR_THEMES,
   DEFAULT_EDITOR_THEME_ID,

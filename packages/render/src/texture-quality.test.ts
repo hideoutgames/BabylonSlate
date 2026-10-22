@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RenderTargetTexture, Scene, StandardMaterial, Texture, type Effect } from "@babylonjs/core";
-import { installAssetBytes } from "@babylonslate/assets";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { installAssetBytes } from "@haptic/assets";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { ResourceCache } from "./resource-cache";
 import { sceneRenderingSettings } from "./render-settings";

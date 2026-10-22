@@ -1,4 +1,4 @@
-import type { BabassetHeader } from "@babylonslate/assets";
+import type { HassetHeader } from "@haptic/assets";
 
 /** Encode progress fields: rewriting them alone does not change the bytes a Texture uploads. */
 const TEXTURE_PROGRESS_FIELDS = new Set(["compressionState", "encodeWallMs", "encodeError"]);
@@ -13,7 +13,7 @@ const TEXTURE_ENCODE_FIELDS = new Set([
   "ktx2Sha256",
 ]);
 
-type TextureHeader = Pick<BabassetHeader, "payload" | "chunks">;
+type TextureHeader = Pick<HassetHeader, "payload" | "chunks">;
 
 function isKtx2Chunk(chunk: TextureHeader["chunks"][number]): boolean {
   return chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:");

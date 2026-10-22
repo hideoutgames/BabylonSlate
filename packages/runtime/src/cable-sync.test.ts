@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { SoftwarePhysicsBackend, type PhysicsTransform, type SphereSweepQuery } from "@babylonslate/physics";
+import type { CommandMessage } from "@haptic/bridge";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { SoftwarePhysicsBackend, type PhysicsTransform, type SphereSweepQuery } from "@haptic/physics";
 import { CableWorldSync } from "./cable-sync";
 
 class QueryPhysicsBackend extends SoftwarePhysicsBackend {

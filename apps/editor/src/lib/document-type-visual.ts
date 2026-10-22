@@ -1,6 +1,6 @@
-import type { AssetRegistry } from "@babylonslate/assets";
-import { assetTypeForDocumentKind, type DocumentRef } from "@babylonslate/core";
-import { resolveTypeVisual } from "@babylonslate/editor-kit";
+import type { AssetRegistry } from "@haptic/assets";
+import { assetTypeForDocumentKind, type DocumentRef } from "@haptic/core";
+import { resolveTypeVisual } from "@haptic/editor-kit";
 import {
   classParentLookup,
   visualForIndexedAsset,

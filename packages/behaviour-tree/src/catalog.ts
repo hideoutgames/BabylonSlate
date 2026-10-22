@@ -1,5 +1,5 @@
 import { builtinClassId } from "./builtins";
-import type { PinType } from "@babylonslate/scripting";
+import type { PinType } from "@haptic/scripting";
 import type { BtNodeKind } from "./types";
 
 export type BtCatalogKind = BtNodeKind | "decorator" | "service";

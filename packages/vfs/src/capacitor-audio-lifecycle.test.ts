@@ -36,7 +36,7 @@ describe("Capacitor audio lifecycle bridge", () => {
     removeRouteChange.mockClear();
   });
 
-  it("dispatches babylonslate:audiointerruption from the native plugin", async () => {
+  it("dispatches haptic:audiointerruption from the native plugin", async () => {
     initializeCapacitorAudioLifecycle();
     await flushAsync();
 
@@ -44,7 +44,7 @@ describe("Capacitor audio lifecycle bridge", () => {
       (call) => call[0] === "audioInterruption",
     )?.[1];
     const listener = vi.fn();
-    window.addEventListener("babylonslate:audiointerruption", listener);
+    window.addEventListener("haptic:audiointerruption", listener);
 
     handler!({ type: "began" });
 
@@ -55,7 +55,7 @@ describe("Capacitor audio lifecycle bridge", () => {
     );
   });
 
-  it("dispatches babylonslate:audioroutechange from the native plugin", async () => {
+  it("dispatches haptic:audioroutechange from the native plugin", async () => {
     initializeCapacitorAudioLifecycle();
     await flushAsync();
 
@@ -63,7 +63,7 @@ describe("Capacitor audio lifecycle bridge", () => {
       (call) => call[0] === "audioRouteChange",
     )?.[1];
     const listener = vi.fn();
-    window.addEventListener("babylonslate:audioroutechange", listener);
+    window.addEventListener("haptic:audioroutechange", listener);
 
     handler!({ reason: 1 });
 
@@ -95,7 +95,7 @@ describe("Capacitor audio lifecycle bridge", () => {
 
   it("removes pending registrations after early cleanup and suppresses their events", async () => {
     const listener = vi.fn();
-    window.addEventListener("babylonslate:audiointerruption", listener);
+    window.addEventListener("haptic:audiointerruption", listener);
     const cleanup = initializeCapacitorAudioLifecycle();
     cleanup();
     await flushAsync();
@@ -103,7 +103,7 @@ describe("Capacitor audio lifecycle bridge", () => {
     expect(removeRouteChange).toHaveBeenCalledOnce();
     addListener.mock.calls[0]?.[1]({ type: "began" });
     expect(listener).not.toHaveBeenCalled();
-    window.removeEventListener("babylonslate:audiointerruption", listener);
+    window.removeEventListener("haptic:audiointerruption", listener);
   });
 
   it("handles rejected native audio registration without an unhandled rejection", async () => {

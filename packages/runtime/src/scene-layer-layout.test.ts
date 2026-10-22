@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ClassRegistry, World, type Actor, type ActorComponent } from "@babylonslate/object-model";
+import { ClassRegistry, World, type Actor, type ActorComponent } from "@haptic/object-model";
 import { SceneLayerLayout } from "./scene-layer-layout";
 
 function row(world: World, layerId: string, id: string, authoredX: number) {

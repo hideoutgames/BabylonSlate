@@ -21,7 +21,7 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..3c8b2420b8e5f5bb6245298bb406582e
      uv6: "UV6",
      uv7: "UV7",
      uv8: "UV8",
-+    // BabylonSlate: gate optional vertex streams so meshes without them read a
++    // Haptic: gate optional vertex streams so meshes without them read a
 +    // zeroed private copy instead of a real attribute; WebGPU rejects draws
 +    // declaring attributes no buffer supplies, and each attribute consumes one
 +    // of the 8 guaranteed vertex buffer slots.
@@ -59,7 +59,7 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..3c8b2420b8e5f5bb6245298bb406582e
 +                            state._attributeDeclaration += defineStart;
 +                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${shaderType};\n`;
                              state._attributeDeclaration += `#endif\n`;
-+                            // BabylonSlate: the private copy is assigned from
++                            // Haptic: the private copy is assigned from
 +                            // vertexInputs under the same guard, so consumers
 +                            // read a valid zero when the attribute is gated out.
 +                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${shaderType} = ${shaderType}(0.);\n`;
@@ -460,7 +460,7 @@ index 42a19a93119be03738ecfb3d48e2a0626a14d81a..92204738b04416361b5427ec5d001c7c
      _randomTexture2: RawTexture;
      /** Indicates that the update of particles is done in the animate function (and not in render). Default: false */
      updateInAnimate: boolean;
-+    /** BabylonSlate: skip simulation/emission/prewarm and draw existing buffers only. */
++    /** Haptic: skip simulation/emission/prewarm and draw existing buffers only. */
 +    paused: boolean;
      private _attributesStrideSize;
      private _cachedUpdateDefines;
@@ -473,7 +473,7 @@ index 23cc4b44ae5ddaa1a098cc367cbe2b53fb5c8196..125ef9305ad59e91d2e3bf3fd1486edc
          this._timeDelta = 0;
          /** Indicates that the update of particles is done in the animate function (and not in render). Default: false */
          this.updateInAnimate = false;
-+        // BabylonSlate: hold simulation while drawing the last completed particle buffers.
++        // Haptic: hold simulation while drawing the last completed particle buffers.
 +        this.paused = false;
          this._actualFrame = 0;
          this._renderPassObserver = null;
@@ -782,7 +782,7 @@ index 046984e478022e39c2405a1fa1d86c5326015e25..521afef3565b03446e7699397d540f17
       * Disposes all the assets in the container
       */
      dispose() {
-+        // BabylonSlate: retired model generations must not retain Scene observers.
++        // Haptic: retired model generations must not retain Scene observers.
 +        if (this._onSceneDisposeObserver) {
 +            this.scene.onDisposeObservable.remove(this._onSceneDisposeObserver);
 +            this._onSceneDisposeObserver = null;
@@ -798,7 +798,7 @@ index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..79b40ff5e116b92d42aed46496340b62
       * Render the scene
       * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
       * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
-+     * @param ignoreActions BabylonSlate: suppress frame and intersection gameplay actions during render-only presentation.
++     * @param ignoreActions Haptic: suppress frame and intersection gameplay actions during render-only presentation.
       */
 -    render(updateCameras?: boolean, ignoreAnimations?: boolean): void;
 +    render(updateCameras?: boolean, ignoreAnimations?: boolean, ignoreActions?: boolean): void;
@@ -813,7 +813,7 @@ index 07e0f7e14442d2187e86d561a8c448f01d67b238..10f58511d6243c767e4fbfd258eb68fe
       * Render the scene
       * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
       * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
-+     * @param ignoreActions BabylonSlate: suppress frame and intersection gameplay actions during render-only presentation.
++     * @param ignoreActions Haptic: suppress frame and intersection gameplay actions during render-only presentation.
       */
 -    render(updateCameras = true, ignoreAnimations = false) {
 +    render(updateCameras = true, ignoreAnimations = false, ignoreActions = false) {

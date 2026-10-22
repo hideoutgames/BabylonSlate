@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { ProjectService } from "./project-service";
 
@@ -14,7 +14,7 @@ describe("default input assets", () => {
 
   it("loads authored controls and never recreates deleted inputs on project load", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Inputs.babproject");
+    await storage.openDocumentsProject("Inputs.hproject");
     await installMinimalProject(storage);
     const service = new ProjectService(storage);
     await service.loadCurrentProject();

@@ -1,7 +1,7 @@
 import {
   arrayOf, assetRef, BOOL, EXEC, INT, pin, STRING, structRef,
   type CodegenContext, type NodeDefinition,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 const TREE = assetRef("DataTree");
 const PATHS = arrayOf(STRING);

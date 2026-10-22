@@ -1,5 +1,5 @@
-import { parseDeformerProperties, type SerializedComponent } from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import { parseDeformerProperties, type SerializedComponent } from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 
 /** Bounded control cage editing through the shared Scene/Class PropertyGrid. */

@@ -36,71 +36,71 @@ describe("nextCopyName", () => {
 });
 
 describe("asset file suffix helpers", () => {
-  it("strips a typed container suffix, or only .babasset from any other name", () => {
-    expect(stripAssetFileSuffix("main.scene.babasset")).toBe("main");
-    expect(stripAssetFileSuffix("Item.datadefinition.babasset")).toBe("Item");
-    expect(stripAssetFileSuffix("Items.datatree.babasset")).toBe("Items");
-    expect(stripAssetFileSuffix("hero.class.babasset")).toBe("hero");
-    expect(stripAssetFileSuffix("hud.ui.babasset")).toBe("hud.ui");
-    expect(stripAssetFileSuffix("ground.tileset.babasset")).toBe("ground");
-    expect(stripAssetFileSuffix("overworld.tilemap.babasset")).toBe("overworld");
-    expect(stripAssetFileSuffix("pack.plugin.babasset")).toBe("pack");
-    expect(stripAssetFileSuffix("master.mixer.babasset")).toBe("master");
-    expect(stripAssetFileSuffix("sfx.channel.babasset")).toBe("sfx");
-    expect(stripAssetFileSuffix("near.atten.babasset")).toBe("near");
-    expect(stripAssetFileSuffix("tex.babasset")).toBe("tex");
-    expect(stripAssetFileSuffix("walk.spriteanim.babasset")).toBe("walk");
-    expect(stripAssetFileSuffix("day.skyboxcreator.babasset")).toBe("day");
-    expect(stripAssetFileSuffix("Sparks.emitter.babasset")).toBe("Sparks");
-    expect(stripAssetFileSuffix("Fire.particles.babasset")).toBe("Fire");
-    expect(stripAssetFileSuffix("Duplicate_1.babasset")).toBe("Duplicate_1");
-    expect(stripAssetFileSuffix("Hero.CLASS.BABASSET")).toBe("Hero");
+  it("strips a typed container suffix, or only .hasset from any other name", () => {
+    expect(stripAssetFileSuffix("main.scene.hasset")).toBe("main");
+    expect(stripAssetFileSuffix("Item.datadefinition.hasset")).toBe("Item");
+    expect(stripAssetFileSuffix("Items.datatree.hasset")).toBe("Items");
+    expect(stripAssetFileSuffix("hero.class.hasset")).toBe("hero");
+    expect(stripAssetFileSuffix("hud.ui.hasset")).toBe("hud.ui");
+    expect(stripAssetFileSuffix("ground.tileset.hasset")).toBe("ground");
+    expect(stripAssetFileSuffix("overworld.tilemap.hasset")).toBe("overworld");
+    expect(stripAssetFileSuffix("pack.plugin.hasset")).toBe("pack");
+    expect(stripAssetFileSuffix("master.mixer.hasset")).toBe("master");
+    expect(stripAssetFileSuffix("sfx.channel.hasset")).toBe("sfx");
+    expect(stripAssetFileSuffix("near.atten.hasset")).toBe("near");
+    expect(stripAssetFileSuffix("tex.hasset")).toBe("tex");
+    expect(stripAssetFileSuffix("walk.spriteanim.hasset")).toBe("walk");
+    expect(stripAssetFileSuffix("day.skyboxcreator.hasset")).toBe("day");
+    expect(stripAssetFileSuffix("Sparks.emitter.hasset")).toBe("Sparks");
+    expect(stripAssetFileSuffix("Fire.particles.hasset")).toBe("Fire");
+    expect(stripAssetFileSuffix("Duplicate_1.hasset")).toBe("Duplicate_1");
+    expect(stripAssetFileSuffix("Hero.CLASS.HASSET")).toBe("Hero");
   });
 
   it("preserves the original container suffix", () => {
-    expect(assetFileSuffix("Item.datadefinition.babasset")).toBe(".datadefinition.babasset");
-    expect(assetFileSuffix("Items.datatree.babasset")).toBe(".datatree.babasset");
-    expect(assetFileSuffix("main.scene.babasset")).toBe(".scene.babasset");
-    expect(assetFileSuffix("hero.class.babasset")).toBe(".class.babasset");
-    expect(assetFileSuffix("hud.ui.babasset")).toBe(".babasset");
-    expect(assetFileSuffix("hero.sprite.babasset")).toBe(".sprite.babasset");
-    expect(assetFileSuffix("walk.spriteanim.babasset")).toBe(
-      ".spriteanim.babasset",
+    expect(assetFileSuffix("Item.datadefinition.hasset")).toBe(".datadefinition.hasset");
+    expect(assetFileSuffix("Items.datatree.hasset")).toBe(".datatree.hasset");
+    expect(assetFileSuffix("main.scene.hasset")).toBe(".scene.hasset");
+    expect(assetFileSuffix("hero.class.hasset")).toBe(".class.hasset");
+    expect(assetFileSuffix("hud.ui.hasset")).toBe(".hasset");
+    expect(assetFileSuffix("hero.sprite.hasset")).toBe(".sprite.hasset");
+    expect(assetFileSuffix("walk.spriteanim.hasset")).toBe(
+      ".spriteanim.hasset",
     );
-    expect(assetFileSuffix("loco.anim.babasset")).toBe(".anim.babasset");
-    expect(assetFileSuffix("ground.tileset.babasset")).toBe(".tileset.babasset");
-    expect(assetFileSuffix("overworld.tilemap.babasset")).toBe(
-      ".tilemap.babasset",
+    expect(assetFileSuffix("loco.anim.hasset")).toBe(".anim.hasset");
+    expect(assetFileSuffix("ground.tileset.hasset")).toBe(".tileset.hasset");
+    expect(assetFileSuffix("overworld.tilemap.hasset")).toBe(
+      ".tilemap.hasset",
     );
-    expect(assetFileSuffix("pack.plugin.babasset")).toBe(".plugin.babasset");
-    expect(assetFileSuffix("master.mixer.babasset")).toBe(".mixer.babasset");
-    expect(assetFileSuffix("sfx.channel.babasset")).toBe(".channel.babasset");
-    expect(assetFileSuffix("near.atten.babasset")).toBe(".atten.babasset");
-    expect(assetFileSuffix("day.skyboxcreator.babasset")).toBe(
-      ".skyboxcreator.babasset",
+    expect(assetFileSuffix("pack.plugin.hasset")).toBe(".plugin.hasset");
+    expect(assetFileSuffix("master.mixer.hasset")).toBe(".mixer.hasset");
+    expect(assetFileSuffix("sfx.channel.hasset")).toBe(".channel.hasset");
+    expect(assetFileSuffix("near.atten.hasset")).toBe(".atten.hasset");
+    expect(assetFileSuffix("day.skyboxcreator.hasset")).toBe(
+      ".skyboxcreator.hasset",
     );
-    expect(assetFileSuffix("Sparks.emitter.babasset")).toBe(".emitter.babasset");
-    expect(assetFileSuffix("Fire.particles.babasset")).toBe(
-      ".particles.babasset",
+    expect(assetFileSuffix("Sparks.emitter.hasset")).toBe(".emitter.hasset");
+    expect(assetFileSuffix("Fire.particles.hasset")).toBe(
+      ".particles.hasset",
     );
-    expect(assetFileSuffix("tex.babasset")).toBe(".babasset");
+    expect(assetFileSuffix("tex.hasset")).toBe(".hasset");
   });
 
   it("duplicates a Particle Graph under its own suffix", () => {
-    const fileName = "Embers.particlegraph.babasset";
+    const fileName = "Embers.particlegraph.hasset";
     const stem = stripAssetFileSuffix(fileName);
     expect(stem).toBe("Embers");
     expect(`${nextCopyName(stem, ["Embers"])}${assetFileSuffix(fileName)}`).toBe(
-      "Embers_1.particlegraph.babasset",
+      "Embers_1.particlegraph.hasset",
     );
   });
 
   it("keeps a Save Game's display name and container suffix when duplicating", () => {
-    const fileName = "PlayerProgress.savegame.babasset";
+    const fileName = "PlayerProgress.savegame.hasset";
     const stem = stripAssetFileSuffix(fileName);
     expect(stem).toBe("PlayerProgress");
     expect(`${nextCopyName(stem, ["PlayerProgress"])}${assetFileSuffix(fileName)}`).toBe(
-      "PlayerProgress_1.savegame.babasset",
+      "PlayerProgress_1.savegame.hasset",
     );
   });
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage, DebugGraphTrace, DebugObserveTarget } from "@babylonslate/bridge";
-import { createDefaultAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
-import { btEdgeId, createDefaultBehaviourTree, type BehaviourTreeDocument, type BtNode } from "@babylonslate/behaviour-tree";
-import { createActor, createDefaultSceneSettings, type SerializedScene } from "@babylonslate/core";
+import type { CommandMessage, DebugGraphTrace, DebugObserveTarget } from "@haptic/bridge";
+import { createDefaultAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import { btEdgeId, createDefaultBehaviourTree, type BehaviourTreeDocument, type BtNode } from "@haptic/behaviour-tree";
+import { createActor, createDefaultSceneSettings, type SerializedScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AssetPicker, PropertyGrid, type AssetPickerEntry } from "@babylonslate/editor-kit";
-import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import { AssetPicker, PropertyGrid, type AssetPickerEntry } from "@haptic/editor-kit";
+import type { SerializedActor, SerializedScene } from "@haptic/core";
 import { useActiveDocumentId, useDocumentActions, useRegistryState } from "../context/document-context";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { RenderTargetCaptureActorsField } from "./render-target-capture-actors-field";

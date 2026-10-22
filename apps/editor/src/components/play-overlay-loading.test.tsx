@@ -12,8 +12,8 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   // Keep persistent settings I/O outside the startup/failure UI contract.
   createAppSettingsStore: () => ({ load: () => new Promise(() => {}) }),
 }));

@@ -1,9 +1,9 @@
-import { normalizeRenderingPipeline } from "@babylonslate/core";
+import { normalizeRenderingPipeline } from "@haptic/core";
 import {
   createBackendEngineSession,
   webGpuMaterialCompatibilityReason,
   type BackendEngineSession,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { startPlayer, type PlayerBootHandle, type PlayerBootOptions } from "./boot";
 import { packedContentFromGame } from "./hydrate";
 

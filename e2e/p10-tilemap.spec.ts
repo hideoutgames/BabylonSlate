@@ -41,9 +41,9 @@ async function createAsset(
 async function guidForPath(page: Page, path: string): Promise<string> {
   return page.evaluate((assetPath) => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath(assetPath) ?? "";
+    return host.__hapticTest?.guidForPath(assetPath) ?? "";
   }, path);
 }
 
@@ -51,11 +51,11 @@ async function tileAt(page: Page, gx: number, gy: number): Promise<number | null
   return page.evaluate(
     ([x, y]) => {
       const host = globalThis as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           activeTilemapTile: (gx: number, gy: number) => number | null;
         };
       };
-      return host.__babylonslateTest?.activeTilemapTile(x, y) ?? null;
+      return host.__hapticTest?.activeTilemapTile(x, y) ?? null;
     },
     [gx, gy] as const,
   );
@@ -131,17 +131,17 @@ test.describe("P10 tilemaps", () => {
       .getByTestId("content-browser-import-input")
       .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
     await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
+      page.locator('[data-asset-path="assets/albedo.hasset"]'),
     ).toBeVisible({ timeout: 15_000 });
 
     await createAsset(page, "Tileset", "Ground");
-    await page.locator('[data-asset-path="assets/Ground.tileset.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Ground.tileset.hasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-tileset")).toBeVisible();
     await expect(page.getByTestId("tileset-preview")).toBeVisible();
     await expect(page.getByTestId("tileset-editor")).toBeVisible();
     await expect(page.getByTestId("property-texture-open")).toHaveCount(0);
     await page.getByTestId("property-texture").click();
-    const textureGuid = await guidForPath(page, "assets/albedo.babasset");
+    const textureGuid = await guidForPath(page, "assets/albedo.hasset");
     expect(textureGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId(`search-item-${textureGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${textureGuid}`).click();
@@ -177,14 +177,14 @@ test.describe("P10 tilemaps", () => {
 
     await createAsset(page, "Tilemap", "Overworld");
     await page
-      .locator('[data-asset-path="assets/Overworld.tilemap.babasset"]')
+      .locator('[data-asset-path="assets/Overworld.tilemap.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-tilemap")).toBeVisible();
     await expect(page.getByTestId("tilemap-details")).toBeVisible();
     await expect(page.getByTestId("tilemap-editor")).toBeVisible();
     await expect(page.getByTestId("tilemap-palette")).toBeVisible();
     await page.getByTestId("tilemap-tilesets-add").click();
-    const tilesetGuid = await guidForPath(page, "assets/Ground.tileset.babasset");
+    const tilesetGuid = await guidForPath(page, "assets/Ground.tileset.hasset");
     expect(tilesetGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId(`search-item-${tilesetGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${tilesetGuid}`).click();
@@ -236,7 +236,7 @@ test.describe("P10 tilemaps", () => {
       .not.toBe(sizeBefore);
 
     await createAsset(page, "Sprite", "Hero");
-    await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Hero.sprite.hasset"]').dblclick();
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
     await createAsset(page, "AnimationGraph", "Loco");
 
@@ -250,7 +250,7 @@ test.describe("P10 tilemaps", () => {
     await page.getByTestId("place-actors-item-tilemap").click();
     const tilemapGuid = await guidForPath(
       page,
-      "assets/Overworld.tilemap.babasset",
+      "assets/Overworld.tilemap.hasset",
     );
     await pickSelectedAsset(page, "Tilemap", tilemapGuid);
 
@@ -266,9 +266,9 @@ test.describe("P10 tilemaps", () => {
     await page.getByTestId("details-add-component").click();
     await pickCatalogItem(page, "add-component-catalog", "ColliderComponent", "Physics collider");
 
-    const spriteGuid = await guidForPath(page, "assets/Hero.sprite.babasset");
+    const spriteGuid = await guidForPath(page, "assets/Hero.sprite.hasset");
     await pickSelectedAsset(page, "Sprite", spriteGuid);
-    const graphGuid = await guidForPath(page, "assets/Loco.anim.babasset");
+    const graphGuid = await guidForPath(page, "assets/Loco.anim.hasset");
     await pickSelectedAsset(
       page,
       "Animation Graph",

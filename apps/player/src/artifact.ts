@@ -1,4 +1,4 @@
-import { collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
+import { collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@haptic/core";
 import {
   parseGameManifest,
   GAME_MANIFEST_FILE,
@@ -19,8 +19,8 @@ import {
   fontMsdfAtlasExportGuid,
   type GameAssetIndexEntry,
   type GameManifest,
-} from "@babylonslate/exporter";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+} from "@haptic/exporter";
+import type { ScriptBundleEntry } from "@haptic/bridge";
 import {
   AssetLoadingService,
   complexCollisionModelGuids,
@@ -37,7 +37,7 @@ import {
   type ModelPayload,
   decodeAreaEmission,
   type AreaEmissionPixels,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 const decoder = new TextDecoder();
 

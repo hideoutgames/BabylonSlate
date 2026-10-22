@@ -1,4 +1,4 @@
-import { pin, type NodeDefinition, objectRef } from "@babylonslate/scripting";
+import { pin, type NodeDefinition, objectRef } from "@haptic/scripting";
 
 /**
  * Generic Get <Subsystem> node. Hidden from Add Node like Cast: the editor

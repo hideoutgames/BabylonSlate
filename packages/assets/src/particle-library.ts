@@ -1,13 +1,13 @@
 /**
  * The one particle library shape shared by editor Play, the emitter/system previews,
- * `@babylonslate/render` and the exported player. Emitter entries are tagged by kind so
+ * `@haptic/render` and the exported player. Emitter entries are tagged by kind so
  * a Particle System can mix Basic emitters and Particle Graphs per slot.
  */
 import {
   normalizeParticleGraphDocument,
   particleGraphCompileKey,
   type ParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { stableStringify } from "./bytes";
 import {
   normalizeParticleEmitterPayload,

@@ -1,4 +1,4 @@
-import type { PinType } from "@babylonslate/scripting";
+import type { PinType } from "@haptic/scripting";
 
 export type BtNodeKind = "selector" | "sequence" | "parallel" | "task";
 export type BtAbortMode = "none" | "self" | "lowerPriority" | "both";

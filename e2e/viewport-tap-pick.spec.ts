@@ -32,11 +32,11 @@ async function actorCanvasFraction(page: Page, actorId: string) {
     (id) =>
       (
         globalThis as unknown as {
-          __babylonslateViewportTest: {
+          __hapticViewportTest: {
             actorCanvasFraction: (actorId: string) => { x: number; y: number } | null;
           };
         }
-      ).__babylonslateViewportTest.actorCanvasFraction(id),
+      ).__hapticViewportTest.actorCanvasFraction(id),
     actorId,
   );
 }
@@ -63,9 +63,9 @@ test("a viewport tap selects the actor under it, not the one at the view centre"
     (scene) =>
       (
         globalThis as unknown as {
-          __babylonslateTest: { setActiveSceneContent: (scene: SerializedScene) => Promise<boolean> };
+          __hapticTest: { setActiveSceneContent: (scene: SerializedScene) => Promise<boolean> };
         }
-      ).__babylonslateTest.setActiveSceneContent(scene),
+      ).__hapticTest.setActiveSceneContent(scene),
     offCentreBoxes(),
   );
   const rows = {
@@ -81,9 +81,9 @@ test("a viewport tap selects the actor under it, not the one at the view centre"
   // taps still reach the view canvas, so pick coordinates are unchanged.
   await expect.poll(() => page.evaluate(() => (
     globalThis as unknown as {
-      __babylonslateViewportTest: { renderingBaseline: () => { render?: { presentation?: { direct?: boolean } } } | null };
+      __hapticViewportTest: { renderingBaseline: () => { render?: { presentation?: { direct?: boolean } } } | null };
     }
-  ).__babylonslateViewportTest.renderingBaseline()?.render?.presentation?.direct)).toBe(true);
+  ).__hapticViewportTest.renderingBaseline()?.render?.presentation?.direct)).toBe(true);
   const shown = (await page.getByTestId("project-engine-canvas").boundingBox())!;
   for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(shown[key] - box[key])).toBeLessThan(1);
   expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("data-testid"), {

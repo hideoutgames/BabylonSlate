@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
-import type { PerformanceProfile } from "@babylonslate/debugger";
-import type { RenderFrameReport } from "@babylonslate/render";
+import type { PerformanceProfile } from "@haptic/debugger";
+import type { RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore, type DiagnosticSessionPorts } from "./diagnostic-results-store";
 
 const options = { durationMs: 10_000, byteBudget: 16 * 1024 * 1024 };
@@ -24,7 +24,7 @@ it("opens old results without collecting and enforces Simulation capability in d
 it("keeps one result and ignores a previous session's late collection", async () => {
   const store = new DiagnosticResultsStore();
   const first = store.bindSession(ports());
-  const profile = { kind: "babylonslate-performance" } as PerformanceProfile;
+  const profile = { kind: "haptic-performance" } as PerformanceProfile;
   first.publishProfile(profile);
   first.release();
   expect(store.getSnapshot().result).toEqual({ kind: "profile", profile });

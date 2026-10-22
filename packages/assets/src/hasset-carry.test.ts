@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { DEFAULT_BLOB_THRESHOLD, decodeBabasset, encodeBabasset, type BabassetHeader, type ChunkInput } from "./babasset";
-import { carryStoredChunks, storedBabassetMatches, verifyChunksBeforeWrite } from "./babasset-carry";
-import { BLOBS_DIR } from "./babproject";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { DEFAULT_BLOB_THRESHOLD, decodeHasset, encodeHasset, type HassetHeader, type ChunkInput } from "./hasset";
+import { carryStoredChunks, storedHassetMatches, verifyChunksBeforeWrite } from "./hasset-carry";
+import { BLOBS_DIR } from "./hproject";
 import { createVfsBlobStore } from "./blob-store";
 import { readAssetCatalog } from "./payload-loader";
 
-const PATH = "assets/Tex.babasset";
-const HEADER: Omit<BabassetHeader, "chunks"> = {
+const PATH = "assets/Tex.hasset";
+const HEADER: Omit<HassetHeader, "chunks"> = {
   dependencyMetadataVersion: 1, requiredDependencies: [], dependencies: [],
   guid: "tex-1", type: "Texture", name: "Tex", engineVersion: "0.0.0", version: 1, mode: "thin", parentClass: null,
   payload: { compressionState: "compressed" },
@@ -20,11 +20,11 @@ const chunk = (id: string, data: Uint8Array, kind = id): ChunkInput => ({ id, ki
 /** A stored file with a document, a blob-sized `pixels` chunk and a small inline `note`. */
 async function stored(chunks: ChunkInput[] = [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)]) {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("carry.babproject");
+  await storage.openDocumentsProject("carry.hproject");
   await storage.mkdir("assets", true);
   const blobs = createVfsBlobStore(storage);
   const writeBlob = (sha256: string, data: Uint8Array) => blobs.writeBlob(sha256, data);
-  await storage.writeBinary(PATH, await encodeBabasset({ header: HEADER, chunks, writeBlob }));
+  await storage.writeBinary(PATH, await encodeHasset({ header: HEADER, chunks, writeBlob }));
   return { storage, blobs, writeBlob, catalog: await readAssetCatalog(storage, PATH) };
 }
 
@@ -37,19 +37,19 @@ describe("carrying stored chunks into a rewrite", () => {
 
     const carried = await carryStoredChunks(storage, blobs, catalog, { omit: new Set(["document"]) });
     const document = chunk("document", new TextEncoder().encode('{"edited":true}'));
-    const rewritten = await encodeBabasset({ header: HEADER, chunks: [document, ...carried!], writeBlob: uploads });
+    const rewritten = await encodeHasset({ header: HEADER, chunks: [document, ...carried!], writeBlob: uploads });
 
     expect(readBlob).not.toHaveBeenCalled();
     expect(uploads).not.toHaveBeenCalled();
     // The reference: decode every chunk (reading the blob) and encode them afresh.
-    const decoded = await decodeBabasset(originalBytes, (sha256) => blobs.readBlob(sha256));
-    const reference = await encodeBabasset({
+    const decoded = await decodeHasset(originalBytes, (sha256) => blobs.readBlob(sha256));
+    const reference = await encodeHasset({
       header: HEADER,
       chunks: [document, ...["pixels", "note"].map((id) => chunk(id, decoded.chunks.get(id)!))],
       writeBlob,
     });
     expect(rewritten).toEqual(reference);
-    const reread = await decodeBabasset(rewritten, (sha256) => blobs.readBlob(sha256));
+    const reread = await decodeHasset(rewritten, (sha256) => blobs.readBlob(sha256));
     expect(reread.chunks.get("pixels")).toEqual(BIG);
     expect(reread.chunks.get("note")).toEqual(SMALL);
     expect(reread.chunks.get("document")).toEqual(document.data);
@@ -84,9 +84,9 @@ describe("carrying stored chunks into a rewrite", () => {
     await blob.storage.writeBinary(`${BLOBS_DIR}/${pixels.sha256}`, flipped);
     expect(await carryStoredChunks(blob.storage, blob.blobs, blob.catalog, { load: (entry) => entry.id === "pixels" })).toBeNull();
     const carried = await carryStoredChunks(blob.storage, blob.blobs, blob.catalog, { omit: new Set(["document"]) });
-    const rewritten = await encodeBabasset({ header: HEADER, chunks: [chunk("document", SMALL), ...carried!], writeBlob: blob.writeBlob });
+    const rewritten = await encodeHasset({ header: HEADER, chunks: [chunk("document", SMALL), ...carried!], writeBlob: blob.writeBlob });
     // Carrying kept the digest, so the damaged blob is still rejected, not blessed.
-    await expect(decodeBabasset(rewritten, (sha256) => blob.blobs.readBlob(sha256))).rejects.toThrow(/Hash mismatch for chunk pixels/);
+    await expect(decodeHasset(rewritten, (sha256) => blob.blobs.readBlob(sha256))).rejects.toThrow(/Hash mismatch for chunk pixels/);
   });
 
   it("returns the chunks it was asked to load with their bytes, and leaves the others carried", async () => {
@@ -102,7 +102,7 @@ describe("carrying stored chunks into a rewrite", () => {
   it("does not carry an inline chunk a re-encode would move to the blob store", async () => {
     const { storage, blobs } = await stored();
     // Written without a blob store, so the large chunk sits inline.
-    await storage.writeBinary(PATH, await encodeBabasset({ header: HEADER, chunks: [chunk("document", SMALL), chunk("pixels", BIG)] }));
+    await storage.writeBinary(PATH, await encodeHasset({ header: HEADER, chunks: [chunk("document", SMALL), chunk("pixels", BIG)] }));
     const catalog = await readAssetCatalog(storage, PATH);
     expect(await carryStoredChunks(storage, blobs, catalog)).toBeNull();
     const loaded = await carryStoredChunks(storage, blobs, catalog, { load: (entry) => entry.id === "pixels" });
@@ -112,7 +112,7 @@ describe("carrying stored chunks into a rewrite", () => {
   it("does not carry an externalised chunk a re-encode would keep inline", async () => {
     const { storage, blobs, writeBlob } = await stored();
     // Written with a threshold under its size, so this small chunk sits in the blob store.
-    await storage.writeBinary(PATH, await encodeBabasset({
+    await storage.writeBinary(PATH, await encodeHasset({
       header: HEADER, chunks: [chunk("document", SMALL), chunk("note", SMALL)], blobThreshold: 1, writeBlob,
     }));
     const catalog = await readAssetCatalog(storage, PATH);
@@ -123,31 +123,31 @@ describe("carrying stored chunks into a rewrite", () => {
   });
 });
 
-describe("storedBabassetMatches", () => {
+describe("storedHassetMatches", () => {
   it("is true only for the same header, so an edited document is still written", async () => {
     const { storage, catalog, writeBlob } = await stored();
-    const same = await encodeBabasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
-    expect(await storedBabassetMatches(storage, catalog, same)).toBe(true);
+    const same = await encodeHasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
+    expect(await storedHassetMatches(storage, catalog, same)).toBe(true);
 
-    const edited = await encodeBabasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 4])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
-    expect(await storedBabassetMatches(storage, catalog, edited)).toBe(false);
+    const edited = await encodeHasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 4])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
+    expect(await storedHassetMatches(storage, catalog, edited)).toBe(false);
 
-    const retitled = await encodeBabasset({ header: { ...HEADER, name: "Renamed" }, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
-    expect(await storedBabassetMatches(storage, catalog, retitled)).toBe(false);
+    const retitled = await encodeHasset({ header: { ...HEADER, name: "Renamed" }, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
+    expect(await storedHassetMatches(storage, catalog, retitled)).toBe(false);
   });
 
   it("is false once the file changed after it was read", async () => {
     const { storage, catalog, writeBlob } = await stored();
-    const same = await encodeBabasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
-    await storage.writeBinary(PATH, await encodeBabasset({ header: { ...HEADER, name: "Other" }, chunks: [chunk("document", SMALL)], writeBlob }));
-    expect(await storedBabassetMatches(storage, catalog, same)).toBe(false);
+    const same = await encodeHasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
+    await storage.writeBinary(PATH, await encodeHasset({ header: { ...HEADER, name: "Other" }, chunks: [chunk("document", SMALL)], writeBlob }));
+    expect(await storedHassetMatches(storage, catalog, same)).toBe(false);
   });
 
   it("is false, not an error, once the file was deleted, so the caller writes it back", async () => {
     const { storage, catalog, writeBlob } = await stored();
-    const same = await encodeBabasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
+    const same = await encodeHasset({ header: HEADER, chunks: [chunk("document", new Uint8Array([1, 2, 3])), chunk("pixels", BIG), chunk("note", SMALL)], writeBlob });
     await storage.remove(PATH);
-    expect(await storedBabassetMatches(storage, catalog, same)).toBe(false);
+    expect(await storedHassetMatches(storage, catalog, same)).toBe(false);
   });
 });
 
@@ -157,7 +157,7 @@ describe("verifyChunksBeforeWrite", () => {
   /** The container a save of `document` writes over `fixture`: its other chunks carried, the document supplied. */
   async function savedOver(fixture: Awaited<ReturnType<typeof stored>>, document: Uint8Array): Promise<Uint8Array> {
     const carried = await carryStoredChunks(fixture.storage, fixture.blobs, fixture.catalog, { omit: new Set(["document"]) });
-    return encodeBabasset({ header: HEADER, chunks: [chunk("document", document), ...carried!], writeBlob: fixture.writeBlob });
+    return encodeHasset({ header: HEADER, chunks: [chunk("document", document), ...carried!], writeBlob: fixture.writeBlob });
   }
 
   it("accepts a container whose replaced chunk is intact in the file", async () => {

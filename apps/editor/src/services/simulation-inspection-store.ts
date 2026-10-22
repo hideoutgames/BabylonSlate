@@ -1,7 +1,7 @@
 import type {
   RuntimeIdentityCursor, RuntimeIdentityRow, RuntimeInspectorPayload, RuntimeInspectorResult,
   RuntimeObjectIdentity,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import type { RuntimeInspectionAction, RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
 
 type Selection = Extract<RuntimeInspectorPayload, { kind: "selection" }>;

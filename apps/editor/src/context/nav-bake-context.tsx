@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { NavMeshGenerateSettings } from "@babylonslate/navigation";
+import type { NavMeshGenerateSettings } from "@haptic/navigation";
 import { useDocumentActions, useProjectState } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { NavBakeDialog } from "../components/nav-bake-dialog";
@@ -23,9 +23,9 @@ import { createNavBakeWorker } from "../services/nav-bake-worker-host";
 import {
   parseNavMeshActorSettings,
   parseNavMeshSettings,
-} from "@babylonslate/navigation";
-import type { NavBakeCollectExtras } from "@babylonslate/render";
-import type { SerializedScene } from "@babylonslate/core";
+} from "@haptic/navigation";
+import type { NavBakeCollectExtras } from "@haptic/render";
+import type { SerializedScene } from "@haptic/core";
 import type { ProjectSceneWriter } from "../services/project-write-admission";
 import {
   navMeshAutoBakeProperties,

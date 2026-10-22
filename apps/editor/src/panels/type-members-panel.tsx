@@ -7,15 +7,15 @@ import {
   TypeColorMark,
   pinPickerColorVar,
   pinPickerLabel,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { ENUM_VALUE_MAX } from "@babylonslate/scripting";
+import { ENUM_VALUE_MAX } from "@haptic/scripting";
 import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";

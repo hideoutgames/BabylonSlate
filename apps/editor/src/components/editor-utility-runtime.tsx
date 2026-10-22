@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
-import { ClassRegistry } from "@babylonslate/object-model";
+import { ScriptHost, type ScriptHostServices } from "@haptic/runtime";
+import { ClassRegistry } from "@haptic/object-model";
 import {
   useDocumentActions,
   useProjectState,

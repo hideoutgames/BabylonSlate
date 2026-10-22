@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@babylonslate/core";
-import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
-import { sceneAssetClassId } from "@babylonslate/object-model";
+import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@haptic/core";
+import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import { sceneAssetClassId } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
 import type { AcquireRuntimeScene } from "./scene-source";

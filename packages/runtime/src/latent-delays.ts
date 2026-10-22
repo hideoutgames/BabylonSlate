@@ -1,4 +1,4 @@
-import type { BObject } from "@babylonslate/object-model";
+import type { BObject } from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 

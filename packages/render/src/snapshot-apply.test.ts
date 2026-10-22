@@ -4,9 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DirectionalLight, Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
-import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
-import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@babylonslate/core";
+import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeHasset, embedGlbExternalImages, encodeHasset, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@haptic/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
@@ -422,12 +422,12 @@ describe("createPlayMesh", () => {
     expect(model.getChildMeshes().length).toBeGreaterThan(0);
   });
 
-  it("loads a static Model.source view after a babasset round-trip", async () => {
+  it("loads a static Model.source view after a hasset round-trip", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     const glb = encodeTriangleGlb();
-    const encoded = await encodeBabasset({
+    const encoded = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "model-1",
@@ -449,7 +449,7 @@ describe("createPlayMesh", () => {
       ],
       blobThreshold: 1024 * 1024,
     });
-    const source = (await decodeBabasset(encoded)).chunks.get("source")!;
+    const source = (await decodeHasset(encoded)).chunks.get("source")!;
     expect(
       source.byteOffset > 0 || source.buffer.byteLength > source.byteLength,
     ).toBe(true);

@@ -1,7 +1,7 @@
 import { Mesh, Ray, StandardMaterial, TransformNode, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, identitySerializedTransform, parseCableProperties, type SerializedScene } from "@babylonslate/core";
-import { SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, identitySerializedTransform, parseCableProperties, type SerializedScene } from "@haptic/core";
+import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { applyCableFrame, createCableMesh, sampleCableFrame, stepEditorCables } from "./cable-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import { createTestEngine } from "./create-null-engine";

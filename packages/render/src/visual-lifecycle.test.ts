@@ -1,7 +1,7 @@
-import { installAssetBytes } from "@babylonslate/assets";
+import { installAssetBytes } from "@haptic/assets";
 import { Animation, AnimationGroup, FreeCamera, Mesh, NullEngine, PBRMaterial, RawTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
-import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
-import { createActor, createDefaultScene, createMeshComponent, parseOverlayPanelProperties, parseText2DProperties } from "@babylonslate/core";
+import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
+import { createActor, createDefaultScene, createMeshComponent, parseOverlayPanelProperties, parseText2DProperties } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, glbContainerLoadCount } from "./glb-anim";
 import * as modelContainer from "./model-container";

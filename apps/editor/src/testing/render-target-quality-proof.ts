@@ -5,14 +5,14 @@ import {
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality,
   normalizeShadowSettings, normalizeWaterBody, type RenderTargetCaptureQuality,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   applyAuthoredLightProperties, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, RenderTargetCaptures,
   setSceneWaterTime,
-} from "@babylonslate/render";
-import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
-import { updateSceneRenderingSettings } from "@babylonslate/render/render-settings";
-import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
+} from "@haptic/render";
+import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { updateSceneRenderingSettings } from "@haptic/render/render-settings";
+import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 
 const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "fullQuality"];
 type Backend = "webgl2" | "webgpu";

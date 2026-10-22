@@ -1,4 +1,4 @@
-import { UI_CONTROL_2D_VISUAL_PARTS, type UIControl2DClassId } from "@babylonslate/core";
+import { UI_CONTROL_2D_VISUAL_PARTS, type UIControl2DClassId } from "@haptic/core";
 import type { EngineClassScriptApi, EngineScriptEvent, EngineScriptFunction, EngineScriptPin, EngineScriptVariable } from "./engine-script-api";
 
 const EXEC_IN: EngineScriptPin = { name: "exec", typeId: "exec", direction: "in" };

@@ -1,5 +1,5 @@
-import type { SessionBoundaryRequest, SessionBoundaryResult, SessionPauseReason } from "@babylonslate/bridge";
-import { SaveGameError, SaveGameService, type SaveGameServiceOptions, type SerializedScene } from "@babylonslate/core";
+import type { SessionBoundaryRequest, SessionBoundaryResult, SessionPauseReason } from "@haptic/bridge";
+import { SaveGameError, SaveGameService, type SaveGameServiceOptions, type SerializedScene } from "@haptic/core";
 import {
   Actor,
   attachSerializedComponents,
@@ -7,7 +7,7 @@ import {
   type BObject,
   type SceneActorHooks,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { SaveGameWorld } from "./save-game-world";

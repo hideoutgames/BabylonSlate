@@ -1,4 +1,4 @@
-import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -525,7 +525,7 @@ export class ResourceCache {
     const url =
       typeof URL !== "undefined" && URL.createObjectURL
         ? URL.createObjectURL(blob)
-        : `blob:babylonslate/${assetGuid}`;
+        : `blob:haptic/${assetGuid}`;
     const entry: CacheEntry = {
       assetGuid,
       key,

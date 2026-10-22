@@ -18,7 +18,7 @@ test.describe("Windows menu", () => {
     test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .locator('[data-asset-path="assets/main.scene.hasset"]')
       .dblclick();
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 15_000,

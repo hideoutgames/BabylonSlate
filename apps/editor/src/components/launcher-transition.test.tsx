@@ -16,7 +16,7 @@ let motionQuery: MediaQueryList;
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development Build");
+  vi.stubGlobal("__HAPTIC_BUILD_LABEL__", "0.0.1 Development Build");
   reducedMotion = false;
   motionQuery = Object.assign(new EventTarget(), {
     get matches() {

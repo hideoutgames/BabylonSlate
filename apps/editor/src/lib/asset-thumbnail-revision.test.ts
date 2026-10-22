@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { readThumbnail, writeThumbnail, type IndexedAsset } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { readThumbnail, writeThumbnail, type IndexedAsset } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createAssetThumbnailRevisionIndex } from "./asset-thumbnail-revision";
 
 function asset(guid: string, type: string, header: Partial<IndexedAsset["header"]> = {}): IndexedAsset {
   return {
     rootId: "project",
-    path: `Content/${guid}.${type.toLowerCase()}.babasset`,
+    path: `Content/${guid}.${type.toLowerCase()}.hasset`,
     header: {
       guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin",
       payload: {}, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [], ...header,
@@ -64,7 +64,7 @@ describe("saved asset thumbnail revisions", () => {
     const second = createAssetThumbnailRevisionIndex([
       asset("unrelated", "Material", { chunks: documentChunk("edited") }),
       materialFunction,
-      { ...material, path: "Content/Moved/Surface.material.babasset", mtime: 123, header: {
+      { ...material, path: "Content/Moved/Surface.material.hasset", mtime: 123, header: {
         ...material.header, dependencies: ["function", "texture"], payload: { metallic: 0.2, roughness: 0.5 },
       } },
       texture,

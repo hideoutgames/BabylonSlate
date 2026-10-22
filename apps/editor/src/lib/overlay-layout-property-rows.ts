@@ -1,5 +1,5 @@
-import { parseOverlayContainerProperties, parseOverlayLayoutProperties, type SerializedComponent } from "@babylonslate/core";
-import { humanizePropertyLabel, type ClassPickerEntry, type PropertyRow } from "@babylonslate/editor-kit";
+import { parseOverlayContainerProperties, parseOverlayLayoutProperties, type SerializedComponent } from "@haptic/core";
+import { humanizePropertyLabel, type ClassPickerEntry, type PropertyRow } from "@haptic/editor-kit";
 
 export function overlayLayoutPropertyRows(actorId: string, component: SerializedComponent, update: (key: string, value: unknown) => void, classes: readonly ClassPickerEntry[] = []): PropertyRow[] {
   const props = { ...parseOverlayLayoutProperties(component.properties, component.classId), ...parseOverlayContainerProperties(component.properties) };

@@ -1,7 +1,7 @@
 import { Color3, HemisphericLight, Material, Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
-import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
+import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";

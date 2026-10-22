@@ -1,8 +1,8 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, PBRMaterial, Scene, StandardMaterial, TransformNode } from "@babylonjs/core";
-import { createDefaultSpritePayload } from "@babylonslate/assets";
-import { createActor, createDefaultScene, createSkyboxComponent, emptySkyboxFaces } from "@babylonslate/core";
+import { createDefaultSpritePayload } from "@haptic/assets";
+import { createActor, createDefaultScene, createSkyboxComponent, emptySkyboxFaces } from "@haptic/core";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { ResourceCache } from "./resource-cache";

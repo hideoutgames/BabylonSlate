@@ -1,4 +1,4 @@
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { SourceRevisionChangedError } from "@haptic/core";
 
 /** Project-scoped source/CPU loading. Engine resources remain in ResourceCache. */
 export type AssetLoadState = "unloaded" | "loading" | "ready" | "failed";

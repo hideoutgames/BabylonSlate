@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultParticleEmitterPayload,
   type ParticleEmitterPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { particleModuleSummary } from "./particle-value-modes";
 
 function emitter(patch: (payload: ParticleEmitterPayload) => void): ParticleEmitterPayload {

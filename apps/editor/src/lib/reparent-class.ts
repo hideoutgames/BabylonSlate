@@ -1,9 +1,9 @@
-import { err, type Result } from "@babylonslate/core";
+import { err, type Result } from "@haptic/core";
 import {
   ClassRegistry,
   isLockedEngineClassId,
   type ReparentResult,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import {
   classIdFromClassAsset,
   type ClassAssetRef,

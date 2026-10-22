@@ -5,7 +5,7 @@ import {
   FLOAT,
   ROTATOR,
   VEC3,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
 
 export const rotatorNodes: NodeDefinition[] = [

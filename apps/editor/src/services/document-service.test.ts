@@ -8,7 +8,7 @@ import {
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   type DocumentKind,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   DocumentService,
   documentKindsRevision,
@@ -49,7 +49,7 @@ describe("DocumentService", () => {
     expect(service.getDocument(id)?.dirty).toBe(true);
     service.updateSceneFromHistory(id, structuredClone(edited));
     expect(service.getDocument(id)?.dirty).toBe(false);
-    const moved = service.repathDocument("scene", MAIN_SCENE_FILE, "assets/Moved.scene.babasset")!;
+    const moved = service.repathDocument("scene", MAIN_SCENE_FILE, "assets/Moved.scene.hasset")!;
     service.updateScene(moved.newId, original, "compare");
     expect(service.getDocument(moved.newId)?.dirty).toBe(true);
     service.updateScene(moved.newId, structuredClone(edited), "compare");
@@ -60,7 +60,7 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     const saved = { name: "Saved", roughness: 0.5 };
     const project = createMockProjectService({ loadDocument: vi.fn(async () => structuredClone(saved)) });
-    const id = await service.openDocument(project, { kind: "material", path: "assets/Test.material.babasset", label: "Material" });
+    const id = await service.openDocument(project, { kind: "material", path: "assets/Test.material.hasset", label: "Material" });
     service.updateAssetDocument(id, { ...saved, roughness: 0.9 });
     expect(service.getDocument(id)?.dirty).toBe(true);
     // Forward edits do not hash the document, so editing back stays dirty.
@@ -80,7 +80,7 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     const saved = { name: "Shiny", roughness: 0.5 };
     const project = createMockProjectService({ loadDocument: vi.fn(async () => structuredClone(saved)) });
-    const path = "assets/Shiny.material.babasset";
+    const path = "assets/Shiny.material.hasset";
     const id = await service.openDocument(project, { kind: "material", path, label: "Shiny Material" });
 
     service.applyAssetRename(id, "Glossy");
@@ -92,7 +92,7 @@ describe("DocumentService", () => {
 
     service.applyAssetRename(id, "Matte");
     expect(service.getDocument(id)).toMatchObject({ dirty: true, content: { name: "Matte", roughness: 0.9 }, ref: { label: "Matte Material" } });
-    const moved = service.repathDocument("material", path, "assets/Matte.material.babasset")!;
+    const moved = service.repathDocument("material", path, "assets/Matte.material.hasset")!;
     expect(service.getDocument(moved.newId)?.ref.label).toBe("Matte Material");
   });
 
@@ -102,7 +102,7 @@ describe("DocumentService", () => {
       loadDocument: vi.fn(async (kind: string) => (kind === "scene" ? createDefaultScene() : { nodes: [] })),
     });
     const sceneId = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
-    const treeId = await service.openDocument(project, { kind: "data-tree", path: "assets/Loot.datatree.babasset", label: "Loot" });
+    const treeId = await service.openDocument(project, { kind: "data-tree", path: "assets/Loot.datatree.hasset", label: "Loot" });
     const scene = service.getDocument(sceneId)!;
     const tree = service.getDocument(treeId)!;
 
@@ -119,7 +119,7 @@ describe("DocumentService", () => {
     const project = createMockProjectService();
     const sceneId = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
     const graphId = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
-    const assetId = await service.openDocument(project, { kind: "material", path: "assets/Test.material.babasset", label: "Material" });
+    const assetId = await service.openDocument(project, { kind: "material", path: "assets/Test.material.hasset", label: "Material" });
     const before = service.getOpenDocumentsOrdered().map(doc => ({ ...doc }));
     const revisions = service.getRevisions();
     const changes: Array<string | null> = [];
@@ -166,13 +166,13 @@ describe("DocumentService", () => {
     const project = createMockProjectService();
     const scene = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
     const graph = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
-    const dirtyGraph = await service.openDocument(project, { kind: "graph", path: "assets/Dirty.babasset", label: "Dirty" });
+    const dirtyGraph = await service.openDocument(project, { kind: "graph", path: "assets/Dirty.hasset", label: "Dirty" });
     service.updateGraph(dirtyGraph, { nodes: [], edges: [], actorDefaults: { generateHitEvents: true } });
     const release = service.lockAuthoring("Stop the session first");
     expect(() => service.closeDocument(scene)).toThrow("Stop the session first");
     expect(() => service.closeDocument(dirtyGraph)).toThrow("Stop the session first");
     expect(() => service.closeDocumentsForPaths([MAIN_CLASS_FILE])).toThrow("Stop the session first");
-    expect(() => service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Renamed.babasset")).toThrow("Stop the session first");
+    expect(() => service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Renamed.hasset")).toThrow("Stop the session first");
     await expect(service.initializeFromProject(project, createEmptyProject("Other"), createEmptyLayouts())).rejects.toThrow("Stop the session first");
     expect(service.getDocument(scene)).toBeDefined();
     expect(service.getDocument(dirtyGraph)?.dirty).toBe(true);
@@ -189,7 +189,7 @@ describe("DocumentService", () => {
     let finishRead!: (value: ReturnType<typeof createDefaultScene>) => void;
     const project = createMockProjectService({ loadDocument: () => new Promise(resolve => { finishRead = resolve; }) });
     const beforeCommit = vi.fn(() => { service.closeDocument(original); });
-    const loading = service.openDocument(project, { kind: "scene", path: "assets/Other.babasset", label: "Other" }, null, true, { beforeCommit });
+    const loading = service.openDocument(project, { kind: "scene", path: "assets/Other.hasset", label: "Other" }, null, true, { beforeCommit });
     const release = service.lockAuthoring("Protected baseline");
     release();
     finishRead(createDefaultScene());
@@ -202,7 +202,7 @@ describe("DocumentService", () => {
   it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();
-    const ref = { kind: "data-tree" as const, path: "assets/Sword.datatree.babasset", label: "Sword" };
+    const ref = { kind: "data-tree" as const, path: "assets/Sword.datatree.hasset", label: "Sword" };
     const original = { kind: "dataTree", defaultDefinitionGuid: "item", entries: [{ id: "row", parentId: null, name: "Sword", values: { Price: 5 } }] };
     const project = createMockProjectService({ loadDocument: vi.fn(async () => original) });
     const id = await service.openDocument(project, ref, { panel: "object" }, false, { background: true });
@@ -236,7 +236,7 @@ describe("DocumentService", () => {
   it.each([true, false])("preserves a foreground opening and shared edits when a background read races it (slow background: %s)", async (slowBackground) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();
-    const ref = { kind: "data-tree" as const, path: "assets/Sword.datatree.babasset", label: "Sword" };
+    const ref = { kind: "data-tree" as const, path: "assets/Sword.datatree.hasset", label: "Sword" };
     const original = { kind: "dataTree", defaultDefinitionGuid: "item", entries: [{ id: "row", parentId: null, name: "Sword", values: { Price: 5 } }] };
     let finish!: (value: Record<string, unknown>) => void;
     const project = createMockProjectService({ loadDocument: vi.fn()
@@ -260,7 +260,7 @@ describe("DocumentService", () => {
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
     const open = (name: string, background = false) => service.openDocument(project, {
-      kind: "data-tree", path: `assets/${name}.datatree.babasset`, label: name,
+      kind: "data-tree", path: `assets/${name}.datatree.hasset`, label: name,
     }, null, !background, { background });
     const first = await open("First");
     const background = await open("Shared", true);
@@ -322,7 +322,7 @@ describe("DocumentService", () => {
       loadDocument: vi.fn(() => new Promise<{ nodes: []; edges: [] }>((resolve) => { finishRead = resolve; })),
     }), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
     const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
-    service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Moved.class.babasset");
+    service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Moved.class.hasset");
     finishRead({ nodes: [], edges: [] });
     await rejected;
     expect(service.getOpenDocumentsOrdered()).toEqual([]);
@@ -330,8 +330,8 @@ describe("DocumentService", () => {
 
   it("waits for blocking UI before reading a scene and only closes the previous scene after success", async () => {
     const service = new DocumentService();
-    const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
-    const next = { kind: "scene" as const, path: "assets/Next.scene.babasset", label: "Next" };
+    const previous = { kind: "scene" as const, path: "assets/Previous.scene.hasset", label: "Previous" };
+    const next = { kind: "scene" as const, path: "assets/Next.scene.hasset", label: "Next" };
     await service.openDocument(createMockProjectService(), previous);
     let paint!: () => void;
     let read!: (scene: ReturnType<typeof createDefaultScene>) => void;
@@ -357,14 +357,14 @@ describe("DocumentService", () => {
 
   it("keeps the current scene and dirty revision when a replacement read fails", async () => {
     const service = new DocumentService();
-    const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
+    const previous = { kind: "scene" as const, path: "assets/Previous.scene.hasset", label: "Previous" };
     await service.openDocument(createMockProjectService(), previous);
     const edited = { ...createDefaultScene(), name: "Edited" };
     service.updateScene(documentId(previous), edited);
     const beforeCommit = vi.fn();
     const failure = new Error("Scene read failed");
     await expect(service.openDocument(createMockProjectService({ loadDocument: vi.fn().mockRejectedValue(failure) }),
-      { kind: "scene", path: "assets/Missing.scene.babasset", label: "Missing" }, null, true, { beforeCommit },
+      { kind: "scene", path: "assets/Missing.scene.hasset", label: "Missing" }, null, true, { beforeCommit },
     )).rejects.toBe(failure);
     expect(beforeCommit).not.toHaveBeenCalled();
     expect(service.getActiveDocument()).toMatchObject({ id: documentId(previous), dirty: true, content: edited });
@@ -377,10 +377,10 @@ describe("DocumentService", () => {
     const oldRead = vi.fn(() => new Promise<ReturnType<typeof createDefaultScene>>((resolve) => { finishOldRead = resolve; }));
     const beforeCommit = vi.fn();
     const old = service.openDocument(createMockProjectService({ loadDocument: oldRead }),
-      { kind: "scene", path: "assets/Old.scene.babasset", label: "Old" }, null, true, { signal: controller.signal, beforeCommit });
+      { kind: "scene", path: "assets/Old.scene.hasset", label: "Old" }, null, true, { signal: controller.signal, beforeCommit });
     const rejected = expect(old).rejects.toMatchObject({ name: "AbortError" });
     controller.abort();
-    const next = { kind: "scene" as const, path: "assets/New.scene.babasset", label: "New" };
+    const next = { kind: "scene" as const, path: "assets/New.scene.hasset", label: "New" };
     await service.openDocument(createMockProjectService(), next);
     finishOldRead({ ...createDefaultScene(), name: "Old" });
     await rejected;
@@ -393,11 +393,11 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     const project = createMockProjectService();
     for (const name of ["Main", "Other", "Control"]) {
-      await service.openDocument(project, { kind: "graph", path: `assets/${name}.class.babasset`, label: name });
+      await service.openDocument(project, { kind: "graph", path: `assets/${name}.class.hasset`, label: name });
     }
-    const main = "graph:assets/Main.class.babasset";
-    const other = "graph:assets/Other.class.babasset";
-    const control = "graph:assets/Control.class.babasset";
+    const main = "graph:assets/Main.class.hasset";
+    const other = "graph:assets/Other.class.hasset";
+    const control = "graph:assets/Control.class.hasset";
     service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "saved", kind: "event", name: "Saved revision" }] });
     service.updateGraph(control, { nodes: [], edges: [], members: [{ id: "control", kind: "event", name: "Control edit" }] });
     const saved = service.getDirtyDocuments().map((doc) => ({ ...doc }));
@@ -459,7 +459,7 @@ describe("DocumentService", () => {
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
-    const enumPath = "assets/colors.babasset";
+    const enumPath = "assets/colors.hasset";
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
 
     await service.openDocument(project, {
@@ -584,7 +584,7 @@ describe("DocumentService", () => {
     const project = createMockProjectService();
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
-    const enumPath = "assets/colors.babasset";
+    const enumPath = "assets/colors.hasset";
     const enumId = documentId({ kind: "enum", path: enumPath });
 
     await service.openDocument(project, {
@@ -645,7 +645,7 @@ describe("DocumentService", () => {
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
     const firstId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
-    const secondPath = "assets/level.scene.babasset";
+    const secondPath = "assets/level.scene.hasset";
     const secondId = documentId({ kind: "scene", path: secondPath });
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
@@ -674,7 +674,7 @@ describe("DocumentService", () => {
   });
 
   it("keeps SceneLayer tabs open beside a world scene and hosts them as 2D editor scenes", async () => {
-    const { createDefaultSceneLayer } = await import("@babylonslate/core");
+    const { createDefaultSceneLayer } = await import("@haptic/core");
     const service = new DocumentService();
     service.ensureContentBrowserTab();
     const layer = createDefaultSceneLayer();
@@ -689,7 +689,7 @@ describe("DocumentService", () => {
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
     const layerId = documentId({
       kind: "scene-layer",
-      path: "assets/Hud.scenelayer.babasset",
+      path: "assets/Hud.scenelayer.hasset",
     });
     await service.openDocument(project, {
       kind: "scene",
@@ -698,7 +698,7 @@ describe("DocumentService", () => {
     });
     await service.openDocument(project, {
       kind: "scene-layer",
-      path: "assets/Hud.scenelayer.babasset",
+      path: "assets/Hud.scenelayer.hasset",
       label: "HUD",
     });
     expect(service.getState().openDocuments.has(sceneId)).toBe(true);
@@ -828,7 +828,7 @@ describe("DocumentService", () => {
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
     const firstPath = MAIN_SCENE_FILE;
-    const secondPath = "assets/level.scene.babasset";
+    const secondPath = "assets/level.scene.hasset";
     await service.openDocument(project, {
       kind: "scene",
       path: firstPath,
@@ -862,7 +862,7 @@ describe("DocumentService", () => {
     const firstId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
     const secondId = documentId({
       kind: "scene",
-      path: "assets/level.scene.babasset",
+      path: "assets/level.scene.hasset",
     });
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
@@ -901,8 +901,8 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
-    const oldPath = "assets/main.scene.babasset";
-    const newPath = "assets/levels/main.scene.babasset";
+    const oldPath = "assets/main.scene.hasset";
+    const newPath = "assets/levels/main.scene.hasset";
     await service.openDocument(project, {
       kind: "scene",
       path: oldPath,
@@ -930,7 +930,7 @@ describe("DocumentService", () => {
         members: [{ name: "None", value: 0 }],
       })),
     });
-    const path = "assets/colors.babasset";
+    const path = "assets/colors.hasset";
     await service.openDocument(project, {
       kind: "enum",
       path,
@@ -975,7 +975,7 @@ describe("DocumentService", () => {
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
     const scenePath = MAIN_SCENE_FILE;
-    const enumPath = "assets/colors.babasset";
+    const enumPath = "assets/colors.hasset";
     await service.openDocument(project, {
       kind: "scene",
       path: scenePath,
@@ -1011,7 +1011,7 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();
     const project = createMockProjectService();
-    const spritePath = "assets/fx/spark.sprite.babasset";
+    const spritePath = "assets/fx/spark.sprite.hasset";
     const graphPath = MAIN_CLASS_FILE;
     await service.openDocument(project, {
       kind: "sprite",
@@ -1073,7 +1073,7 @@ describe("DocumentService", () => {
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
     const traceId = documentId({
       kind: "trace",
-      path: "derived/proj/traces/gone.babtrace",
+      path: "derived/proj/traces/gone.htrace",
     });
     await service.initializeFromProject(projectService, project, {
       ...createEmptyLayouts(),
@@ -1088,9 +1088,9 @@ describe("DocumentService", () => {
 });
 
 describe("DocumentService revisions", () => {
-  const HERO = "assets/Hero.class.babasset";
-  const HELPER = "assets/Helper.class.babasset";
-  const STONE = "assets/Stone.material.babasset";
+  const HERO = "assets/Hero.class.hasset";
+  const HELPER = "assets/Helper.class.hasset";
+  const STONE = "assets/Stone.material.hasset";
 
   /** Content Browser, Main scene, two Classes and a Material; Stone is active. */
   async function openFixture() {
@@ -1177,7 +1177,7 @@ describe("DocumentService revisions", () => {
     { name: "Save with nothing dirty", act: (f) => f.service.markAllClean([]), kinds: [], tabs: false },
     {
       name: "opening a tab",
-      act: (f) => f.service.openDocument(f.project, { kind: "enum", path: "assets/Mood.enum.babasset", label: "Mood" }),
+      act: (f) => f.service.openDocument(f.project, { kind: "enum", path: "assets/Mood.enum.hasset", label: "Mood" }),
       kinds: ["enum"],
       tabs: true,
     },
@@ -1190,7 +1190,7 @@ describe("DocumentService revisions", () => {
     { name: "closing a tab", act: (f) => f.service.closeDocument(f.helper), kinds: ["graph"], tabs: true },
     {
       name: "a rename",
-      act: (f) => f.service.repathDocument("graph", HERO, "assets/Champion.class.babasset"),
+      act: (f) => f.service.repathDocument("graph", HERO, "assets/Champion.class.hasset"),
       kinds: ["graph"],
       tabs: true,
     },

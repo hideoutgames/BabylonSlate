@@ -8,7 +8,7 @@ import {
   normalizeShadowSettings,
   normalizeRenderingQuality,
   normalizeFocusNavigationSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { GAME_MANIFEST_FILE } from "./constants";
 
@@ -55,15 +55,15 @@ describe("exportGame", () => {
     const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [{ assetGuid: "hero", classId: "Hero", source: "export function onTick() {}", anchors: [], entryPoints: [] }],
       assets: [
-        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), assetPath: "assets/Levels/Main.scene.babasset" },
-        { guid: "hero", type: "Class", sceneGuid: "scene", name: "Hero", bytes: new TextEncoder().encode("{}"), assetPath: "plugins/Foo/assets/Hero.class.babasset" },
+        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), assetPath: "assets/Levels/Main.scene.hasset" },
+        { guid: "hero", type: "Class", sceneGuid: "scene", name: "Hero", bytes: new TextEncoder().encode("{}"), assetPath: "plugins/Foo/assets/Hero.class.hasset" },
         { guid: "area-emission:tex", type: "AreaEmission", sceneGuid: "scene", bytes: new Uint8Array([1]), encoding: "bytes" },
       ],
     });
     if (!result.ok) throw new Error(result.error);
     const byGuid = new Map(result.value.manifest.assets.map(asset => [asset.guid, asset]));
-    expect(byGuid.get("scene")?.assetPath).toBe("assets/Levels/Main.scene.babasset");
-    expect(byGuid.get("hero")?.assetPath).toBe("plugins/Foo/assets/Hero.class.babasset");
+    expect(byGuid.get("scene")?.assetPath).toBe("assets/Levels/Main.scene.hasset");
+    expect(byGuid.get("hero")?.assetPath).toBe("plugins/Foo/assets/Hero.class.hasset");
     // The exported file path stays the file in the game, not the authored path.
     expect(byGuid.get("scene")?.path).toMatch(/^assets\/data-\d+\.bin$/);
     const generated = result.value.manifest.assets.filter(asset => !asset.assetPath);

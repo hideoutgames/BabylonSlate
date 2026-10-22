@@ -5,7 +5,7 @@ import {
   snapshotFloatCount,
   type ActorSlot,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   createDefaultSceneLayer,
@@ -13,9 +13,9 @@ import {
   type SerializedActor,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
-import { generateNavMesh, initNavigation } from "@babylonslate/navigation";
-import type { Actor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { generateNavMesh, initNavigation } from "@haptic/navigation";
+import type { Actor } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
 
