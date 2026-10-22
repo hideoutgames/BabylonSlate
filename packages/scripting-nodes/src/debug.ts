@@ -124,6 +124,21 @@ function printHudPins(
 
 export const debugNodes: NodeDefinition[] = [
   {
+    id: "debug.assert",
+    title: "Assert",
+    category: "debug",
+    developmentOnlyByDefault: true,
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("condition", "Condition", "in", BOOL),
+      pin("message", "Message", "in", STRING, "data", true, ""),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`if (!(${ctx.input("condition")})) ctx.assertFailed(${ctx.input("message")});`);
+    },
+  },
+  {
     id: "debug.log",
     title: "Log",
     category: "debug",

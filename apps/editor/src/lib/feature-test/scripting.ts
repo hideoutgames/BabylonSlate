@@ -984,7 +984,7 @@ async function saveInterfaceProbe(
   return { ref, components };
 }
 
-/** Read Data Entry `Weapons/Sword` + Break, and Get Data Children of `Weapons`. */
+/** Read Data Entry `Weapons/Sword` + Break (an Assert checks it was found), and Get Data Children of `Weapons`. */
 async function saveDataProbe(
   ctx: FeatureTestContext,
   types: ScriptingTypes,
@@ -1008,10 +1008,12 @@ async function saveDataProbe(
       gNode("children", "data.getChildren", 220, 400, { "default:tree": types.itemsTree, "default:entryPath": "Weapons" }),
       gNode("child-count", "array.length", 460, 400),
       format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
+      gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
       printText("print", 940, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      gExec("begin", "print"),
+      ...gChain("begin", "assert-found", "print"),
+      gWire("read", "found", "assert-found", "condition"),
       gWire("read", "value", "fields", "in"),
       gWire("fields", "Label", "text", fmtArg("label")),
       gWire("fields", "Damage", "text", fmtArg("damage")),

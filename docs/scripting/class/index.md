@@ -785,6 +785,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Assert](assert.md) | Reports an error for this node when a condition is false. |
 | [Draw Debug Arrow](draw-debug-arrow.md) | Draws an arrow from a start position to an end position. |
 | [Draw Debug Box](draw-debug-box.md) | Draws a wireframe box at a world position. |
 | [Draw Debug Circle](draw-debug-circle.md) | Draws a circle outline at a world position. |

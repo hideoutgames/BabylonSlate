@@ -173,6 +173,8 @@ export interface ScriptHostServices {
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
+  /** A failed Assert node: an error for the node that ran it. Without it, the failure is an Error log. */
+  assertFailed?(message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
     classId: string,
@@ -360,6 +362,11 @@ export interface ScriptContext {
    * ("Hero: Destroy Actor (Target) tried to access null.") every time, and never throws.
    */
   nullAccess(message: string): void;
+  /**
+   * An Assert node's condition was false. Reports "Assertion failed: <message>" as an error for the
+   * node every time, and never throws: the graph continues.
+   */
+  assertFailed(message: unknown): void;
   print(
     message: string,
     key: string,
@@ -793,7 +800,7 @@ type LoadedScript = {
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "print"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "assertFailed" | "print"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
   | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
@@ -1485,6 +1492,12 @@ export class ScriptHost {
       log: (severity, category, message) =>
         services.log(severity, category, message),
       nullAccess: (message) => services.log("error", "Script", message),
+      assertFailed: (message) => {
+        const detail = typeof message === "string" ? message.trim() : "";
+        const text = detail ? `Assertion failed: ${detail}` : "Assertion failed";
+        if (services.assertFailed) services.assertFailed(text);
+        else services.log("error", "Assert", text);
+      },
       print: (message, key, duration, color) =>
         services.print(message, key, duration, color),
       drawDebug: (payload) => {
