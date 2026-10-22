@@ -59,4 +59,41 @@ describe("Assert node", () => {
     expect(scenario.diagnostics()).toEqual([]);
     expect(scenario.logs("Probe")).toEqual(["after"]);
   });
+
+  it("reports Assert Equal with both values and Assert Is Valid for a missing object", async () => {
+    const vector = (id: string) => graphNode(registry, id, "vector.make3", { "default:x": 1, "default:y": 2, "default:z": 3 });
+    const sum = (id: string, b: number) => graphNode(registry, id, "math.add", { "default:a": 1, "default:b": b });
+    const scenario = await run({
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        graphNode(registry, "begin", "flow.event.beginPlay"),
+        vector("v1"), vector("v2"),
+        graphNode(registry, "sameVectors", "debug.assertEqual", { "default:message": "Same spot" }),
+        sum("two", 1), sum("three", 2),
+        graphNode(registry, "score", "debug.assertEqual", { "default:message": "Score" }),
+        graphNode(registry, "self", "actor.getSelf"),
+        graphNode(registry, "hasSelf", "debug.assertIsValid", { "default:message": "Self" }),
+        graphNode(registry, "target", "debug.assertIsValid", { "default:message": "Target" }),
+        graphNode(registry, "after", "debug.log", { category: "Probe", "default:message": "after" }),
+      ],
+      edges: [
+        wire("begin", "execOut", "sameVectors", "execIn"),
+        wire("v1", "out", "sameVectors", "actual"),
+        wire("v2", "out", "sameVectors", "expected"),
+        wire("sameVectors", "execOut", "score", "execIn"),
+        wire("two", "out", "score", "actual"),
+        wire("three", "out", "score", "expected"),
+        wire("score", "execOut", "hasSelf", "execIn"),
+        wire("self", "out", "hasSelf", "object"),
+        wire("hasSelf", "execOut", "target", "execIn"),
+        wire("target", "execOut", "after", "execIn"),
+      ],
+    });
+    expect(scenario.diagnostics()).toEqual([
+      expect.objectContaining({ code: "runtime.assert", message: "Assertion failed: Score (expected 3, got 2)", nodeId: "score" }),
+      expect.objectContaining({ code: "runtime.assert", message: "Assertion failed: Target (the object is not valid)", nodeId: "target" }),
+    ]);
+    expect(scenario.logs("Probe")).toEqual(["after"]);
+  });
 });
