@@ -3,6 +3,7 @@ import { Textarea } from "@babylonslate/ui/components/textarea";
 import { buttonVariants } from "@babylonslate/ui/components/button";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { commitPickerOptionKeyDown } from "./search-dialog";
+import { useTouchUi } from "./touch-ui";
 import {
   PICKER_LIST_MAX_HEIGHT_PX,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
@@ -325,6 +326,7 @@ export function MarkupAutocompleteTextarea({
   ...rest
 }: MarkupAutocompleteTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const touch = useTouchUi();
   const [caret, setCaret] = useState(value.length);
   const pendingCaret = useRef<number | null>(null);
 
@@ -367,7 +369,7 @@ export function MarkupAutocompleteTextarea({
         ) : (
           <WindowedList
             itemCount={session.items.length}
-            rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+            rowHeight={touch ? WINDOWED_LIST_TOUCH_ROW_HEIGHT : 28}
           >
             {(index) => {
               const item = session.items[index]!;

@@ -31,10 +31,11 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        // Touch targets in the touch layout (Compact Mode off), compact otherwise.
         touch:
-          "min-h-[var(--touch-target,44px)] gap-1.5 px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
+          "min-h-7 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:px-3 pointer-coarse:has-data-[icon=inline-end]:pr-2.5 pointer-coarse:has-data-[icon=inline-start]:pl-2.5",
         "touch-icon":
-          "box-border size-[var(--touch-target,44px)] min-h-[var(--touch-target,44px)] min-w-[var(--touch-target,44px)]",
+          "box-border size-7 pointer-coarse:size-[var(--touch-target,44px)] pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]",
       },
     },
     defaultVariants: {

@@ -240,7 +240,7 @@ import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
@@ -332,6 +332,9 @@ function ContentBrowserWorkspaceBody({
   diagnostics,
 }: ContentBrowserWorkspaceBodyProps) {
   const phone = usePhoneLayout();
+  // Phone toolbar buttons are icon-only; their size follows Compact Mode.
+  const touchSizing = usePhoneTouchSizing();
+  const phoneIconSize = touchSizing ? "touch-icon" : "icon-sm";
   const [foldersOpen, setFoldersOpen] = useState(false);
   useEffect(() => {
     if (hidden || !phone) setFoldersOpen(false);
@@ -2516,7 +2519,7 @@ function ContentBrowserWorkspaceBody({
             <Button
               type="button"
               variant="outline"
-              size={phone ? "touch" : "sm"}
+              size={touchSizing ? "touch" : "sm"}
               className="w-full justify-start"
               data-testid="content-browser-new-folder"
               aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.newFolder")?.[0] ?? "")}
@@ -2540,7 +2543,7 @@ function ContentBrowserWorkspaceBody({
           nodes={treeNodes}
           selectedId={treeSelectedId}
           selectedIds={treeSelectedIds}
-          rowHeight={phone ? 44 : undefined}
+          rowHeight={touchSizing ? 44 : undefined}
           onSelect={(id, options) => {
             handleTreeSelect(id, options);
             if (phone) setFoldersOpen(false);
@@ -2592,7 +2595,7 @@ function ContentBrowserWorkspaceBody({
               render={
                 <Button
                   variant="outline"
-                  size="touch"
+                  size={touchSizing ? "touch" : "sm"}
                   className="min-w-0 flex-1 justify-start"
                   aria-label="Browse Folders"
                   data-testid="content-browser-browse-folders"
@@ -2627,7 +2630,7 @@ function ContentBrowserWorkspaceBody({
               <Button
                 type="button"
                 variant="outline"
-                size={phone ? "touch-icon" : "sm"}
+                size={phone ? phoneIconSize : "sm"}
                 aria-label="Import"
                 data-testid="content-browser-import"
                 aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.import")?.[0] ?? "")}
@@ -2657,7 +2660,7 @@ function ContentBrowserWorkspaceBody({
               render={
                 <Button
                   type="button"
-                  size={phone ? "touch" : "sm"}
+                  size={touchSizing ? "touch" : "sm"}
                   data-testid="content-browser-new-asset"
                   aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.newAsset")?.[0] ?? "")}
                   disabled={busy || !selectedRootWritable}
@@ -2687,7 +2690,8 @@ function ContentBrowserWorkspaceBody({
             aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.find")?.[0] ?? "")}
             className={cn(
               "min-h-[var(--chrome-row,28px)]",
-              phone ? "h-11 min-w-0" : "min-w-40",
+              phone ? "min-w-0" : "min-w-40",
+              touchSizing && "h-11",
             )}
             data-testid="content-browser-search"
           />
@@ -2697,7 +2701,7 @@ function ContentBrowserWorkspaceBody({
                 <Button
                   type="button"
                   variant={typeFilters.length > 0 ? "secondary" : "outline"}
-                  size={phone ? "touch-icon" : "sm"}
+                  size={phone ? phoneIconSize : "sm"}
                   data-testid="content-browser-filter"
                   aria-label={
                     typeFilters.length > 0
@@ -2750,7 +2754,7 @@ function ContentBrowserWorkspaceBody({
                 <Button
                   type="button"
                   variant="outline"
-                  size={phone ? "touch-icon" : "sm"}
+                  size={phone ? phoneIconSize : "sm"}
                   data-testid="content-browser-sort"
                   aria-label="Sort"
                 />
@@ -2855,7 +2859,7 @@ function ContentBrowserWorkspaceBody({
             <FolderBreadcrumbs
               root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_CONTENT_ROOT_ID ? "Content" : folderRoot.label }}
               path={selectedFolderPath}
-              touch={phone}
+              touch={touchSizing}
               onNavigate={(path) => {
                 setSelectedFolderPath(path);
                 setSelectedGuids(new Set());
@@ -2915,11 +2919,11 @@ function ContentBrowserWorkspaceBody({
                 </EmptyHeader>
                 <EmptyContent>
                   {gridSearch.trim() || typeFilters.length ? (
-                    <Button variant="outline" size={phone ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
+                    <Button variant="outline" size={touchSizing ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
                   ) : selectedRootWritable ? (
                     <div className="flex items-center gap-2">
-                      <Button size={phone ? "touch" : "sm"} disabled={busy} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); openNewAssetMenu({ x: rect.left, y: rect.bottom + 4 }); }}><PlusIcon data-icon="inline-start" />New Asset</Button>
-                      <Button variant="outline" size={phone ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
+                      <Button size={touchSizing ? "touch" : "sm"} disabled={busy} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); openNewAssetMenu({ x: rect.left, y: rect.bottom + 4 }); }}><PlusIcon data-icon="inline-start" />New Asset</Button>
+                      <Button variant="outline" size={touchSizing ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
                     </div>
                   ) : null}
                 </EmptyContent>
@@ -2955,7 +2959,7 @@ function ContentBrowserWorkspaceBody({
           {canOpenSelection ? (
             <Button
               variant="outline"
-              size="touch"
+              size={touchSizing ? "touch" : "sm"}
               aria-label="Open Selected Item"
               disabled={busy}
               onClick={openSelection}
@@ -3135,16 +3139,14 @@ function ContentBrowserWorkspaceBody({
             <AlertDialogCancel
               ref={deleteCancelRef}
               disabled={busy}
-              size="touch"
-              className="h-[var(--touch-target,44px)]"
+              className="pointer-coarse:h-[var(--touch-target,44px)]"
               data-testid="content-browser-delete-cancel"
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              size="touch"
-              className="h-[var(--touch-target,44px)]"
+              className="pointer-coarse:h-[var(--touch-target,44px)]"
               disabled={busy}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
