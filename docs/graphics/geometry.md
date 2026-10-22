@@ -19,6 +19,7 @@ A Spline is a path of 2 to 128 points in the component's local space.
 - **Closed Loop** joins the last point to the first. It needs at least three points.
 - To edit in a scene, choose **Edit In Viewport** on the component. Drag a point to move it, drag a midpoint to add a point, and double-click a point to remove it. A selected point can also be moved with the Move gizmo.
 - Type exact positions in the point rows in the **Inspector**.
+- In Play, scripts can follow a Spline with **Get Spline Length** and **Get Location At Distance Along Spline** ([Spline](../components/spline.md#use-it-in-scripts)).
 
 Water Rivers use the same point editing; see [Water](water.md).
 

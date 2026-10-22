@@ -49,12 +49,31 @@ export const FEATURE_TEST_ZONES: Readonly<Record<FeatureTestZoneId, FeatureTestZ
   lod: { id: "lod", title: "Model LOD", center: [64, 64], size: [56, 24] },
 };
 
-/** Static main camera: frames the three zone rows from behind and above. */
+/**
+ * Main camera: a Spring Arm rig that tours the main scene in Play along the
+ * closed `FEATURE_TEST_CAMERA_TOUR` Spline. Its authored pose is the tour's start.
+ */
 export const FEATURE_TEST_MAIN_CAMERA = {
   actorId: "ft-camera-main",
   componentId: "ft-camera-main-cam",
-  position: [0, 38, -52] as [number, number, number],
-  target: [0, 0, 36] as [number, number, number],
+};
+
+/**
+ * Looping camera tour (world metres): along the front of the first zone row,
+ * low through both gaps between rows, high behind the back row, then a high
+ * sweep down the left side back to the start. Clear of every zone footprint.
+ */
+export const FEATURE_TEST_CAMERA_TOUR = {
+  pathActorId: "ft-camera-tour-path",
+  /** Metres per second along the path; one lap takes about two and a half minutes. */
+  speed: 6,
+  points: [
+    [-72, 10, -16], [-24, 9, -16], [24, 9, -16], [72, 10, -16],
+    [90, 9, 0], [72, 7, 16], [24, 6, 16], [-24, 6, 16], [-72, 7, 16],
+    [-90, 8, 32], [-72, 7, 48], [-24, 6, 48], [24, 7, 48], [72, 9, 48],
+    [100, 13, 66], [72, 16, 86], [24, 16, 86], [-24, 16, 86], [-72, 18, 86],
+    [-100, 22, 56], [-104, 20, 16], [-94, 14, -10],
+  ] as Array<[number, number, number]>,
 };
 
 /** World position from a zone-local offset (x, y, z). */
