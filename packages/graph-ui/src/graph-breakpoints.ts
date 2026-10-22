@@ -35,8 +35,7 @@ export function useNodeBreakpoint(nodeId: string): GraphBreakpointState | null {
     (onChange: () => void) => breakpoints?.subscribe(onChange) ?? (() => {}),
     [breakpoints],
   );
-  return useSyncExternalStore(
-    breakpoints ? subscribe : unsubscribed,
-    breakpoints ? () => breakpoints.state(nodeId) : noBreakpoint,
-  );
+  const snapshot = breakpoints ? () => breakpoints.state(nodeId) : noBreakpoint;
+  // The server snapshot lets the docs' static node previews render a node without a live store.
+  return useSyncExternalStore(breakpoints ? subscribe : unsubscribed, snapshot, snapshot);
 }
