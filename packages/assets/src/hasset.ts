@@ -8,7 +8,7 @@ import {
 } from "./bytes";
 import { AssetFormatVersionError } from "./migration";
 
-export const HASSET_MAGIC = new TextEncoder().encode("BABA");
+export const HASSET_MAGIC = new TextEncoder().encode("HAPT");
 export const HASSET_FORMAT_VERSION = 1;
 export const HASSET_PREFIX_BYTES = 12;
 /** Reject corrupt lengths before allocating a catalog header. */
@@ -144,8 +144,8 @@ export function readHassetHeaderLength(bytes: Uint8Array): number {
 
 /**
  * Refuse a header written before chunk lengths and dependency metadata
- * version {@link ASSET_DEPENDENCY_METADATA_VERSION}. The engine is unreleased,
- * so such files are not upgraded.
+ * version {@link ASSET_DEPENDENCY_METADATA_VERSION}, the released layout.
+ * Such pre-release files are not upgraded.
  */
 function assertCurrentHeaderLayout(raw: unknown): void {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;

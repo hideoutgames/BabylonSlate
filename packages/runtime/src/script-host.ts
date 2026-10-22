@@ -74,6 +74,7 @@ import type { TweenValueType } from "@haptic/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
+import { scriptValuesEqual } from "./script-values-equal";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
   type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
@@ -173,6 +174,8 @@ export interface ScriptHostServices {
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
+  /** A failed Assert node: an error for the node that ran it. Without it, the failure is an Error log. */
+  assertFailed?(message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
     classId: string,
@@ -380,6 +383,13 @@ export interface ScriptContext {
    * ("Hero: Destroy Actor (Target) tried to access null.") every time, and never throws.
    */
   nullAccess(message: string): void;
+  /**
+   * An Assert node's check failed. Reports "Assertion failed: <message> (<detail>)" as an error for
+   * the node every time, and never throws: the graph continues.
+   */
+  assertFailed(message: unknown, detail?: string): void;
+  /** Assert Equal: reports a failure naming both values unless they are equal (`scriptValuesEqual`). */
+  assertEqual(actual: unknown, expected: unknown, message: unknown): void;
   print(
     message: string,
     key: string,
@@ -814,7 +824,7 @@ type LoadedScript = {
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "print"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "assertFailed" | "assertEqual" | "print"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
   | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
@@ -1478,6 +1488,12 @@ export class ScriptHost {
       if (guid) services.setSceneLayerCamera?.(guid, changes);
     };
     const vector2 = (value: unknown) => value as { x?: unknown; y?: unknown } | null | undefined;
+    const reportAssertion = (message: unknown, detail?: string) => {
+      const summary = typeof message === "string" ? message.trim() : "";
+      const text = `Assertion failed${summary ? `: ${summary}` : ""}${detail ? ` (${detail})` : ""}`;
+      if (services.assertFailed) services.assertFailed(text);
+      else services.log("error", "Assert", text);
+    };
     const members: HostContextMembers = {
       getSaveData: <TData extends object>() => this.saveGameService().getSaveData() as TData,
       getSaveField: (id, type, array) => readField(this.saveGameService().getField(id), type, array),
@@ -1506,6 +1522,11 @@ export class ScriptHost {
       log: (severity, category, message) =>
         services.log(severity, category, message),
       nullAccess: (message) => services.log("error", "Script", message),
+      assertFailed: (message, detail) => reportAssertion(message, detail),
+      assertEqual: (actual, expected, message) => {
+        if (scriptValuesEqual(actual, expected)) return;
+        reportAssertion(message, `expected ${formatValue(expected)}, got ${formatValue(actual)}`);
+      },
       print: (message, key, duration, color) =>
         services.print(message, key, duration, color),
       drawDebug: (payload) => {
