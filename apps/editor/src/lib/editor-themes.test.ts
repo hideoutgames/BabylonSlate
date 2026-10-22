@@ -40,7 +40,7 @@ function oklchToHex(text: string): string | undefined {
 }
 
 describe("editor themes", () => {
-  it("keeps Default in sync with the dark tokens it stands for", () => {
+  it("keeps Haptic Dark in sync with the dark tokens it stands for", () => {
     const css = readFileSync(new URL("../../../../packages/ui/src/styles/tokens.css", import.meta.url), "utf8");
     const dark = css.slice(css.indexOf("\n.dark {"));
     const tokens = Object.fromEntries(
@@ -59,7 +59,7 @@ describe("editor themes", () => {
 
   it("forks a built-in theme on the first edit and edits the fork afterwards", () => {
     const settings = defaultEngineSettings();
-    expect(setActiveThemeColor(settings, "background", "#102030")).toEqual({ forkedName: "Default Copy" });
+    expect(setActiveThemeColor(settings, "background", "#102030")).toEqual({ forkedName: "Haptic Dark Copy" });
     expect(setActiveThemeColor(settings, "card", "#203040")).toEqual({});
 
     expect(settings.customEditorThemes).toHaveLength(1);
@@ -71,10 +71,44 @@ describe("editor themes", () => {
     );
 
     settings.editorTheme = DEFAULT_EDITOR_THEME_ID;
-    expect(setActiveThemeColor(settings, "background", "#000000")).toEqual({ forkedName: "Default Copy 2" });
+    expect(setActiveThemeColor(settings, "background", "#000000")).toEqual({ forkedName: "Haptic Dark Copy 2" });
   });
 
-  it("falls back to Default when the selected theme is gone", () => {
+  it("ships readable built-in themes with distinct ids and names", () => {
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((index) => {
+        const value = parseInt(hex.slice(index, index + 2), 16) / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      }) as [number, number, number];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: string, b: string) => {
+      const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+      return (high + 0.05) / (low + 0.05);
+    };
+    expect(new Set(BUILT_IN_EDITOR_THEMES.map((theme) => theme.id)).size).toBe(BUILT_IN_EDITOR_THEMES.length);
+    expect(new Set(BUILT_IN_EDITOR_THEMES.map((theme) => theme.name)).size).toBe(BUILT_IN_EDITOR_THEMES.length);
+    for (const { name, colors } of BUILT_IN_EDITOR_THEMES) {
+      for (const key of THEME_COLOR_KEYS) expect(colors[key], `${name} ${key}`).toMatch(/^#[0-9a-f]{6}$/);
+      expect(contrast(colors.foreground, colors.card), `${name} text`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(colors["muted-foreground"], colors.card), `${name} muted text`).toBeGreaterThanOrEqual(3);
+      expect(contrast(colors["primary-foreground"], colors.primary), `${name} primary`).toBeGreaterThanOrEqual(4.5);
+      for (const key of THEME_COLOR_KEYS.filter((entry) => entry.startsWith("node-") && entry !== "node-title-foreground")) {
+        expect(contrast(colors["node-title-foreground"], colors[key]), `${name} ${key}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("marks light themes so native controls follow them", () => {
+    const white = BUILT_IN_EDITOR_THEMES.find((theme) => theme.id === "haptic-white")!;
+    expect(white.name).toBe("Haptic White");
+    expect(editorThemeStylesheet(white.colors)).toContain("color-scheme: light;");
+    expect(editorThemeStylesheet(BUILT_IN_EDITOR_THEMES.find((theme) => theme.id === "dracula")!.colors)).not.toContain(
+      "color-scheme",
+    );
+  });
+
+  it("falls back to Haptic Dark when the selected theme is gone", () => {
     expect(resolveEditorTheme("custom-missing", []).id).toBe(DEFAULT_EDITOR_THEME_ID);
   });
 
@@ -92,7 +126,7 @@ describe("editor themes", () => {
     expect(parsed).toEqual({ ok: true, name: "Night", colors });
   });
 
-  it("imports partial themes over Default and rejects other files", () => {
+  it("imports partial themes over Haptic Dark and rejects other files", () => {
     const parsed = parseEditorThemeFile(
       JSON.stringify({ format: "haptic-editor-theme", version: 1, name: "Bits", colors: { card: "#ABCDEF", nope: "#000000", border: "red" } }),
     );
