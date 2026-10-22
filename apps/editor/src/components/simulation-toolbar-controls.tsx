@@ -1,7 +1,7 @@
 import { ToolbarOverflowItem } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
-import { GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SquareIcon } from "lucide-react";
+import { GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SkipForwardIcon, SquareIcon } from "lucide-react";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import {
   SIMULATION_CONTROL_ATTRIBUTE,
@@ -11,9 +11,9 @@ import {
 const controlProps = { [SIMULATION_CONTROL_ATTRIBUTE]: "" };
 
 /**
- * The running Simulation in the global toolbar's Play island: Pause, a red
- * Stop in place of Simulate, a Game / Edit input toggle and, away from its Scene,
- * Return To Scene.
+ * The running Simulation in the global toolbar's Play island: Pause, Step while
+ * paused, a red Stop in place of Simulate, a Game / Edit input toggle and, away
+ * from its Scene, Return To Scene.
  */
 export function SimulationToolbarControls({
   controls,
@@ -57,6 +57,39 @@ export function SimulationToolbarControls({
         </TooltipTrigger>
         <TooltipContent>{paused ? "Resume" : "Pause"}</TooltipContent>
       </Tooltip>
+      {paused && controls ? (
+        <ToolbarOverflowItem
+          id="simulation-step"
+          priority={TOOLBAR_OVERFLOW_PRIORITY.simulationStep}
+          items={[{
+            id: "simulation-step",
+            label: "Step",
+            icon: <SkipForwardIcon />,
+            disabled: controls.stepPending || controls.pausePending || stopping,
+            onSelect: () => controls.step(),
+          }]}
+        >
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="chrome-icon-button"
+                aria-label="Step"
+                disabled={controls.stepPending || controls.pausePending || stopping}
+                onClick={() => controls.step()}
+                data-testid="simulation-step"
+                {...controlProps}
+              />
+            }
+          >
+            <SkipForwardIcon />
+          </TooltipTrigger>
+          <TooltipContent>Step One Tick</TooltipContent>
+        </Tooltip>
+        </ToolbarOverflowItem>
+      ) : null}
       <Tooltip>
         <TooltipTrigger
           render={
