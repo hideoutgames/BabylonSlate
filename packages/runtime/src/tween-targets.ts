@@ -2,7 +2,7 @@ import {
   isOverlayLayoutClass, parseOverlayLayoutProperties, supportsOverlayVisualStyle,
   type TweenValueType,
 } from "@babylonslate/core";
-import { Actor, ActorComponent, BObject, engineScriptApiFor } from "@babylonslate/object-model";
+import { Actor, ActorComponent, BObject, SceneLayer, engineScriptApiFor } from "@babylonslate/object-model";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenReference } from "./tween-runtime";
 import { applyTweenTransform, tweenWorldTransformDepth, type TweenTransformChannel } from "./tween-transforms";
@@ -13,6 +13,10 @@ const propertyTypes: Record<string, TweenValueType> = {
   "overlay.opacity": "float", "overlay.tint": "color", "anchor.offset": "vec2",
   "scroll.offset": "vec2", "layout.size": "vec2", "text.fontSize": "float",
   "text.color": "color", "text.outline": "float", "text.outlineColor": "color", "text.wrapSize": "vec2",
+};
+
+const sceneLayerCameraTypes: Record<string, TweenValueType> = {
+  "sceneLayer.cameraLocation": "vec2", "sceneLayer.cameraRotation": "float", "sceneLayer.cameraZoom": "float",
 };
 
 /** Preserve native array storage while user variables retain their authored value shape. */
@@ -60,6 +64,17 @@ export function propertyTweenReference(
           world ? "world" : "local", findActor)) return false;
         if (object instanceof Actor) services.teleportActor?.(object);
         else services.refreshComponent?.(object, "transform");
+      },
+    };
+  }
+  if (kind === "sceneLayer") {
+    if (!(target instanceof SceneLayer) || sceneLayerCameraTypes[property] !== type) return null;
+    return {
+      identity: target, property, owner: target, channels: [property],
+      set(value) {
+        const vector = value as { x: number; y: number };
+        services.setSceneLayerCamera?.(target.guid, channel === "cameraLocation" ? { x: vector.x, y: vector.y }
+          : channel === "cameraRotation" ? { rotation: value } : { zoom: value });
       },
     };
   }

@@ -39,7 +39,7 @@
   }
 }
 
-/* Compact rows for mouse and trackpad; coarse pointers keep 44px targets. */
+/* Compact rows by default; the touch layout (Compact Mode off) keeps 44px targets. */
 .context-menu-item {
   display: flex;
   min-height: var(--chrome-row, 28px);
@@ -55,11 +55,9 @@
   cursor: default;
 }
 
-@media (pointer: coarse) {
-  .context-menu-item {
-    min-height: var(--touch-target, 44px);
-    padding-inline: 10px;
-  }
+:where(.touch-ui) .context-menu-item {
+  min-height: var(--touch-target, 44px);
+  padding-inline: 10px;
 }
 
 .context-menu-item:disabled {

@@ -59,7 +59,7 @@ import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera, EngineView } from "@babylonjs/core";
-import { resolveRenderingQuality } from "@babylonslate/core";
+import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt, type RenderPerformanceSample } from "./render-performance";
@@ -3123,10 +3123,11 @@ function initializeEngine(
     const blockingLayer = sceneLayerCompositor?.pickHits(mapped.x, mapped.y).find(hit => hit.hitTest === "block")?.layerId;
     for (const layer of [...(sceneLayerCompositor?.sortedLayers() ?? [])].reverse()) {
       if (layerLoads.get(layer.layerId)?.ready === false) continue;
-      const worldX = (x / Math.max(1, size.width) - 0.5) * layer.viewBounds.width;
-      const worldY = (0.5 - y / Math.max(1, size.height)) * layer.viewBounds.height;
-      const target = overlayLayouts.scrollAt(layer.layerId, worldX, worldY);
-      if (target?.componentId) return { target, layer, scaleX: layer.viewBounds.width / Math.max(1, size.width) / (target.scroll?.scaleX || 1), scaleY: layer.viewBounds.height / Math.max(1, size.height) / (target.scroll?.scaleY || 1) };
+      const point = sceneLayerCanvasToLayer(x, y, size.width, size.height, layer.viewBounds, layer.cameraState);
+      const target = overlayLayouts.scrollAt(layer.layerId, point.x, point.y);
+      // Wheel steps: layer units per screen pixel at the camera's zoom, along the box's own axes.
+      const zoom = layer.cameraState.zoom;
+      if (target?.componentId) return { target, layer, scaleX: layer.viewBounds.width / Math.max(1, size.width) / zoom / (target.scroll?.scaleX || 1), scaleY: layer.viewBounds.height / Math.max(1, size.height) / zoom / (target.scroll?.scaleY || 1) };
       if (layer.layerId === blockingLayer) break;
     }
     return undefined;
@@ -3180,8 +3181,13 @@ function initializeEngine(
         overlayPointerState.pressed.clear();
       }
       if (scrollDrag.active) {
-        const { target, layer, scaleX, scaleY } = scrollDrag.target;
-        options.onSceneLayerScroll?.({ layerId: layer.layerId, actorId: target.actorId, componentId: target.componentId!, deltaX: (scrollDrag.x - x) * scaleX, deltaY: (scrollDrag.y - y) * scaleY });
+        const { target, layer } = scrollDrag.target;
+        // The drag in layer units through the layer camera, so it follows a moved, turned or zoomed view.
+        const size = pointerCanvas();
+        const from = sceneLayerCanvasToLayer(scrollDrag.x, scrollDrag.y, size.width, size.height, layer.viewBounds, layer.cameraState);
+        const to = sceneLayerCanvasToLayer(x, y, size.width, size.height, layer.viewBounds, layer.cameraState);
+        options.onSceneLayerScroll?.({ layerId: layer.layerId, actorId: target.actorId, componentId: target.componentId!,
+          deltaX: (from.x - to.x) / (target.scroll?.scaleX || 1), deltaY: (to.y - from.y) / (target.scroll?.scaleY || 1) });
         scrollDrag.x = x; scrollDrag.y = y;
         return;
       }
@@ -3751,6 +3757,10 @@ function initializeEngine(
       if (command.type === "sceneLayerLayout") {
         overlayLayouts.apply(command);
         scheduler.invalidate("snapshot");
+      }
+      if (command.type === "sceneLayerCamera") {
+        sceneLayerCompositor?.setCamera(command.layerId, command.camera);
+        scheduler.invalidate("camera");
       }
       audioService?.handleCommand(command);
       if (command.type === "configureRenderTargetCapture") {

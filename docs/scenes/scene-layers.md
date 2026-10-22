@@ -42,6 +42,24 @@ To script layer elements, make a Class whose parent is **Scene Layer Actor**. Su
 
 Layers with a higher **Z-Order** draw on top. The same asset can be shown more than once. Add effects to a live layer with [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md).
 
+## Move the layer camera
+
+Each layer shown in the game has its own 2D camera, separate from the world camera and from other layers. It starts centred on the design canvas at its normal size; scripts can pan, turn and zoom it, for example to scroll a map or a level-select screen.
+
+| To | Use |
+| --- | --- |
+| Pan | [Set Scene Layer Camera Location](../scripting/class/set-scene-layer-camera-location.md), [Add Scene Layer Camera Offset](../scripting/class/add-scene-layer-camera-offset.md), [Tween Scene Layer Camera Location](../scripting/class/tween-scene-layer-camera-location.md) |
+| Turn | [Set Scene Layer Camera Rotation](../scripting/class/set-scene-layer-camera-rotation.md), [Tween Scene Layer Camera Rotation](../scripting/class/tween-scene-layer-camera-rotation.md) |
+| Zoom | [Set Scene Layer Camera Zoom](../scripting/class/set-scene-layer-camera-zoom.md), [Tween Scene Layer Camera Zoom](../scripting/class/tween-scene-layer-camera-zoom.md) |
+| Read it | [Get Scene Layer Camera Location](../scripting/class/get-scene-layer-camera-location.md), [Get Scene Layer Camera Rotation](../scripting/class/get-scene-layer-camera-rotation.md), [Get Scene Layer Camera Zoom](../scripting/class/get-scene-layer-camera-zoom.md) |
+
+These nodes take the layer. A **Scene Layer Actor** finds its own with [Get Owning Scene Layer](../scripting/class/get-owning-scene-layer.md); [Create Scene Layer](../scripting/class/create-scene-layer.md) returns the layer it creates.
+
+- Everything on the layer moves with its camera, including actors with a [2D Anchor](../components/2d-anchor.md). To keep a HUD still over a moving layer, put the HUD on another layer with a higher **Z-Order**.
+- Taps, buttons, scroll boxes, form controls, joysticks and [Project Cursor To Scene](../scripting/class/project-cursor-to-scene.md) follow the moved, turned or zoomed view.
+- While the camera is turned, a [2D Scroll Box](../components/2d-scroll-box.md) or [2D Mask](../components/2d-mask.md) clips to the smallest upright rectangle on screen that contains it.
+- The camera is not saved. Every layer starts with the default camera each time it is shown, and a Scene Layer open in the editor always shows the default view.
+
 ## Buttons and pointer events
 
 An actor receives pointer events only after you add a **2D Button** to it. It then gets [Event On Click](../scripting/class/event-on-click.md), [Event On Press Start](../scripting/class/event-on-press-start.md), [Event On Press End](../scripting/class/event-on-press-end.md), [Event On Mouse Enter](../scripting/class/event-on-mouse-enter.md) and [Event On Mouse Leave](../scripting/class/event-on-mouse-leave.md). These fire for touch as well as the mouse. The button uses the actor's visual (a 2D Texture, Panel or Text, for example) as its tap area.
@@ -56,7 +74,7 @@ Respond with [Event On Focus Enter](../scripting/class/event-on-focus-enter.md),
 
 ## Things to know
 
-- In Play, the layer is never stretched. If the screen's shape differs from **Layer Width** × **Layer Height**, such as on an ultra-wide monitor, the layer keeps its proportions, the canvas stays centred, and the extra space appears at the sides (or top and bottom). Add a [2D Anchor](../components/2d-anchor.md) to keep an element at a screen edge or corner.
+- In Play, the layer is never stretched. If the screen's shape differs from **Layer Width** × **Layer Height**, such as on an ultra-wide monitor, the layer keeps its proportions, the canvas stays centred, and the extra space appears at the sides (or top and bottom). Add a [2D Anchor](../components/2d-anchor.md) to keep an element at a screen edge or corner of the default view.
 - Layers draw after the world and its post-processing, so world effects never touch them. In the editor a layer has a black background; in the game it is transparent.
 - With **Enable Physics** off, Rigid Bodies stay where scripts put them and no hit or overlap events fire. With it on, bodies in different layers, or in a layer and the world, never collide.
 - Physics queries from a layer's scripts, such as [Line Trace](../scripting/class/line-trace.md), only see that layer.

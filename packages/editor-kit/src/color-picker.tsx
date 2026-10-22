@@ -9,7 +9,7 @@ import { Slider } from "@babylonslate/ui/components/slider";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { popupMenuFrame } from "./catalog-menu";
 import { colorToHex, parseHexColor, type ColorValue } from "./color-field";
-import { isCoarsePointerEnvironment } from "./prevent-document-overscroll";
+import { useTouchUi } from "./touch-ui";
 import { SelectAllInput } from "./select-all-input";
 
 type Rgba = [number, number, number, number];
@@ -113,7 +113,7 @@ export function ColorPicker({
   const paletteRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; start: ColorDraft } | null>(null);
   const id = useId();
-  const coarse = isCoarsePointerEnvironment();
+  const touch = useTouchUi();
   const current = draft && !disabled && draft.withAlpha === withAlpha && sameColor(draft.source, value) ? draft : null;
 
   // Drop a stale draft while rendering; opening the palette resets the drag.
@@ -155,7 +155,7 @@ export function ColorPicker({
 
   return <>
     <Button ref={triggerRef} type="button" variant="outline" size="sm" disabled={disabled}
-      className={cn("min-w-0 gap-1.5 px-1.5 [@media(pointer:coarse)]:min-h-11", className)}
+      className={cn("min-w-0 gap-1.5 px-1.5 pointer-coarse:min-h-11", className)}
       aria-label={ariaLabel} aria-haspopup="dialog" aria-expanded={Boolean(current)} data-testid={testId}
       title={colorToHex(rgb(value))}
       onPointerDown={(event) => event.stopPropagation()}
@@ -180,7 +180,7 @@ export function ColorPicker({
         finalFocus={triggerRef} initialFocus={paletteRef}
         className="catalog-menu catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
-        style={popupMenuFrame(current.anchor, { width: 360, height: withAlpha ? (coarse ? 492 : 440) : (coarse ? 420 : 368) })}
+        style={popupMenuFrame(current.anchor, { width: 360, height: withAlpha ? (touch ? 492 : 440) : (touch ? 420 : 368) })}
         data-popup-picker=""
         data-testid={`${testId}-dialog`}
         onPointerDown={(event) => event.stopPropagation()}
@@ -232,17 +232,17 @@ export function ColorPicker({
             <div className="flex shrink-0 gap-2">
               <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                 <span>Before</span>
-                <span className="h-7 w-10 rounded-sm border border-border [@media(pointer:coarse)]:h-11" style={{ background: colorBackground(current.source) }} aria-hidden="true" />
+                <span className="h-7 w-10 rounded-sm border border-border pointer-coarse:h-11" style={{ background: colorBackground(current.source) }} aria-hidden="true" />
               </div>
               <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                 <span>After</span>
-                <span className="h-7 w-10 rounded-sm border border-border [@media(pointer:coarse)]:h-11" style={{ background: colorBackground(current.color) }} aria-hidden="true" />
+                <span className="h-7 w-10 rounded-sm border border-border pointer-coarse:h-11" style={{ background: colorBackground(current.color) }} aria-hidden="true" />
               </div>
             </div>
             <Field className="min-w-0 flex-1 gap-1" data-invalid={invalidHex || undefined}>
               <FieldLabel htmlFor={`${id}-hex`} className="text-xs">Hex</FieldLabel>
               <SelectAllInput id={`${id}-hex`} value={current.hex} spellCheck={false} autoComplete="off"
-                className="h-7 min-h-7 font-mono [@media(pointer:coarse)]:min-h-11"
+                className="h-7 min-h-7 font-mono pointer-coarse:min-h-11"
                 aria-invalid={invalidHex || undefined} aria-describedby={invalidHex ? `${id}-hex-error` : undefined}
                 data-testid={`${testId}-hex`}
                 onChange={(event) => {
@@ -269,7 +269,7 @@ export function ColorPicker({
                   setDraft((previous) => previous ? { ...previous, color: [...rgb(previous.color), alpha], alpha: String(alpha) } : null);
                 }} />
               <SelectAllInput id={`${id}-alpha`} aria-label="Alpha Value" value={current.alpha} inputMode="decimal"
-                className="h-7 min-h-7 w-16 [@media(pointer:coarse)]:min-h-11"
+                className="h-7 min-h-7 w-16 pointer-coarse:min-h-11"
                 aria-invalid={invalidAlpha || undefined} aria-describedby={invalidAlpha ? `${id}-alpha-error` : undefined}
                 data-testid={`${testId}-alpha`}
                 onChange={(event) => {
@@ -283,8 +283,8 @@ export function ColorPicker({
         </FieldGroup>
         <Separator />
         <div className="flex shrink-0 items-center justify-end gap-2 px-3 py-2">
-          <Button type="button" size={coarse ? "touch" : "sm"} variant="outline" onClick={close}>Cancel</Button>
-          <Button type="button" size={coarse ? "touch" : "sm"} disabled={invalidHex || invalidAlpha}
+          <Button type="button" size={touch ? "touch" : "sm"} variant="outline" onClick={close}>Cancel</Button>
+          <Button type="button" size={touch ? "touch" : "sm"} disabled={invalidHex || invalidAlpha}
             onClick={() => {
               if (disabled || invalidHex || invalidAlpha) return;
               const changed = !sameColor(current.color, value);

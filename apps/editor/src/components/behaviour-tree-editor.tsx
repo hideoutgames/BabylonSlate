@@ -684,7 +684,7 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
                 {keys.map((key) => (
                   <li
                     key={key.name}
-                    className="flex min-h-11 items-center justify-between gap-2 rounded-md px-2 text-sm"
+                    className="flex min-h-7 items-center justify-between gap-2 rounded-md px-2 text-sm pointer-coarse:min-h-11"
                     data-testid={`bt-blackboard-key-${key.name}`}
                   >
                     <SelectableText>{key.name}</SelectableText>
@@ -1210,7 +1210,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             <Button
               type="button"
               variant="outline"
-              className="min-h-11"
+              className="pointer-coarse:min-h-11"
               data-testid="bt-add-decorator"
               onClick={() => setAttachmentCatalog("decorator")}
             >
@@ -1219,7 +1219,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             <Button
               type="button"
               variant="outline"
-              className="min-h-11"
+              className="pointer-coarse:min-h-11"
               data-testid="bt-add-service"
               onClick={() => setAttachmentCatalog("service")}
             >
@@ -1230,7 +1230,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-11"
+                  className="pointer-coarse:min-h-11"
                   data-testid="bt-attachment-up"
                   onClick={() => commit(moveAttachment(doc, selected.id, attachment.id, -1))}
                 >
@@ -1239,7 +1239,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-11"
+                  className="pointer-coarse:min-h-11"
                   data-testid="bt-attachment-down"
                   onClick={() => commit(moveAttachment(doc, selected.id, attachment.id, 1))}
                 >
@@ -1248,7 +1248,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-11"
+                  className="pointer-coarse:min-h-11"
                   data-testid="bt-remove-attachment"
                   onClick={() => {
                     commit(removeAttachment(doc, selected.id, attachment.id));

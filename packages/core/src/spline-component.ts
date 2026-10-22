@@ -41,7 +41,7 @@ export interface SplinePathSample {
  */
 export function sampleSplinePath(
   body: SplineProperties,
-  options: { linearElevation?: boolean } = {},
+  options: { linearElevation?: boolean; subdivisions?: number } = {},
 ): SplinePathSample[] {
   const { points, curvature } = body;
   const count = points.length;
@@ -56,7 +56,8 @@ export function sampleSplinePath(
     const [a, b] = index < 0 ? [points[0]!, points[1]!] : [points[count - 1]!, points[count - 2]!];
     return [2 * a[0] - b[0], linearElevation ? a[1] : 2 * a[1] - b[1], 2 * a[2] - b[2]];
   };
-  const steps = curvature > 0 && count > 2 ? SPLINE_SUBDIVISIONS : 1;
+  const steps = curvature > 0 && count > 2
+    ? Math.max(1, Math.floor(options.subdivisions ?? SPLINE_SUBDIVISIONS)) : 1;
   const segments = closed ? count : count - 1;
   const samples: SplinePathSample[] = [];
   const knot = (a: SplinePoint, b: SplinePoint) => Math.max(1e-4, Math.sqrt(linearElevation
@@ -85,4 +86,77 @@ export function sampleSplinePath(
 /** Component-local curve, including the endpoint (the first point for a loop). */
 export function splineCentreline(body: SplineProperties): SplinePoint[] {
   return sampleSplinePath(body).map((sample) => sample.position);
+}
+
+/** Sub-segments per curved control segment when scripts travel a Spline by distance. */
+export const SPLINE_DISTANCE_SUBDIVISIONS = 32;
+
+/** A Spline resampled for travel by arc length. */
+export interface SplineArcPath {
+  points: SplinePoint[];
+  /** Arc length from the first point to each point. */
+  distances: number[];
+  /** Unit tangent at each point, averaged across the neighbouring segments so it turns smoothly. */
+  tangents: SplinePoint[];
+  length: number;
+  closed: boolean;
+}
+
+export interface SplineDistanceSample {
+  position: SplinePoint;
+  /** Unit travel direction; zero for a path with no length. */
+  direction: SplinePoint;
+}
+
+/**
+ * Arc-length path through `points`, an already sampled curve (for a loop, ending
+ * on its first point). Repeated points are dropped so every segment has length.
+ */
+export function splineArcPath(points: readonly SplinePoint[], closed: boolean): SplineArcPath {
+  const kept: SplinePoint[] = [];
+  for (const point of points) {
+    const last = kept.at(-1);
+    if (!last || Math.hypot(point[0] - last[0], point[1] - last[1], point[2] - last[2]) > 1e-6) kept.push([...point]);
+  }
+  const loop = closed && kept.length >= 3 && Math.hypot(...[0, 1, 2].map((axis) => kept[0]![axis]! - kept.at(-1)![axis]!)) <= 1e-6;
+  const distances = [0];
+  const directions: SplinePoint[] = [];
+  for (let index = 1; index < kept.length; index++) {
+    const a = kept[index - 1]!, b = kept[index]!;
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    distances.push(distances[index - 1]! + length);
+    directions.push([(b[0] - a[0]) / length, (b[1] - a[1]) / length, (b[2] - a[2]) / length]);
+  }
+  const unit = (a: SplinePoint | undefined, b: SplinePoint | undefined): SplinePoint => {
+    const sum: SplinePoint = [(a?.[0] ?? 0) + (b?.[0] ?? 0), (a?.[1] ?? 0) + (b?.[1] ?? 0), (a?.[2] ?? 0) + (b?.[2] ?? 0)];
+    const length = Math.hypot(...sum);
+    // Opposite neighbours (a hairpin) keep the incoming direction.
+    return length > 1e-9 ? [sum[0] / length, sum[1] / length, sum[2] / length] : a ?? b ?? [0, 0, 0];
+  };
+  const tangents = kept.map((_, index) => {
+    if (loop && (index === 0 || index === kept.length - 1)) return unit(directions.at(-1), directions[0]);
+    return unit(directions[index - 1], directions[index]);
+  });
+  return { points: kept, distances, tangents, length: distances.at(-1)!, closed: loop };
+}
+
+/** Position and direction `distance` along the path: a loop wraps, an open path clamps to its ends. */
+export function sampleSplineArcPath(path: SplineArcPath, distance: number): SplineDistanceSample {
+  const { points, distances, tangents, length } = path;
+  if (points.length < 2 || !(length > 0)) {
+    return { position: [...(points[0] ?? [0, 0, 0])], direction: [0, 0, 0] };
+  }
+  const travelled = Number.isFinite(distance) ? distance : 0;
+  const at = path.closed ? ((travelled % length) + length) % length : Math.max(0, Math.min(length, travelled));
+  let low = 0, high = distances.length - 1;
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if (distances[middle]! <= at) low = middle; else high = middle;
+  }
+  const fraction = (at - distances[low]!) / (distances[high]! - distances[low]!);
+  const a = points[low]!, b = points[high]!, ta = tangents[low]!, tb = tangents[high]!;
+  const position = [0, 1, 2].map((axis) => a[axis]! + (b[axis]! - a[axis]!) * fraction) as SplinePoint;
+  const blend = [0, 1, 2].map((axis) => ta[axis]! + (tb[axis]! - ta[axis]!) * fraction) as SplinePoint;
+  const size = Math.hypot(...blend);
+  return { position, direction: size > 1e-9 ? [blend[0] / size, blend[1] / size, blend[2] / size] : [...ta] };
 }

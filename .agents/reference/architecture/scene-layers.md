@@ -20,7 +20,8 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 | Layer physics query routing (`callerSceneLayerId`) | [`packages/runtime/src/runtime-host-physics.ts`](../../../packages/runtime/src/runtime-host-physics.ts) |
 | Compositor (extra Babylon `Scene`s on the shared Engine) | [`packages/render/src/scene-layer-compositor.ts`](../../../packages/render/src/scene-layer-compositor.ts) |
 | Play command allowlist, overlay snapshot flag | [`packages/bridge/src/play-engine-commands.ts`](../../../packages/bridge/src/play-engine-commands.ts), [`snapshot-buffer.ts`](../../../packages/bridge/src/snapshot-buffer.ts) |
-| Graph nodes | [`packages/scripting-nodes/src/scene-layer.ts`](../../../packages/scripting-nodes/src/scene-layer.ts) |
+| Graph nodes | [`packages/scripting-nodes/src/scene-layer.ts`](../../../packages/scripting-nodes/src/scene-layer.ts); camera tweens in [`tween.ts`](../../../packages/scripting-nodes/src/tween.ts) and [`packages/runtime/src/tween-targets.ts`](../../../packages/runtime/src/tween-targets.ts) |
+| Layer camera state and canvas mapping (`SceneLayerCamera`, `sceneLayerCanvasToLayer`) | [`packages/core/src/scene-layer.ts`](../../../packages/core/src/scene-layer.ts) |
 | Editor document and Place Actors host filter | [`apps/editor/src/lib/scene-layer-document.ts`](../../../apps/editor/src/lib/scene-layer-document.ts), [`place-actors.ts`](../../../apps/editor/src/lib/place-actors.ts) (`placeActorsForHost`) |
 
 ## Document and editor
@@ -42,7 +43,9 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 ## Runtime and render
 
 - Readiness is per layer instance: `sceneLayerLoading` → `sceneLayerRealized` → `sceneLayerReady` for that exact load id. Begin Play, ticks, physics and playback wait for owner readiness; late acknowledgements for removed/superseded ids are ignored. Create Scene Layer resolves when ready (30 s deadline).
-- Each layer camera is an independent orthographic HUD camera at `(0, 0, -10)` with `±viewBounds/2` ortho (`SceneLayerView.viewBounds`, recomputed on resize; picking, pointer, scroll, joystick, safe-area and cursor-projection maths use the same extent). Never parent overlay cameras or meshes to the world camera or copy world view/projection; re-bind the pose if another owner changed it.
+- Each layer camera is an independent orthographic HUD camera 10 units in front of its `SceneLayerCamera` centre (`(x, y, -10)` looking along +Z), rolled by its rotation (degrees, positive counter-clockwise like actor Z rotation) with `±viewBounds/2 / zoom` ortho (`SceneLayerView.viewBounds` recomputed on resize, `cameraState` from `sceneLayerCamera`). Never parent overlay cameras or meshes to the world camera or copy world view/projection; re-bind the pose if another owner changed it.
+- The camera is session state on the `SceneLayer` instance (`camera`, default `SCENE_LAYER_DEFAULT_CAMERA`), set only by scripts through `SceneLayers.setCamera`, which emits `sceneLayerCamera` on change. Never saved, never in the editor tab, excluded from Save Games like the rest of a layer. Zoom is floored at `SCENE_LAYER_CAMERA_MIN_ZOOM`; non-finite values keep the current field.
+- Every canvas → layer mapping (compositor picks, scroll targeting and drag, 2D form controls, 2D Joystick, `projectCursorToSceneLayer`) goes through `sceneLayerCanvasToLayer` with the layer's view bounds and camera; never re-derive it from `viewBounds` alone. Wheel steps scale by zoom only (they scroll along the box's axes). Scroll and mask scissors bound all four projected corners, so a rolled camera clips to the upright screen rectangle (an accepted over-draw at the corners: scissors cannot rotate).
 - Draw order: world, then layers by `zOrder` (ties by instance id). Layers without PP clear depth only; layers with PP render to an RTT through the coordinator FrameGraph, then alpha-composite (targets keep alpha).
 - Overlay identity is `sceneLayerId` / `SNAPSHOT_FLAG_OVERLAY` / overlay-only mesh kind. Overlay visuals never instantiate on the world Scene; leftover `actor-*` world copies are disposed.
 - `2DTexture` / `2DMaterial` share the Engine `ResourceCache`; overlay sampling must not steal a world texture wrapper. Overlay materials compile scene-local unlit (separate cache key).
@@ -57,7 +60,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 
 ## Components with fixed contracts
 
-- `2DAnchor` maps from `layerBounds` onto the Play view bounds: the anchor point moves to the matching view point and the actor keeps its authored distance from it (identity plus offset, never scaled). Unanchored actors keep design positions around the centre. The uppermost anchor in a subtree wins; anchors never bake into positions.
+- `2DAnchor` maps from `layerBounds` onto the Play view bounds: the anchor point moves to the matching view point and the actor keeps its authored distance from it (identity plus offset, never scaled). Unanchored actors keep design positions around the centre. The uppermost anchor in a subtree wins; anchors never bake into positions. Anchors and safe-area insets use the default (zoom 1, centred) view and ignore the layer camera, so anchored content moves with the camera; a fixed HUD over a panning layer is a second layer.
 - 2D Text / Rich Text use glyph-quad meshes (Bitmap default, MSDF when the Font has both chunks), not Babylon GUI or `TextRenderer`. Size is px / `pixelsPerUnit`.
 - Style (Opacity / Tint) and component motion travel separately from structural mesh assignments, so tweens never rebuild visuals.
 - 2D Painter, Joystick, form controls, virtualized collections and masks are overlay-only; script-generated painter commands are never written back to the project.

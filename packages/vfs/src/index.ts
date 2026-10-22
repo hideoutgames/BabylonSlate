@@ -1,6 +1,7 @@
 export * from "./app-settings";
 export * from "./capacitor-app-lifecycle";
 export * from "./capacitor-audio-lifecycle";
+export * from "./compact-mode";
 export * from "./create-app-settings";
 export * from "./create-storage";
 export * from "./derived-storage";

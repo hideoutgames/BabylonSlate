@@ -15,7 +15,7 @@ The toolbar above the grid has:
 | Control | Use |
 | --- | --- |
 | Import | Import files into the current folder. See [Importing Assets](importing.md). |
-| New Asset | Open a menu of asset types, grouped by category, with a search field at the top. Pick a type, then name the asset to create it in the current folder. See [Assets](../assets/index.md) for every type. |
+| New Asset | Open a menu of asset types, grouped by category, with a search field at the top. Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
 | Search assets… | Filter the grid by name. |
 | Filter | Show only the asset types you tick under **Asset Types**. |
 | Sort | **Name A–Z**, **Name Z–A**, **Type A–Z**, **Type Z–A**, **Date Modified (Newest)** or **Date Modified (Oldest)**. |

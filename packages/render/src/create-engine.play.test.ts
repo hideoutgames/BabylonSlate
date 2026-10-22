@@ -5398,6 +5398,29 @@ describe("Play createEngine view", () => {
     expect(scrolls).toHaveLength(count + 1);
   });
 
+  it("scrolls overlay content through a turned and zoomed Scene Layer camera", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const scrolls: Array<{ deltaX: number; deltaY: number }> = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
+    handle.applyCommand({ type: "sceneLayerCamera", layerId: "hud", camera: { x: 0, y: 0, rotation: 90, zoom: 2 } });
+    // Zoom 2 halves the layer units per pixel; the wheel scrolls along the box's own axis.
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls[0]?.deltaY).toBeCloseTo(0.28125);
+    // Turned 90° counter-clockwise, a drag to the left of the screen moves the finger down the layer.
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(100, 128));
+    canvas.emit("pointerup", pointerAt(100, 128));
+    expect(scrolls.at(-1)?.deltaX).toBeCloseTo(0);
+    expect(scrolls.at(-1)?.deltaY).toBeCloseTo(-0.24609375);
+  });
+
   it.each([
     { classId: "2DCheckboxComponent", pointerType: "touch" },
     { classId: "2DToggleComponent", pointerType: "pen" },

@@ -31,7 +31,7 @@ import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentMenu } from "../components/add-component-menu";
 import { anchorBelow } from "../lib/menu-anchor";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import {
   prefabComponentLabelParts,
   physicsWorldFromOpenDocuments,
@@ -177,8 +177,8 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
   const { frameActor } = useSceneEditing();
   const keybinds = useKeybindings();
-  const phone = usePhoneLayout();
-  const actionSize = phone ? "touch-icon" : "icon-sm";
+  const touchSizing = usePhoneTouchSizing();
+  const actionSize = touchSizing ? "touch-icon" : "icon-sm";
   const panelRef = useRef<HTMLDivElement>(null);
   const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -322,7 +322,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
       <div ref={panelRef} className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
-            className={phone ? "h-11" : "h-7"}
+            className={touchSizing ? "h-11" : "h-7"}
             placeholder="Search components"
             aria-label="Search components"
             value={search}
@@ -340,7 +340,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         </div>
         <div className="min-h-0 flex-1">
           <TreeView
-            rowHeight={phone ? 44 : undefined}
+            rowHeight={touchSizing ? 44 : undefined}
             nodes={treeNodes}
             selectedId={selectedId}
             selectedIds={selectedIds}

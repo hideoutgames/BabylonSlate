@@ -26,6 +26,48 @@ function floatScript(): CompiledScript {
 
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
 
+/**
+ * A layer actor's Begin Play through every Scene Layer camera node: set and
+ * offset the location (doubling it from Get), set roll and zoom, then tween
+ * each from its current value and log once the last finishes.
+ */
+function cameraRigScript(): CompiledScript {
+  const registry = createDefaultNodeRegistry();
+  const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
+    ({ id, typeId, properties, pins: registry.get(typeId)!.pins(properties), position: { x: 0, y: 0 } });
+  const exec = (from: string, to: string, pin = "execOut") =>
+    ({ id: `${from}-${to}`, sourceNodeId: from, sourcePinId: pin, targetNodeId: to, targetPinId: "execIn" });
+  const data = (from: string, to: string, pin: string) =>
+    ({ id: `${from}-${to}-${pin}`, sourceNodeId: from, sourcePinId: "out", targetNodeId: to, targetPinId: pin });
+  const steps = ["set", "offset", "roll", "zoom", "tweenRoll", "tweenZoom", "tweenLocation", "done"];
+  const graph: LogicGraph = { id: "camera", kind: "event", nodes: [
+    node("begin", "flow.event.beginPlay"),
+    node("owner", "scene-layer.getOwningSceneLayer"),
+    node("location", "scene-layer.getCameraLocation"),
+    node("rotation", "scene-layer.getCameraRotation"),
+    node("zoomValue", "scene-layer.getCameraZoom"),
+    node("set", "scene-layer.setCameraLocation", { "default:location": { x: 2, y: 1 } }),
+    node("offset", "scene-layer.addCameraOffset"),
+    node("roll", "scene-layer.setCameraRotation", { "default:rotation": 30 }),
+    node("zoom", "scene-layer.setCameraZoom", { "default:zoom": 2 }),
+    node("tweenRoll", "tween.sceneLayerCameraRotation", { "default:b": 90, "default:duration": 1 }),
+    node("tweenZoom", "tween.sceneLayerCameraZoom", { "default:b": 4, "default:duration": 1 }),
+    node("tweenLocation", "tween.sceneLayerCameraLocation", { "default:b": { x: 0, y: 0 }, "default:duration": 1 }),
+    node("done", "debug.log", { "default:message": "camera done" }),
+  ], edges: [
+    exec("begin", "set"),
+    ...steps.slice(1).map((step, index) => exec(steps[index]!, step)),
+    ...["set", "offset", "roll", "zoom", "location", "rotation", "zoomValue"].map((to) => data("owner", to, "layer")),
+    ...["tweenRoll", "tweenZoom", "tweenLocation"].map((to) => data("owner", to, "target")),
+    data("location", "offset", "delta"),
+    data("rotation", "tweenRoll", "a"),
+    data("zoomValue", "tweenZoom", "a"),
+    data("location", "tweenLocation", "a"),
+  ] };
+  const compiled = compileGraph(graph, { registry, assetGuid: "rig" });
+  return { classId: "CameraRig", parentClassId: "SceneLayerActor", assetGuid: "rig", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints };
+}
+
 describe("Tween runtime integration", () => {
   it("runs a compiled one-shot reference tween using pause and time dilation, then executes Completed once", async () => {
     const commands: CommandMessage[] = [];
@@ -97,6 +139,56 @@ describe("Tween runtime integration", () => {
       expect(commands.some(command => command.type === "assignMesh")).toBe(false);
       runtime.removeSceneLayer(liveLayer.guid); runtime.tick(); runtime.tick(); runtime.tick(); await flush();
       expect(commands.some(command => command.type === "log" && command.message === "fade complete")).toBe(false);
+    } finally { runtime.stop(); }
+  });
+
+  it("runs the Scene Layer camera nodes from a layer actor's graph", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("rig", "Rig", { classId: "CameraRig" })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5,
+      playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([cameraRigScript()]); runtime.realizePlayWorld(); runtime.start();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      for (let tick = 0; tick < 8; tick++) { runtime.tick(); await flush(); }
+      expect(commands.flatMap(command => command.type === "sceneLayerCamera" ? [command.camera] : []).slice(0, 4)).toEqual([
+        { x: 2, y: 1, rotation: 0, zoom: 1 },
+        { x: 4, y: 2, rotation: 0, zoom: 1 },
+        { x: 4, y: 2, rotation: 30, zoom: 1 },
+        { x: 4, y: 2, rotation: 30, zoom: 2 },
+      ]);
+      expect(liveLayer.camera).toEqual({ x: 0, y: 0, rotation: 90, zoom: 4 });
+      expect(commands.filter(command => command.type === "log" && command.message === "camera done")).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
+
+  it("tweens a layer actor's own Scene Layer camera location, roll and zoom together", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("rig", "Rig", { classId: "CameraRig" })];
+    const script: CompiledScript = { classId: "CameraRig", parentClassId: "SceneLayerActor", assetGuid: "rig", anchors: [],
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: true }],
+      source: `export async function onBeginPlay(ctx) {
+        const layer = ctx.getOwningSceneLayer(ctx.self);
+        const moved = ctx.tweenProperty(layer, "sceneLayer.cameraLocation", "vec2", {x:0,y:0}, {x:4,y:2}, 2, "linear");
+        const turned = ctx.tweenProperty(layer, "sceneLayer.cameraRotation", "float", 0, 90, 2, "linear");
+        const zoomed = await ctx.tweenProperty(layer, "sceneLayer.cameraZoom", "float", 1, 3, 2, "linear");
+        if (zoomed && await moved && await turned) ctx.log("log", "Tween", "camera complete");
+      }`,
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5,
+      playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    const cameras = () => commands.flatMap(command => command.type === "sceneLayerCamera" ? [command.camera] : []);
+    try {
+      await runtime.loadScripts([script]); runtime.realizePlayWorld(); runtime.start();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      commands.length = 0;
+      runtime.tick();
+      expect(cameras().at(-1)).toEqual({ x: 1, y: 0.5, rotation: 22.5, zoom: 1.5 });
+      runtime.tick(); runtime.tick(); runtime.tick(); await flush();
+      expect(liveLayer.camera).toEqual({ x: 4, y: 2, rotation: 90, zoom: 3 });
+      expect(commands.filter(command => command.type === "log" && command.message === "camera complete")).toHaveLength(1);
     } finally { runtime.stop(); }
   });
 });

@@ -308,16 +308,12 @@
   background: var(--graph-state-selected);
 }
 
-@media (pointer: coarse) {
-  .anim-transition-badge::before {
-    inset: -17px;
-  }
+:where(.touch-ui) .anim-transition-badge::before {
+  inset: -17px;
 }
 
-@media (pointer: coarse) {
-  .node-palette-context {
-    min-height: var(--touch-target, 44px);
-  }
+:where(.touch-ui) .node-palette-context {
+  min-height: var(--touch-target, 44px);
 }
 
 .graph-card-node[data-selected="true"] {
@@ -403,19 +399,17 @@
 }
 
 /* Numeric defaults inherit the shared field's integrated scalar scrub area. */
-@media (max-width: 767px), (pointer: coarse) {
-  .graph-editor-canvas {
-    --graph-asset-picker-height: var(--touch-target, 44px);
-  }
-  .graph-pin-default-editor :is([data-slot="button"], .graph-pin-default-input, .graph-pin-default-boolean) {
-    min-height: var(--touch-target, 44px);
-    min-width: var(--touch-target, 44px);
-  }
+:where(.touch-ui) .graph-editor-canvas {
+  --graph-asset-picker-height: var(--touch-target, 44px);
+}
+:where(.touch-ui) .graph-pin-default-editor :is([data-slot="button"], .graph-pin-default-input, .graph-pin-default-boolean) {
+  min-height: var(--touch-target, 44px);
+  min-width: var(--touch-target, 44px);
 }
 
 /* Match shared numeric fields' phone breakpoint for separate vector-axis targets. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
-  .graph-pin-default-component {
+  :where(.touch-ui) .graph-pin-default-component {
     width: 6rem;
   }
 }

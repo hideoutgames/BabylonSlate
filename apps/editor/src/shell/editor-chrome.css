@@ -343,10 +343,15 @@
   flex: 1;
   min-width: 0;
   justify-content: flex-start;
+}
+
+/* Phone bars and controls are touch-sized only in the touch layout (Compact
+ * Mode off); Compact Mode keeps the 28px desktop rows on phones too. */
+:where(.touch-ui) .editor-phone-documents .document-switcher-compact {
   height: var(--touch-target, 44px);
 }
 
-.editor-chrome-shell[data-phone="true"] .editor-chrome-bar {
+:where(.touch-ui) .editor-chrome-shell[data-phone="true"] .editor-chrome-bar {
   height: var(--touch-target, 44px);
   min-height: var(--touch-target, 44px);
 }
@@ -356,7 +361,7 @@
   gap: 0.25rem;
 }
 
-.editor-chrome-shell[data-phone="true"]
+:where(.touch-ui) .editor-chrome-shell[data-phone="true"]
   :is(.chrome-icon-button, .chrome-action-button) {
   min-height: var(--touch-target, 44px);
   min-width: var(--touch-target, 44px);
@@ -434,16 +439,14 @@
   background: transparent;
 }
 
-@media (pointer: coarse) {
-  .scene-environment-panel [data-slot="button"] {
-    min-width: var(--touch-target, 44px);
-    min-height: var(--touch-target, 44px);
-  }
+:where(.touch-ui) .scene-environment-panel [data-slot="button"] {
+  min-width: var(--touch-target, 44px);
+  min-height: var(--touch-target, 44px);
+}
 
-  .content-browser-panes > [data-slot="resizable-handle"] {
-    width: var(--touch-target, 44px);
-    margin-inline: calc((var(--touch-target, 44px) - 4px) / -2);
-  }
+:where(.touch-ui) .content-browser-panes > [data-slot="resizable-handle"] {
+  width: var(--touch-target, 44px);
+  margin-inline: calc((var(--touch-target, 44px) - 4px) / -2);
 }
 
 .editor-tools-sheet-actions {
@@ -456,8 +459,13 @@
 .editor-tools-sheet-actions > [data-slot="button"],
 .editor-tools-sheet-actions > [data-slot="badge"],
 .editor-tools-sheet-actions > [data-slot="dropdown-menu-trigger"] {
-  min-height: var(--touch-target, 44px);
   width: 100%;
+}
+
+:where(.touch-ui) .editor-tools-sheet-actions > [data-slot="button"],
+:where(.touch-ui) .editor-tools-sheet-actions > [data-slot="badge"],
+:where(.touch-ui) .editor-tools-sheet-actions > [data-slot="dropdown-menu-trigger"] {
+  min-height: var(--touch-target, 44px);
 }
 
 .phone-window-bar {
@@ -466,8 +474,8 @@
   padding: 0.25rem 0.5rem;
 }
 
-.phone-window-switcher,
-.phone-window-menu [data-slot="select-item"] {
+:where(.touch-ui) .phone-window-switcher,
+:where(.touch-ui) .phone-window-menu [data-slot="select-item"] {
   min-height: var(--touch-target, 44px);
 }
 

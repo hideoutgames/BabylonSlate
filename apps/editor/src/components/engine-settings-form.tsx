@@ -3,6 +3,7 @@ import { EnginePluginsSettings } from "./engine-plugins-settings";
 import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { DebuggerSettingsFields } from "./debugger-settings-fields";
+import { CompactModeField } from "./compact-mode-field";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -14,6 +15,7 @@ import {
   MIN_HARDWARE_SCALING_LEVEL,
   MIN_UNDO_BYTE_BUDGET,
   MIN_VIEWPORT_FRAME_CAP,
+  resolveCompactMode,
   type EngineSettings,
 } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
@@ -156,6 +158,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
 
 export type EngineSettingsCategoryId =
   | "about"
+  | "interface"
   | "undo"
   | "debugger"
   | "viewport"
@@ -222,6 +225,17 @@ export function EngineSettingsForm({
               <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
             </Field>
           )}
+        </FieldSet>
+      ) : null}
+
+      {categoryId === "interface" ? (
+        <FieldSet>
+          <FieldLegend>Interface</FieldLegend>
+          <CompactModeField
+            id="setting-compact-mode"
+            checked={resolveCompactMode(settings)}
+            onCheckedChange={compactMode => void onChange({ compactMode })}
+          />
         </FieldSet>
       ) : null}
 
