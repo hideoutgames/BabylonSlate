@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import { applyPrintHudCommand } from "@babylonslate/core";
+import { applyPrintHudCommand } from "@haptic/core";
 import { PrintOverlay } from "./print-overlay";
 
 afterEach(() => {

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "@babylonslate/core";
-import { AssetPicker, PropertyGrid, type PropertyRow } from "@babylonslate/editor-kit";
-import { FieldGroup, FieldSet, FieldLegend } from "@babylonslate/ui/components/field";
+import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "@haptic/core";
+import { AssetPicker, PropertyGrid, type PropertyRow } from "@haptic/editor-kit";
+import { FieldGroup, FieldSet, FieldLegend } from "@haptic/ui/components/field";
 
 export function FocusNavigationFields({ value, onChange, assets }: {
   value: FocusNavigationSettings | undefined;

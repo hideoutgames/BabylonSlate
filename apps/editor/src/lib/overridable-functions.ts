@@ -2,9 +2,9 @@ import type {
   GraphClassMember,
   GraphClassMemberPin,
   SerializedGraph,
-} from "@babylonslate/core";
-import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@babylonslate/editor-kit";
-import { engineScriptEventsFor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
+import { engineScriptEventsFor } from "@haptic/object-model";
 import {
   DEFAULT_FUNCTION_PINS,
   nativeEventStubs,

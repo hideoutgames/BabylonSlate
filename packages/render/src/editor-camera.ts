@@ -1,5 +1,5 @@
 import { ArcRotateCamera, Camera, Scene, Vector3 } from "@babylonjs/core";
-import type { ViewportMode } from "@babylonslate/core";
+import type { ViewportMode } from "@haptic/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {
   pixelPerfectOrthoHalfHeight,

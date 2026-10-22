@@ -1,7 +1,7 @@
 import { Matrix, Mesh, StandardMaterial, type Effect } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultMaterialDocument, lowerMaterialDocument, setMaterialDomain } from "@babylonslate/shader-graph";
-import { createActor, createText2DComponent, parseText2DProperties } from "@babylonslate/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument, setMaterialDomain } from "@haptic/shader-graph";
+import { createActor, createText2DComponent, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { MaterialLibrary } from "./material-library";
 import { createText2DMesh, refreshText2DMaterials, updateText2DAppear } from "./text2d-mesh";
@@ -9,7 +9,7 @@ import { textMaterialGlyphBinding } from "./text-material-block";
 import { prewarmMaterial } from "./material-compiler";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene } from "@haptic/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
 const disposers: Array<() => void> = [];

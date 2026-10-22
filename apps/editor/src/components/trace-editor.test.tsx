@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { TracePayload } from "@babylonslate/debugger";
+import type { TracePayload } from "@haptic/debugger";
 import {
   TraceLogPanel,
   TracePlaybackProvider,
@@ -16,7 +16,7 @@ import {
 } from "./trace-editor";
 
 const traceDocument = vi.hoisted(() => ({
-  id: "trace:traces/session.babtrace",
+  id: "trace:traces/session.htrace",
   content: null as unknown,
 }));
 

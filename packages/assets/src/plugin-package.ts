@@ -1,6 +1,6 @@
-import { ENGINE_VERSION, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, type ProjectStorage } from "@haptic/core";
 import { decodeAssetDocument } from "./asset-document";
-import { decodeBabasset, encodeBabasset, readBabassetHeader, type BabassetHeader } from "./babasset";
+import { decodeHasset, encodeHasset, readHassetHeader, type HassetHeader } from "./hasset";
 import {
   ASSETS_DIR,
   decodeProjectZip,
@@ -9,9 +9,9 @@ import {
   PLUGIN_MANIFEST_FILE,
   readProjectTree,
   writeProjectTree,
-  type BabprojectManifest,
+  type HprojectManifest,
   type ProjectTreeFile,
-} from "./babproject";
+} from "./hproject";
 import { stableStringify } from "./bytes";
 import { newAssetGuid } from "./guid";
 import { applyImportGuidRemap } from "./importers/guid-remap";
@@ -52,8 +52,8 @@ export function uniquePluginFolderName(
   return `${base}-${index}`;
 }
 
-export interface InspectedBabplugin {
-  manifest: BabprojectManifest;
+export interface InspectedHplugin {
+  manifest: HprojectManifest;
   settings: PluginSettingsPayload;
   settingsPath: string;
   files: ProjectTreeFile[];
@@ -129,7 +129,7 @@ function pluginFiles(files: readonly ProjectTreeFile[]): ProjectTreeFile[] {
   return result;
 }
 
-function parseManifest(data: Uint8Array, fallback: BabprojectManifest): BabprojectManifest {
+function parseManifest(data: Uint8Array, fallback: HprojectManifest): HprojectManifest {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(data)) as Record<string, unknown>;
     return {
@@ -150,15 +150,15 @@ function parseManifest(data: Uint8Array, fallback: BabprojectManifest): Babproje
 async function findPluginSettingsFile(
   files: readonly ProjectTreeFile[],
 ): Promise<ProjectTreeFile | null> {
-  const babassets = files.filter((file) => file.path.endsWith(".babasset"));
-  const preferred = babassets.filter((file) =>
+  const hassets = files.filter((file) => file.path.endsWith(".hasset"));
+  const preferred = hassets.filter((file) =>
     file.path.endsWith(PLUGIN_FILE_SUFFIX),
   );
-  const candidates = [...preferred, ...babassets.filter((file) => !preferred.includes(file))];
+  const candidates = [...preferred, ...hassets.filter((file) => !preferred.includes(file))];
   let best: ProjectTreeFile | null = null;
   for (const file of candidates) {
     try {
-      const header = readBabassetHeader(file.data);
+      const header = readHassetHeader(file.data);
       if (header.type !== PLUGIN_SETTINGS_TYPE) continue;
       if (!best || file.path.length < best.path.length) best = file;
     } catch {
@@ -168,11 +168,11 @@ async function findPluginSettingsFile(
   return best;
 }
 
-export async function inspectBabplugin(bytes: Uint8Array): Promise<InspectedBabplugin> {
+export async function inspectHplugin(bytes: Uint8Array): Promise<InspectedHplugin> {
   const zipFiles = pluginFiles(decodeProjectZip(bytes));
   const settingsFile = await findPluginSettingsFile(zipFiles);
   if (!settingsFile) {
-    throw new Error("Not a .babplugin: missing PluginSettings");
+    throw new Error("Not a .hplugin: missing PluginSettings");
   }
   const document = await decodeAssetDocument(settingsFile.data);
   const settings = normalizePluginSettings(document.payload, {
@@ -188,7 +188,7 @@ export async function inspectBabplugin(bytes: Uint8Array): Promise<InspectedBabp
       data: file.data,
     }))
     .filter((file) => file.path !== ""));
-  const fallbackManifest: BabprojectManifest = {
+  const fallbackManifest: HprojectManifest = {
     kind: "plugin",
     guid: settings.pluginGuid,
     name: settings.displayName,
@@ -217,7 +217,7 @@ export async function exportPluginZip(
       data: file.data,
     }))
     .filter((file) => file.path !== "" && !isPluginManifestPath(file.path));
-  const manifest: BabprojectManifest = {
+  const manifest: HprojectManifest = {
     kind: "plugin",
     guid: descriptor.pluginGuid,
     name: descriptor.settings.displayName,
@@ -238,12 +238,12 @@ export interface PluginImportIndexedAsset {
 }
 
 /**
- * Plan a `.babplugin` import. A guid counts as taken when an existing plugin
+ * Plan a `.hplugin` import. A guid counts as taken when an existing plugin
  * or a real indexed asset has it. An Unresolved placeholder does not take its
  * guid: the incoming plugin may be what fills it.
  */
 export function planPluginImport(options: {
-  incoming: InspectedBabplugin;
+  incoming: InspectedHplugin;
   existingPlugins: readonly PluginDescriptor[];
   indexedAssets: readonly PluginImportIndexedAsset[];
   existingFolderNames: readonly string[];
@@ -298,16 +298,16 @@ export function planPluginImport(options: {
  * they are the ids the plugin's previous version, and its users, already have.
  */
 function containedGuidRemap(
-  incoming: InspectedBabplugin,
+  incoming: InspectedHplugin,
   occupiedGuids: ReadonlySet<string>,
   createGuid: () => string,
 ): Record<string, string> {
   const remap: Record<string, string> = {};
   for (const file of incoming.files) {
-    if (!file.path.endsWith(".babasset") || file.path === incoming.settingsPath) continue;
+    if (!file.path.endsWith(".hasset") || file.path === incoming.settingsPath) continue;
     let guid: string;
     try {
-      guid = readBabassetHeader(file.data).guid;
+      guid = readHassetHeader(file.data).guid;
     } catch {
       continue;
     }
@@ -321,7 +321,7 @@ const PACK_BLOBS_DIR = `${ASSETS_DIR}/.blobs`;
 /**
  * Give the remapped assets their new guids and rewrite every reference to
  * them in the pack's assets (dependencies, payloads, documents), as a
- * `.babasset` import does.
+ * `.hasset` import does.
  */
 async function remapPluginAssetGuids(
   files: readonly ProjectTreeFile[],
@@ -336,10 +336,10 @@ async function remapPluginAssetGuids(
     if (!data) throw new Error(`Plugin blob ${sha256} is missing from the package`);
     return data;
   };
-  const assets: Array<{ index: number; header: BabassetHeader; result: ImportResult }> = [];
+  const assets: Array<{ index: number; header: HassetHeader; result: ImportResult }> = [];
   for (const [index, file] of files.entries()) {
-    if (!file.path.endsWith(".babasset")) continue;
-    const decoded = await decodeBabasset(file.data, readBlob);
+    if (!file.path.endsWith(".hasset")) continue;
+    const decoded = await decodeHasset(file.data, readBlob);
     const { header } = decoded;
     assets.push({
       index,
@@ -366,7 +366,7 @@ async function remapPluginAssetGuids(
     const result = remapped[position]!;
     const { chunks, ...header } = asset.header;
     void chunks;
-    const data = await encodeBabasset({
+    const data = await encodeHasset({
       header: {
         ...header,
         guid: result.guid,
@@ -411,7 +411,7 @@ async function cleanupImport(storage: ProjectStorage, folderPath: string): Promi
 
 export async function applyPluginImport(
   storage: ProjectStorage,
-  incoming: InspectedBabplugin,
+  incoming: InspectedHplugin,
   plan: PluginImportPlan,
 ): Promise<PluginDescriptor> {
   const replace =
@@ -425,7 +425,7 @@ export async function applyPluginImport(
   if (folderName.includes("/")) throw new Error("Plugin folder must be a single name");
   let files = pluginFiles(incoming.files);
   if (!files.some((file) => file.path === incoming.settingsPath)) {
-    throw new Error("Not a .babplugin: missing PluginSettings");
+    throw new Error("Not a .hplugin: missing PluginSettings");
   }
   const assetGuids = plan.kind === "install" || plan.kind === "remap-plugin" ? plan.assetGuids : undefined;
   if (assetGuids && Object.keys(assetGuids).length > 0) files = await remapPluginAssetGuids(files, assetGuids);
@@ -435,7 +435,7 @@ export async function applyPluginImport(
     throw new Error(`Plugin folder already exists: ${folderPath}`);
   }
   // Stage outside plugins/ so discovery cannot mistake recovery copies for plugins.
-  const transaction = `.babylonslate-plugin-import-${newAssetGuid()}`;
+  const transaction = `.haptic-plugin-import-${newAssetGuid()}`;
   const staged = `${transaction}/incoming`;
   const backup = `${transaction}/original`;
   const remapGuid = plan.kind === "remap-plugin" ? plan.nextGuid : null;
@@ -485,7 +485,7 @@ export async function unpackEnginePluginZip(
 ): Promise<PluginDescriptor> {
   validatePluginPath(folderName);
   if (folderName.includes("/")) throw new Error("Plugin folder must be a single name");
-  const incoming = await inspectBabplugin(zip);
+  const incoming = await inspectHplugin(zip);
   const out: ProjectTreeFile[] = incoming.files.map((file) => ({
     path: `${folderName}/${file.path}`,
     data: file.data,

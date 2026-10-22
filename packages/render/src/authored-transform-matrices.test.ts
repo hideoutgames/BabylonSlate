@@ -6,7 +6,7 @@ import {
   type AffineTransform,
   type SerializedActor,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { authoredActorMatrices, authoredActorWorldTransform, authoredTransformMatrix } from "./authored-transform-matrices";

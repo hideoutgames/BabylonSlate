@@ -394,11 +394,11 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.babasset$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.hasset$/i,
         "",
       )
-      .replace(/\.babasset$/i, "")
-      .replace(/\.babtrace$/i, "") ?? path;
+      .replace(/\.hasset$/i, "")
+      .replace(/\.htrace$/i, "") ?? path;
   return base
     .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

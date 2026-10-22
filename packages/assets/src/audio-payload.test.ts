@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
+import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import {
   AUDIO_SPEED_OF_SOUND,
   audioAssetDependencies,
@@ -38,7 +38,7 @@ import {
 } from "./audio-payload";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
-import { decodeBabasset, encodeBabasset } from "./babasset";
+import { decodeHasset, encodeHasset } from "./hasset";
 import { bytesEqual } from "./bytes";
 import { importAudio } from "./importers/audio";
 
@@ -614,14 +614,14 @@ describe("audio payloads", () => {
 });
 
 describe("audio asset containers", () => {
-  it("round-trips a new Audio babasset and keeps the source chunk", async () => {
+  it("round-trips a new Audio hasset and keeps the source chunk", async () => {
     const source = new Uint8Array([1, 2, 3, 4]);
     const payload = {
       volume: 0.5,
       audioChannelGuid: "ch-1",
       soundAttenuationGuid: "att-1",
     };
-    const encoded = await encodeBabasset({
+    const encoded = await encodeHasset({
       header: {
         ...collectAssetDependencyMetadata("Audio", payload),
         guid: "00000000-0000-4000-8000-00000000a001",
@@ -635,11 +635,11 @@ describe("audio asset containers", () => {
       },
       chunks: [{ id: "source", kind: "audio", mime: "audio/wav", data: source }],
     });
-    const relative = "__fixtures__/audio-v1.babasset";
+    const relative = "__fixtures__/audio-v1.hasset";
     if (UPDATE) writeGoldenBinary(FIXTURE_DIR, relative, encoded);
     const golden = readGoldenBinary(FIXTURE_DIR, relative);
     expect(bytesEqual(encoded, golden)).toBe(true);
-    const decoded = await decodeBabasset(golden);
+    const decoded = await decodeHasset(golden);
     expect(decoded.header.payload).toEqual({
       volume: 0.5,
       audioChannelGuid: "ch-1",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { lowerMaterialDocument } from "@haptic/shader-graph";
 import { importedGltfMaterial } from "./gltf-material";
 
 describe("imported glTF material graphs", () => {

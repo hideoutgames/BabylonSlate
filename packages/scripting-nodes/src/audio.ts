@@ -4,7 +4,7 @@ import {
   EXEC,
   FLOAT,
   assetRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 /** Volume pins default to 1; codegen clamps the value to 0..1. */
 function volumeExpr(ctx: Parameters<NodeDefinition["codegen"]>[0]): string {

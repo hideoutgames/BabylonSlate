@@ -1,5 +1,5 @@
-import { isEditorUtilityObjectClass } from "@babylonslate/core";
-import type { ClassPickerEntry } from "@babylonslate/editor-kit";
+import { isEditorUtilityObjectClass } from "@haptic/core";
+import type { ClassPickerEntry } from "@haptic/editor-kit";
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 
 export function editorUtilityObjectClassEntries(

@@ -1,4 +1,4 @@
-import { normalizeChord, type KeyChord } from "@babylonslate/editor-kit";
+import { normalizeChord, type KeyChord } from "@haptic/editor-kit";
 
 export type EditorCommandCategory = "General" | "Documents" | "Play" | "Viewport" | "Editing" | "Content Browser";
 

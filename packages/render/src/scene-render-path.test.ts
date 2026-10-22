@@ -1,7 +1,7 @@
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createEditorGrid } from "./editor-grid";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -21,7 +21,7 @@ import {
   createActor,
   createDefaultScene,
   normalizeRenderingQuality,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import * as capabilities from "./clustered-light-capabilities";
 import { applyAuthoredLightProperties } from "./scene-illumination";

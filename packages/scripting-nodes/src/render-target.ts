@@ -1,8 +1,8 @@
-import { ENGINE_RENDER_TARGET_MODE_ENUM_ID, type RenderTargetCaptureProperty } from "@babylonslate/core";
+import { ENGINE_RENDER_TARGET_MODE_ENUM_ID, type RenderTargetCaptureProperty } from "@haptic/core";
 import {
   actorRef, arrayOf, assetRef, BOOL, enumRef, EXEC, FLOAT, pin,
   type NodeDefinition, type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 const CAPTURE = actorRef("RenderTargetCapture");

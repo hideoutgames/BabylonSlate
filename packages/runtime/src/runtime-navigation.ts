@@ -1,8 +1,8 @@
-import type { CommandMessage, DebugNavAgent } from "@babylonslate/bridge";
-import { eulerDegreesToQuaternion, type Quat, type Transform } from "@babylonslate/core";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import { parseRigidBodyProperties, type PhysicsWorldKind } from "@babylonslate/physics";
-import type { BtResult } from "@babylonslate/behaviour-tree";
+import type { CommandMessage, DebugNavAgent } from "@haptic/bridge";
+import { eulerDegreesToQuaternion, type Quat, type Transform } from "@haptic/core";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import { parseRigidBodyProperties, type PhysicsWorldKind } from "@haptic/physics";
+import type { BtResult } from "@haptic/behaviour-tree";
 import {
   createNavigationBackend,
   facingYawFromVelocity,
@@ -15,7 +15,7 @@ import {
   type NavMeshBlockerProperties,
   type NavObstacleKind,
   type NavPoint,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 import {
   actorChainWorldTransform,
   actorParentGuid,

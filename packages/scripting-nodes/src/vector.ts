@@ -6,7 +6,7 @@ import {
   VEC3,
   VEC4,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 import { hoistedCall } from "./hoisted-helper";
 

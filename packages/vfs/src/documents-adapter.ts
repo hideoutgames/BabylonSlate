@@ -1,12 +1,12 @@
 import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { StorageNotFoundError } from "@babylonslate/core";
+import { StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";

@@ -1,6 +1,6 @@
 import { Matrix, Mesh, Quaternion, Vector3, Viewport, type AbstractMesh, type Node, type Observer, type Scene } from "@babylonjs/core";
-import { overlayRectContains, type OverlayLayoutEntry, type OverlayLayoutRect } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { overlayRectContains, type OverlayLayoutEntry, type OverlayLayoutRect } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 
 type LayoutCommand = Extract<CommandMessage, { type: "sceneLayerLayout" }>;
 const clips = new WeakMap<Node, OverlayLayoutRect | null>();

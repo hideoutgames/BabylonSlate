@@ -1,4 +1,4 @@
-import { pin, type NodeDefinition, EXEC, VEC3, BOOL, FLOAT, actorRef } from "@babylonslate/scripting";
+import { pin, type NodeDefinition, EXEC, VEC3, BOOL, FLOAT, actorRef } from "@haptic/scripting";
 
 /** One coherent sample, shared with the native buoyancy simulation. */
 export const waterNodes: NodeDefinition[] = [{

@@ -10,7 +10,7 @@ import {
   type Matrix,
   type Scene,
 } from "@babylonjs/core";
-import type { GpuBackend } from "@babylonslate/core";
+import type { GpuBackend } from "@haptic/core";
 import { engineAdapterInfo } from "./render-diagnostics";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderPathStatus } from "./scene-render-path";

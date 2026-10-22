@@ -1,7 +1,7 @@
-import { CableSimulation, cablePropertiesEqual, parseCableProperties, DEFAULT_SPRING_ARM_PROPERTIES, SPRING_ARM_LENGTH_LIMITS, type CableProperties, type Transform } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import type { PhysicsBackend, SphereSweepQuery, PhysicsTransform } from "@babylonslate/physics";
+import { CableSimulation, cablePropertiesEqual, parseCableProperties, DEFAULT_SPRING_ARM_PROPERTIES, SPRING_ARM_LENGTH_LIMITS, type CableProperties, type Transform } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import type { PhysicsBackend, SphereSweepQuery, PhysicsTransform } from "@haptic/physics";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 interface CableHost {

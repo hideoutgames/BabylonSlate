@@ -1,5 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core";
-import type { GpuBackend } from "@babylonslate/core";
+import type { GpuBackend } from "@haptic/core";
 
 export interface EngineBackendStatus {
   requestedBackend: GpuBackend;

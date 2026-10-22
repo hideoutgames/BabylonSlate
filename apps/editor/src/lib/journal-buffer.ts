@@ -2,7 +2,7 @@ import {
   coalesceJournalLines,
   serializeJournalLine,
   type JournalLine,
-} from "@babylonslate/edit";
+} from "@haptic/edit";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 
 /**

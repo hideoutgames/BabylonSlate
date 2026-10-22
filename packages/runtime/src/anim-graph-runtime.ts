@@ -1,6 +1,6 @@
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@babylonslate/bridge";
-import type { TraceAnimGraphState } from "@babylonslate/debugger";
-import { Actor, ActorComponent, type BObject, type World } from "@babylonslate/object-model";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/bridge";
+import type { TraceAnimGraphState } from "@haptic/debugger";
+import { Actor, ActorComponent, type BObject, type World } from "@haptic/object-model";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -10,7 +10,7 @@ import {
   evaluateAnimGraph,
   type AnimEvalState,
   type AnimGraphDocument,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptDebugTrace } from "./script-debug";

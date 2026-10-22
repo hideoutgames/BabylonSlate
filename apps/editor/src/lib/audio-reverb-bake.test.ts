@@ -9,8 +9,8 @@ import {
   decodeAudioReverbChunk,
   geometryHashForAudioBake,
   isDryAudioReverbFallback,
-} from "@babylonslate/assets";
-import { createActor, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
+} from "@haptic/assets";
+import { createActor, createMeshComponent, identitySerializedTransform } from "@haptic/core";
 import {
   collectAudioReverbFlushScenes,
   createAudioReverbBakeController,
@@ -68,7 +68,7 @@ describe("audio reverb bake controller", () => {
       boxActor("wall-b", [12, 0, 0]),
       boxActor("wall-c", [0, 0, 12]),
     ]);
-    controller.schedule("assets/Main.scene.babasset", wall);
+    controller.schedule("assets/Main.scene.hasset", wall);
     await vi.advanceTimersByTimeAsync(AUDIO_BAKE_DEBOUNCE_MS - 1);
     expect(writes).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
@@ -78,13 +78,13 @@ describe("audio reverb bake controller", () => {
       false,
     );
 
-    controller.schedule("assets/Main.scene.babasset", wall);
+    controller.schedule("assets/Main.scene.hasset", wall);
     await vi.advanceTimersByTimeAsync(AUDIO_BAKE_DEBOUNCE_MS);
     await controller.drain();
     expect(bakes).toHaveLength(1);
 
     controller.schedule(
-      "assets/Main.scene.babasset",
+      "assets/Main.scene.hasset",
       sceneWith([
         boxActor("wall", [0, 0, 0]),
         boxActor("wall-b", [12, 0, 0]),
@@ -97,7 +97,7 @@ describe("audio reverb bake controller", () => {
     expect(bakes).toHaveLength(1);
 
     controller.schedule(
-      "assets/Main.scene.babasset",
+      "assets/Main.scene.hasset",
       sceneWith([
         boxActor("wall", [10, 0, 0]),
         boxActor("wall-b", [12, 0, 0]),
@@ -128,10 +128,10 @@ describe("audio reverb bake controller", () => {
       },
     });
     const scene = sceneWith([boxActor("wall", [0, 0, 0])]);
-    controller.schedule("assets/Main.scene.babasset", scene);
+    controller.schedule("assets/Main.scene.hasset", scene);
     await vi.advanceTimersByTimeAsync(AUDIO_BAKE_DEBOUNCE_MS);
     let saved = false;
-    const save = controller.flush("assets/Main.scene.babasset", structuredClone(scene)).then(() => { saved = true; });
+    const save = controller.flush("assets/Main.scene.hasset", structuredClone(scene)).then(() => { saved = true; });
     await vi.advanceTimersByTimeAsync(0);
     expect(saved).toBe(false);
     expect(bakes).toHaveLength(1);
@@ -143,7 +143,7 @@ describe("audio reverb bake controller", () => {
     expect(writes).toHaveLength(1);
     expect([...writes[0]!.bytes]).toEqual([1, 2, 3]);
 
-    await controller.flush("assets/Main.scene.babasset", sceneWith([boxActor("wall", [8, 0, 0])]));
+    await controller.flush("assets/Main.scene.hasset", sceneWith([boxActor("wall", [8, 0, 0])]));
     expect(bakes).toHaveLength(2);
     expect(writes).toHaveLength(2);
     expect((writes[1]!.payload.actors as ReturnType<typeof boxActor>[])[0]!.transform.position).toEqual([8, 0, 0]);
@@ -164,9 +164,9 @@ describe("audio reverb bake controller", () => {
       },
       write: async (entry) => { writes.push(entry); },
     });
-    controller.schedule("assets/Main.scene.babasset", sceneWith([boxActor("wall", [0, 0, 0])]));
+    controller.schedule("assets/Main.scene.hasset", sceneWith([boxActor("wall", [0, 0, 0])]));
     await vi.advanceTimersByTimeAsync(AUDIO_BAKE_DEBOUNCE_MS);
-    await controller.flush("assets/Main.scene.babasset", sceneWith([boxActor("wall", [8, 0, 0])]));
+    await controller.flush("assets/Main.scene.hasset", sceneWith([boxActor("wall", [8, 0, 0])]));
     release();
     await vi.advanceTimersByTimeAsync(0);
     expect(bakes).toBe(2);
@@ -189,11 +189,11 @@ describe("audio reverb bake controller", () => {
       withWrite,
     });
     const scene = sceneWith([boxActor("wall", [0, 0, 0])]);
-    controller.schedule("assets/Main.scene.babasset", scene);
+    controller.schedule("assets/Main.scene.hasset", scene);
     await vi.waitFor(() => expect(withWrite).toHaveBeenCalledOnce());
-    const flushed = controller.flushAll([{ path: "assets/Main.scene.babasset", scene: structuredClone(scene) }]);
+    const flushed = controller.flushAll([{ path: "assets/Main.scene.hasset", scene: structuredClone(scene) }]);
     refuse(locked);
-    const unsaved = (await flushed).get("assets/Main.scene.babasset");
+    const unsaved = (await flushed).get("assets/Main.scene.hasset");
     expect(unsaved?.reason).toBe(locked);
     expect(unsaved?.bytes).toEqual(new Uint8Array([2]));
     controller.dispose();
@@ -234,7 +234,7 @@ describe("audio reverb bake controller", () => {
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
     const scene = sceneWith([boxActor("wall", [0, 0, 0])]);
-    const flush = controller.flush("assets/Main.scene.babasset", scene);
+    const flush = controller.flush("assets/Main.scene.hasset", scene);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(AUDIO_BAKE_WORKER_TIMEOUT_MS);
     await flush;
@@ -257,7 +257,7 @@ describe("audio reverb bake controller", () => {
       },
     });
     await controller.flush(
-      "assets/Main.scene.babasset",
+      "assets/Main.scene.hasset",
       sceneWith([boxActor("crate", [0, 0, 0], { dynamic: true })]),
     );
     expect(writes).toHaveLength(1);
@@ -284,7 +284,7 @@ describe("audio reverb bake controller", () => {
           writes.push(entry);
         },
       });
-      await controller.flush("assets/Main.scene.babasset", sceneWith(actors));
+      await controller.flush("assets/Main.scene.hasset", sceneWith(actors));
       expect(yielded).toBeGreaterThan(0);
       expect(writes).toHaveLength(1);
     } finally {
@@ -304,7 +304,7 @@ describe("collectStaticAudioGeometry used by the bake controller", () => {
 describe("collectAudioReverbFlushScenes", () => {
   it("loads every scene path, including ones that are not open", async () => {
     const loaded = await collectAudioReverbFlushScenes({
-      paths: ["assets/Open.scene.babasset", "assets/Closed.scene.babasset"],
+      paths: ["assets/Open.scene.hasset", "assets/Closed.scene.hasset"],
       load: async (path) => {
         if (path.includes("Closed")) {
           return sceneWith([boxActor("wall", [8, 0, 0])]);
@@ -313,8 +313,8 @@ describe("collectAudioReverbFlushScenes", () => {
       },
     });
     expect(loaded.scenes.map((entry) => entry.path)).toEqual([
-      "assets/Open.scene.babasset",
-      "assets/Closed.scene.babasset",
+      "assets/Open.scene.hasset",
+      "assets/Closed.scene.hasset",
     ]);
     expect(loaded.scenes[1]?.scene.actors?.[0]?.id).toBe("wall");
     expect(loaded.unreadable.size).toBe(0);
@@ -323,16 +323,16 @@ describe("collectAudioReverbFlushScenes", () => {
   it("reports each Scene it cannot load and still collects the rest", async () => {
     const failure = new Error("read failed");
     const loaded = await collectAudioReverbFlushScenes({
-      paths: ["assets/Broken.scene.babasset", "assets/Empty.scene.babasset", "assets/Main.scene.babasset"],
+      paths: ["assets/Broken.scene.hasset", "assets/Empty.scene.hasset", "assets/Main.scene.hasset"],
       load: async (path) => {
         if (path.includes("Broken")) throw failure;
         if (path.includes("Empty")) return null;
         return sceneWith([boxActor("wall", [0, 0, 0])]);
       },
     });
-    expect(loaded.scenes.map((entry) => entry.path)).toEqual(["assets/Main.scene.babasset"]);
-    expect(loaded.unreadable.get("assets/Broken.scene.babasset")).toBe(failure);
-    expect(loaded.unreadable.get("assets/Empty.scene.babasset")).toBeInstanceOf(Error);
+    expect(loaded.scenes.map((entry) => entry.path)).toEqual(["assets/Main.scene.hasset"]);
+    expect(loaded.unreadable.get("assets/Broken.scene.hasset")).toBe(failure);
+    expect(loaded.unreadable.get("assets/Empty.scene.hasset")).toBeInstanceOf(Error);
   });
 });
 

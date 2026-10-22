@@ -13,7 +13,7 @@ import {
   readPinDefault,
   type TypeContext,
   type LogicGraph,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { selfActorPin, subject } from "./self-pin";
 
 const LAYER = objectRef("SceneLayer");

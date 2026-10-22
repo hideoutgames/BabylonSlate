@@ -1,6 +1,6 @@
-import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@babylonslate/assets";
-import { newGuid } from "@babylonslate/core";
-import { dataFieldIdentity, ENUM_VALUE_MAX } from "@babylonslate/scripting";
+import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@haptic/assets";
+import { newGuid } from "@haptic/core";
+import { dataFieldIdentity, ENUM_VALUE_MAX } from "@haptic/scripting";
 import type {
   EnumAsset,
   EnumMember,
@@ -8,7 +8,7 @@ import type {
   ScriptInterfaceAsset,
   StructField,
   StructureAsset,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export const TEXTURE_USAGE_OPTIONS = [
   "albedo",

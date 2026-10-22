@@ -1,4 +1,4 @@
-import type { ProjectSettings } from "@babylonslate/core";
+import type { ProjectSettings } from "@haptic/core";
 import { isDataAssetPayload, isDataGraphNodePayload, mapDataAssetReferences, mapDataGraphReferences, mapDataGraphLiteralReferences, type DataDefinitionFieldsResolver } from "./data-asset-refs";
 
 export type ClearDeletedAssetRefsResult<T> = {

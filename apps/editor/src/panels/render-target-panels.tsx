@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, RENDER_TARGET_MODES, RENDER_TARGET_MODE_LABELS } from "@babylonslate/core";
-import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, type PropertyRow } from "@babylonslate/editor-kit";
+import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, RENDER_TARGET_MODES, RENDER_TARGET_MODE_LABELS } from "@haptic/core";
+import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, type PropertyRow } from "@haptic/editor-kit";
 import {
   useDocumentActions,
   useRegistryState,

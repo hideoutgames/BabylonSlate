@@ -8,11 +8,11 @@ import {
 } from "./bytes";
 import { AssetFormatVersionError } from "./migration";
 
-export const BABASSET_MAGIC = new TextEncoder().encode("BABA");
-export const BABASSET_FORMAT_VERSION = 1;
-export const BABASSET_PREFIX_BYTES = 12;
+export const HASSET_MAGIC = new TextEncoder().encode("BABA");
+export const HASSET_FORMAT_VERSION = 1;
+export const HASSET_PREFIX_BYTES = 12;
 /** Reject corrupt lengths before allocating a catalog header. */
-export const MAX_BABASSET_HEADER_BYTES = 16 * 1024 * 1024;
+export const MAX_HASSET_HEADER_BYTES = 16 * 1024 * 1024;
 /** Chunks at or above this size externalise to the blob store in thin mode. */
 export const DEFAULT_BLOB_THRESHOLD = 64 * 1024;
 /** Header dependency metadata layout this engine writes and reads. */
@@ -34,7 +34,7 @@ export const chunkEntrySchema = z.object({
   locator: chunkLocatorSchema,
 });
 
-export const babassetHeaderSchema = z.object({
+export const hassetHeaderSchema = z.object({
   chunks: z.array(chunkEntrySchema),
   dependencies: z.array(z.string()),
   /** Complete references above; only these edges prepare an immediate consumer. */
@@ -60,7 +60,7 @@ export const babassetHeaderSchema = z.object({
   version: z.number().int().nonnegative(),
 });
 
-export type BabassetHeader = z.infer<typeof babassetHeaderSchema>;
+export type HassetHeader = z.infer<typeof hassetHeaderSchema>;
 export type ChunkEntry = z.infer<typeof chunkEntrySchema>;
 
 export interface ChunkInput {
@@ -91,8 +91,8 @@ export function isCarriedChunk(chunk: EncodableChunk): chunk is CarriedChunkInpu
   return "carried" in chunk;
 }
 
-export interface EncodeBabassetOptions {
-  header: Omit<BabassetHeader, "chunks">;
+export interface EncodeHassetOptions {
+  header: Omit<HassetHeader, "chunks">;
   chunks: EncodableChunk[];
   /** When set, chunks >= threshold use blob locators (thin mode). */
   blobThreshold?: number;
@@ -100,13 +100,13 @@ export interface EncodeBabassetOptions {
   writeBlob?: (sha256: string, data: Uint8Array) => Promise<void>;
   /**
    * Bundled mode: dependency assets embedded as nested `asset` chunks.
-   * Each entry's bytes should already be a complete .babasset.
+   * Each entry's bytes should already be a complete .hasset.
    */
   nestedAssets?: Array<{ guid: string; bytes: Uint8Array }>;
 }
 
-export interface DecodedBabasset {
-  header: BabassetHeader;
+export interface DecodedHasset {
+  header: HassetHeader;
   /** Absolute file offsets are resolved; payloads may be empty for header-only. */
   chunks: Map<string, Uint8Array>;
   /** Nested dependency assets unpacked from bundled mode. */
@@ -116,28 +116,28 @@ export interface DecodedBabasset {
 function assertMagic(bytes: Uint8Array): void {
   if (
     bytes.byteLength < 4 ||
-    bytes[0] !== BABASSET_MAGIC[0] ||
-    bytes[1] !== BABASSET_MAGIC[1] ||
-    bytes[2] !== BABASSET_MAGIC[2] ||
-    bytes[3] !== BABASSET_MAGIC[3]
+    bytes[0] !== HASSET_MAGIC[0] ||
+    bytes[1] !== HASSET_MAGIC[1] ||
+    bytes[2] !== HASSET_MAGIC[2] ||
+    bytes[3] !== HASSET_MAGIC[3]
   ) {
-    throw new Error("Not a .babasset file (bad magic)");
+    throw new Error("Not a .hasset file (bad magic)");
   }
 }
 
 /**
  * Read header + chunk table without allocating chunk payloads.
  */
-export function readBabassetHeaderLength(bytes: Uint8Array): number {
-  if (bytes.byteLength < BABASSET_PREFIX_BYTES) throw new Error("Truncated .babasset prefix");
+export function readHassetHeaderLength(bytes: Uint8Array): number {
+  if (bytes.byteLength < HASSET_PREFIX_BYTES) throw new Error("Truncated .hasset prefix");
   assertMagic(bytes);
   const formatVersion = readU32LE(bytes, 4);
-  if (formatVersion !== BABASSET_FORMAT_VERSION) {
-    throw new Error(`Unsupported .babasset format version ${formatVersion}`);
+  if (formatVersion !== HASSET_FORMAT_VERSION) {
+    throw new Error(`Unsupported .hasset format version ${formatVersion}`);
   }
   const headerLen = readU32LE(bytes, 8);
-  if (headerLen === 0 || headerLen > MAX_BABASSET_HEADER_BYTES) {
-    throw new Error(`Invalid .babasset header length ${headerLen}`);
+  if (headerLen === 0 || headerLen > MAX_HASSET_HEADER_BYTES) {
+    throw new Error(`Invalid .hasset header length ${headerLen}`);
   }
   return headerLen;
 }
@@ -150,7 +150,7 @@ export function readBabassetHeaderLength(bytes: Uint8Array): number {
 function assertCurrentHeaderLayout(raw: unknown): void {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
   const header = raw as Record<string, unknown>;
-  const asset = typeof header.guid === "string" ? `Asset ${header.guid}` : ".babasset";
+  const asset = typeof header.guid === "string" ? `Asset ${header.guid}` : ".hasset";
   const version = header.dependencyMetadataVersion;
   if (typeof version === "number" && version > ASSET_DEPENDENCY_METADATA_VERSION) {
     throw new AssetFormatVersionError(
@@ -168,27 +168,27 @@ function assertCurrentHeaderLayout(raw: unknown): void {
   }
   if (missing.length) {
     throw new AssetFormatVersionError(
-      `${asset} uses an unsupported old .babasset layout (missing ${missing.join(", ")}). This engine reads dependency metadata version ${ASSET_DEPENDENCY_METADATA_VERSION} with chunk lengths; older files are not upgraded.`,
+      `${asset} uses an unsupported old .hasset layout (missing ${missing.join(", ")}). This engine reads dependency metadata version ${ASSET_DEPENDENCY_METADATA_VERSION} with chunk lengths; older files are not upgraded.`,
     );
   }
 }
 
 /** Validate a header in the current layout; older layouts throw {@link AssetFormatVersionError}. */
-function parseBabassetHeader(raw: unknown): BabassetHeader {
+function parseHassetHeader(raw: unknown): HassetHeader {
   assertCurrentHeaderLayout(raw);
-  return babassetHeaderSchema.parse(raw);
+  return hassetHeaderSchema.parse(raw);
 }
 
-export function readBabassetHeader(bytes: Uint8Array): BabassetHeader {
-  const headerLen = readBabassetHeaderLength(bytes);
-  if (bytes.byteLength < BABASSET_PREFIX_BYTES + headerLen) throw new Error("Truncated .babasset header");
-  const headerBytes = bytes.subarray(BABASSET_PREFIX_BYTES, BABASSET_PREFIX_BYTES + headerLen);
+export function readHassetHeader(bytes: Uint8Array): HassetHeader {
+  const headerLen = readHassetHeaderLength(bytes);
+  if (bytes.byteLength < HASSET_PREFIX_BYTES + headerLen) throw new Error("Truncated .hasset header");
+  const headerBytes = bytes.subarray(HASSET_PREFIX_BYTES, HASSET_PREFIX_BYTES + headerLen);
   const json = new TextDecoder().decode(headerBytes);
-  return parseBabassetHeader(JSON.parse(json));
+  return parseHassetHeader(JSON.parse(json));
 }
 
-export async function encodeBabasset(
-  options: EncodeBabassetOptions,
+export async function encodeHasset(
+  options: EncodeHassetOptions,
 ): Promise<Uint8Array> {
   const threshold = options.blobThreshold ?? DEFAULT_BLOB_THRESHOLD;
   const mode = options.header.mode ?? "thin";
@@ -202,7 +202,7 @@ export async function encodeBabasset(
       allChunks.push({
         id: `nested:${nested.guid}`,
         kind: "asset",
-        mime: "application/vnd.babylonslate.babasset",
+        mime: "application/vnd.haptic.hasset",
         data: nested.bytes,
       });
     }
@@ -269,18 +269,18 @@ export async function encodeBabasset(
   }
 
   // A writer must never produce a file the reader refuses.
-  const header: BabassetHeader = parseBabassetHeader({
+  const header: HassetHeader = parseHassetHeader({
     ...options.header,
     mode,
     chunks: table,
   });
   const headerJson = stableStringify(header);
   const headerBytes = new TextEncoder().encode(headerJson);
-  if (headerBytes.byteLength > MAX_BABASSET_HEADER_BYTES) throw new Error(".babasset header exceeds the catalog size limit");
+  if (headerBytes.byteLength > MAX_HASSET_HEADER_BYTES) throw new Error(".hasset header exceeds the catalog size limit");
 
   return concatBytes([
-    BABASSET_MAGIC,
-    writeU32LE(BABASSET_FORMAT_VERSION),
+    HASSET_MAGIC,
+    writeU32LE(HASSET_FORMAT_VERSION),
     writeU32LE(headerBytes.byteLength),
     headerBytes,
     ...chunkBytes,
@@ -299,7 +299,7 @@ async function readVerifiedChunk(
     const { offset, length } = entry.locator.inline;
     const end = payloadStart + offset + length;
     if (end > bytes.byteLength || entry.byteLength !== length) {
-      throw new Error(`Truncated or invalid chunk ${entry.id} in .babasset`);
+      throw new Error(`Truncated or invalid chunk ${entry.id} in .hasset`);
     }
     data = bytes.subarray(payloadStart + offset, end);
   } else {
@@ -310,41 +310,41 @@ async function readVerifiedChunk(
     }
     data = await readBlob(entry.locator.blob);
     if (data.byteLength !== entry.byteLength) {
-      throw new Error(`Length mismatch for chunk ${entry.id} in .babasset`);
+      throw new Error(`Length mismatch for chunk ${entry.id} in .hasset`);
     }
   }
   if ((await sha256Hex(data)) !== entry.sha256) {
-    throw new Error(`Hash mismatch for chunk ${entry.id} in .babasset`);
+    throw new Error(`Hash mismatch for chunk ${entry.id} in .hasset`);
   }
   return data;
 }
 
 /**
- * Decode one chunk, verified like {@link decodeBabasset}, without reading or
+ * Decode one chunk, verified like {@link decodeHasset}, without reading or
  * hashing the others. Null when the file has no chunk with that id.
  */
-export async function decodeBabassetChunk(
+export async function decodeHassetChunk(
   bytes: Uint8Array,
   chunkId: string,
   readBlob?: (sha256: string) => Promise<Uint8Array>,
 ): Promise<Uint8Array | null> {
-  const header = readBabassetHeader(bytes);
+  const header = readHassetHeader(bytes);
   const entry = header.chunks.find((chunk) => chunk.id === chunkId);
   if (!entry) return null;
-  return readVerifiedChunk(bytes, BABASSET_PREFIX_BYTES + readU32LE(bytes, 8), entry, readBlob);
+  return readVerifiedChunk(bytes, HASSET_PREFIX_BYTES + readU32LE(bytes, 8), entry, readBlob);
 }
 
 /**
  * Decode every chunk. Each one must have its recorded length and sha256, so a
  * truncated file or a torn blob is rejected rather than returned as the chunk.
  */
-export async function decodeBabasset(
+export async function decodeHasset(
   bytes: Uint8Array,
   readBlob?: (sha256: string) => Promise<Uint8Array>,
-): Promise<DecodedBabasset> {
-  const header = readBabassetHeader(bytes);
+): Promise<DecodedHasset> {
+  const header = readHassetHeader(bytes);
   const headerLen = readU32LE(bytes, 8);
-  const payloadStart = BABASSET_PREFIX_BYTES + headerLen;
+  const payloadStart = HASSET_PREFIX_BYTES + headerLen;
   const chunks = new Map<string, Uint8Array>();
   const nestedAssets = new Map<string, Uint8Array>();
 

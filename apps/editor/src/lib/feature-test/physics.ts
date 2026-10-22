@@ -6,9 +6,9 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedTransform,
-} from "@babylonslate/core";
-import { engineScriptApiFor, type EngineScriptFunction } from "@babylonslate/object-model";
-import { parseColliderProperties, parseConstraintProperties } from "@babylonslate/physics";
+} from "@haptic/core";
+import { engineScriptApiFor, type EngineScriptFunction } from "@haptic/object-model";
+import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import {
   actor,
   comp,

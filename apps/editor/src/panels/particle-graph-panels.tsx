@@ -10,9 +10,9 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { GraphEditor, type GraphDiagnostic } from "@babylonslate/graph-ui";
-import { particleLibraryEmitterKey, type ParticleLibrary } from "@babylonslate/assets";
+} from "@haptic/editor-kit";
+import { GraphEditor, type GraphDiagnostic } from "@haptic/graph-ui";
+import { particleLibraryEmitterKey, type ParticleLibrary } from "@haptic/assets";
 import {
   PARTICLE_BILLBOARD_MODE_IDS,
   PARTICLE_BLEND_MODE_IDS,
@@ -20,7 +20,7 @@ import {
   PARTICLE_CPU_CAPACITY_BUDGET,
   PARTICLE_CURVE_MAX_KEYS,
   PARTICLE_CURVE_MIN_KEYS,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   PARTICLE_CONDITION_TESTS,
   PARTICLE_GRAPH_LIMITS,
@@ -49,10 +49,10 @@ import {
   type ParticleGraphDocument,
   type ParticleGraphNode,
   type ParticleNumericType,
-} from "@babylonslate/particle-graph";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { PARTICLE_STAGE_ROLE } from "@babylonslate/ui/lib/data-types";
+} from "@haptic/particle-graph";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
+import { PARTICLE_STAGE_ROLE } from "@haptic/ui/lib/data-types";
 import { useRegistryState } from "../context/document-context";
 import {
   useParticleGraphEditing,

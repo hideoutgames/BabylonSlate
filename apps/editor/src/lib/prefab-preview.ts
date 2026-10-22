@@ -13,8 +13,8 @@ import {
   type SerializedScene,
   type SerializedTransform,
   type ViewportMode,
-} from "@babylonslate/core";
-import type { TreeDropPlacement } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import type { TreeDropPlacement } from "@haptic/editor-kit";
 
 export const PREFAB_ROOT_ID = "prefab-root";
 

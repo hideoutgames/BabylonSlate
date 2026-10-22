@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "@babylonslate/core";
+import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "@haptic/core";
 import { FocusNavigationFields } from "./focus-navigation-fields";
 
 // Base UI dispatches PointerEvent when activating its native switch input.
@@ -16,9 +16,9 @@ describe("focus navigation settings", () => {
     function Editor() {
       const [value, setValue] = useState(normalizeFocusNavigationSettings());
       return <FocusNavigationFields value={value} onChange={(next) => { saved = next; setValue(next); }} assets={[
-        { guid: "nav", name: "Menu Movement", type: "InputAxis", path: "assets/Menu.babasset", valueType: "2d" },
-        { guid: "zoom", name: "Zoom", type: "InputAxis", path: "assets/Zoom.babasset", valueType: "1d" },
-        { guid: "accept", name: "Accept", type: "InputAction", path: "assets/Accept.babasset" },
+        { guid: "nav", name: "Menu Movement", type: "InputAxis", path: "assets/Menu.hasset", valueType: "2d" },
+        { guid: "zoom", name: "Zoom", type: "InputAxis", path: "assets/Zoom.hasset", valueType: "1d" },
+        { guid: "accept", name: "Accept", type: "InputAction", path: "assets/Accept.hasset" },
       ]} />;
     }
     render(<Editor />);

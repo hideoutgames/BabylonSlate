@@ -3,7 +3,7 @@ import {
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   isSceneLayerDeniedComponent,
   type EngineComponentClassId,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export { ENGINE_COMPONENT_CLASS_IDS, SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS };
 export type { EngineComponentClassId };

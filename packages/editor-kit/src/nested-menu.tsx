@@ -24,9 +24,9 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/dropdown-menu";
+import { Separator } from "@haptic/ui/components/separator";
+import { cn } from "@haptic/ui/lib/utils";
 import { ariaKeyShortcuts, type KeyChord } from "./keybinds";
 import { ShortcutKeys } from "./shortcut-keys";
 import {

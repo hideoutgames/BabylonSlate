@@ -1,5 +1,5 @@
-import { SaveGameError, newGuid, type SaveGameDefinition, type SaveGameValue, type Transform } from "@babylonslate/core";
-import { Actor, ActorComponent, BObject, type World } from "@babylonslate/object-model";
+import { SaveGameError, newGuid, type SaveGameDefinition, type SaveGameValue, type Transform } from "@haptic/core";
+import { Actor, ActorComponent, BObject, type World } from "@haptic/object-model";
 
 interface SavedActor {
   id: string;

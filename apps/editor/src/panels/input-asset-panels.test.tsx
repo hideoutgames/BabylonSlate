@@ -21,7 +21,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   openDocuments: [
     {
       id: "jump",
-      ref: { kind: documentKind.value, path: "Jump.inputaction.babasset" },
+      ref: { kind: documentKind.value, path: "Jump.inputaction.hasset" },
       content: {
         valueType:
           documentExtra.valueType ??

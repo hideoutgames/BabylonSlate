@@ -50,8 +50,8 @@ for (const backend of ["webgpu"] as const) {
       await expect(root).toHaveAttribute("data-backend-fallback", "");
       await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
       await expect.poll(() => page.evaluate(() => {
-        const host = window as typeof window & { __babylonslatePlayerTest?: { visuals(): Array<{ visible: boolean; position: [number, number, number] }> } };
-        return host.__babylonslatePlayerTest?.visuals().filter((visual) => visual.visible).map((visual) => visual.position).sort((a, b) => a[0] - b[0]);
+        const host = window as typeof window & { __hapticPlayerTest?: { visuals(): Array<{ visible: boolean; position: [number, number, number] }> } };
+        return host.__hapticPlayerTest?.visuals().filter((visual) => visual.visible).map((visual) => visual.position).sort((a, b) => a[0] - b[0]);
       })).toEqual(EXPECTED_PREVIEW_ACTOR_POSITIONS);
       // GameInstance ticks and structural visuals exist while shaders still load.
       await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });

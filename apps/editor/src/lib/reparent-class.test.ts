@@ -15,9 +15,9 @@ function classAsset(
 }
 
 describe("tryReparentUserClass", () => {
-  const hero = classAsset("assets/Hero.class.babasset", "Actor");
-  const pawn = classAsset("assets/Pawn.class.babasset", "Actor");
-  const child = classAsset("assets/Child.class.babasset", "Hero");
+  const hero = classAsset("assets/Hero.class.hasset", "Actor");
+  const pawn = classAsset("assets/Pawn.class.hasset", "Actor");
+  const child = classAsset("assets/Child.class.hasset", "Hero");
 
   it("updates parentClass and leaves callers to keep graph payload", () => {
     const result = tryReparentUserClass({

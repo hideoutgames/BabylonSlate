@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { TilemapTerrainBrush } from "@babylonslate/assets";
+import type { TilemapTerrainBrush } from "@haptic/assets";
 import { TilesetPayloadLoader } from "./tilemap-tileset-payloads";
 
 export interface TilemapEditingContextValue {

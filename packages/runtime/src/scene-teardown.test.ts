@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 
 function scene(count = 80) {

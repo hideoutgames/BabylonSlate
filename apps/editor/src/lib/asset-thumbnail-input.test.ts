@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultSpritePayload, type IndexedAsset } from "@babylonslate/assets";
-import { createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
+import { createDefaultSpritePayload, type IndexedAsset } from "@haptic/assets";
+import { createMeshComponent, identitySerializedTransform } from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createDefaultMaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { prepareAssetThumbnailInput } from "./asset-thumbnail-input";
 
 function asset(guid: string, type: string, payload: Record<string, unknown> = {}, parentClass?: string): IndexedAsset {
   return {
     rootId: "project",
-    path: `Content/${guid}.${type.toLowerCase()}.babasset`,
+    path: `Content/${guid}.${type.toLowerCase()}.hasset`,
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type, name: guid, parentClass, payload,
@@ -77,9 +77,9 @@ describe("prepareAssetThumbnailInput", () => {
     expect(result?.assets?.texturePixelSizes?.get("texture")).toEqual({ width: 4096, height: 2048 });
     expect(inputs.collectTextureBytes).toHaveBeenCalledWith(["texture"]);
     expect(inputs.readAssetChunk.mock.calls.map(([path]) => path)).toEqual([
-      "Content/material.material.babasset",
-      "Content/outer.materialfunction.babasset",
-      "Content/inner.materialfunction.babasset",
+      "Content/material.material.hasset",
+      "Content/outer.materialfunction.hasset",
+      "Content/inner.materialfunction.hasset",
     ]);
   });
 

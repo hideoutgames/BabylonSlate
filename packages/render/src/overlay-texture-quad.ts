@@ -5,7 +5,7 @@ import {
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
-import { sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { VisualBundle } from "./visual-bundle";
 

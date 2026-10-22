@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/assets",
+  "name": "@haptic/assets",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,17 +13,17 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/assets"
   },
   "dependencies": {
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/object-model": "workspace:*",
-    "@babylonslate/particle-graph": "workspace:*",
-    "@babylonslate/shader-graph": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/object-model": "workspace:*",
+    "@haptic/particle-graph": "workspace:*",
+    "@haptic/shader-graph": "workspace:*",
     "@noble/hashes": "2.4.0",
     "fflate": "^0.8.3",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@babylonslate/test-kit": "workspace:*",
-    "@babylonslate/vfs": "workspace:*",
+    "@haptic/test-kit": "workspace:*",
+    "@haptic/vfs": "workspace:*",
     "ktx-parse": "^1.1.0",
     "typescript": "~6.0.3"
   }

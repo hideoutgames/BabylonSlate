@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { EditorReadOnlyContext } from "@babylonslate/editor-kit";
+import { EditorReadOnlyContext } from "@haptic/editor-kit";
 import { EditorView } from "@codemirror/view";
 import { CodeBodyEditor } from "./js-body-editor";
 

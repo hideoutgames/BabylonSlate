@@ -8,7 +8,7 @@ import {
   type StaticSound,
   type StaticSoundBuffer,
 } from "@babylonjs/core/AudioV2";
-import { AUDIO_MUFFLE_LOWPASS_HZ, AUDIO_SHARED_REVERB_BUSES } from "@babylonslate/assets";
+import { AUDIO_MUFFLE_LOWPASS_HZ, AUDIO_SHARED_REVERB_BUSES } from "@haptic/assets";
 import type {
   AudioPlaybackBackend,
   AudioPlayRequest,

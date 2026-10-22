@@ -45,15 +45,15 @@ test("project backend changes rebuild one Engine while preserving scene edits an
   await page.getByTestId("outliner-add-actor").click();
   await page.getByTestId("place-actors-item-shape-box").click();
   expect(await page.evaluate(() => (window as unknown as {
-    __babylonslateViewportTest: { commitGizmoNudge(): Promise<boolean> };
-  }).__babylonslateViewportTest.commitGizmoNudge())).toBe(true);
+    __hapticViewportTest: { commitGizmoNudge(): Promise<boolean> };
+  }).__hapticViewportTest.commitGizmoNudge())).toBe(true);
   const position = () => page.evaluate(() => (window as unknown as {
-    __babylonslateTest: { activeSceneActorPosition(): number[] };
-  }).__babylonslateTest.activeSceneActorPosition());
+    __hapticTest: { activeSceneActorPosition(): number[] };
+  }).__hapticTest.activeSceneActorPosition());
   const moved = await position();
   const baseline = () => page.evaluate(() => (window as unknown as {
-    __babylonslateViewportTest: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number; drawCalls: number } | null };
-  }).__babylonslateViewportTest.renderingBaseline());
+    __hapticViewportTest: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number; drawCalls: number } | null };
+  }).__hapticViewportTest.renderingBaseline());
   const captures = [];
   for (const backend of ["WebGPU", "WebGL2", "WebGPU"]) {
     await page.getByTestId("settings-menu").click();
@@ -78,8 +78,8 @@ test("project backend changes rebuild one Engine while preserving scene edits an
   await expect.poll(position).toEqual(moved);
   await clickPlayAndWaitForOverlay(page);
   await expect.poll(() => page.evaluate(() => (window as unknown as {
-    __babylonslatePlayTest?: { tickIndex(): number };
-  }).__babylonslatePlayTest?.tickIndex() ?? 0), { timeout: 30_000 }).toBeGreaterThan(3);
+    __hapticPlayTest?: { tickIndex(): number };
+  }).__hapticPlayTest?.tickIndex() ?? 0), { timeout: 30_000 }).toBeGreaterThan(3);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   await waitForSceneViewportReady(page);
@@ -96,8 +96,8 @@ test("a lost WebGPU device stops Play and Retry restores the viewport on a new E
   await openMinimalTestProject(page);
   await openMainScene(page);
   const baseline = () => page.evaluate(() => (window as unknown as {
-    __babylonslateViewportTest: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number } | null };
-  }).__babylonslateViewportTest.renderingBaseline());
+    __hapticViewportTest: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number } | null };
+  }).__hapticViewportTest.renderingBaseline());
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
@@ -109,13 +109,13 @@ test("a lost WebGPU device stops Play and Retry restores the viewport on a new E
 
   await clickPlayAndWaitForOverlay(page);
   const ticks = () => page.evaluate(() => (window as unknown as {
-    __babylonslatePlayTest?: { tickIndex(): number };
-  }).__babylonslatePlayTest?.tickIndex() ?? 0);
+    __hapticPlayTest?: { tickIndex(): number };
+  }).__hapticPlayTest?.tickIndex() ?? 0);
   await expect.poll(ticks, { timeout: 30_000 }).toBeGreaterThan(3);
   // Software WebGPU resolves `device.lost` for a destroyed device the Engine did not dispose.
   expect(await page.evaluate(() => (window as unknown as {
-    __babylonslateViewportTest: { destroyGraphicsDevice(): boolean };
-  }).__babylonslateViewportTest.destroyGraphicsDevice())).toBe(true);
+    __hapticViewportTest: { destroyGraphicsDevice(): boolean };
+  }).__hapticViewportTest.destroyGraphicsDevice())).toBe(true);
 
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 30_000 });
   const dialog = page.getByTestId("project-rendering-dialog");
@@ -152,13 +152,13 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       errors.push(message.text());
   });
   await page.goto("/?webgpuProof");
-  await page.waitForFunction(() => "__babylonslateWebGpuProof" in window);
+  await page.waitForFunction(() => "__hapticWebGpuProof" in window);
   const result = await page.evaluate(() =>
     (
       window as unknown as {
-        __babylonslateWebGpuProof: typeof runWebGpuProof;
+        __hapticWebGpuProof: typeof runWebGpuProof;
       }
-    ).__babylonslateWebGpuProof(),
+    ).__hapticWebGpuProof(),
   );
   await testInfo.attach("webgpu-material-proof", {
     body: JSON.stringify(result),

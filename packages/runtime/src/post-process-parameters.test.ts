@@ -5,17 +5,17 @@ import {
   createDefaultSceneLayer,
   createMeshComponent,
   type MaterialParameterCatalog,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   type CommandMessage,
   isPlayEngineCommandType,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import { runtimeOptionsFromLoadControl } from "./play-load";
 

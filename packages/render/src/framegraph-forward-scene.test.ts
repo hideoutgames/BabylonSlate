@@ -30,14 +30,14 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
-import { normalizeParticleEmitterPayload } from "@babylonslate/assets";
+import { normalizeParticleEmitterPayload } from "@haptic/assets";
 import {
   DEFAULT_RENDER_EFFECTS,
   fogVolumeBindings,
   normalizeRenderingQuality,
   normalizeShadowSettings,
   qualityPresetPatch,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { ParticleService } from "./particle-service";

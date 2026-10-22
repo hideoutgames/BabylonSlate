@@ -18,7 +18,7 @@ import {
   parseText3DProperties,
   type Text3DAlignment,
   type Text3DProperties,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   bundledAsciiTypeFace,
   parseTypeFaceJson,

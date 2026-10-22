@@ -33,13 +33,13 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { isSceneFrameReady } from "./scene-perf";
 

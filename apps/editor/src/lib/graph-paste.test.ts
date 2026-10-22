@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
-import type { GraphPasteElements } from "@babylonslate/graph-ui";
+import type { SerializedGraph } from "@haptic/core";
+import type { GraphPasteElements } from "@haptic/graph-ui";
 import { customEventRenameError } from "./class-members";
 import { prepareClassGraphPaste } from "./graph-paste";
 

@@ -10,10 +10,10 @@ import {
 describe("refuseTheirsPaths", () => {
   it("returns the holder message for the first path locked by someone else", () => {
     const refuse = (path: string) =>
-      path === "assets/theirs.babasset" ? "Locked by Bob" : null;
+      path === "assets/theirs.hasset" ? "Locked by Bob" : null;
     expect(
       refuseTheirsPaths(
-        ["assets/mine.babasset", "assets/theirs.babasset"],
+        ["assets/mine.hasset", "assets/theirs.hasset"],
         refuse,
       ),
     ).toBe("Locked by Bob");
@@ -21,7 +21,7 @@ describe("refuseTheirsPaths", () => {
 
   it("allows a move when none of the paths are theirs", () => {
     expect(
-      refuseTheirsPaths(["assets/mine.babasset"], () => null),
+      refuseTheirsPaths(["assets/mine.hasset"], () => null),
     ).toBeNull();
   });
 });
@@ -30,32 +30,32 @@ describe("oursLockPaths", () => {
   it("returns only paths we currently hold", () => {
     expect(
       oursLockPaths(
-        ["assets/mine.babasset", "assets/theirs.babasset", "assets/free.babasset"],
+        ["assets/mine.hasset", "assets/theirs.hasset", "assets/free.hasset"],
         (path) =>
-          path === "assets/mine.babasset"
+          path === "assets/mine.hasset"
             ? "mine"
-            : path === "assets/theirs.babasset"
+            : path === "assets/theirs.hasset"
               ? "theirs"
               : null,
       ),
-    ).toEqual(["assets/mine.babasset"]);
+    ).toEqual(["assets/mine.hasset"]);
   });
 });
 
 describe("containedAssetPaths", () => {
   const assets = [
-    { path: "assets/hero.scene.babasset" },
-    { path: "assets/chars/ada.babasset" },
-    { path: "assets/chars/bob.babasset" },
-    { path: "assets/chars/extra/c.babasset" },
-    { path: "assets/chars_backup/x.babasset" },
+    { path: "assets/hero.scene.hasset" },
+    { path: "assets/chars/ada.hasset" },
+    { path: "assets/chars/bob.hasset" },
+    { path: "assets/chars/extra/c.hasset" },
+    { path: "assets/chars_backup/x.hasset" },
   ];
 
   it("lists nested assets under a folder prefix, not sibling names", () => {
     expect(containedAssetPaths(assets, "assets/chars")).toEqual([
-      "assets/chars/ada.babasset",
-      "assets/chars/bob.babasset",
-      "assets/chars/extra/c.babasset",
+      "assets/chars/ada.hasset",
+      "assets/chars/bob.hasset",
+      "assets/chars/extra/c.hasset",
     ]);
   });
 });
@@ -65,20 +65,20 @@ describe("folderMoveLockTransfers", () => {
     expect(
       folderMoveLockTransfers(
         [
-          { path: "assets/chars/ada.babasset" },
-          { path: "assets/chars/extra/c.babasset" },
+          { path: "assets/chars/ada.hasset" },
+          { path: "assets/chars/extra/c.hasset" },
         ],
         "assets/chars",
         "assets/people",
       ),
     ).toEqual([
       {
-        from: "assets/chars/ada.babasset",
-        to: "assets/people/ada.babasset",
+        from: "assets/chars/ada.hasset",
+        to: "assets/people/ada.hasset",
       },
       {
-        from: "assets/chars/extra/c.babasset",
-        to: "assets/people/extra/c.babasset",
+        from: "assets/chars/extra/c.hasset",
+        to: "assets/people/extra/c.hasset",
       },
     ]);
   });
@@ -89,15 +89,15 @@ describe("applyLockTransfers", () => {
     const transferred: string[] = [];
     await applyLockTransfers(
       [
-        { from: "assets/a.babasset", to: "assets/b.babasset" },
-        { from: "assets/same.babasset", to: "assets/same.babasset" },
-        { from: "assets/theirs.babasset", to: "assets/moved.babasset" },
+        { from: "assets/a.hasset", to: "assets/b.hasset" },
+        { from: "assets/same.hasset", to: "assets/same.hasset" },
+        { from: "assets/theirs.hasset", to: "assets/moved.hasset" },
       ],
-      (path) => (path === "assets/a.babasset" ? "mine" : null),
+      (path) => (path === "assets/a.hasset" ? "mine" : null),
       async (from, to) => {
         transferred.push(`${from}->${to}`);
       },
     );
-    expect(transferred).toEqual(["assets/a.babasset->assets/b.babasset"]);
+    expect(transferred).toEqual(["assets/a.hasset->assets/b.hasset"]);
   });
 });

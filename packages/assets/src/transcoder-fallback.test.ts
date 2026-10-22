@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { encodeHasset, readHassetHeader } from "./hasset";
 import { ktx2ChunkId } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
 
@@ -13,7 +13,7 @@ const editorKtx2 = join(
 
 describe("transcoder unavailable / export-omitted smoke", () => {
   it("selectTextureChunk uses source when transcoder URLs are unavailable", async () => {
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-1",
@@ -41,7 +41,7 @@ describe("transcoder unavailable / export-omitted smoke", () => {
         },
       ],
     });
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     const selected = selectTextureChunk(header, { transcoderAvailable: false });
     expect(selected.kind).toBe("source");
     expect(selected.reason).toBe("transcoder-unavailable");
@@ -68,7 +68,7 @@ describe("transcoder unavailable / export-omitted smoke", () => {
   });
 
   it("loader prefers KTX2 only when transcoder is available", async () => {
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-2",
@@ -96,7 +96,7 @@ describe("transcoder unavailable / export-omitted smoke", () => {
         },
       ],
     });
-    const header = readBabassetHeader(bytes);
+    const header = readHassetHeader(bytes);
     expect(selectTextureChunk(header).kind).toBe("ktx2");
     expect(
       selectTextureChunk(header, { transcoderAvailable: false }).kind,

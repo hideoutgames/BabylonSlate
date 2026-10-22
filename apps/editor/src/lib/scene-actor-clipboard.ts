@@ -1,6 +1,6 @@
-import { actorSubtree, isFocusTargetClass, remapSceneStreamingReferences, type SerializedActor, type SerializedScene } from "@babylonslate/core";
+import { actorSubtree, isFocusTargetClass, remapSceneStreamingReferences, type SerializedActor, type SerializedScene } from "@haptic/core";
 import { duplicateSceneActors } from "./place-actors";
-import { authoredActorWorldTransform } from "@babylonslate/render";
+import { authoredActorWorldTransform } from "@haptic/render";
 
 /** Component ids can repeat across actors; local maps resolve those separately. */
 function sceneReferenceMap(

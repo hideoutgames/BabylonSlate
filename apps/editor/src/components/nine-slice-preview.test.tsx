@@ -8,11 +8,11 @@ const docs = vi.hoisted(() => ({
   assets: [
     {
       header: { guid: "tex-1", name: "Panel", type: "Texture" },
-      path: "assets/Panel.texture.babasset",
+      path: "assets/Panel.texture.hasset",
     },
     {
       header: { guid: "mat-1", name: "PanelMat", type: "Material" },
-      path: "assets/PanelMat.material.babasset",
+      path: "assets/PanelMat.material.hasset",
     },
   ],
 }));
@@ -66,7 +66,7 @@ describe("NineSlicePreview", () => {
       expect(screen.getByTestId("panel-nine-slice-overlay")).toBeTruthy();
     });
     expect(docs.readAssetChunk).toHaveBeenCalledWith(
-      "assets/Panel.texture.babasset",
+      "assets/Panel.texture.hasset",
       "pixels",
     );
     expect(screen.getByTestId("panel-nine-slice-line-left").style.left).toBe(
@@ -112,10 +112,10 @@ describe("NineSlicePreview", () => {
     });
     expect(docs.loadAssetDocument).toHaveBeenCalledWith(
       "material",
-      "assets/PanelMat.material.babasset",
+      "assets/PanelMat.material.hasset",
     );
     expect(docs.readAssetChunk).toHaveBeenCalledWith(
-      "assets/Panel.texture.babasset",
+      "assets/Panel.texture.hasset",
       "pixels",
     );
   });

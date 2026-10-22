@@ -1,8 +1,8 @@
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import type { PropertyRow } from "@haptic/editor-kit";
 import {
   clampAudioGain,
   type SoundAttenuationPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 const DEFAULT_CONE = {
   innerAngle: 90,

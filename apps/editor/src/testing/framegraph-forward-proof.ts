@@ -21,12 +21,12 @@ import {
   createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
-} from "@babylonslate/render";
-import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+} from "@haptic/render";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 
 export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "webgl2", output: "backbuffer" | "texture" = "backbuffer") {
   const canvas = document.createElement("canvas");

@@ -4,13 +4,13 @@ import {
   discoverEngineExtensions,
   discoverProjectExtensions,
   exportExtensionZip,
-  inspectBabextension,
+  inspectHextension,
   installEngineExtensionDefaults,
   readProjectTree,
   unpackEngineExtensionZip,
   writeProjectExtension,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EngineExtensionLibrary } from "./engine-extension-library";
 
 async function storage(name: string) {
@@ -42,7 +42,7 @@ describe("EngineExtensionLibrary", () => {
     const reloaded = new EngineExtensionLibrary(bundled, saved);
     expect((await reloaded.list()).find((entry) => entry.extensionGuid === "user-guid"))
       .toMatchObject({ bundled: false, enabledByDefault: true });
-    const exported = await inspectBabextension(await reloaded.export("user-guid"));
+    const exported = await inspectHextension(await reloaded.export("user-guid"));
     expect(exported.settings).toMatchObject({ extensionGuid: "user-guid", displayName: "User Tool", iconKey: "Code", experimental: true, enabledByDefault: true });
     expect(new TextDecoder().decode(exported.files.find((file) => file.path === "index.ts")?.data)).toContain("api.log('original')");
     expect(new TextDecoder().decode(exported.files.find((file) => file.path === "assets/data.txt")?.data)).toBe("template");
@@ -54,10 +54,10 @@ describe("EngineExtensionLibrary", () => {
     await store.setEnabledByDefault("old-guid", true);
     const incoming = await archive("new-guid", " user TOOL ", "export function activate(api) { api.log('replacement'); }");
     expect(await store.import(incoming)).toMatchObject({ status: "conflict", existing: { extensionGuid: "old-guid" } });
-    expect((await inspectBabextension(await store.export("old-guid"))).settings.enabledByDefault).toBe(true);
+    expect((await inspectHextension(await store.export("old-guid"))).settings.enabledByDefault).toBe(true);
     expect(await store.import(incoming, { replaceGuid: "old-guid" })).toMatchObject({ status: "imported", entry: { extensionGuid: "new-guid", enabledByDefault: true } });
     await expect(store.export("old-guid")).rejects.toThrow(/no longer exists/i);
-    const replacement = await inspectBabextension(await store.export("new-guid"));
+    const replacement = await inspectHextension(await store.export("new-guid"));
     expect(new TextDecoder().decode(replacement.files.find((file) => file.path === "index.ts")?.data)).toContain("api.log('replacement')");
   });
 
@@ -79,7 +79,7 @@ describe("EngineExtensionLibrary", () => {
     await expect(store.import(await archive("other-guid", "bundled TOOL"), { replaceGuid: "bundled-guid" })).rejects.toThrow(/bundled.*cannot be replaced/i);
     await expect(store.import(await archive("bundled-guid", "Different Tool"))).rejects.toThrow(/bundled.*cannot be replaced/i);
     await store.setEnabledByDefault("bundled-guid", true);
-    expect((await inspectBabextension(await store.export("bundled-guid"))).settings.enabledByDefault).toBe(true);
+    expect((await inspectHextension(await store.export("bundled-guid"))).settings.enabledByDefault).toBe(true);
   });
 
   it("freezes snapshots and new-project copies independently of later library defaults, replacement and deletion", async () => {
@@ -126,7 +126,7 @@ describe("EngineExtensionLibrary", () => {
     expect(await readProjectTree(saved)).toEqual(before);
     expect((await store.list()).some((entry) => entry.extensionGuid === "incoming-guid")).toBe(false);
     if (replace) {
-      const restored = await inspectBabextension(await store.export("original-guid"));
+      const restored = await inspectHextension(await store.export("original-guid"));
       expect(restored.settings.enabledByDefault).toBe(true);
       expect(new TextDecoder().decode(restored.files.find((file) => file.path === "index.ts")?.data)).toContain("api.log('original')");
     }
@@ -135,7 +135,7 @@ describe("EngineExtensionLibrary", () => {
 
   it("isolates corrupted library archives as deletable rows while healthy defaults still copy", async () => {
     const { bundled, saved, library: store } = await library();
-    await saved.writeBinary("broken.babextension", new Uint8Array([1, 2, 3]));
+    await saved.writeBinary("broken.hextension", new Uint8Array([1, 2, 3]));
     await bundled.mkdir("broken-bundle", true);
     await bundled.writeText("broken-bundle/extension.json", "{invalid");
     const entries = await store.list();
@@ -147,7 +147,7 @@ describe("EngineExtensionLibrary", () => {
     const snapshot = await store.createStorageSnapshot();
     expect((await discoverEngineExtensions(snapshot)).map((entry) => entry.extensionGuid)).toEqual(["bundled-guid"]);
     await store.remove(broken.extensionGuid);
-    expect(await saved.exists("broken.babextension")).toBe(false);
+    expect(await saved.exists("broken.hextension")).toBe(false);
     expect((await store.list()).some((entry) => entry.extensionGuid === broken.extensionGuid)).toBe(false);
   });
 });

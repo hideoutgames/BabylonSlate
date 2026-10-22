@@ -3,7 +3,7 @@ import {
   type NodeDefinition,
   FLOAT,
   objectRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export const gameInstanceNodes: NodeDefinition[] = [
   {

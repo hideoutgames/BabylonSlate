@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import type { TracePayload } from "@babylonslate/debugger";
-import { readTraceDocument } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import type { TracePayload } from "@haptic/debugger";
+import { readTraceDocument } from "@haptic/assets";
 import {
   finishPlaySessionWithTrace,
   recordedTraceFileName,
@@ -48,7 +48,7 @@ describe("play trace spill", () => {
     expect(recordedTraceFileName(1_700_000_000_000)).toBe("session-1700000000000");
   });
 
-  it("writes a .babtrace under derived traces and returns a Trace document ref", async () => {
+  it("writes a .htrace under derived traces and returns a Trace document ref", async () => {
     const derived = new MemoryStorageAdapter("documents");
     await derived.openDocumentsProject("derived-traces");
     const spilled = await spillRecordedTraceDocument({
@@ -58,7 +58,7 @@ describe("play trace spill", () => {
       fileName: "session-1",
       documentGuid: "trace-guid",
     });
-    expect(spilled.path).toBe("derived/proj-1/traces/session-1.babtrace");
+    expect(spilled.path).toBe("derived/proj-1/traces/session-1.htrace");
     expect(spilled.ref).toEqual({
       kind: "trace",
       path: spilled.path,

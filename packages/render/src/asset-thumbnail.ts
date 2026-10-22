@@ -8,9 +8,9 @@ import {
   type AbstractMesh,
   type Material,
 } from "@babylonjs/core";
-import { DEFAULT_THUMBNAIL_MAX_EDGE } from "@babylonslate/assets";
-import type { SerializedScene } from "@babylonslate/core";
-import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
+import { DEFAULT_THUMBNAIL_MAX_EDGE } from "@haptic/assets";
+import type { SerializedScene } from "@haptic/core";
+import type { MaterialDocument, MaterialFunctionDocument } from "@haptic/shader-graph";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { isEditorBillboardMesh } from "./editor-billboard";
 import { isEditorCameraModel } from "./editor-camera-model";

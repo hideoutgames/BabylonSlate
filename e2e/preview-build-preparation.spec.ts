@@ -60,7 +60,7 @@ test("Play, Preview Build and Export refuse an older-format startup Scene", asyn
   const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
   files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: SCENE_SCHEMA_VERSION - 1 }));
   // A current Scene hosts the Output Log while Play starts from the startup Scene.
-  const otherScene = "assets/other.scene.babasset";
+  const otherScene = "assets/other.scene.hasset";
   files.set(otherScene, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-0000000000aa", type: "Scene", name: "Other",
     version: SCENE_SCHEMA_VERSION, payload: createDefaultScene() as unknown as Record<string, unknown> }));
   await openMinimalTestProject(page, files);

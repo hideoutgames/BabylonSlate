@@ -1,5 +1,5 @@
 import { importAudio } from "./audio";
-import { importBabasset } from "./babasset";
+import { importHasset } from "./hasset";
 import { importFont, isMsdfAtlasPng } from "./font";
 import { importImage } from "./image";
 import { importEnvironmentTexture } from "./environment";
@@ -25,7 +25,7 @@ const IMPORTERS_BY_EXTENSION: Record<string, Importer> = {
   ttf: importFont,
   otf: importFont,
   json: importFont,
-  babasset: importBabasset,
+  hasset: importHasset,
 };
 
 export function importerForExtension(extension: string): Importer | undefined {
@@ -61,7 +61,7 @@ export async function importByExtension(
 }
 
 export * from "./audio";
-export * from "./babasset";
+export * from "./hasset";
 export * from "./font";
 export * from "./glb-parse";
 export * from "./guid-remap";

@@ -3,7 +3,7 @@ import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { createInProcessRuntime } from "./driver";
 
 describe("tilemap chain colliders", () => {

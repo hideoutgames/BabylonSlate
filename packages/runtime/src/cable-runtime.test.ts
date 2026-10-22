@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, type SerializedActor, type SerializedComponent } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultSceneSettings, type SerializedActor, type SerializedComponent } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 function cable(id: string, properties: Record<string, unknown> = {}): SerializedComponent {

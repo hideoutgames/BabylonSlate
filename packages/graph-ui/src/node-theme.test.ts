@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
+import { basicParticleStageRole } from "@haptic/ui/lib/data-types";
 import {
   nodeVisualRole,
   pinCssVar,

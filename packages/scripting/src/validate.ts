@@ -1,4 +1,4 @@
-import { formatEventTitle, humanizePropertyLabel } from "@babylonslate/core";
+import { formatEventTitle, humanizePropertyLabel } from "@haptic/core";
 import type { GraphEdge, GraphNode, GraphPin, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
 import { compiledNodeIds, entryNodes } from "./compiled-nodes";

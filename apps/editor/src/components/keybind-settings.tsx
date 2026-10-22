@@ -5,21 +5,21 @@ import {
   isApplePlatform,
   ShortcutKeys,
   type KeyChord,
-} from "@babylonslate/editor-kit";
-import type { EngineSettings } from "@babylonslate/vfs";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import type { EngineSettings } from "@haptic/vfs";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
   FieldDescription,
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 import {
   EDITOR_COMMAND_CATEGORIES,
   EDITOR_COMMANDS,

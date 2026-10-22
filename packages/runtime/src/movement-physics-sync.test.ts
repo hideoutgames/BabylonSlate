@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
-import { identityTransform, parseMovementProperties } from "@babylonslate/core";
-import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
+import { identityTransform, parseMovementProperties } from "@haptic/core";
+import { createDefaultSpriteAnimationPayload } from "@haptic/assets";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 it.each(["3d", "2d"] as const)("%s Movement alone creates a capsule, updates dimensions and retires on removal", (kind) => {

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { compileGraph, type GraphNode } from "@babylonslate/scripting";
+import { compileGraph, type GraphNode } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 const outgoingActor = { id: "outgoing" };

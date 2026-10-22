@@ -28,17 +28,17 @@ import {
   assetRowIdentity,
   type AtlasTileGridTool,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { Button } from "@babylonslate/ui/components/button";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Field, FieldDescription, FieldTitle } from "@babylonslate/ui/components/field";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { Toggle } from "@haptic/ui/components/toggle";
+import { Button } from "@haptic/ui/components/button";
+import { Badge } from "@haptic/ui/components/badge";
+import { Field, FieldDescription, FieldTitle } from "@haptic/ui/components/field";
+import { Separator } from "@haptic/ui/components/separator";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import {
   canonicalTerrainMask,
   ensureTilesetTiles,
@@ -61,7 +61,7 @@ import {
   type TilesetTerrain,
   type TilesetTerrainStyle,
   type TilesetTile,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   useDocumentActions,
   useOpenDocument,

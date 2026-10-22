@@ -2,7 +2,7 @@ import type { AbstractEngine, Scene } from "@babylonjs/core";
 import {
   normalizeRenderPathOverrides,
   type RenderPathOverrides,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { publishSceneRenderPath, syncSceneRenderPath } from "./scene-render-path";
 
 type RenderPathSession = {

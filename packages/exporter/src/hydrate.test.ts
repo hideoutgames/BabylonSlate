@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
-import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
+import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
+import { createDefaultSpriteAnimationPayload } from "@haptic/assets";
 import { packedContentFromGame } from "./hydrate";
 import { gameSourceSubset, type GameSourceContent } from "./source-content";
 import type { GameAssetIndexEntry } from "./types";

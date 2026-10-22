@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   createEmptyProjectFiles,
   encodeProjectZip,
   writeProjectTree,
-} from "./babproject";
+} from "./hproject";
 import { listTemplateCatalog, loadTemplateFiles } from "./templates";
 
 async function templatesFolder() {

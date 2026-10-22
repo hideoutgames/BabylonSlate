@@ -4,7 +4,7 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialInstanceDocument,
   type MaterialSource,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { useDocumentActions, useRegistryState } from "./document-context";
 import {
   MATERIAL_DOCUMENT_KINDS,

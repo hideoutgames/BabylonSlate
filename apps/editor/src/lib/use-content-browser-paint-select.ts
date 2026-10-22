@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "@babylonslate/editor-kit";
+import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "@haptic/editor-kit";
 import {
   paintSelectTiles,
   resolveContentBrowserPaintHit,

@@ -6,7 +6,7 @@ import {
   createText3DComponent,
   documentId,
   type SerializedGraph,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   DocumentProvider,
   useDocumentActions,
@@ -59,12 +59,12 @@ vi.mock("../lib/engine-extension-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extension-library")>()),
   ensureEngineExtensionLibrary: (await provider()).emptyEngineLibrary,
 }));
-vi.mock("@babylonslate/render/ktx2-transcoder", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/render/ktx2-transcoder")>()),
+vi.mock("@haptic/render/ktx2-transcoder", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/render/ktx2-transcoder")>()),
   probeKtx2TranscoderAvailable: async () => false,
 }));
-vi.mock("@babylonslate/render/scene-load-readiness", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/render/scene-load-readiness")>()),
+vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/render/scene-load-readiness")>()),
   waitForSceneLoadingPaint: async () => {},
 }));
 // Play is not running; the panel only reads the focused debugger node.

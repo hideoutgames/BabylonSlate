@@ -1,8 +1,8 @@
 import { Material, Mesh, StandardMaterial } from "@babylonjs/core";
-import { installAssetBytes } from "@babylonslate/assets";
+import { installAssetBytes } from "@haptic/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";
-import { identityTransform, parseText2DProperties } from "@babylonslate/core";
+import { identityTransform, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
 import { applyAssignMaterial, applyAssignMesh, applyComponentTransformsCommand, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh, playComponentMeshName, retirePlaySlot, type AssignMeshPart } from "./snapshot-apply";

@@ -23,13 +23,13 @@ import {
   DEFAULT_RENDER_WIDTH,
   type ProjectAppearance,
   type ProjectFolderHandle,
-} from "@babylonslate/core";
-import { SearchInput } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import { SearchInput } from "@haptic/editor-kit";
 import {
   getHostPlatform,
   pickImportFiles,
-} from "@babylonslate/vfs";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
+} from "@haptic/vfs";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,8 +39,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/alert-dialog";
+import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,16 +49,16 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import {
   Empty,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import {
   filterListedProjects,
   HOMEPAGE_PROJECT_SORT_OPTIONS,

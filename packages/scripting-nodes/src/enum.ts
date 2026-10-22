@@ -8,7 +8,7 @@ import {
   STRING,
   enumRef,
   enumSwitchCasePinId,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export function enumGuidOf(properties: Record<string, unknown>): string {
   return typeof properties.enumGuid === "string" && properties.enumGuid.trim()
@@ -48,7 +48,7 @@ export {
   ENUM_SWITCH_CASE_PREFIX,
   enumSwitchCasePinId,
   enumSwitchMemberNameFromPinId,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 /** Display name for a Switch exec pin. Runtime values stay the member name. */
 export function titleCaseEnumMember(name: string): string {

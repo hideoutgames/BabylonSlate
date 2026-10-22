@@ -18,8 +18,8 @@ import {
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
-import { normalizeCelShadingSettings, normalizeEnvironmentLightingSettings } from "@babylonslate/core";
+} from "@haptic/shader-graph";
+import { normalizeCelShadingSettings, normalizeEnvironmentLightingSettings } from "@haptic/core";
 import { CelMaterial } from "./cel-material";
 import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
@@ -29,7 +29,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { ResourceCache } from "./resource-cache";
 import { applyEnvironmentLighting } from "./environment-lighting";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 
 const engines: NullEngine[] = [];
 afterEach(() => {

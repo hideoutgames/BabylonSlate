@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Dialog } from "@babylonslate/ui/components/dialog";
-import { SelectableText } from "@babylonslate/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Dialog } from "@haptic/ui/components/dialog";
+import { SelectableText } from "@haptic/editor-kit";
 import { ProgressDialogContent, ProgressDialogFailure, ProgressDialogStatus } from "./progress-dialog-parts";
 
 export type PlayPreparePhase = "saving" | "compiling" | "releasing";

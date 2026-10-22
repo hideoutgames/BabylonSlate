@@ -1,4 +1,4 @@
-import { emptySkyboxFaces, type SkyboxFaces } from "@babylonslate/core";
+import { emptySkyboxFaces, type SkyboxFaces } from "@haptic/core";
 import {
   createSkyboxFaceTextureResult,
   fitSourceIntoSkyboxNet,
@@ -8,7 +8,7 @@ import {
   stripAssetFileSuffix,
   type ImportResult,
   type SkyboxCreatorPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 export function relativePathUnderPrefix(
   path: string,

@@ -80,8 +80,8 @@ for (const scenario of scenarios) {
 
     await clickPlayAndWaitForOverlay(page);
     await expect.poll(() => page.evaluate(() => (window as unknown as {
-      __babylonslatePlayTest?: { tickIndex(): number };
-    }).__babylonslatePlayTest?.tickIndex() ?? 0), { timeout: 30_000 }).toBeGreaterThan(3);
+      __hapticPlayTest?: { tickIndex(): number };
+    }).__hapticPlayTest?.tickIndex() ?? 0), { timeout: 30_000 }).toBeGreaterThan(3);
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     await waitForSceneViewportReady(page);
@@ -103,8 +103,8 @@ async function selectBackend(page: Page, backend: string): Promise<void> {
 
 function baseline(page: Page): Promise<Baseline> {
   return page.evaluate(() => (window as unknown as {
-    __babylonslateViewportTest?: { renderingBaseline(): Baseline };
-  }).__babylonslateViewportTest?.renderingBaseline() ?? null);
+    __hapticViewportTest?: { renderingBaseline(): Baseline };
+  }).__hapticViewportTest?.renderingBaseline() ?? null);
 }
 
 function renderedColors(page: Page): Promise<number> {

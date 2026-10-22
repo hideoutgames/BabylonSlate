@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
-import { FakeLockProvider } from "@babylonslate/source-control";
-import { MemorySecretStore } from "@babylonslate/vfs";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
+import { FakeLockProvider } from "@haptic/source-control";
+import { MemorySecretStore } from "@haptic/vfs";
 import { SourceControlService } from "../services/source-control-service";
 import { DocumentLockBanner } from "./document-lock-banner";
 
@@ -15,7 +15,7 @@ const enabled = {
 async function serviceWithTheirs(): Promise<SourceControlService> {
   const service = new SourceControlService();
   const fake = new FakeLockProvider({ selfName: "Ada" });
-  fake.addTheirs("assets/hero.scene.babasset", "Bob", "2026-08-15T11:50:00Z");
+  fake.addTheirs("assets/hero.scene.hasset", "Bob", "2026-08-15T11:50:00Z");
   await service.configure({
     settings: enabled,
     projectGuid: "proj",
@@ -26,7 +26,7 @@ async function serviceWithTheirs(): Promise<SourceControlService> {
     fake,
   });
   await service.refresh();
-  service.onOpenDocument("assets/hero.scene.babasset");
+  service.onOpenDocument("assets/hero.scene.hasset");
   return service;
 }
 
@@ -37,18 +37,18 @@ describe("DocumentLockBanner", () => {
 
   it("does not offer a source-control override for a simulation authoring lock", async () => {
     const service = await serviceWithTheirs();
-    render(<DocumentLockBanner path="assets/hero.scene.babasset" sourceControl={service}
+    render(<DocumentLockBanner path="assets/hero.scene.hasset" sourceControl={service}
       authoringReason="Stop Simulation to edit authored content." />);
     expect(screen.getByText("Read-Only During Simulation")).toBeTruthy();
     expect(screen.queryByTestId("document-lock-edit-anyway")).toBeNull();
-    expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
+    expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(true);
   });
 
   it("shows the holder and Edit Anyway, then leaves the banner after confirm", async () => {
     const service = await serviceWithTheirs();
     const { rerender } = render(
       <DocumentLockBanner
-        path="assets/hero.scene.babasset"
+        path="assets/hero.scene.hasset"
         sourceControl={service}
       />,
     );
@@ -59,11 +59,11 @@ describe("DocumentLockBanner", () => {
     fireEvent.click(screen.getByTestId("document-lock-edit-anyway"));
     rerender(
       <DocumentLockBanner
-        path="assets/hero.scene.babasset"
+        path="assets/hero.scene.hasset"
         sourceControl={service}
       />,
     );
     expect(screen.getByTestId("document-lock-edit-anyway")).toBeTruthy();
-    expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(false);
+    expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(false);
   });
 });

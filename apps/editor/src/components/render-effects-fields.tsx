@@ -1,10 +1,10 @@
 import {
   RENDER_EFFECTS_LIMITS,
   type RenderEffectsSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { ReactNode } from "react";
-import { ColorField, NumberField } from "@babylonslate/editor-kit";
-import { Switch } from "@babylonslate/ui/components/switch";
+import { ColorField, NumberField } from "@haptic/editor-kit";
+import { Switch } from "@haptic/ui/components/switch";
 import { SpatialEffectsFields } from "./spatial-effects-fields";
 import {
   Field,
@@ -13,7 +13,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -21,7 +21,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 
 const pipelineLabels = {
   legacyDisplay: "Legacy Display",

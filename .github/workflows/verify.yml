@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  BL_EXECUTION_POLICY: hosted-ci
+  HAPTIC_EXECUTION_POLICY: hosted-ci
 
 jobs:
   # static + unit + 4 e2e shards = 6 jobs/PR. Four ready PRs use 24; GitHub
@@ -128,7 +128,7 @@ jobs:
       # The immutable build is verified before this shard executes its tests.
       - run: pnpm test:e2e --partition=${{ matrix.shard }}/4
         env:
-          BL_TEST_BUILD_MODE: ci-bundle
+          HAPTIC_TEST_BUILD_MODE: ci-bundle
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

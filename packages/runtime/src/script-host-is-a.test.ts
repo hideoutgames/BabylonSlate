@@ -3,14 +3,14 @@ import {
   Actor,
   ClassRegistry,
   GameInstance,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
 
 function node(

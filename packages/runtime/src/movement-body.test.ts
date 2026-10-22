@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { identityTransform } from "@babylonslate/core";
-import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
-import { createPhysicsBackend, createSoftwarePhysicsBackend, type PhysicsBackend } from "@babylonslate/physics";
+import { identityTransform } from "@haptic/core";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
+import { createPhysicsBackend, createSoftwarePhysicsBackend, type PhysicsBackend } from "@haptic/physics";
 import { MovementWorldSync } from "./movement";
 import { PhysicsWorldSync } from "./physics-sync";
 

@@ -9,12 +9,12 @@ export async function resolveExecutionPlan(profile, env = process.env) {
   const lowMemory = !hosted && config.profile === "low-memory";
   const request = workloadFor(profile, {
     ...env,
-    BL_TEST_PROFILE: lowMemory ? "shared" : env.BL_TEST_PROFILE,
+    HAPTIC_TEST_PROFILE: lowMemory ? "shared" : env.HAPTIC_TEST_PROFILE,
   });
   // Public-repository ubuntu-latest runners have four vCPUs and 16 GB.
   const workers = hosted ? 4 : lowMemory ? 1 : request.workers;
   const browserWorkers =
-    !hosted && !lowMemory && env.BL_TEST_PROFILE === "fast" ? 2 : 1;
+    !hosted && !lowMemory && env.HAPTIC_TEST_PROFILE === "fast" ? 2 : 1;
   return Object.freeze({
     profile,
     hosted,
@@ -34,7 +34,7 @@ export async function resolveExecutionPlan(profile, env = process.env) {
       capacity: Object.freeze({ ...config.capacity }),
     }),
     messages: Object.freeze(
-      lowMemory && env.BL_TEST_PROFILE === "fast"
+      lowMemory && env.HAPTIC_TEST_PROFILE === "fast"
         ? ["Low-memory host policy limits fast execution to one worker."]
         : [],
     ),

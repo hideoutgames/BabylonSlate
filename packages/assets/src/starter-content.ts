@@ -1,6 +1,6 @@
-import { ENGINE_VERSION } from "@babylonslate/core";
+import { ENGINE_VERSION } from "@haptic/core";
 import { encodeAssetDocument } from "./asset-document";
-import type { ProjectTreeFile } from "./babproject";
+import type { ProjectTreeFile } from "./hproject";
 import {
   createDefaultPluginSettings,
   encodePluginSettingsDocument,
@@ -12,8 +12,8 @@ export const STARTER_CONTENT_PLUGIN_GUID =
   "c0ffee00-0000-4000-8000-000000000001";
 export const STARTER_ACTOR_GUID = "c0ffee00-0000-4000-8000-000000000002";
 export const STARTER_ACTOR_CLASS_NAME = "StarterActor";
-export const STARTER_CONTENT_SETTINGS_FILE = "starter-content.plugin.babasset";
-export const STARTER_ACTOR_FILE = "assets/StarterActor.class.babasset";
+export const STARTER_CONTENT_SETTINGS_FILE = "starter-content.plugin.hasset";
+export const STARTER_ACTOR_FILE = "assets/StarterActor.class.hasset";
 
 /** Directory-form Starter Content files (no plugin.json; discovery uses PluginSettings). */
 export async function buildStarterContentFiles(): Promise<ProjectTreeFile[]> {
@@ -24,7 +24,7 @@ export async function buildStarterContentFiles(): Promise<ProjectTreeFile[]> {
   settings.enabledByDefault = false;
   settings.iconKey = "Puzzle";
   settings.description = "Bundled engine starter classes with no artwork.";
-  settings.author = "BabylonSlate";
+  settings.author = "Haptic";
   settings.category = "Engine";
   settings.engineVersion = ENGINE_VERSION;
 

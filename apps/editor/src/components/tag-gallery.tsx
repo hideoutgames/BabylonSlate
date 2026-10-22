@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { createTag, findTag, normalizeTagRegistry, type TagContainer } from "@babylonslate/core";
-import { PanelFrame, PropertyGrid, TagProvider } from "@babylonslate/editor-kit";
+import { createTag, findTag, normalizeTagRegistry, type TagContainer } from "@haptic/core";
+import { PanelFrame, PropertyGrid, TagProvider } from "@haptic/editor-kit";
 
 function sampleRegistry() {
   return [

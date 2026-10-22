@@ -1,5 +1,5 @@
-import { sameDebugObserveTarget, type DebugGraphTrace, type DebugInstance, type DebugObserveTarget } from "@babylonslate/bridge";
-import { btNodeStatuses, type BtNodeStatus } from "@babylonslate/behaviour-tree";
+import { sameDebugObserveTarget, type DebugGraphTrace, type DebugInstance, type DebugObserveTarget } from "@haptic/bridge";
+import { btNodeStatuses, type BtNodeStatus } from "@haptic/behaviour-tree";
 
 /** What the editor asks the running Simulation to watch. */
 export type GraphDebugRequest = {

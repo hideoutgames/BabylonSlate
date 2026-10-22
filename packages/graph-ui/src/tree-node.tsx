@@ -12,8 +12,8 @@ import {
   humanizePropertyLabel,
   useContextMenu,
   type NestedMenuItem,
-} from "@babylonslate/editor-kit";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { cn } from "@haptic/ui/lib/utils";
 import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";

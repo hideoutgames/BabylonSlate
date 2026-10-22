@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { Input } from "@babylonslate/ui/components/input";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Input } from "@haptic/ui/components/input";
+import { cn } from "@haptic/ui/lib/utils";
 
 export type InlineRenameEnd = "enter" | "escape" | "blur";
 

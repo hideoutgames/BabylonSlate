@@ -8,7 +8,7 @@ import {
   type CompileOptions,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 const registry = createDefaultNodeRegistry();

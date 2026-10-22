@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DebugInspectNode, DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectNode, DebugInspectSnapshot } from "@haptic/object-model";
 import { createInspectWorldStore, sameInspectValue } from "./inspect-world-store";
 
 function actor(id: string, label: string, variables: Record<string, unknown> = {}): DebugInspectNode {

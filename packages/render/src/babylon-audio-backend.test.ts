@@ -28,7 +28,7 @@ vi.mock("@babylonjs/core/AudioV2", () => ({
   CreateSoundBufferAsync: audio.createBuffer,
   CreateSoundAsync: audio.createSound,
 }));
-import { createDefaultAudioPayload } from "@babylonslate/assets";
+import { createDefaultAudioPayload } from "@haptic/assets";
 import { AudioService } from "./audio-service";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 

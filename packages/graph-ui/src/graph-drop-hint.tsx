@@ -1,4 +1,4 @@
-import { Badge } from "@babylonslate/ui/components/badge";
+import { Badge } from "@haptic/ui/components/badge";
 
 export type GraphDropHintState = {
   clientX: number;

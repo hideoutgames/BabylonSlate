@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeAssetDocument, readAssetDocumentHeader, type ChunkEntry, type IndexedAsset } from "@babylonslate/assets";
+import { encodeAssetDocument, readAssetDocumentHeader, type ChunkEntry, type IndexedAsset } from "@haptic/assets";
 import {
   changedTextureEncodings,
   sceneViewportAssetKey,
@@ -14,7 +14,7 @@ function chunk(id: string, kind: string, sha256: string): ChunkEntry {
 
 async function indexed(type: string, guid: string, payload: Record<string, unknown>, chunks: ChunkEntry[]): Promise<IndexedAsset> {
   const header = readAssetDocumentHeader(await encodeAssetDocument({ type, guid, name: guid, version: 1, payload }));
-  return { rootId: "project", path: `assets/${guid}.babasset`, header: { ...header, payload, chunks } };
+  return { rootId: "project", path: `assets/${guid}.hasset`, header: { ...header, payload, chunks } };
 }
 
 const sourceChunk = (sha: string) => chunk("pixels", "pixels", sha);

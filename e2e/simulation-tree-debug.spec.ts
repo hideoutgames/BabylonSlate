@@ -3,8 +3,8 @@ import { createContentBrowserAsset, openMainScene, openTestProject } from "./ope
 import { pickCatalogItem } from "./pick-catalog-item";
 
 type TestHost = typeof globalThis & {
-  __babylonslateSimulationTest: { start(): Promise<void> };
-  __babylonslateTest: { guidForPath(path: string): string | null };
+  __hapticSimulationTest: { start(): Promise<void> };
+  __hapticTest: { guidForPath(path: string): string | null };
 };
 
 const select = (page: Page) => page.getByTestId("graph-debug-instance-select");
@@ -69,10 +69,10 @@ test("a Simulation shows a Behaviour Tree and an Animation Graph run for the ins
   await openTestProject(page);
   await createContentBrowserAsset(page, "BehaviourTree", "Patrol");
   await createContentBrowserAsset(page, "AnimationGraph", "Loco");
-  await openAsset(page, "assets/Patrol.bt.babasset", "behaviour-tree-editor");
-  await openAsset(page, "assets/Loco.anim.babasset", "anim-graph-editor");
-  const guid = (path: string) => page.evaluate((assetPath) => (globalThis as TestHost).__babylonslateTest.guidForPath(assetPath) ?? "", path);
-  const [treeGuid, graphGuid] = [await guid("assets/Patrol.bt.babasset"), await guid("assets/Loco.anim.babasset")];
+  await openAsset(page, "assets/Patrol.bt.hasset", "behaviour-tree-editor");
+  await openAsset(page, "assets/Loco.anim.hasset", "anim-graph-editor");
+  const guid = (path: string) => page.evaluate((assetPath) => (globalThis as TestHost).__hapticTest.guidForPath(assetPath) ?? "", path);
+  const [treeGuid, graphGuid] = [await guid("assets/Patrol.bt.hasset"), await guid("assets/Loco.anim.hasset")];
   expect(treeGuid).not.toBe("");
   expect(graphGuid).not.toBe("");
 
@@ -83,7 +83,7 @@ test("a Simulation shows a Behaviour Tree and an Animation Graph run for the ins
   await placeEmptyActor(page);
   await addAssetComponent(page, "BehaviourTreeComponent", "Behaviour Tree", "treeGuid", treeGuid);
 
-  await page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.start());
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
   await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
   await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
 

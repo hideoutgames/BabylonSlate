@@ -21,7 +21,7 @@ import {
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderingQuality,
   normalizeWaterBody,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { COMPILE_AHEAD_LIMIT } from "./driver-compile";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";

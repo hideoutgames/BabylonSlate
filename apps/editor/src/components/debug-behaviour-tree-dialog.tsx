@@ -1,17 +1,17 @@
-import type { DebugBehaviourTree } from "@babylonslate/bridge";
-import { sanitizeInspectValue } from "@babylonslate/object-model";
+import type { DebugBehaviourTree } from "@haptic/bridge";
+import { sanitizeInspectValue } from "@haptic/object-model";
 import { useState } from "react";
 import {
   humanizePropertyLabel,
   PropertyGrid,
   SelectableText,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Select,
   SelectContent,
@@ -19,16 +19,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/select";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import {
   Empty,
   EmptyHeader,
   EmptyTitle,
   EmptyDescription,
-} from "@babylonslate/ui/components/empty";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/empty";
+import { Badge } from "@haptic/ui/components/badge";
+import { cn } from "@haptic/ui/lib/utils";
 import { playInspectPropertyRows } from "../lib/play-inspect-rows";
 
 export function DebugBehaviourTreeDialog({

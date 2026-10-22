@@ -28,7 +28,7 @@ import {
   type TilesetPayload,
   type TilesetTerrain,
   type TilesetTile,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   ANIM_EXIT_TIME_REACHED_TYPE,
   ANIM_RULE_ENTER_NODE_ID,
@@ -37,7 +37,7 @@ import {
   defaultAnimStatePosition,
   type AnimGraphDocument,
   type AnimTransition,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   createDefaultScene,
   DEFAULT_TWO_D_PROJECT_SETTINGS,
@@ -45,8 +45,8 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
-import { parseColliderProperties, parseConstraintProperties } from "@babylonslate/physics";
+} from "@haptic/core";
+import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import {
   actor,
   comp,

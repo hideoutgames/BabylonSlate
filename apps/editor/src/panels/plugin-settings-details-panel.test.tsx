@@ -12,7 +12,7 @@ import {
   normalizePluginSettings,
   type PluginDescriptor,
   type PluginSettingsPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { PluginSettingsDetailsPanel } from "./plugin-settings-details-panel";
 
 const harness = vi.hoisted(() => ({
@@ -32,7 +32,7 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [
         {
           id: "plugin-settings:pack",
-          ref: { path: "plugins/pack/pack.plugin.babasset", label: "Pack" },
+          ref: { path: "plugins/pack/pack.plugin.hasset", label: "Pack" },
           content,
         },
       ],
@@ -57,7 +57,7 @@ function plugin(guid: string, displayName: string): PluginDescriptor {
     pluginGuid: guid,
     folderName: guid,
     folderPath: `plugins/${guid}`,
-    settingsPath: `plugins/${guid}/${guid}.plugin.babasset`,
+    settingsPath: `plugins/${guid}/${guid}.plugin.hasset`,
     contentPath: `plugins/${guid}/assets`,
     source: "project",
     readOnly: false,

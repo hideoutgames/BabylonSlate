@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SaveGameService, type SaveGameDefinition, type SaveGameStorage } from "@babylonslate/core";
-import { Actor } from "@babylonslate/object-model";
-import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { SaveGameService, type SaveGameDefinition, type SaveGameStorage } from "@haptic/core";
+import { Actor } from "@haptic/object-model";
+import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
 function storage(): SaveGameStorage {

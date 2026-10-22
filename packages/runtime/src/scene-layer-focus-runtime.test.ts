@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer, identitySerializedTransform, normalizeFocusNavigationSettings } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, createDefaultSceneLayer, identitySerializedTransform, normalizeFocusNavigationSettings } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 import { runtimeOptionsFromLoadControl } from "./play-load";
 

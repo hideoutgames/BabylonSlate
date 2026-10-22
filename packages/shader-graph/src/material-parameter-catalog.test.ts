@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMaterialParameterCatalog } from "@babylonslate/core";
+import { normalizeMaterialParameterCatalog } from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,

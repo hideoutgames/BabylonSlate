@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultWaterDefinition, identityTransform } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createPhysicsBackend } from "@babylonslate/physics";
+import { createDefaultWaterDefinition, identityTransform } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { createPhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 describe("Water buoyancy with native collision response", () => {

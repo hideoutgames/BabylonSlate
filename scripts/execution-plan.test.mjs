@@ -23,8 +23,8 @@ test("low-memory policy clamps fast/CI requests without making builds impossible
     for (const profile of ["build", "unit", "browser", "coverage", "tooling"]) {
       const plan = await resolveExecutionPlan(profile, {
         CI: "true",
-        BL_TEST_PROFILE: "fast",
-        BL_LOCAL_RESOURCE_CONFIG: path,
+        HAPTIC_TEST_PROFILE: "fast",
+        HAPTIC_LOCAL_RESOURCE_CONFIG: path,
       });
       assert.equal(plan.hosted, false);
       assert.equal(plan.workers, 1);
@@ -64,14 +64,14 @@ test("low-memory policy clamps fast/CI requests without making builds impossible
     }
   }
   await assert.rejects(
-    resolveExecutionPlan("unit", { BL_LOCAL_RESOURCE_CONFIG: "" }),
+    resolveExecutionPlan("unit", { HAPTIC_LOCAL_RESOURCE_CONFIG: "" }),
     /empty override/,
   );
 });
 
 test("partial/spurious CI context cannot select hosted execution", async () => {
   const hosted = {
-    BL_EXECUTION_POLICY: "hosted-ci",
+    HAPTIC_EXECUTION_POLICY: "hosted-ci",
     GITHUB_ACTIONS: "true",
     RUNNER_ENVIRONMENT: "github-hosted",
     GITHUB_RUN_ID: "123",
@@ -99,9 +99,9 @@ test("partial/spurious CI context cannot select hosted execution", async () => {
 test("an alternate or missing configuration cannot relax an existing host policy", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "host-policy-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  await mkdir(join(directory, "BabylonSlate"));
+  await mkdir(join(directory, "Haptic"));
   await writeFile(
-    join(directory, "BabylonSlate/local-resources.json"),
+    join(directory, "Haptic/local-resources.json"),
     JSON.stringify({ version: 1, profile: "low-memory", reserveGiB: 4.5 }),
   );
   const alternative = join(directory, "worktree.json");
@@ -112,8 +112,8 @@ test("an alternate or missing configuration cannot relax an existing host policy
   for (const path of [alternative, join(directory, "absent.json")]) {
     const plan = await resolveExecutionPlan("unit", {
       LOCALAPPDATA: directory,
-      BL_LOCAL_RESOURCE_CONFIG: path,
-      BL_TEST_PROFILE: "fast",
+      HAPTIC_LOCAL_RESOURCE_CONFIG: path,
+      HAPTIC_TEST_PROFILE: "fast",
     });
     assert.equal(plan.workers, 1);
     assert.equal(plan.config.maxRoots, 1);

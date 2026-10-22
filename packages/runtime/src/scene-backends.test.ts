@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer, createDefaultSceneSettings } from "@babylonslate/core";
-import { generateNavMesh } from "@babylonslate/navigation";
-import * as physics from "@babylonslate/physics";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createDefaultSceneSettings } from "@haptic/core";
+import { generateNavMesh } from "@haptic/navigation";
+import * as physics from "@haptic/physics";
 import { createInProcessRuntime } from "./driver";
 import { createRuntimeFromLoad } from "./play-load";
 

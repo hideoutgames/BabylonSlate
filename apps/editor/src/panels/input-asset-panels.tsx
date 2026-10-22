@@ -5,22 +5,22 @@ import {
   normalizeInputAssetPayload,
   type InputAssetPayload,
   type InputDevice,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   BindingCodePicker,
   PanelFrame,
   PropertyGrid,
   SearchDropdown,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   Empty,
   EmptyHeader,
   EmptyTitle,
   EmptyDescription,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import {
   useActiveDocumentId,
   useDocumentActions,

@@ -1,7 +1,7 @@
 import {
   PARTICLE_CURVE_MAX_KEYS,
   PARTICLE_CURVE_MIN_KEYS,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { resizeParticleValue, type ParticleNumericType } from "./types";
 
 /** One Gradient node stop. `value` has the node's `valueType` width. */

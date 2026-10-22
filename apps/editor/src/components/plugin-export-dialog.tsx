@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
-import type { PluginDescriptor } from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
+import type { PluginDescriptor } from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@babylonslate/ui/components/alert";
+} from "@haptic/ui/components/alert";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +23,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 import {
   ensureEnginePluginLibrary,
   type EnginePluginEntry,

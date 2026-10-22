@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AudioReverbGeometry } from "@babylonslate/assets";
+import type { AudioReverbGeometry } from "@haptic/assets";
 import { createAudioReverbWorker } from "./audio-reverb-worker-host";
 
 class SilentWorker {

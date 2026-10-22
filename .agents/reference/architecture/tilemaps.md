@@ -5,7 +5,7 @@ Tileset and Tilemap assets, chunked geometry, merged chain collision, animated t
 ## Decisions
 
 - Not Babylon `SpriteMap`: that format cannot golden-test geometry or emit collision chains.
-- Geometry and collision builders in `@babylonslate/assets` are pure and Babylon-free; callers pass world tile size (`px / pixelsPerUnit`) so assets never read project settings.
+- Geometry and collision builders in `@haptic/assets` are pure and Babylon-free; callers pass world tile size (`px / pixelsPerUnit`) so assets never read project settings.
 - Atlas materials stay unlit, double-sided and alpha-tested (same path as sprites) in both 2D and 3D; they disable fog and image processing. Switching to blend needs an on-device fill-rate measurement.
 - Autotile terrains resolve at paint time into ordinary GIDs: render, physics, nav bake and the runtime never see terrain data, and a painted map stays valid if its terrains change.
 - The author picks the autotile style per terrain (`sides` or `blob`) rather than per Tileset, so one sheet can mix a 4-side strip set and a blob ground set.
@@ -29,11 +29,11 @@ Tileset and Tilemap assets, chunked geometry, merged chain collision, animated t
 
 ## Formats
 
-- Tileset (`.tileset.babasset`, kind `tileset`): `textureGuid`, `atlasWidth/Height` (source pixels, needed before the texture loads), `tileWidth/Height`, `margin`, `spacing`, per-id `tiles` metadata (`collision` none / full / chain points, `flags`, `animation`, `animationFrameDurationMs`, optional `terrain`), optional `terrains`.
+- Tileset (`.tileset.hasset`, kind `tileset`): `textureGuid`, `atlasWidth/Height` (source pixels, needed before the texture loads), `tileWidth/Height`, `margin`, `spacing`, per-id `tiles` metadata (`collision` none / full / chain points, `flags`, `animation`, `animationFrameDurationMs`, optional `terrain`), optional `terrains`.
 - Terrains: `terrains: [{ id, name, style: "sides" | "blob" }]` (unknown style → `sides`); a member tile has `terrain: { id, mask }`. Both keys are optional and omitted when empty, so older Tilesets decode unchanged (additive, no header version bump); normalize drops a membership whose terrain the Tileset does not define and clamps `mask` to 8 bits. `mask` stores raw bits so switching style keeps corner bits; the style's canonical form is applied when resolving.
 - Mask bits, clockwise from north in +Y-up tile space: N 1, NE 2, E 4, SE 8, S 16, SW 32, W 64, NW 128 (`TERRAIN_*`). Canonical `sides` keeps N/E/S/W (16 variants); canonical `blob` keeps a corner only when both adjacent sides are set (47 variants).
 - Tile id 0 is empty; id 1 is the first atlas cell, row 0 at the image top.
-- Tilemap (`.tilemap.babasset`, kind `tilemap`): Tiled-style `tilesets` `{ guid, firstGid, tileCount }`; cells store global GIDs (`firstGid + localId - 1`); `tileWidth/Height`; `width/height` in tiles (default 64×64); `chunkSize` (default 32); ordered `layers` with visibility, collision opt-in, sorting, parallax and sparse chunks.
+- Tilemap (`.tilemap.hasset`, kind `tilemap`): Tiled-style `tilesets` `{ guid, firstGid, tileCount }`; cells store global GIDs (`firstGid + localId - 1`); `tileWidth/Height`; `width/height` in tiles (default 64×64); `chunkSize` (default 32); ordered `layers` with visibility, collision opt-in, sorting, parallax and sparse chunks.
 - Chunk `{ cx, cy, tiles }`, `tiles.length === chunkSize²`, index `ly * chunkSize + lx`, (0,0) bottom-left, +Y up, XY plane. Empty cells and chunks are never allocated.
 - `decodeTileGid` picks the highest `firstGid <= gid`; a map without tilesets owns no GIDs. `tileCount` never shrinks; `reconcileTilemapTilesets` relocates growing ranges and remaps cells as part of the next authored edit (so it undoes with it). Closed maps are never rewritten across documents.
 - Removing a Tileset erases its painted cells without compacting other GIDs.

@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/test-kit",
+  "name": "@haptic/test-kit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,11 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/test-kit"
   },
   "dependencies": {
-    "@babylonslate/object-model": "workspace:*",
-    "@babylonslate/runtime": "workspace:*"
+    "@haptic/object-model": "workspace:*",
+    "@haptic/runtime": "workspace:*"
   },
   "devDependencies": {
-    "@babylonslate/bridge": "workspace:*",
+    "@haptic/bridge": "workspace:*",
     "typescript": "~6.0.3"
   }
 }

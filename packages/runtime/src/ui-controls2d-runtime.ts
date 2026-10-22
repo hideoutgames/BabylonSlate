@@ -4,9 +4,9 @@ import {
   normalizeUIControl2DText,
   parseUIControl2DProperties,
   type UIControl2DProperties,
-} from "@babylonslate/core";
-import type { ControlMessage } from "@babylonslate/bridge";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+} from "@haptic/core";
+import type { ControlMessage } from "@haptic/bridge";
+import type { Actor, ActorComponent } from "@haptic/object-model";
 import { actorParentGuid } from "./actor-world-transform";
 
 type ControlInput = Extract<ControlMessage, { type: "sceneLayerControl" }>;

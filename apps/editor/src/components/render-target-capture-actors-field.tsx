@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { EntryListEditor, PropertyGrid, SearchDialog, humanizePropertyLabel } from "@babylonslate/editor-kit";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
-import type { SerializedActor } from "@babylonslate/core";
+import { EntryListEditor, PropertyGrid, SearchDialog, humanizePropertyLabel } from "@haptic/editor-kit";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
+import type { SerializedActor } from "@haptic/core";
 
 /** Scene Actor references share one picker/list in scene and prefab Details. */
 export function RenderTargetCaptureActorsField({ actorIds, actors, onChange, source }: {

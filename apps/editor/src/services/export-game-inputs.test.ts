@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene, createDefaultSceneLayer, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
-import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
-import type { IndexedAsset } from "@babylonslate/assets";
+import { createDefaultScene, createDefaultSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
+import type { IndexedAsset } from "@haptic/assets";
 import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
-import { importEnvironmentTexture, AREA_EMISSION_EDGE, areaEmissionChunkId, encodeAreaEmission } from "@babylonslate/assets";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
+import { importEnvironmentTexture, AREA_EMISSION_EDGE, areaEmissionChunkId, encodeAreaEmission } from "@haptic/assets";
 import { assetHeaderDependencies, assetReferencesIncludingOpenDocuments } from "../lib/content-browser-helpers";
 
 function textureAsset(): IndexedAsset {
   return {
     rootId: "project",
-    path: "assets/Hero.texture.babasset",
+    path: "assets/Hero.texture.hasset",
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "tex-1",
@@ -66,7 +66,7 @@ describe("loadExportDocuments", () => {
   });
   it.each(["RenderTarget", "RenderTargetTexture"])("retains %s document bytes and dependency payloads for export", async (type) => {
     const document = type === "RenderTarget" ? { size: 512, mode: "depth" } : { renderTargetGuid: "target", attachment: "depth" };
-    const asset: IndexedAsset = { ...textureAsset(), path: `assets/capture.${type}.babasset`, header: {
+    const asset: IndexedAsset = { ...textureAsset(), path: `assets/capture.${type}.hasset`, header: {
       ...textureAsset().header, guid: "capture", type, payload: {}, chunks: [
         { id: "document", kind: "document", mime: "application/json", sha256: "aa", byteLength: 1, locator: { inline: { offset: 0, length: 1 } } },
       ],
@@ -77,7 +77,7 @@ describe("loadExportDocuments", () => {
     expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("capture")!))).toEqual(document);
   });
   it("reports a document that failed to load when the export asks for its bytes", async () => {
-    const asset: IndexedAsset = { ...textureAsset(), path: "assets/Hero.class.babasset", header: {
+    const asset: IndexedAsset = { ...textureAsset(), path: "assets/Hero.class.hasset", header: {
       ...textureAsset().header, guid: "hero", type: "Class", payload: {}, chunks: [],
     } };
     const loaded = await loadFixtureExportDocuments({ assets: [asset], loadDocument: async () => { throw new Error("Storage unavailable"); },
@@ -91,7 +91,7 @@ describe("loadExportDocuments", () => {
     const sourceHash = "a".repeat(64);
     asset.header.chunks[0]!.sha256 = sourceHash;
     const id = areaEmissionChunkId(sourceHash);
-    asset.header.chunks.push({ id, kind: "area-emission", mime: "application/x-babylonslate-area-emission", sha256: "b".repeat(64), byteLength: 1, locator: { inline: { offset: 0, length: 1 } } });
+    asset.header.chunks.push({ id, kind: "area-emission", mime: "application/x-haptic-area-emission", sha256: "b".repeat(64), byteLength: 1, locator: { inline: { offset: 0, length: 1 } } });
     const prepared = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(190), sourceHash);
     const load = () => loadFixtureExportDocuments({ assets: [asset], loadDocument: async () => null, readAssetChunk: async (_path, chunk) => chunk === id ? prepared : new Uint8Array([7]) });
     const loaded = await load();
@@ -118,7 +118,7 @@ describe("loadExportDocuments", () => {
     const payload = scene as unknown as Record<string, unknown>;
     const dependencies = assetHeaderDependencies("Scene", payload);
     expect(dependencies).toContain(imported!.guid);
-    const sceneAsset = { ...asset, path: "assets/main.scene.babasset", header: { ...asset.header, guid: "scene-1", type: "Scene", payload: {}, dependencies: [] } };
+    const sceneAsset = { ...asset, path: "assets/main.scene.hasset", header: { ...asset.header, guid: "scene-1", type: "Scene", payload: {}, dependencies: [] } };
     expect(assetReferencesIncludingOpenDocuments(imported!.guid, [asset, sceneAsset], [{ ref: { path: sceneAsset.path }, content: payload }]).inbound).toEqual(["scene-1"]);
     scene.settings.environmentTextureGuid = null;
     expect(assetHeaderDependencies("Scene", payload)).not.toContain(imported!.guid);
@@ -150,7 +150,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "scene-1",
@@ -202,7 +202,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Hero.texture.babasset",
+          path: "assets/Hero.texture.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "tex-1",
@@ -264,7 +264,7 @@ describe("loadExportDocuments", () => {
         assets: [
           {
             rootId: "project",
-            path: "assets/Spark.texture.babasset",
+            path: "assets/Spark.texture.hasset",
             header: {
               dependencyMetadataVersion: 1, requiredDependencies: [],
               guid: "tex-1",
@@ -305,7 +305,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Hero.sprite.babasset",
+          path: "assets/Hero.sprite.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "sprite-1",
@@ -332,7 +332,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "scene-1",
@@ -368,7 +368,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "scene-1",
@@ -403,7 +403,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "font-1",
@@ -438,13 +438,13 @@ describe("loadExportDocuments", () => {
   });
 
   it("packs Audio source with payload so the player can route gain", async () => {
-    const { decodePackedAudioAsset } = await import("@babylonslate/assets");
+    const { decodePackedAudioAsset } = await import("@haptic/assets");
     const kinds: string[] = [];
     const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
-          path: "assets/Jump.babasset",
+          path: "assets/Jump.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "jump",
@@ -495,12 +495,12 @@ describe("loadExportDocuments", () => {
   });
 
   it("packs every Audio clip blob, not only the default source chunk", async () => {
-    const { decodePackedAudioAsset } = await import("@babylonslate/assets");
+    const { decodePackedAudioAsset } = await import("@haptic/assets");
     const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
-          path: "assets/Jump.babasset",
+          path: "assets/Jump.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "jump",
@@ -566,7 +566,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Hero_Idle.animation.babasset",
+          path: "assets/Hero_Idle.animation.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "hero-idle-anim",
@@ -600,7 +600,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Embers.particlegraph.babasset",
+          path: "assets/Embers.particlegraph.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "embers",
@@ -630,7 +630,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "font-1",
@@ -676,7 +676,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "font-1",
@@ -726,14 +726,14 @@ describe("loadExportDocuments", () => {
   });
 
   it("packs Model payload with GLB source so importScale survives export", async () => {
-    const { decodePackedModelAsset } = await import("@babylonslate/assets");
+    const { decodePackedModelAsset } = await import("@haptic/assets");
     const kinds: string[] = [];
     const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9, 8]);
     const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
-          path: "assets/Hero.model.babasset",
+          path: "assets/Hero.model.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "hero-model",
@@ -793,7 +793,7 @@ describe("loadExportDocuments", () => {
       assets: [
         {
           rootId: "project",
-          path: "assets/Hud.scenelayer.babasset",
+          path: "assets/Hud.scenelayer.hasset",
           header: {
             dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "hud",

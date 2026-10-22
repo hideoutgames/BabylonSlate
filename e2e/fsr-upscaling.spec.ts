@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { runFsrUpscalingProof } from "../apps/editor/src/testing/fsr-upscaling-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2", "webgpu"] as const) {

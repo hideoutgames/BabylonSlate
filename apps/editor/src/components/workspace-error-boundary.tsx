@@ -3,9 +3,9 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@babylonslate/ui/components/alert";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/ui/components/alert";
+import { SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import { profileRegion } from "../lib/render-profile";
 
 interface WorkspaceErrorBoundaryProps {

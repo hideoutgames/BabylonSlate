@@ -1,4 +1,4 @@
-import type { MaterialInstanceOverrides, SerializedScene } from "@babylonslate/core";
+import type { MaterialInstanceOverrides, SerializedScene } from "@haptic/core";
 import type { EditCommand } from "../command";
 import { snapshotBytes } from "../snapshot-bytes";
 

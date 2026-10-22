@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage } from "@haptic/core";
 
 const journalOperations = new WeakMap<
   ProjectStorage,

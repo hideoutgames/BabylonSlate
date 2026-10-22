@@ -4,9 +4,9 @@ import {
   normalizeParticleEmitterPayload,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
-} from "@babylonslate/assets";
-import { PARTICLE_CPU_CAPACITY_BUDGET, PARTICLE_UPDATE_SPEED } from "@babylonslate/core";
-import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@babylonslate/particle-graph";
+} from "@haptic/assets";
+import { PARTICLE_CPU_CAPACITY_BUDGET, PARTICLE_UPDATE_SPEED } from "@haptic/core";
+import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService, particleStats, type ParticleMaterialOwner, type ParticleServiceDiagnostic } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";

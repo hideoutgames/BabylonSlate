@@ -15,7 +15,7 @@ test(
       page.getByTestId("content-browser-new-asset-dialog"),
     ).toHaveCount(0);
     await page
-      .locator('[data-asset-path="assets/CameraMove.inputaxis.babasset"]')
+      .locator('[data-asset-path="assets/CameraMove.inputaxis.hasset"]')
       .dblclick();
     const workspace = page.getByTestId("document-workspace-input-axis");
     await expect(workspace).toBeVisible();
@@ -94,7 +94,7 @@ test(
       )
       .click();
     await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .locator('[data-asset-path="assets/main.class.hasset"]')
       .dblclick();
     await page.getByTestId("graph-add-node").click();
     await page.getByTestId("node-palette-search").fill("CameraMove");

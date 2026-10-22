@@ -1,32 +1,32 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   readActorSlot,
   snapshotFloatCount,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   createDefaultSceneSettings,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   encodeTraceDocument,
   decodeTraceDocument,
-} from "@babylonslate/assets";
-import type { BehaviourTreeDocument } from "@babylonslate/behaviour-tree";
+} from "@haptic/assets";
+import type { BehaviourTreeDocument } from "@haptic/behaviour-tree";
 import {
   generateNavMesh,
   initNavigation,
   recastWalkableQuadFromXy,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 import {
   BOOL,
   compileGraph,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
@@ -639,7 +639,7 @@ describe("P11 §18 acceptance", () => {
     runtime.stop();
   });
 
-  it("replays recorded BT decisions from a .babtrace payload", async () => {
+  it("replays recorded BT decisions from a .htrace payload", async () => {
     const options = {
       seed: 1,
       maxActors: 8,

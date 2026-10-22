@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_FLY_SPEED } from "@babylonslate/render";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { DEFAULT_FLY_SPEED } from "@haptic/render";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   joystickValueFromPointer,
   VIEWPORT_JOYSTICK_RADIUS,

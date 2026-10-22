@@ -1,4 +1,4 @@
-import { ASSET_TYPES } from "@babylonslate/core";
+import { ASSET_TYPES } from "@haptic/core";
 import type { EngineEnum, EngineStruct } from "./engine-types";
 
 /** Engine types behind the Asset Registry nodes (`packages/scripting-nodes/src/asset-registry.ts`). */
