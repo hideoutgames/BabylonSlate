@@ -72,8 +72,8 @@ test("a breakpoint set from a node's menu stops a Simulation, opens the node and
   await page.waitForTimeout(300);
   expect(await tickIndex(page)).toBe(stoppedAt);
   // The toolbar names the stop as the canvas titles its node, and Debug Instance follows the object that reached it.
-  await expect(printNode(page)).toContainText("Debug Print");
-  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Debug Print on Hero");
+  await expect(printNode(page)).toContainText("Print");
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Print on Hero");
   await expect(page.getByTestId("graph-debug-instance-select")).toContainText("Hero");
   // The object's path shows from its next tick on (a Step stops at the node again) and stays lit while paused.
   await page.getByTestId("simulation-step").click();

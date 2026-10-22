@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { BREAKPOINT_PAUSE_CODE, type SessionPauseCause } from "@haptic/bridge";
-import { documentId, type SerializedGraph } from "@haptic/core";
-import { canvasNodeTitle } from "@haptic/graph-ui";
+import { documentId } from "@haptic/core";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { useOpenDocument } from "../context/document-context";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { sessionReportNodeTitle } from "./session-report-locations";
 
 /** Where a Simulation stopped, named for the toolbar: Class, event or function, node and object. */
 export type BreakpointStop = {
@@ -16,20 +16,9 @@ export type BreakpointStop = {
   objectName?: string;
 };
 
-type GraphNodes = SerializedGraph["nodes"];
-
-function findNode(graph: SerializedGraph | null | undefined, nodeId: string): GraphNodes[number] | undefined {
-  if (!graph) return undefined;
-  const nodes: GraphNodes[] = [graph.nodes, ...Object.values(graph.functionGraphs ?? {}).map((slice) => slice.nodes)];
-  for (const list of nodes) {
-    const node = list.find((candidate) => candidate.id === nodeId);
-    if (node) return node;
-  }
-  return undefined;
-}
-
-const titleOf = (node: GraphNodes[number] | undefined) =>
-  node ? canvasNodeTitle((node.data ?? {}) as Record<string, unknown>, node.type) : undefined;
+/** The title the open Class's canvas shows for a node (catalog titles come from hydration). */
+const titleOf = (content: unknown, nodeId: string | undefined) =>
+  content && nodeId ? sessionReportNodeTitle("Class", content, nodeId) ?? undefined : undefined;
 
 /**
  * The names of a breakpoint stop, from the breakpoint as it was set and the Class document the stop
@@ -43,14 +32,14 @@ export function useBreakpointStop(cause: SessionPauseCause | null | undefined): 
     if (!isStop || !cause) return null;
     const { assetGuid, graphId, nodeId, entryNodeId, instanceLabel } = cause;
     const entry = store?.get({ assetGuid: assetGuid!, graphId: graphId ?? "event-graph", nodeId: nodeId! });
-    const graph = (doc?.content ?? null) as SerializedGraph | null;
+    const content = doc?.content;
     return {
       className: entry?.label.className ?? classIdForGraphPath(assetGuid!),
       // A function's runs start at its entry, which is named for the function.
       entryName: graphId && graphId !== "event-graph"
         ? entry?.label.graphName ?? graphId
-        : titleOf(entryNodeId ? findNode(graph, entryNodeId) : undefined) ?? "Event Graph",
-      nodeTitle: titleOf(findNode(graph, nodeId!)) ?? entry?.label.nodeTitle ?? nodeId!,
+        : titleOf(content, entryNodeId) ?? "Event Graph",
+      nodeTitle: titleOf(content, nodeId) ?? entry?.label.nodeTitle ?? nodeId!,
       ...(instanceLabel ? { objectName: instanceLabel } : {}),
     };
   }, [cause, doc?.content, isStop, store]);
