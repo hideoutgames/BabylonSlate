@@ -69,6 +69,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
 
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => layout.phone,
+  usePhoneTouchSizing: () => layout.phone,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs));

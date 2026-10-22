@@ -88,7 +88,7 @@ import {
   selectionAfterLockChange,
 } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
@@ -205,7 +205,7 @@ const ActorRowActions = memo(function ActorRowActions({
   label,
   muted,
   locked,
-  phone,
+  touchSizing,
   actionSize,
   actions,
 }: {
@@ -213,7 +213,7 @@ const ActorRowActions = memo(function ActorRowActions({
   label: string;
   muted: boolean;
   locked: boolean;
-  phone: boolean;
+  touchSizing: boolean;
   actionSize: RowActionSize;
   actions: OutlinerRowActions;
 }) {
@@ -236,7 +236,7 @@ const ActorRowActions = memo(function ActorRowActions({
       <Toggle
         aria-label={`${locked ? "Unlock" : "Lock"} ${label}`}
         title={`${locked ? "Unlock" : "Lock"} ${label}`}
-        size={phone ? "touch" : "sm"}
+        size={touchSizing ? "touch" : "sm"}
         onPressedChange={() => actions.toggleFlag(actorId, "locked")}
         data-testid={`outliner-lock-${actorId}`}
         pressed={locked}
@@ -550,8 +550,8 @@ export function SceneOutlinerPanel(props: IDockviewPanelProps) {
 
 function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
-  const phone = usePhoneLayout();
-  const actionSize = phone ? "touch-icon" : "icon-sm";
+  const touchSizing = usePhoneTouchSizing();
+  const actionSize = touchSizing ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
   const {
     getOpenDocuments,
@@ -1277,14 +1277,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
               label={node.label}
               muted={node.muted === true}
               locked={lockedIds.has(actorId)}
-              phone={phone}
+              touchSizing={touchSizing}
               actionSize={actionSize}
               actions={rowActions}
             />
           ),
         };
       }),
-    [actionSize, lockedIds, nodes, phone, rowActions],
+    [actionSize, lockedIds, nodes, touchSizing, rowActions],
   );
 
   // Other documents' edits re-render this panel through the document
@@ -1292,7 +1292,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const tree = useMemo(
     () => (
       <TreeView
-        rowHeight={phone ? 44 : undefined}
+        rowHeight={touchSizing ? 44 : undefined}
         nodes={treeNodes}
         selectedId={selectedRowId}
         selectedIds={selectedRowIds}
@@ -1331,7 +1331,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       finishRowRename,
       frameActor,
       moveActorDropHint,
-      phone,
+      touchSizing,
       renamingRowId,
       reparentRow,
       scene,
@@ -1349,7 +1349,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
             ref={searchRef}
-            className={phone ? "h-11" : "h-7"}
+            className={touchSizing ? "h-11" : "h-7"}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}

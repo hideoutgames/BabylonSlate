@@ -6,6 +6,7 @@ import type { CreatableAssetType } from "../lib/content-browser-helpers";
 const layout = vi.hoisted(() => ({ phone: false }));
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => layout.phone,
+  usePhoneTouchSizing: () => layout.phone,
 }));
 
 function renderDialog(

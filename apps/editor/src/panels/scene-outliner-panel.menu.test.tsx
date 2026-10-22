@@ -50,6 +50,7 @@ const assetRegistry = vi.hoisted(() => ({
 
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => harness.phone,
+  usePhoneTouchSizing: () => harness.phone,
 }));
 
 vi.mock("../context/document-workspace-context", () => ({

@@ -175,7 +175,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         // Selection intentionally enabled for code editing.
         style={{ userSelect: "text", WebkitUserSelect: "text" }}
       />
-      <div className="hidden flex-wrap gap-1 border-t p-1 [@media(pointer:coarse)]:flex" data-testid="js-accessory-bar">
+      <div className="hidden flex-wrap gap-1 border-t p-1 pointer-coarse:flex" data-testid="js-accessory-bar">
         <Button type="button" variant="outline" size="touch" disabled={readOnly} onPointerDown={(event) => event.preventDefault()} onClick={() => { if (viewRef.current) { viewRef.current.focus(); startCompletion(viewRef.current); } }}>Complete</Button>
         {ACCESSORY.map((token) => (
           <Button

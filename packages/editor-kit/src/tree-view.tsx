@@ -722,7 +722,12 @@ export function TreeView({
       aria-multiselectable={selectedIds ? true : undefined}
       aria-activedescendant={activeNode ? rowId(activeNode.id) : undefined}
       tabIndex={0}
-      className="group/tree text-foreground h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+      // Keyboard focus outlines the active row, not the whole scrollport; an
+      // empty tree has no row, so it keeps the ring.
+      className={cn(
+        "group/tree text-foreground h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none",
+        nodes.length === 0 && "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+      )}
       data-testid={testId}
       onKeyDown={onKeyDown}
       onScroll={(event) => {

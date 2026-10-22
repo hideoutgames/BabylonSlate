@@ -30,22 +30,20 @@
   color: var(--destructive);
 }
 
-@media (pointer: coarse) {
-  [data-testid="trace-snapshot-panel"] .editor-search-input input,
-  [data-testid="trace-log-panel"] .editor-search-input input,
-  [data-testid="trace-log-panel"] [data-slot="select-trigger"],
-  [data-testid="trace-playback-frame"] {
-    min-height: var(--touch-target, 44px);
-  }
-  [data-testid="trace-snapshot-panel"] .editor-search-input input,
-  [data-testid="trace-log-panel"] .editor-search-input input {
-    padding-right: calc(var(--touch-target, 44px) + 4px);
-  }
-  [data-testid="trace-snapshot-panel"]
-    .editor-search-input
-    [data-slot="button"],
-  [data-testid="trace-log-panel"] .editor-search-input [data-slot="button"] {
-    min-width: var(--touch-target, 44px);
-    min-height: var(--touch-target, 44px);
-  }
+:where(.touch-ui) [data-testid="trace-snapshot-panel"] .editor-search-input input,
+:where(.touch-ui) [data-testid="trace-log-panel"] .editor-search-input input,
+:where(.touch-ui) [data-testid="trace-log-panel"] [data-slot="select-trigger"],
+:where(.touch-ui) [data-testid="trace-playback-frame"] {
+  min-height: var(--touch-target, 44px);
+}
+:where(.touch-ui) [data-testid="trace-snapshot-panel"] .editor-search-input input,
+:where(.touch-ui) [data-testid="trace-log-panel"] .editor-search-input input {
+  padding-right: calc(var(--touch-target, 44px) + 4px);
+}
+:where(.touch-ui) [data-testid="trace-snapshot-panel"]
+  .editor-search-input
+  [data-slot="button"],
+:where(.touch-ui) [data-testid="trace-log-panel"] .editor-search-input [data-slot="button"] {
+  min-width: var(--touch-target, 44px);
+  min-height: var(--touch-target, 44px);
 }

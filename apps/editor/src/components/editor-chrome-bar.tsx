@@ -46,6 +46,7 @@ import {
   ToolbarOverflowTrack,
   TypeVisualIcon,
   ariaKeyShortcuts,
+  useTouchUi,
   type NestedMenuItem,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -71,7 +72,7 @@ import {
   SheetTrigger,
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { useCoarsePointer, usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneLayout } from "../shell/use-platform-layout";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import { ProjectIdentityMark } from "./project-identity-mark";
 import { DocumentSwitcher } from "./document-switcher";
@@ -345,7 +346,7 @@ export function EditorChromeBar({
   const debugMode = useDebugMode();
   const featureTestCheck = featureTestProject && debugMode;
   const phone = usePhoneLayout();
-  const coarse = useCoarsePointer();
+  const touch = useTouchUi();
   // Keeps its lazy class lookup until the registry changes, not per edit.
   const resolveDocumentVisual = useMemo(() => {
     void registryEpoch;
@@ -602,7 +603,7 @@ export function EditorChromeBar({
       {phone ? (
         <Button
           variant="outline"
-          size="touch"
+          size={touch ? "touch" : "sm"}
           data-testid="global-search"
           disabled={!projectName}
           onClick={openSearch}
@@ -719,7 +720,7 @@ export function EditorChromeBar({
           <div className="editor-phone-documents">
             <Button
               variant="ghost"
-              size="touch-icon"
+              size={touch ? "touch-icon" : "icon-sm"}
               aria-label="Content Browser"
               title="Content Browser"
               onClick={() => setActiveDocument(CONTENT_BROWSER_ID)}
@@ -1053,7 +1054,7 @@ export function EditorChromeBar({
 
         <ToolbarOverflowTrack className="editor-global-toolbar-end">
           <ToolbarOverflowMenu
-            touch={phone || coarse}
+            touch={touch}
             className="chrome-icon-button"
             data-testid="toolbar-overflow"
           />
@@ -1063,7 +1064,7 @@ export function EditorChromeBar({
                 render={
                   <Button
                     variant="outline"
-                    size="touch-icon"
+                    size={touch ? "touch-icon" : "icon-sm"}
                     aria-label="More Tools"
                     data-testid="editor-more-tools"
                   />

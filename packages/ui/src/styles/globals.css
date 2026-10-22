@@ -190,10 +190,8 @@
   margin-inline: 0.75rem;
 }
 
-@media (pointer: coarse) {
-  .settings-dialog .settings-field:has(> [role="switch"]) {
-    min-height: var(--touch-target, 44px);
-  }
+:where(.touch-ui) .settings-dialog .settings-field:has(> [role="switch"]) {
+  min-height: var(--touch-target, 44px);
 }
 
 @media (max-width: 480px) {
@@ -216,63 +214,64 @@
   overscroll-behavior: contain;
 }
 
-/* Mouse and trackpad menus match the 12px chrome: compact type, 28px rows.
- * Touch keeps its own larger rows. */
-@media (pointer: fine) {
-  .editor-menu
-    :is(
-      [data-slot="dropdown-menu-item"],
-      [data-slot="dropdown-menu-sub-trigger"],
-      [data-slot="dropdown-menu-checkbox-item"],
-      [data-slot="dropdown-menu-radio-item"],
-      [data-slot="select-item"]
-    ) {
-    min-height: var(--chrome-row, 28px);
-    font-size: 12px;
-  }
+/* Compact Mode menus match the 12px chrome: compact type, 28px rows. The
+ * touch layout (`html.touch-ui`) keeps its own larger rows. */
+:where(:root:not(.touch-ui)) .editor-menu
+  :is(
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="select-item"]
+  ) {
+  min-height: var(--chrome-row, 28px);
+  font-size: 12px;
 }
 
 .catalog-category-picker {
   display: none;
 }
 
-@media (pointer: coarse) {
-  .editor-dialog
-    :is(
-      [data-slot="button"],
-      [data-slot="alert-dialog-action"],
-      [data-slot="alert-dialog-cancel"],
-      [data-slot="input"],
-      [data-slot="select-trigger"]
-    ) {
-    min-height: var(--touch-target);
-    min-width: var(--touch-target);
-  }
+:where(.touch-ui) .editor-dialog
+  :is(
+    [data-slot="button"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"],
+    [data-slot="input"],
+    [data-slot="select-trigger"]
+  ) {
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+}
 
+/* Text size follows the device, not Compact Mode: iOS zooms into focused
+ * fields below 16px. */
+@media (pointer: coarse) {
   .editor-dialog :is([data-slot="input"], [data-slot="textarea"]) {
     font-size: 1rem;
   }
+}
 
-  .editor-dialog .editor-search-input [data-slot="input"] {
-    padding-right: calc(var(--touch-target) + 0.5rem);
-  }
+:where(.touch-ui) .editor-dialog .editor-search-input [data-slot="input"] {
+  padding-right: calc(var(--touch-target) + 0.5rem);
+}
 
-  :is(
-    [data-slot="dropdown-menu-item"],
-    [data-slot="dropdown-menu-checkbox-item"],
-    [data-slot="dropdown-menu-radio-item"],
-    [data-slot="dropdown-menu-sub-trigger"],
-    [data-slot="select-item"],
-    .catalog-sidebar [data-slot="button"]
-  ) {
-    min-height: var(--touch-target);
-  }
+:where(.touch-ui) :is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="select-item"],
+  .catalog-sidebar [data-slot="button"]
+) {
+  min-height: var(--touch-target);
 }
 
 /* Matches the editor phone layout, including phones held in landscape. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
-  /* Tablet Details retain compact axis fields; phones use larger entry targets. */
-  .numeric-drag-field [data-numeric-scrub] {
+  /* Tablet Details retain compact axis fields; touch phones use larger entry
+   * targets. Compact Mode keeps phones compact too. */
+  :where(.touch-ui) .numeric-drag-field [data-numeric-scrub] {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -280,16 +279,15 @@
     min-height: var(--touch-target);
   }
 
-  .numeric-drag-field [data-slot="input"] {
+  :where(.touch-ui) .numeric-drag-field [data-slot="input"] {
     min-height: var(--touch-target);
-    font-size: 1rem;
   }
 
-  .numeric-drag-field[data-scalar] [data-slot="input"] {
+  :where(.touch-ui) .numeric-drag-field[data-scalar] [data-slot="input"] {
     padding-right: calc(var(--touch-target) + 0.25rem);
   }
 
-  :is(.editor-dialog, .phone-dockview)
+  :where(.touch-ui) :is(.editor-dialog, .phone-dockview)
     :is(
       [data-slot="input"],
       [data-slot="select-trigger"],
@@ -304,7 +302,7 @@
     font-size: 1rem;
   }
 
-  .phone-dockview [data-slot="property-grid"] [data-slot="button"] {
+  :where(.touch-ui) .phone-dockview [data-slot="property-grid"] [data-slot="button"] {
     min-height: var(--touch-target);
     min-width: var(--touch-target);
   }
@@ -331,10 +329,8 @@
   }
 }
 
-@media (pointer: coarse) {
-  .input-asset-editor button, .input-asset-editor input, .input-asset-editor [role="combobox"] {
-    min-height: 44px;
-  }
+:where(.touch-ui) .input-asset-editor button, :where(.touch-ui) .input-asset-editor input, :where(.touch-ui) .input-asset-editor [role="combobox"] {
+  min-height: 44px;
 }
 
 /* Floating toolbar islands over viewports, graphs and previews. One frosted
@@ -457,13 +453,11 @@
   color: var(--muted-foreground);
 }
 
-/* Coarse pointers get full touch targets in islands that live over a running
- * game (Play, Preview Build), unlike the dense editor viewport islands. */
-@media (pointer: coarse) {
-  .toolbar-island-touch button {
-    min-width: 40px;
-    min-height: 40px;
-  }
+/* The touch layout gives islands that live over a running game (Play,
+ * Preview Build) full touch targets, unlike the dense editor viewport islands. */
+:where(.touch-ui) .toolbar-island-touch button {
+  min-width: 40px;
+  min-height: 40px;
 }
 
 /* In-game developer readouts (stats, light and audio debug, log tail): one

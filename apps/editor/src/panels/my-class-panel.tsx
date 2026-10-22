@@ -75,7 +75,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   collectClassGraphsForPalette,
@@ -501,7 +501,7 @@ export function ClassMembersView({
   canvasDropApi?: GraphDropPoint | null;
   onOpenInherited?: (member: MyClassMember) => void;
 }) {
-  const phone = usePhoneLayout();
+  const touchSizing = usePhoneTouchSizing();
   const keybinds = useKeybindings();
   const sessionState = useEditorSessionState();
   const treeRef = useRef<HTMLDivElement | null>(null);
@@ -797,7 +797,7 @@ export function ClassMembersView({
               >
                 <IconActionButton
                   label={addLabel}
-                  size={phone ? "touch-icon" : "icon-sm"}
+                  size={touchSizing ? "touch-icon" : "icon-sm"}
                   data-testid={`class-add-${section.id}`}
                 >
                   <PlusIcon />
@@ -827,7 +827,7 @@ export function ClassMembersView({
               >
                 <IconActionButton
                   label={addLabel}
-                  size={phone ? "touch-icon" : "icon-sm"}
+                  size={touchSizing ? "touch-icon" : "icon-sm"}
                   data-testid={`class-add-${section.id}`}
                 >
                   <PlusIcon />
@@ -841,7 +841,7 @@ export function ClassMembersView({
           trailing: (
             <IconActionButton
               label={addLabel}
-              size={phone ? "touch-icon" : "icon-sm"}
+              size={touchSizing ? "touch-icon" : "icon-sm"}
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
                 event.stopPropagation();
@@ -859,7 +859,7 @@ export function ClassMembersView({
       members,
       membersOptions,
       treeSections,
-      phone,
+      touchSizing,
       renamableIds,
       overridableRows,
       overridableEventRows,
@@ -1150,7 +1150,7 @@ export function ClassMembersView({
         onPointerCancel={backgroundMenu.onPointerCancel}
       >
         <TreeView
-          rowHeight={phone ? 44 : undefined}
+          rowHeight={touchSizing ? 44 : undefined}
           nodes={nodes}
           selectedId={selectedId}
           selectedIds={selectionIds}

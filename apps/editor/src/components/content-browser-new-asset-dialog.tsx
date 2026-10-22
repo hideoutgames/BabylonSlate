@@ -41,7 +41,7 @@ import {
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import { hasTouchInput } from "../lib/touch-input";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 export type NewAssetClassAssetRef = {
   path?: string;
@@ -180,6 +180,7 @@ export function ContentBrowserNewAssetDialog({
   onCreate,
 }: ContentBrowserNewAssetDialogProps) {
   const phone = usePhoneLayout();
+  const touchSizing = usePhoneTouchSizing();
   const [parentSearch, setParentSearch] = useState("");
   const [definitionPickerOpen, setDefinitionPickerOpen] = useState(false);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
@@ -333,7 +334,7 @@ export function ContentBrowserNewAssetDialog({
                   aria-label="Search Parent Classes"
                   className={cn(
                     "min-h-[var(--chrome-row,28px)]",
-                    phone && "h-11",
+                    touchSizing && "h-11",
                   )}
                   data-testid="new-asset-parent-search"
                 />
@@ -369,7 +370,7 @@ export function ContentBrowserNewAssetDialog({
           <Button
             type="button"
             variant="outline"
-            size={phone ? "touch" : "default"}
+            size={touchSizing ? "touch" : "default"}
             disabled={busy}
             onClick={() => onOpenChange(false)}
           >
@@ -377,7 +378,7 @@ export function ContentBrowserNewAssetDialog({
           </Button>
           <Button
             type="button"
-            size={phone ? "touch" : "default"}
+            size={touchSizing ? "touch" : "default"}
             disabled={!canCreate}
             data-testid="content-browser-new-asset-create"
             onClick={() => onCreate()}

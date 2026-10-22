@@ -59,14 +59,12 @@
   transition: none;
 }
 
-@media (pointer: coarse) {
-  .catalog-menu-row {
-    padding-inline: 10px;
-  }
+:where(.touch-ui) .catalog-menu-row {
+  padding-inline: 10px;
+}
 
-  .catalog-menu-item[data-nested="true"] {
-    padding-inline-start: 2rem;
-  }
+:where(.touch-ui) .catalog-menu-item[data-nested="true"] {
+  padding-inline-start: 2rem;
 }
 
 @media (hover: none) and (pointer: coarse) {
