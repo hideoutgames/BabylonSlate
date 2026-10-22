@@ -3325,6 +3325,7 @@ function initializeEngine(
     binding.paused = paused;
     if (paused) resetJoysticks();
     scheduler.setPaused(paused);
+    debugOverlay?.setPaused(paused);
     audioService?.setPaused(paused || held);
     particleService?.setPaused(paused || held);
   };
