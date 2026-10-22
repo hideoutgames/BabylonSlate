@@ -28,7 +28,7 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
+import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
 import { otherShadowReservations } from "./shadow-admission";
 import { beginManagedRenderAllocation, limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";

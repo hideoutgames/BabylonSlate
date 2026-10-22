@@ -1,4 +1,4 @@
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 
 /** Console display of one coordinate: four decimals, with float noise and -0 shown as 0. */
 function formatCoordinate(value: number): string {

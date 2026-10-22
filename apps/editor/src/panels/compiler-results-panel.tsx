@@ -1,16 +1,16 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
 import {
   PanelFrame,
   SelectableText,
   TREE_ROW_HEIGHT,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
-} from "@babylonslate/editor-kit";
-import type { SerializedScene } from "@babylonslate/core";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/editor-kit";
+import type { SerializedScene } from "@haptic/core";
+import type { Diagnostic } from "@haptic/scripting";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
 import {

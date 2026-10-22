@@ -4,19 +4,19 @@ import type { Dirent, Stats } from "node:fs";
 import { lstat, open, mkdir, readdir, readFile, readlink, realpath, rename, rm, stat, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { projectFolderName, projectRelativePath } from "./project-path";
-import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
+import { isStorageNotFound, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 /** Staged writes are renamed over their file; listings hide one a crash left behind. */
-const STAGED_WRITE = /^\.babylonslate-[0-9a-f-]{36}\.tmp$/;
+const STAGED_WRITE = /^\.haptic-[0-9a-f-]{36}\.tmp$/;
 
 function errorCode(error: unknown): unknown {
   return (error as { code?: unknown } | null)?.code;
@@ -214,7 +214,7 @@ export class NodeStorageAdapter implements ProjectStorage {
     // A link inside the project keeps pointing at its (checked) target.
     const target = await realpath(full).catch(() => full);
     await mkdir(dirname(target), { recursive: true });
-    const staged = join(dirname(target), `.babylonslate-${randomUUID()}.tmp`);
+    const staged = join(dirname(target), `.haptic-${randomUUID()}.tmp`);
     try {
       const file = await open(staged, "wx");
       try {

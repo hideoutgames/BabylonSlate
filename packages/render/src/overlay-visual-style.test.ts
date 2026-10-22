@@ -1,6 +1,6 @@
 import { Matrix, Mesh, MeshBuilder, StandardMaterial } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
-import { createActor, identitySerializedTransform, parseText2DProperties } from "@babylonslate/core";
+import { createActor, identitySerializedTransform, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
 import { applyAssignMesh, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, playComponentMeshName } from "./snapshot-apply";

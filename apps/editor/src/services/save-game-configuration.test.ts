@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createSessionSaveStorage, SaveGameService, type SaveGameStorage } from "@babylonslate/core";
+import { createSessionSaveStorage, SaveGameService, type SaveGameStorage } from "@haptic/core";
 import { prepareSaveGameConfiguration } from "./save-game-configuration";
 
 it("wipes only disposable Preview data during Simulation preparation", async () => {

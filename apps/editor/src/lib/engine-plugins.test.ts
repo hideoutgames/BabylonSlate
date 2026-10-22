@@ -2,8 +2,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AssetRegistry, STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles, discoverEnginePlugins } from "@babylonslate/assets";
-import type { HttpStorageCatalog } from "@babylonslate/vfs";
+import { AssetRegistry, STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles, discoverEnginePlugins } from "@haptic/assets";
+import type { HttpStorageCatalog } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
 import { loadEnginePluginStorage } from "./engine-plugins";
 
@@ -34,10 +34,10 @@ describe("loadEnginePluginStorage", () => {
       expect(discovered[0]).toMatchObject({ folderPath: "starter-content", readOnly: true });
       const registry = new AssetRegistry(storage);
       await registry.mountRoot({ id: "plugin", kind: "plugin", pathPrefix: "starter-content/assets", readOnly: true });
-      const actor = index.files.find(file => file.path.endsWith("StarterActor.class.babasset"))!;
+      const actor = index.files.find(file => file.path.endsWith("StarterActor.class.hasset"))!;
       const payloadFiles = actor.parts.filter(part => part.offset >= actor.parts[0]!.length + actor.parts[1]!.length).map(part => part.file);
       for (const file of payloadFiles) expect(requests).not.toContain(file);
-      expect(requests.some(file => file.endsWith(".babplugin"))).toBe(false);
+      expect(requests.some(file => file.endsWith(".hplugin"))).toBe(false);
       expect(await storage.exists(actor.path)).toBe(true);
       const selected = registry.list().find(entry => entry.path === actor.path)!;
       expect((await registry.readAssetDocument(selected.header.guid)).guid).toBe(selected.header.guid);

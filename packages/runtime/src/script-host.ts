@@ -1,12 +1,12 @@
-import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
-import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName, type RuntimeAssetLoadState, type RuntimeAssetPreloadOptions, type RuntimeAssetPreloadResult } from "@babylonslate/core";
+import { createUnavailableEditorDataApi, type EditorDataApi } from "@haptic/scripting";
+import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName, type RuntimeAssetLoadState, type RuntimeAssetPreloadOptions, type RuntimeAssetPreloadResult } from "@haptic/core";
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import type { ScriptDebugTrace } from "./script-debug";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
-import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
-import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
+import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@haptic/core";
+import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@haptic/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
-import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState, TouchInput } from "@babylonslate/core";
+import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState, TouchInput } from "@haptic/core";
 import {
   combineRotators,
   createSeededRng,
@@ -29,8 +29,8 @@ import {
   rotatorUp,
   slerpQuats,
   type Rng,
-} from "@babylonslate/core";
-import type { MaterialParameterValue, ScriptBundleEntry } from "@babylonslate/bridge";
+} from "@haptic/core";
+import type { MaterialParameterValue, ScriptBundleEntry } from "@haptic/bridge";
 import {
   Actor,
   ActorComponent,
@@ -49,7 +49,7 @@ import {
   type InterfaceRegistry,
   type LifecycleHooks,
   type TickContext,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type {
   ColliderShape,
   HitResult,
@@ -58,27 +58,27 @@ import type {
   PhysicsTransform,
   TeleportOptions,
   Vec3,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import {
   animExitTimeReached,
   type AnimStateFacts,
   type AnimTransitionDecision,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
 import { actorLabel } from "./actor-world-transform";
 import { splineComponentFunction } from "./spline-script";
-import { isInfiniteLoopError, type ScriptLoopLocation } from "@babylonslate/debugger";
-import type { InputBindingControls } from "@babylonslate/input";
-import type { TweenValueType } from "@babylonslate/core";
+import { isInfiniteLoopError, type ScriptLoopLocation } from "@haptic/debugger";
+import type { InputBindingControls } from "@haptic/input";
+import type { TweenValueType } from "@haptic/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
   type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
-  type SaveGameMigrationData } from "@babylonslate/core";
-import { isUIControl2DClass } from "@babylonslate/core";
+  type SaveGameMigrationData } from "@haptic/core";
+import { isUIControl2DClass } from "@haptic/core";
 
 const EMPTY_DATA = new RuntimeDataCatalog();
 const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();

@@ -5,7 +5,7 @@ import {
   createWorldSnapshot,
   stringifyWorldSnapshot,
   type WorldSnapshot,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 
 export interface DeterministicScenarioOptions {
   seed: number;

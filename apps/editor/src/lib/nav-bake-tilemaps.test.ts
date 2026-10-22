@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { emptyChunkTiles, normalizeTilemapPayload } from "@babylonslate/assets";
-import { normalizeTilesetPayload } from "@babylonslate/assets";
+import { emptyChunkTiles, normalizeTilemapPayload } from "@haptic/assets";
+import { normalizeTilesetPayload } from "@haptic/assets";
 import { navBakeTilemapChains } from "./nav-bake-tilemaps";
 
 describe("navBakeTilemapChains", () => {

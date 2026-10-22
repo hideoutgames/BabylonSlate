@@ -1,4 +1,4 @@
-import { serializeTransform } from "@babylonslate/core";
+import { serializeTransform } from "@haptic/core";
 import type { World } from "./world";
 import { sanitizeInspectValue } from "./inspect-snapshot";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import { simulationCaptureChunks } from "./simulation-capture-transport";
 import { SnapshotPublisher } from "./snapshot-publisher";

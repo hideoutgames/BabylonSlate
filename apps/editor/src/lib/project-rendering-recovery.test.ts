@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackendEngineSession, BackendEngineSessionOptions, WebGpuDeviceLoss } from "@babylonslate/render";
+import type { BackendEngineSession, BackendEngineSessionOptions, WebGpuDeviceLoss } from "@haptic/render";
 const { createSession } = vi.hoisted(() => ({ createSession: vi.fn() }));
-vi.mock("@babylonslate/render", () => ({ createBackendEngineSession: createSession }));
+vi.mock("@haptic/render", () => ({ createBackendEngineSession: createSession }));
 import { GameSessionOwner, type GameSessionMode, type GameSessionStopResult } from "../services/game-session-owner";
 import { createProjectEngineController, type ProjectEngineRequest } from "./project-engine";
 import { RenderingRetryError, retryProjectRendering, stopGameOnDeviceLoss } from "./project-rendering-recovery";

@@ -7,8 +7,8 @@ const audioIO = vi.hoisted(() => ({
   write: vi.fn(async () => {}),
   remove: vi.fn(async () => {}),
 }));
-vi.mock("@babylonslate/vfs", async (original) => ({
-  ...await original<typeof import("@babylonslate/vfs")>(),
+vi.mock("@haptic/vfs", async (original) => ({
+  ...await original<typeof import("@haptic/vfs")>(),
   pickImportFiles: audioIO.pick,
 }));
 
@@ -26,11 +26,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     list: () => [
       {
         header: { guid: "ch-1", name: "SFX", type: "AudioChannel" },
-        path: "assets/SFX.channel.babasset",
+        path: "assets/SFX.channel.hasset",
       },
       {
         header: { guid: "att-1", name: "Near", type: "SoundAttenuation" },
-        path: "assets/Near.atten.babasset",
+        path: "assets/Near.atten.hasset",
       },
     ],
   },
@@ -48,7 +48,7 @@ describe("Audio editor docks", () => {
   it("shows a failed project audio write without adding an unsaved clip", async () => {
     audioIO.write.mockRejectedValueOnce(new Error("Folder access revoked"));
     const onChange = vi.fn();
-    render(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }] }} onChange={onChange} />);
+    render(<AudioClips path="assets/Jump.hasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }] }} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("audio-add-clip"));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Folder access revoked"));
     expect(onChange).not.toHaveBeenCalled();
@@ -58,7 +58,7 @@ describe("Audio editor docks", () => {
   it("keeps the clip listed when its project storage removal fails", async () => {
     audioIO.remove.mockRejectedValueOnce(new Error("Folder is offline"));
     const onChange = vi.fn();
-    render(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }, { chunkId: "clip-1", name: "Second", weight: 1 }] }} onChange={onChange} />);
+    render(<AudioClips path="assets/Jump.hasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }, { chunkId: "clip-1", name: "Second", weight: 1 }] }} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("audio-clip-1-remove"));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Folder is offline"));
     expect(onChange).not.toHaveBeenCalled();
@@ -70,10 +70,10 @@ describe("Audio editor docks", () => {
     audioIO.remove.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRemove = resolve; }));
     const onChange = vi.fn();
     const clips = [{ chunkId: "source", name: "Jump", weight: 1 }, { chunkId: "clip-1", name: "Second", weight: 1 }];
-    const view = render(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ volume: 1, clips }} onChange={onChange} />);
+    const view = render(<AudioClips path="assets/Jump.hasset" assetName="Jump" payload={{ volume: 1, clips }} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("audio-clip-1-remove"));
     await waitFor(() => expect(audioIO.remove).toHaveBeenCalled());
-    view.rerender(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ volume: 0.25, clips }} onChange={onChange} />);
+    view.rerender(<AudioClips path="assets/Jump.hasset" assetName="Jump" payload={{ volume: 0.25, clips }} onChange={onChange} />);
     finishRemove();
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -100,7 +100,7 @@ describe("Audio editor docks", () => {
     const onChange = vi.fn();
     render(
       <AudioClips
-        path="assets/Jump.babasset"
+        path="assets/Jump.hasset"
         payload={{}}
         assetName="Jump"
         onChange={onChange}

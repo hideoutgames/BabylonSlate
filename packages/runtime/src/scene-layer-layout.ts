@@ -1,5 +1,5 @@
-import { resolveOverlayLayout, type OverlaySafeAreaInsets, type VirtualizedItem, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@babylonslate/core";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import { resolveOverlayLayout, type OverlaySafeAreaInsets, type VirtualizedItem, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@haptic/core";
+import type { Actor, ActorComponent } from "@haptic/object-model";
 import { samePlainData } from "./plain-data";
 import { SceneLayerLayoutGate } from "./scene-layer-layout-gate";
 

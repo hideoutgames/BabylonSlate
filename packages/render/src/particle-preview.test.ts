@@ -1,7 +1,7 @@
 import { ParticleSystem, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { PARTICLE_UPDATE_SPEED } from "@babylonslate/core";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { PARTICLE_UPDATE_SPEED } from "@haptic/core";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createTestEngine } from "./create-null-engine";
 import {
   createParticleMaterialResolver,

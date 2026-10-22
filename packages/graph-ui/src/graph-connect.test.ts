@@ -1,4 +1,4 @@
-import { isAssignable, type PinType } from "@babylonslate/scripting";
+import { isAssignable, type PinType } from "@haptic/scripting";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {

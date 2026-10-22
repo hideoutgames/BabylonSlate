@@ -9,7 +9,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
   type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 function node(registry: NodeRegistry, id: string, typeId: string): GraphNode {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyLogicGraph } from "@babylonslate/scripting";
-import type { CodegenContext } from "@babylonslate/scripting";
+import { createEmptyLogicGraph } from "@haptic/scripting";
+import type { CodegenContext } from "@haptic/scripting";
 import { allNodeDefinitions } from "./index";
 
 const PROPERTIES = {

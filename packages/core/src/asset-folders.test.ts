@@ -24,8 +24,8 @@ describe("asset folder paths", () => {
   });
 
   it("takes the parent directory of a storage path", () => {
-    expect(assetFolderOfPath("assets/Weapons/Rifle.class.babasset")).toBe("assets/Weapons");
-    expect(assetFolderOfPath("Rifle.class.babasset")).toBe("");
+    expect(assetFolderOfPath("assets/Weapons/Rifle.class.hasset")).toBe("assets/Weapons");
+    expect(assetFolderOfPath("Rifle.class.hasset")).toBe("");
   });
 });
 
@@ -70,9 +70,9 @@ describe("Always Package Folders", () => {
 
 describe("asset catalog helpers", () => {
   it.each([
-    ["assets/Weapons/Rifle.class.babasset", "Rifle"],
-    ["assets/my-weapon.class.babasset", "my_weapon"],
-    ["assets/.class.babasset", "Graph"],
+    ["assets/Weapons/Rifle.class.hasset", "Rifle"],
+    ["assets/my-weapon.class.hasset", "my_weapon"],
+    ["assets/.class.hasset", "Graph"],
   ])("derives the class id of %s", (path, expected) => {
     expect(classIdForAssetPath(path)).toBe(expected);
   });

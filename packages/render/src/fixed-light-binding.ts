@@ -19,7 +19,7 @@ import {
   type Scene,
   type ShadowGenerator,
 } from "@babylonjs/core";
-import type { FixedLightKind, FixedLightLayout } from "@babylonslate/core";
+import type { FixedLightKind, FixedLightLayout } from "@haptic/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import type { FixedLightSeat } from "./fixed-light-seats";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";

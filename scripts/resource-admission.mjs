@@ -27,7 +27,7 @@ export function resourceStateDirectory(
     platform === "win32"
       ? join(env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "Temp")
       : tmpdir(),
-    "babylonslate-test-admission-v1",
+    "haptic-test-admission-v1",
   );
 }
 export const admissionDirectory = resourceStateDirectory();
@@ -49,13 +49,13 @@ export const workloads = {
 export function workloadFor(name, env = process.env) {
   const request = workloads[name];
   if (!request) throw new Error(`Unknown workload: ${name}`);
-  const profile = env.BL_TEST_PROFILE ?? "shared";
+  const profile = env.HAPTIC_TEST_PROFILE ?? "shared";
   if (!["shared", "fast"].includes(profile))
     throw new Error(`Unknown test profile: ${profile}`);
   if (
     profile === "shared" ||
     ["tooling", "typecheck", "docs", "build"].includes(name) ||
-    env.BL_EXECUTION_POLICY === "hosted-ci"
+    env.HAPTIC_EXECUTION_POLICY === "hosted-ci"
   )
     return { ...request };
   return { ...request, workers: 2, memoryGiB: request.memoryGiB * 2 };
@@ -227,7 +227,7 @@ export async function withAdmissionLock(directory, check, operation) {
 export async function acquireResources(request, options = {}) {
   const directory = options.directory ?? admissionDirectory;
   if (!options.directory && process.platform === "win32") {
-    const legacy = resolve(tmpdir(), "babylonslate-test-admission-v1", "queue");
+    const legacy = resolve(tmpdir(), "haptic-test-admission-v1", "queue");
     if (legacy.toLowerCase() !== join(directory, "queue").toLowerCase()) {
       const entries = await readdir(legacy).catch((error) => {
         if (error.code === "ENOENT") return [];

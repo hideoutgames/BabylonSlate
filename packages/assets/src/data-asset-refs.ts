@@ -1,4 +1,4 @@
-import { buildDataTreeIndex, isDataTreeAsset } from "@babylonslate/core";
+import { buildDataTreeIndex, isDataTreeAsset } from "@haptic/core";
 
 /** Data values are authored text unless their saved field schema says otherwise. */
 type ReferenceKind = "asset" | "class";

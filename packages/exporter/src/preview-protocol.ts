@@ -1,24 +1,24 @@
 import { GAME_MANIFEST_FILE } from "./constants";
 
-export const PREVIEW_PACK_MESSAGE = "babylonslate-preview-pack";
+export const PREVIEW_PACK_MESSAGE = "haptic-preview-pack";
 /** Player → editor: the pack listener is installed, send (or resend) the pack. */
-export const PREVIEW_REQUEST_PACK_MESSAGE = "babylonslate-preview-request-pack";
-export const PREVIEW_READY_MESSAGE = "babylonslate-preview-ready";
-export const PREVIEW_DIAGNOSTICS_MESSAGE = "babylonslate-preview-diagnostics";
+export const PREVIEW_REQUEST_PACK_MESSAGE = "haptic-preview-request-pack";
+export const PREVIEW_READY_MESSAGE = "haptic-preview-ready";
+export const PREVIEW_DIAGNOSTICS_MESSAGE = "haptic-preview-diagnostics";
 /** Player → editor: boot failed, so the overlay can explain the black canvas. */
-export const PREVIEW_ERROR_MESSAGE = "babylonslate-preview-error";
-export const PREVIEW_STOP_MESSAGE = "babylonslate-preview-stop";
+export const PREVIEW_ERROR_MESSAGE = "haptic-preview-error";
+export const PREVIEW_STOP_MESSAGE = "haptic-preview-stop";
 export const PREVIEW_CONSOLE_REQUEST_MESSAGE =
-  "babylonslate-preview-console-request";
+  "haptic-preview-console-request";
 export const PREVIEW_CONSOLE_RESULT_MESSAGE =
-  "babylonslate-preview-console-result";
+  "haptic-preview-console-result";
 export const PREVIEW_CONSOLE_EVENT_MESSAGE =
-  "babylonslate-preview-console-event";
+  "haptic-preview-console-event";
 export const PREVIEW_CONSOLE_CATALOG_MESSAGE =
-  "babylonslate-preview-console-catalog";
+  "haptic-preview-console-catalog";
 /** Editor → player: request current live actor completion values. */
 export const PREVIEW_CONSOLE_CONTEXT_MESSAGE =
-  "babylonslate-preview-console-context";
+  "haptic-preview-console-context";
 
 export type PreviewConsoleRequest = {
   type: typeof PREVIEW_CONSOLE_REQUEST_MESSAGE;

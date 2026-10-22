@@ -1,4 +1,4 @@
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 
 /** The named actors a console completes: only these fields of a snapshot feed it. */
 export type InspectActorRef = { kind: string; label: string; id: string };

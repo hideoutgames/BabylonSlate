@@ -4,12 +4,12 @@ import {
   type ParticleEmitterPayload,
   type ParticleSpace,
   type ParticleSystemPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   createDefaultParticleGraphDocument,
   newParticleNodeProperties,
   type ParticleGraphDocument,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
   actor,

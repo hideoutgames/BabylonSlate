@@ -18,7 +18,7 @@ import {
   isDryAudioReverbFallback,
   occlusionFactor,
 } from "./audio-reverb";
-import { createActor, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
+import { createActor, createMeshComponent, identitySerializedTransform } from "@haptic/core";
 
 /** `audioReverb` chunk budget from .agents/reference/architecture/audio.md. */
 const REVERB_CHUNK_BUDGET_BYTES = 64 * 1024;

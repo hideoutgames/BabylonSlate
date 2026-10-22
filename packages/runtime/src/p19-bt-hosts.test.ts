@@ -1,14 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { eulerDegreesToQuaternion, quaternionToEulerDegrees } from "@babylonslate/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import { eulerDegreesToQuaternion, quaternionToEulerDegrees } from "@haptic/core";
 import {
   createActor,
   createDefaultSceneSettings,
   type SerializedScene,
-} from "@babylonslate/core";
-import type { BehaviourTreeDocument } from "@babylonslate/behaviour-tree";
-import { generateNavMesh, initNavigation } from "@babylonslate/navigation";
+} from "@haptic/core";
+import type { BehaviourTreeDocument } from "@haptic/behaviour-tree";
+import { generateNavMesh, initNavigation } from "@haptic/navigation";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

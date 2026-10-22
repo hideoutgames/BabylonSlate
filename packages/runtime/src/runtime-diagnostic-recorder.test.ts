@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { createDefaultScene } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 afterEach(() => vi.useRealTimers());

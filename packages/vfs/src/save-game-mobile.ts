@@ -1,4 +1,4 @@
-import type { SaveGameStorage } from "@babylonslate/core";
+import type { SaveGameStorage } from "@haptic/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform } from "./platform";
 import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, normalizeSaveGameStorageError, saveGameSegments } from "./save-game-path";

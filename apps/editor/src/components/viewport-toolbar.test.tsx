@@ -8,12 +8,12 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { createDefaultScene, type SerializedScene } from "@haptic/core";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { ViewportToolbar } from "./viewport-toolbar";
 import { KeybindProvider } from "../context/keybind-context";
 import { AppSettingsProvider } from "../context/app-settings-context";
-import { MemoryAppSettingsStore, defaultEngineSettings } from "@babylonslate/vfs";
+import { MemoryAppSettingsStore, defaultEngineSettings } from "@haptic/vfs";
 
 if (
   typeof window !== "undefined" &&
@@ -69,7 +69,7 @@ const harness = vi.hoisted(() => ({
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "scene:assets/Main.scene.babasset",
+    documentId: "scene:assets/Main.scene.hasset",
   }),
 }));
 
@@ -119,10 +119,10 @@ vi.mock("../context/scene-editing-context", () => ({
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "scene:assets/Main.scene.babasset",
+      id: "scene:assets/Main.scene.hasset",
       ref: {
         kind: harness.documentKind,
-        path: "assets/Main.scene.babasset",
+        path: "assets/Main.scene.hasset",
         label: "Main Scene",
       },
       content: harness.scene,
@@ -208,11 +208,11 @@ describe("ViewportToolbar", () => {
     fireEvent.keyDown(document.body, { key: "g", code: "KeyG" });
     expect(harness.applySceneChange).not.toHaveBeenCalled();
     fireEvent.keyDown(document.body, { key: "H", code: "KeyH", shiftKey: true });
-    expect(harness.applySceneChange).toHaveBeenCalledWith("scene:assets/Main.scene.babasset", expect.objectContaining({
+    expect(harness.applySceneChange).toHaveBeenCalledWith("scene:assets/Main.scene.hasset", expect.objectContaining({
       settings: expect.objectContaining({ grid: expect.objectContaining({ snapEnabled: true }) }),
     }));
     fireEvent.keyDown(document.body, { key: "J", code: "KeyJ", shiftKey: true });
-    expect(harness.applySceneChange).toHaveBeenLastCalledWith("scene:assets/Main.scene.babasset", expect.objectContaining({
+    expect(harness.applySceneChange).toHaveBeenLastCalledWith("scene:assets/Main.scene.hasset", expect.objectContaining({
       settings: expect.objectContaining({ grid: expect.objectContaining({ showGrid: false }) }),
     }));
     fireEvent.click(screen.getByTestId("viewport-view"));
@@ -262,7 +262,7 @@ describe("ViewportToolbar", () => {
     expect(harness.setSnapEnabled).not.toHaveBeenCalled();
     expect(harness.applySceneChange).toHaveBeenCalledOnce();
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({
         settings: expect.objectContaining({
           grid: expect.objectContaining({ tileSize: 8, snapTranslate: 2, snapScale: 0.1 }),
@@ -287,7 +287,7 @@ describe("ViewportToolbar", () => {
     expect(harness.applySceneChange).not.toHaveBeenCalled();
     fireEvent.keyDown(rotation, { key: "Enter" });
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({
         settings: expect.objectContaining({ grid: expect.objectContaining({ snapRotateDeg: 30 }) }),
       }),
@@ -389,7 +389,7 @@ describe("ViewportToolbar", () => {
     fireEvent.click(snap);
     expect(harness.setSnapEnabled).toHaveBeenCalledWith(false);
     expect(harness.applySceneChange).toHaveBeenCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({
         settings: expect.objectContaining({
           grid: expect.objectContaining({ snapEnabled: false }),
@@ -475,7 +475,7 @@ describe("ViewportToolbar", () => {
     fireEvent.click(screen.getByTestId("viewport-mode-3d"));
     expect(harness.setViewportMode).toHaveBeenCalledWith("2d");
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({ viewportMode: "2d" }),
     );
 
@@ -490,7 +490,7 @@ describe("ViewportToolbar", () => {
     fireEvent.click(screen.getByTestId("viewport-mode-3d"));
     expect(harness.setViewportMode).toHaveBeenLastCalledWith("3d");
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({ viewportMode: "3d" }),
     );
   });
@@ -505,7 +505,7 @@ describe("ViewportToolbar", () => {
       fireEvent.click(snap);
       expect(harness.setSnapEnabled).toHaveBeenCalledWith(true);
       expect(harness.applySceneChange).toHaveBeenCalledWith(
-        "scene:assets/Main.scene.babasset",
+        "scene:assets/Main.scene.hasset",
         expect.objectContaining({
           settings: expect.objectContaining({
             grid: expect.objectContaining({ snapEnabled: true }),
@@ -582,7 +582,7 @@ describe("ViewportToolbar", () => {
       key: "Enter",
     });
     expect(harness.applySceneChange).toHaveBeenCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({
         settings: expect.objectContaining({
           grid: expect.objectContaining({
@@ -610,7 +610,7 @@ describe("ViewportToolbar", () => {
     });
     fireEvent.keyDown(screen.getByTestId("number-prompt-input"), { key: "Enter" });
     expect(harness.applySceneChange).toHaveBeenCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({
         settings: expect.objectContaining({
           grid: expect.objectContaining({ tileSize: 0.0001 }),
@@ -625,7 +625,7 @@ describe("ViewportToolbar", () => {
     fireEvent.click(screen.getByTestId("viewport-show-navmesh-toggle"));
     expect(harness.setNavmeshVisible).toHaveBeenCalledWith(true);
     expect(harness.applySceneChange).toHaveBeenCalledWith(
-      "scene:assets/Main.scene.babasset",
+      "scene:assets/Main.scene.hasset",
       expect.objectContaining({
         settings: expect.objectContaining({ showNavmesh: true }),
       }),

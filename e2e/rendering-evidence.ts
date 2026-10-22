@@ -7,13 +7,13 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /** Reproducibility metadata; desktop functional captures never certify A16. */
 export function renderingEvidence(sceneSource: string, graphicsArguments =
-  process.env.BL_RENDER_NATIVE_GPU === "1" && !process.env.CI
+  process.env.HAPTIC_RENDER_NATIVE_GPU === "1" && !process.env.CI
     ? test.info().project.use.launchOptions?.args ?? [] : SOFTWARE_WEBGPU_ARGS) {
   return {
     kind: "desktop-functional-only",
     recordedAt: new Date().toISOString(),
     buildRevision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-    artifactSha256: process.env.BL_TEST_BUILD_KEY,
+    artifactSha256: process.env.HAPTIC_TEST_BUILD_KEY,
     sceneSource,
     sceneSourceSha256: createHash("sha256").update(readFileSync(sceneSource)).digest("hex"),
     host: { os: platform(), osVersion: release(), arch: arch(), cpu: cpus()[0]?.model },

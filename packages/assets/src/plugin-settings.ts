@@ -1,8 +1,8 @@
-import { ENGINE_VERSION } from "@babylonslate/core";
+import { ENGINE_VERSION } from "@haptic/core";
 import { encodeAssetDocument } from "./asset-document";
 
 export const PLUGIN_SETTINGS_TYPE = "PluginSettings";
-export const PLUGIN_FILE_SUFFIX = ".plugin.babasset";
+export const PLUGIN_FILE_SUFFIX = ".plugin.hasset";
 
 export interface PluginDependency {
   guid: string;

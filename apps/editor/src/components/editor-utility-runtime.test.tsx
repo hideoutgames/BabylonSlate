@@ -31,8 +31,8 @@ const { invokeEvent, load, hostServices, docs } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@babylonslate/runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/runtime")>()),
+vi.mock("@haptic/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/runtime")>()),
   ScriptHost: class {
     constructor(services: (typeof hostServices)[number]) {
       hostServices.push(services);
@@ -116,19 +116,19 @@ describe("EditorUtilityRuntime", () => {
   it("lets editor utility graphs query the live registry, rebuilt after the registry changes", async () => {
     const asset = (name: string) => ({
       rootId: "project",
-      path: `assets/${name}.texture.babasset`,
+      path: `assets/${name}.texture.hasset`,
       header: { guid: `guid-${name}`, name, type: "Texture", dependencies: [], engineVersion: "0", mode: "thin", parentClass: null, payload: {}, chunks: [], version: 1 },
     });
     docs.assetRegistry.list.mockReturnValue([asset("A")]);
     render(<EditorUtilityRuntime />);
     await waitFor(() => expect(hostServices).toHaveLength(1));
     const catalog = () => hostServices[0]!.getAssetCatalog!()!;
-    expect(catalog().getAssetsByPath("assets", false).map((entry) => entry.Path)).toEqual(["assets/A.texture.babasset"]);
+    expect(catalog().getAssetsByPath("assets", false).map((entry) => entry.Path)).toEqual(["assets/A.texture.hasset"]);
     docs.assetRegistry.list.mockReturnValue([asset("A"), asset("B")]);
     docs.assetRegistry.generation = 2;
     expect(catalog().getAssetsByPath("assets", false).map((entry) => entry.Path)).toEqual([
-      "assets/A.texture.babasset",
-      "assets/B.texture.babasset",
+      "assets/A.texture.hasset",
+      "assets/B.texture.hasset",
     ]);
   });
 

@@ -11,9 +11,9 @@ test("a world view draws each Material's previous Effect with the changed lights
   });
   await page.goto("/?test=1&variantSwapProof=1");
   await page.waitForFunction(() =>
-    typeof (window as unknown as { __babylonslateVariantSwapProof?: unknown }).__babylonslateVariantSwapProof === "function");
+    typeof (window as unknown as { __hapticVariantSwapProof?: unknown }).__hapticVariantSwapProof === "function");
   const result = await page.evaluate(() =>
-    (window as unknown as { __babylonslateVariantSwapProof: typeof runVariantSwapProof }).__babylonslateVariantSwapProof());
+    (window as unknown as { __hapticVariantSwapProof: typeof runVariantSwapProof }).__hapticVariantSwapProof());
   await testInfo.attach("variant-swap-proof", { body: JSON.stringify(result), contentType: "application/json" });
   expect(errors).toEqual([]);
   const materials = ["native pbr", "native standard", "cel source:CEL", "graph"];

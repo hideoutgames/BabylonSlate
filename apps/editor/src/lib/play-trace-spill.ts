@@ -1,7 +1,7 @@
-import type { ProjectStorage, DocumentRef } from "@babylonslate/core";
-import { createDocumentRef } from "@babylonslate/core";
-import { writeTraceDocument } from "@babylonslate/assets";
-import type { TracePayload } from "@babylonslate/debugger";
+import type { ProjectStorage, DocumentRef } from "@haptic/core";
+import { createDocumentRef } from "@haptic/core";
+import { writeTraceDocument } from "@haptic/assets";
+import type { TracePayload } from "@haptic/debugger";
 import type { PlaySessionResult } from "../services/play-session";
 
 export function recordedTraceFileName(nowMs: number): string {

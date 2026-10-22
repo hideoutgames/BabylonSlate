@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { identityTransform } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { ClassRegistry, World } from "@babylonslate/object-model";
-import { HavokPhysicsBackend } from "@babylonslate/physics";
+import { identityTransform } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { ClassRegistry, World } from "@haptic/object-model";
+import { HavokPhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 import { RagdollWorldSync } from "./ragdoll-sync";
 

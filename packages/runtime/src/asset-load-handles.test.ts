@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { Actor } from "@babylonslate/object-model";
+import { createActor, createDefaultScene } from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { Actor } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
 

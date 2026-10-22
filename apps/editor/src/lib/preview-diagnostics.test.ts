@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@babylonslate/debugger";
+import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@haptic/debugger";
 import {
   sessionEntriesFromPreviewDiagnostics,
   shouldClosePreviewOnDiagnostics,
@@ -12,7 +12,7 @@ describe("sessionEntriesFromPreviewDiagnostics", () => {
         message: "Infinite loop detected",
         severity: "error",
         code: INFINITE_LOOP_DIAGNOSTIC_CODE,
-        assetGuid: "assets/main.class.babasset",
+        assetGuid: "assets/main.class.hasset",
         graphId: "event-graph",
         nodeId: "js",
         bodyLine: 1,

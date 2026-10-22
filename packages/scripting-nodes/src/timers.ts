@@ -3,7 +3,7 @@ import {
   type NodeDefinition,
   EXEC,
   FLOAT,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export const timerNodes: NodeDefinition[] = [
   {

@@ -44,10 +44,10 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
-} from "@babylonslate/bridge";
-import { areaRectLightBindings, createDefaultScene } from "@babylonslate/core";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@babylonslate/assets";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/bridge";
+import { areaRectLightBindings, createDefaultScene } from "@haptic/core";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEngine } from "./create-engine";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";

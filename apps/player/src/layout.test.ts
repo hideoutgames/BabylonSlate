@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
+import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
 import { applyPlayerLayout } from "./layout";
 
 type LayoutRoot = {

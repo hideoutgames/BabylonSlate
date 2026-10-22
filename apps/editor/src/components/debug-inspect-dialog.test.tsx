@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { ConnectedDebugInspectDialog, DebugInspectDialog } from "./debug-inspect-dialog";
 import { createInspectWorldStore } from "../lib/inspect-world-store";

@@ -1,5 +1,5 @@
-import type { ProjectStorage, StorageReadOptions } from "@babylonslate/core";
-import { BLOBS_DIR } from "./babproject";
+import type { ProjectStorage, StorageReadOptions } from "@haptic/core";
+import { BLOBS_DIR } from "./hproject";
 import { sha256Hex } from "./bytes";
 
 export interface BlobStore {

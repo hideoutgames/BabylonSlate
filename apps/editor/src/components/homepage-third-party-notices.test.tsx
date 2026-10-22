@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { MemoryAppSettingsStore } from "@babylonslate/vfs";
+import { MemoryAppSettingsStore } from "@haptic/vfs";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { ApplicationSettingsFields } from "./homepage-application-settings";
 import { ThirdPartyNoticesPage, type ThirdPartyNotices } from "./homepage-third-party-notices";

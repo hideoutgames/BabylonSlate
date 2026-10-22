@@ -1,5 +1,5 @@
-import type { Actor, World } from "@babylonslate/object-model";
-import type { Transform } from "@babylonslate/core";
+import type { Actor, World } from "@haptic/object-model";
+import type { Transform } from "@haptic/core";
 import {
   actorParentGuid,
   composeParentChildTransform,
@@ -16,7 +16,7 @@ import {
   type Quat,
   type PhysicsTransform,
   type Vec3,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 
 export function sameDescriptor(
   a: readonly unknown[] | undefined,

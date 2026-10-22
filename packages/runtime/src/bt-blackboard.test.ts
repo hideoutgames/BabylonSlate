@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BObject } from "@babylonslate/object-model";
+import { BObject } from "@haptic/object-model";
 import { copyBlackboard, sameBlackboard } from "./bt-blackboard";
 
 /** A hang cannot be interrupted, but a copy that takes exponentially long fails here on any run that finishes. */

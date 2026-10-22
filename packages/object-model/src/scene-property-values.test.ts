@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createActor } from "@babylonslate/core";
+import { createActor } from "@haptic/core";
 import { ClassRegistry } from "./class-registry";
 import { createActorFromSerialized } from "./instantiate-scene";
 import { hydrateScenePropertyReferences } from "./scene-property-values";

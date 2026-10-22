@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import { RuntimeVoices } from "./runtime-voices";
 
 const play = (voiceId: string, restoredAtSeconds?: number): CommandMessage => ({

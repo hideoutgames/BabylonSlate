@@ -44,7 +44,7 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     };
 
     await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .locator('[data-asset-path="assets/main.scene.hasset"]')
       .dblclick();
     await expect(page.getByTestId("viewport-panel")).toBeVisible({
       timeout: 15_000,
@@ -55,7 +55,7 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
         const targets = [
           '[data-testid="editor-chrome-bar"]',
           '[data-testid="viewport-panel"]',
-          ".dockview-theme-babylonslate .dv-tab",
+          ".dockview-theme-haptic .dv-tab",
         ];
         return targets.map((selector) => {
           const el = document.querySelector(selector);

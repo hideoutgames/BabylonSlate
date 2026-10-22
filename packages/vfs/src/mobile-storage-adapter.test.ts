@@ -41,8 +41,8 @@ describe("mobile project binding", () => {
   });
 
   it("restores expired folder access for reconnect without an explicit init call", async () => {
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "external-old", name: "Old Game" }));
-    prefs.set("babylonslate:scoped-stale", "1");
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "external-old", name: "Old Game" }));
+    prefs.set("haptic:scoped-stale", "1");
     const storage = new MobileStorageAdapter(new DocumentsStorageAdapter(createFakeDocumentsFs()));
     expect(await storage.needsReconnect()).toBe(true);
     expect((await storage.listProjects()).map((folder) => folder.id)).toContain("external-old");

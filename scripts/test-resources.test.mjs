@@ -50,7 +50,7 @@ test("diagnostics expose owned reservations without secrets or unrelated environ
   const report = await resourceReport({
     directory,
     env: {
-      BL_LOCAL_RESOURCE_CONFIG: join(directory, "missing.json"),
+      HAPTIC_LOCAL_RESOURCE_CONFIG: join(directory, "missing.json"),
       API_TOKEN: "private-api-token",
     },
     observeMemory: () => ({ availableBytes: null, errors: ["unavailable"] }),

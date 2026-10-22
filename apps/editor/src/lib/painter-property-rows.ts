@@ -1,5 +1,5 @@
-import { parsePainter2DProperties, SCENE_LAYER_HIT_TESTS, SCENE_LAYER_HIT_TEST_LABELS, type SerializedComponent } from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import { parsePainter2DProperties, SCENE_LAYER_HIT_TESTS, SCENE_LAYER_HIT_TEST_LABELS, type SerializedComponent } from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
 
 export function painterPropertyRows(actorId: string, component: SerializedComponent, update: (property: string, value: unknown) => void): PropertyRow[] {
   const value = parsePainter2DProperties(component.properties), defaults = parsePainter2DProperties({});

@@ -21,7 +21,7 @@ import {
 } from "@babylonjs/core";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
-import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
+import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CelMaterial } from "./cel-material";
 import {

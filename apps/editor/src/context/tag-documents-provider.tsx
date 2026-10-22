@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
-import { createTag, normalizeTagRegistry } from "@babylonslate/core";
-import { TagProvider } from "@babylonslate/editor-kit";
+import { createTag, normalizeTagRegistry } from "@haptic/core";
+import { TagProvider } from "@haptic/editor-kit";
 import {
   useDocumentActions,
   useProjectState,

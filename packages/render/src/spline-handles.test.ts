@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRenderer, Vector3 } from "@babylonjs/core";
-import { createActor, createDefaultScene, parseSplineProperties } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseSplineProperties } from "@haptic/core";
 import { createSplineHandles, insertSplinePoint, removeSplinePoint, splineHandles } from "./spline-handles";
 import { createSplineMesh, splineMeshBody } from "./spline-mesh";
 import { selectedShapeComponent } from "./shape-edit-target";

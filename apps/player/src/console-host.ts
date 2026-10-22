@@ -1,5 +1,5 @@
-import type { ControlMessage } from "@babylonslate/bridge";
-import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { ControlMessage } from "@haptic/bridge";
+import type { DebugInspectSnapshot } from "@haptic/object-model";
 
 type Result = { success: boolean; output: string };
 

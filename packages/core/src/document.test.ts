@@ -29,16 +29,16 @@ describe("P9 document kinds", () => {
   });
 
   it("strips material file suffixes from tab labels", () => {
-    expect(labelFromPath("assets/Rock.material.babasset")).toBe("Rock");
-    expect(labelFromPath("assets/Tint.matfunc.babasset")).toBe("Tint");
-    expect(labelFromPath("assets/Depth.rendertarget.babasset")).toBe("Depth");
-    expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
+    expect(labelFromPath("assets/Rock.material.hasset")).toBe("Rock");
+    expect(labelFromPath("assets/Tint.matfunc.hasset")).toBe("Tint");
+    expect(labelFromPath("assets/Depth.rendertarget.hasset")).toBe("Depth");
+    expect(labelFromPath("assets/Depth Image.rendertargettexture.hasset")).toBe("Depth Image");
   });
 
   it("restores Data Definition and Data Tree document identities with readable labels", () => {
     for (const [type, kind, path, label] of [
-      ["DataDefinition", "data-definition", "assets/Iron Sword.datadefinition.babasset", "Iron Sword Data Definition"],
-      ["DataTree", "data-tree", "assets/Weapons.datatree.babasset", "Weapons Data Tree"],
+      ["DataDefinition", "data-definition", "assets/Iron Sword.datadefinition.hasset", "Iron Sword Data Definition"],
+      ["DataTree", "data-tree", "assets/Weapons.datatree.hasset", "Weapons Data Tree"],
     ] as const) {
       const mapped = documentKindForAssetType(type)!;
       const ref = createDocumentRef(mapped, path);
@@ -56,9 +56,9 @@ describe("P9 document kinds", () => {
     expect(isSceneWorkspaceKind("scene")).toBe(true);
     expect(isSceneWorkspaceKind("scene-layer")).toBe(true);
     expect(isSceneWorkspaceKind("graph")).toBe(false);
-    expect(labelFromPath("assets/hud.scenelayer.babasset")).toBe("Hud");
+    expect(labelFromPath("assets/hud.scenelayer.hasset")).toBe("Hud");
     expect(
-      createDocumentRef("scene-layer", "assets/hud.scenelayer.babasset", {
+      createDocumentRef("scene-layer", "assets/hud.scenelayer.hasset", {
         name: "HUD",
       }).label,
     ).toBe("HUD Scene Layer");
@@ -71,7 +71,7 @@ describe("P9 document kinds", () => {
     expect(documentKindForAssetType("SaveGame")).toBe("save-game");
     expect(assetTypeForDocumentKind("save-game")).toBe("SaveGame");
     expect(documentKindLabel("save-game")).toBe("Save Game");
-    expect(labelFromPath("assets/PlayerProgress.savegame.babasset")).toBe("PlayerProgress");
+    expect(labelFromPath("assets/PlayerProgress.savegame.hasset")).toBe("PlayerProgress");
     expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
     expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
     expect(isAssetDocumentKind("font")).toBe(true);
@@ -87,10 +87,10 @@ describe("P9 document kinds", () => {
     expect(documentKindLabel("tilemap")).toBe("Tilemap");
     expect(isAssetDocumentKind("tileset")).toBe(true);
     expect(isAssetDocumentKind("tilemap")).toBe(true);
-    expect(labelFromPath("assets/ground.tileset.babasset")).toBe("Ground");
-    expect(labelFromPath("assets/overworld.tilemap.babasset")).toBe("Overworld");
+    expect(labelFromPath("assets/ground.tileset.hasset")).toBe("Ground");
+    expect(labelFromPath("assets/overworld.tilemap.hasset")).toBe("Overworld");
     expect(
-      createDocumentRef("tileset", "assets/ground.tileset.babasset", {
+      createDocumentRef("tileset", "assets/ground.tileset.hasset", {
         name: "Ground",
       }).label,
     ).toBe("Ground Tileset");
@@ -101,17 +101,17 @@ describe("P9 document kinds", () => {
     expect(assetTypeForDocumentKind("sprite-animation")).toBe("SpriteAnimation");
     expect(documentKindLabel("sprite-animation")).toBe("Sprite Animation");
     expect(isAssetDocumentKind("sprite-animation")).toBe(true);
-    expect(labelFromPath("assets/walk.spriteanim.babasset")).toBe("Walk");
+    expect(labelFromPath("assets/walk.spriteanim.hasset")).toBe("Walk");
     expect(
-      createDocumentRef("sprite-animation", "assets/walk.spriteanim.babasset", {
+      createDocumentRef("sprite-animation", "assets/walk.spriteanim.hasset", {
         name: "Walk",
       }).label,
     ).toBe("Walk Sprite Animation");
   });
 
   it("parses document ids and labels compound suffixes", () => {
-    expect(labelFromPath("assets/player_hud.scenelayer.babasset")).toBe("Player Hud");
-    expect(labelFromPath("assets/move_input.inputaction.babasset")).toBe("Move Input");
+    expect(labelFromPath("assets/player_hud.scenelayer.hasset")).toBe("Player Hud");
+    expect(labelFromPath("assets/move_input.inputaction.hasset")).toBe("Move Input");
   });
 });
 
@@ -120,9 +120,9 @@ describe("Class and settings documents", () => {
     expect(documentKindForAssetType("Class")).toBe("graph");
     expect(assetTypeForDocumentKind("graph")).toBe("Class");
     expect(documentKindLabel("graph")).toBe("Class");
-    expect(labelFromPath("assets/hero.class.babasset")).toBe("Hero");
+    expect(labelFromPath("assets/hero.class.hasset")).toBe("Hero");
     expect(
-      createDocumentRef("graph", "assets/hero.class.babasset", { name: "Hero" })
+      createDocumentRef("graph", "assets/hero.class.hasset", { name: "Hero" })
         .label,
     ).toBe("Hero Class");
   });
@@ -132,12 +132,12 @@ describe("Class and settings documents", () => {
     expect(assetTypeForDocumentKind("model")).toBe("Model");
     expect(documentKindLabel("model")).toBe("Model");
     expect(isAssetDocumentKind("model")).toBe(true);
-    expect(parseDocumentId("model:assets/hero.babasset")).toEqual({
+    expect(parseDocumentId("model:assets/hero.hasset")).toEqual({
       kind: "model",
-      path: "assets/hero.babasset",
+      path: "assets/hero.hasset",
     });
     expect(
-      createDocumentRef("model", "assets/hero.babasset", { name: "Hero" }).label,
+      createDocumentRef("model", "assets/hero.hasset", { name: "Hero" }).label,
     ).toBe("Hero Model");
   });
 
@@ -147,7 +147,7 @@ describe("Class and settings documents", () => {
     expect(documentKindLabel("skeleton")).toBe("Skeleton");
     expect(isAssetDocumentKind("skeleton")).toBe(true);
     expect(
-      createDocumentRef("skeleton", "assets/hero.skeleton.babasset", {
+      createDocumentRef("skeleton", "assets/hero.skeleton.hasset", {
         name: "Hero",
       }).label,
     ).toBe("Hero Skeleton");
@@ -156,7 +156,7 @@ describe("Class and settings documents", () => {
     expect(documentKindLabel("animation")).toBe("Animation");
     expect(isAssetDocumentKind("animation")).toBe(true);
     expect(
-      createDocumentRef("animation", "assets/hero_idle.babasset", {
+      createDocumentRef("animation", "assets/hero_idle.hasset", {
         name: "Hero_Idle",
       }).label,
     ).toBe("Hero_Idle Animation");
@@ -167,9 +167,9 @@ describe("Class and settings documents", () => {
     expect(assetTypeForDocumentKind("audio")).toBe("Audio");
     expect(documentKindLabel("audio")).toBe("Audio");
     expect(isAssetDocumentKind("audio")).toBe(true);
-    expect(labelFromPath("assets/jump.babasset")).toBe("Jump");
+    expect(labelFromPath("assets/jump.hasset")).toBe("Jump");
     expect(
-      createDocumentRef("audio", "assets/jump.babasset", { name: "Jump" }).label,
+      createDocumentRef("audio", "assets/jump.hasset", { name: "Jump" }).label,
     ).toBe("Jump Audio");
   });
 
@@ -178,7 +178,7 @@ describe("Class and settings documents", () => {
     expect(assetTypeForDocumentKind("texture")).toBe("Texture");
     expect(documentKindLabel("texture")).toBe("Texture");
     expect(
-      createDocumentRef("texture", "assets/grass.babasset", { name: "Grass" }).label,
+      createDocumentRef("texture", "assets/grass.hasset", { name: "Grass" }).label,
     ).toBe("Grass Texture");
   });
 
@@ -193,11 +193,11 @@ describe("Class and settings documents", () => {
     expect(documentKindLabel("structure")).toBe("Structure");
     expect(documentKindLabel("script-interface")).toBe("Script Interface");
     expect(
-      createDocumentRef("enum", "assets/colors.babasset", { name: "Colors" })
+      createDocumentRef("enum", "assets/colors.hasset", { name: "Colors" })
         .label,
     ).toBe("Colors Enum");
     expect(
-      createDocumentRef("script-interface", "assets/hit.babasset", {
+      createDocumentRef("script-interface", "assets/hit.hasset", {
         name: "Hit",
       }).label,
     ).toBe("Hit Script Interface");
@@ -218,11 +218,11 @@ describe("Class and settings documents", () => {
     expect(documentKindLabel("audio-channel")).toBe("Audio Channel");
     expect(documentKindLabel("sound-attenuation")).toBe("Sound Attenuation");
     expect(isAssetDocumentKind("audio-mixer")).toBe(true);
-    expect(labelFromPath("assets/master.mixer.babasset")).toBe("Master");
-    expect(labelFromPath("assets/sfx.channel.babasset")).toBe("Sfx");
-    expect(labelFromPath("assets/near.atten.babasset")).toBe("Near");
+    expect(labelFromPath("assets/master.mixer.hasset")).toBe("Master");
+    expect(labelFromPath("assets/sfx.channel.hasset")).toBe("Sfx");
+    expect(labelFromPath("assets/near.atten.hasset")).toBe("Near");
     expect(
-      createDocumentRef("audio-mixer", "assets/master.mixer.babasset", {
+      createDocumentRef("audio-mixer", "assets/master.mixer.hasset", {
         name: "Master",
       }).label,
     ).toBe("Master Audio Mixer");
@@ -236,10 +236,10 @@ describe("Class and settings documents", () => {
     expect(documentKindLabel("particle-emitter")).toBe("Particle Emitter");
     expect(documentKindLabel("particle-system")).toBe("Particle System");
     expect(isAssetDocumentKind("particle-emitter")).toBe(true);
-    expect(labelFromPath("assets/sparks.emitter.babasset")).toBe("Sparks");
-    expect(labelFromPath("assets/fire.particles.babasset")).toBe("Fire");
+    expect(labelFromPath("assets/sparks.emitter.hasset")).toBe("Sparks");
+    expect(labelFromPath("assets/fire.particles.hasset")).toBe("Fire");
     expect(
-      createDocumentRef("particle-system", "assets/fire.particles.babasset", {
+      createDocumentRef("particle-system", "assets/fire.particles.hasset", {
         name: "Fire",
       }).label,
     ).toBe("Fire Particle System");
@@ -250,9 +250,9 @@ describe("Class and settings documents", () => {
     expect(assetTypeForDocumentKind("particle-graph")).toBe("ParticleGraph");
     expect(documentKindLabel("particle-graph")).toBe("Particle Graph");
     expect(isAssetDocumentKind("particle-graph")).toBe(true);
-    expect(labelFromPath("assets/embers.particlegraph.babasset")).toBe("Embers");
+    expect(labelFromPath("assets/embers.particlegraph.hasset")).toBe("Embers");
     expect(
-      createDocumentRef("particle-graph", "assets/embers.particlegraph.babasset", {
+      createDocumentRef("particle-graph", "assets/embers.particlegraph.hasset", {
         name: "Embers",
       }).label,
     ).toBe("Embers Particle Graph");
@@ -263,9 +263,9 @@ describe("Class and settings documents", () => {
     expect(assetTypeForDocumentKind("skybox-creator")).toBe("SkyboxCreator");
     expect(documentKindLabel("skybox-creator")).toBe("Skybox Creator");
     expect(isAssetDocumentKind("skybox-creator")).toBe(true);
-    expect(labelFromPath("assets/day.skyboxcreator.babasset")).toBe("Day");
+    expect(labelFromPath("assets/day.skyboxcreator.hasset")).toBe("Day");
     expect(
-      createDocumentRef("skybox-creator", "assets/day.skyboxcreator.babasset", {
+      createDocumentRef("skybox-creator", "assets/day.skyboxcreator.hasset", {
         name: "Day",
       }).label,
     ).toBe("Day Skybox Creator");
@@ -276,11 +276,11 @@ describe("Class and settings documents", () => {
     expect(assetTypeForDocumentKind("trace")).toBe("Trace");
     expect(documentKindLabel("trace")).toBe("Trace");
     expect(isAssetDocumentKind("trace")).toBe(true);
-    expect(labelFromPath("derived/proj/traces/session-1.babtrace")).toBe(
+    expect(labelFromPath("derived/proj/traces/session-1.htrace")).toBe(
       "Session 1",
     );
     expect(
-      createDocumentRef("trace", "derived/proj/traces/session-1.babtrace", {
+      createDocumentRef("trace", "derived/proj/traces/session-1.htrace", {
         name: "session-1",
       }).label,
     ).toBe("session-1 Trace");
@@ -292,16 +292,16 @@ describe("Class and settings documents", () => {
     expect(documentKindLabel("plugin-settings")).toBe("Plugin Settings");
     expect(isAssetDocumentKind("plugin-settings")).toBe(true);
     expect(
-      parseDocumentId("plugin-settings:plugins/pack/pack.plugin.babasset"),
+      parseDocumentId("plugin-settings:plugins/pack/pack.plugin.hasset"),
     ).toEqual({
       kind: "plugin-settings",
-      path: "plugins/pack/pack.plugin.babasset",
+      path: "plugins/pack/pack.plugin.hasset",
     });
-    expect(labelFromPath("plugins/pack/pack.plugin.babasset")).toBe("Pack");
+    expect(labelFromPath("plugins/pack/pack.plugin.hasset")).toBe("Pack");
     expect(
       createDocumentRef(
         "plugin-settings",
-        "plugins/pack/pack.plugin.babasset",
+        "plugins/pack/pack.plugin.hasset",
         { name: "Pack" },
       ).label,
     ).toBe("Pack Plugin Settings");
@@ -311,8 +311,8 @@ describe("Class and settings documents", () => {
 describe("document ids and layouts", () => {
   it("namespaces asset document ids by kind and path", () => {
     expect(
-      documentId({ kind: "scene", path: "assets/main.scene.babasset" }),
-    ).toBe("scene:assets/main.scene.babasset");
+      documentId({ kind: "scene", path: "assets/main.scene.hasset" }),
+    ).toBe("scene:assets/main.scene.hasset");
     expect(parseDocumentId("not-an-id")).toBeNull();
     expect(parseDocumentId(CONTENT_BROWSER_ID)).toEqual({
       kind: "content-browser",
@@ -331,7 +331,7 @@ describe("document ids and layouts", () => {
 
   it("labels a scene tab from the file stem when payload name is still Main", () => {
     expect(
-      createDocumentRef("scene", "assets/Level2.scene.babasset", {
+      createDocumentRef("scene", "assets/Level2.scene.hasset", {
         name: "Main",
       }).label,
     ).toBe("Level2 Scene");
@@ -340,6 +340,6 @@ describe("document ids and layouts", () => {
 
 
 it("uses readable input asset tab names without implementation suffixes", () => {
-  expect(labelFromPath("assets/Jump.inputaction.babasset")).toBe("Jump");
-  expect(labelFromPath("assets/CameraMove.inputaxis.babasset")).toBe("CameraMove");
+  expect(labelFromPath("assets/Jump.inputaction.hasset")).toBe("Jump");
+  expect(labelFromPath("assets/CameraMove.inputaxis.hasset")).toBe("CameraMove");
 });

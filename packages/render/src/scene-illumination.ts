@@ -20,14 +20,14 @@ import {
   type Matrix,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
-import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
+import type { SerializedActor, SerializedComponent, SerializedScene } from "@haptic/core";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
   areaRectLightBindings,
   normalizeSceneFogSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
 import { applyEnvironmentLighting } from "./environment-lighting";

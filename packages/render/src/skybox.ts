@@ -15,7 +15,7 @@ import {
   parseSkyboxSize,
   skyboxFaceGuids,
   type SkyboxFaces,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { engineDefaultSkyboxFaceUrl } from "./default-skybox/faces";
 import type { MeshAssetContext } from "./mesh-assets";
 import {

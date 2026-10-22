@@ -1,5 +1,5 @@
 import type { AbstractMesh, BaseTexture, IParticleSystem, Light, Scene } from "@babylonjs/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { particleDrawOrderRevision } from "./sorting";
 import type { SnapshotSceneBinding } from "./snapshot-apply";

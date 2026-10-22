@@ -1,4 +1,4 @@
-import { GLTF_MESH_DECODER_RELATIVE_FILES } from "@babylonslate/assets";
+import { GLTF_MESH_DECODER_RELATIVE_FILES } from "@haptic/assets";
 
 export { GLTF_MESH_DECODER_RELATIVE_FILES };
 

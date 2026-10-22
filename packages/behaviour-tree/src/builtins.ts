@@ -1,6 +1,6 @@
-import { BT_CLASS_ALIASES } from "@babylonslate/core";
+import { BT_CLASS_ALIASES } from "@haptic/core";
 
-export { BT_CLASS_ALIASES } from "@babylonslate/core";
+export { BT_CLASS_ALIASES } from "@haptic/core";
 
 export const BUILTIN_TASKS = new Set([
   "bt.task.succeed",

@@ -11,8 +11,8 @@ import {
   TypeVisualIcon,
   humanizePropertyLabel,
   resolveTypeVisual,
-} from "@babylonslate/editor-kit";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { cn } from "@haptic/ui/lib/utils";
 
 type AssetReferenceData = {
   title?: string;

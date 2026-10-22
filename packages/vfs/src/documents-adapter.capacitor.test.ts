@@ -25,7 +25,7 @@ describe("DocumentsStorageAdapter on the Capacitor Filesystem plugin", () => {
     const storage = new DocumentsStorageAdapter();
     await storage.openDocumentsProject("Game");
     native.readDocumentsRange.mockResolvedValue({ data: btoa("ab"), totalSize: 4, revision: "one", actualBytesRead: 2 });
-    const read = await storage.readBinaryRange("asset.babasset", 1, 2);
+    const read = await storage.readBinaryRange("asset.hasset", 1, 2);
     expect(read.bytes).toEqual(new Uint8Array([97, 98]));
     expect(native.readDocumentsRange).toHaveBeenCalledWith(expect.objectContaining({ offset: 1, length: 2 }));
   });

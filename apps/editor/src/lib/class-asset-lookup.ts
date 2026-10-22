@@ -4,9 +4,9 @@
  * factories pull in every graph package, so the boot path can import them
  * without that module. `content-browser-helpers` re-exports everything here.
  */
-import type { AssetRegistry } from "@babylonslate/assets";
-import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
-import { isSceneAssetClassId } from "@babylonslate/object-model";
+import type { AssetRegistry } from "@haptic/assets";
+import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
+import { isSceneAssetClassId } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import type { CreatableAssetType } from "./content-browser-helpers";
 
@@ -23,40 +23,40 @@ export type ClassAssetRef = {
 };
 
 const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
-  Scene: ".scene.babasset",
-  SceneLayer: ".scenelayer.babasset",
-  Class: ".class.babasset",
-  Prefab: ".prefab.babasset",
-  Sprite: ".sprite.babasset",
-  SpriteAnimation: ".spriteanim.babasset",
-  AnimationGraph: ".anim.babasset",
-  Material: ".material.babasset",
-  MaterialFunction: ".matfunc.babasset",
-  MaterialInstance: ".matinst.babasset",
-  Tileset: ".tileset.babasset",
-  Tilemap: ".tilemap.babasset",
-  BehaviourTree: ".bt.babasset",
-  Blackboard: ".blackboard.babasset",
-  SaveGame: ".savegame.babasset",
-  AudioMixer: ".mixer.babasset",
-  InputAction: ".inputaction.babasset",
-  DataDefinition: ".datadefinition.babasset",
-  DataTree: ".datatree.babasset",
-  InputAxis: ".inputaxis.babasset",
-  AudioChannel: ".channel.babasset",
-  SoundAttenuation: ".atten.babasset",
-  ParticleEmitter: ".emitter.babasset",
-  ParticleGraph: ".particlegraph.babasset",
-  ParticleSystem: ".particles.babasset",
-  Water: ".water.babasset",
-  RenderTarget: ".rendertarget.babasset",
-  RenderTargetTexture: ".rendertargettexture.babasset",
-  SkyboxCreator: ".skyboxcreator.babasset",
+  Scene: ".scene.hasset",
+  SceneLayer: ".scenelayer.hasset",
+  Class: ".class.hasset",
+  Prefab: ".prefab.hasset",
+  Sprite: ".sprite.hasset",
+  SpriteAnimation: ".spriteanim.hasset",
+  AnimationGraph: ".anim.hasset",
+  Material: ".material.hasset",
+  MaterialFunction: ".matfunc.hasset",
+  MaterialInstance: ".matinst.hasset",
+  Tileset: ".tileset.hasset",
+  Tilemap: ".tilemap.hasset",
+  BehaviourTree: ".bt.hasset",
+  Blackboard: ".blackboard.hasset",
+  SaveGame: ".savegame.hasset",
+  AudioMixer: ".mixer.hasset",
+  InputAction: ".inputaction.hasset",
+  DataDefinition: ".datadefinition.hasset",
+  DataTree: ".datatree.hasset",
+  InputAxis: ".inputaxis.hasset",
+  AudioChannel: ".channel.hasset",
+  SoundAttenuation: ".atten.hasset",
+  ParticleEmitter: ".emitter.hasset",
+  ParticleGraph: ".particlegraph.hasset",
+  ParticleSystem: ".particles.hasset",
+  Water: ".water.hasset",
+  RenderTarget: ".rendertarget.hasset",
+  RenderTargetTexture: ".rendertargettexture.hasset",
+  SkyboxCreator: ".skyboxcreator.hasset",
 };
 
 /** File suffix a new asset of this type is written with. */
 export function newAssetFileSuffix(type: CreatableAssetType): string {
-  return ASSET_FILE_SUFFIX[type] ?? ".babasset";
+  return ASSET_FILE_SUFFIX[type] ?? ".hasset";
 }
 
 export function newAssetFileName(

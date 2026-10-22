@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   createActor,
   createDefaultSceneSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 
 describe("AudioComponent play-on-start", () => {

@@ -27,9 +27,9 @@ async function createAsset(
 async function guidForPath(page: Page, path: string): Promise<string> {
   return page.evaluate((assetPath) => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath(assetPath) ?? "";
+    return host.__hapticTest?.guidForPath(assetPath) ?? "";
   }, path);
 }
 
@@ -107,7 +107,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
   }) => {
     await openTestProject(page);
     await createAsset(page, "BehaviourTree", "Patrol");
-    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Patrol.bt.hasset"]').dblclick();
     await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
     await expect(page.getByTestId("bt-node-root")).toBeVisible();
 
@@ -144,7 +144,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     page.on("pageerror", (error) => errors.push(error.message));
     await openTestProject(page, "/?test=1&previewThrow=1");
     await createAsset(page, "BehaviourTree", "Patrol");
-    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Patrol.bt.hasset"]').dblclick();
     await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
 
     await openMainScene(page);
@@ -156,7 +156,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
       "BehaviourTreeComponent",
       "Behaviour Tree",
     );
-    const treeGuid = await guidForPath(page, "assets/Patrol.bt.babasset");
+    const treeGuid = await guidForPath(page, "assets/Patrol.bt.hasset");
     expect(treeGuid.length).toBeGreaterThan(0);
     await pickSelectedAsset(page, "Behaviour Tree", treeGuid);
 

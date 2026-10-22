@@ -1,13 +1,13 @@
-import { ENGINE_VERSION, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, type ProjectStorage } from "@haptic/core";
 import {
-  decodeBabassetChunk,
-  encodeBabasset,
-  readBabassetHeader,
-  type BabassetHeader,
+  decodeHassetChunk,
+  encodeHasset,
+  readHassetHeader,
+  type HassetHeader,
   type ChunkInput,
-  type DecodedBabasset,
+  type DecodedHasset,
   type EncodableChunk,
-} from "./babasset";
+} from "./hasset";
 import type { BlobStore } from "./blob-store";
 import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
 import { stableStringify } from "./bytes";
@@ -31,7 +31,7 @@ export interface AssetDocument {
  * have its bytes: a save must never drop a chunk it could not load.
  */
 export function extraChunksFromDecoded(
-  decoded: DecodedBabasset,
+  decoded: DecodedHasset,
 ): ChunkInput[] {
   const extra: ChunkInput[] = [];
   for (const entry of decoded.header.chunks) {
@@ -68,7 +68,7 @@ export async function encodeAssetDocument(
   const body = new TextEncoder().encode(stableStringify(document.payload));
   const extra = options.extraChunks ?? [];
   const storeInHeader = options.headerPayload !== undefined;
-  return encodeBabasset({
+  return encodeHasset({
     header: {
       ...(options.dependencyMetadata ?? collectAssetDependencyMetadata(document.type, document.payload, {
         ...options.dependencyContext,
@@ -109,7 +109,7 @@ export async function encodeAssetDocument(
 }
 
 /**
- * The document of a `.babasset`: its `document` chunk, else its header
+ * The document of a `.hasset`: its `document` chunk, else its header
  * payload. Only that chunk is read and verified; other chunks (source bytes,
  * bakes, encodes) are neither loaded from blobs nor hashed.
  */
@@ -117,8 +117,8 @@ export async function decodeAssetDocument(
   bytes: Uint8Array,
   options: { blobs?: BlobStore } = {},
 ): Promise<AssetDocument> {
-  const header = readBabassetHeader(bytes);
-  const body = await decodeBabassetChunk(
+  const header = readHassetHeader(bytes);
+  const body = await decodeHassetChunk(
     bytes,
     DOCUMENT_CHUNK_ID,
     options.blobs ? (sha256) => options.blobs!.readBlob(sha256) : undefined,
@@ -144,7 +144,7 @@ export async function readStoredAssetDocument(
 }
 
 function assetDocumentFrom(
-  header: BabassetHeader,
+  header: HassetHeader,
   body: Uint8Array | null,
 ): AssetDocument {
   const headerPayload = header.payload;
@@ -202,9 +202,9 @@ export function stampDocumentChunkName(
 
 /** Header-only read for registry indexing: never touches chunk payloads. */
 export function readAssetDocumentHeader(bytes: Uint8Array) {
-  return readBabassetHeader(bytes);
+  return readHassetHeader(bytes);
 }
 
 export function isAssetDocumentPath(path: string): boolean {
-  return path.endsWith(".babasset");
+  return path.endsWith(".hasset");
 }

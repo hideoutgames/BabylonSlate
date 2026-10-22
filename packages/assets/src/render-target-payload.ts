@@ -1,4 +1,4 @@
-import { normalizeRenderTargetTexturePayload } from "@babylonslate/core";
+import { normalizeRenderTargetTexturePayload } from "@haptic/core";
 
 /** Header dependencies keep live sampler outputs reachable in Play and export. */
 export function renderTargetAssetDependencies(assetType: string, payload: unknown): string[] {

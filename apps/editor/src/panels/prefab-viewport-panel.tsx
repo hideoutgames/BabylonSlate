@@ -1,16 +1,16 @@
 import type { AbstractEngine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { AssetLoadError } from "@babylonslate/assets";
-import { areaEmissionTextureGuids, requestEditorDrop } from "@babylonslate/core";
+import { AssetLoadError } from "@haptic/assets";
+import { areaEmissionTextureGuids, requestEditorDrop } from "@haptic/core";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
   applyViewportJoystickSteer,
   syncEditorPlayState,
   type EngineHandle,
-} from "@babylonslate/render";
-import { isTestModeEnabled } from "@babylonslate/vfs";
+} from "@haptic/render";
+import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
@@ -27,7 +27,7 @@ import {
   type MaterialViewportTestSnapshot,
 } from "../lib/material-viewport-test-snapshot";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { walkAncestry } from "@babylonslate/editor-kit";
+import { walkAncestry } from "@haptic/editor-kit";
 import {
   classIdFromClassAsset,
   classParentLookup,
@@ -580,7 +580,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
-      __babylonslatePrefabViewportTest?: {
+      __hapticPrefabViewportTest?: {
         diagnostics: () => unknown;
         visuals: () => Array<
           MaterialViewportTestSnapshot & {
@@ -591,7 +591,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         >;
       };
     };
-    host.__babylonslatePrefabViewportTest = {
+    host.__hapticPrefabViewportTest = {
       diagnostics: () => {
         const handle = engineRef.current;
         if (!handle) return null;
@@ -632,7 +632,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       },
     };
     return () => {
-      delete host.__babylonslatePrefabViewportTest;
+      delete host.__hapticPrefabViewportTest;
     };
   }, []);
 

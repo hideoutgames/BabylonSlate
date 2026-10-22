@@ -67,8 +67,8 @@ import { WorleyNoise3DBlock } from "@babylonjs/core/Materials/Node/Blocks/worley
 import type {
   MaterialOperation,
   MaterialValueType,
-} from "@babylonslate/shader-graph";
-import { componentCount, customGlslInterface, materialGradientStops, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
+import { componentCount, customGlslInterface, materialGradientStops, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@haptic/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**

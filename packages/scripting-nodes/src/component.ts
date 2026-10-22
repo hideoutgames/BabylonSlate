@@ -8,7 +8,7 @@ import {
   objectRef,
   BOOL,
   TRANSFORM,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { selfActorPin, selfPin, subject } from "./self-pin";
 
 export const componentNodes: NodeDefinition[] = [

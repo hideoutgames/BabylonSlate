@@ -16,9 +16,9 @@ export interface AnchorEntry {
 }
 
 const V8_FRAME =
-  /^\s*at\s+(?:(.+?)\s+\()?((?:babylonslate:|blob:|file:|https?:).+?):(\d+):(\d+)\)?\s*$/;
+  /^\s*at\s+(?:(.+?)\s+\()?((?:haptic:|blob:|file:|https?:).+?):(\d+):(\d+)\)?\s*$/;
 const WEBKIT_FRAME =
-  /^(?:(.*)@)?((?:babylonslate:|blob:|file:|https?:).+?):(\d+):(\d+)\s*$/;
+  /^(?:(.*)@)?((?:haptic:|blob:|file:|https?:).+?):(\d+):(\d+)\s*$/;
 
 export function parseStackFrames(stack: string): StackFrame[] {
   const frames: StackFrame[] = [];
@@ -71,7 +71,7 @@ export function lookupAnchor(
 }
 
 export function assetGuidFromSourceUrl(url: string): string | null {
-  const match = url.match(/^babylonslate:\/\/\/([^/?#]+?)(?:\.js)?$/);
+  const match = url.match(/^haptic:\/\/\/([^/?#]+?)(?:\.js)?$/);
   return match ? match[1]! : null;
 }
 

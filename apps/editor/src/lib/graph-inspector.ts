@@ -1,19 +1,19 @@
-import { INPUT_KEYS, declaredValueUnit, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import { INPUT_KEYS, declaredValueUnit, normalizeTag, normalizeTagContainer } from "@haptic/core";
 import { dataGraphMetadata, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
 import type {
   ParameterRow,
   PinListRow,
   ParameterValueType,
   PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   ASSET_REF_PICKER_TYPES,
   classRowIdentity,
   assetRowIdentity,
   humanizePropertyLabel,
-} from "@babylonslate/editor-kit";
-import type { GraphPin, LiteralPinDefault, PinType } from "@babylonslate/scripting";
-import { displayPinTypesForGraph } from "@babylonslate/graph-ui";
+} from "@haptic/editor-kit";
+import type { GraphPin, LiteralPinDefault, PinType } from "@haptic/scripting";
+import { displayPinTypesForGraph } from "@haptic/graph-ui";
 import {
   BOOL,
   ENGINE_ENUMS,
@@ -43,7 +43,7 @@ import {
   vec4TupleToObject,
   type TypeSchemas,
   type StructField,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,

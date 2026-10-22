@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { encodeBabasset } from "./babasset";
+import { encodeHasset } from "./hasset";
 import { projectContentRoot } from "./content-root";
 import {
   createDefaultPluginSettings,
@@ -21,7 +21,7 @@ import { AssetRegistry } from "./registry";
 
 async function projectStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("plugins.babproject");
+  await storage.openDocumentsProject("plugins.hproject");
   return storage;
 }
 
@@ -42,7 +42,7 @@ async function writePluginFolder(
     const path = `plugins/${folder}/assets/${asset.relativePath}`;
     const dir = path.slice(0, path.lastIndexOf("/"));
     await storage.mkdir(dir, true);
-    const bytes = await encodeBabasset({
+    const bytes = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: asset.guid,
@@ -84,7 +84,7 @@ describe("discoverProjectPlugins", () => {
     const storage = await projectStorage();
     const settings = createDefaultPluginSettings({ pluginGuid: "plug-1", displayName: "Pack" });
     await storage.mkdir("plugins/Pack", true);
-    await storage.writeBinary("plugins/Pack/Pack.plugin.babasset", await encodeAssetDocument({
+    await storage.writeBinary("plugins/Pack/Pack.plugin.hasset", await encodeAssetDocument({
       guid: "plug-1", type: "PluginSettings", name: "Pack", version: 1,
       payload: settings as unknown as Record<string, unknown>,
     }, {
@@ -112,7 +112,7 @@ describe("discoverProjectPlugins", () => {
     expect(discovered[0]!.folderName).toBe("Pack");
     expect(discovered[0]!.folderPath).toBe("plugins/Pack");
     expect(discovered[0]!.settingsPath).toBe(
-      "plugins/Pack/Pack.plugin.babasset",
+      "plugins/Pack/Pack.plugin.hasset",
     );
     expect(discovered[0]!.contentPath).toBe("plugins/Pack/assets");
     expect(discovered[0]!.source).toBe("project");
@@ -138,7 +138,7 @@ describe("discoverEnginePlugins", () => {
     const bytes = await encodePluginSettingsDocument(settings);
     await storage.mkdir("starter-content", true);
     await storage.writeBinary(
-      "starter-content/StarterContent.plugin.babasset",
+      "starter-content/StarterContent.plugin.hasset",
       bytes,
     );
     await storage.mkdir("starter-content/assets", true);
@@ -161,7 +161,7 @@ describe("shadowEnginePlugins", () => {
       pluginGuid: "shared",
       folderName: "starter-content",
       folderPath: "starter-content",
-      settingsPath: "starter-content/starter-content.plugin.babasset",
+      settingsPath: "starter-content/starter-content.plugin.hasset",
       contentPath: "starter-content/assets",
       source: "engine" as const,
       readOnly: true,
@@ -171,7 +171,7 @@ describe("shadowEnginePlugins", () => {
       ...engine,
       folderName: "starter-content",
       folderPath: "plugins/starter-content",
-      settingsPath: "plugins/starter-content/starter-content.plugin.babasset",
+      settingsPath: "plugins/starter-content/starter-content.plugin.hasset",
       contentPath: "plugins/starter-content/assets",
       source: "project" as const,
       readOnly: false,
@@ -181,7 +181,7 @@ describe("shadowEnginePlugins", () => {
       pluginGuid: "other-engine",
       folderName: "other",
       folderPath: "other",
-      settingsPath: "other/other.plugin.babasset",
+      settingsPath: "other/other.plugin.hasset",
       contentPath: "other/assets",
       settings: createDefaultPluginSettings({
         pluginGuid: "other-engine",
@@ -377,7 +377,7 @@ describe("mountEnabledPlugins", () => {
     });
     await writePluginFolder(storage, "Removed", settings, [
       {
-        relativePath: "Removed.class.babasset",
+        relativePath: "Removed.class.hasset",
         guid: "removed-class",
         type: "Class",
         name: "Removed",
@@ -404,7 +404,7 @@ describe("mountEnabledPlugins", () => {
     const storage = await projectStorage();
     const settings = createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tools" });
     await writePluginFolder(storage, "Tools", settings, [
-      { relativePath: "Old/Hammer.class.babasset", guid: "hammer", type: "Class", name: "Hammer" },
+      { relativePath: "Old/Hammer.class.hasset", guid: "hammer", type: "Class", name: "Hammer" },
     ]);
     const registry = new AssetRegistry(storage);
     const options = { enabledGuids: new Set(["tools"]) };
@@ -433,7 +433,7 @@ describe("mountEnabledPlugins", () => {
     await writePluginFolder(storage, "Base", base);
     await writePluginFolder(storage, "Extra", extra, [
       {
-        relativePath: "Extra.class.babasset",
+        relativePath: "Extra.class.hasset",
         guid: "extra-class",
         type: "Class",
         name: "Extra",
@@ -468,7 +468,7 @@ describe("mountEnabledPlugins", () => {
     });
     await writePluginFolder(storage, "On", on, [
       {
-        relativePath: "Hero.class.babasset",
+        relativePath: "Hero.class.hasset",
         guid: "hero-1",
         type: "Class",
         name: "Hero",
@@ -476,7 +476,7 @@ describe("mountEnabledPlugins", () => {
     ]);
     await writePluginFolder(storage, "Off", off, [
       {
-        relativePath: "Villain.class.babasset",
+        relativePath: "Villain.class.hasset",
         guid: "villain-1",
         type: "Class",
         name: "Villain",
@@ -494,9 +494,9 @@ describe("mountEnabledPlugins", () => {
     expect(registry.getByGuid("villain-1")).toBeUndefined();
     expect(
       registry.listDocumentPaths({ rootId: "project" }).graphs,
-    ).not.toContain("plugins/On/assets/Hero.class.babasset");
+    ).not.toContain("plugins/On/assets/Hero.class.hasset");
     expect(registry.listDocumentPaths().graphs).toContain(
-      "plugins/On/assets/Hero.class.babasset",
+      "plugins/On/assets/Hero.class.hasset",
     );
   });
 
@@ -518,7 +518,7 @@ describe("mountEnabledPlugins", () => {
     b.pluginDependencies = [{ guid: "a", version: "1.0.0" }];
     await writePluginFolder(storage, "A", a, [
       {
-        relativePath: "A.class.babasset",
+        relativePath: "A.class.hasset",
         guid: "class-a",
         type: "Class",
         name: "A",
@@ -526,7 +526,7 @@ describe("mountEnabledPlugins", () => {
     ]);
     await writePluginFolder(storage, "B", b, [
       {
-        relativePath: "B.class.babasset",
+        relativePath: "B.class.hasset",
         guid: "class-b",
         type: "Class",
         name: "B",
@@ -534,7 +534,7 @@ describe("mountEnabledPlugins", () => {
     ]);
     await writePluginFolder(storage, "Solo", solo, [
       {
-        relativePath: "Solo.class.babasset",
+        relativePath: "Solo.class.hasset",
         guid: "class-solo",
         type: "Class",
         name: "Solo",
@@ -563,7 +563,7 @@ describe("indexUnresolvedPlaceholders", () => {
       version: 1,
       payload: { name: "Main", actors: [] },
     });
-    const withDeps = await encodeBabasset({
+    const withDeps = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "scene-1",
@@ -586,7 +586,7 @@ describe("indexUnresolvedPlaceholders", () => {
       ],
     });
     void sceneBytes;
-    await storage.writeBinary("assets/main.scene.babasset", withDeps);
+    await storage.writeBinary("assets/main.scene.hasset", withDeps);
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
@@ -602,7 +602,7 @@ describe("indexUnresolvedPlaceholders", () => {
     });
     await writePluginFolder(storage, "Pack", settings, [
       {
-        relativePath: "tex.babasset",
+        relativePath: "tex.hasset",
         guid: "plugin-tex",
         type: "Texture",
         name: "Shared",

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { AnimatedInputBlockTypes, ArcRotateCamera, MeshBuilder, NullEngine, PrecisionDate, Scene, Vector3 } from "@babylonjs/core";
-import { convertGlslToMaterial, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { convertGlslToMaterial, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 
 const disposers: Array<() => void> = [];

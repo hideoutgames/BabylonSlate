@@ -8,7 +8,7 @@ import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
-import { normalizeModelImportScale, type ModelMaterialSlot } from "@babylonslate/assets";
+import { normalizeModelImportScale, type ModelMaterialSlot } from "@haptic/assets";
 import {
   createMaterialPreviewScene,
   type MaterialPreviewScene,

@@ -70,9 +70,9 @@ test("a skinned model whose file has no normals is lit, not black", async ({ pag
     mimeType: "model/gltf-binary",
     buffer: Buffer.from(skinnedQuadWithoutNormals()),
   });
-  await expect(page.locator('[data-asset-path="assets/FlatQuad.babasset"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-asset-path="assets/FlatQuad.hasset"]')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("importing-overlay")).toHaveCount(0);
-  const modelGuid = await guidForPath(page, "assets/FlatQuad.babasset");
+  const modelGuid = await guidForPath(page, "assets/FlatQuad.hasset");
   await openMainScene(page);
   await page.getByTestId("outliner-add-actor").click();
   await page.getByTestId("place-actors-catalog-search").fill("FlatQuad");

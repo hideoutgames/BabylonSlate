@@ -12,7 +12,7 @@ import {
   type Scene,
   type StandardMaterial,
 } from "@babylonjs/core";
-import type { ViewportMode } from "@babylonslate/core";
+import type { ViewportMode } from "@haptic/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 import { createOverlayTransformBox } from "./overlay-transform-box";

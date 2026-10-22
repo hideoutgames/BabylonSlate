@@ -11,7 +11,7 @@ import {
   pin,
   structRef,
   type NodeDefinition,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { castDefaultClassId } from "./casting";
 
 /** Asset Registry queries answer from the packaged asset catalog of the running host. */
@@ -50,7 +50,7 @@ export const assetRegistryNodes: NodeDefinition[] = [
     category: "assetRegistry",
     pure: true,
     description:
-      "Looks up an asset by its full storage path, such as assets/Weapons/Rifle.class.babasset. Found is false when no packaged asset has that path.",
+      "Looks up an asset by its full storage path, such as assets/Weapons/Rifle.class.hasset. Found is false when no packaged asset has that path.",
     pins: () => [
       pin("path", "Path", "in", STRING),
       pin("assetData", "Asset Data", "out", ASSET_DATA),

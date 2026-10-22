@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { createDataEntryForDefinition, type TypeSchemas } from "@babylonslate/scripting";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { createDataEntryForDefinition, type TypeSchemas } from "@haptic/scripting";
 import { ProjectService } from "./project-service";
 import { createPickerAsset, createProjectAsset } from "../lib/create-project-asset";
 

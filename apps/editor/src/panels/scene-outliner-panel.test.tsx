@@ -4,7 +4,7 @@ import {
   createActor,
   createDefaultScene,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   actorRowId,
   folderRowId,

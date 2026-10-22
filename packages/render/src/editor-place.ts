@@ -1,5 +1,5 @@
 import { Matrix, Vector3, type ArcRotateCamera } from "@babylonjs/core";
-import type { ViewportMode } from "@babylonslate/core";
+import type { ViewportMode } from "@haptic/core";
 
 /** Closest a new actor may sit along the view ray, in world units. */
 export const EDITOR_PLACE_MIN_DISTANCE = 4;

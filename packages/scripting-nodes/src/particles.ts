@@ -2,7 +2,7 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { selfActorPin } from "./self-pin";
 
 export const particleNodes: NodeDefinition[] = [

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { HIDDEN_VIEWPORT_HEIGHT, WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
 import {
   WindowedList,

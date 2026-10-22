@@ -5,7 +5,7 @@ import {
   normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, WaterBlendIndex,
   RENDER_QUALITY_PROFILES, sampleWaterSurface, sampleWaterWaves, waterBankFadeLength, waterHorizontalEnvelope, waterWaveSet,
   type QualityLevel, type WaterBodyProperties, type WaterDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, settleSceneWater, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
   waterMeshBody, WATER_BLEND_REFRESH_MS, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_RESTORES_PER_FRAME,
@@ -15,9 +15,9 @@ import type { WaterMaterialPlugin } from "./water-material";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { WATER_FIELD_EDGE_RAMP } from "./water-field";
 import { applyAssignMesh, applySnapshotToScene, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { createSkyboxMesh } from "./skybox";
 

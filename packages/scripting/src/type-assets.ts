@@ -1,5 +1,5 @@
 /** Enum / Structure / ScriptInterface type asset payloads (P5). */
-import type { DataFieldSnapshot } from "@babylonslate/core";
+import type { DataFieldSnapshot } from "@haptic/core";
 
 export type EnumMember = { name: string; value: number };
 

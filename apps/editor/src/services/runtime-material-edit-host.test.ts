@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import { RuntimeMaterialEditHost } from "./runtime-material-edit-host";
 
 const prepare: Extract<CommandMessage, { type: "prepareRuntimeMaterialEdit" }> = {

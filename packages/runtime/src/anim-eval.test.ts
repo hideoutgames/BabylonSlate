@@ -1,26 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   animRuleScriptClassId,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   createActor,
   createDefaultSceneSettings,
   createDefaultSceneLayer,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   compileTransitionRuleGraph,
   type GraphNode,
   type NodeRegistry,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -38,7 +38,7 @@ function ruleNode(
 /** Compiled rule for `graph-1` that holds the transition until the bool variable `moving` is true. */
 function movingRuleScript(transitionId: string): CompiledScript {
   const registry = createDefaultNodeRegistry();
-  const assetGuid = `assets/Hero.anim.babasset#${transitionId}`;
+  const assetGuid = `assets/Hero.anim.hasset#${transitionId}`;
   const compiled = compileTransitionRuleGraph(
     {
       id: transitionId,

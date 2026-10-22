@@ -8,7 +8,7 @@ import {
   LogOutIcon,
   Settings2Icon,
 } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -16,7 +16,7 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import { HomepageAccountCenter } from "./homepage-account-center";
 import {
   unconfiguredBilling,

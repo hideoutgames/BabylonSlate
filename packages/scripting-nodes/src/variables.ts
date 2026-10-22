@@ -4,8 +4,8 @@ import {
   EXEC,
   objectRef,
   pinTypeForVariable,
-} from "@babylonslate/scripting";
-import { declaredValueUnit } from "@babylonslate/core";
+} from "@haptic/scripting";
+import { declaredValueUnit } from "@haptic/core";
 import { localVariableIdent } from "./member-pins";
 import { subject } from "./self-pin";
 

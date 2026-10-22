@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { Diagnostic } from "@babylonslate/scripting";
+import type { Diagnostic } from "@haptic/scripting";
 
 type ValidationContextValue = {
   diagnostics: Diagnostic[];

@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { GizmoTool } from "@babylonslate/render";
+import type { GizmoTool } from "@haptic/render";
 
 export type ModelColliderGizmoTool = Exclude<GizmoTool, "none">;
 

@@ -3,7 +3,7 @@ import {
   DEFAULT_EDITOR_DROP_DISTANCE,
   DEFAULT_TRACE_BYTE_BUDGET,
   normalizeProjectAppearance,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Each undo step retains a document snapshot; keep the history bounded. */
 export const MAX_UNDO_HISTORY_LENGTH = 1000;
@@ -277,7 +277,7 @@ export const engineSettingsSchema = z.object({
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;
 
-export const ENGINE_SETTINGS_CHANGED_EVENT = "babylonslate:engine-settings";
+export const ENGINE_SETTINGS_CHANGED_EVENT = "haptic:engine-settings";
 export type AppSettingsMutation = (settings: EngineSettings) => void;
 
 export function defaultEngineSettings(): EngineSettings {

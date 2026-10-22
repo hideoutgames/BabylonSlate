@@ -1,6 +1,6 @@
 import { DirectionalLight, Mesh, PointLight, StandardMaterial, Texture, TransformNode, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, normalizeShadowSettings } from "@babylonslate/core";
+import { createActor, normalizeShadowSettings } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyEditorBillboardFromActor,

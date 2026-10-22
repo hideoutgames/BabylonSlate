@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { AssetOpenProvider, AssetPickerControl } from "@babylonslate/editor-kit";
+import { AssetOpenProvider, AssetPickerControl } from "@haptic/editor-kit";
 import { GraphEditor } from "./graph-editor";
 
 afterEach(cleanup);

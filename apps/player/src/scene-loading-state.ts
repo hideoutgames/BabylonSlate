@@ -1,5 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core";
-import type { SceneLoadProgress } from "@babylonslate/render";
+import type { SceneLoadProgress } from "@haptic/render";
 
 /**
  * Preview Build and exported players own no loading chrome: authored Scene

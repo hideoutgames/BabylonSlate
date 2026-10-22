@@ -28,11 +28,11 @@ import {
   type Material,
   type Mesh,
 } from "@babylonjs/core";
-import { normalizeRenderingQuality, normalizeShadowSettings } from "@babylonslate/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
-import { applyAuthoredLightProperties, setSceneRenderSettings } from "@babylonslate/render";
-import { glErrorTraceEntries, installGlErrorTrace } from "@babylonslate/render/gl-error-trace";
-import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
+import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
+import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
+import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { CelMaterial } from "../../../../packages/render/src/cel-material";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";

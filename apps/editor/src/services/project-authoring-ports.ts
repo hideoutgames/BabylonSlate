@@ -1,5 +1,5 @@
-import type { ProjectStorage } from "@babylonslate/core";
-import type { AssetRegistry, BlobStore, ContentRoot, EncodeQueue } from "@babylonslate/assets";
+import type { ProjectStorage } from "@haptic/core";
+import type { AssetRegistry, BlobStore, ContentRoot, EncodeQueue } from "@haptic/assets";
 import { admitOwnerWrites, guardProjectStorage, type ProjectWriteAdmission } from "./project-write-admission";
 
 /** Guard handles returned to editor utilities without changing internal owners. */

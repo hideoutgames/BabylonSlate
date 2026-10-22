@@ -6,7 +6,7 @@ import {
   type Text2DAlignment,
   type Text2DProperties,
   type Text2DVerticalAlignment,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export type GlyphSource = "bitmap" | "msdf";
 

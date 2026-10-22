@@ -14,10 +14,10 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from "electron";
-import { NodeStorageAdapter } from "@babylonslate/vfs/node";
-import { NodeSaveGameStorage } from "@babylonslate/vfs/save-game-node";
+import { NodeStorageAdapter } from "@haptic/vfs/node";
+import { NodeSaveGameStorage } from "@haptic/vfs/save-game-node";
 import { DesktopSaveGames } from "./desktop-save-games";
-import type { ProjectFolderHandle } from "@babylonslate/core";
+import type { ProjectFolderHandle } from "@haptic/core";
 import { DesktopSecretStore, isMissingFile } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";

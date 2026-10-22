@@ -62,7 +62,7 @@ async function streamingProject() {
   ];
   for (const [index, [name, parentClass, graph]] of classes.entries()) {
     const guid = `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
-    files.set(`assets/${name}.class.babasset`, await encodeAssetDocument({
+    files.set(`assets/${name}.class.hasset`, await encodeAssetDocument({
       guid, type: "Class", name, version: versions.currentVersion("Class"),
       payload: graph as unknown as Record<string, unknown>,
     }, { parentClass }));
@@ -80,7 +80,7 @@ async function streamingProject() {
       components: [createMeshComponent("room-child-mesh", "box")],
     }),
   ];
-  files.set("assets/StreamedRoom.scene.babasset", await encodeAssetDocument({
+  files.set("assets/StreamedRoom.scene.hasset", await encodeAssetDocument({
     guid: CHILD_GUID, type: "Scene", name: child.name,
     version: versions.currentVersion("Scene"), payload: child as unknown as Record<string, unknown>,
   }));
@@ -113,7 +113,7 @@ async function streamingProject() {
 async function visiblePositions(host: Locator) {
   return host.evaluate(() => {
     type VisualHost = { visuals: () => Array<{ visible: boolean; position: number[] }> };
-    return (globalThis as unknown as { __babylonslatePlayTest?: VisualHost }).__babylonslatePlayTest?.visuals()
+    return (globalThis as unknown as { __hapticPlayTest?: VisualHost }).__hapticPlayTest?.visuals()
       .filter((visual) => visual.visible)
       .map((visual) => visual.position.map((value) => Math.round(value * 1000) / 1000))
       .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!) ?? [];
@@ -131,8 +131,8 @@ for (const mode of ["Play"] as const) {
     await openMainScene(page);
     await waitForSceneViewportReady(page);
     const editorActors = await page.evaluate(() => (globalThis as unknown as {
-      __babylonslateViewportTest: { sceneVisuals: () => Array<{ actorId: string }> };
-    }).__babylonslateViewportTest.sceneVisuals().map((visual) => visual.actorId));
+      __hapticViewportTest: { sceneVisuals: () => Array<{ actorId: string }> };
+    }).__hapticViewportTest.sceneVisuals().map((visual) => visual.actorId));
     expect(editorActors).toEqual(expect.arrayContaining(["parent-box", "left", "right"]));
     expect(editorActors.some((id) => id === "room" || id === "room-child" || id.startsWith("scene-stream:"))).toBe(false);
 
@@ -154,19 +154,19 @@ for (const mode of ["Play"] as const) {
     };
     const positions = async (expected: number[][]) => expect.poll(() => visiblePositions(host), { timeout: 30_000 }).toEqual(expected);
     const sceneSources = async () => page.evaluate((guid) => {
-      const testHost = (globalThis as unknown as { __babylonslateTest: {
+      const testHost = (globalThis as unknown as { __hapticTest: {
         assetLoading: () => { sources: { entries: Array<{ assetId: string; owners: string[] }> } };
         trimAssetSources: () => void;
-      } }).__babylonslateTest;
+      } }).__hapticTest;
       testHost.trimAssetSources();
       return testHost.assetLoading().sources.entries.filter((entry) => entry.assetId === guid);
     }, CHILD_GUID);
     const sceneDocumentReads = async () => page.evaluate(() => {
-      const testHost = (globalThis as unknown as { __babylonslateTest: {
+      const testHost = (globalThis as unknown as { __hapticTest: {
         assetLoading: () => { chunks: { recentRequests: Array<{ path: string; chunkId: string }> } };
-      } }).__babylonslateTest;
+      } }).__hapticTest;
       return testHost.assetLoading().chunks.recentRequests.filter((entry) =>
-        entry.path === "assets/StreamedRoom.scene.babasset" && entry.chunkId === "document").length;
+        entry.path === "assets/StreamedRoom.scene.hasset" && entry.chunkId === "document").length;
     });
     await positions([PARENT_POSITION]);
     expect(await sceneSources()).toEqual([]);

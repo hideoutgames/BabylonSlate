@@ -11,13 +11,13 @@ import {
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
-import { embedGlbExternalImages } from "@babylonslate/assets";
+import { embedGlbExternalImages } from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
   createMeshComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import {

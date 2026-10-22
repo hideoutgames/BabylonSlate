@@ -5,8 +5,8 @@ import {
   AssetRegistry,
   createDefaultSpriteAnimationPayload,
   projectContentRoot,
-} from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   SpriteAnimationDetails,
   SpriteAnimationPreview,
@@ -41,7 +41,7 @@ let assetRegistry: AssetRegistry;
 
 beforeAll(async () => {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("animation-preview.babproject");
+  await storage.openDocumentsProject("animation-preview.hproject");
   assetRegistry = new AssetRegistry(storage);
   await assetRegistry.mountRoot(projectContentRoot());
   for (const asset of [
@@ -51,7 +51,7 @@ beforeAll(async () => {
   ]) {
     await assetRegistry.createAsset(
       "project",
-      `${asset.name}.${asset.type.toLowerCase()}.babasset`,
+      `${asset.name}.${asset.type.toLowerCase()}.hasset`,
       { ...asset, version: 1, dependencies: [], payload: {}, chunks: [] },
     );
   }
@@ -225,8 +225,8 @@ describe("SpriteAnimation editor", () => {
     await waitFor(() => {
       expect(preview.querySelectorAll("img")).toHaveLength(3);
     });
-    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroAtlas.texture.babasset", "pixels");
-    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroRun.texture.babasset", "pixels");
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroAtlas.texture.hasset", "pixels");
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroRun.texture.hasset", "pixels");
     readAssetChunk.mockClear();
 
     fireEvent.click(screen.getByTestId("sprite-animation-play"));
@@ -242,7 +242,7 @@ describe("SpriteAnimation editor", () => {
     expect(preview.getAttribute("data-frame-index")).toBe("1");
     expect(preview.querySelectorAll("img")).toHaveLength(3);
     expect(readAssetChunk).toHaveBeenCalledTimes(1);
-    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroRun.texture.babasset", "pixels");
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroRun.texture.hasset", "pixels");
 
     fireEvent.click(screen.getByTestId("sprite-animation-pause"));
     expect(preview.getAttribute("data-playing")).toBe("false");

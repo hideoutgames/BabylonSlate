@@ -104,8 +104,8 @@ export function playPerformanceRoom(): SerializedScene {
 }
 
 /**
- * Minimal project files at the requested quality level. `BL_PERF_RENDER_MODE`
- * (`cel`) flips the render mode and `BL_PERF_BACKEND` (`webgl2`/`webgpu`)
+ * Minimal project files at the requested quality level. `HAPTIC_PERF_RENDER_MODE`
+ * (`cel`) flips the render mode and `HAPTIC_PERF_BACKEND` (`webgl2`/`webgpu`)
  * selects the project GPU backend for routes that exercise both.
  */
 export async function projectFilesWithQuality(level: QualityLevel) {
@@ -115,14 +115,14 @@ export async function projectFilesWithQuality(level: QualityLevel) {
   const project = JSON.parse(new TextDecoder().decode(projectBytes)) as {
     settings: Record<string, unknown>;
   };
-  const backend = process.env.BL_PERF_BACKEND;
+  const backend = process.env.HAPTIC_PERF_BACKEND;
   // Quality lives on settings.render; a top-level settings.quality is ignored
   // by normalization, so the profile must merge into the render block or the
   // route silently runs the default profile.
   project.settings.render = {
     ...(project.settings.render as Record<string, unknown> | undefined),
     quality: RENDER_QUALITY_PROFILES[level],
-    ...(process.env.BL_PERF_RENDER_MODE === "cel" ? { mode: "cel" } : {}),
+    ...(process.env.HAPTIC_PERF_RENDER_MODE === "cel" ? { mode: "cel" } : {}),
     ...(backend === "webgl2" || backend === "webgpu" ? { gpuBackend: backend } : {}),
   };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));

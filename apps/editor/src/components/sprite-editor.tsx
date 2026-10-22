@@ -10,19 +10,19 @@ import {
   usePanZoomSurface,
   type PanZoomBase,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   createDefaultSpritePayload,
   parseSpriteCollision,
   parseSpritePivot,
   type SpriteCollision,
   type SpritePayload,
-} from "@babylonslate/assets";
-import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/assets";
+import { Button } from "@haptic/ui/components/button";
+import { Separator } from "@haptic/ui/components/separator";
+import { Toggle } from "@haptic/ui/components/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   useDocumentActions,
   useOpenDocument,

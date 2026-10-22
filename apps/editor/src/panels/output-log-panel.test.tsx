@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { TREE_ROW_HEIGHT, WINDOWED_SLICE_OVERSCAN } from "@babylonslate/editor-kit";
+import { TREE_ROW_HEIGHT, WINDOWED_SLICE_OVERSCAN } from "@haptic/editor-kit";
 import { OutputLogPanel } from "./output-log-panel";
 
 const lines = Array.from({ length: 500 }, (_, i) => `log line ${i}`);

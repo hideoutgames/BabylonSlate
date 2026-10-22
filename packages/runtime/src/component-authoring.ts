@@ -1,11 +1,11 @@
-import { OVERLAY_CONTAINER_CLASSES, parseOverlayContainerProperties, isUIControl2DClass, parseUIControl2DProperties } from "@babylonslate/core";
-import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@babylonslate/core";
-import { isOverlayLayoutClass, parseOverlayLayoutProperties } from "@babylonslate/core";
-import { DEFAULT_COLLISION_PRESET_ID } from "@babylonslate/core";
+import { OVERLAY_CONTAINER_CLASSES, parseOverlayContainerProperties, isUIControl2DClass, parseUIControl2DProperties } from "@haptic/core";
+import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@haptic/core";
+import { isOverlayLayoutClass, parseOverlayLayoutProperties } from "@haptic/core";
+import { DEFAULT_COLLISION_PRESET_ID } from "@haptic/core";
 import type {
   PhysicsWorldKind,
   ViewportMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
@@ -25,18 +25,18 @@ import {
   createRichText2DComponent,
   createText2DComponent,
   createDefaultRenderTargetCaptureProperties,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   parseColliderProperties,
   parseConstraintProperties,
   parseRigidBodyProperties,
-} from "@babylonslate/physics/component-props";
+} from "@haptic/physics/component-props";
 import {
   DEFAULT_NAV_AGENT_PARAMS,
   defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
-} from "@babylonslate/navigation/settings";
-import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties } from "@babylonslate/core";
+} from "@haptic/navigation/settings";
+import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties } from "@haptic/core";
 
 /** Canonical authorable fields shared by scene editing and final-state capture. */
 export function defaultComponentAuthoringProperties(

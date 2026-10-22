@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { IndexedAsset } from "@babylonslate/assets";
-import { createDefaultWaterDefinition, type WaterDefinition } from "@babylonslate/core";
+import type { IndexedAsset } from "@haptic/assets";
+import { createDefaultWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { WaterPreviewPanel } from "./water-panels";
 
-const WATER_PATH = "assets/Lake.water.babasset";
+const WATER_PATH = "assets/Lake.water.hasset";
 
 type OpenDocument = { id: string; ref: { kind: string; path: string }; content: unknown };
 type PreviewHost = { scene: { isDisposed: boolean }; dispose: () => void };
@@ -31,7 +31,7 @@ const harness = vi.hoisted(() => ({
   loadLibrary: async (guid: string): Promise<MaterialLibraryResult> => ({ documents: new Map([[guid, {}]]), functions: new Map(), textureGuids: [] }),
 }));
 
-vi.mock("@babylonslate/render", async () => {
+vi.mock("@haptic/render", async () => {
   const { NullEngine, Scene } = await import("@babylonjs/core");
   const engine = new NullEngine();
   return {
@@ -133,7 +133,7 @@ describe("WaterPreviewPanel", () => {
       editWater({ waveHeight });
       // The Play context changes identity on every edit anywhere; so do unrelated open documents.
       harness.play = { ensureSharedEngine: () => harness.engine };
-      setDocument("material", "assets/Unrelated.material.babasset", { waveHeight });
+      setDocument("material", "assets/Unrelated.material.hasset", { waveHeight });
       rerender();
       // Each step reaches the preview as it is committed.
       expect(harness.applied.at(-1)!.mesh).toBe(harness.meshes[0]);
@@ -186,25 +186,25 @@ describe("WaterPreviewPanel", () => {
 
   it("rebuilds for a Style or Custom Material change and for edits to anything that material reaches", async () => {
     // A closed Material whose saved header calls an open Material Function, which samples a Texture.
-    harness.assets.set("mat", asset("mat", "Material", "assets/Mat.material.babasset", ["fn"]));
-    harness.assets.set("fn", asset("fn", "MaterialFunction", "assets/Fn.materialfunction.babasset"));
-    const texture = (payload: Record<string, unknown>, chunkSha256s: string[]) => asset("tex", "Texture", "assets/Tex.texture.babasset", [], { usage: "albedo", ...payload }, chunkSha256s);
+    harness.assets.set("mat", asset("mat", "Material", "assets/Mat.material.hasset", ["fn"]));
+    harness.assets.set("fn", asset("fn", "MaterialFunction", "assets/Fn.materialfunction.hasset"));
+    const texture = (payload: Record<string, unknown>, chunkSha256s: string[]) => asset("tex", "Texture", "assets/Tex.texture.hasset", [], { usage: "albedo", ...payload }, chunkSha256s);
     harness.assets.set("tex", texture({ compressionState: "pending" }, ["source-1"]));
-    harness.assets.set("other", asset("other", "Material", "assets/Other.material.babasset"));
+    harness.assets.set("other", asset("other", "Material", "assets/Other.material.hasset"));
     const sample = (name: string) => ({ name, nodes: [{ id: "sample", type: "texture.sample", properties: { textureGuid: "tex" } }] });
-    setDocument("material-function", "assets/Fn.materialfunction.babasset", sample("Fn"));
+    setDocument("material-function", "assets/Fn.materialfunction.hasset", sample("Fn"));
     editWater({ materialGuid: "mat" });
     const rerender = renderPreview();
     await waitFor(() => expect(harness.meshes).toHaveLength(1));
     expect(harness.meshes[0]!.material).toEqual({ customMaterial: "mat" });
     const builds = () => harness.meshes.length;
 
-    setDocument("material", "assets/Other.material.babasset", { name: "Unrelated edit" });
+    setDocument("material", "assets/Other.material.hasset", { name: "Unrelated edit" });
     editWater({ opacity: 0.5 });
     rerender();
     expect(harness.hosts).toHaveLength(1);
 
-    setDocument("material-function", "assets/Fn.materialfunction.babasset", sample("Fn edited"));
+    setDocument("material-function", "assets/Fn.materialfunction.hasset", sample("Fn edited"));
     rerender();
     await waitFor(() => expect(builds()).toBe(2));
 
@@ -235,7 +235,7 @@ describe("WaterPreviewPanel", () => {
   });
 
   it("builds a loading Custom Material preview with the edits made while it loaded", async () => {
-    harness.assets.set("mat", asset("mat", "Material", "assets/Mat.material.babasset"));
+    harness.assets.set("mat", asset("mat", "Material", "assets/Mat.material.hasset"));
     let finish: (library: MaterialLibraryResult) => void = () => {};
     harness.loadLibrary = () => new Promise((resolve) => { finish = resolve; });
     editWater({ materialGuid: "mat" });

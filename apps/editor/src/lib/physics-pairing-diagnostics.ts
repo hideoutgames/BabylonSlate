@@ -1,10 +1,10 @@
-import { diagnostic, type Diagnostic } from "@babylonslate/scripting";
-import { normalizeModelPayload, type AssetRegistry } from "@babylonslate/assets";
+import { diagnostic, type Diagnostic } from "@haptic/scripting";
+import { normalizeModelPayload, type AssetRegistry } from "@haptic/assets";
 import {
   physicsActorsDiagnostics,
   type PhysicsActorLike,
   type PhysicsDiagnosticsContext,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 
 /** Document kinds whose unsaved content decides a Model's simple collision shapes. */
 export const MODEL_DOCUMENT_KINDS = ["model"] as const;

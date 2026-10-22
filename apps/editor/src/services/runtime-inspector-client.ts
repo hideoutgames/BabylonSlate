@@ -1,6 +1,6 @@
 import type {
   RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeObjectIdentity,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 
 type ClientAction<T> = T extends { sequence: number } ? Omit<T, "sequence"> & { sequence?: number } : T;
 export type RuntimeInspectionAction = ClientAction<RuntimeInspectorAction>;

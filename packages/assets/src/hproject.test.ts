@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { createDefaultScene, createEmptyProject, normalizeProjectSettings, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
-import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { createDefaultScene, createEmptyProject, normalizeProjectSettings, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import {
   createEmptyProjectFiles,
@@ -14,7 +14,7 @@ import {
   readProjectTree,
   rewriteProjectIdentity,
   writeProjectTree,
-} from "./babproject";
+} from "./hproject";
 import { bytesEqual } from "./bytes";
 import {
   hasJournal,
@@ -25,10 +25,10 @@ import {
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
 
-describe("babproject codec", () => {
+describe("hproject codec", () => {
   it("round-trips directory ↔ zip byte-identically for sorted trees", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Demo.babproject");
+    await storage.openDocumentsProject("Demo.hproject");
     // Pinned so the golden bytes do not change with each engine release.
     const engineVersion = "0.0.0";
     const files = createEmptyProjectFiles({
@@ -43,7 +43,7 @@ describe("babproject codec", () => {
     // The golden carries a real asset so the container covers the shape the
     // editor actually writes, not just manifests.
     files.push({
-      path: "assets/main.scene.babasset",
+      path: "assets/main.scene.hasset",
       data: await encodeAssetDocument({
         type: "Scene",
         name: "main.scene",
@@ -64,7 +64,7 @@ describe("babproject codec", () => {
 
     expect(bytesEqual(zip, encodeProjectZip(fromZip))).toBe(true);
 
-    const relative = "__fixtures__/demo.babproject.zip";
+    const relative = "__fixtures__/demo.hproject.zip";
     if (UPDATE) {
       writeGoldenBinary(FIXTURE_DIR, relative, zip);
     }
@@ -72,7 +72,7 @@ describe("babproject codec", () => {
     expect(bytesEqual(zip, golden)).toBe(true);
 
     const sceneFromGolden = decodeProjectZip(golden).find(
-      (f) => f.path === "assets/main.scene.babasset",
+      (f) => f.path === "assets/main.scene.hasset",
     );
     expect(await decodeAssetDocument(sceneFromGolden!.data)).toMatchObject({
       version: SCENE_SCHEMA_VERSION,
@@ -82,7 +82,7 @@ describe("babproject codec", () => {
 
   it("preserves requested renderer axes and shading in an exported project snapshot", async () => {
     const source = new MemoryStorageAdapter();
-    await source.openDocumentsProject("Rendering.babproject");
+    await source.openDocumentsProject("Rendering.hproject");
     await writeProjectTree(
       source,
       createEmptyProjectFiles({ guid: "rendering", name: "Rendering" }),
@@ -130,12 +130,12 @@ describe("babproject codec", () => {
       name: "Template",
     });
     const dest = new MemoryStorageAdapter("documents");
-    await dest.openDocumentsProject("FromTemplate.babproject");
+    await dest.openDocumentsProject("FromTemplate.hproject");
     await createProjectFromTemplate({
       templateFiles: template,
       destination: dest,
       guid: "new-guid",
-      name: "FromTemplate.babproject",
+      name: "FromTemplate.hproject",
     });
     const tree = await readProjectTree(dest);
     const manifest = JSON.parse(
@@ -144,7 +144,7 @@ describe("babproject codec", () => {
       ),
     ) as { guid: string; name: string };
     expect(manifest.guid).toBe("new-guid");
-    expect(manifest.name).toBe("FromTemplate.babproject");
+    expect(manifest.name).toBe("FromTemplate.hproject");
   });
 
   it("rewriteProjectIdentity leaves non-manifest files intact", () => {

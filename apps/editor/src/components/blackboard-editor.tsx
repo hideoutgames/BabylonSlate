@@ -6,7 +6,7 @@ import {
   parseBlackboardDocument,
   type BlackboardDocument,
   type BlackboardKey,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   AssetPicker,
   PanelFrame,
@@ -18,14 +18,14 @@ import {
   assetRowIdentity,
   pinPickerColorVar,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   defaultValueForMember,
   keepsTypeClassId,
   pinTypeForMember,
   typeClassIdFromPinType,
   typeIdFromPinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
 import { useBlackboardEditing } from "../context/blackboard-editing-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";

@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, RawTexture, Scene, StandardMaterial, Vector3, type PBRMaterial, type SubMesh, type UniformBuffer } from "@babylonjs/core";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
-import { WATER_SWELL_WARP_TERMS, WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { WATER_SWELL_WARP_TERMS, WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
 import { SharedOutlineOwner } from "./shared-outline";

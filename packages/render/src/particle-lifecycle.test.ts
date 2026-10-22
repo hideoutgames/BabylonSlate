@@ -1,7 +1,7 @@
 import { MeshBuilder, NodeMaterial, NodeMaterialModes, NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@babylonslate/assets";
-import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@babylonslate/particle-graph";
+import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@haptic/assets";
+import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService } from "./particle-service";
 

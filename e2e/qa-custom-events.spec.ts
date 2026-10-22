@@ -4,13 +4,13 @@ import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-tes
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
-const CLASS_PATH = "assets/Mannequin.class.babasset";
+const CLASS_PATH = "assets/Mannequin.class.hasset";
 
 async function savedGraph(page: Page): Promise<SerializedGraph> {
   return page.evaluate(async (path) => {
     const bytes = await (globalThis as unknown as {
-      __babylonslateTest: { readAssetChunk: (path: string, chunk: string) => Promise<Uint8Array> };
-    }).__babylonslateTest.readAssetChunk(path, "document");
+      __hapticTest: { readAssetChunk: (path: string, chunk: string) => Promise<Uint8Array> };
+    }).__hapticTest.readAssetChunk(path, "document");
     return JSON.parse(new TextDecoder().decode(bytes));
   }, CLASS_PATH);
 }
@@ -45,8 +45,8 @@ test("H12/M28: Ping with its created declaration compiles and runs after reload 
     ],
   };
   expect(await page.evaluate((graph) => (globalThis as unknown as {
-    __babylonslateTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> };
-  }).__babylonslateTest.setMainGraphContent(graph), next)).toBe(true);
+    __hapticTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> };
+  }).__hapticTest.setMainGraphContent(graph), next)).toBe(true);
   await page.getByTestId("compile-graph").click();
   await expect(page.getByTestId("compile-graph")).toBeDisabled();
   await expect(page.getByTestId("compilation-error")).toHaveCount(0);

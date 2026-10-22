@@ -1,9 +1,9 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Switch } from "@babylonslate/ui/components/switch";
-import { nodeRoleColorVar, type NodeRole } from "@babylonslate/ui/lib/data-types";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { Switch } from "@haptic/ui/components/switch";
+import { nodeRoleColorVar, type NodeRole } from "@haptic/ui/lib/data-types";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface ModuleStackProps {
   children: ReactNode;
