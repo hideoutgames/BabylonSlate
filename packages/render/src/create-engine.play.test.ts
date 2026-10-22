@@ -28,6 +28,7 @@ import {
   requestEditorDrop,
   parseCableProperties,
   parseText2DProperties,
+  parseJoystick2DProperties,
   parseUIControl2DProperties,
   type RenderSettingsPatch,
 } from "@babylonslate/core";
@@ -5449,8 +5450,12 @@ describe("Play createEngine view", () => {
     canvas.emit("pointerdown", pointerAt(x, y, { pointerType }));
     canvas.emit("pointermove", pointerAt(x, y - 4, { pointerType }));
     expect(scrolls).toEqual([]);
+    // Game input capture must not see a pointer the control, then the scroll drag, holds.
+    expect(handle.ownsGamePointer(1)).toBe(true);
     canvas.emit("pointermove", pointerAt(x, y - 28, { pointerType }));
+    expect(handle.ownsGamePointer(1)).toBe(true);
     canvas.emit("pointerup", pointerAt(x, y, { pointerType }));
+    expect(handle.ownsGamePointer(1)).toBe(false);
     expect(scrolls).toHaveLength(1);
     expect(scrolls[0]?.deltaY).toBeCloseTo(0.4921875);
     expect(controls.filter(event => event.action === "change" || event.action === "commit")).toEqual([]);
@@ -5463,6 +5468,31 @@ describe("Play createEngine view", () => {
     expect(scrolls).toHaveLength(1);
     if (classId === "2DDropdownComponent") expect(visual.expanded).toBe(true);
     else expect(controls.filter(event => event.action === "change")).toHaveLength(1);
+  });
+
+  it("reports a SceneLayer joystick's finger as owned until it lifts, and leaves other fingers to the game", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const axes = new Map<string, number>();
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onTouchAxis: (controlId, value) => axes.set(controlId, value) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2djoystick", meshAssetGuid: null, hitTest: "block",
+      parts: [{ componentId: "stick", meshKind: "2djoystick", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+        joystick: parseJoystick2DProperties({ radius: 2, joystickRadius: 1, deadZone: 0 }) }] });
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(150, 128));
+    expect(axes.get("joystick-x")).toBeGreaterThan(0);
+    expect(handle.ownsGamePointer(1)).toBe(true);
+    canvas.emit("pointerdown", pointerAt(4, 4, { pointerId: 2 }));
+    expect(handle.ownsGamePointer(2)).toBe(false);
+    canvas.emit("pointerup", pointerAt(150, 128));
+    expect(handle.ownsGamePointer(1)).toBe(false);
   });
 
   it.each(["2DSliderComponent", "2DRangeSliderComponent"])("keeps a touch drag on %s instead of scrolling its container", classId => {

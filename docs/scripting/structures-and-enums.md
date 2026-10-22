@@ -41,8 +41,8 @@ A Structure variable's default is edited field by field in the **Inspector**. Re
 
 Haptic also provides Enums and Structures that are not assets but appear in the same pickers and **Add Node** lists, for example:
 
-- Enums: **Collision Channel**, **Easing Curve**, **Key** and **Render Target Mode**.
-- Structures: **Hit Result** (returned by collision events and traces), **TagContainer** and **Save Game Info**.
+- Enums: **Collision Channel**, **Easing Curve**, **Key**, **Render Target Mode**, **Touch Phase** and **Touch Type**.
+- Structures: **Hit Result** (returned by collision events and traces), **TagContainer**, **Save Game Info** and **Touch** (returned by the [touch nodes](../input/index.md#touch)).
 
 Vectors, Rotator, Color and Transform have their own Make and Break nodes, such as [Make Transform](class/make-transform.md) and [Break Color](class/break-color.md).
 

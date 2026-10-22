@@ -4,6 +4,7 @@ import {
   FreeCamera,
   MeshBuilder,
   PointerDragBehavior,
+  Quaternion,
   Scene,
   UtilityLayerRenderer,
   Vector3,
@@ -497,6 +498,33 @@ describe("createOverlayTransformBox", () => {
     expect(euler.z).toBeCloseTo(Math.PI / 2);
     expect(mesh.position.x).toBeCloseTo(0);
     expect(mesh.position.y).toBeCloseTo(0);
+    box.dispose();
+    layer.dispose();
+  });
+
+  it("keeps a 3D actor's X/Y tilt when the box moves and rotates it", () => {
+    const { scene } = createHandle();
+    const layer = new UtilityLayerRenderer(scene);
+    const mesh = MeshBuilder.CreateBox("actor", { size: 1 }, scene);
+    mesh.rotationQuaternion = Quaternion.FromEulerAngles(0.4, -0.7, 0.2);
+    const box = createOverlayTransformBox(layer, scene);
+    box.attachTo(mesh);
+    const interior = dragOf(layer.utilityLayerScene.getMeshByName("overlay-box-interior"));
+    interior.onDragStartObservable.notifyObservers(dragAt(0, 0));
+    interior.onDragObservable.notifyObservers(dragAt(2, 0));
+    interior.onDragEndObservable.notifyObservers(dragAt(2, 0));
+    let euler = mesh.rotationQuaternion!.toEulerAngles();
+    expect([euler.x, euler.y, euler.z].map((v) => Number(v.toFixed(5)))).toEqual([0.4, -0.7, 0.2]);
+
+    writeOverlayBoxTransform(mesh, {
+      position: [mesh.position.x, mesh.position.y, mesh.position.z],
+      rotationZ: 1.1,
+      scale: [1, 1, 1],
+    });
+    euler = mesh.rotationQuaternion!.toEulerAngles();
+    expect(euler.x).toBeCloseTo(0.4);
+    expect(euler.y).toBeCloseTo(-0.7);
+    expect(euler.z).toBeCloseTo(1.1);
     box.dispose();
     layer.dispose();
   });
