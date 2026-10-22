@@ -161,4 +161,24 @@ describe("SearchDropdown", () => {
     });
     expect(screen.getByText("No matches")).toBeTruthy();
   });
+
+  it("fades the results edge while more rows are below, and stops once scrolled to the end", () => {
+    render(
+      <SearchDropdown open title="Types" items={items} onSelect={() => {}} data-testid="palette">
+        <button type="button">Types</button>
+      </SearchDropdown>,
+    );
+    const results = screen.getByTestId("palette-results");
+    const fade = screen.getByTestId("palette-more-below");
+    expect(fade.hasAttribute("data-visible")).toBe(false);
+    Object.defineProperties(results, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 300 },
+    });
+    fireEvent.scroll(results);
+    expect(fade.hasAttribute("data-visible")).toBe(true);
+    results.scrollTop = 200;
+    fireEvent.scroll(results);
+    expect(fade.hasAttribute("data-visible")).toBe(false);
+  });
 });

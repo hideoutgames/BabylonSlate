@@ -13,7 +13,7 @@ A hierarchy of named, typed entries. Branches can use different Data Definitions
 Double-tap a Data Tree to open it.
 
 - **Tree**: the hierarchy. **Default Definition** sets the tree's Definition. **Search Tree** filters it; **Add Root** and **Add Child** add entries. Each entry has a menu with **Add Child**, **Rename**, **Move To**, **Move Up**, **Move Down**, **Duplicate Subtree** and **Remove Subtree**.
-- **Entries**: the entries of one branch as a table. **New Entry** adds one, **Search Entries** filters them, and cells edit values in place. The **View** menu holds **Include Descendants**, **Filter**, **Columns**, **Clear Sort** and **Copy Entry Values**.
+- **Entries**: the entries of one branch as a table. **New Entry** adds one, **Search Entries** filters them, and cells edit values in place. The **View** menu holds **Include Descendants**, **Filter**, **Columns**, **Clear Sort** and **Copy Entry Values**. **Columns** is available when the listed entries share a Definition with fields.
 - **Values**: the selected entry's Definition and field values.
 - **Validation**: problems in the hierarchy or the values.
 

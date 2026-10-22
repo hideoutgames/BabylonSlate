@@ -199,6 +199,26 @@ export function duplicateSubtree(
   );
 }
 
+/**
+ * Duplicates each listed subtree as `duplicateSubtree` does, as one edit. A
+ * listed node inside another copied subtree goes with that copy instead of
+ * being copied twice; the root is never copied, so it takes nothing along.
+ */
+export function duplicateSubtrees(
+  doc: BehaviourTreeDocument,
+  nodeIds: readonly string[],
+): BehaviourTreeDocument {
+  const parented = new Set(doc.nodes.flatMap((node) => node.children));
+  const copied = nodeIds.filter((nodeId) => nodeId !== doc.rootId && parented.has(nodeId));
+  const nested = new Set<string>();
+  for (const nodeId of copied) {
+    for (const id of subtreeIds(doc, nodeId)) if (id !== nodeId) nested.add(id);
+  }
+  return copied
+    .filter((nodeId) => !nested.has(nodeId))
+    .reduce((next, nodeId) => duplicateSubtree(next, nodeId), doc);
+}
+
 function duplicatedPositions(
   doc: BehaviourTreeDocument,
   ids: ReadonlySet<string>,

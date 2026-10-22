@@ -72,6 +72,7 @@ export {
   isCoarsePointerEnvironment,
   shouldPreventDocumentOverscroll,
 } from "./prevent-document-overscroll";
+export { TOUCH_ROW_HEIGHT, TOUCH_UI_CLASS, isTouchUi, setTouchUi, useTouchUi } from "./touch-ui";
 export {
   useContextMenu,
   CONTEXT_MENU_LONG_PRESS_MS,

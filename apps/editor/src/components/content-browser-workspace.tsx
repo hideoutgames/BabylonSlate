@@ -32,7 +32,7 @@ import {
   UploadIcon,
   WaypointsIcon,
 } from "lucide-react";
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { AssetCopyOptions, IndexedAsset } from "@babylonslate/assets";
 import {
   isThumbnailableAssetType,
   newAssetGuid,
@@ -237,15 +237,25 @@ import {
   type ContentBrowserTileLock,
 } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
+import { ContentBrowserCopyProgressDialog, type ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
 import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
   | { kind: "folder"; path: string; guids: string[] }
   | { kind: "selection"; folders: string[]; guids: string[] };
+
+/** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
+type CopyStep = {
+  name: string;
+  /** Files the step writes, for the progress total. */
+  units: number;
+  run: (options: AssetCopyOptions) => Promise<() => Promise<void>>;
+  onDone?: () => void;
+};
 
 type MoveTarget = {
   operation: "move" | "copy";
@@ -332,6 +342,9 @@ function ContentBrowserWorkspaceBody({
   diagnostics,
 }: ContentBrowserWorkspaceBodyProps) {
   const phone = usePhoneLayout();
+  // Phone toolbar buttons are icon-only; their size follows Compact Mode.
+  const touchSizing = usePhoneTouchSizing();
+  const phoneIconSize = touchSizing ? "touch-icon" : "icon-sm";
   const [foldersOpen, setFoldersOpen] = useState(false);
   useEffect(() => {
     if (hidden || !phone) setFoldersOpen(false);
@@ -398,6 +411,8 @@ function ContentBrowserWorkspaceBody({
   const [newAssetType, setNewAssetType] =
     useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("");
+  // Starts as the open folder; the dialog's Location can move it elsewhere.
+  const [newAssetFolder, setNewAssetFolder] = useState(ASSETS_ROOT);
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
@@ -410,6 +425,8 @@ function ContentBrowserWorkspaceBody({
   } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [copyProgress, setCopyProgress] = useState<ContentBrowserCopyProgress | null>(null);
+  const copyAbortRef = useRef<AbortController | null>(null);
   const [nameDialog, setNameDialog] = useState<NameEntry | null>(null);
   const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
@@ -508,6 +525,10 @@ function ContentBrowserWorkspaceBody({
     browserRoots.find((root) => root.id === selectedRoot.rootId),
   );
   const folderRoot = browserRoots.find((root) => root.id === selectedRoot.rootId) ?? browserRoots[0]!;
+  const isReadOnlyFolder = useCallback(
+    (path: string) => contentBrowserFolderOps(path, browserRoots).readOnly,
+    [browserRoots],
+  );
 
   // Layout effects, so a reveal that is not a discrete event (closing a
   // dirty tab after Save) never paints a folder the browser is about to leave.
@@ -889,14 +910,14 @@ function ContentBrowserWorkspaceBody({
     : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
   const newAssetTakenError = useMemo(() => {
     if (!newAssetOpen) return null;
-    if (isNewAssetNameTaken(existingAssetPaths, selectedFolderPath, newAssetType, newAssetName)) {
+    if (isNewAssetNameTaken(existingAssetPaths, newAssetFolder, newAssetType, newAssetName)) {
       return "An asset with this name already exists in the folder.";
     }
     const fileName = newAssetType === "Class" ? newAssetFileName("Class", newAssetName) : "";
     return fileName
-      ? classIdConflict(referenceAssets, joinAssetFolderPath(selectedFolderPath, fileName))
+      ? classIdConflict(referenceAssets, joinAssetFolderPath(newAssetFolder, fileName))
       : null;
-  }, [existingAssetPaths, newAssetName, newAssetOpen, newAssetType, referenceAssets, selectedFolderPath]);
+  }, [existingAssetPaths, newAssetFolder, newAssetName, newAssetOpen, newAssetType, referenceAssets]);
   const nameEntryError = (entry: NameEntry): string | null => {
     const invalid = contentEntryNameError(entry.value);
     if (invalid) return invalid;
@@ -1096,6 +1117,55 @@ function ContentBrowserWorkspaceBody({
     [repathDocument],
   );
 
+  /**
+   * Runs Copy to Folder or Duplicate behind the cancelable progress dialog.
+   * Cancel aborts the copy in progress and deletes the copies already made, so
+   * a canceled operation leaves the content as it was. Returns false then.
+   */
+  const runCopySteps = useCallback(async (
+    operation: ContentBrowserCopyProgress["operation"],
+    steps: readonly CopyStep[],
+  ): Promise<boolean> => {
+    const controller = new AbortController();
+    copyAbortRef.current = controller;
+    const total = steps.reduce((sum, step) => sum + step.units, 0);
+    const undo: Array<() => Promise<void>> = [];
+    let completed = 0;
+    setCopyProgress({ operation, name: steps[0]?.name ?? "", completed, total, canceling: false });
+    try {
+      for (const step of steps) {
+        controller.signal.throwIfAborted();
+        const base = completed;
+        setCopyProgress((current) => current && { ...current, name: step.name, completed: base });
+        undo.push(await step.run({
+          signal: controller.signal,
+          onProgress: (copied) => setCopyProgress((current) => current && { ...current, completed: base + copied }),
+        }));
+        completed = base + step.units;
+        setCopyProgress((current) => current && { ...current, completed });
+        step.onDone?.();
+      }
+      return true;
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+      for (const revert of undo.reverse()) await revert();
+      return false;
+    } finally {
+      copyAbortRef.current = null;
+      setCopyProgress(null);
+    }
+  }, []);
+
+  const cancelCopy = useCallback(() => {
+    copyAbortRef.current?.abort();
+    setCopyProgress((current) => current && { ...current, canceling: true });
+  }, []);
+
+  /** Files a folder copy writes, for the progress total. */
+  const folderAssetCount = useCallback((path: string) =>
+    assetRegistry?.list().filter((asset) => asset.path.startsWith(`${path}/`)).length ?? 0,
+  [assetRegistry]);
+
   const openMoveForSnapshot = useCallback(
     (operation: "move" | "copy") => {
       if (!assetRegistry) return;
@@ -1284,10 +1354,10 @@ function ContentBrowserWorkspaceBody({
           );
           // Each copy is written beside its source, as folder duplicates are.
           const sources = [
-            ...folders.map((path) => ({ guid: null, from: contentBrowserFolderOps(path, browserRoots) })),
+            ...folders.map((path) => ({ guid: null, path, from: contentBrowserFolderOps(path, browserRoots) })),
             ...guids.flatMap((guid) => {
               const path = assetRegistry.getByGuid(guid)?.path;
-              return path ? [{ guid, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
+              return path ? [{ guid, path, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
             }),
           ];
           const readOnly = sources.find(({ from }) => from.readOnly);
@@ -1295,15 +1365,29 @@ function ContentBrowserWorkspaceBody({
             setOperationError(`${readOnly.from.pathPrefix} is read-only.`);
             return;
           }
+          const steps: CopyStep[] = sources.map(({ guid, path, from }) => guid
+            ? {
+              name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
+              units: 1,
+              run: async (options) => {
+                const copy = await assetRegistry.duplicateAsset(guid, from.rootId, from.relative, options);
+                return () => assetRegistry.deleteAsset(copy.header.guid);
+              },
+            }
+            : {
+              name: path.slice(path.lastIndexOf("/") + 1),
+              units: folderAssetCount(path),
+              run: async (options) => {
+                const copy = await assetRegistry.duplicateFolder(from.rootId, from.relative, options);
+                return () => assetRegistry.deleteFolder(from.rootId, copy);
+              },
+            });
           void (async () => {
             setBusy(true);
             setOperationError(null);
             try {
               try {
-                for (const { guid, from } of sources) {
-                  if (guid) await assetRegistry.duplicateAsset(guid, from.rootId, from.relative);
-                  else await assetRegistry.duplicateFolder(from.rootId, from.relative);
-                }
+                await runCopySteps("duplicate", steps);
               } finally {
                 await refreshAssetRegistry();
               }
@@ -1404,6 +1488,8 @@ function ContentBrowserWorkspaceBody({
       projectGuid,
       projectDocument,
       thumbnailsEnabled,
+      folderAssetCount,
+      runCopySteps,
       openMoveForSnapshot,
       openOrFocusDocument,
       noteAssetsCreated,
@@ -1995,15 +2081,36 @@ function ContentBrowserWorkspaceBody({
     const total = remainingGuids.size + remainingFolders.size;
     try {
       if (moveTarget.operation === "copy") {
-        for (const move of moves) {
+        const steps = moves.flatMap((move): CopyStep[] => {
           if (move.kind === "folder") {
             const from = contentBrowserFolderOps(move.sourcePath, browserRoots);
-            await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative);
-            remainingFolders.delete(move.sourcePath);
-          } else if (move.guid) {
-            await assetRegistry.copyAsset(move.guid, dest.rootId, dest.relative);
-            remainingGuids.delete(move.guid);
+            return [{
+              name: move.sourcePath.slice(move.sourcePath.lastIndexOf("/") + 1),
+              units: folderAssetCount(move.sourcePath),
+              run: async (options) => {
+                const copy = await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative, options);
+                return () => assetRegistry.deleteFolder(from.rootId, copy);
+              },
+              onDone: () => remainingFolders.delete(move.sourcePath),
+            }];
           }
+          const guid = move.guid;
+          if (!guid) return [];
+          return [{
+            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
+            units: 1,
+            run: async (options) => {
+              const copy = await assetRegistry.copyAsset(guid, dest.rootId, dest.relative, options);
+              return () => assetRegistry.deleteAsset(copy.header.guid);
+            },
+            onDone: () => remainingGuids.delete(guid),
+          }];
+        });
+        if (!(await runCopySteps("copy", steps))) {
+          // Canceled: every copy was removed again, so nothing remains to retry.
+          await refreshAssetRegistry();
+          setMoveTarget(null);
+          return;
         }
       } else {
         await applyRegistryMoves(moves, (move) => {
@@ -2051,6 +2158,8 @@ function ContentBrowserWorkspaceBody({
     refreshAssetRegistry,
     rootPrefixes,
     browserRoots,
+    folderAssetCount,
+    runCopySteps,
   ]);
 
   const handleImport = useCallback(async () => {
@@ -2080,8 +2189,9 @@ function ContentBrowserWorkspaceBody({
     if (busy || !selectedRootWritable) return;
     setNewAssetType(type);
     setNewAssetName("");
+    setNewAssetFolder(selectedFolderPath);
     setNewAssetOpen(true);
-  }, [busy, selectedRootWritable]);
+  }, [busy, selectedFolderPath, selectedRootWritable]);
   const emptyGridMenuPointRef = useRef<{ x: number; y: number } | null>(null);
 
   // Disabled like the toolbar buttons, so a read-only root offers no action
@@ -2410,7 +2520,8 @@ function ContentBrowserWorkspaceBody({
   );
 
   const handleCreateAsset = useCallback(async () => {
-    if (!assetRegistry || newAssetTakenError || selectedRoot.readOnly) return;
+    const destination = contentBrowserFolderOps(newAssetFolder, browserRoots);
+    if (!assetRegistry || newAssetTakenError || destination.readOnly) return;
     const name = newAssetName.trim();
     if (!name || contentEntryNameError(name)) return;
     setBusy(true);
@@ -2419,8 +2530,8 @@ function ContentBrowserWorkspaceBody({
       const type = newAssetType;
       const created = await createProjectAsset({
         registry: assetRegistry,
-        rootId: selectedRoot.rootId,
-        folderRelative: selectedRoot.relative,
+        rootId: destination.rootId,
+        folderRelative: destination.relative,
         type,
         name,
         parentClass: type === "Class" ? newAssetParent : null,
@@ -2440,6 +2551,12 @@ function ContentBrowserWorkspaceBody({
         viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
       });
       setNewAssetOpen(false);
+      // A Location changed in the dialog shows the folder the asset went to.
+      if (newAssetFolder !== selectedFolderPath) {
+        setSelectedFolderPath(newAssetFolder);
+        setSelectedGuids(new Set());
+        setSelectedFolderPaths(new Set());
+      }
       // The mounted registry indexed the asset on write; a remount would
       // rescan every root while the new tile waits.
       noteAssetsCreated();
@@ -2455,7 +2572,9 @@ function ContentBrowserWorkspaceBody({
     activeDocumentId,
     allAssets,
     assetRegistry,
+    browserRoots,
     classParentOf,
+    newAssetFolder,
     newAssetName,
     newAssetTakenError,
     newAssetParent,
@@ -2467,7 +2586,7 @@ function ContentBrowserWorkspaceBody({
     getOpenDocuments,
     noteAssetsCreated,
     openOrFocusDocument,
-    selectedRoot,
+    selectedFolderPath,
   ]);
 
   if (!projectDocument) {
@@ -2516,7 +2635,7 @@ function ContentBrowserWorkspaceBody({
             <Button
               type="button"
               variant="outline"
-              size={phone ? "touch" : "sm"}
+              size={touchSizing ? "touch" : "sm"}
               className="w-full justify-start"
               data-testid="content-browser-new-folder"
               aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.newFolder")?.[0] ?? "")}
@@ -2540,7 +2659,7 @@ function ContentBrowserWorkspaceBody({
           nodes={treeNodes}
           selectedId={treeSelectedId}
           selectedIds={treeSelectedIds}
-          rowHeight={phone ? 44 : undefined}
+          rowHeight={touchSizing ? 44 : undefined}
           onSelect={(id, options) => {
             handleTreeSelect(id, options);
             if (phone) setFoldersOpen(false);
@@ -2592,7 +2711,7 @@ function ContentBrowserWorkspaceBody({
               render={
                 <Button
                   variant="outline"
-                  size="touch"
+                  size={touchSizing ? "touch" : "sm"}
                   className="min-w-0 flex-1 justify-start"
                   aria-label="Browse Folders"
                   data-testid="content-browser-browse-folders"
@@ -2627,7 +2746,7 @@ function ContentBrowserWorkspaceBody({
               <Button
                 type="button"
                 variant="outline"
-                size={phone ? "touch-icon" : "sm"}
+                size={phone ? phoneIconSize : "sm"}
                 aria-label="Import"
                 data-testid="content-browser-import"
                 aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.import")?.[0] ?? "")}
@@ -2657,7 +2776,7 @@ function ContentBrowserWorkspaceBody({
               render={
                 <Button
                   type="button"
-                  size={phone ? "touch" : "sm"}
+                  size={touchSizing ? "touch" : "sm"}
                   data-testid="content-browser-new-asset"
                   aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.newAsset")?.[0] ?? "")}
                   disabled={busy || !selectedRootWritable}
@@ -2687,7 +2806,8 @@ function ContentBrowserWorkspaceBody({
             aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.find")?.[0] ?? "")}
             className={cn(
               "min-h-[var(--chrome-row,28px)]",
-              phone ? "h-11 min-w-0" : "min-w-40",
+              phone ? "min-w-0" : "min-w-40",
+              touchSizing && "h-11",
             )}
             data-testid="content-browser-search"
           />
@@ -2697,7 +2817,7 @@ function ContentBrowserWorkspaceBody({
                 <Button
                   type="button"
                   variant={typeFilters.length > 0 ? "secondary" : "outline"}
-                  size={phone ? "touch-icon" : "sm"}
+                  size={phone ? phoneIconSize : "sm"}
                   data-testid="content-browser-filter"
                   aria-label={
                     typeFilters.length > 0
@@ -2750,7 +2870,7 @@ function ContentBrowserWorkspaceBody({
                 <Button
                   type="button"
                   variant="outline"
-                  size={phone ? "touch-icon" : "sm"}
+                  size={phone ? phoneIconSize : "sm"}
                   data-testid="content-browser-sort"
                   aria-label="Sort"
                 />
@@ -2855,7 +2975,7 @@ function ContentBrowserWorkspaceBody({
             <FolderBreadcrumbs
               root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_CONTENT_ROOT_ID ? "Content" : folderRoot.label }}
               path={selectedFolderPath}
-              touch={phone}
+              touch={touchSizing}
               onNavigate={(path) => {
                 setSelectedFolderPath(path);
                 setSelectedGuids(new Set());
@@ -2915,11 +3035,11 @@ function ContentBrowserWorkspaceBody({
                 </EmptyHeader>
                 <EmptyContent>
                   {gridSearch.trim() || typeFilters.length ? (
-                    <Button variant="outline" size={phone ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
+                    <Button variant="outline" size={touchSizing ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
                   ) : selectedRootWritable ? (
                     <div className="flex items-center gap-2">
-                      <Button size={phone ? "touch" : "sm"} disabled={busy} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); openNewAssetMenu({ x: rect.left, y: rect.bottom + 4 }); }}><PlusIcon data-icon="inline-start" />New Asset</Button>
-                      <Button variant="outline" size={phone ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
+                      <Button size={touchSizing ? "touch" : "sm"} disabled={busy} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); openNewAssetMenu({ x: rect.left, y: rect.bottom + 4 }); }}><PlusIcon data-icon="inline-start" />New Asset</Button>
+                      <Button variant="outline" size={touchSizing ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
                     </div>
                   ) : null}
                 </EmptyContent>
@@ -2955,7 +3075,7 @@ function ContentBrowserWorkspaceBody({
           {canOpenSelection ? (
             <Button
               variant="outline"
-              size="touch"
+              size={touchSizing ? "touch" : "sm"}
               aria-label="Open Selected Item"
               disabled={busy}
               onClick={openSelection}
@@ -3000,7 +3120,10 @@ function ContentBrowserWorkspaceBody({
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         takenNameError={newAssetTakenError}
-        destinationFolder={selectedFolderPath}
+        destinationFolder={newAssetFolder}
+        onDestinationFolderChange={setNewAssetFolder}
+        folderTrees={folderTrees}
+        isFolderDisabled={isReadOnlyFolder}
         error={operationError}
         busy={busy}
         onCreate={() => {
@@ -3135,16 +3258,14 @@ function ContentBrowserWorkspaceBody({
             <AlertDialogCancel
               ref={deleteCancelRef}
               disabled={busy}
-              size="touch"
-              className="h-[var(--touch-target,44px)]"
+              className="pointer-coarse:h-[var(--touch-target,44px)]"
               data-testid="content-browser-delete-cancel"
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              size="touch"
-              className="h-[var(--touch-target,44px)]"
+              className="pointer-coarse:h-[var(--touch-target,44px)]"
               disabled={busy}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
@@ -3272,6 +3393,8 @@ function ContentBrowserWorkspaceBody({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ContentBrowserCopyProgressDialog progress={copyProgress} onCancel={cancelCopy} />
 
       <ContentBrowserMoveDialog
         key={

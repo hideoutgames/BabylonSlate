@@ -11,7 +11,7 @@ import {
 import {
   AssetPicker, DisclosureSection, EntryListEditor, NamePromptDialog, PanelFrame,
   PinShapeGlyph, PinTypePicker, PropertyGrid, SearchInput, TreeView, TypeColorMark,
-  isCoarsePointerEnvironment, pinPickerColorVar, type PropertyRow,
+  pinPickerColorVar, useTouchUi, type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
@@ -118,6 +118,7 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
   const { definition, selectedField, select, error, commit } = useSaveGameDocument();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
+  const touchRows = useTouchUi();
   const needle = query.trim().toLocaleLowerCase();
   const fields = definition?.fields.filter((field) => `${field.name} ${FIELD_TYPE_LABELS[field.type]} ${field.array ? "Array" : "Single"}`.toLocaleLowerCase().includes(needle)) ?? [];
   return <PanelFrame data-testid="save-game-fields-panel">
@@ -135,7 +136,7 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
           preview: <span className="text-xs text-muted-foreground">{FIELD_TYPE_LABELS[field.type]}{field.array ? " Array" : ""}</span>,
         }))}
         selectedId={selectedField?.id}
-        rowHeight={isCoarsePointerEnvironment() ? 44 : 28}
+        rowHeight={touchRows ? 44 : 28}
         onSelect={select}
         emptyLabel="No Matching Fields"
         aria-label="Save Fields"

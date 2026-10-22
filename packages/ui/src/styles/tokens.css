@@ -5,6 +5,13 @@
  */
 
 @custom-variant dark (&:is(.dark *));
+/*
+ * `pointer-coarse:` is the touch layout, not the pointer media query: it applies
+ * while `html.touch-ui` is set (the Compact Mode application setting is off).
+ * `:where` keeps the media query's specificity. Gestures still read the real
+ * pointer in script.
+ */
+@custom-variant pointer-coarse (&:where(.touch-ui, .touch-ui *));
 
 @theme inline {
     --color-trace-selected: var(--trace-selected);
@@ -233,7 +240,8 @@
     --graph-state-selected: oklch(0.83 0.14 80);
     --graph-state-entry: oklch(0.74 0.12 155);
     --surface-shadow: 0 2px 6px rgb(0 0 0 / 18%);
-    --list-stripe: oklch(0 0 0 / 0.035);
+    /* A light lift: a dark tint does not show on the near-black panels. */
+    --list-stripe: oklch(1 0 0 / 0.03);
     --trace-selected: oklch(0.76 0.18 55);
     --trace-script: oklch(0.70 0.14 260);
     --trace-physics: oklch(0.72 0.12 185);

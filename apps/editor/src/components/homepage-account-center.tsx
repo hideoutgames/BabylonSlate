@@ -39,7 +39,7 @@ import {
 const SECTIONS = [
   { id: "account", label: "Account", keywords: "account profile name picture photo avatar email security sign in out create delete" },
   { id: "subscription", label: "Subscription", keywords: "subscription plan pro free enterprise billing payment invoice" },
-  { id: "application", label: "Application", keywords: "application updates automatic theme style color colors appearance import export legal third-party notices licenses licences open source" },
+  { id: "application", label: "Application", keywords: "application updates automatic theme style color colors appearance import export interface compact mode density touch legal third-party notices licenses licences open source" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];

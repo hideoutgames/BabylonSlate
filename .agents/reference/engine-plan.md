@@ -255,7 +255,8 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 - Canonical shadcn theme tokens live only in [tokens.css](../../packages/ui/src/styles/tokens.css), which [globals.css](../../packages/ui/src/styles/globals.css) imports; Scene, Prefab and graph canvases stay dark regardless of theme. Rules: [gesture rules](architecture.md#gesture-rules).
 - Compose chrome from `@babylonslate/ui` and `@babylonslate/editor-kit`; no raw styled `<input>`, `<select>` or `<button>` in `apps/editor/src`. Pick lists use `SearchDialog` / `SearchDropdown`; no full-width bottom Sheets.
-- Density: `--chrome-row` 28px for chrome, rows and tree items; `--touch-target` 44px for graph pin rows and grips. Dock tab strips 26px fine / 30px coarse. Compact desktop controls stay compact.
+- Density: `--chrome-row` 28px for chrome, rows and tree items; `--touch-target` 44px for graph pin rows and grips. Dock tab strips 26px compact / 30px touch. Compact desktop controls stay compact.
+- Compact Mode is an application setting, on by default except on iOS and Android; touch-sized controls and rows appear only while it is off, so a touchscreen laptop stays compact and an iPad with a trackpad can opt in. Gestures always follow the real pointer.
 - Rounded radius token scale; no square corners and no hardcoded radii.
 - Text is not selectable by default (`user-select: none`, `-webkit-touch-callout: none`); inputs, `contenteditable` and `SelectableText` opt back in.
 - Long-press (500 ms, 8px tolerance, matching Dockview) is the primary context-menu gesture; right-click is the secondary path; the native menu is suppressed app-wide.

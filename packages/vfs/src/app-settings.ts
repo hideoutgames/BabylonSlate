@@ -131,6 +131,11 @@ export const engineSettingsSchema = z.object({
       coarsePointerTargetScale: z.number().default(1),
     })
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
+  /**
+   * Compact desktop density instead of the touch layout. Unset follows the
+   * platform: on except on iOS and Android (`resolveCompactMode`).
+   */
+  compactMode: z.boolean().optional().catch(undefined),
   /** Active editor theme: a built-in theme id or a `customEditorThemes` id. */
   editorTheme: z.string().min(1).catch("default").default("default"),
   /** Invalid entries are dropped one by one so one bad theme keeps the rest. */

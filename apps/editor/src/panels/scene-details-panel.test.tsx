@@ -478,6 +478,32 @@ describe("SceneDetailsPanel authoring", () => {
     expect(harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.components[0]!.properties.offsetX).toBe(3);
   });
 
+  it("rotates and scales Scene Layer 3D geometry in 3D with 2D placement, and keeps 2D actors and mixed selections 2D", () => {
+    scene().viewportMode = "2d";
+    scene().actors = [
+      createActor("model", "Model", { components: [createMeshComponent("mesh", "box")] }),
+      createActor("label", "Label", { components: [{ id: "text", classId: "2DTextComponent", properties: {} }] }),
+    ];
+    harness.documentKind = "scene-layer";
+    harness.selectedActorIds = ["model"];
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("property-actor-position-z")).toBeNull();
+    const edited = () => harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.transform;
+    fireEvent.change(screen.getByTestId("property-actor-z-order"), { target: { value: "2" } });
+    expect(edited().position).toEqual([0, 0, -2]);
+    fireEvent.change(screen.getByTestId("property-actor-rotation-x"), { target: { value: "30" } });
+    expect(quaternionToEulerDegrees(edited().rotation)[0]).toBeCloseTo(30);
+    fireEvent.change(screen.getByTestId("property-actor-scale-z"), { target: { value: "4" } });
+    expect(edited().scale).toEqual([1, 1, 4]);
+
+    for (const selection of [["label"], ["model", "label"]]) {
+      harness.selectedActorIds = selection;
+      view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+      expect(screen.getByTestId("property-actor-z-order")).toBeTruthy();
+      expect(screen.queryByTestId("property-actor-rotation-x")).toBeNull();
+    }
+  });
+
   it("excludes Outliner anchors from mixed-selection transform and visibility edits", () => {
     scene().actors = [
       createActor("pin", "2D Anchor", { components: [{ id: "anchor", classId: "2DAnchorComponent", properties: {} }] }),
