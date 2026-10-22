@@ -661,7 +661,8 @@ describe("material preview presenter", () => {
 
     presenter.present({ force: true });
     expect(render).not.toHaveBeenCalled();
-    ready.mockReturnValue(true);
+    // Babylon's own readiness from here, so the probe sees the variant it processes drawn.
+    ready.mockRestore();
     await host.renderer.prepare();
     presenter.present();
     expect(render).toHaveBeenCalledTimes(1);
