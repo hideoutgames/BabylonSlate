@@ -42,7 +42,7 @@ function applyCatalogLayout(
   options: DockWindowOptions | undefined,
   hostWidth: number,
 ): void {
-  const windows = listDockWindows(kind, options);
+  const windows = listDockWindows(kind, options).filter((def) => def.openByDefault !== false);
   const primaryId = primaryDockPanel(kind, options);
   const ordered = [
     ...windows.filter((def) => def.id === primaryId),

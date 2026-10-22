@@ -134,6 +134,8 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     repathProjectFolder: noop,
     renameAsset: unavailable("renameAsset"),
     subscribeDocumentIdentity: unsubscribe,
+    readProjectDerivedText: async () => null,
+    writeProjectDerivedText: async () => {},
     retryFailedTextureEncoding: async () => 0,
     prepareAreaEmission: resolved,
     collectPlayAreaEmissions: async () => new Map(),
