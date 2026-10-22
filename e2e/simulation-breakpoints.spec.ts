@@ -34,8 +34,11 @@ const tickIndex = (page: Page) => page.evaluate(() => (globalThis as TestHost)._
 /** Canvas nodes whose run highlight is held (a paused Web Animation on the node shell). */
 const heldNodes = (page: Page) => page.evaluate(() => document.getAnimations()
   .filter((animation) => animation.playState === "paused")
-  .map((animation) => ((animation.effect as KeyframeEffect | null)?.target as Element | null)?.closest(".react-flow__node")?.getAttribute("data-id"))
-  .filter((id): id is string => !!id));
+  .map((animation) => (animation.effect as KeyframeEffect | null)?.target)
+  .filter((target): target is Element => target instanceof Element && target.matches("[data-node-role]"))
+  .map((target) => target.closest(".react-flow__node")?.getAttribute("data-id"))
+  .filter((id): id is string => !!id)
+  .sort());
 
 test("a breakpoint set from a node's menu stops a Simulation, opens the node and names the stop", async ({ page }) => {
   test.setTimeout(240_000);
@@ -68,12 +71,13 @@ test("a breakpoint set from a node's menu stops a Simulation, opens the node and
   const stoppedAt = await tickIndex(page);
   await page.waitForTimeout(300);
   expect(await tickIndex(page)).toBe(stoppedAt);
-  // The toolbar names the stop, and Debug Instance follows the object that reached the node.
-  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", /› Event Tick › Print String on Hero$/);
+  // The toolbar names the stop as the canvas titles its node, and Debug Instance follows the object that reached it.
+  await expect(printNode(page)).toContainText("Debug Print");
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Debug Print on Hero");
   await expect(page.getByTestId("graph-debug-instance-select")).toContainText("Hero");
   // The object's path shows from its next tick on (a Step stops at the node again) and stays lit while paused.
   await page.getByTestId("simulation-step").click();
-  await expect.poll(() => heldNodes(page), { timeout: 15_000 }).toEqual(expect.arrayContaining(["tick", "print"]));
+  await expect.poll(() => heldNodes(page), { timeout: 15_000 }).toEqual(["print", "tick"]);
 
   // Switched off while the Simulation runs, it no longer stops it.
   await printNode(page).locator("[data-node-role]").click({ button: "right" });
