@@ -67,8 +67,9 @@ describe("touch gestures", () => {
   it("holds Long Press from half a second until the lift, through later movement, without a tap or swipe", () => {
     const { tick, idle } = gestureResolver();
     tick(finger(1, "down", 100, 100));
-    idle(28);
+    idle(27);
     expect(tick().actions["long-press"]?.held).toBe(false);
+    // The 30th tick reaches 0.5 s, although 30 × 1/60 sums to just under it.
     expect(tick().actions["long-press"]).toMatchObject({ held: true, pressed: true });
     expect(tick(finger(1, "move", 300, 100)).actions["long-press"]?.held).toBe(true);
     const lift = tick(finger(1, "up", 300, 30));
@@ -76,13 +77,28 @@ describe("touch gestures", () => {
     expect(started(lift)).toEqual([]);
   });
 
-  it("never long-presses when a second finger arrives first", () => {
+  it("never long-presses when a second finger arrives first, and ends a long press when one arrives later", () => {
     const { tick, idle } = gestureResolver();
     tick(finger(1, "down", 100, 100));
     tick(finger(2, "down", 300, 100));
     tick(finger(2, "up", 300, 100));
     idle(40);
     expect(tick().actions["long-press"]?.held).toBe(false);
+    tick(finger(1, "up", 100, 100));
+
+    tick(finger(3, "down", 100, 100));
+    idle(30);
+    expect(tick().actions["long-press"]?.held).toBe(true);
+    expect(tick(finger(4, "down", 300, 100)).actions["long-press"]).toMatchObject({ held: false, released: true });
+  });
+
+  it("times gestures in real time, so a frozen game clock still long-presses", () => {
+    const { resolver } = gestureResolver();
+    // Game time dilation 0: no game time passes, but the player's finger is still held for real.
+    const frozen = (...events: RawInputEvent[]) => resolver.resolve(events, 0, TICK);
+    frozen(finger(1, "down", 100, 100));
+    for (let i = 0; i < 28; i++) frozen();
+    expect(frozen().actions["long-press"]?.held).toBe(true);
   });
 
   it("swipes in the dominant direction of a quick move, with the flick's velocity on the lift", () => {
@@ -94,6 +110,13 @@ describe("touch gestures", () => {
     const ended = lift.touchEvents.find((touch) => touch.Phase === "Ended")!;
     // Two ticks of 40 px each, smoothed: (2400 + 2400 / 2) / 2 px per second upward.
     expect(ended.Velocity.y).toBeCloseTo(-1800);
+
+    // A move and the lift in one tick: the Moved record carries the same settled velocity as the Ended one.
+    tick(finger(3, "down", 100, 100));
+    const flick = tick(finger(3, "move", 100, 60), finger(3, "up", 100, 20));
+    const [moved, lifted] = flick.touchEvents;
+    expect(moved).toMatchObject({ Phase: "Moved" });
+    expect(moved!.Velocity).toEqual(lifted!.Velocity);
 
     tick(finger(2, "down", 100, 100));
     expect(started(tick(finger(2, "up", 30, 110)))).toEqual(["swipe-left"]);
@@ -144,6 +167,12 @@ describe("touch gestures", () => {
 });
 
 describe("gesture bindings", () => {
+  it("reads a gesture even where a released joystick axis has the same code", () => {
+    const resolver = new InputResolver({ actions: [{ name: "Tap", bindings: [{ device: "touch", code: "tap" }] }], axes: [] });
+    resolver.resolve([{ kind: "touchAxis", tick: 0, controlId: "tap", value: 0 }], TICK);
+    expect(resolver.resolve([finger(1, "down", 5, 5), finger(1, "up", 5, 5)], TICK).actions.Tap.pressed).toBe(true);
+  });
+
   it("lets one action take a swipe and a key, and releases neither while the other holds it", () => {
     const resolver = new InputResolver({ actions: [{ name: "Jump", bindings: [
       { device: "key", code: "Space" },

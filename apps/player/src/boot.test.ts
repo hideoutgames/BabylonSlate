@@ -81,7 +81,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(), whenReleased: vi.fn(async () => {}),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
-    setGameTimePaused: vi.fn(), setGameInputEnabled: vi.fn(), ownsGamePointer: () => false,
+    setGameTimePaused: vi.fn(), setGameInputEnabled: vi.fn(), ownsGamePointer: () => false, publishSceneLayerSize: vi.fn(),
     captureFrame: vi.fn(async () => ({ version: 1 })), cancelFrameCapture: vi.fn(),
     prepareSceneStream: vi.fn(async (_slots: readonly number[], _signal: AbortSignal, progress?: (value: number) => void) => { progress?.(1); }),
     setSceneStreamingPaused: vi.fn(),

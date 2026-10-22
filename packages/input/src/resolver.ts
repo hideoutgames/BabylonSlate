@@ -178,7 +178,8 @@ const TOUCH_TYPE: Record<PointerKind, TouchType> = { mouse: "Mouse", touch: "Fin
 
 /** A `touch` binding code: an on-screen control's axis, or a gesture. */
 function touchControlValue(state: ResolverInternals, code: string): number {
-  return state.touchAxes.get(code) ?? state.gestureValues.get(code) ?? 0;
+  // A released joystick axis stores 0; it must not hide a gesture with the same code.
+  return (state.touchAxes.get(code) ?? 0) || (state.gestureValues.get(code) ?? 0);
 }
 
 function copyTouch(touch: TouchInput): TouchInput {
@@ -275,10 +276,15 @@ export class InputResolver {
     this.gestures.setViewSize(width, height);
   }
 
-  /** Apply one tick's events and return the resolved action / axis snapshot. */
+  /**
+   * Apply one tick's events and return the resolved action / axis snapshot.
+   * `deltaSeconds` is game time (Held Seconds); `inputSeconds`, real time for
+   * human gestures and touch velocity, so time dilation does not change them.
+   */
   resolve(
     events: readonly RawInputEvent[],
     deltaSeconds = 0,
+    inputSeconds = deltaSeconds,
   ): ResolvedInputTick {
     const inputs: Record<string, InputValueState> = {};
     const pressedKeys: InputKey[] = [];
@@ -319,7 +325,8 @@ export class InputResolver {
     const connections: GamepadConnectionEvent[] = [];
     const touchEvents: TouchInput[] = [];
     const dt = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
-    this.tickSeconds = dt;
+    const inputDt = Number.isFinite(inputSeconds) ? Math.max(0, inputSeconds) : 0;
+    this.tickSeconds = inputDt;
     this.beginTouchTick();
     // Name lookups (`isActionHeld("Jump")`) cover every asset with that display
     // name; `inputs` keeps each asset's own state.
@@ -525,7 +532,7 @@ export class InputResolver {
     const touches = [...this.state.contacts.values(), ...this.state.liftedContacts]
       .map((contact) => copyTouch(contact.touch))
       .sort((a, b) => a.Finger - b.Finger);
-    this.state.gestureValues = this.gestures.step(touchEvents, touches, dt);
+    this.state.gestureValues = this.gestures.step(touchEvents, touches, inputDt);
     sample();
     this.state.previousHeldActions = new Set(
       this.mappings.actions
@@ -650,6 +657,7 @@ export class InputResolver {
     }
     if (!holdsPrimary) {
       this.settleVelocity(contact);
+      if (contact.moved) contact.moved.Velocity = { ...touch.Velocity };
       touch.Phase = event.phase === "cancel" ? "Cancelled" : "Ended";
       this.state.contacts.delete(event.pointerId);
       this.state.liftedContacts.push(contact);

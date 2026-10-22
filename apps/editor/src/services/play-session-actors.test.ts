@@ -109,6 +109,7 @@ describe.each(["worker", "in-process"] as const)(
         applyCommand: options.applyCommand ?? (() => {}),
         pushSnapshot: options.pushSnapshot ?? (() => {}),
         setGameInputEnabled() {},
+        publishSceneLayerSize() {},
         setSimulationEditMode() {},
         loadScene() {},
         resetAudioSession() {},

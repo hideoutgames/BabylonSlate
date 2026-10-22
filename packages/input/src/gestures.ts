@@ -36,6 +36,8 @@ export const DOUBLE_TAP_DISTANCE_PX = 32;
 export const SWIPE_MIN_DISTANCE_PX = 48;
 /** Longest press-to-lift time of a swipe; a slower move is a drag. */
 export const SWIPE_MAX_SECONDS = 0.5;
+/** Summed tick lengths drift (30 × 1/60 is just under 0.5); thresholds allow for it. */
+const TIME_EPSILON = 1e-6;
 
 interface ContactGesture {
   startTime: number;
@@ -101,7 +103,8 @@ export class GestureRecognizer {
     this.time += deltaSeconds;
     let longPress = false;
     for (const contact of this.contacts.values()) {
-      if (!contact.longPress && contact.alone && contact.maxDistance <= GESTURE_SLOP_PX && this.time - contact.startTime >= LONG_PRESS_SECONDS) {
+      if (!contact.longPress && contact.alone && contact.maxDistance <= GESTURE_SLOP_PX
+        && this.time - contact.startTime >= LONG_PRESS_SECONDS - TIME_EPSILON) {
         contact.longPress = true;
       }
       longPress ||= contact.longPress;
@@ -115,7 +118,11 @@ export class GestureRecognizer {
     const { x, y } = record.Position;
     if (record.Phase === "Began") {
       const alone = this.contacts.size === 0;
-      if (!alone) for (const other of this.contacts.values()) other.alone = false;
+      // A second finger ends every single-finger gesture, a long press under way included.
+      if (!alone) for (const other of this.contacts.values()) {
+        other.alone = false;
+        other.longPress = false;
+      }
       this.contacts.set(record.Finger, { startTime: this.time, startX: x, startY: y, maxDistance: 0, alone, longPress: false });
       return;
     }
@@ -126,10 +133,11 @@ export class GestureRecognizer {
     this.contacts.delete(record.Finger);
     if (record.Phase !== "Ended" || !contact.alone || contact.longPress) return;
     const duration = this.time - contact.startTime;
-    if (contact.maxDistance <= GESTURE_SLOP_PX && duration < LONG_PRESS_SECONDS) {
+    if (contact.maxDistance <= GESTURE_SLOP_PX && duration < LONG_PRESS_SECONDS - TIME_EPSILON) {
       values.set(C.tap, 1);
       const last = this.lastTap;
-      if (last && contact.startTime - last.time <= DOUBLE_TAP_SECONDS && distance(last.x, last.y, contact.startX, contact.startY) <= DOUBLE_TAP_DISTANCE_PX) {
+      if (last && contact.startTime - last.time <= DOUBLE_TAP_SECONDS + TIME_EPSILON
+        && distance(last.x, last.y, contact.startX, contact.startY) <= DOUBLE_TAP_DISTANCE_PX) {
         values.set(C.doubleTap, 1);
         this.lastTap = null;
       } else {
@@ -139,7 +147,7 @@ export class GestureRecognizer {
     }
     const dx = x - contact.startX;
     const dy = y - contact.startY;
-    if (Math.hypot(dx, dy) < SWIPE_MIN_DISTANCE_PX || duration > SWIPE_MAX_SECONDS) return;
+    if (Math.hypot(dx, dy) < SWIPE_MIN_DISTANCE_PX || duration > SWIPE_MAX_SECONDS + TIME_EPSILON) return;
     // The view's y grows downward.
     values.set(Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? C.swipeRight : C.swipeLeft) : (dy > 0 ? C.swipeDown : C.swipeUp), 1);
   }

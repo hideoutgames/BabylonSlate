@@ -328,6 +328,12 @@ export interface EngineHandle {
    * engine's own canvas listeners, which run before a later-attached capture.
    */
   ownsGamePointer: (pointerId: number) => boolean;
+  /**
+   * Send the current Scene Layer and canvas size through `onSceneLayerResize`
+   * again. Hosts call it once their runtime exists: the report `createEngine`
+   * makes comes before there is a runtime to receive it.
+   */
+  publishSceneLayerSize: () => void;
   /** Use the existing debug camera while preserving the possessed game camera/listener. */
   setSimulationEditMode: (enabled: boolean) => void;
   /** Request one supported render-only frame; unsupported owners retain the last image. */
@@ -3965,6 +3971,7 @@ function initializeEngine(
       gameInputEnabled = enabled;
     },
     ownsGamePointer: (pointerId: number) => !disposed && ownsGamePointer(pointerId),
+    publishSceneLayerSize: () => { if (!disposed) notifyOverlayResize(); },
     setSimulationEditMode: (enabled: boolean) => {
       if (disposed || !playFreeCam || simulationEditMode === enabled) return;
       resetJoysticks();
