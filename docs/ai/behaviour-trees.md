@@ -15,6 +15,7 @@ The tree editor has four windows: **Graph**, **Blackboard**, the **Inspector** f
 - Select a composite, then use **Add Node** in the Graph toolbar. The new node becomes its last child.
 - Children run from left to right. Drag a node sideways to change its place; the number on each node shows its order.
 - Long-press a node for **Add Decorator**, **Wrap In Sequence**, **Duplicate** and **Delete**. The root cannot be duplicated or deleted.
+- **Duplicate** on a node that is part of a selection copies every selected node with its children, each next to its original. A selected node under another selected node goes along with that copy.
 - **Auto Arrange** tidies the layout without changing the order.
 - Select a node to edit its settings in the **Inspector**, where **Add Decorator** and **Add Service** attach extra rows to it.
 
