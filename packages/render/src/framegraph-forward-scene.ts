@@ -197,6 +197,8 @@ export class ForwardSceneFrameGraph {
   private variantSwaps = false;
   /** Whether the latest scene or graph probe found a swap. */
   private probeSwapped = false;
+  /** The readiness revision and Engine frame of the last passing probe that tolerated a swap. */
+  private swapProbe: { revision: number; frame: number } | undefined;
   /** Only outline membership or style changed; the prepared graph's other tasks stay admitted. */
   private outlineDirtyFlag = false;
   /** The view's instance-source revision as of the last full graph probe. */
@@ -447,9 +449,17 @@ export class ForwardSceneFrameGraph {
     if (this.variantSwaps) this.readinessDirtyFlag = true;
   }
 
-  /** A probe that tolerates no swap cannot trust a pass that tolerated one. */
-  private untrustedSwaps(): void {
-    if (this.variantSwaps && !variantSwapsTolerated()) this.readinessDirtyFlag = true;
+  /**
+   * A probe that tolerates no swap cannot trust a pass that tolerated one. When a steady frame's probe found a swap
+   * pending this frame or the last, with no input changed since, the answer is "not ready" without walking every
+   * mesh again (Play asks once more at each frame's end); otherwise it probes again.
+   */
+  private swapsStillPending(): boolean {
+    if (!this.variantSwaps || variantSwapsTolerated()) return false;
+    const probe = this.swapProbe;
+    if (probe && probe.revision === this.readinessRevision && this.scene.getEngine().frameId - probe.frame <= 1) return true;
+    this.readinessDirtyFlag = true;
+    return false;
   }
 
   markReadinessDirty(): void {
@@ -470,6 +480,9 @@ export class ForwardSceneFrameGraph {
   private markGraphProbed(): void {
     this.readinessDirtyFlag = false;
     this.variantSwaps = this.probeSwapped;
+    this.swapProbe = this.probeSwapped && variantSwapsTolerated()
+      ? { revision: this.readinessRevision, frame: this.scene.getEngine().frameId }
+      : undefined;
     this.outlineDirtyFlag = false;
     this.probedOutlineSources = this.outlineView?.sourceRevision ?? 0;
   }
@@ -539,7 +552,7 @@ export class ForwardSceneFrameGraph {
   sceneStrictlyReady(camera: Camera): boolean {
     if (this.unavailable(camera)) return false;
     this.syncMembership();
-    this.untrustedSwaps();
+    if (this.swapsStillPending()) return false;
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
@@ -1362,7 +1375,7 @@ export class ForwardSceneFrameGraph {
 
   /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */
   private probeDirty(): boolean {
-    this.untrustedSwaps();
+    if (this.swapsStillPending()) return false;
     if (!this.readinessDirty) return true;
     if (this.readinessDirtyFlag) {
       if (!this.isReady()) return false;

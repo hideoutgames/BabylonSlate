@@ -291,12 +291,12 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
   place(...actors);
 
   // The world view's frames, as the render loop drives them.
-  const views: Array<{ rendered: boolean; reason?: string; holding: boolean }> = [];
+  const views: Array<{ rendered: boolean; reason?: string; holding: boolean; checks: number }> = [];
   const render = SceneRenderCoordinator.prototype.render;
   vi.spyOn(SceneRenderCoordinator.prototype, "render").mockImplementation(function (this: SceneRenderCoordinator, ...args) {
     const result = render.apply(this, args);
     if ((this as unknown as { scene: unknown }).scene === handle.scene)
-      views.push({ rendered: result.rendered, reason: result.reason, holding: this.holdingForPipelines });
+      views.push({ rendered: result.rendered, reason: result.reason, holding: this.holdingForPipelines, checks: this.strictReadinessChecks });
     return result;
   });
   /** One Play frame, then `FRAME_MS` of timers and microtasks (preparation, presentation, material preparation). */
@@ -338,6 +338,8 @@ interface CauseRecord {
   holdRaised: boolean;
   /** Frames in which Play's game time was paused. */
   pausedFrames: number;
+  /** Full readiness probes per frame while the cause's compiles were pending, after the cause's own frame (each walks every mesh). */
+  probesPerFrame: number;
   /** WebGPU model: Effects whose pipeline a skipped draw waited for. */
   pipelines: number;
   /** In a frame the view drew while the cause's compiles were pending, the subject drew the Effect it had before the cause. */
@@ -378,6 +380,7 @@ async function measure(world: PlayWorld, cause: () => unknown, settled?: () => v
   await settle(world);
   settled?.();
   const before = world.subjectEffect();
+  let checksBefore = 0;
   world.driver.arm();
   const holdsBefore = world.holds.length;
   cause();
@@ -398,7 +401,10 @@ async function measure(world: PlayWorld, cause: () => unknown, settled?: () => v
     }
     if (paused) pausedFrames++;
     holdReported ||= holding;
+    // The cause's own invalidation is probed in its first frame; count what the pending swap costs after it.
+    if (index === 0) checksBefore = world.views.at(-1)?.checks ?? 0;
   }
+  const probesPerFrame = ((world.views.at(-1)?.checks ?? 0) - checksBefore) / (PENDING_FRAMES - 1);
   world.driver.release();
   let recovered = false;
   let recoveryFrames = 0;
@@ -418,6 +424,7 @@ async function measure(world: PlayWorld, cause: () => unknown, settled?: () => v
     holdReported,
     holdRaised: world.holds.slice(holdsBefore).includes(true),
     pausedFrames,
+    probesPerFrame,
     pipelines: world.driver.pipelines.size,
     previousEffectDrawn,
     adopted: !!after && created.includes(after),
@@ -444,9 +451,11 @@ function expectSwapped(record: CauseRecord, model: Model): void {
     paused: record.pausedFrames > 0, recovered: record.recovered,
     // Only a pending compile leaves a previous Effect drawing; a synchronous link draws the new one at once.
     previousEffectDrawn: record.previousEffectDrawn, adopted: record.adopted,
+    // One probe per frame while a swap is pending, not one per readiness question.
+    probesAtMostOnePerFrame: record.probesPerFrame <= 1,
   }, detail).toEqual({
     heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
-    previousEffectDrawn: model === "parallel", adopted: true,
+    previousEffectDrawn: model === "parallel", adopted: true, probesAtMostOnePerFrame: true,
   });
 }
 
