@@ -33,6 +33,8 @@ Overlay components work only in Scene Layers. Add them with **Add Component > Ov
 
 Sprites, tilemaps, meshes, 3D text, sound, particles, Rigid Bodies, Colliders and Physics Constraints also work on a layer. Lights, cameras, skyboxes, water, fog volumes and Scene Streaming do not.
 
+An actor with a mesh or 3D text is posed in 3D: its **Inspector** shows Position, Rotation and Scale on X, Y and Z, so you can tilt it or push it back in depth. In the viewport it keeps the 2D box; moving or rotating it there keeps its X and Y tilt.
+
 To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. The **2D Scene Layer Actor Switcher** shows one Scene Layer Actor Class at a time from its list; **Initial Index** picks the first one (−1 starts empty), and the **Switch Scene Layer Actor** function changes it.
 
 ## Show a layer in the game

@@ -49,6 +49,7 @@ import {
   findActor,
   identitySerializedTransform,
   isFocusTargetClass,
+  isSceneLayer3DActor,
   isSceneLayerAnchorActor,
   parseOverlayPanelProperties,
   parseText2DProperties,
@@ -1200,6 +1201,10 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     );
   const multiSelection = selectedActors.length > 1;
   const spatialActors = selectedActors.filter((entry) => !isSceneLayerAnchorActor(entry));
+  // Layer 3D geometry is posed in full 3D here; the viewport keeps the 2D box.
+  const transformMode = overlay && spatialActors.length > 0 && spatialActors.every(isSceneLayer3DActor)
+    ? "3d"
+    : scene.viewportMode;
   const shapeComponents = actor.components.filter((component) =>
     component.classId === "SplineComponent" || component.classId === DEFORMER_COMPONENT_CLASS_ID || waterKindForClass(component.classId) !== null,
   );
@@ -1228,12 +1233,12 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     ...(spatialActors.length === 0 ? [] : multiSelection
       ? selectionTransformPropertyRows(
           spatialActors,
-          scene.viewportMode,
+          transformMode,
           (update) => updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : update(entry)),
         )
       : spatialTransformPropertyRows(
           "actor",
-          scene.viewportMode,
+          transformMode,
           actor.transform,
           (transform) => updateActor((entry) => ({ ...entry, transform })),
         )),
