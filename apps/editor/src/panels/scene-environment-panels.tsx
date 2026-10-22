@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@babylonslate/core";
-import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, type PropertyRow } from "@babylonslate/editor-kit";
+import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, useTouchUi, type PropertyRow } from "@babylonslate/editor-kit";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
@@ -23,7 +23,6 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
-import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 const NEW_LANDSCAPE_SIZE = 64;
 const NEW_LANDSCAPE_CELLS = 64;
@@ -72,7 +71,7 @@ export function LandscapeOutlinerPanel(_props: IDockviewPanelProps) { void _prop
 export function FoliageOutlinerPanel(_props: IDockviewPanelProps) { void _props; return <EnvironmentOutliner classId="FoliageComponent" />; }
 
 function EnvironmentOutliner({ classId }: { classId: string }) {
-  const touchRows = usePhoneTouchSizing();
+  const touchRows = useTouchUi();
   const { scene, commit } = useEnvironmentScene();
   const { selectedActorIds, selectActor, frameActor } = useSceneEditing();
   const { landscapeSelection, setLandscapeSelection } = useSceneTools();

@@ -11,7 +11,7 @@ import {
 import {
   AssetPicker, DisclosureSection, EntryListEditor, NamePromptDialog, PanelFrame,
   PinShapeGlyph, PinTypePicker, PropertyGrid, SearchInput, TreeView, TypeColorMark,
-  pinPickerColorVar, type PropertyRow,
+  pinPickerColorVar, useTouchUi, type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
@@ -27,7 +27,6 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSaveGameEditing } from "../context/save-game-editing-context";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
-import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 const FIELD_TYPES = ["bool", "int", "float", "string", "vec3", "actor", "asset"] as const;
 const FIELD_TYPE_LABELS: Record<SaveGameField["type"], string> = {
@@ -119,7 +118,7 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
   const { definition, selectedField, select, error, commit } = useSaveGameDocument();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
-  const touchRows = usePhoneTouchSizing();
+  const touchRows = useTouchUi();
   const needle = query.trim().toLocaleLowerCase();
   const fields = definition?.fields.filter((field) => `${field.name} ${FIELD_TYPE_LABELS[field.type]} ${field.array ? "Array" : "Single"}`.toLocaleLowerCase().includes(needle)) ?? [];
   return <PanelFrame data-testid="save-game-fields-panel">
