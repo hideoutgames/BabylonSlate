@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Ref } from "react";
 import { FolderIcon } from "lucide-react";
 import type { FolderNode } from "@babylonslate/assets";
 import { SearchInput, TreeView } from "@babylonslate/editor-kit";
@@ -13,6 +13,9 @@ export interface FolderTreePickerProps {
   isDisabled?: (path: string) => boolean;
   searchTestId?: string;
   treeTestId?: string;
+  searchRef?: Ref<HTMLInputElement>;
+  /** Keyboard-free focus target around the tree, for dialogs opened by touch or pointer. */
+  bodyRef?: Ref<HTMLDivElement>;
 }
 
 /** Folder search and a collapsible folder tree over the registry's content roots. */
@@ -23,6 +26,8 @@ export function FolderTreePicker({
   isDisabled,
   searchTestId,
   treeTestId,
+  searchRef,
+  bodyRef,
 }: FolderTreePickerProps) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -46,12 +51,13 @@ export function FolderTreePicker({
   return (
     <>
       <SearchInput
+        ref={searchRef}
         value={search}
         onChange={setSearch}
         placeholder="Search Folders"
         data-testid={searchTestId}
       />
-      <div className="h-64 min-h-0 rounded-md border border-border">
+      <div ref={bodyRef} tabIndex={-1} className="h-64 min-h-0 rounded-md border border-border outline-none">
         <TreeView
           nodes={nodes}
           selectedId={selectedPath}

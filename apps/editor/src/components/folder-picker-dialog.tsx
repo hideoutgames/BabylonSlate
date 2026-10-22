@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FolderNode } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -38,9 +38,17 @@ export function FolderPickerDialog({
   "data-testid": testId = "folder-picker-dialog",
 }: FolderPickerDialogProps) {
   const [selected, setSelected] = useState<string | null>(initialPath);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-testid={testId}>
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid={testId}
+        // A focused search field holds the iPad keyboard up and the tree does
+        // not pan until a tap moves focus; only a keyboard opening starts there.
+        initialFocus={(interaction) => (interaction === "keyboard" ? searchRef.current : bodyRef.current)}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -51,6 +59,8 @@ export function FolderPickerDialog({
           isDisabled={isDisabled}
           searchTestId={`${testId}-search`}
           treeTestId={`${testId}-tree`}
+          searchRef={searchRef}
+          bodyRef={bodyRef}
         />
         <p className="text-sm text-muted-foreground" data-testid={`${testId}-selection`}>
           Folder: <span className="text-foreground">{selected ?? "None"}</span>
