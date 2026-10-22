@@ -51,6 +51,22 @@ When a script throws or a [Log](../scripting/class/log.md) node writes an Error 
 
 Each node pauses the Simulation only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
 
+### Breakpoints
+
+A breakpoint stops a Simulation when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions. Set one in any of these ways:
+
+- Choose **Add Breakpoint** from the node's menu (right-click, or press and hold on touch).
+- Select the node and press <kbd>F9</kbd>.
+- With a mouse, click the faint dot at the start of the node's title bar.
+
+A red dot then marks the node. A hollow dot means the breakpoint is disabled: it is kept but does not stop. The node's menu has **Remove Breakpoint** and **Disable Breakpoint** / **Enable Breakpoint**.
+
+When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
+
+The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in Classes you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
+
+Breakpoints are kept with the project on this device, not in its assets. Setting one never changes a document. Play, Preview Build and exported games never stop at them.
+
 ## Watch a graph run
 
 While a Simulation runs, open a Class, a Behaviour Tree or an Animation Graph to see it run for one object, the way a debugger would.

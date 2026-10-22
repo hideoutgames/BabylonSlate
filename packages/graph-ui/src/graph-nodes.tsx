@@ -25,6 +25,7 @@ import {
 import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
+import { canBreakOnNode, useNodeBreakpoint } from "./graph-breakpoints";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";
 import {
@@ -40,6 +41,11 @@ import { PinDefaultEditor } from "./pin-default-editor";
 import { isPinWired } from "./pin-connections";
 
 export type CanvasNode = Node<Record<string, unknown>>;
+
+/** The title a node shows, as hosts name it outside the canvas (the Breakpoints window). */
+export function canvasNodeTitle(data: Record<string, unknown>, type: string | undefined): string {
+  return visualFromData(data, type).title;
+}
 
 function visualFromData(
   data: Record<string, unknown>,
@@ -357,6 +363,38 @@ function NodeErrorBadge({
   );
 }
 
+/**
+ * A node's breakpoint at the start of its title bar: a red dot, hollow while disabled. With a mouse
+ * the dot toggles it, and a faint dot on title-bar hover adds one; touch uses the node menu, and the
+ * keyboard the canvas's Toggle Breakpoint key.
+ */
+function NodeBreakpointDot({ nodeId, data }: { nodeId: string; data?: Record<string, unknown> }) {
+  const { breakpoints } = useGraphEditorContext();
+  const state = useNodeBreakpoint(nodeId);
+  if (!breakpoints || !canBreakOnNode(data)) return null;
+  const label = state ? "Remove Breakpoint" : "Add Breakpoint";
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={label}
+      title={label}
+      data-breakpoint={state ?? undefined}
+      className={cn(
+        "nodrag absolute left-1 top-1/2 flex size-3 -translate-y-1/2 items-center justify-center pointer-coarse:pointer-events-none",
+        !state && "opacity-0 group-hover/title:opacity-40 pointer-coarse:hidden",
+      )}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        breakpoints.toggle(nodeId);
+      }}
+    >
+      <span className={cn("size-2.5 rounded-full border-2 border-destructive", state !== "disabled" && "bg-destructive")} />
+    </button>
+  );
+}
+
 function shellIsDevelopmentOnly(
   nodeId: string,
   data: Record<string, unknown> | undefined,
@@ -457,11 +495,12 @@ export function BlueprintNodeShell({
         {card ? null : (
           <div
             className={cn(
-              "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
+              "group/title relative rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               marker && "pr-10",
               nodeRoleClass(role),
             )}
           >
+            <NodeBreakpointDot nodeId={nodeId} data={data} />
             {title}
           </div>
         )}

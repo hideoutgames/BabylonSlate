@@ -2,13 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import {
+  canBreakOnNode,
+  canvasNodeTitle,
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
   type GraphCanvasDropApi,
   type GraphPasteElements,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
-import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry } from "@babylonslate/editor-kit";
+import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@babylonslate/editor-kit";
 import { isEditorGraphHost, type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
@@ -25,6 +27,8 @@ import {
 import { GraphPinDefaultHostContext } from "../context/graph-pin-defaults-provider";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
+import { useBreakpointStore } from "../context/breakpoints-context";
+import { useKeybindChord } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
@@ -233,6 +237,47 @@ export function GraphPanel(
   ]);
 
   const assetGuid = doc?.ref.path ?? documentId;
+
+  // Breakpoints use the compiler's terms: the Class path and the graph's run id.
+  const breakpointStore = useBreakpointStore();
+  const breakpointAsset = breakpointStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
+  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
+  const graphName = activeFunctionId
+    ? graphContent?.members?.find((member) => member.id === activeFunctionId)?.name ?? activeFunctionId
+    : "Event Graph";
+  const latestGraph = useRef(graph);
+  latestGraph.current = graph;
+  const breakpointLabel = useCallback((nodeId: string) => {
+    const node = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
+    return {
+      className: classId ?? breakpointAsset ?? "",
+      graphName,
+      nodeTitle: node ? canvasNodeTitle(node.data, node.type) : nodeId,
+    };
+  }, [breakpointAsset, classId, graphName]);
+  const breakpoints = useMemo(
+    () => breakpointStore && breakpointAsset ? breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel) : undefined,
+    [breakpointAsset, breakpointLabel, breakpointStore, runGraphId],
+  );
+  // A function graph runs under its name, so renaming a function moves its breakpoints with it.
+  const functionRunIds = useMemo(() => new Map(
+    Object.keys(graphContent?.functionGraphs ?? {}).map((id) => [id, functionGraphExportName({
+      id,
+      name: graphContent?.members?.find((member) => member.id === id)?.name,
+    })]),
+  ), [graphContent?.functionGraphs, graphContent?.members]);
+  const previousFunctionRunIds = useRef(functionRunIds);
+  useEffect(() => {
+    const before = previousFunctionRunIds.current;
+    previousFunctionRunIds.current = functionRunIds;
+    if (!breakpointStore || !breakpointAsset || before === functionRunIds) return;
+    for (const [id, runId] of functionRunIds) {
+      const previous = before.get(id);
+      if (previous === undefined || previous === runId) continue;
+      breakpointStore.renameGraph(breakpointAsset, previous, runId,
+        graphContent?.members?.find((member) => member.id === id)?.name ?? id);
+    }
+  }, [breakpointAsset, breakpointStore, functionRunIds, graphContent?.members]);
 
   useEffect(() => {
     if (!panelApi) return;
@@ -470,17 +515,33 @@ export function GraphPanel(
     [setFocusDiagnostic],
   );
   const contextMenuItemsForNode = useCallback(
-    (nodeId: string) =>
-      graphContent && canRenameCustomEvent(graphContent, nodeId)
-        ? [
-            {
-              id: "rename-event",
-              label: "Rename Event",
-              onSelect: () => setRenameEventId(nodeId),
-            },
-          ]
-        : [],
-    [graphContent],
+    (nodeId: string) => {
+      const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
+        ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
+        : [];
+      const node = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
+      if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return items;
+      const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
+      const entry = breakpointStore.get(location);
+      if (!entry) {
+        return [...items, {
+          id: "add-breakpoint",
+          label: "Add Breakpoint",
+          shortcut: toggleBreakpointChord,
+          onSelect: () => breakpointStore.toggle(location, breakpointLabel(nodeId)),
+        }];
+      }
+      return [
+        ...items,
+        { id: "remove-breakpoint", label: "Remove Breakpoint", shortcut: toggleBreakpointChord, onSelect: () => breakpointStore.remove(location) },
+        {
+          id: "toggle-breakpoint-enabled",
+          label: entry.enabled ? "Disable Breakpoint" : "Enable Breakpoint",
+          onSelect: () => breakpointStore.setEnabled(location, !entry.enabled),
+        },
+      ];
+    },
+    [breakpointAsset, breakpointLabel, breakpointStore, graphContent, runGraphId, toggleBreakpointChord],
   );
 
   const preparePaste = useCallback(
@@ -514,6 +575,7 @@ export function GraphPanel(
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
             runTrace={runTrace}
+            breakpoints={breakpoints}
             commitPositionsOnDragEnd
             singleExecOutputOnConnect
             colorMode="dark"

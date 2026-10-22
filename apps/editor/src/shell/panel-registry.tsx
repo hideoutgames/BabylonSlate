@@ -1,3 +1,4 @@
+import { BreakpointsPanel } from "../panels/breakpoints-panel";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-game-panels";
 import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
 import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
@@ -131,6 +132,7 @@ export const panelComponents = {
   "compiler-results": (props: IDockviewPanelProps) => (
     <CompilerResultsPanel {...props} />
   ),
+  breakpoints: () => <BreakpointsPanel />,
   "my-class": (props: IDockviewPanelProps) => <MyClassPanel {...props} />,
   "scene-outliner": (props: IDockviewPanelProps) => (
     <SceneOutlinerPanel {...props} />

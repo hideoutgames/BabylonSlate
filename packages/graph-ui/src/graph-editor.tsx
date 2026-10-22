@@ -155,6 +155,7 @@ import {
   type GraphCommand,
   type GraphKeybinds,
 } from "./graph-keybinds";
+import { canBreakOnNode, type GraphBreakpoints } from "./graph-breakpoints";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -213,6 +214,11 @@ export interface GraphEditorProps {
    * graph. Memoize it: a new identity re-renders every node.
    */
   runTrace?: GraphRunTrace;
+  /**
+   * The graph's breakpoints, which the host owns. Nodes with an exec pin show theirs in the title bar,
+   * and the Toggle Breakpoint key toggles them on the selected nodes, read-only canvases included.
+   */
+  breakpoints?: GraphBreakpoints;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
   /** Locks inline values without disabling node movement or graph connections. */
@@ -699,6 +705,7 @@ function GraphEditorCanvas({
   onSessionViewportChange,
   readOnly: readOnlyProp = false,
   runTrace,
+  breakpoints,
   readOnlyPinDefaults: readOnlyPinDefaultsProp,
   onPinSelect,
   nodeTypes: nodeTypesProp,
@@ -2209,9 +2216,15 @@ function GraphEditorCanvas({
             new Set(currentEdges.filter((edge) => edge.selected).map((edge) => edge.id)),
           );
         }
+        case "toggleBreakpoint": {
+          if (!breakpoints) return false;
+          const targets = graphStateRef.current.nodes.filter((node) => node.selected && canBreakOnNode(node.data));
+          for (const node of targets) breakpoints.toggle(node.id);
+          return targets.length > 0;
+        }
       }
     },
-    [copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements],
+    [breakpoints, copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements],
   );
   const commandRef = useRef({ readOnly, bindings: commandBindings, run: runGraphCommand });
   useLayoutEffect(() => {
@@ -2234,9 +2247,10 @@ function GraphEditorCanvas({
     const onFocusIn = (event: FocusEvent) => { if (inside(event.target)) engaged = true; };
     const onKeyDown = (event: KeyboardEvent) => {
       const { readOnly: locked, bindings, run } = commandRef.current;
-      if (!engaged || locked || event.defaultPrevented || event.isComposing) return;
+      if (!engaged || event.defaultPrevented || event.isComposing) return;
       const command = graphCommandForEvent(event, bindings);
-      if (!command) return;
+      // Breakpoints are not graph data, so a read-only canvas still sets them.
+      if (!command || (locked && command !== "toggleBreakpoint")) return;
       if (event.target instanceof Element) {
         if (event.target.closest(KEY_EXEMPT_TARGETS)) return;
         const dialog = event.target.closest('[role="dialog"], [role="alertdialog"]');
@@ -2843,6 +2857,7 @@ function GraphEditorCanvas({
       nodeMenu,
       connectionRefusal,
       runTrace,
+      breakpoints,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -2873,6 +2888,7 @@ function GraphEditorCanvas({
       nodeMenu,
       connectionRefusal,
       runTrace,
+      breakpoints,
       defaultEdgeOptions.type,
     ],
   );

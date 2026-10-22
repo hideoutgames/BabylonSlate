@@ -1,0 +1,74 @@
+import { expect, test, type Page } from "@playwright/test";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+  identitySerializedTransform,
+  type SerializedGraph,
+} from "../packages/core/src/index";
+import { openMinimalTestProject } from "./minimal-project";
+import { openMainScene } from "./open-test-project";
+import { setPreviewScene } from "./preview-parity";
+
+type TestHost = typeof globalThis & {
+  __babylonslateSimulationTest: { start(): Promise<void> };
+  __babylonslatePlayTest: { tickIndex(): number };
+  __babylonslateTest: { setMainGraphContent(graph: SerializedGraph): Promise<boolean> };
+};
+
+const node = (id: string, type: string, data: Record<string, unknown> = {}, x = 0, y = 0) =>
+  ({ id, type, position: { x, y }, data });
+
+/** Event Tick prints every tick. */
+const CLASS_GRAPH = {
+  nodes: [
+    node("tick", "flow.event.tick", {}, 0, 0),
+    node("print", "debug.print", { "default:key": "tick", "default:duration": 0.1 }, 420, 0),
+  ],
+  edges: [{ id: "tick.execOut>print.execIn", source: "tick", sourceHandle: "execOut", target: "print", targetHandle: "execIn" }],
+} as unknown as SerializedGraph;
+
+const graphPanel = (page: Page) => page.getByTestId("graph-panel");
+const printNode = (page: Page) => graphPanel(page).locator('.react-flow__node[data-id="print"]');
+const tickIndex = (page: Page) => page.evaluate(() => (globalThis as TestHost).__babylonslatePlayTest.tickIndex());
+
+test("a breakpoint set from a node's menu stops a Simulation and opens the node", async ({ page }) => {
+  test.setTimeout(240_000);
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  expect(await page.evaluate((graph) => (globalThis as TestHost).__babylonslateTest.setMainGraphContent(graph), CLASS_GRAPH)).toBe(true);
+  const scene = createDefaultScene();
+  scene.actors = [
+    ...scene.actors.filter((actor) => actor.classId !== "main"),
+    createActor("hero", "Hero", {
+      classId: "main",
+      transform: identitySerializedTransform(),
+      components: [createMeshComponent("hero-mesh", "box")],
+    }),
+  ];
+  await setPreviewScene(page, scene);
+
+  await page.locator('[data-testid="document-tab"][data-document-kind="graph"]').getByTestId("document-tab-select").click();
+  await expect(printNode(page)).toBeVisible({ timeout: 15_000 });
+  await printNode(page).locator("[data-node-role]").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add Breakpoint" }).click();
+  await expect(printNode(page).locator('[data-breakpoint="enabled"]')).toHaveCount(1);
+
+  await page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.start());
+  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
+  // The first tick stops: the Simulation pauses (Step appears) and the Class graph opens at the node.
+  await expect(page.getByTestId("simulation-step")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("focused-graph-node")).toHaveAttribute("data-node-id", "print");
+  await expect(printNode(page)).toBeVisible();
+  const stoppedAt = await tickIndex(page);
+  await page.waitForTimeout(300);
+  expect(await tickIndex(page)).toBe(stoppedAt);
+
+  // Switched off while the Simulation runs, it no longer stops it.
+  await printNode(page).locator("[data-node-role]").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Disable Breakpoint" }).click();
+  await expect(printNode(page).locator('[data-breakpoint="disabled"]')).toHaveCount(1);
+  await page.getByTestId("simulation-pause").click();
+  await expect.poll(() => tickIndex(page), { timeout: 30_000 }).toBeGreaterThan(stoppedAt + 2);
+  await expect(page.getByTestId("simulation-step")).toHaveCount(0);
+});
