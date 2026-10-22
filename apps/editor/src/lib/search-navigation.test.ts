@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SearchEntry } from "@babylonslate/assets";
+import type { SearchEntry } from "@haptic/assets";
 import {
   documentOpenForTarget,
   groupSearchEntries,
@@ -20,95 +20,95 @@ describe("documentOpenForTarget", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/main.scene.babasset",
+        path: "assets/main.scene.hasset",
         guid: "s1",
         assetType: "Scene",
       }),
-    ).toEqual({ kind: "scene", path: "assets/main.scene.babasset" });
+    ).toEqual({ kind: "scene", path: "assets/main.scene.hasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/hero.class.babasset",
+        path: "assets/hero.class.hasset",
         guid: "c1",
         assetType: "Class",
       }),
-    ).toEqual({ kind: "graph", path: "assets/hero.class.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/hero.class.hasset" });
   });
 
   it("routes actors to their scene and nodes to their graph", () => {
     expect(
       documentOpenForTarget({
         kind: "scene-actor",
-        scenePath: "assets/main.scene.babasset",
+        scenePath: "assets/main.scene.hasset",
         actorId: "actor-1",
       }),
-    ).toEqual({ kind: "scene", path: "assets/main.scene.babasset" });
+    ).toEqual({ kind: "scene", path: "assets/main.scene.hasset" });
     expect(
       documentOpenForTarget({
         kind: "graph-node",
-        graphPath: "assets/main.class.babasset",
+        graphPath: "assets/main.class.hasset",
         nodeId: "log-1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/main.class.hasset" });
     expect(
       documentOpenForTarget({
         kind: "variable",
         name: "health",
-        graphPath: "assets/main.class.babasset",
+        graphPath: "assets/main.class.hasset",
         nodeId: "var-1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/main.class.hasset" });
   });
 
   it("opens settings documents for import and type assets", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/hero.babasset",
+        path: "assets/hero.hasset",
         guid: "tex-1",
         assetType: "Texture",
       }),
-    ).toEqual({ kind: "texture", path: "assets/hero.babasset" });
+    ).toEqual({ kind: "texture", path: "assets/hero.hasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/hero.babasset",
+        path: "assets/hero.hasset",
         guid: "mesh-1",
         assetType: "Model",
       }),
-    ).toEqual({ kind: "model", path: "assets/hero.babasset" });
+    ).toEqual({ kind: "model", path: "assets/hero.hasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/hero.skeleton.babasset",
+        path: "assets/hero.skeleton.hasset",
         guid: "skel-1",
         assetType: "Skeleton",
       }),
-    ).toEqual({ kind: "skeleton", path: "assets/hero.skeleton.babasset" });
+    ).toEqual({ kind: "skeleton", path: "assets/hero.skeleton.hasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/hero_idle.babasset",
+        path: "assets/hero_idle.hasset",
         guid: "anim-1",
         assetType: "Animation",
       }),
-    ).toEqual({ kind: "animation", path: "assets/hero_idle.babasset" });
+    ).toEqual({ kind: "animation", path: "assets/hero_idle.hasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/jump.babasset",
+        path: "assets/jump.hasset",
         guid: "audio-1",
         assetType: "Audio",
       }),
-    ).toEqual({ kind: "audio", path: "assets/jump.babasset" });
+    ).toEqual({ kind: "audio", path: "assets/jump.hasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
-        path: "assets/colors.babasset",
+        path: "assets/colors.hasset",
         guid: "enum-1",
         assetType: "Enum",
       }),
-    ).toEqual({ kind: "enum", path: "assets/colors.babasset" });
+    ).toEqual({ kind: "enum", path: "assets/colors.hasset" });
     expect(
       documentOpenForTarget({ kind: "class", classId: "Actor" }),
     ).toEqual({ kind: "content-browser", path: "" });
@@ -116,10 +116,10 @@ describe("documentOpenForTarget", () => {
       documentOpenForTarget({
         kind: "class",
         classId: "MyHero",
-        path: "assets/hero.class.babasset",
+        path: "assets/hero.class.hasset",
         guid: "c1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/hero.class.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/hero.class.hasset" });
   });
 });
 
@@ -128,7 +128,7 @@ describe("revealAssetFromTarget", () => {
     expect(
       revealAssetFromTarget({
         kind: "asset",
-        path: "assets/hero.babasset",
+        path: "assets/hero.hasset",
         guid: "tex-1",
         assetType: "Texture",
       }),
@@ -136,23 +136,23 @@ describe("revealAssetFromTarget", () => {
     expect(
       revealAssetFromTarget({
         kind: "asset",
-        path: "assets/tools.babasset",
+        path: "assets/tools.hasset",
         guid: "tools-1",
         assetType: "EditorUtilityInterface",
       }),
-    ).toEqual({ guid: "tools-1", path: "assets/tools.babasset" });
+    ).toEqual({ guid: "tools-1", path: "assets/tools.hasset" });
     expect(
       revealAssetFromTarget({
         kind: "class",
         classId: "MyHero",
-        path: "assets/my-hero.babasset",
+        path: "assets/my-hero.hasset",
         guid: "class-1",
       }),
-    ).toEqual({ guid: "class-1", path: "assets/my-hero.babasset" });
+    ).toEqual({ guid: "class-1", path: "assets/my-hero.hasset" });
     expect(
       revealAssetFromTarget({
         kind: "scene-actor",
-        scenePath: "assets/main.scene.babasset",
+        scenePath: "assets/main.scene.hasset",
         actorId: "actor-1",
       }),
     ).toBeNull();
@@ -174,7 +174,7 @@ describe("groupSearchEntries", () => {
         label: "Main",
         target: {
           kind: "asset",
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
           guid: "s1",
           assetType: "Scene",
         },
@@ -185,7 +185,7 @@ describe("groupSearchEntries", () => {
         label: "Cube",
         target: {
           kind: "scene-actor",
-          scenePath: "assets/main.scene.babasset",
+          scenePath: "assets/main.scene.hasset",
           actorId: "a1",
         },
       }),

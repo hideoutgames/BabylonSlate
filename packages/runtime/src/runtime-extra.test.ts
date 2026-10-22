@@ -8,7 +8,7 @@ import {
   type AnchorEntry,
 } from "./stack-map";
 import { createInProcessRuntime } from "./driver";
-import { encodeInputEvents } from "@babylonslate/input";
+import { encodeInputEvents } from "@haptic/input";
 
 describe("diagnostics aggregator", () => {
   it("dedupes by code/asset/node, keeps the first message, and caps entries", () => {
@@ -54,7 +54,7 @@ describe("diagnostics aggregator", () => {
 
 describe("stack map helpers", () => {
   it("extracts asset guid and maps stacks", () => {
-    expect(assetGuidFromSourceUrl("babylonslate:///abc.js")).toBe("abc");
+    expect(assetGuidFromSourceUrl("haptic:///abc.js")).toBe("abc");
     const tables = new Map<string, readonly AnchorEntry[]>([
       [
         "abc",
@@ -62,14 +62,14 @@ describe("stack map helpers", () => {
       ],
     ]);
     const hit = mapStackToAnchor(
-      "Error: x\n    at run (babylonslate:///abc.js:2:1)",
+      "Error: x\n    at run (haptic:///abc.js:2:1)",
       tables,
     );
     expect(hit?.nodeId).toBe("n1");
   });
   it.each([
-    "at run (babylonslate:///AnimGraph:asset:rule.js:8:2)",
-    "run@babylonslate:///AnimGraph:asset:rule.js:8:2",
+    "at run (haptic:///AnimGraph:asset:rule.js:8:2)",
+    "run@haptic:///AnimGraph:asset:rule.js:8:2",
   ])("maps qualified script identities in browser stack frames: %s", (frame) => {
     const anchor = { line: 8, column: 1, assetGuid: "asset", graphId: "rule", nodeId: "loop" };
     expect(mapStackToAnchor(`InfiniteLoopError: Infinite loop detected\n${frame}`,
@@ -106,7 +106,7 @@ describe("runtime driver extras", () => {
       },
     ]);
     const err = new Error("boom");
-    err.stack = "Error: boom\n    at x (babylonslate:///fix.js:1:1)";
+    err.stack = "Error: boom\n    at x (haptic:///fix.js:1:1)";
     const diag = runtime.reportError(err);
     expect(diag?.nodeId).toBe("n");
     expect(runtime.getLogRing().entries().length).toBeGreaterThan(0);

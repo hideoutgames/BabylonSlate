@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { buildDataTreeIndex, createDataTreeEntry, isDataTreeAsset, type DataTreeAsset, type DataTreeEntry, type DataTreeIndex } from "@babylonslate/core";
-import { createDataEntryForDefinition, reconcileDataEntry, validateDataDefinition, validateDataEntry, type DataValidationIssue } from "@babylonslate/scripting";
+import { buildDataTreeIndex, createDataTreeEntry, isDataTreeAsset, type DataTreeAsset, type DataTreeEntry, type DataTreeIndex } from "@haptic/core";
+import { createDataEntryForDefinition, reconcileDataEntry, validateDataDefinition, validateDataEntry, type DataValidationIssue } from "@haptic/scripting";
 import {
   useDocumentActions,
   useRegistryState,

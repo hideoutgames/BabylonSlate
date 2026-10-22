@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIO_REVERB_ALLPASS_COUNT,
   AUDIO_REVERB_COMB_COUNT,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   connectParametricReverb,
   parametricReverbTopology,

@@ -3,7 +3,7 @@ import type { DiagnosticResultsStore } from "../services/diagnostic-results-stor
 import type { SimulationSession } from "../services/simulation-session";
 import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation-retention-dialog";
 import { SimulationTransformToolbar } from "./simulation-transform-toolbar";
-import type { GizmoTool, RuntimeTransformTools } from "@babylonslate/render";
+import type { GizmoTool, RuntimeTransformTools } from "@haptic/render";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
 import {
@@ -11,15 +11,15 @@ import {
   usePublishSimulationControls,
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
-import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
+import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
-import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
-import type { SceneLoadProgress } from "@babylonslate/render";
-import type { RenderDiagnostics } from "@babylonslate/render";
+import { nextStatGroups, type StatGroup } from "@haptic/debugger";
+import type { SceneLoadProgress } from "@haptic/render";
+import type { RenderDiagnostics } from "@haptic/render";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   resolveRenderingQuality,
@@ -33,13 +33,13 @@ import {
   type SerializedSceneLayer,
   type CollisionTriangleMesh,
   type CollisionPreset,
-} from "@babylonslate/core";
-import { cn } from "@babylonslate/ui/lib/utils";
-import { SelectableText } from "@babylonslate/editor-kit";
-import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
-import { applyInspectSelectionToConsoleLine } from "@babylonslate/runtime";
+} from "@haptic/core";
+import { cn } from "@haptic/ui/lib/utils";
+import { SelectableText } from "@haptic/editor-kit";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
+import { applyInspectSelectionToConsoleLine } from "@haptic/runtime";
 import type { AbstractEngine } from "@babylonjs/core";
-import { createAppSettingsStore } from "@babylonslate/vfs";
+import { createAppSettingsStore } from "@haptic/vfs";
 import {
   startPlaySession,
   type PlaySession,
@@ -61,14 +61,14 @@ import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintHud, type PrintHudPrint } from "./print-overlay";
 import { PlayDebugConsole } from "./play-debug-console";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
-import type { DebugBehaviourTree } from "@babylonslate/bridge";
+import type { DebugBehaviourTree } from "@haptic/bridge";
 import { ConnectedDebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
 import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { ScriptBundleEntry } from "@haptic/bridge";
 import {
   applyPlayPreviewCanvasLayout,
   clampRenderResolution,
@@ -83,7 +83,7 @@ import type {
   ModelPayload,
   ParticleLibrary,
   RetargetAnimationLoad,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import type { PlayAudioLibrary } from "../lib/play-audio";
 import {
   PLAY_AUDIO_UNLOCK_HINT,
@@ -92,17 +92,17 @@ import {
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
-import { isTestModeEnabled } from "@babylonslate/vfs";
+} from "@haptic/shader-graph";
+import { isTestModeEnabled } from "@haptic/vfs";
 import {
   getHostMemoryStats,
   type HostMemoryStats,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import {
   audioDebugOverlayText,
   audioStats,
   type FontAssetEntry,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
@@ -114,7 +114,7 @@ export interface PlayOverlayProps {
   simulationSession?: SimulationSession;
   simulationAssetGuids?: readonly string[];
   simulationSaveStorage?: Parameters<typeof startPlaySession>[0]["simulationSaveStorage"];
-  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
+  saveGame?: import("@haptic/core").SaveGameConfiguration;
   sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
@@ -126,23 +126,23 @@ export interface PlayOverlayProps {
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneCatalog?: Array<{ guid: string; name: string }>;
   classAssetGuids?: Record<string, string>;
-  consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
+  consoleCommands?: Array<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   audioAssetGuids?: string[];
   acquireSceneSources?: PlaySceneSourceLoader;
   acquireAssetSources?: PlayAssetSourceLoader;
-  sessionSources?: import("@babylonslate/render").SceneSourceAssets;
-  getAssetLoadState?: (guid: string) => import("@babylonslate/core").RuntimeAssetLoadState;
-  getSourceControls?: () => import("@babylonslate/bridge").ControlMessage[];
-  releaseInitialSources?: () => void | import("@babylonslate/bridge").ControlMessage[];
+  sessionSources?: import("@haptic/render").SceneSourceAssets;
+  getAssetLoadState?: (guid: string) => import("@haptic/core").RuntimeAssetLoadState;
+  getSourceControls?: () => import("@haptic/bridge").ControlMessage[];
+  releaseInitialSources?: () => void | import("@haptic/bridge").ControlMessage[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
-  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
-  assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  inputAssets?: import("@haptic/core").InputAssetDefinition[];
+  dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
+  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -152,13 +152,13 @@ export interface PlayOverlayProps {
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
-  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
-  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
-  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
+  renderTargets?: ReadonlyMap<string, import("@haptic/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@haptic/core").RenderTargetTexturePayload>;
+  waterPayloads?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
-  areaEmissions?: ReadonlyMap<string, import("@babylonslate/assets").AreaEmissionPixels>;
+  areaEmissions?: ReadonlyMap<string, import("@haptic/assets").AreaEmissionPixels>;
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
@@ -177,7 +177,7 @@ export interface PlayOverlayProps {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
+  loadAudioSourceBytes?: import("@haptic/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   particleLibrary?: ParticleLibrary;
@@ -1045,7 +1045,7 @@ function PlayOverlayView({
   useEffect(() => {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
-      __babylonslatePlayTest?: {
+      __hapticPlayTest?: {
         actorPositions: () => readonly {
           slotId: number;
           x: number;
@@ -1071,7 +1071,7 @@ function PlayOverlayView({
         ) => Promise<import("../testing/flythrough-probe").FlyThroughResult>;
       };
     };
-    host.__babylonslatePlayTest = {
+    host.__hapticPlayTest = {
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       scalability: () => sessionRef.current?.handle.scalabilityStatus(),
@@ -1098,7 +1098,7 @@ function PlayOverlayView({
       },
     };
     return () => {
-      delete host.__babylonslatePlayTest;
+      delete host.__hapticPlayTest;
     };
   }, []);
 

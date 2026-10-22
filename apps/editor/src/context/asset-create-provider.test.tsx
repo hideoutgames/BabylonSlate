@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
   AssetRegistry,
-  encodeBabasset,
+  encodeHasset,
   projectContentRoot,
-} from "@babylonslate/assets";
-import { useAssetCreate, type AssetCreateApi } from "@babylonslate/editor-kit";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/assets";
+import { useAssetCreate, type AssetCreateApi } from "@haptic/editor-kit";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { AssetCreateDocumentsProvider } from "./asset-create-provider";
 import { dataGraphAssetCreateOptions } from "../lib/data-graph";
 
@@ -22,9 +22,9 @@ afterEach(() => {
 
 async function projectRegistry(): Promise<AssetRegistry> {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("test.babproject");
+  await storage.openDocumentsProject("test.hproject");
   await storage.mkdir("assets/Levels", true);
-  const bytes = await encodeBabasset({
+  const bytes = await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "scene-main",
@@ -39,7 +39,7 @@ async function projectRegistry(): Promise<AssetRegistry> {
     },
     chunks: [],
   });
-  await storage.writeBinary("assets/Levels/Main.scene.babasset", bytes);
+  await storage.writeBinary("assets/Levels/Main.scene.hasset", bytes);
   const registry = new AssetRegistry(storage);
   await registry.mountRoot(projectContentRoot());
   return registry;
@@ -66,7 +66,7 @@ describe("AssetCreateDocumentsProvider", () => {
     const noteAssetsCreated = vi.fn(() => {
       listedAtRefresh = registry
         .list()
-        .some((asset) => asset.path === "assets/Levels/Rock.material.babasset");
+        .some((asset) => asset.path === "assets/Levels/Rock.material.hasset");
     });
     const refreshAssetRegistry = vi.fn();
     docs.value = {
@@ -77,7 +77,7 @@ describe("AssetCreateDocumentsProvider", () => {
       openDocuments: [
         {
           id: "scene:main",
-          ref: { kind: "scene", path: "assets/Levels/Main.scene.babasset" },
+          ref: { kind: "scene", path: "assets/Levels/Main.scene.hasset" },
           content: null,
         },
       ],
@@ -91,7 +91,7 @@ describe("AssetCreateDocumentsProvider", () => {
 
     const guid = await api.createAsset({ type: "Material", name: "Rock" });
     expect(registry.getByGuid(guid)?.path).toBe(
-      "assets/Levels/Rock.material.babasset",
+      "assets/Levels/Rock.material.hasset",
     );
     expect(listedAtRefresh).toBe(true);
     // Project Settings pickers name no owner document: project content root.
@@ -101,7 +101,7 @@ describe("AssetCreateDocumentsProvider", () => {
       ownerPath: null,
     });
     expect(registry.getByGuid(global)?.path).toBe(
-      "assets/Global.material.babasset",
+      "assets/Global.material.hasset",
     );
 
     expect(api.canCreateClass!("GameInstance")).toBe(true);

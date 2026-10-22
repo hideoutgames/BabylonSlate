@@ -1,7 +1,7 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";

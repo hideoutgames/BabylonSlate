@@ -31,17 +31,17 @@ const harness = vi.hoisted(() => ({
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "script-interface:assets/IHit.babasset",
+    documentId: "script-interface:assets/IHit.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "script-interface:assets/IHit.babasset",
+      id: "script-interface:assets/IHit.hasset",
       ref: {
         kind: "script-interface",
-        path: "assets/IHit.babasset",
+        path: "assets/IHit.hasset",
         label: "IHit Script Interface",
       },
       content: harness.content,

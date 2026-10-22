@@ -3,15 +3,15 @@ import {
   nextCopyName,
   type AssetRegistry,
   type IndexedAsset,
-} from "@babylonslate/assets";
-import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle, WaterStylizedLook } from "@babylonslate/core";
-import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@babylonslate/scripting";
-import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
+} from "@haptic/assets";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle, WaterStylizedLook } from "@haptic/core";
+import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@haptic/scripting";
+import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
 import {
   isLockedEngineClassId,
   MAX_CLASS_INHERITANCE_DEPTH,
-} from "@babylonslate/object-model";
-import type { MaterialDomain } from "@babylonslate/shader-graph";
+} from "@haptic/object-model";
+import type { MaterialDomain } from "@haptic/shader-graph";
 import {
   ASSETS_ROOT,
   assetHeaderDependencyMetadata,
@@ -198,7 +198,7 @@ export type PickerCreateFolder = {
 /**
  * Picker-created assets go next to the owning document when it sits in a
  * writable content root. A document outside every root but holding one (a
- * plugin's `plugins/Foo/Foo.plugin.babasset` beside `plugins/Foo/assets`) uses
+ * plugin's `plugins/Foo/Foo.plugin.hasset` beside `plugins/Foo/assets`) uses
  * that root. Otherwise (engine plugins, the project, no document): `assets`.
  */
 export function pickerCreateFolder(

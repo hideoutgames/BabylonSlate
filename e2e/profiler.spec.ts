@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, showOverlayButtons } from "./play";
 
-type PlayHost = { __babylonslatePlayTest?: { tickIndex(): number } };
-const tick = (page: Page) => page.evaluate(() => (globalThis as unknown as PlayHost).__babylonslatePlayTest?.tickIndex() ?? -1);
+type PlayHost = { __hapticPlayTest?: { tickIndex(): number } };
+const tick = (page: Page) => page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.tickIndex() ?? -1);
 
 test("Profiler records a session and captures a frame without losing the recording", async ({ page }) => {
   test.setTimeout(120_000);

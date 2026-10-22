@@ -5,7 +5,7 @@
   "displayName": "GLSL to Material",
   "version": "0.1.0",
   "description": "Experimental conversion of fragment GLSL into an editable Material node graph.",
-  "author": "BabylonSlate",
+  "author": "Haptic",
   "category": "Materials",
   "iconKey": "Code",
   "experimental": true,

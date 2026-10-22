@@ -7,8 +7,8 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
-} from "@babylonslate/bridge";
-import { createInProcessRuntime } from "@babylonslate/runtime";
+} from "@haptic/bridge";
+import { createInProcessRuntime } from "@haptic/runtime";
 
 /**
  * P4 payload fidelity: one in-process run (actor transforms after N ticks)

@@ -1,8 +1,8 @@
-import type { SerializedGraph } from "@babylonslate/core";
-import { formatEventMemberName, formatEventTitle } from "@babylonslate/editor-kit";
-import type { GraphPasteElements, GraphPasteResult } from "@babylonslate/graph-ui";
-import { singletonEventKey } from "@babylonslate/scripting";
-import { jsIdent } from "@babylonslate/scripting-nodes";
+import type { SerializedGraph } from "@haptic/core";
+import { formatEventMemberName, formatEventTitle } from "@haptic/editor-kit";
+import type { GraphPasteElements, GraphPasteResult } from "@haptic/graph-ui";
+import { singletonEventKey } from "@haptic/scripting";
+import { jsIdent } from "@haptic/scripting-nodes";
 import { canRenameCustomEvent } from "./class-members";
 import { duplicateBaseName } from "./scene-actor-names";
 

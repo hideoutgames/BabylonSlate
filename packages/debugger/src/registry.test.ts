@@ -1,4 +1,4 @@
-import { RenderingQualitySession } from "@babylonslate/core";
+import { RenderingQualitySession } from "@haptic/core";
 import { describe, expect, it } from "vitest";
 import {
   createCommandRegistry,

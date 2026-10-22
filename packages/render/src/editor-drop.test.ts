@@ -13,18 +13,18 @@ import {
   parseLandscapeProperties,
   type SerializedActor,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { calculateEditorDropTransforms } from "./editor-drop";
 import type { MeshAssetContext } from "./mesh-assets";
-import type { ColliderShape, Vec3 } from "@babylonslate/physics";
+import type { ColliderShape, Vec3 } from "@haptic/physics";
 import {
   createDefaultSpritePayload,
   emptyChunkTiles,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {

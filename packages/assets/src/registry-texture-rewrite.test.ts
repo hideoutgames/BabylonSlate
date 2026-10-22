@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { DEFAULT_BLOB_THRESHOLD, decodeBabasset, encodeBabasset } from "./babasset";
-import { BLOBS_DIR } from "./babproject";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { DEFAULT_BLOB_THRESHOLD, decodeHasset, encodeHasset } from "./hasset";
+import { BLOBS_DIR } from "./hproject";
 import { createVfsBlobStore } from "./blob-store";
 import { sha256Hex } from "./bytes";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry } from "./registry";
 
-const PATH = "assets/tex.babasset";
+const PATH = "assets/tex.hasset";
 /** Large enough to live in the blob store, as an imported image does. */
 const PIXELS = new Uint8Array(DEFAULT_BLOB_THRESHOLD + 5).map((_, index) => index % 253);
 
@@ -24,10 +24,10 @@ function ktx2(width: number, height: number): Uint8Array {
 /** A compressed Texture whose source pixels are a blob and whose one encode is off the 4x4 grid. */
 async function compressedTexture() {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("rewrite.babproject");
+  await storage.openDocumentsProject("rewrite.hproject");
   await storage.mkdir("assets", true);
   const blobs = createVfsBlobStore(storage);
-  await storage.writeBinary(PATH, await encodeBabasset({
+  await storage.writeBinary(PATH, await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [], dependencies: [],
       guid: "tex-1", type: "Texture", name: "Tex", engineVersion: "0.0.0", version: 1, mode: "thin", parentClass: null,
@@ -65,7 +65,7 @@ describe("Texture state writes", () => {
     expect(header.payload).toMatchObject({ compressionState: "encoding", ktx2ChunkId: "ktx2:old", ktx2Width: 1, ktx2Height: 1 });
     expect(header.payload.ktx2Sha256).toBe(header.chunks.find((entry) => entry.id === "ktx2:old")!.sha256);
     // The rewritten file still verifies every chunk against its digest.
-    const decoded = await decodeBabasset(await storage.readBinary(PATH), (sha256) => blobs.readBlob(sha256));
+    const decoded = await decodeHasset(await storage.readBinary(PATH), (sha256) => blobs.readBlob(sha256));
     expect(decoded.chunks.get("pixels")).toEqual(PIXELS);
     expect(decoded.chunks.get("ktx2:old")).toEqual(ktx2(1, 1));
     expect(decoded.header.chunks.map((entry) => entry.id)).toEqual(["pixels", "ktx2:old"]);
@@ -98,7 +98,7 @@ describe("Texture state writes", () => {
     expect(header.payload).toMatchObject({ compressionState: "compressed", ktx2ChunkId: "ktx2:new", ktx2Width: 8, ktx2Height: 8 });
     expect(header.payload.ktx2Sha256).toBe(await sha256Hex(ktx2(8, 8)));
     expect(header.payload.ktx2Sha256).toBe(header.chunks.find((entry) => entry.id === "ktx2:new")!.sha256);
-    const decoded = await decodeBabasset(await storage.readBinary(PATH), (sha256) => blobs.readBlob(sha256));
+    const decoded = await decodeHasset(await storage.readBinary(PATH), (sha256) => blobs.readBlob(sha256));
     expect(decoded.chunks.get("pixels")).toEqual(PIXELS);
     expect(decoded.chunks.get("ktx2:new")).toEqual(ktx2(8, 8));
   });

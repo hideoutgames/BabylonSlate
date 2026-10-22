@@ -4,7 +4,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 
 ## Ownership
 
-- [`packages/object-model/src/`](../../../packages/object-model/src/) (`@babylonslate/object-model`) depends only on `@babylonslate/core`. Never import React, Babylon or Capacitor here.
+- [`packages/object-model/src/`](../../../packages/object-model/src/) (`@haptic/object-model`) depends only on `@haptic/core`. Never import React, Babylon or Capacitor here.
 - Runtime systems that drive it: [`packages/runtime/src/`](../../../packages/runtime/src/) (driver, script host, `PhysicsWorldSync` in `physics-sync.ts`, `world-component-index.ts`, `actor-world-transform.ts`).
 - Component placement (`world` / `overlay` / `any`) is declared once in `ENGINE_COMPONENT_DESCRIPTORS` ([`packages/core/src/engine-components.ts`](../../../packages/core/src/engine-components.ts)); SceneLayer allow/deny lists and object-model ids derive from it.
 - Deterministic harness: `runDeterministicScenario` in [`packages/test-kit/src/harness.ts`](../../../packages/test-kit/src/harness.ts) (seed, fixed dt, N ticks, canonical snapshot golden).
@@ -36,7 +36,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 
 1. `gameInstance`: GameInstance `onTick`, then live GameSubsystems in class-id order.
 2. `sceneSubsystems`: main Scene's SceneSubsystems; gated by `canTickScene` then `canTickSceneSubsystem`.
-3. `actors` (spawn order) → 4. `components` (attach order) → 5. `physics` (backend `step` + write-back, filled by `@babylonslate/physics`) → 6. `postPhysics` (boundary only).
+3. `actors` (spawn order) → 4. `components` (attach order) → 5. `physics` (backend `step` + write-back, filled by `@haptic/physics`) → 6. `postPhysics` (boundary only).
 
 `WorldOptions.canTickScene` suspends phases 2–6 during cooperative scene preparation while the Game Instance keeps ticking; `canTickActor` gates individual owners and SceneLayers. Both are rechecked mid-tick.
 
@@ -79,5 +79,5 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 ## Product decisions
 
 - No `ModelComponent`: imported models bind on `MeshComponent.assetGuid`.
-- **Prefab** (`.prefab.babasset`, kind `prefab`) is logic-free `{ components }` (`SerializedPrefab`). Placed instances are plain `Actor`s with baked components and `prefabGuid`; the runtime ignores `prefabGuid` and never loads the Prefab, and Spawn Actor cannot spawn one.
+- **Prefab** (`.prefab.hasset`, kind `prefab`) is logic-free `{ components }` (`SerializedPrefab`). Placed instances are plain `Actor`s with baked components and `prefabGuid`; the runtime ignores `prefabGuid` and never loads the Prefab, and Spawn Actor cannot spawn one.
 - `DeformerComponent` is visual-only: physics, navigation and CPU picking keep the original shape. The worker sends revisioned `setActorDeformers` control snapshots, never vertices. Limits in [`deformer-component.ts`](../../../packages/core/src/deformer-component.ts) (`DEFORMER_MAX_CONTROLS` 64, coordinates clamp to ±1e10 before Float32 upload). Unavailable in SceneLayers.

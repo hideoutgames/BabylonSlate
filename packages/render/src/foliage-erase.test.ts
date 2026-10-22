@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core";
-import { parseFoliageProperties } from "@babylonslate/core";
+import { parseFoliageProperties } from "@haptic/core";
 import { FoliageEraseSession } from "./foliage-erase";
 
 type Dab = { point: Vector3; radius: number };

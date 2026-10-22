@@ -1,4 +1,4 @@
-import type { CommandMessage, ControlMessage, RuntimeMaterialEditPreparation } from "@babylonslate/bridge";
+import type { CommandMessage, ControlMessage, RuntimeMaterialEditPreparation } from "@haptic/bridge";
 
 type MaterialCommit = Extract<CommandMessage, { type: "assignMaterial" | "setMaterialParameter" }>;
 type Response = Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>;

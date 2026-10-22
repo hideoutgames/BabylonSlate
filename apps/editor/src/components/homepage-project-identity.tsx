@@ -2,8 +2,8 @@ import { useState } from "react";
 import {
   normalizeProjectAppearance,
   type ProjectAppearance,
-} from "@babylonslate/core";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/core";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   DEFAULT_PROJECT_APPEARANCE,
   PROJECT_COLOR_PRESETS,

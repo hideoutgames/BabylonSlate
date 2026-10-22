@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer, type SerializedComponent, type UIControl2DProperties } from "@babylonslate/core";
-import { isPlayEngineCommandType, type CommandMessage, type ControlMessage } from "@babylonslate/bridge";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { createActor, createDefaultScene, createDefaultSceneLayer, type SerializedComponent, type UIControl2DProperties } from "@haptic/core";
+import { isPlayEngineCommandType, type CommandMessage, type ControlMessage } from "@haptic/bridge";
+import { Actor, ActorComponent } from "@haptic/object-model";
 import { UIControls2DRuntime } from "./ui-controls2d-runtime";
 import { createInProcessRuntime } from "./driver";
 

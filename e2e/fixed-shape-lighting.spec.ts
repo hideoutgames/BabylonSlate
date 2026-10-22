@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test";
 import type { runFixedLightProof } from "../apps/editor/src/testing/fixed-light-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-// CI runs WebGL2. BL_RENDER_NATIVE_GPU=1 (perf-gpu, playwright.perf.config.ts) keeps the machine GPU's
+// CI runs WebGL2. HAPTIC_RENDER_NATIVE_GPU=1 (perf-gpu, playwright.perf.config.ts) keeps the machine GPU's
 // launch arguments and adds WebGPU, which is too slow on the software adapter.
-const NATIVE_GPU = process.env.BL_RENDER_NATIVE_GPU === "1";
+const NATIVE_GPU = process.env.HAPTIC_RENDER_NATIVE_GPU === "1";
 if (!NATIVE_GPU) test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of NATIVE_GPU ? (["webgl2", "webgpu"] as const) : (["webgl2"] as const)) {
@@ -20,9 +20,9 @@ for (const backend of NATIVE_GPU ? (["webgl2", "webgpu"] as const) : (["webgl2"]
     });
     await page.goto("/?test=1&fixedLightProof=1");
     await page.waitForFunction(() =>
-      typeof (window as unknown as { __babylonslateFixedLightProof?: unknown }).__babylonslateFixedLightProof === "function");
+      typeof (window as unknown as { __hapticFixedLightProof?: unknown }).__hapticFixedLightProof === "function");
     const result = await page.evaluate((backend) =>
-      (window as unknown as { __babylonslateFixedLightProof: typeof runFixedLightProof }).__babylonslateFixedLightProof(backend), backend);
+      (window as unknown as { __hapticFixedLightProof: typeof runFixedLightProof }).__hapticFixedLightProof(backend), backend);
     await testInfo.attach("fixed-light-proof", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.backend).toBe(backend);

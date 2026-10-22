@@ -1,9 +1,9 @@
-import { BT_DEBUG_GRAPH_ID, type CommandMessage, type DebugBehaviourTree } from "@babylonslate/bridge";
-import { eulerDegreesToQuaternion } from "@babylonslate/core";
-import type { TraceBtState } from "@babylonslate/debugger";
-import type { Actor, ActorComponent, BObject, World } from "@babylonslate/object-model";
-import type { PhysicsWorldKind } from "@babylonslate/physics";
-import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
+import { BT_DEBUG_GRAPH_ID, type CommandMessage, type DebugBehaviourTree } from "@haptic/bridge";
+import { eulerDegreesToQuaternion } from "@haptic/core";
+import type { TraceBtState } from "@haptic/debugger";
+import type { Actor, ActorComponent, BObject, World } from "@haptic/object-model";
+import type { PhysicsWorldKind } from "@haptic/physics";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
   btEdgeId,
   evaluateBehaviourTree,
@@ -14,7 +14,7 @@ import {
   type BtEvalState,
   type BtEvalTrace,
   type BtResult,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   actorChainWorldTransform,
   actorParentGuid,

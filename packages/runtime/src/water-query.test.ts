@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
-import { createActor, createDefaultSceneSettings, createDefaultWaterDefinition, type SerializedActor } from "@babylonslate/core";
-import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { Actor, ActorComponent } from "@haptic/object-model";
+import { createActor, createDefaultSceneSettings, createDefaultWaterDefinition, type SerializedActor } from "@haptic/core";
+import { compileGraph, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import { ScriptHost } from "./script-host";
 import { WaterWorld } from "./water-world";

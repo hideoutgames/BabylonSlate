@@ -1,7 +1,7 @@
 import type {
   MaterialParameterCatalog,
   MaterialParameterValue,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { MaterialDocument, MaterialFunctionDocument } from "./document";
 import { lowerMaterialDocument, type MaterialBuildPlan } from "./lower";
 

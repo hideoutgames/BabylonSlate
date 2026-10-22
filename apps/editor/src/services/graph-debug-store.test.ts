@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DebugGraphTrace, DebugInstance, DebugObserveTarget } from "@babylonslate/bridge";
+import type { DebugGraphTrace, DebugInstance, DebugObserveTarget } from "@haptic/bridge";
 import { GraphDebugStore, type GraphDebugRequest } from "./graph-debug-store";
 
 const DOOR: DebugObserveTarget = { kind: "class", classId: "Door" };

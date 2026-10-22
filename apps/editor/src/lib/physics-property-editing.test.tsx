@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { quaternionToEulerDegrees, type SerializedComponent } from "@babylonslate/core";
-import { PropertyGrid } from "@babylonslate/editor-kit";
+import { quaternionToEulerDegrees, type SerializedComponent } from "@haptic/core";
+import { PropertyGrid } from "@haptic/editor-kit";
 import { applyPrefabPropertyDefaults, componentPropertyRows } from "./component-property-rows";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 

@@ -1,4 +1,4 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import type { LogicGraph, GraphNode, GraphEdge, GraphPin } from "./ir";
 import { STRING, type PinType } from "./types";
 

@@ -5,14 +5,14 @@ import {
   LoaderCircleIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
-import { cn } from "@babylonslate/ui/lib/utils";
-import { ariaKeyShortcuts, ShortcutKeys } from "@babylonslate/editor-kit";
+} from "@haptic/ui/components/tooltip";
+import { cn } from "@haptic/ui/lib/utils";
+import { ariaKeyShortcuts, ShortcutKeys } from "@haptic/editor-kit";
 import type { ActionFeedback, ActionResult } from "../lib/action-feedback";
 import type { EditorCommandId } from "../lib/editor-keybinds";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";

@@ -4,8 +4,8 @@ import {
   Scene,
   VertexBuffer,
 } from "@babylonjs/core";
-import type { SpriteFrame } from "@babylonslate/assets";
-import { spriteFrameUvs } from "@babylonslate/assets";
+import type { SpriteFrame } from "@haptic/assets";
+import { spriteFrameUvs } from "@haptic/assets";
 
 const spriteQuads = new WeakSet<Mesh>();
 export function isSpriteQuad(mesh: unknown): boolean { return mesh instanceof Mesh && spriteQuads.has(mesh); }

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
-import { createDefaultPluginSettings, type PluginDescriptor } from "@babylonslate/assets";
-import { defaultExportPreset } from "@babylonslate/core";
-import { createAppSettingsStore } from "@babylonslate/vfs";
+import { createDefaultPluginSettings, type PluginDescriptor } from "@haptic/assets";
+import { defaultExportPreset } from "@haptic/core";
+import { createAppSettingsStore } from "@haptic/vfs";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -30,10 +30,10 @@ const {
   pluginDescriptors,
   applyPluginOverrides,
 } = vi.hoisted(() => {
-  const lastProjectRender = { current: null as import("@babylonslate/core").RenderProjectSettings | null };
+  const lastProjectRender = { current: null as import("@haptic/core").RenderProjectSettings | null };
   return {
     updateProjectVersion: vi.fn(),
-    updateProjectSettings: vi.fn((patch: { render?: import("@babylonslate/core").RenderProjectSettings }) => {
+    updateProjectSettings: vi.fn((patch: { render?: import("@haptic/core").RenderProjectSettings }) => {
       if (patch?.render) lastProjectRender.current = patch.render;
     }),
     setShowPluginContent: vi.fn(),
@@ -48,16 +48,16 @@ const {
     exportProject: vi.fn(),
     importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
-    projectSourceControl: { current: null as Partial<import("@babylonslate/core").SourceControlProjectSettings> | null },
-    projectExportPresets: { current: null as import("@babylonslate/core").ExportPreset[] | null },
+    projectSourceControl: { current: null as Partial<import("@haptic/core").SourceControlProjectSettings> | null },
+    projectExportPresets: { current: null as import("@haptic/core").ExportPreset[] | null },
     lastProjectRender,
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
   };
 });
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
+vi.mock("@haptic/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/vfs")>();
   return {
     ...actual,
     getHostPlatform: () => host.platform,
@@ -66,7 +66,7 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => {
 });
 
 vi.mock("../context/document-context", async () => {
-  const { createEmptyProject: emptyProject } = await import("@babylonslate/core");
+  const { createEmptyProject: emptyProject } = await import("@haptic/core");
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const projectDocument = emptyProject("Demo");
     if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
@@ -102,15 +102,15 @@ vi.mock("../context/document-context", async () => {
       list: () => [
         {
           header: { guid: "font-1", name: "Display", type: "Font" },
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
         },
         {
           header: { guid: "scene-1", name: "Main", type: "Scene" },
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
         },
         {
           header: { guid: "scene-2", name: "Arena", type: "Scene" },
-          path: "assets/Arena.scene.babasset",
+          path: "assets/Arena.scene.hasset",
         },
         {
           header: {
@@ -119,7 +119,7 @@ vi.mock("../context/document-context", async () => {
             type: "Class",
             parentClass: "EditorUtilityObject",
           },
-          path: "assets/Tools.class.babasset",
+          path: "assets/Tools.class.hasset",
         },
         {
           header: {
@@ -128,11 +128,11 @@ vi.mock("../context/document-context", async () => {
             type: "Class",
             parentClass: "GameInstance",
           },
-          path: "assets/MyGame.class.babasset",
+          path: "assets/MyGame.class.hasset",
         },
         {
           header: { guid: "mixer-1", name: "Master", type: "AudioMixer" },
-          path: "assets/Master.mixer.babasset",
+          path: "assets/Master.mixer.hasset",
         },
       ],
       listRoots: () => [{ id: "project" }],
@@ -146,7 +146,7 @@ vi.mock("../context/document-context", async () => {
         guid === "font-1"
           ? {
               header: { guid: "font-1", name: "Display", type: "Font" },
-              path: "assets/Display.font.babasset",
+              path: "assets/Display.font.hasset",
             }
           : undefined,
     },
@@ -279,7 +279,7 @@ describe("SettingsModal project authoring", () => {
     importPlugin.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
-    const file = new File([new Uint8Array([1, 2])], "broken.babplugin");
+    const file = new File([new Uint8Array([1, 2])], "broken.hplugin");
     Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([1, 2]).buffer });
     await act(async () => {
       fireEvent.change(screen.getByTestId("import-plugin-input"), { target: { files: [file] } });
@@ -667,7 +667,7 @@ describe("SettingsModal project authoring", () => {
       readOnly: false,
       folderPath: "plugins/tools",
       contentPath: "plugins/tools/assets",
-      settingsPath: "plugins/tools/tools.plugin.babasset",
+      settingsPath: "plugins/tools/tools.plugin.hasset",
       settings: {
         ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }),
         beta: true,

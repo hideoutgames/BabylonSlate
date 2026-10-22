@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { classHeaderMeta, type SerializedGraph } from "@babylonslate/core";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
+import { classHeaderMeta, type SerializedGraph } from "@haptic/core";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
@@ -63,17 +63,17 @@ describe("replaceSerializedGraphInDocument", () => {
 describe("collectSubsystemClassesForPalette", () => {
   it("lists every project and plugin subsystem class by compile id with its base", () => {
     const assets = [
-      { path: "assets/Rain-Weather.class.babasset", header: { type: "Class", name: "Rain-Weather", parentClass: "Weather" } },
-      { path: "assets/Weather.class.babasset", header: { type: "Class", name: "Weather", parentClass: "SceneSubsystem" } },
-      { path: "assets/Save.class.babasset", header: { type: "Class", name: "Save", parentClass: "GameSubsystem" } },
-      { path: "assets/Hero.class.babasset", header: { type: "Class", name: "Hero", parentClass: "Actor" } },
-      { path: "assets/MyGame.class.babasset", header: { type: "Class", name: "MyGame", parentClass: "GameInstance" } },
-      { path: "plugins/pack/assets/Quest.class.babasset", header: { type: "Class", name: "Quest", parentClass: "GameSubsystem" } },
+      { path: "assets/Rain-Weather.class.hasset", header: { type: "Class", name: "Rain-Weather", parentClass: "Weather" } },
+      { path: "assets/Weather.class.hasset", header: { type: "Class", name: "Weather", parentClass: "SceneSubsystem" } },
+      { path: "assets/Save.class.hasset", header: { type: "Class", name: "Save", parentClass: "GameSubsystem" } },
+      { path: "assets/Hero.class.hasset", header: { type: "Class", name: "Hero", parentClass: "Actor" } },
+      { path: "assets/MyGame.class.hasset", header: { type: "Class", name: "MyGame", parentClass: "GameInstance" } },
+      { path: "plugins/pack/assets/Quest.class.hasset", header: { type: "Class", name: "Quest", parentClass: "GameSubsystem" } },
     ];
     expect(
       collectSubsystemClassesForPalette({
         assets,
-        openDocuments: [{ ref: { kind: "graph", path: "assets/Save.class.babasset" } }],
+        openDocuments: [{ ref: { kind: "graph", path: "assets/Save.class.hasset" } }],
         parentOf: classParentLookup(assets),
         classIdForPath: classIdForGraphPath,
       }),
@@ -100,7 +100,7 @@ describe("collectFunctionLibrariesForPalette", () => {
     const libraries = collectFunctionLibrariesForPalette({
       assets: [
         {
-          path: "assets/MathLib.class.babasset",
+          path: "assets/MathLib.class.hasset",
           header: {
             type: "Class",
             name: "MathLib",
@@ -124,7 +124,7 @@ describe("collectFunctionLibrariesForPalette", () => {
           },
         },
         {
-          path: "assets/EditorMath.class.babasset",
+          path: "assets/EditorMath.class.hasset",
           header: {
             type: "Class",
             name: "EditorMath",
@@ -133,7 +133,7 @@ describe("collectFunctionLibrariesForPalette", () => {
           },
         },
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           header: {
             type: "Class",
             name: "Hero",
@@ -144,7 +144,7 @@ describe("collectFunctionLibrariesForPalette", () => {
       ],
       openDocuments: [
         {
-          ref: { kind: "graph", path: "assets/EditorMath.class.babasset" },
+          ref: { kind: "graph", path: "assets/EditorMath.class.hasset" },
           content: {
             nodes: [],
             edges: [],
@@ -319,7 +319,7 @@ describe("collectClassGraphsForPalette", () => {
     const graphs = collectClassGraphsForPalette({
       assets: [
         {
-          path: "assets/Guard.class.babasset",
+          path: "assets/Guard.class.hasset",
           header: {
             type: "Class",
             name: "Guard",
@@ -332,7 +332,7 @@ describe("collectClassGraphsForPalette", () => {
           },
         },
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           header: {
             type: "Class",
             name: "Hero",
@@ -345,7 +345,7 @@ describe("collectClassGraphsForPalette", () => {
       ],
       openDocuments: [
         {
-          ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+          ref: { kind: "graph", path: "assets/Hero.class.hasset" },
           content: {
             nodes: [],
             edges: [],
@@ -371,7 +371,7 @@ describe("collectClassGraphsForPalette", () => {
       assets: [],
       openDocuments: [
         {
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
+          ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" },
           content: createDefaultAnimGraph(),
         },
       ],
@@ -386,7 +386,7 @@ describe("collectSceneDocumentsForPalette", () => {
     const scenes = collectSceneDocumentsForPalette({
       assets: [
         {
-          path: "assets/Hall.scene.babasset",
+          path: "assets/Hall.scene.hasset",
           header: {
             guid: "scene-1",
             type: "Scene",
@@ -409,7 +409,7 @@ describe("collectSceneDocumentsForPalette", () => {
       ],
       openDocuments: [
         {
-          ref: { kind: "scene", path: "assets/Hall.scene.babasset" },
+          ref: { kind: "scene", path: "assets/Hall.scene.hasset" },
           content: {
             name: "Main Hall Live",
             actors: [
@@ -521,10 +521,10 @@ describe("collectGraphTypeAssets", () => {
   it.each([null, undefined])("keeps saved Data Definition fields available when a restored tab has %s content", (content) => {
     const fields = [{ id: "damage", name: "Damage", typeId: "int", defaultValue: 12 }];
     const catalog = collectGraphTypeAssets({
-      assets: [{ path: "assets/ItemStats.babasset", header: {
+      assets: [{ path: "assets/ItemStats.hasset", header: {
         type: "DataDefinition", guid: "stats", name: "ItemStats", payload: { kind: "dataDefinition", fields },
       } }],
-      openDocuments: [{ ref: { kind: "data-definition", path: "assets/ItemStats.babasset" }, content }],
+      openDocuments: [{ ref: { kind: "data-definition", path: "assets/ItemStats.hasset" }, content }],
     });
     expect(catalog.dataDefinitions).toEqual([{ guid: "stats", name: "ItemStats", fields }]);
     expect(typeSchemasFromGraphAssets(catalog).dataDefinitions?.stats?.fields).toEqual(fields);
@@ -533,12 +533,12 @@ describe("collectGraphTypeAssets", () => {
   it("keeps Data Definitions independent and projects unsaved fields into graph value schemas", () => {
     const catalog = collectGraphTypeAssets({
       assets: [
-        { path: "assets/Stats.babasset", header: { type: "DataDefinition", guid: "stats", name: "Stats", payload: {
+        { path: "assets/Stats.hasset", header: { type: "DataDefinition", guid: "stats", name: "Stats", payload: {
           fields: [{ id: "health", name: "Health", typeId: "float", defaultValue: 10 }],
         } } },
-        { path: "assets/Vector.babasset", header: { type: "Structure", guid: "vector", name: "Vector", payload: { fields: [] } } },
+        { path: "assets/Vector.hasset", header: { type: "Structure", guid: "vector", name: "Vector", payload: { fields: [] } } },
       ],
-      openDocuments: [{ ref: { kind: "data-definition", path: "assets/Stats.babasset" }, content: {
+      openDocuments: [{ ref: { kind: "data-definition", path: "assets/Stats.hasset" }, content: {
         fields: [{ id: "health", name: "HitPoints", typeId: "float", defaultValue: 25 }],
       } }],
     });
@@ -555,8 +555,8 @@ describe("collectGraphTypeAssets", () => {
   it("omits malformed definitions without breaking unrelated type catalogs", () => {
     const catalog = collectGraphTypeAssets({
       assets: [
-        { path: "assets/Broken.babasset", header: { type: "DataDefinition", guid: "broken", name: "Broken", payload: { fields: [{ name: "Bad" }] } } },
-        { path: "assets/Good.babasset", header: { type: "DataDefinition", guid: "good", name: "Good", payload: { fields: [] } } },
+        { path: "assets/Broken.hasset", header: { type: "DataDefinition", guid: "broken", name: "Broken", payload: { fields: [{ name: "Bad" }] } } },
+        { path: "assets/Good.hasset", header: { type: "DataDefinition", guid: "good", name: "Good", payload: { fields: [] } } },
       ],
       openDocuments: [],
     });

@@ -1,5 +1,5 @@
-import { Dialog } from "@babylonslate/ui/components/dialog";
-import { Button } from "@babylonslate/ui/components/button";
+import { Dialog } from "@haptic/ui/components/dialog";
+import { Button } from "@haptic/ui/components/button";
 import { ProgressDialogContent, ProgressDialogStatus } from "./progress-dialog-parts";
 
 export type ContentBrowserCopyProgress = {

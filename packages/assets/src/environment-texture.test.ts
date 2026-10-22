@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { readEnvironmentTextureInfo } from "./environment-texture";
 import { importByExtension } from "./importers";
 import { AssetRegistry } from "./registry";
 import { projectContentRoot } from "./content-root";
-import { decodeBabasset, encodeBabasset } from "./babasset";
+import { decodeHasset, encodeHasset } from "./hasset";
 import { selectTextureChunk } from "./texture-loader";
 import { resolveGpuTexture } from "./resolve-gpu-texture";
 
@@ -76,11 +76,11 @@ describe("environment texture import", () => {
           usage: "skybox",
         },
       });
-      const packed = await encodeBabasset({
+      const packed = await encodeHasset({
         header: { ...asset!, dependencyMetadataVersion: 1, requiredDependencies: [], engineVersion: "0.0.0", mode: "thin" },
         chunks: asset!.chunks,
       });
-      const decoded = await decodeBabasset(packed);
+      const decoded = await decodeHasset(packed);
       expect(decoded.chunks.get("source")).toEqual(source);
       // Saved 2D settings or a stale encode must never reinterpret HDR cube data.
       decoded.header.payload = {
@@ -204,7 +204,7 @@ describe("environment texture import", () => {
 
   it("retains source and dimensional metadata through registry rename and fresh indexing", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Environment.babproject");
+    await storage.openDocumentsProject("Environment.hproject");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const source = buildFloatDdsCubeFixture();
@@ -225,7 +225,7 @@ describe("environment texture import", () => {
       mipLevels: 2,
     });
     expect(
-      (await decodeBabasset(await storage.readBinary(renamed.path))).chunks.get(
+      (await decodeHasset(await storage.readBinary(renamed.path))).chunks.get(
         "source",
       ),
     ).toEqual(source);

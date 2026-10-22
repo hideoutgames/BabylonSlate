@@ -13,7 +13,7 @@ import {
   visiblePrintHudEntries,
   type PrintHudColor,
   type PrintHudEntry,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export type PrintOverlayEntry = PrintHudEntry;
 

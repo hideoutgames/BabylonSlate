@@ -5,7 +5,7 @@ import {
   snapshotActiveFloatCount,
   snapshotFloatCount,
   type ActorSlot,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import type { AudioPose } from "./audio-playback-backend";
 
 export interface SampledSnapshot {

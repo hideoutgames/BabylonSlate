@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultAudioMixerPayload } from "@babylonslate/assets";
+import { createDefaultAudioMixerPayload } from "@haptic/assets";
 import {
   AUDIO_MIXER_EMPTY_CHANNELS_COPY,
   applyMixerChannelPick,

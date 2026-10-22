@@ -138,11 +138,11 @@ async function framePixels(canvas: Locator): Promise<Buffer> {
 async function scalingLevel(page: Page): Promise<number | null> {
   return page.evaluate(() => {
     const host = window as typeof window & {
-      __babylonslatePlayerTest?: {
+      __hapticPlayerTest?: {
         rendering: () => { scalingLevel?: number } | null;
       };
     };
-    return host.__babylonslatePlayerTest?.rendering()?.scalingLevel ?? null;
+    return host.__hapticPlayerTest?.rendering()?.scalingLevel ?? null;
   });
 }
 
@@ -250,7 +250,7 @@ test("editor viewport applies project bloom through Post Processing settings", a
     (material) => material.guid !== MAT_EDGE,
   )) {
     files.set(
-      `assets/${material.name}.material.babasset`,
+      `assets/${material.name}.material.hasset`,
       await encodeAssetDocument({
         guid: material.guid,
         type: "Material",

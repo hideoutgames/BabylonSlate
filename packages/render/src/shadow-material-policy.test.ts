@@ -20,7 +20,7 @@ import {
   newCustomGlslProperties,
   type MaterialDocument,
   type MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { CelMaterial } from "./cel-material";
 import { compileMaterialPlan } from "./material-compiler";
 import { HelperProgramPlugin, shareHelperProgram } from "./helper-program";

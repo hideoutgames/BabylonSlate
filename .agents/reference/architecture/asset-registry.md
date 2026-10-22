@@ -4,9 +4,9 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 ## Ownership
 
-- Registry and loaders: [`packages/assets/src/`](../../../packages/assets/src/) (`registry.ts`, `content-root.ts`, `payload-loader.ts`, `babasset-carry.ts`, `asset-loading-service.ts`, `registry-asset-loading.ts`, `encode-queue.ts`, `texture-*.ts`, `importers/`).
+- Registry and loaders: [`packages/assets/src/`](../../../packages/assets/src/) (`registry.ts`, `content-root.ts`, `payload-loader.ts`, `hasset-carry.ts`, `asset-loading-service.ts`, `registry-asset-loading.ts`, `encode-queue.ts`, `texture-*.ts`, `importers/`).
 - Editor host: `ProjectService` ([`apps/editor/src/services/project-service.ts`](../../../apps/editor/src/services/project-service.ts)); Content Browser UI: [`apps/editor/src/components/content-browser-workspace.tsx`](../../../apps/editor/src/components/content-browser-workspace.tsx), helpers in `apps/editor/src/lib/content-browser-*.ts`.
-- GPU resources and native disposal stay in `ResourceCache` ([`packages/render/src/`](../../../packages/render/src/)); Babylon never enters `@babylonslate/assets`.
+- GPU resources and native disposal stay in `ResourceCache` ([`packages/render/src/`](../../../packages/render/src/)); Babylon never enters `@haptic/assets`.
 
 ## Invariants
 
@@ -27,8 +27,8 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 ## File operations
 
 - Every operation writing a new path claims a case-folded reservation synchronously, before its first await; a second writer gets the usual "already exists" error. Duplicate/copy allocate `stem_N` names and new guids; move/rename keep guids.
-- Folder moves/deletes wait for pending writes; GUID-based saves resolve the current path after admission. Moves copy then remove; case-only renames use a recovery copy (`.babylonslate-move-*`, excluded from discovery). Not crash-atomic.
-- Empty folders persist through a `.babylonslate-folder` marker.
+- Folder moves/deletes wait for pending writes; GUID-based saves resolve the current path after admission. Moves copy then remove; case-only renames use a recovery copy (`.haptic-move-*`, excluded from discovery). Not crash-atomic.
+- Empty folders persist through a `.haptic-folder` marker.
 - A scanned file whose guid is already indexed stays unindexed (`listGuidConflicts()`), and deleting a folder holding one is refused.
 - Folder copy/duplicate is a deep copy: references inside the copied folder point at the copies (`applyImportGuidRemap`), copied Classes get class ids from their new stems.
 - Copies take `AssetCopyOptions`: `signal` is checked before a copy's write and between a folder's files (not during the reference remap); an aborted folder copy deletes its partial destination. The Content Browser removes earlier completed copies itself, so Cancel leaves no copies.
@@ -54,7 +54,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 - `AccountedPayloadLoader` reads inline ranges or named blobs, verifies length and sha256, and rechecks the source revision after each chunk; a concurrent save fails the read (callers retry the whole acquisition, at most three times).
 - `decodeAssetDocument` reads only the `document` chunk. Readers pairing documents and chunks use `loadDocumentWithChunks` ([containers](containers.md#documents)).
-- `carryStoredChunks` (`babasset-carry.ts`): rewrites that change the header, `document` or one derived chunk carry other chunks by stored sha256 without reading blobs; output is byte-identical to a full re-encode, and anything unproven falls back to full decode. A save whose header and file are unchanged writes nothing (no mtime or generation change).
+- `carryStoredChunks` (`hasset-carry.ts`): rewrites that change the header, `document` or one derived chunk carry other chunks by stored sha256 without reading blobs; output is byte-identical to a full re-encode, and anything unproven falls back to full decode. A save whose header and file are unchanged writes nothing (no mtime or generation change).
 - Document saves, renames and derived commits share one per-asset write queue.
 
 ## Scoped loading
@@ -72,8 +72,8 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 ## Importers
 
-- Pure functions keyed by extension: `(bytes, options) → ImportResult[]`. Cross-project `.babasset` import remaps colliding guids with `remapImportResultGuids` (typed reference fields only; text-typed values stay as authored). Template instantiation keeps guids.
-- Model ingest is **GLB/glTF only** (`MODEL_EXTENSIONS`); parse failure throws, never a stub. OBJ, STL and FBX convert to GLB in [`packages/render/src/`](../../../packages/render/src/) (`convert-obj-to-glb.ts`, `convert-stl-to-glb.ts`, `@babylonslate/render/fbx-import` worker kept out of the player bundle). The Content Browser never constructs Babylon Scenes itself.
+- Pure functions keyed by extension: `(bytes, options) → ImportResult[]`. Cross-project `.hasset` import remaps colliding guids with `remapImportResultGuids` (typed reference fields only; text-typed values stay as authored). Template instantiation keeps guids.
+- Model ingest is **GLB/glTF only** (`MODEL_EXTENSIONS`); parse failure throws, never a stub. OBJ, STL and FBX convert to GLB in [`packages/render/src/`](../../../packages/render/src/) (`convert-obj-to-glb.ts`, `convert-stl-to-glb.ts`, `@haptic/render/fbx-import` worker kept out of the player bundle). The Content Browser never constructs Babylon Scenes itself.
 - glTF import embeds external images, creates Material per slot, Skeleton when `rigKind !== "none"`, one Animation per clip. Missing `.gltf` BIN throws `MISSING_GLTF_BIN` per file. Empty image bytes must not set `compressionState: "pending"`.
 - A relative image URI no sidecar supplies is dropped from the stored GLB together with its textures and every material `*Texture` reference (`stripUnmatchedGltfImageUris`), so each remaining `texture.source` is a valid image index and the Material imports from its factors. The glTF loader throws on a texture without an image, which fails the whole Scene. `embedGltfImportBatch` returns `{ files, warnings }`: one warning per model naming the missing files, which the Content Browser lists in the import issues dialog.
 - Font JSON (msdf / facetype) attaches to an existing Font of that family; MSDF PNG is a Font sidecar, not a Texture.
@@ -84,7 +84,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 - `EncodeQueue` runs one job at a time; a Texture has one job, and a newer user request supersedes older results. The registry owns `compressionState`, `ktx2ChunkId`, `encodeError`, `ktx2Width/Height/BlockAlign/Sha256`; document saves take them from the file.
 - Compressed non-atlas Textures encode at sizes rounded up to multiples of 4 (`textureEncodeSize`, WebGPU block alignment); atlases (Tileset/Sprite/Sprite Animation via `atlasTextures` header meta) keep their size. Padding never changes existing `ktx2:<hash>` ids (only Particle keys `blockAlign`).
 - With Source Control enabled there are **no background re-encodes** of shared Textures; only explicit user actions and this session's new files realign ([source-control](source-control.md)).
-- Encoding runs on `apps/editor/public/basis/encode-worker.js` with a transferable source; KTX2/Draco/meshopt/Havok decoders are self-hosted under `apps/editor/public/` (each directory has a `README.md` with upstream and SHA-256). `KTX2_TRANSCODER_RELATIVE_FILES` lives in assets so export can list them without `@babylonslate/render`.
+- Encoding runs on `apps/editor/public/basis/encode-worker.js` with a transferable source; KTX2/Draco/meshopt/Havok decoders are self-hosted under `apps/editor/public/` (each directory has a `README.md` with upstream and SHA-256). `KTX2_TRANSCODER_RELATIVE_FILES` lives in assets so export can list them without `@haptic/render`.
 
 ## Thumbnails
 

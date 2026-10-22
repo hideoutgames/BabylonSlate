@@ -1,6 +1,6 @@
 import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type Node, type TransformNode } from "@babylonjs/core";
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import type { RagdollBonePose } from "@babylonslate/core";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
+import type { RagdollBonePose } from "@haptic/core";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { MODEL_IMPORT_SCALE_NODE_NAME } from "./glb-anim";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Actor } from "@babylonslate/object-model";
-import { compileGraph, type GraphNode, type LogicGraph, type NodeRegistry } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { Actor } from "@haptic/object-model";
+import { compileGraph, type GraphNode, type LogicGraph, type NodeRegistry } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { ScriptHost } from "./script-host";
 import { TweenRuntime } from "./tween-runtime";
 

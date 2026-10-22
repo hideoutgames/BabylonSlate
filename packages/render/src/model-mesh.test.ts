@@ -4,7 +4,7 @@ import {
   packedGltfBytes,
   gpuModelBytes,
 } from "./model-mesh";
-import { buildMinimalGlbFixture } from "@babylonslate/assets";
+import { buildMinimalGlbFixture } from "@haptic/assets";
 
 describe("packedGltfBytes", () => {
   it("returns the same bytes when the ArrayBuffer is already packed", () => {

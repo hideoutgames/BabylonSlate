@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { isLibraryFolder } from "@babylonslate/vfs/library-folders";
+import { isLibraryFolder } from "@haptic/vfs/library-folders";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -142,7 +142,7 @@ export const LIBRARY_FILE_OPERATIONS = [
   "readBinary", "readBinaryRange", "writeBinary", "exists", "readdir", "mkdir", "remove", "stat",
 ] as const;
 
-/** Matches `NativeHttpImageType` in `@babylonslate/vfs`; Clerk accepts exactly these profile picture types. */
+/** Matches `NativeHttpImageType` in `@haptic/vfs`; Clerk accepts exactly these profile picture types. */
 const UPLOAD_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 /** 10 MiB of image bytes, base64 encoded, with slack for padding. */
 const MAX_UPLOAD_BASE64_LENGTH = 14 * 1024 * 1024;

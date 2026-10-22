@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDefaultSpritePayload } from "@babylonslate/assets";
+import { createDefaultSpritePayload } from "@haptic/assets";
 import { SpriteEditor, SpritePreview } from "./sprite-editor";
 
 const readAssetChunk = vi.hoisted(() =>
@@ -11,11 +11,11 @@ vi.mock("../context/document-context", async () => {
   const assets = [
     {
       header: { guid: "tex-1", name: "HeroAtlas", type: "Texture" },
-      path: "assets/HeroAtlas.texture.babasset",
+      path: "assets/HeroAtlas.texture.hasset",
     },
     {
       header: { guid: "mesh-1", name: "Cube", type: "Mesh" },
-      path: "assets/Cube.mesh.babasset",
+      path: "assets/Cube.mesh.hasset",
     },
   ];
   return (await import("../testing/document-context-mock")).documentContextMock(() => ({

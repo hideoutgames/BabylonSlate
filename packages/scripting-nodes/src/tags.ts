@@ -2,9 +2,9 @@ import {
   BOOL, EXEC, INT, RESOLVING_WILDCARD, STRING, TAG, TAG_CONTAINER,
   arrayOf, pin, tagCasePinId, tagCasesConstant, tagCasesOf, tagOptionPinId,
   type NodeDefinition, type PinType,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 
-export { tagCasePinId, tagCasesOf, tagOptionPinId } from "@babylonslate/scripting";
+export { tagCasePinId, tagCasesOf, tagOptionPinId } from "@haptic/scripting";
 
 function caseName(properties: Record<string, unknown>, tag: number): string {
   const names = properties.caseNames as Record<string, unknown> | undefined;

@@ -1,4 +1,4 @@
-import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
+import type { SerializedGraph, SerializedScene } from "@haptic/core";
 import type { EditCommand } from "./command";
 import {
   JOURNAL_REPATH_TYPE,

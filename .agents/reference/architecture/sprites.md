@@ -35,7 +35,7 @@ Pivot is normalized with v down; the quad is offset so the pivot sits on the act
 
 ## Sprite Animation asset
 
-- Separate `.spriteanim.babasset` in the Content Browser Animation group. Payload: `frameDurationMs` (default 100) and `frames[]` of `{ textureGuid, durationMsOverride?, durationMs, pivot, collision, width?, height? }` — one Texture per frame, full UVs.
+- Separate `.spriteanim.hasset` in the Content Browser Animation group. Payload: `frameDurationMs` (default 100) and `frames[]` of `{ textureGuid, durationMsOverride?, durationMs, pivot, collision, width?, height? }` — one Texture per frame, full UVs.
 - Effective duration = sum of per-frame durations (`durationMs` when `durationMsOverride` is true, else `frameDurationMs`).
 - Missing `width` / `height` are stamped from the Texture image (PNG, JPEG, WebP, GIF) in the editor; Play and the player fill them from catalog Texture sizes, else source bytes (`hydrateSpriteAnimationPixelSizes`).
 - Header `dependencies[]` lists frame Textures for Show References and export closure.

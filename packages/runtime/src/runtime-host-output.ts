@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import type { ScriptHostServices } from "./script-host";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";

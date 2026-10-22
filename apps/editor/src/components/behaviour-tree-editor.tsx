@@ -45,7 +45,7 @@ import {
   type BtCatalogEntry,
   type BtNode,
   type BtPropertyField,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import {
   AssetPicker,
   CatalogDialog,
@@ -66,16 +66,16 @@ import {
   type NestedMenuItem,
   type PropertyRow,
   type Vector3Value,
-} from "@babylonslate/editor-kit";
-import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/graph-ui";
-import { defaultJsValue } from "@babylonslate/scripting";
-import { Button } from "@babylonslate/ui/components/button";
-import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+} from "@haptic/editor-kit";
+import { GraphEditor, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
+import { defaultJsValue } from "@haptic/scripting";
+import { Button } from "@haptic/ui/components/button";
+import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
-import { documentId } from "@babylonslate/core";
+import { documentId } from "@haptic/core";
 import {
   useDocumentActions,
   useOpenDocument,

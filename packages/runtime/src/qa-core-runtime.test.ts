@@ -3,9 +3,9 @@ import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
-import type { CommandMessage } from "@babylonslate/bridge";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
 const registry = createDefaultNodeRegistry();

@@ -1,5 +1,5 @@
-import type { SerializedScene } from "@babylonslate/core";
-import type { SceneComponentPickerEntry } from "@babylonslate/editor-kit";
+import type { SerializedScene } from "@haptic/core";
+import type { SceneComponentPickerEntry } from "@haptic/editor-kit";
 import { sceneActorDisplayNames } from "./scene-actor-names";
 
 export function sceneComponentTitle(classId: string): string {

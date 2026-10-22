@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AssetRegistry, FolderNode, IndexedAsset } from "@babylonslate/assets";
-import { normalizeProjectSettings } from "@babylonslate/core";
+import type { AssetRegistry, FolderNode, IndexedAsset } from "@haptic/assets";
+import { normalizeProjectSettings } from "@haptic/core";
 import { createRegistryCatalogSource, playAssetCatalog } from "./asset-catalog";
 
 function indexed(
@@ -25,15 +25,15 @@ const node = (path: string, children: FolderNode[] = []): FolderNode => ({ name:
 
 describe("playAssetCatalog", () => {
   const assets = [
-    indexed("assets/Levels/Main.scene.babasset", "Scene", { dependencies: ["guid-Hero"] }),
-    indexed("assets/Levels/Bonus.scene.babasset", "Scene", { dependencies: ["guid-Gem"] }),
-    indexed("assets/Hero.class.babasset", "Class", { parentClass: "Actor", dependencies: ["guid-hero-tex"] }),
-    indexed("assets/Hero.texture.babasset", "Texture", { guid: "guid-hero-tex" }),
-    indexed("assets/Gem.texture.babasset", "Texture", { guid: "guid-Gem" }),
-    indexed("assets/Spare/Spare.texture.babasset", "Texture"),
-    indexed("assets/Tools/Tool.class.babasset", "Class", { parentClass: "EditorUtilityObject" }),
-    indexed("assets/Unused.texture.babasset", "Texture"),
-    indexed("plugins/On/assets/Prop.class.babasset", "Class", { parentClass: "Actor", rootId: "plugin:on" }),
+    indexed("assets/Levels/Main.scene.hasset", "Scene", { dependencies: ["guid-Hero"] }),
+    indexed("assets/Levels/Bonus.scene.hasset", "Scene", { dependencies: ["guid-Gem"] }),
+    indexed("assets/Hero.class.hasset", "Class", { parentClass: "Actor", dependencies: ["guid-hero-tex"] }),
+    indexed("assets/Hero.texture.hasset", "Texture", { guid: "guid-hero-tex" }),
+    indexed("assets/Gem.texture.hasset", "Texture", { guid: "guid-Gem" }),
+    indexed("assets/Spare/Spare.texture.hasset", "Texture"),
+    indexed("assets/Tools/Tool.class.hasset", "Class", { parentClass: "EditorUtilityObject" }),
+    indexed("assets/Unused.texture.hasset", "Texture"),
+    indexed("plugins/On/assets/Prop.class.hasset", "Class", { parentClass: "Actor", rootId: "plugin:on" }),
     indexed("__unresolved__/guid-Gone", "Unresolved", { placeholder: true }),
   ];
   const registry = { list: () => assets, listRoots: () => [{ id: "project" }, { id: "plugin:on" }] } as unknown as Pick<AssetRegistry, "list" | "listRoots">;
@@ -56,7 +56,7 @@ describe("playAssetCatalog", () => {
     const hero = playAssetCatalog({ registry, settings: normalizeProjectSettings({ startupSceneGuid: "guid-Main" }), sceneGuid: "guid-Main" })
       .find((entry) => entry.guid === "guid-Hero");
     expect(hero).toEqual({
-      guid: "guid-Hero", name: "Hero", type: "Class", path: "assets/Hero.class.babasset", classId: "Hero", parentClass: "Actor",
+      guid: "guid-Hero", name: "Hero", type: "Class", path: "assets/Hero.class.hasset", classId: "Hero", parentClass: "Actor",
       dependencies: ["guid-hero-tex"], requiredDependencies: [],
     });
   });
@@ -79,8 +79,8 @@ describe("createRegistryCatalogSource", () => {
 
   it("lists every registry asset, including editor-only ones, and the empty folders", () => {
     const registry = fakeRegistry([
-      indexed("assets/Weapons/Rifle.class.babasset", "Class", { parentClass: "Actor" }),
-      indexed("assets/Tools/Tool.class.babasset", "Class", { parentClass: "EditorUtilityObject" }),
+      indexed("assets/Weapons/Rifle.class.hasset", "Class", { parentClass: "Actor" }),
+      indexed("assets/Tools/Tool.class.hasset", "Class", { parentClass: "EditorUtilityObject" }),
       indexed("__unresolved__/guid-Gone", "Unresolved", { placeholder: true }),
     ]);
     const catalog = createRegistryCatalogSource(() => registry)()!;
@@ -90,12 +90,12 @@ describe("createRegistryCatalogSource", () => {
   });
 
   it("keeps one catalog until the registry changes, then reflects the change", () => {
-    const assets = [indexed("assets/A.texture.babasset", "Texture")];
+    const assets = [indexed("assets/A.texture.hasset", "Texture")];
     const registry = fakeRegistry(assets);
     const source = createRegistryCatalogSource(() => registry);
     const first = source()!;
     expect(source()).toBe(first);
-    assets.push(indexed("assets/B.texture.babasset", "Texture"));
+    assets.push(indexed("assets/B.texture.hasset", "Texture"));
     expect(source()).toBe(first);
     registry.generation += 1;
     const second = source()!;
@@ -104,10 +104,10 @@ describe("createRegistryCatalogSource", () => {
   });
 
   it("follows a different registry even at the same generation, and reports none without one", () => {
-    let current: ReturnType<typeof fakeRegistry> | null = fakeRegistry([indexed("assets/A.texture.babasset", "Texture")]);
+    let current: ReturnType<typeof fakeRegistry> | null = fakeRegistry([indexed("assets/A.texture.hasset", "Texture")]);
     const source = createRegistryCatalogSource(() => current);
     const first = source()!;
-    current = fakeRegistry([indexed("assets/B.texture.babasset", "Texture")]);
+    current = fakeRegistry([indexed("assets/B.texture.hasset", "Texture")]);
     expect(source()!.hasAsset("guid-B")).toBe(true);
     expect(source()!.hasAsset("guid-A")).toBe(false);
     expect(first.hasAsset("guid-A")).toBe(true);

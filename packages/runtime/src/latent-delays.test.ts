@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { createActor, createDefaultScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };

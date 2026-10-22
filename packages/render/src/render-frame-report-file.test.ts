@@ -36,7 +36,7 @@ const exported = (change: (copy: Exported) => void) => {
   return value;
 };
 it.each<[string, unknown]>([
-  ["a performance profile", { kind: "babylonslate-performance", version: 1 }],
+  ["a performance profile", { kind: "haptic-performance", version: 1 }],
   ["a newer export version", exported((value) => { value.version = 2; })],
   ["a report without stages", exported((value) => { Reflect.deleteProperty(value.report, "stages"); })],
   ["a stage of an unknown kind", exported((value) => { value.report.stages[0]!.kind = "compute"; })],

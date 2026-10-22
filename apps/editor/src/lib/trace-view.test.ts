@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TracePayload } from "@babylonslate/debugger";
+import type { TracePayload } from "@haptic/debugger";
 import {
   asTracePayload,
   collectTraceLogWindow,

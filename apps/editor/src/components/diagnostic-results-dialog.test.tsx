@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { PerformanceRecorder } from "@babylonslate/debugger";
-import { serializeRenderFrameReport, type RenderFrameReport } from "@babylonslate/render";
+import { PerformanceRecorder } from "@haptic/debugger";
+import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
 import DiagnosticResultsDialog, { PerformanceSummary, PerformanceTimeline } from "./diagnostic-results-dialog";
 

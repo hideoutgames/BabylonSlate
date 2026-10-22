@@ -1,4 +1,4 @@
-import type { MaterialBuildPlan, MaterialDocument } from "@babylonslate/shader-graph";
+import type { MaterialBuildPlan, MaterialDocument } from "@haptic/shader-graph";
 import type { MaterialLibrary } from "./material-library";
 import { normalizePostProcessStack, type PostProcessStackDiagnostic, type PostProcessStackEntry } from "./post-process-material";
 

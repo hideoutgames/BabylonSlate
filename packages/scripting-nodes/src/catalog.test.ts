@@ -7,7 +7,7 @@ import {
   INT,
   STRING,
   type LogicGraph,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 async function loadModule(source: string): Promise<Record<string, unknown>> {
@@ -78,7 +78,7 @@ describe("compiler goldens", () => {
       ],
     };
     const result = compileGraph(graph, { assetGuid: "guid-1", registry });
-    expect(result.source).toContain("sourceURL=babylonslate:///guid-1.js");
+    expect(result.source).toContain("sourceURL=haptic:///guid-1.js");
     expect(result.source).toContain("ctx.log");
     expect(result.anchors.some((a) => a.nodeId === "log")).toBe(true);
     // Determinism

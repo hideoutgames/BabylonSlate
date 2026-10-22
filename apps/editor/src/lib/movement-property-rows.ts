@@ -3,8 +3,8 @@ import {
   parseMovementProperties,
   type MovementProperties,
   type SerializedComponent,
-} from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+} from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 
 type NumericProperty = {

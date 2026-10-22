@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
-import type { BridgeHostMessage, CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import { createDefaultScene } from "@haptic/core";
+import type { BridgeHostMessage, CommandMessage, ControlMessage } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import {
   createRuntimeFromLoad,

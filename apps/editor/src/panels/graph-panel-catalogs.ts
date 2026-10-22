@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { SaveGameDefinition } from "@babylonslate/core";
+import type { SaveGameDefinition } from "@haptic/core";
 import {
   useDocumentActions,
   useProjectState,

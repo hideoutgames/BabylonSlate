@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   createWorldSnapshot,
   stringifyWorldSnapshot,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { replayTracePayload } from "./trace-replay";
 

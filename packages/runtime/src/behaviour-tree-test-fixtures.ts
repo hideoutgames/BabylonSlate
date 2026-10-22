@@ -1,4 +1,4 @@
-import { sameDebugObserveTarget, type CommandMessage } from "@babylonslate/bridge";
+import { sameDebugObserveTarget, type CommandMessage } from "@haptic/bridge";
 import type { RuntimeDriver } from "./driver-types";
 
 /**

@@ -19,7 +19,7 @@ describe("Preferences app settings", () => {
   });
 
   it("replaces unreadable stored settings instead of failing every load and update", async () => {
-    stored.set("babylonslate:engine-settings", "{not-json");
+    stored.set("haptic:engine-settings", "{not-json");
     const store = new PreferencesAppSettingsStore();
     expect((await store.load()).undoHistoryLength).toBe(50);
     await store.update((settings) => { settings.undoHistoryLength = 75; });
@@ -27,7 +27,7 @@ describe("Preferences app settings", () => {
   });
 
   it("keeps stored settings when the native read fails", async () => {
-    stored.set("babylonslate:engine-settings", JSON.stringify({ undoHistoryLength: 75 }));
+    stored.set("haptic:engine-settings", JSON.stringify({ undoHistoryLength: 75 }));
     get.mockRejectedValueOnce(new Error("Preferences unavailable"));
     const store = new PreferencesAppSettingsStore();
     await expect(store.update((settings) => { settings.graphDefaultZoom = 1; }))

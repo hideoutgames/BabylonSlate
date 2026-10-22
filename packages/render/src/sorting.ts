@@ -1,5 +1,5 @@
 import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
-import { sortingLayerSortKey } from "@babylonslate/core";
+import { sortingLayerSortKey } from "@haptic/core";
 
 /**
  * Babylon supports four rendering groups, reserved here for coarse separation

@@ -2,9 +2,9 @@ import {
   eulerDegreesToQuaternion,
   quaternionToEulerDegrees,
   type SerializedComponent,
-} from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
-import { parseConstraintProperties } from "@babylonslate/physics";
+} from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
+import { parseConstraintProperties } from "@haptic/physics";
 import type { ComponentPropertyContext } from "./component-property-rows";
 
 /** Scene and Class authoring share the same serialized constraint properties. */

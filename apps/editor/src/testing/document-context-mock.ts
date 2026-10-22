@@ -30,7 +30,7 @@
  * value; add an entry for any new such hook.
  */
 import { useSyncExternalStore, type ReactNode } from "react";
-import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@babylonslate/core";
+import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@haptic/core";
 import { documentKindsRevision, type DocumentRevisions } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
 import { SourceControlService } from "../services/source-control-service";

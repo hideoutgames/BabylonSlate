@@ -7,17 +7,17 @@ import {
   type SaveGameDefinition,
   type SaveGameField,
   type SaveGameValue,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   AssetPicker, DisclosureSection, EntryListEditor, NamePromptDialog, PanelFrame,
   PinShapeGlyph, PinTypePicker, PropertyGrid, SearchInput, TreeView, TypeColorMark,
   pinPickerColorVar, useTouchUi, type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@babylonslate/ui/components/field";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@haptic/ui/components/field";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import {
   useRegistryState,
   useDocumentActions,

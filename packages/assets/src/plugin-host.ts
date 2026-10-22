@@ -1,8 +1,8 @@
-import { ENGINE_VERSION, isStorageNotFound, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, isStorageNotFound, type ProjectStorage } from "@haptic/core";
 import { DOCUMENT_CHUNK_ID } from "./asset-document";
 import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetCatalogRead } from "./payload-loader";
 import { createVfsBlobStore } from "./blob-store";
-import { ASSETS_DIR, PLUGINS_DIR } from "./babproject";
+import { ASSETS_DIR, PLUGINS_DIR } from "./hproject";
 import { pluginContentRoot } from "./content-root";
 import {
   encodePluginSettingsDocument,
@@ -103,7 +103,7 @@ async function findPluginSettings(
     return null;
   }
   const files = entries.filter(
-    (entry) => !entry.isDir && entry.name.endsWith(".babasset"),
+    (entry) => !entry.isDir && entry.name.endsWith(".hasset"),
   );
   const preferred = files.filter((entry) =>
     entry.name.endsWith(PLUGIN_FILE_SUFFIX),

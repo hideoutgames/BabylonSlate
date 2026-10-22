@@ -1,6 +1,6 @@
-import type { GizmoTool } from "@babylonslate/render";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
+import type { GizmoTool } from "@haptic/render";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { MoveIcon, RotateCwIcon, ScalingIcon } from "lucide-react";
 
 const TOOLS = [

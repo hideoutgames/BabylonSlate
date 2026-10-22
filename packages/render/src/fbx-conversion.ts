@@ -1,7 +1,7 @@
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { FBXFileLoader } from "@babylonjs/loaders/FBX/fbxFileLoader";
-import { ingestGltfForImport } from "@babylonslate/assets";
+import { ingestGltfForImport } from "@haptic/assets";
 import { exportConvertedSceneToGlb } from "./convert-obj-to-glb";
 
 export type ModelImportFile = { name: string; bytes: Uint8Array };

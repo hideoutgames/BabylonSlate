@@ -5,11 +5,11 @@ description: shadcn/ui primitives for Haptic's editor chrome in packages/ui (Bas
 
 # shadcn/ui
 
-shadcn/ui components are source files that the CLI copies into a project. Here they form `@babylonslate/ui`, the primitive layer of the editor chrome. This skill covers what differs from upstream shadcn; the rule files hold the Incorrect/Correct examples.
+shadcn/ui components are source files that the CLI copies into a project. Here they form `@haptic/ui`, the primitive layer of the editor chrome. This skill covers what differs from upstream shadcn; the rule files hold the Incorrect/Correct examples.
 
 ## This repo
 
-- **Components** live in `packages/ui/src/components/`. Import them as `@babylonslate/ui/components/<name>`, or `#components/<name>` inside `packages/ui`. `cn` comes from `@babylonslate/ui/lib/utils` (`#lib/utils` inside the package).
+- **Components** live in `packages/ui/src/components/`. Import them as `@haptic/ui/components/<name>`, or `#components/<name>` inside `packages/ui`. `cn` comes from `@haptic/ui/lib/utils` (`#lib/utils` inside the package).
 - **Config**: `packages/ui/components.json` and `apps/editor/components.json` both use style `base-nova`, Tailwind v4 (no `tailwind.config`), CSS variables and the `lucide` icon library (`lucide-react`). The editor config points `ui` and `utils` at `packages/ui`, so CLI output lands there.
 - **Primitives are Base UI** (`@base-ui/react`); nothing imports Radix. Upstream examples written for Radix (`asChild`, `type="single"`, string `defaultValue`) do not apply. See [rules/base-ui.md](rules/base-ui.md).
 - **Theme tokens** live in `packages/ui/src/styles/tokens.css`, which `globals.css` imports. See [customization.md](customization.md).

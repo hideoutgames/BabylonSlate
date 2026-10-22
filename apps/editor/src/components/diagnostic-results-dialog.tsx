@@ -7,8 +7,8 @@ import {
   TICK_BUDGET_MS,
   type PerformanceProfile,
   type PerformanceStream,
-} from "@babylonslate/debugger";
-import { parseRenderFrameReport, serializeRenderFrameReport, type RenderFrameReport } from "@babylonslate/render";
+} from "@haptic/debugger";
+import { parseRenderFrameReport, serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import {
   humanizePropertyLabel,
   NumberField,
@@ -20,18 +20,18 @@ import {
   useTouchUi,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
+import { Separator } from "@haptic/ui/components/separator";
+import { cn } from "@haptic/ui/lib/utils";
 import { CameraIcon, ChevronsLeftIcon, ChevronsRightIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useAppSettings } from "../context/app-settings-context";
 import { downloadBlob } from "../lib/download";
 import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { DiagnosticResultsStore, type DiagnosticResult } from "../services/diagnostic-results-store";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
 import { TraceEmptyState } from "./trace-inspection-controls";
 
 const format = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "Unavailable" : value.toFixed(3);

@@ -20,8 +20,8 @@ import {
   type AudioPayload,
   type AudioReverbField,
   type SoundAttenuationPayload,
-} from "@babylonslate/assets";
-import type { CommandMessage } from "@babylonslate/bridge";
+} from "@haptic/assets";
+import type { CommandMessage } from "@haptic/bridge";
 import type { AudioDebugVoiceSnapshot } from "./audio-debug";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import type { NativePreparationPriority, NativePreparationScheduler } from "./native-preparation";

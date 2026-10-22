@@ -1,6 +1,6 @@
 # Editor UI component catalog
 
-Reusable Editor UI components (`@babylonslate/ui`, `@babylonslate/editor-kit`, `@babylonslate/graph-ui`, multi-screen app wrappers): what each does and where it is used. Pick from here before writing editor chrome.
+Reusable Editor UI components (`@haptic/ui`, `@haptic/editor-kit`, `@haptic/graph-ui`, multi-screen app wrappers): what each does and where it is used. Pick from here before writing editor chrome.
 
 ## Rules
 
@@ -17,9 +17,9 @@ Reusable Editor UI components (`@babylonslate/ui`, `@babylonslate/editor-kit`, `
 - Numeric fields show two decimals by default. `NumericDragField.precision` and numeric `PropertyRow.precision` opt into finer display without rounding stored values (Water Buoyancy Volume: six places, `0.0001 m³` scrub step).
 - Token and action-vs-pressed rules live in the theming reference; touch sizing in the [gesture rules](architecture.md#gesture-rules).
 
-## Primitives (`@babylonslate/ui`)
+## Primitives (`@haptic/ui`)
 
-Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Import as `@babylonslate/ui/components/<name>`. Composition parts (`DialogTitle`, `FieldLabel`, ...) belong to the family row.
+Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Import as `@haptic/ui/components/<name>`. Composition parts (`DialogTitle`, `FieldLabel`, ...) belong to the family row.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
@@ -51,18 +51,18 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 
 Gallery-only (installed, unused in production panels): **Skeleton** (loading placeholder, not the Skeleton asset document) and **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`). Every asset document shell (Sprite, Sprite Animation, Tileset, Tilemap, Material, Material Function, Enum, Structure, ScriptInterface, Data Definition, Data Tree, Class, Animation Graph, Behaviour Tree, Model, Skeleton, Animation, Particle Emitter/Graph/System, Skybox Creator, Font, Trace) is DockView, not Tabs.
 
-## Composites (`@babylonslate/editor-kit`)
+## Composites (`@haptic/editor-kit`)
 
-Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import from `@babylonslate/editor-kit`.
+Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import from `@haptic/editor-kit`.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Every docked panel: Outliner, Inspector, Graph, Class, Prefab, Output Log, Compiler Results and the asset-editor docks (Sprite, Tileset, Tilemap, Texture, Font, Model, Skeleton, Animation, Audio, Particle, Skybox Creator, Animation Graph). Output Log caps at `OUTPUT_LOG_RING_CAP` (500) via `appendOutputLogLines` and windows mounted rows. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Gallery, `AnimEditorModeBar`; intended for panel toolbars. |
-| **Toolbar island** (`.toolbar-island` in `@babylonslate/ui` globals) | One floating tool surface: blurred translucent popover fill, soft border and shadow, 3px padding. Buttons inside lose their own borders and fills; hover is a faint fill; a pressed Toggle / ToggleGroup item uses the `--selection` orange fill and text; open menu triggers stay neutral. `toolbar-island-vertical` stacks; `toolbar-island-touch` gives coarse pointers 40px buttons. `toolbar-island-readout` shows a read-only value (backend, counts) as plain muted text, never a pill Badge. | Scene / Prefab viewport, Landscape / Foliage brushes, graph toolbar and zoom controls, Material / Model / Particle preview toolbars, Simulation Move / Rotate / Scale tools, Play and Preview Build controls. |
+| **Toolbar island** (`.toolbar-island` in `@haptic/ui` globals) | One floating tool surface: blurred translucent popover fill, soft border and shadow, 3px padding. Buttons inside lose their own borders and fills; hover is a faint fill; a pressed Toggle / ToggleGroup item uses the `--selection` orange fill and text; open menu triggers stay neutral. `toolbar-island-vertical` stacks; `toolbar-island-touch` gives coarse pointers 40px buttons. `toolbar-island-readout` shows a read-only value (backend, counts) as plain muted text, never a pill Badge. | Scene / Prefab viewport, Landscape / Foliage brushes, graph toolbar and zoom controls, Material / Model / Particle preview toolbars, Simulation Move / Rotate / Scale tools, Play and Preview Build controls. |
 | **PlayChromeTool** ([`play-overlay-chrome.tsx`](../../apps/editor/src/components/play-overlay-chrome.tsx)) | Icon-only island button whose label is its accessible name and tooltip; optional `pressed`. | Play and Preview Build control islands (Pause/Step, Stats, Console, Inspector, Profiler, Capture Frame, Stop). |
 | **DisclosureSection** | Controlled FieldSet category with compact Button, keyboard activation, `aria-expanded` / `aria-controls`, 44px coarse target. Hosts keep open state separate from authored data. | Scene Defaults Shadows and CEL Shading overrides; gallery. |
-| **ModuleStack** (`ModuleStage`, `ModuleCard`) | Staged Inspector module stack. `ModuleStage` = section with sticky 28px header (`z-20`) and accent pill; `accentRole` sets `--module-accent` to a `--node-*` token (`nodeRoleColorVar`, `PARTICLE_STAGE_ROLE` / `basicParticleStageRole` in `@babylonslate/ui/lib/data-types`). `ModuleCard` follows the Scene Inspector component card: compact ghost header (44px coarse), muted or destructive summary while collapsed, optional `Switch` (`<Title> Enabled`) for toggle modules, 2px accent rule. Open state is host-owned; a disabled module collapses, dims and renders no body but keeps its data. | Basic Particle Emitter Inspector; Particle Graph Inspector (stage headers accented by node role); gallery. |
+| **ModuleStack** (`ModuleStage`, `ModuleCard`) | Staged Inspector module stack. `ModuleStage` = section with sticky 28px header (`z-20`) and accent pill; `accentRole` sets `--module-accent` to a `--node-*` token (`nodeRoleColorVar`, `PARTICLE_STAGE_ROLE` / `basicParticleStageRole` in `@haptic/ui/lib/data-types`). `ModuleCard` follows the Scene Inspector component card: compact ghost header (44px coarse), muted or destructive summary while collapsed, optional `Switch` (`<Title> Enabled`) for toggle modules, 2px accent rule. Open state is host-owned; a disabled module collapses, dims and renders no body but keeps its data. | Basic Particle Emitter Inspector; Particle Graph Inspector (stage headers accented by node role); gallery. |
 | **ValueModeField** | 24px ghost icon button (44px coarse) with Tooltip opening a `NestedMenu` radio group of modes (`VALUE_MODE_CONSTANT` / `_RANGE` / `_CURVE` / `_GRADIENT`). Named `<Label> Value Mode, <Current>`. Hosts place it in a PropertyGrid `labelAccessory`, swap the row kind per mode, and omit it when only one mode is allowed. | Basic Particle Emitter value modes; gallery. |
 | **CurveField** | 2-8 key linear curve (`{ t, value }`). Collapsed: 28px (coarse 44px) `touch-pan-y` sparkline toggle; expanded: `isolate touch-none` plot (96px, coarse 128px) with axis labels (Birth to Death by default). Keys are raw `<button>` handles (28px; coarse 44px tall, no wider than the gap to the nearest key so boxes never overlap): drag, arrow nudge (Shift x10), Delete. Endpoints stay at t=0 and 1, interior keys stay 0.01 from neighbours, values clamp to `valueMin`/`valueMax`, Y range refits after a drag. **Add Key** (widest-gap midpoint, interpolated), **Remove Key**, Time/Value fields edit the selected key; double-click adds a key. | PropertyGrid `curve` rows (Basic Particle Emitter; Particle Graph Float Gradient stops); gallery. |
 | **GradientField** | 2-8 RGBA stops (`{ t, color }`) on a bar over a token checkerboard. Stops use CurveField's hit rules, horizontal drag, arrow nudge, Delete; endpoints locked. **Add Stop**, **Remove Stop**, Location and an alpha `ColorField` edit the selected stop in one change. Particle gradients follow the 2-8 limit; the Material **Gradient** node's `EntryListEditor` allows 2-32. | PropertyGrid `gradient` rows (Basic Particle Emitter Color; Particle Graph Color Gradient stops); gallery. |
@@ -121,7 +121,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 
 Related hooks and helpers (not components): `useContextMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`; editor app: `useDebugConsoleLogs` (per-frame `DebugConsole` feed for Play and Preview Build), `useDockPanelShown` (whether a dock panel is on screen: Dockview `isVisible` inside the active document tab); labels: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`, `formatBindingLabel`; type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`; picker identity: `assetRowIdentity`, `classRowIdentity`, `selectedPickerIdentity`; picker creation: `AssetCreateProvider` / `useAssetCreate` (the editor mounts `AssetCreateDocumentsProvider` beside `AssetOpenDocumentsProvider`); keybind chord helpers (`parseChord`, `normalizeChord`, `chordFromEvent`, `ariaKeyShortcuts`, `describeChord`).
 
-## Graph (`@babylonslate/graph-ui`)
+## Graph (`@haptic/graph-ui`)
 
 Source: [`packages/graph-ui/src/`](../../packages/graph-ui/src/). Reused by script, shader, animation, behaviour-tree and particle graphs and the Content Browser read-only References dialog.
 

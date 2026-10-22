@@ -18,7 +18,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
   const material = createDefaultMaterialDocument("Tween White");
   material.shadingModel = "unlit";
   material.nodes[0]!.properties.value = [1, 1, 1];
-  files.set("assets/TweenWhite.material.babasset", await encodeAssetDocument({
+  files.set("assets/TweenWhite.material.hasset", await encodeAssetDocument({
     guid: materialGuid, type: "Material", name: "Tween White", version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown>,
   }));
   const components: SerializedComponent[] = [
@@ -59,7 +59,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
   }, { parentClass: "SceneLayerActor", dependencies: [materialGuid] }));
   const layer = createDefaultSceneLayer();
   layer.actors = [createActor("tween-hud", "Tween HUD", { classId: "main", components })];
-  files.set("assets/TweenHud.scenelayer.babasset", await encodeAssetDocument({
+  files.set("assets/TweenHud.scenelayer.hasset", await encodeAssetDocument({
     guid: layerGuid, type: "SceneLayer", name: "Tween HUD", version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown>,
   }, { dependencies: [classGuid, materialGuid] }));
   const scene = createDefaultScene();
@@ -100,7 +100,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
   await page.keyboard.press("KeyT");
   for (const [id] of actions) await expect(page.getByTestId("print-overlay")).toContainText(`Tween ${id} completed`, { timeout: 30000 });
   await expect.poll(async () => (await readPixels()).finished, { timeout: 30000 }).toBe(true);
-  const tick = () => page.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest: { tickIndex(): number } }).__babylonslatePlayTest.tickIndex());
+  const tick = () => page.evaluate(() => (globalThis as unknown as { __hapticPlayTest: { tickIndex(): number } }).__hapticPlayTest.tickIndex());
   const completedAt = await tick();
   await expect.poll(tick, { timeout: 30000 }).toBeGreaterThan(completedAt + 90);
   await expect.poll(async () => (await readPixels()).finished, { timeout: 10000 }).toBe(true);

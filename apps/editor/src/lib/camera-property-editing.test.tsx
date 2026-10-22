@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SerializedComponent } from "@babylonslate/core";
-import { PropertyGrid } from "@babylonslate/editor-kit";
+import type { SerializedComponent } from "@haptic/core";
+import { PropertyGrid } from "@haptic/editor-kit";
 import { componentPropertyRows } from "./component-property-rows";
 
 afterEach(() => {

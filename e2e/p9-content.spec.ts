@@ -150,17 +150,17 @@ async function materialVisual(
   return page.evaluate(
     ({ viewport, actorId }) => {
       const host = globalThis as unknown as {
-        __babylonslateViewportTest?: {
+        __hapticViewportTest?: {
           sceneVisuals: () => MaterialVisualSnapshot[];
         };
-        __babylonslatePrefabViewportTest?: {
+        __hapticPrefabViewportTest?: {
           visuals: () => MaterialVisualSnapshot[];
         };
       };
       const visuals =
         viewport === "scene"
-          ? host.__babylonslateViewportTest?.sceneVisuals()
-          : host.__babylonslatePrefabViewportTest?.visuals();
+          ? host.__hapticViewportTest?.sceneVisuals()
+          : host.__hapticPrefabViewportTest?.visuals();
       return visuals?.find((visual) => visual.actorId === actorId) ?? null;
     },
     { viewport, actorId },
@@ -174,7 +174,7 @@ test.describe("P9 content systems", () => {
   }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
-    const materialPath = "assets/RefreshMaterial.material.babasset";
+    const materialPath = "assets/RefreshMaterial.material.hasset";
     await createAsset(page, "Material", "RefreshMaterial");
     const materialGuid = await guidForPath(page, materialPath);
     expect(materialGuid).not.toBe("");
@@ -183,14 +183,14 @@ test.describe("P9 content systems", () => {
     expect(
       await page.evaluate(async (nextScene) => {
         const host = globalThis as unknown as {
-          __babylonslateTest?: {
+          __hapticTest?: {
             setActiveSceneContent: (
               scene: typeof nextScene,
             ) => Promise<boolean>;
           };
         };
         return (
-          host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false
+          host.__hapticTest?.setActiveSceneContent(nextScene) ?? false
         );
       }, scene),
     ).toBe(true);
@@ -200,7 +200,7 @@ test.describe("P9 content systems", () => {
       })
       .toMatchObject({ materialInputs: { baseColor: [0.8, 0.8, 0.8] } });
     const beforeScene = await materialVisual(page, "scene", "material-actor");
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("graph-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -210,14 +210,14 @@ test.describe("P9 content systems", () => {
       await page.evaluate(
         async (components) => {
           const host = globalThis as unknown as {
-            __babylonslateTest?: {
+            __hapticTest?: {
               setMainGraphComponents: (
                 value: typeof components,
               ) => Promise<boolean>;
             };
           };
           return (
-            host.__babylonslateTest?.setMainGraphComponents(components) ?? false
+            host.__hapticTest?.setMainGraphComponents(components) ?? false
           );
         },
         [mesh],
@@ -253,7 +253,7 @@ test.describe("P9 content systems", () => {
     expect(afterScene?.materialUniqueId).not.toBe(
       beforeScene?.materialUniqueId,
     );
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
     await expect
       .poll(
@@ -285,10 +285,10 @@ test.describe("P9 content systems", () => {
         )),
       });
     await expect(
-      page.locator('[data-asset-path="assets/display.babasset"]'),
+      page.locator('[data-asset-path="assets/display.hasset"]'),
     ).toBeVisible({ timeout: 30_000 });
     await page
-      .locator('[data-asset-path="assets/display.babasset"]')
+      .locator('[data-asset-path="assets/display.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-font")).toBeVisible();
     const sample = page.getByTestId("font-sample-preview");
@@ -317,7 +317,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "Sprite", "Hero");
     await page
-      .locator('[data-asset-path="assets/Hero.sprite.babasset"]')
+      .locator('[data-asset-path="assets/Hero.sprite.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-sprite")).toBeVisible();
     await expect(page.getByTestId("sprite-preview")).toBeVisible();
@@ -326,7 +326,7 @@ test.describe("P9 content systems", () => {
 
     await createAsset(page, "SpriteAnimation", "Walk");
     await page
-      .locator('[data-asset-path="assets/Walk.spriteanim.babasset"]')
+      .locator('[data-asset-path="assets/Walk.spriteanim.hasset"]')
       .dblclick();
     await expect(
       page.getByTestId("document-workspace-sprite-animation"),
@@ -337,7 +337,7 @@ test.describe("P9 content systems", () => {
 
     await createAsset(page, "AnimationGraph", "Loco");
     await page
-      .locator('[data-asset-path="assets/Loco.anim.babasset"]')
+      .locator('[data-asset-path="assets/Loco.anim.hasset"]')
       .dblclick();
     await expect(
       page.getByTestId("document-workspace-anim-graph"),
@@ -357,7 +357,7 @@ test.describe("P9 content systems", () => {
 
     await createAsset(page, "Material", "Surface");
     await page
-      .locator('[data-asset-path="assets/Surface.material.babasset"]')
+      .locator('[data-asset-path="assets/Surface.material.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("material-graph-editor")).toBeVisible();
@@ -370,7 +370,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "Material", "Rock");
     await page
-      .locator('[data-asset-path="assets/Rock.material.babasset"]')
+      .locator('[data-asset-path="assets/Rock.material.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await openWindowsMenu(page);
@@ -479,7 +479,7 @@ test.describe("P9 content systems", () => {
     await openMinimalTestProject(page);
     await createAsset(page, "Material", "Glsl");
     await page
-      .locator('[data-asset-path="assets/Glsl.material.babasset"]')
+      .locator('[data-asset-path="assets/Glsl.material.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("material-details-panel")).toBeVisible();
@@ -555,7 +555,7 @@ test.describe("P9 content systems", () => {
     await openMinimalTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
     await createAsset(page, "Material", "ParamSample");
-    await openAssetFromBrowser(page, "assets/ParamSample.material.babasset");
+    await openAssetFromBrowser(page, "assets/ParamSample.material.hasset");
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await addMaterialPaletteNode(page, "Texture Parameter", "param.texture");
     await pickMaterialNodeTexture(page, albedoGuid);
@@ -594,7 +594,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "Material", "Bloom");
     await page
-      .locator('[data-asset-path="assets/Bloom.material.babasset"]')
+      .locator('[data-asset-path="assets/Bloom.material.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("property-domain")).toBeVisible();
@@ -608,7 +608,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
     await page.getByTestId("scene-post-process-stack-add").click();
     await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
-    const bloomGuid = await guidForPath(page, "assets/Bloom.material.babasset");
+    const bloomGuid = await guidForPath(page, "assets/Bloom.material.hasset");
     expect(bloomGuid.length).toBeGreaterThan(0);
     await page.getByTestId(`search-item-${bloomGuid}`).click();
     await expect(
@@ -670,7 +670,7 @@ test.describe("P9 content systems", () => {
     await expect(materialButton).toBeVisible();
     await materialButton.click();
     await expect(page.getByTestId("details-asset-picker")).toBeVisible();
-    const rockGuid = await guidForPath(page, "assets/Rock.material.babasset");
+    const rockGuid = await guidForPath(page, "assets/Rock.material.hasset");
     expect(rockGuid.length).toBeGreaterThan(0);
     await page.getByTestId(`search-item-${rockGuid}`).click();
     await expect(page.getByTestId("details-asset-picker")).toHaveCount(0);
@@ -692,7 +692,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "MaterialFunction", "Tint");
     await page
-      .locator('[data-asset-path="assets/Tint.matfunc.babasset"]')
+      .locator('[data-asset-path="assets/Tint.matfunc.hasset"]')
       .dblclick();
     await expect(
       page.getByTestId("document-workspace-material-function"),

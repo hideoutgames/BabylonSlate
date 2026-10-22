@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { BridgeHostMessage, BridgeWorkerMessage, CommandMessage } from "@babylonslate/bridge";
+import type { BridgeHostMessage, BridgeWorkerMessage, CommandMessage } from "@haptic/bridge";
 import { createPlayerWorkerHost } from "./worker-host";
 
 class FakeWorker {

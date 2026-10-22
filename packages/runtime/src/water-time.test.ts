@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
+import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 import {
   createActor, createDefaultSceneSettings, createDefaultWaterDefinition, identityTransform, normalizeWaterBody, sampleWaterSurface,
   type SerializedActor,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 
 const probe = { x: 3, y: -0.5, z: 2 };

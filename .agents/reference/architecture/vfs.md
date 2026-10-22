@@ -5,7 +5,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 ## Ownership and boundaries
 
 - Port: `ProjectStorage` in [`packages/core/src/storage-port.ts`](../../../packages/core/src/storage-port.ts). Adapters and factories: [`packages/vfs/src/`](../../../packages/vfs/src/) (`createStorage`, `createMountedProjectStorage`, `createReadOnlyProjectStorage`, `createTemplateStorage`, `createDerivedStorage`, `createAppSettingsStore`, `createSaveGameStorage`).
-- **The UI never imports Capacitor or Electron.** All project I/O goes through `createStorage()`; secrets and CORS-bypass HTTP stay in `vfs` so they never leak into `@babylonslate/source-control` or the editor.
+- **The UI never imports Capacitor or Electron.** All project I/O goes through `createStorage()`; secrets and CORS-bypass HTTP stay in `vfs` so they never leak into `@haptic/source-control` or the editor.
 - Desktop main process and preload: [`apps/desktop/src/`](../../../apps/desktop/src/). Native plugins: `apps/editor/ios/App/App/`, `apps/editor/android/app/src/main/java/`.
 
 ## ProjectStorage contract
@@ -26,33 +26,33 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 | OPFS | Web | Projects in `project-v2-<SHA-256 hex of JSON id>`; binding/deletion serialize with Web Locks, and a bound project holds a per-project session lock (one tab per project, below); writes never recreate a deleted project folder; `readdir` skips `*.crswap`; required for browser writes (no temporary in-memory saves). Libraries/derived data bind with `{ library: true }`. |
 | Documents | iPad / Android default | `Directory.Documents` (iOS) or app-private `Directory.Data` (Android) under `BabylonSlate/projects/`; no picker. Android projects excluded from cloud backup. |
 | Scoped / external | iPad / Android opt-in | Security-scoped bookmarks (`NSFileCoordinator`) / SAF tree URIs; root-confined paths; revoked access → **Reconnect Project Folder**. iOS resolves each bookmark once per session and holds its access: every resolution issues a sandbox extension and iOS caps them per process, so resolving per operation exhausted them and failed later folders until relaunch. SAF overwrites stage a sibling then rename. |
-| Node | Electron main, tools | Root-confined through real paths; writes stage `.babylonslate-<uuid>.tmp`, flush and rename (no truncated files). |
+| Node | Electron main, tools | Root-confined through real paths; writes stage `.haptic-<uuid>.tmp`, flush and rename (no truncated files). |
 | Electron | Desktop renderer | `ElectronStorageAdapter` over `project:*` IPC; one main-process Node adapter per editor document; project ids are `node:` paths under `userData/projects`. |
 | HTTP catalog | Bundled engine plugins | `HttpCatalogStorageAdapter` over content-addressed immutable parts; never downloads archives; works without HTTP Range. |
 | Read-only wrapper / Memory | Engine plugins / tests | Writes throw / in-memory tree. |
 
-- **OPFS session lock:** a project (non-library) bind holds the Web Lock `babylonslate:opfs-session:<project id>` until `releaseFolder`, a bind of another project, or deleting that project. It is separate from the `babylonslate:opfs:<id>` lifecycle lock, which only covers a bind or delete. A project is therefore open in one tab; the journal and saves have a single writer. Refusal is taken with `ifAvailable` and throws `ProjectOpenElsewhereError` (`isProjectOpenElsewhere`) before any folder, meta or bound-project change, so the previous project stays bound. `deleteProject` needs the lock too (its own session counts); it borrows it for the deletion otherwise. Libraries take none. Locks die with their document, so reload and crash free the project, and the lock is released (and awaited) before the folder is reported released so a same-tab reopen is never refused. A host without `navigator.locks` cannot tell, so it does not refuse. Other adapters are single-window and unaffected.
+- **OPFS session lock:** a project (non-library) bind holds the Web Lock `haptic:opfs-session:<project id>` until `releaseFolder`, a bind of another project, or deleting that project. It is separate from the `haptic:opfs:<id>` lifecycle lock, which only covers a bind or delete. A project is therefore open in one tab; the journal and saves have a single writer. Refusal is taken with `ifAvailable` and throws `ProjectOpenElsewhereError` (`isProjectOpenElsewhere`) before any folder, meta or bound-project change, so the previous project stays bound. `deleteProject` needs the lock too (its own session counts); it borrows it for the deletion otherwise. Libraries take none. Locks die with their document, so reload and crash free the project, and the lock is released (and awaited) before the folder is reported released so a same-tab reopen is never refused. A host without `navigator.locks` cannot tell, so it does not refuse. Other adapters are single-window and unaffected.
 - `withReadScope` gives a scan a bounded native directory-lookup cache (Android): ≤ 8,192 listing entries per scope, ≤ 8 scopes per plugin, cleared around every mutation. Not a snapshot.
 - Mobile startup restores external folder ids without contacting the provider; recents reopen by stable id and never recreate missing folders.
 
 ## App-owned libraries and derived data
 
 - `LIBRARY_FOLDERS` ([`library-folders.ts`](../../../packages/vfs/src/library-folders.ts)) is exactly `__slate_templates__`, `__slate_engine_plugins__`, `__slate_engine_extensions__`; renderer and Electron main share it. Electron binds each to `userData/libraries/<folder>` over `library:*` IPC (file operations only: no picker, open, list or release channels) and refuses any other scope.
-- Derived data: `createDerivedStorage` root `__babylonslate_derived__` (OPFS library bind on web/Electron, beside projects on mobile). It is a regenerable cache.
+- Derived data: `createDerivedStorage` root `__haptic_derived__` (OPFS library bind on web/Electron, beside projects on mobile). It is a regenerable cache.
 - Templates: each directory with `project.json` or `.zip` in the template library is a card; only the chosen template is decoded. No user-chosen templates folder.
 
 ## Project creation
 
-- Scaffold only into an empty folder (ignoring `.babylonslate-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`); never overwrite. `.babylonslate-creating` marks an app-owned partial scaffold that a retry may clear.
+- Scaffold only into an empty folder (ignoring `.haptic-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`); never overwrite. `.haptic-creating` marks an app-owned partial scaffold that a retry may clear.
 - Persist the recent-project entry before the editor becomes interactive. Project identity for the browser lives in `project.json` metadata (`name`, optional `appearance`; uploaded images ≤ 96 KiB data URL).
 
 ## Write performance decision
 
-The Documents tier crosses the Capacitor bridge once per asset write with base64 encoding, so: (1) write only dirty documents, (2) externalise large immutable chunks to the blob store (existing hashes are never rewritten), (3) debounce behind the command layer. **No pack format**: one `.babasset` per asset stays the on-disk unit, keeping the registry and Content Browser free of pack indirection. Revisit only with device numbers.
+The Documents tier crosses the Capacitor bridge once per asset write with base64 encoding, so: (1) write only dirty documents, (2) externalise large immutable chunks to the blob store (existing hashes are never rewritten), (3) debounce behind the command layer. **No pack format**: one `.hasset` per asset stays the on-disk unit, keeping the registry and Content Browser free of pack indirection. Revisit only with device numbers.
 
 ## App settings (Engine Settings)
 
-- Global settings live outside any project; schema and defaults in [`app-settings.ts`](../../../packages/vfs/src/app-settings.ts). Backends: Capacitor Preferences (iOS/Android), `globalThis.babylonslate.userData` (Electron, `engine-settings.json` replaced atomically), localStorage (web).
+- Global settings live outside any project; schema and defaults in [`app-settings.ts`](../../../packages/vfs/src/app-settings.ts). Backends: Capacitor Preferences (iOS/Android), `globalThis.haptic.userData` (Electron, `engine-settings.json` replaced atomically), localStorage (web).
 - `AppSettingsStore.update` is a queued read-mutate-validate-write transaction across store instances; emit change events only after persistence.
 - A refused save keeps settings in memory for the session; an unreadable file keeps `automaticUpdatesEnabled` off (it may hold an opt-out). A failed native Preferences read never overwrites stored settings.
 - `compactMode` stays unset until chosen, so it follows the platform default (`resolveCompactMode`: on except on iOS and Android); Account → Application and Engine Settings → Interface edit it.
@@ -71,7 +71,7 @@ The Documents tier crosses the Capacitor bridge once per asset write with base64
 | Web | `UnavailableSecretStore` (`available: false`): Source Control hidden | none |
 
 - `nativeHttp`: `{ method, url, headers, body?, upload? }` → `{ status, bodyText, headers? }`. `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
-- Preload exposes `babylonslate.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`.
+- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`.
 
 ## Platform decisions
 

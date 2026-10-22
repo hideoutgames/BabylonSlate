@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { identityTransform, type Transform } from "@babylonslate/core";
-import { ClassRegistry, World } from "@babylonslate/object-model";
+import { identityTransform, type Transform } from "@haptic/core";
+import { ClassRegistry, World } from "@haptic/object-model";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   type PhysicsBackend,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 afterEach(() => vi.restoreAllMocks());

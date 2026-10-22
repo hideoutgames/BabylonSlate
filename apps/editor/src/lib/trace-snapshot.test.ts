@@ -6,7 +6,7 @@ import {
   parseTraceSnapshot,
   traceSnapshotRoots,
 } from "./trace-snapshot";
-import type { TraceFrame } from "@babylonslate/debugger";
+import type { TraceFrame } from "@haptic/debugger";
 
 const frame: TraceFrame = {
   tickIndex: 99,

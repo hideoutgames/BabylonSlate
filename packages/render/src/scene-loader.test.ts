@@ -6,7 +6,7 @@ import {
   createMeshComponent,
   type SerializedComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   actorIdFromMeshName,

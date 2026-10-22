@@ -10,7 +10,7 @@ import {
 import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { EnvironmentLightingFields } from "./environment-lighting-fields";
 
 if (typeof window.PointerEvent === "undefined")

@@ -1,5 +1,5 @@
-import type { SerializedComponent, SerializedGraph } from "@babylonslate/core";
-import { humanizePropertyLabel, walkAncestry, type PropertyRow } from "@babylonslate/editor-kit";
+import type { SerializedComponent, SerializedGraph } from "@haptic/core";
+import { humanizePropertyLabel, walkAncestry, type PropertyRow } from "@haptic/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 
 /** Includes inherited script fields and preserves authored choices for missing classes. */

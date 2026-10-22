@@ -11,10 +11,10 @@ import {
   type AudioChannelPayload,
   type AudioMixerPayload,
   type SoundAttenuationPayload,
-} from "@babylonslate/assets";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
-import { createInProcessRuntime } from "@babylonslate/test-kit";
+} from "@haptic/assets";
+import type { CommandMessage } from "@haptic/bridge";
+import { createActor, createDefaultSceneSettings } from "@haptic/core";
+import { createInProcessRuntime } from "@haptic/test-kit";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import { FakeAudioPlaybackBackend, type AudioPose } from "./audio-playback-backend";
 import { AudioService } from "./audio-service";
@@ -1958,14 +1958,14 @@ describe("AudioService lifecycle events", () => {
     const service = new AudioService({ backend, lifecycleTarget: target });
 
     target.dispatchEvent(
-      new CustomEvent("babylonslate:audiointerruption", {
+      new CustomEvent("haptic:audiointerruption", {
         detail: { type: "began" },
       }),
     );
     expect(backend.paused).toBe(true);
 
     target.dispatchEvent(
-      new CustomEvent("babylonslate:audiointerruption", {
+      new CustomEvent("haptic:audiointerruption", {
         detail: { type: "ended", shouldResume: true },
       }),
     );
@@ -1981,12 +1981,12 @@ describe("AudioService lifecycle events", () => {
 
     service.setPaused(true);
     target.dispatchEvent(
-      new CustomEvent("babylonslate:audiointerruption", {
+      new CustomEvent("haptic:audiointerruption", {
         detail: { type: "began" },
       }),
     );
     target.dispatchEvent(
-      new CustomEvent("babylonslate:audiointerruption", {
+      new CustomEvent("haptic:audiointerruption", {
         detail: { type: "ended", shouldResume: true },
       }),
     );
@@ -2001,19 +2001,19 @@ describe("AudioService lifecycle events", () => {
     const service = new AudioService({ backend, lifecycleTarget: target });
 
     target.dispatchEvent(
-      new CustomEvent("babylonslate:audiointerruption", {
+      new CustomEvent("haptic:audiointerruption", {
         detail: { type: "began" },
       }),
     );
     target.dispatchEvent(
-      new CustomEvent("babylonslate:audiointerruption", {
+      new CustomEvent("haptic:audiointerruption", {
         detail: { type: "ended", shouldResume: false },
       }),
     );
     expect(backend.paused).toBe(true);
 
     const resumeContext = vi.spyOn(backend, "resumeContext");
-    target.dispatchEvent(new Event("babylonslate:audioroutechange"));
+    target.dispatchEvent(new Event("haptic:audioroutechange"));
     service.setPaused(false);
     expect(backend.paused).toBe(true);
     expect(resumeContext).not.toHaveBeenCalled();
@@ -2027,10 +2027,10 @@ describe("AudioService lifecycle events", () => {
     const backend = new FakeAudioPlaybackBackend();
     const target = new EventTarget();
     const service = new AudioService({ backend, lifecycleTarget: target });
-    target.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
-    target.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "ended", shouldResume: true } }));
+    target.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } }));
+    target.dispatchEvent(new CustomEvent("haptic:audiointerruption", { detail: { type: "ended", shouldResume: true } }));
     expect(backend.paused).toBe(true);
-    target.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    target.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } }));
     expect(backend.paused).toBe(false);
     service.dispose();
   });
@@ -2041,7 +2041,7 @@ describe("AudioService lifecycle events", () => {
     const target = new EventTarget();
     const service = new AudioService({ backend, lifecycleTarget: target });
 
-    target.dispatchEvent(new Event("babylonslate:audioroutechange"));
+    target.dispatchEvent(new Event("haptic:audioroutechange"));
     expect(resumeContext).toHaveBeenCalled();
 
     service.dispose();
@@ -2054,7 +2054,7 @@ describe("AudioService lifecycle events", () => {
     const service = new AudioService({ backend, lifecycleTarget: target });
 
     service.setPaused(true);
-    target.dispatchEvent(new Event("babylonslate:audioroutechange"));
+    target.dispatchEvent(new Event("haptic:audioroutechange"));
     expect(resumeContext).not.toHaveBeenCalled();
 
     service.dispose();

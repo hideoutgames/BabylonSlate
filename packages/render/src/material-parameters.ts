@@ -6,8 +6,8 @@ import {
   TextureBlock,
   type NodeMaterial,
 } from "@babylonjs/core";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
-import type { MaterialBuildPlan } from "@babylonslate/shader-graph";
+import type { MaterialParameterValue } from "@haptic/bridge";
+import type { MaterialBuildPlan } from "@haptic/shader-graph";
 import type { BlockRealization } from "./material-block-registry";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";

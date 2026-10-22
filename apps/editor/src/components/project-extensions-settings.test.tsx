@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createEmptyProject } from "@babylonslate/core";
-import { createDefaultExtensionSettings, decodeExtensionSettings, exportExtensionZip, writeProjectExtension } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { convertGlslToMaterial } from "@babylonslate/shader-graph";
+import { createEmptyProject } from "@haptic/core";
+import { createDefaultExtensionSettings, decodeExtensionSettings, exportExtensionZip, writeProjectExtension } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { convertGlslToMaterial } from "@haptic/shader-graph";
 import { EditorExtensionService, type ExtensionOverrides } from "../services/editor-extension-service";
 import { ProjectExtensionsSettings } from "./project-extensions-settings";
 
@@ -13,8 +13,8 @@ const harness = vi.hoisted(() => ({
   pick: vi.fn(),
 }));
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@babylonslate/vfs")>(),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@haptic/vfs")>(),
   pickImportFiles: harness.pick,
 }));
 vi.mock("../context/document-context", async () => {
@@ -159,7 +159,7 @@ describe("ProjectExtensionsSettings", () => {
       ...createDefaultExtensionSettings({ extensionGuid: "tools", displayName: "Tools" }), enabledByDefault: true,
     }, "export function activate() {}");
     const bytes = await exportExtensionZip(incomingStorage, incoming);
-    harness.pick.mockResolvedValue([{ name: "Tools.babextension", bytes }]);
+    harness.pick.mockResolvedValue([{ name: "Tools.hextension", bytes }]);
     render(<ProjectExtensionsSettings />);
 
     fireEvent.click(screen.getByRole("button", { name: "Import Extension" }));

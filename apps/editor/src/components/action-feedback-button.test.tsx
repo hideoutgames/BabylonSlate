@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SaveAllIcon, Undo2Icon } from "lucide-react";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { ActionFeedbackButton } from "./action-feedback-button";
 
 afterEach(() => {

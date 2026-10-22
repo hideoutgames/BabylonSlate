@@ -1,24 +1,24 @@
 import { useMemo } from "react";
-import type { TracePayload } from "@babylonslate/debugger";
+import type { TracePayload } from "@haptic/debugger";
 import {
   SearchInput,
   SelectableText,
   TreeView,
   WindowedList,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   Alert,
   AlertTitle,
   AlertDescription,
-} from "@babylonslate/ui/components/alert";
+} from "@haptic/ui/components/alert";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
-import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+} from "@haptic/ui/components/toggle-group";
+import { Button } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import {
   compareTraceSnapshots,
   exactTraceValue,

@@ -1,6 +1,6 @@
 ---
 name: editor-ui-components
-description: Look up the Editor UI component catalog before building editor chrome, panels, dialogs, forms, trees, property grids, catalogs, search, or graph UI. Use when adding or changing apps/editor UI, @babylonslate/ui, editor-kit, or graph-ui. Read .agents/reference/components.md to choose existing reusable components instead of custom markup.
+description: Look up the Editor UI component catalog before building editor chrome, panels, dialogs, forms, trees, property grids, catalogs, search, or graph UI. Use when adding or changing apps/editor UI, @haptic/ui, editor-kit, or graph-ui. Read .agents/reference/components.md to choose existing reusable components instead of custom markup.
 ---
 
 # Editor UI components
@@ -13,9 +13,9 @@ Read [components.md](../../reference/components.md) in full, including its Rules
 
 ## Imports
 
-- Primitives: `@babylonslate/ui/components/<name>`
-- Composites: `@babylonslate/editor-kit`
-- Graph: `@babylonslate/graph-ui`
+- Primitives: `@haptic/ui/components/<name>`
+- Composites: `@haptic/editor-kit`
+- Graph: `@haptic/graph-ui`
 - App wrappers: relative imports under `apps/editor/src/components/`
 
 ## Related

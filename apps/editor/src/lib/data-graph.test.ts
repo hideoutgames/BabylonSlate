@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import { applyDataGraphAssetPicks, collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, patchDataGraphNode } from "./data-graph";
 import { dataNodePropertyRows, dataNodePathOptions, variableAssetPickerAllowedTypes } from "./graph-inspector";
 
@@ -8,7 +8,7 @@ const entries = [
   { id: "sword", parentId: "weapons", name: "Sword", values: { Damage: 10 } },
   { id: "armor", parentId: null, name: "Armor", definitionGuid: "armor", values: {} },
 ];
-const assets = [{ path: "assets/items.babasset", header: { guid: "items", type: "DataTree", name: "Items", payload: { defaultDefinitionGuid: "weapon", entries } } }];
+const assets = [{ path: "assets/items.hasset", header: { guid: "items", type: "DataTree", name: "Items", payload: { defaultDefinitionGuid: "weapon", entries } } }];
 const catalog = collectDataGraphAssets(assets);
 
 describe("Data Tree graph catalog and Inspector", () => {

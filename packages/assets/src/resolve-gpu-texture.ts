@@ -1,4 +1,4 @@
-import type { BabassetHeader } from "./babasset";
+import type { HassetHeader } from "./hasset";
 import { isEnvironmentTexturePayload, readEnvironmentTextureInfo } from "./environment-texture";
 import { longestEdge, sniffImageSize } from "./image-size";
 import {
@@ -25,7 +25,7 @@ export interface EditorTextureLod {
 }
 
 export interface ResolveGpuTextureOptions {
-  header: BabassetHeader;
+  header: HassetHeader;
   readChunk: (chunkId: string) => Promise<Uint8Array | null>;
   editorLod?: EditorTextureLod | null;
   encodeSettings?: TextureEncodeSettings;
@@ -42,7 +42,7 @@ export interface ResolvedGpuTexture {
 }
 
 async function readPixelsOrSource(
-  header: BabassetHeader,
+  header: HassetHeader,
   readChunk: (chunkId: string) => Promise<Uint8Array | null>,
 ): Promise<{ bytes: Uint8Array; chunkId: string } | null> {
   const pixels = header.chunks.find(

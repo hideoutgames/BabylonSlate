@@ -1,14 +1,14 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   HavokPhysicsBackend,
   Rapier2DPhysicsBackend,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import {
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
 

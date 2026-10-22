@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { defaultEngineSettings, type AppSettingsStore, type EngineSettings } from "@babylonslate/vfs";
+import { defaultEngineSettings, type AppSettingsStore, type EngineSettings } from "@haptic/vfs";
 import { AppSettingsProvider, useDebugMode, useGraphicsErrorTrace } from "./app-settings-context";
 
 afterEach(cleanup);

@@ -1,6 +1,6 @@
 import { Mesh, Ray, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DynamicRuntimeMeshGeometry, identitySerializedTransform } from "@babylonslate/core";
+import { DynamicRuntimeMeshGeometry, identitySerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh, flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding, migratePlaySlotVisual, retirePlaySlot } from "./snapshot-apply";

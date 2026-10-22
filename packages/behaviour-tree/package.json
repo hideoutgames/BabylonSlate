@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/behaviour-tree",
+  "name": "@haptic/behaviour-tree",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/behaviour-tree"
   },
   "dependencies": {
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/scripting": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/scripting": "workspace:*",
     "d3-hierarchy": "^3.1.2"
   },
   "devDependencies": {

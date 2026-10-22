@@ -1,6 +1,6 @@
 import { NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { spriteCollisionToBox2d } from "@babylonslate/assets";
+import { spriteCollisionToBox2d } from "@haptic/assets";
 import { createEditorCamera } from "./editor-camera";
 import { createSpriteQuad } from "./sprite-quad";
 import { projectToCanvas } from "./two-d";

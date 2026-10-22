@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Actor } from "@babylonslate/object-model";
+import { Actor } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
 function stubServices(

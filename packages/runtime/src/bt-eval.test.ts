@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
+import type { CommandMessage } from "@haptic/bridge";
+import { createDefaultBehaviourTree } from "@haptic/behaviour-tree";
 import {
   createActor,
   createDefaultSceneSettings,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

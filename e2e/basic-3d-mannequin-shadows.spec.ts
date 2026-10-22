@@ -6,7 +6,7 @@ import { openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { captureMannequinLuminance as luminance, captureMannequinPixels as capture, mannequinContactCoverage, mannequinShadowEdgeError, mannequinShadowMetrics, mannequinShadowPixels, mannequinShadowSamples, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 type Viewport = {
@@ -17,7 +17,7 @@ type Viewport = {
   setShadowCaptureView(position: number[], target: number[], fov: number): void;
   renderingBaseline(): { frameCount: number };
 };
-declare global { interface Window { __babylonslateViewportTest: Viewport } }
+declare global { interface Window { __hapticViewportTest: Viewport } }
 
 // The default WebGL2 PBR Medium editor view. The hosts spec adds CEL; webgpu-backend.spec.ts covers WebGPU shadows.
 const variant = { backend: "webgl2", mode: "pbr", profile: "medium" } as const;
@@ -39,27 +39,27 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   await waitForEditorInteractive(page);
   await openMainScene(page);
   const canvas = page.getByTestId("viewport-canvas");
-  await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest?.shadowDiagnostics()?.lights.some(light => light.generator))).toBe(true);
-  await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);
-  const initial = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
+  await expect.poll(() => page.evaluate(() => window.__hapticViewportTest?.shadowDiagnostics()?.lights.some(light => light.generator))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);
+  const initial = (await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!;
   const settings: RenderShadingSettings = {
     gpuBackend: variant.backend,
     mode: variant.mode, shadows: initial.requestedShadows,
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
   // The template Mannequin faces the default camera (-Z); frame its front, which the sun lights at a wide angle.
-  await page.evaluate(() => window.__babylonslateViewportTest.setShadowCaptureView([0, 1.9, -5.5], [0, 1.35, 0], 0.7));
-  const beforeSettings = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline());
-  await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
+  await page.evaluate(() => window.__hapticViewportTest.setShadowCaptureView([0, 1.9, -5.5], [0, 1.35, 0], 0.7));
+  const beforeSettings = await page.evaluate(() => window.__hapticViewportTest.renderingBaseline());
+  await page.evaluate(settings => window.__hapticViewportTest.setRenderSettings(settings), settings);
   try {
     await expect.poll(() => page.evaluate(() => {
-      const state = window.__babylonslateViewportTest.shadowDiagnostics();
+      const state = window.__hapticViewportTest.shadowDiagnostics();
       return [state?.surfaceMode, state?.requestedShadows.profile, state?.lights.find(light => light.generator)?.generator?.map?.width];
     })).toEqual([variant.mode, variant.profile, 2048]);
   } catch (error) {
     const stalled = await page.evaluate(() => ({
-      baseline: window.__babylonslateViewportTest.renderingBaseline(),
-      shadows: window.__babylonslateViewportTest.shadowDiagnostics(),
+      baseline: window.__hapticViewportTest.renderingBaseline(),
+      shadows: window.__hapticViewportTest.shadowDiagnostics(),
       documentVisibility: document.visibilityState,
     }));
     const animationFrameProbe = await page.evaluate(async () => {
@@ -69,7 +69,7 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
       await new Promise<void>(resolve => setTimeout(resolve, 1_000));
       cancelAnimationFrame(frame);
       return { fired, elapsedMs: performance.now() - started,
-        baseline: window.__babylonslateViewportTest.renderingBaseline() };
+        baseline: window.__hapticViewportTest.renderingBaseline() };
     });
     await testInfo.attach("shadow-profile-stall", {
       body: JSON.stringify({ beforeSettings, ...stalled, animationFrameProbe, errors }, null, 2),
@@ -77,32 +77,32 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
     });
     throw error;
   }
-  const geometry = await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false));
+  const geometry = await page.evaluate(() => window.__hapticViewportTest.mannequinShadowProbe(false));
   const frames = async () => {
-    const id = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount);
+    const id = await page.evaluate(() => window.__hapticViewportTest.renderingBaseline().frameCount);
     // Scene render IDs also count shadow/preparation draws. Wait for presented
     // viewport frames, then require the captured view to belong to this camera.
-    await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount), { timeout: 30_000 }).toBeGreaterThan(id + 2);
+    await expect.poll(() => page.evaluate(() => window.__hapticViewportTest.renderingBaseline().frameCount), { timeout: 30_000 }).toBeGreaterThan(id + 2);
     await expect.poll(() => page.evaluate(() => {
-      const camera = window.__babylonslateViewportTest.shadowDiagnostics()!.camera!;
+      const camera = window.__hapticViewportTest.shadowDiagnostics()!.camera!;
       const p = camera.position!, m = camera.view!;
       return Math.max(...[0, 1, 2].map(i => Math.abs(p[0]! * m[i]! + p[1]! * m[i + 4]! + p[2]! * m[i + 8]! + m[i + 12]!)));
     })).toBeLessThan(1e-5);
   };
   await frames();
-  const state = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
+  const state = (await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!;
   const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
   const points = mannequinShadowSamples(geometry, state, size.width, size.height);
-  const visible = await page.evaluate(points => window.__babylonslateViewportTest.mannequinShadowVisibility(points), points);
+  const visible = await page.evaluate(points => window.__hapticViewportTest.mannequinShadowVisibility(points), points);
   const oracle = mannequinShadowPixels(geometry, state, size.width, size.height);
   const authored = await capture(canvas, points);
   const authoredLuminance = await luminance(canvas, oracle.box);
-  await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(true));
+  await page.evaluate(() => window.__hapticViewportTest.mannequinShadowProbe(true));
   await frames();
   const modelOnly = await capture(canvas, points);
-  const isolated = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
+  const isolated = (await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!;
   expect(isolated.lights.map(light => light.generator?.map)).toEqual(state.lights.map(light => light.generator?.map));
-  await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), { ...settings, shadows: { ...settings.shadows!, enabled: false } });
+  await page.evaluate(settings => window.__hapticViewportTest.setRenderSettings(settings), { ...settings, shadows: { ...settings.shadows!, enabled: false } });
   await frames();
   const directOnly = await capture(canvas, points);
   const directLuminance = await luminance(canvas, oracle.box);
@@ -138,8 +138,8 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   // which on a grazed face spans most of a limb. This one holds the drawn edge to the ray-cast one in metres.
   expect(edgeError.edge, "shadow edge pixels measured").toBeGreaterThan(100);
   expect(edgeError.widthMetres, "mean width of the wrong band along the shadow edges").toBeLessThan(0.02);
-  await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false));
-  await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
+  await page.evaluate(() => window.__hapticViewportTest.mannequinShadowProbe(false));
+  await page.evaluate(settings => window.__hapticViewportTest.setRenderSettings(settings), settings);
   await frames();
-  expect((await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!.requestedShadows).toEqual(settings.shadows);
+  expect((await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!.requestedShadows).toEqual(settings.shadows);
 });

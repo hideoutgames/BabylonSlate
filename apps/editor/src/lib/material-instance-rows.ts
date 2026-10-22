@@ -1,6 +1,6 @@
-import type { MaterialParameterValue } from "@babylonslate/core";
-import type { PropertyRow, assetRowIdentity } from "@babylonslate/editor-kit";
-import type { MaterialInstanceDocument } from "@babylonslate/shader-graph";
+import type { MaterialParameterValue } from "@haptic/core";
+import type { PropertyRow, assetRowIdentity } from "@haptic/editor-kit";
+import type { MaterialInstanceDocument } from "@haptic/shader-graph";
 
 function sameValue(a: MaterialParameterValue, b: MaterialParameterValue): boolean {
   if (a.kind !== b.kind) return false;

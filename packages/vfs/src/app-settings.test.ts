@@ -23,7 +23,7 @@ describe("app settings", () => {
     expect(engineSettingsSchema.safeParse({ debuggerDefaults: { profileDurationSeconds: NaN } }).success).toBe(false);
   });
   it("keeps inline pin editing enabled for existing devices and persists the local lock", async () => {
-    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ graphDefaultZoom: 0.75 }));
+    localStorage.setItem("haptic:engine-settings", JSON.stringify({ graphDefaultZoom: 0.75 }));
     const store = new WebAppSettingsStore();
     expect((await store.load()).readOnlyPinDefaults).toBe(false);
     await store.update((settings) => { settings.readOnlyPinDefaults = true; });
@@ -35,7 +35,7 @@ describe("app settings", () => {
   });
 
   it("adds the trace budget when loading legacy preferences without losing existing settings", async () => {
-    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({
+    localStorage.setItem("haptic:engine-settings", JSON.stringify({
       undoHistoryLength: 75,
       debuggerDefaults: { overlayConsole: false },
     }));
@@ -210,8 +210,8 @@ describe("app settings", () => {
     const parsed = engineSettingsSchema.parse({
       recents: [
         {
-          id: "opfs:Game.babproject",
-          name: "Game.babproject",
+          id: "opfs:Game.hproject",
+          name: "Game.hproject",
           tier: "opfs",
           lastOpenedAt: "2026-08-18T12:00:00.000Z",
           createdAt: "2026-03-15T12:00:00.000Z",
@@ -228,8 +228,8 @@ describe("app settings", () => {
       undoHistoryLength: 100,
       recents: [
         {
-          id: "documents:Demo.babproject",
-          name: "Demo.babproject",
+          id: "documents:Demo.hproject",
+          name: "Demo.hproject",
           tier: "documents",
           lastOpenedAt: "2026-01-01T00:00:00.000Z",
         },
@@ -268,8 +268,8 @@ describe("app settings", () => {
       }),
       stores[3]!.update((settings) => {
         settings.recents.unshift({
-          id: "opfs:Concurrent.babproject",
-          name: "Concurrent.babproject",
+          id: "opfs:Concurrent.hproject",
+          name: "Concurrent.hproject",
           tier: "opfs",
           lastOpenedAt: "2026-09-04T00:00:00.000Z",
         });
@@ -283,13 +283,13 @@ describe("app settings", () => {
     expect(settings.viewportSnapRotateDeg).toBe(45);
     expect(settings.viewportSnapScale).toBe(0.5);
     expect(settings.appearance.theme).toBe("dark");
-    expect(settings.recents[0]?.id).toBe("opfs:Concurrent.babproject");
+    expect(settings.recents[0]?.id).toBe("opfs:Concurrent.hproject");
   });
 
   it("emits persisted settings after update", async () => {
     localStorage.clear();
     const listener = vi.fn();
-    window.addEventListener("babylonslate:engine-settings", listener);
+    window.addEventListener("haptic:engine-settings", listener);
     const persisted = await new WebAppSettingsStore().update((settings) => {
       settings.appearance.theme = "light";
     });
@@ -297,7 +297,7 @@ describe("app settings", () => {
       ...persisted,
       theme: "light",
     });
-    window.removeEventListener("babylonslate:engine-settings", listener);
+    window.removeEventListener("haptic:engine-settings", listener);
   });
 
   it("persists through the web store", async () => {
@@ -317,7 +317,7 @@ describe("app settings", () => {
   });
 
   it("builds the next update on a save localStorage refused, not the older stored copy", async () => {
-    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ viewportFrameCap: 60 }));
+    localStorage.setItem("haptic:engine-settings", JSON.stringify({ viewportFrameCap: 60 }));
     const store = new WebAppSettingsStore();
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("quota", "QuotaExceededError");
@@ -348,7 +348,7 @@ describe("app settings", () => {
   });
 
   it("falls back to defaults when localStorage holds invalid JSON", async () => {
-    localStorage.setItem("babylonslate:engine-settings", "{not-json");
+    localStorage.setItem("haptic:engine-settings", "{not-json");
     const store = new WebAppSettingsStore();
     expect((await store.load()).undoHistoryLength).toBe(50);
   });

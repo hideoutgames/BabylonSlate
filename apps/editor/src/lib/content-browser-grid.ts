@@ -1,7 +1,7 @@
 import {
   WINDOWED_SLICE_OVERSCAN,
   windowedSlice,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 
 /** Matches `grid-cols-[repeat(auto-fill,9rem)]` at a 16px root. */
 export const CONTENT_BROWSER_TILE_WIDTH_PX = 144;

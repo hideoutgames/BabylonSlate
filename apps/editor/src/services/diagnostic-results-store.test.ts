@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
-import type { PerformanceProfile } from "@babylonslate/debugger";
-import type { RenderFrameReport } from "@babylonslate/render";
+import type { PerformanceProfile } from "@haptic/debugger";
+import type { RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore, type DiagnosticSessionPorts } from "./diagnostic-results-store";
 
 const options = { durationMs: 10_000, byteBudget: 16 * 1024 * 1024 };
@@ -24,13 +24,13 @@ it("opens old results without collecting and enforces Simulation capability in d
 it("keeps the latest recording when a frame is captured, and ignores a previous session's late collection", async () => {
   const store = new DiagnosticResultsStore();
   const first = store.bindSession(ports());
-  const profile = { kind: "babylonslate-performance" } as PerformanceProfile;
+  const profile = { kind: "haptic-performance" } as PerformanceProfile;
   first.publishProfile(profile);
   first.release();
   const second = store.bindSession(ports());
   const report = { version: 1 } as RenderFrameReport;
   second.publishFrame(report);
-  const later = { kind: "babylonslate-performance", durationMs: 1 } as PerformanceProfile;
+  const later = { kind: "haptic-performance", durationMs: 1 } as PerformanceProfile;
   first.publishProfile(later);
   first.publishError("late failure");
   expect(store.getSnapshot()).toMatchObject({ error: null, view: "frame", profile, frame: report });
@@ -39,7 +39,7 @@ it("keeps the latest recording when a frame is captured, and ignores a previous 
 
 it("opens a saved frame report beside the recording it does not replace", () => {
   const store = new DiagnosticResultsStore();
-  const profile = { kind: "babylonslate-performance" } as PerformanceProfile;
+  const profile = { kind: "haptic-performance" } as PerformanceProfile;
   const report = { version: 1 } as RenderFrameReport;
   store.importResult({ kind: "profile", profile });
   store.importResult({ kind: "frame", report });

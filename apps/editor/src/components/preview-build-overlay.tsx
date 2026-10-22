@@ -3,20 +3,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DebugBehaviourTree,
   ScriptBundleEntry,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   PREVIEW_CONSOLE_REQUEST_MESSAGE,
   PREVIEW_CONSOLE_RESULT_MESSAGE,
   PREVIEW_CONSOLE_EVENT_MESSAGE,
   PREVIEW_CONSOLE_CATALOG_MESSAGE,
   PREVIEW_CONSOLE_CONTEXT_MESSAGE,
-} from "@babylonslate/exporter";
+} from "@haptic/exporter";
 import {
   createUserCommand,
   createCommandRegistry,
   type ConsoleCompletionContext,
   type TracePayload,
-} from "@babylonslate/debugger";
+} from "@haptic/debugger";
 import {
   isExpectedPreviewMessage,
   previewTargetFromSrc,
@@ -24,14 +24,14 @@ import {
 import { DebugConsole } from "./debug-console";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
-import { Separator } from "@babylonslate/ui/components/separator";
+import { Separator } from "@haptic/ui/components/separator";
 import { PlayChromeTool } from "./play-overlay-chrome";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@babylonslate/ui/components/alert";
-import { SelectableText } from "@babylonslate/editor-kit";
+} from "@haptic/ui/components/alert";
+import { SelectableText } from "@haptic/editor-kit";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 import { createPreviewDiagnostics } from "../services/preview-diagnostics";
 import { formatRuntimeLogLine } from "../lib/output-log-line";

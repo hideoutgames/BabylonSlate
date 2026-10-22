@@ -4,7 +4,7 @@ import {
   normalizeRenderEffectsSettings,
   RENDER_QUALITY_PROFILES,
   type RenderEffectsSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { expect, it } from "vitest";
 import {
   planSceneEffects,

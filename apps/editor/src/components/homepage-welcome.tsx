@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
 export type WelcomeStarter = {

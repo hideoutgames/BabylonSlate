@@ -1,4 +1,4 @@
-import type { Actor, World } from "@babylonslate/object-model";
+import type { Actor, World } from "@haptic/object-model";
 
 const NO_ACTORS: readonly Actor[] = [];
 const indexes = new WeakMap<World, { revision: number; byLayer: ReadonlyMap<string, readonly Actor[]> }>();

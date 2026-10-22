@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import type { Diagnostic } from "@babylonslate/scripting";
+import type { Diagnostic } from "@haptic/scripting";
 import { ValidationProvider, useValidation } from "./validation-context";
 
 afterEach(() => {
@@ -12,8 +12,8 @@ function pairingWarning(message: string): Diagnostic {
     severity: "warning",
     code: "physics.body_without_collider",
     message,
-    assetGuid: "assets/Main.scene.babasset",
-    graphId: "scene:assets/Main.scene.babasset",
+    assetGuid: "assets/Main.scene.hasset",
+    graphId: "scene:assets/Main.scene.hasset",
     actorId: "hero",
     componentId: "rb",
   };

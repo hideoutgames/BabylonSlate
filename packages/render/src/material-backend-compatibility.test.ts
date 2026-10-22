@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument, newCustomGlslProperties } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument, newCustomGlslProperties } from "@haptic/shader-graph";
 import { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
 
 describe("WebGPU material admission", () => {

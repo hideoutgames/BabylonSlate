@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BabassetHeader } from "./babasset";
+import type { HassetHeader } from "./hasset";
 import { resolveGpuTexture } from "./resolve-gpu-texture";
 import { webpHeader } from "./test-support/image-headers";
 
@@ -12,11 +12,11 @@ function ktx2Header(width: number, height: number): Uint8Array {
   return bytes;
 }
 
-function chunk(id: string, kind: string): BabassetHeader["chunks"][number] {
+function chunk(id: string, kind: string): HassetHeader["chunks"][number] {
   return { id, kind, mime: kind === "ktx2" ? "image/ktx2" : "image/png", sha256: id, byteLength: 1, locator: { inline: { offset: 0, length: 1 } } };
 }
 
-function header(chunks: BabassetHeader["chunks"], payload: Record<string, unknown> = {}): BabassetHeader {
+function header(chunks: HassetHeader["chunks"], payload: Record<string, unknown> = {}): HassetHeader {
   return {
     dependencyMetadataVersion: 1, requiredDependencies: [],
     guid: "tex-1",

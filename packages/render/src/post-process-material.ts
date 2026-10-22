@@ -1,7 +1,7 @@
 import type { Camera, Scene } from "@babylonjs/core";
-import { normalizeScenePostProcessStack } from "@babylonslate/core";
-import type { MaterialParameterValue } from "@babylonslate/bridge";
-import type { MaterialDocument } from "@babylonslate/shader-graph";
+import { normalizeScenePostProcessStack } from "@haptic/core";
+import type { MaterialParameterValue } from "@haptic/bridge";
+import type { MaterialDocument } from "@haptic/shader-graph";
 import type { MaterialLibrary } from "./material-library";
 
 /** One authored entry of a scene's ordered post-process chain. */

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline,
-  SaveGameService, createSaveStorageClient, type SaveGameConfiguration, type SaveGameStorage } from "@babylonslate/core";
-import { exportGame } from "@babylonslate/exporter";
-import * as rendering from "@babylonslate/render";
-import * as runtimes from "@babylonslate/runtime";
-import type { BridgeHostMessage, BridgeWorkerMessage } from "@babylonslate/bridge";
+  SaveGameService, createSaveStorageClient, type SaveGameConfiguration, type SaveGameStorage } from "@haptic/core";
+import { exportGame } from "@haptic/exporter";
+import * as rendering from "@haptic/render";
+import * as runtimes from "@haptic/runtime";
+import type { BridgeHostMessage, BridgeWorkerMessage } from "@haptic/bridge";
 import type { AbstractEngine } from "@babylonjs/core";
 import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
@@ -65,7 +65,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.babasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -182,8 +182,8 @@ describe("player startup and Stop ownership", () => {
         success: false, reason: "Runtime busy", paused: false, pauseReasons: [], tickIndex: 0, sceneAssetGuid: "world", sceneLoadId: 1, commandRevision: 0 } });
     };
     // Resuming from app inactivity freezes the view until the runtime answers.
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } }));
     expect(handle.setPaused).toHaveBeenLastCalledWith(true);
     reject();
     await vi.waitFor(() => expect(handle.setPaused).toHaveBeenLastCalledWith(false));
@@ -421,7 +421,7 @@ describe("player startup and Stop ownership", () => {
       message.channel === "control" && message.payload.type === "load" ? [message.payload] : [])[0];
     // The Water entry is a packaged asset without an authored path, so it is not listed.
     expect(load?.assetCatalog).toEqual([
-      { guid: "world", name: "World", type: "Scene", path: "assets/Levels/World.scene.babasset", dependencies: [], requiredDependencies: ["water"] },
+      { guid: "world", name: "World", type: "Scene", path: "assets/Levels/World.scene.hasset", dependencies: [], requiredDependencies: ["water"] },
     ]);
   });
 
@@ -431,7 +431,7 @@ describe("player startup and Stop ownership", () => {
     game.manifest.assets.push(
       { guid: "actor-class", type: "Class", classId: "Actor", encoding: "json" },
       { guid: "hero-class", type: "Class", classId: "Hero", name: "Actor", encoding: "json" },
-      { guid: "door-class", type: "Class", assetPath: "assets/Door.class.babasset", encoding: "json" },
+      { guid: "door-class", type: "Class", assetPath: "assets/Door.class.hasset", encoding: "json" },
     );
     sessions.push(startPlayer({ game, canvas }));
     const load = TestWorker.instances[0]!.messages.flatMap((message) =>
@@ -758,7 +758,7 @@ describe("player startup and Stop ownership", () => {
     expect(() => startPlayer({ game, canvas })).toThrow("Initial pause transport failed");
     const commandsAtFailure = post.mock.calls.length;
     document.dispatchEvent(new Event("visibilitychange"));
-    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+    window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } }));
     expect(post).toHaveBeenCalledTimes(commandsAtFailure);
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();

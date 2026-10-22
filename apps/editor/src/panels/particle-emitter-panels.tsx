@@ -15,7 +15,7 @@ import {
   assetRowIdentity,
   type PropertyRow,
   type Vector3Value,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   PARTICLE_BILLBOARD_MODE_IDS,
   PARTICLE_BLEND_MODE_IDS,
@@ -24,7 +24,7 @@ import {
   PARTICLE_CAPACITY_MIN,
   PARTICLE_CURVE_MAX_KEYS,
   PARTICLE_CURVE_MIN_KEYS,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   PARTICLE_BURST_MAX_ENTRIES,
   PARTICLE_COLOR_SPEC,
@@ -45,11 +45,11 @@ import {
   type ParticleShapeKind,
   type ParticleValueMode,
   type ParticleVec3Tuple,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   basicParticleStageRole,
   type BasicParticleStage,
-} from "@babylonslate/ui/lib/data-types";
+} from "@haptic/ui/lib/data-types";
 import {
   useDocumentActions,
   useOpenDocument,

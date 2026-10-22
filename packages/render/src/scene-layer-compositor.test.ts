@@ -1,6 +1,6 @@
 import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, PickingInfo, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sceneLayerCanvasToLayer } from "@babylonslate/core";
+import { sceneLayerCanvasToLayer } from "@haptic/core";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";

@@ -1,4 +1,4 @@
-import type { ScalabilityAcknowledgement, ScalabilityTransaction } from "@babylonslate/core";
+import type { ScalabilityAcknowledgement, ScalabilityTransaction } from "@haptic/core";
 
 class SupersededSettings extends Error {}
 export interface RuntimeScalabilityHost {

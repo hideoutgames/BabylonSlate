@@ -9,13 +9,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createMeshComponent, engineCommandBus } from "@babylonslate/core";
+import { createMeshComponent, engineCommandBus } from "@haptic/core";
 import {
   AssetLoadError,
   encodeAssetDocument,
   readAssetDocumentHeader,
-} from "@babylonslate/assets";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/assets";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
@@ -147,7 +147,7 @@ const {
         },
       ],
     } as {
-      components: import("@babylonslate/core").SerializedComponent[];
+      components: import("@haptic/core").SerializedComponent[];
       selectedIds: string[];
     },
     prefabDocs: {
@@ -174,8 +174,8 @@ const {
   };
 });
 
-vi.mock("@babylonslate/render", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+vi.mock("@haptic/render", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/render")>();
   return {
     ...actual,
     createEngine: (
@@ -240,7 +240,7 @@ collectPlayRenderTargets,
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
+    documentId: "graph:assets/Hero.class.hasset",
   }),
 }));
 
@@ -281,7 +281,7 @@ vi.mock("../components/viewport-joystick", () => ({
 
 vi.mock("../lib/viewport-render-gate", () => ({
   attachViewportRenderGate: () => () => {},
-  ENGINE_SETTINGS_CHANGED_EVENT: "babylonslate:engine-settings",
+  ENGINE_SETTINGS_CHANGED_EVENT: "haptic:engine-settings",
 }));
 
 describe("PrefabViewportPanel engine", () => {
@@ -349,7 +349,7 @@ describe("PrefabViewportPanel engine", () => {
   it("clears the graph node and member selection only when a pick selects a component or Prefab Root", async () => {
     render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     await waitFor(() => expect(createEngineMock).toHaveBeenCalled());
-    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@haptic/render").CreateEngineOptions;
     act(() => options.onPickActor?.(null));
     expect(pickSelection.setSelectedId).toHaveBeenLastCalledWith(null);
     expect(pickSelection.setSelectedNodeIds).not.toHaveBeenCalled();
@@ -368,7 +368,7 @@ describe("PrefabViewportPanel engine", () => {
     prefabState.components = [{ id: "path", classId: "SplineComponent", properties: {} }];
     render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     await waitFor(() => expect(createEngineMock).toHaveBeenCalled());
-    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@haptic/render").CreateEngineOptions;
     const properties = { points: [[0, 2, 0], [4, 5, 6]], curvature: 0.5 };
     act(() => options.onComponentShapeEdit?.({ actorId: "path", componentId: "path", properties }));
     expect(commitComponentProperties).toHaveBeenCalledExactlyOnceWith("path", properties);
@@ -535,10 +535,10 @@ describe("PrefabViewportPanel engine", () => {
   it("requests the overlay transform box for SceneLayerActor prefabs", () => {
     prefabDocs.openDocuments = [
       {
-        id: "graph:assets/Hero.class.babasset",
+        id: "graph:assets/Hero.class.hasset",
         ref: {
           kind: "class",
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           label: "Hero",
         },
       },
@@ -546,7 +546,7 @@ describe("PrefabViewportPanel engine", () => {
     prefabDocs.assetRegistry = {
       list: () => [
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           header: {
             type: "Class",
             name: "Hero",
@@ -576,10 +576,10 @@ describe("PrefabViewportPanel engine", () => {
       viewportState.mode = cameraMode;
       prefabDocs.openDocuments = [
         {
-          id: "scene:assets/World.scene.babasset",
+          id: "scene:assets/World.scene.hasset",
           ref: {
             kind: "scene",
-            path: "assets/World.scene.babasset",
+            path: "assets/World.scene.hasset",
             label: "World",
           },
           content: { settings: { physicsWorld } },
@@ -709,7 +709,7 @@ describe("PrefabViewportPanel engine", () => {
 
   it("refreshes a saved Material while its prefab stays mounted", async () => {
     const savedAsset = async (value: number) => ({
-      path: "assets/Surface.material.babasset",
+      path: "assets/Surface.material.hasset",
       header: readAssetDocumentHeader(
         await encodeAssetDocument({
           type: "Material",

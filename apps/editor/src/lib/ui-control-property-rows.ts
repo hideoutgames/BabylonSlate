@@ -1,5 +1,5 @@
-import { parseUIControl2DProperties, type SerializedComponent } from "@babylonslate/core";
-import { colorFromHex, colorToHex, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
+import { parseUIControl2DProperties, type SerializedComponent } from "@haptic/core";
+import { colorFromHex, colorToHex, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
 

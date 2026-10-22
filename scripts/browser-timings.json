@@ -22,9 +22,9 @@
     "[desktop-chrome] > editor-density.spec.ts > Editor density and IA > New Asset refuses a name that already exists; Duplicate uses stem_N": 9100,
     "[desktop-chrome] > editor-density.spec.ts > Editor density and IA > Save All is disabled when clean and shows a dirty dot after an edit": 9900,
     "[desktop-chrome] > editor-keybinds.spec.ts > viewport shortcuts match menu hints and closing preserves the dirty document prompt": 11200,
-    "[desktop-chrome] > editor-smoke.spec.ts > BabylonSlate editor smoke > graph Compile button shows a label and disables after compile": 10400,
-    "[desktop-chrome] > editor-smoke.spec.ts > BabylonSlate editor smoke > loads shell, opens project, and shows viewport canvas": 12300,
-    "[desktop-chrome] > editor-smoke.spec.ts > BabylonSlate editor smoke > warm and cold OPFS reopen keep the viewport lazy without prompting": 19100,
+    "[desktop-chrome] > editor-smoke.spec.ts > Haptic editor smoke > graph Compile button shows a label and disables after compile": 10400,
+    "[desktop-chrome] > editor-smoke.spec.ts > Haptic editor smoke > loads shell, opens project, and shows viewport canvas": 12300,
+    "[desktop-chrome] > editor-smoke.spec.ts > Haptic editor smoke > warm and cold OPFS reopen keep the viewport lazy without prompting": 19100,
     "[desktop-chrome] > engine-extensions.spec.ts > authored TypeScript extensions persist code and enablement across a project reload": 20800,
     "[desktop-chrome] > engine-settings.spec.ts > editor viewport applies hardware scaling and the post-processing gate": 25400,
     "[desktop-chrome] > environment-texture.spec.ts > imports HDR environment cubes and consumes linear faces and roughness mips in Scene and Play": 18500,
@@ -171,7 +171,7 @@
     },
     {
       "source": "https://github.com/hideoutgames/BabylonSlate/actions/runs/37588766830",
-      "scope": "All successful first-attempt cases after the four-shard suite trim; durations are rounded as reported in CI list output. The flaky mannequin Play/player host case keeps its conservative 150-second weight. The BL_PERF_LATTICE measurement skips in Verify and carries a nominal 0.1-second weight. Weights for removed tests are dropped."
+      "scope": "All successful first-attempt cases after the four-shard suite trim; durations are rounded as reported in CI list output. The flaky mannequin Play/player host case keeps its conservative 150-second weight. The HAPTIC_PERF_LATTICE measurement skips in Verify and carries a nominal 0.1-second weight. Weights for removed tests are dropped."
     }
   ]
 }

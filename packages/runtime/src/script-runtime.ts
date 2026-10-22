@@ -1,4 +1,4 @@
-import type { UserCommandDef } from "@babylonslate/debugger";
+import type { UserCommandDef } from "@haptic/debugger";
 import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
@@ -14,7 +14,7 @@ import {
   type Subsystem,
   type TickContext,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type { LogSeverity } from "./log-ring";
 import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
 import type { OwnerAdmission } from "./owner-admission";

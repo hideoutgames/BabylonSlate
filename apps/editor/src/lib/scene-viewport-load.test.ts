@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeEnvironmentLightingSettings } from "@babylonslate/core";
+import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeEnvironmentLightingSettings } from "@haptic/core";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,

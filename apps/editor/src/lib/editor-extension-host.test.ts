@@ -1,5 +1,5 @@
-import type { AssetDocument } from "@babylonslate/assets";
-import { convertGlslToMaterial } from "@babylonslate/shader-graph";
+import type { AssetDocument } from "@haptic/assets";
+import { convertGlslToMaterial } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EditorExtensionHost, type EditorExtensionApi, type EditorExtensionServices } from "./editor-extension-host";
 
@@ -10,7 +10,7 @@ function deferred<T>() {
 }
 
 function fixture() {
-  const assets = new Map<string, AssetDocument>([["Content/Original.babasset", {
+  const assets = new Map<string, AssetDocument>([["Content/Original.hasset", {
     type: "Material", name: "Original", guid: "original-guid", version: 1, payload: { roughness: 0.5 },
   }]]);
   const code = new Map([["Code/game.ts", "export const speed = 1;"]]);
@@ -52,7 +52,7 @@ describe("EditorExtensionHost", () => {
           const document = await api.assets.read(entry.path);
           document.payload.roughness = 0.8;
           await api.assets.update(entry.path, document);
-          await api.assets.create("Content/Copy.babasset", { type: document.type, name: "Copy", payload: document.payload });
+          await api.assets.create("Content/Copy.hasset", { type: document.type, name: "Copy", payload: document.payload });
           const source = await api.code.read("Code/game.ts");
           await api.code.write("Code/game.ts", source.replace("1", "2"));
         }});
@@ -61,8 +61,8 @@ describe("EditorExtensionHost", () => {
 
     await host.run("asset-tools", "edit");
 
-    expect(assets.get("Content/Original.babasset")?.payload).toEqual({ roughness: 0.8 });
-    expect(assets.get("Content/Copy.babasset")).toEqual({
+    expect(assets.get("Content/Original.hasset")?.payload).toEqual({ roughness: 0.8 });
+    expect(assets.get("Content/Copy.hasset")).toEqual({
       type: "Material", name: "Copy", guid: "new-guid", version: 1, payload: { roughness: 0.8 },
     });
     expect(code.get("Code/game.ts")).toBe("export const speed = 2;");
@@ -84,17 +84,17 @@ describe("EditorExtensionHost", () => {
         ], execute: async (values: Values): Promise<void> => {
           const result = await api.materials.convertGlsl(values.source, { name: values.name, bindings: { uTime: "time" } });
           if (!result.ok) throw new Error("Conversion failed");
-          await api.assets.create("Content/Converted.babasset", { type: "Material", name: values.name, payload: result.document });
+          await api.assets.create("Content/Converted.hasset", { type: "Material", name: values.name, payload: result.document });
         }});
       }
     ` })).toBe(true);
 
     await expect(host.run("convert", "convert", { source: " " })).rejects.toThrow(/required/i);
-    expect(assets.has("Content/Converted.babasset")).toBe(false);
+    expect(assets.has("Content/Converted.hasset")).toBe(false);
     await host.run("convert", "convert", { source: "uniform float uTime; void main() { gl_FragColor = vec4(uTime); }" });
 
-    expect(assets.get("Content/Converted.babasset")?.payload).toMatchObject({ name: "Converted" });
-    expect(assets.get("Content/Converted.babasset")?.payload.nodes).toEqual(expect.arrayContaining([
+    expect(assets.get("Content/Converted.hasset")?.payload).toMatchObject({ name: "Converted" });
+    expect(assets.get("Content/Converted.hasset")?.payload.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "input.time" }),
     ]));
   });

@@ -2,7 +2,7 @@ import { Color3, Vector3, type Scene, type UtilityLayerRenderer } from "@babylon
 import {
   normalizeWaterBody, waterRiverCentreline, WATER_RIVER_SUBDIVISIONS,
   type WaterBodyProperties, type WaterKind,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createShapeHandles, type ShapeHandlesOptions, type ShapeHandlesHost } from "./shape-handles";
 import { updateWaterMeshBody, waterMeshBody } from "./water-mesh";

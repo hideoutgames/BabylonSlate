@@ -18,7 +18,7 @@ export async function runStage(profile, command, args, options = {}) {
   const commandArgs = typeof args === "function" ? args(plan) : args;
   const inherited = plan.hosted
     ? null
-    : await claimInheritedLease(environment.BL_TEST_LEASE, request);
+    : await claimInheritedLease(environment.HAPTIC_TEST_LEASE, request);
   const lease =
     plan.hosted || inherited
       ? inherited
@@ -35,11 +35,11 @@ export async function runStage(profile, command, args, options = {}) {
   const env = {
     ...environment,
     VITEST_MAX_WORKERS: String(plan.workers),
-    BL_TEST_BROWSER_WORKERS: String(plan.browserWorkers),
-    BL_TEST_RETRIES: String(plan.retries),
+    HAPTIC_TEST_BROWSER_WORKERS: String(plan.browserWorkers),
+    HAPTIC_TEST_RETRIES: String(plan.retries),
     ...(lease
       ? {
-          BL_TEST_LEASE: JSON.stringify({
+          HAPTIC_TEST_LEASE: JSON.stringify({
             ticket: lease.ticket,
             token: lease.token,
             scope: lease.scope ?? lease.token,

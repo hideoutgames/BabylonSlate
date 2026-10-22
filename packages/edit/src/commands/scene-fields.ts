@@ -1,4 +1,4 @@
-import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
+import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
 import type { EditCommand } from "../command";
 import { snapshotBytes } from "../snapshot-bytes";
 

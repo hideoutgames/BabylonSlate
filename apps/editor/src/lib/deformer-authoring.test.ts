@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, deformerBindings, parseDeformerProperties, type SerializedComponent } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, deformerBindings, parseDeformerProperties, type SerializedComponent } from "@haptic/core";
 import { componentPropertyRows, applyPrefabPropertyDefaults } from "./component-property-rows";
 import { patchInspectorComponentProperty } from "./mesh-material-properties";
 import { duplicateSceneActor } from "./place-actors";

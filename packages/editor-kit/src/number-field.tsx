@@ -9,8 +9,8 @@ import {
 import {
   FieldDescription,
   FieldError,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import { parseNumberInput } from "./parse-number-input";
 import { evaluateNumericExpression } from "./numeric-expression";
 import { SelectAllInput } from "./select-all-input";

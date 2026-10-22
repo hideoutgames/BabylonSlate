@@ -4,9 +4,9 @@ import {
   CATALOG_MENU_TOUCH_ROW_HEIGHT,
   CatalogMenu,
   humanizePropertyLabel,
-} from "@babylonslate/editor-kit";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/editor-kit";
+import { Checkbox } from "@haptic/ui/components/checkbox";
+import { cn } from "@haptic/ui/lib/utils";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {
   filterPaletteForPin,

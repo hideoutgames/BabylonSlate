@@ -1,10 +1,10 @@
 import { Matrix, Quaternion, Scene, Vector3 } from "@babylonjs/core";
-import { areaRectLightBindings, identitySerializedTransform } from "@babylonslate/core";
+import { areaRectLightBindings, identitySerializedTransform } from "@haptic/core";
 import { describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { AreaRectLightGroup, AreaRectLightOwner } from "./area-rect-light";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { AREA_EMISSION_TEXTURE_BYTES } from "./area-emission-resource";
 
 function binding() {

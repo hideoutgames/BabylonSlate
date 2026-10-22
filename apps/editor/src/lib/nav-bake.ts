@@ -1,7 +1,7 @@
 import type {
   NavMeshGenerateInput,
   NavMeshGenerateSettings,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 
 export type NavBakePhase =
   | "showing"
