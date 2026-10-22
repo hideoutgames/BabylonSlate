@@ -47,7 +47,7 @@ The editor camera you move in **Edit** does not change the game camera. Authored
 
 ### Pause on errors
 
-When a script throws or a [Log](../scripting/class/log.md) node writes an Error during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time.
+When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time.
 
 Each node pauses the Simulation only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
 
@@ -130,9 +130,10 @@ For a selected actor you can also:
 | --- | --- |
 | [Print](../scripting/class/print.md), [Print String](../scripting/class/print-string.md) | Shows a value as text on the game view. Use **Key** to update one line in place instead of adding lines. |
 | [Log](../scripting/class/log.md) | Writes a message to the **Output Log** with a severity. |
+| [Assert](../scripting/class/assert.md), [Assert Equal](../scripting/class/assert-equal.md), [Assert Is Valid](../scripting/class/assert-is-valid.md) | Report an error for the node when a check fails, so a broken assumption shows up in the **Output Log** and the **Preview Session Report**. |
 | [Draw Debug Line](../scripting/class/draw-debug-line.md), [Draw Debug Box](../scripting/class/draw-debug-box.md), [Draw Debug Sphere](../scripting/class/draw-debug-sphere.md) and other Draw Debug nodes | Draw shapes in the world for a set **Duration**. |
 
-Print and Draw Debug nodes are **Development Only** by default: release exports leave them out. Turn off **Development Only** in the node's **Inspector** to keep one in the exported game.
+Print, Assert and Draw Debug nodes are **Development Only** by default: release exports leave them out. Turn off **Development Only** in the node's **Inspector** to keep one in the exported game.
 
 ## After Play
 

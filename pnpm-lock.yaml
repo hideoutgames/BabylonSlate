@@ -19,7 +19,7 @@ overrides:
 
 patchedDependencies:
   '@babylonjs/core@9.29.0':
-    hash: 644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6
+    hash: 9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d
     path: patches/@babylonjs__core@9.29.0.patch
 
 importers:
@@ -74,15 +74,15 @@ importers:
 
   apps/desktop:
     devDependencies:
-      '@babylonslate/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@babylonslate/vfs':
-        specifier: workspace:*
-        version: link:../../packages/vfs
       '@electron/asar':
         specifier: 4.3.0
         version: 4.3.0
+      '@haptic/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@haptic/vfs':
+        specifier: workspace:*
+        version: link:../../packages/vfs
       '@types/node':
         specifier: ^22.13.10
         version: 22.20.1
@@ -104,27 +104,27 @@ importers:
 
   apps/docs:
     devDependencies:
-      '@babylonslate/behaviour-tree':
-        specifier: workspace:*
-        version: link:../../packages/behaviour-tree
-      '@babylonslate/editor-kit':
-        specifier: workspace:*
-        version: link:../../packages/editor-kit
-      '@babylonslate/graph-ui':
-        specifier: workspace:*
-        version: link:../../packages/graph-ui
-      '@babylonslate/particle-graph':
-        specifier: workspace:*
-        version: link:../../packages/particle-graph
-      '@babylonslate/scripting-nodes':
-        specifier: workspace:*
-        version: link:../../packages/scripting-nodes
-      '@babylonslate/shader-graph':
-        specifier: workspace:*
-        version: link:../../packages/shader-graph
       '@fontsource-variable/onest':
         specifier: ^5.3.1
         version: 5.3.1
+      '@haptic/behaviour-tree':
+        specifier: workspace:*
+        version: link:../../packages/behaviour-tree
+      '@haptic/editor-kit':
+        specifier: workspace:*
+        version: link:../../packages/editor-kit
+      '@haptic/graph-ui':
+        specifier: workspace:*
+        version: link:../../packages/graph-ui
+      '@haptic/particle-graph':
+        specifier: workspace:*
+        version: link:../../packages/particle-graph
+      '@haptic/scripting-nodes':
+        specifier: workspace:*
+        version: link:../../packages/scripting-nodes
+      '@haptic/shader-graph':
+        specifier: workspace:*
+        version: link:../../packages/shader-graph
       '@tailwindcss/node':
         specifier: ^4.3.3
         version: 4.3.3
@@ -169,79 +169,10 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.29.0
-        version: 9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)
+        version: 9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)
       '@babylonjs/loaders':
         specifier: 9.29.0
-        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6))(babylonjs-gltf2interface@9.21.2)
-      '@babylonslate/anim-graph':
-        specifier: workspace:*
-        version: link:../../packages/anim-graph
-      '@babylonslate/assets':
-        specifier: workspace:*
-        version: link:../../packages/assets
-      '@babylonslate/behaviour-tree':
-        specifier: workspace:*
-        version: link:../../packages/behaviour-tree
-      '@babylonslate/bridge':
-        specifier: workspace:*
-        version: link:../../packages/bridge
-      '@babylonslate/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@babylonslate/debugger':
-        specifier: workspace:*
-        version: link:../../packages/debugger
-      '@babylonslate/edit':
-        specifier: workspace:*
-        version: link:../../packages/edit
-      '@babylonslate/editor-kit':
-        specifier: workspace:*
-        version: link:../../packages/editor-kit
-      '@babylonslate/exporter':
-        specifier: workspace:*
-        version: link:../../packages/exporter
-      '@babylonslate/graph-ui':
-        specifier: workspace:*
-        version: link:../../packages/graph-ui
-      '@babylonslate/input':
-        specifier: workspace:*
-        version: link:../../packages/input
-      '@babylonslate/navigation':
-        specifier: workspace:*
-        version: link:../../packages/navigation
-      '@babylonslate/object-model':
-        specifier: workspace:*
-        version: link:../../packages/object-model
-      '@babylonslate/particle-graph':
-        specifier: workspace:*
-        version: link:../../packages/particle-graph
-      '@babylonslate/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
-      '@babylonslate/render':
-        specifier: workspace:*
-        version: link:../../packages/render
-      '@babylonslate/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@babylonslate/scripting':
-        specifier: workspace:*
-        version: link:../../packages/scripting
-      '@babylonslate/scripting-nodes':
-        specifier: workspace:*
-        version: link:../../packages/scripting-nodes
-      '@babylonslate/shader-graph':
-        specifier: workspace:*
-        version: link:../../packages/shader-graph
-      '@babylonslate/source-control':
-        specifier: workspace:*
-        version: link:../../packages/source-control
-      '@babylonslate/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      '@babylonslate/vfs':
-        specifier: workspace:*
-        version: link:../../packages/vfs
+        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d))(babylonjs-gltf2interface@9.21.2)
       '@capacitor/android':
         specifier: ^8.0.0
         version: 8.5.2(@capacitor/core@8.5.2)
@@ -296,6 +227,75 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@19.2.8)
+      '@haptic/anim-graph':
+        specifier: workspace:*
+        version: link:../../packages/anim-graph
+      '@haptic/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
+      '@haptic/behaviour-tree':
+        specifier: workspace:*
+        version: link:../../packages/behaviour-tree
+      '@haptic/bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
+      '@haptic/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@haptic/debugger':
+        specifier: workspace:*
+        version: link:../../packages/debugger
+      '@haptic/edit':
+        specifier: workspace:*
+        version: link:../../packages/edit
+      '@haptic/editor-kit':
+        specifier: workspace:*
+        version: link:../../packages/editor-kit
+      '@haptic/exporter':
+        specifier: workspace:*
+        version: link:../../packages/exporter
+      '@haptic/graph-ui':
+        specifier: workspace:*
+        version: link:../../packages/graph-ui
+      '@haptic/input':
+        specifier: workspace:*
+        version: link:../../packages/input
+      '@haptic/navigation':
+        specifier: workspace:*
+        version: link:../../packages/navigation
+      '@haptic/object-model':
+        specifier: workspace:*
+        version: link:../../packages/object-model
+      '@haptic/particle-graph':
+        specifier: workspace:*
+        version: link:../../packages/particle-graph
+      '@haptic/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
+      '@haptic/render':
+        specifier: workspace:*
+        version: link:../../packages/render
+      '@haptic/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@haptic/scripting':
+        specifier: workspace:*
+        version: link:../../packages/scripting
+      '@haptic/scripting-nodes':
+        specifier: workspace:*
+        version: link:../../packages/scripting-nodes
+      '@haptic/shader-graph':
+        specifier: workspace:*
+        version: link:../../packages/shader-graph
+      '@haptic/source-control':
+        specifier: workspace:*
+        version: link:../../packages/source-control
+      '@haptic/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@haptic/vfs':
+        specifier: workspace:*
+        version: link:../../packages/vfs
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
@@ -315,12 +315,12 @@ importers:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
     devDependencies:
-      '@babylonslate/test-kit':
-        specifier: workspace:*
-        version: link:../../packages/test-kit
       '@capacitor/cli':
         specifier: ^8.0.0
         version: 8.5.2
+      '@haptic/test-kit':
+        specifier: workspace:*
+        version: link:../../packages/test-kit
       '@tailwindcss/vite':
         specifier: ^4.0.14
         version: 4.3.3(vite@8.3.3(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
@@ -353,48 +353,48 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.29.0
-        version: 9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)
-      '@babylonslate/anim-graph':
+        version: 9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)
+      '@haptic/anim-graph':
         specifier: workspace:*
         version: link:../../packages/anim-graph
-      '@babylonslate/assets':
+      '@haptic/assets':
         specifier: workspace:*
         version: link:../../packages/assets
-      '@babylonslate/behaviour-tree':
+      '@haptic/behaviour-tree':
         specifier: workspace:*
         version: link:../../packages/behaviour-tree
-      '@babylonslate/bridge':
+      '@haptic/bridge':
         specifier: workspace:*
         version: link:../../packages/bridge
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@babylonslate/debugger':
+      '@haptic/debugger':
         specifier: workspace:*
         version: link:../../packages/debugger
-      '@babylonslate/exporter':
+      '@haptic/exporter':
         specifier: workspace:*
         version: link:../../packages/exporter
-      '@babylonslate/input':
+      '@haptic/input':
         specifier: workspace:*
         version: link:../../packages/input
-      '@babylonslate/object-model':
+      '@haptic/object-model':
         specifier: workspace:*
         version: link:../../packages/object-model
-      '@babylonslate/render':
+      '@haptic/render':
         specifier: workspace:*
         version: link:../../packages/render
-      '@babylonslate/runtime':
+      '@haptic/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
-      '@babylonslate/shader-graph':
+      '@haptic/shader-graph':
         specifier: workspace:*
         version: link:../../packages/shader-graph
-      '@babylonslate/vfs':
+      '@haptic/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs
     devDependencies:
-      '@babylonslate/particle-graph':
+      '@haptic/particle-graph':
         specifier: workspace:*
         version: link:../../packages/particle-graph
       '@types/node':
@@ -409,7 +409,7 @@ importers:
 
   packages/anim-graph:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -419,16 +419,16 @@ importers:
 
   packages/assets:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/object-model':
+      '@haptic/object-model':
         specifier: workspace:*
         version: link:../object-model
-      '@babylonslate/particle-graph':
+      '@haptic/particle-graph':
         specifier: workspace:*
         version: link:../particle-graph
-      '@babylonslate/shader-graph':
+      '@haptic/shader-graph':
         specifier: workspace:*
         version: link:../shader-graph
       '@noble/hashes':
@@ -441,10 +441,10 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
     devDependencies:
-      '@babylonslate/test-kit':
+      '@haptic/test-kit':
         specifier: workspace:*
         version: link:../test-kit
-      '@babylonslate/vfs':
+      '@haptic/vfs':
         specifier: workspace:*
         version: link:../vfs
       ktx-parse:
@@ -456,10 +456,10 @@ importers:
 
   packages/behaviour-tree:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/scripting':
+      '@haptic/scripting':
         specifier: workspace:*
         version: link:../scripting
       d3-hierarchy:
@@ -475,7 +475,7 @@ importers:
 
   packages/bridge:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -491,7 +491,7 @@ importers:
 
   packages/debugger:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -501,7 +501,7 @@ importers:
 
   packages/edit:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -511,16 +511,16 @@ importers:
 
   packages/editor-kit:
     dependencies:
-      '@babylonslate/assets':
+      '@haptic/assets':
         specifier: workspace:*
         version: link:../assets
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/input':
+      '@haptic/input':
         specifier: workspace:*
         version: link:../input
-      '@babylonslate/ui':
+      '@haptic/ui':
         specifier: workspace:*
         version: link:../ui
       lucide-react:
@@ -545,25 +545,25 @@ importers:
 
   packages/exporter:
     dependencies:
-      '@babylonslate/anim-graph':
+      '@haptic/anim-graph':
         specifier: workspace:*
         version: link:../anim-graph
-      '@babylonslate/assets':
+      '@haptic/assets':
         specifier: workspace:*
         version: link:../assets
-      '@babylonslate/behaviour-tree':
+      '@haptic/behaviour-tree':
         specifier: workspace:*
         version: link:../behaviour-tree
-      '@babylonslate/bridge':
+      '@haptic/bridge':
         specifier: workspace:*
         version: link:../bridge
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/object-model':
+      '@haptic/object-model':
         specifier: workspace:*
         version: link:../object-model
-      '@babylonslate/shader-graph':
+      '@haptic/shader-graph':
         specifier: workspace:*
         version: link:../shader-graph
       fflate:
@@ -576,16 +576,16 @@ importers:
 
   packages/graph-ui:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/editor-kit':
+      '@haptic/editor-kit':
         specifier: workspace:*
         version: link:../editor-kit
-      '@babylonslate/scripting':
+      '@haptic/scripting':
         specifier: workspace:*
         version: link:../scripting
-      '@babylonslate/ui':
+      '@haptic/ui':
         specifier: workspace:*
         version: link:../ui
       '@xyflow/react':
@@ -610,7 +610,7 @@ importers:
 
   packages/input:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -633,7 +633,7 @@ importers:
 
   packages/object-model:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -643,7 +643,7 @@ importers:
 
   packages/particle-graph:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -655,16 +655,16 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.29.0
-        version: 9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)
+        version: 9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)
       '@babylonjs/havok':
         specifier: 1.3.14
         version: 1.3.14
-      '@babylonslate/core':
-        specifier: workspace:*
-        version: link:../core
       '@dimforge/rapier2d-deterministic-compat':
         specifier: ^0.21.0
         version: 0.21.0
+      '@haptic/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       typescript:
         specifier: ~6.0.3
@@ -674,32 +674,32 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.29.0
-        version: 9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)
+        version: 9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)
       '@babylonjs/loaders':
         specifier: 9.29.0
-        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6))(babylonjs-gltf2interface@9.21.2)
+        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d))(babylonjs-gltf2interface@9.21.2)
       '@babylonjs/serializers':
         specifier: 9.29.0
-        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6))(babylonjs-gltf2interface@9.21.2)
-      '@babylonslate/assets':
+        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d))(babylonjs-gltf2interface@9.21.2)
+      '@haptic/assets':
         specifier: workspace:*
         version: link:../assets
-      '@babylonslate/bridge':
+      '@haptic/bridge':
         specifier: workspace:*
         version: link:../bridge
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/navigation':
+      '@haptic/navigation':
         specifier: workspace:*
         version: link:../navigation
-      '@babylonslate/particle-graph':
+      '@haptic/particle-graph':
         specifier: workspace:*
         version: link:../particle-graph
-      '@babylonslate/physics':
+      '@haptic/physics':
         specifier: workspace:*
         version: link:../physics
-      '@babylonslate/shader-graph':
+      '@haptic/shader-graph':
         specifier: workspace:*
         version: link:../shader-graph
       earcut:
@@ -709,7 +709,7 @@ importers:
         specifier: 1.1.1
         version: 1.1.1
     devDependencies:
-      '@babylonslate/test-kit':
+      '@haptic/test-kit':
         specifier: workspace:*
         version: link:../test-kit
       typescript:
@@ -718,44 +718,44 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@babylonslate/anim-graph':
+      '@haptic/anim-graph':
         specifier: workspace:*
         version: link:../anim-graph
-      '@babylonslate/assets':
+      '@haptic/assets':
         specifier: workspace:*
         version: link:../assets
-      '@babylonslate/behaviour-tree':
+      '@haptic/behaviour-tree':
         specifier: workspace:*
         version: link:../behaviour-tree
-      '@babylonslate/bridge':
+      '@haptic/bridge':
         specifier: workspace:*
         version: link:../bridge
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/debugger':
+      '@haptic/debugger':
         specifier: workspace:*
         version: link:../debugger
-      '@babylonslate/input':
+      '@haptic/input':
         specifier: workspace:*
         version: link:../input
-      '@babylonslate/navigation':
+      '@haptic/navigation':
         specifier: workspace:*
         version: link:../navigation
-      '@babylonslate/object-model':
+      '@haptic/object-model':
         specifier: workspace:*
         version: link:../object-model
-      '@babylonslate/physics':
+      '@haptic/physics':
         specifier: workspace:*
         version: link:../physics
-      '@babylonslate/scripting':
+      '@haptic/scripting':
         specifier: workspace:*
         version: link:../scripting
       acorn:
         specifier: 8.18.0
         version: 8.18.0
     devDependencies:
-      '@babylonslate/scripting-nodes':
+      '@haptic/scripting-nodes':
         specifier: workspace:*
         version: link:../scripting-nodes
       typescript:
@@ -764,10 +764,10 @@ importers:
 
   packages/scripting:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/debugger':
+      '@haptic/debugger':
         specifier: workspace:*
         version: link:../debugger
     devDependencies:
@@ -777,10 +777,10 @@ importers:
 
   packages/scripting-nodes:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
-      '@babylonslate/scripting':
+      '@haptic/scripting':
         specifier: workspace:*
         version: link:../scripting
     devDependencies:
@@ -790,7 +790,7 @@ importers:
 
   packages/shader-graph:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -800,7 +800,7 @@ importers:
 
   packages/source-control:
     dependencies:
-      '@babylonslate/core':
+      '@haptic/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -810,14 +810,14 @@ importers:
 
   packages/test-kit:
     dependencies:
-      '@babylonslate/object-model':
+      '@haptic/object-model':
         specifier: workspace:*
         version: link:../object-model
-      '@babylonslate/runtime':
+      '@haptic/runtime':
         specifier: workspace:*
         version: link:../runtime
     devDependencies:
-      '@babylonslate/bridge':
+      '@haptic/bridge':
         specifier: workspace:*
         version: link:../bridge
       typescript:
@@ -866,9 +866,6 @@ importers:
 
   packages/vfs:
     dependencies:
-      '@babylonslate/core':
-        specifier: workspace:*
-        version: link:../core
       '@capacitor/app':
         specifier: ^8.0.0
         version: 8.1.1(@capacitor/core@8.5.2)
@@ -884,6 +881,9 @@ importers:
       '@capacitor/status-bar':
         specifier: ^8.0.3
         version: 8.0.3(@capacitor/core@8.5.2)
+      '@haptic/core':
+        specifier: workspace:*
+        version: link:../core
       '@revenuecat/purchases-capacitor':
         specifier: 13.7.0
         version: 13.7.0(@capacitor/core@8.5.2)
@@ -5973,20 +5973,20 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@babylonjs/core@9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)': {}
+  '@babylonjs/core@9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)': {}
 
   '@babylonjs/havok@1.3.14':
     dependencies:
       '@types/emscripten': 1.41.5
 
-  '@babylonjs/loaders@9.29.0(@babylonjs/core@9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6))(babylonjs-gltf2interface@9.21.2)':
+  '@babylonjs/loaders@9.29.0(@babylonjs/core@9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d))(babylonjs-gltf2interface@9.21.2)':
     dependencies:
-      '@babylonjs/core': 9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)
+      '@babylonjs/core': 9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)
       babylonjs-gltf2interface: 9.21.2
 
-  '@babylonjs/serializers@9.29.0(@babylonjs/core@9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6))(babylonjs-gltf2interface@9.21.2)':
+  '@babylonjs/serializers@9.29.0(@babylonjs/core@9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d))(babylonjs-gltf2interface@9.21.2)':
     dependencies:
-      '@babylonjs/core': 9.29.0(patch_hash=644b95fe57e822ff2ecea94ab663db96f6630acb7e9fbc23a6e585ecf01af0d6)
+      '@babylonjs/core': 9.29.0(patch_hash=9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d)
       babylonjs-gltf2interface: 9.21.2
 
   '@base-ui/react@1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
