@@ -42,6 +42,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import {
   startPlaySession,
+  type PlayHudStats,
   type PlaySession,
   type PlaySessionResult,
   type PlaySceneSourceLoader,
@@ -344,6 +345,7 @@ function PlayOverlayView({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
+  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity">>({});
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -856,6 +858,7 @@ function PlayOverlayView({
               setScriptMs(stats.scriptMs);
               setPhysicsMs(stats.physicsMs);
               setPublishMs(stats.publishMs);
+              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity });
             }
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },
@@ -1228,6 +1231,7 @@ function PlayOverlayView({
             draws={draws}
             rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
+            {...threadStats}
             groups={statGroups}
             visible={statsVisible}
           />
