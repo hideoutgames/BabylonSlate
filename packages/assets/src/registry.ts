@@ -66,6 +66,13 @@ const SCAN_CATALOG_READS = 8;
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
+/** Cancellation and progress for asset and folder copies. */
+export interface AssetCopyOptions {
+  signal?: AbortSignal;
+  /** Folder copies only: files copied so far out of the folder's total. */
+  onProgress?: (copied: number, total: number) => void;
+}
+
 export interface IndexedAsset {
   rootId: string;
   path: string;
@@ -916,17 +923,21 @@ export class AssetRegistry {
     return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded), false, await this.statMtime(storage, asset.path));
   }
 
+  /** With `signal`, an abort before the copy is written throws and writes nothing. */
   async duplicateAsset(
     guid: string,
     rootId: string,
     targetFolderRelative = "",
+    options: AssetCopyOptions = {},
   ): Promise<IndexedAsset> {
-    const duplicate = await this.withCreationWrite(() => this.duplicateAssetUnlocked(guid, rootId, targetFolderRelative));
+    options.signal?.throwIfAborted();
+    const duplicate = await this.withCreationWrite(() => this.duplicateAssetUnlocked(guid, rootId, targetFolderRelative, options.signal));
     await this.alignCreatedTextures([duplicate]);
     return duplicate;
   }
 
-  private async duplicateAssetUnlocked(guid: string, rootId: string, targetFolderRelative: string): Promise<IndexedAsset> {
+  private async duplicateAssetUnlocked(guid: string, rootId: string, targetFolderRelative: string, signal?: AbortSignal): Promise<IndexedAsset> {
+    signal?.throwIfAborted();
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     const root = this.getRootOrThrow(rootId);
@@ -939,6 +950,7 @@ export class AssetRegistry {
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
       sourceBlobs.readBlob(sha256),
     );
+    signal?.throwIfAborted();
     const chunksById = new Map<string, ChunkInput>();
     for (const entry of decoded.header.chunks) {
       const data = decoded.chunks.get(entry.id);
@@ -1007,6 +1019,7 @@ export class AssetRegistry {
         chunks: [...chunksById.values()],
         writeBlob: (sha256, data) => destBlobs.writeBlob(sha256, data),
       });
+      signal?.throwIfAborted();
       const dir = candidate.includes("/")
         ? candidate.slice(0, candidate.lastIndexOf("/"))
         : "";
@@ -1023,15 +1036,23 @@ export class AssetRegistry {
     guid: string,
     rootId: string,
     targetFolderRelative: string,
+    options: AssetCopyOptions = {},
   ): Promise<IndexedAsset> {
-    return this.duplicateAsset(guid, rootId, targetFolderRelative);
+    return this.duplicateAsset(guid, rootId, targetFolderRelative, options);
   }
 
+  /**
+   * With `signal`, an abort stops the copy between files and deletes the
+   * partly written copy before throwing, so a canceled copy leaves nothing.
+   */
   async copyFolder(
     rootId: string,
     relativeFolder: string,
     targetParentRelative: string,
+    options: AssetCopyOptions = {},
   ): Promise<string> {
+    const { signal, onProgress } = options;
+    signal?.throwIfAborted();
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
     const storage = this.storageOf(root);
@@ -1086,35 +1107,44 @@ export class AssetRegistry {
       release();
     }
 
-    const nested = [...this.knownFolders].filter(
-      (folder) => folder !== fromPath && isWithinFolder(folder, fromPath),
-    );
-    nested.sort((a, b) => a.length - b.length);
-    for (const folder of nested) {
-      const suffix = folder.slice(fromPath.length + 1);
-      await this.createFolder(rootId, joinRelative(destRelative, suffix));
-    }
-
     const assets = [...this.byGuid.values()].filter(
       (asset) =>
         asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
     );
-    const copies: Array<{ source: IndexedAsset; copy: IndexedAsset }> = [];
-    for (const asset of assets) {
-      const parent = asset.path.includes("/")
-        ? asset.path.slice(0, asset.path.lastIndexOf("/"))
-        : "";
-      const suffix =
-        parent === fromPath ? "" : parent.slice(fromPath.length + 1);
-      const destFolder = suffix
-        ? joinRelative(destRelative, suffix)
-        : destRelative;
-      const copy = await this.withCreationWrite(() => this.duplicateAssetUnlocked(asset.header.guid, rootId, destFolder));
-      copies.push({ source: asset, copy });
+    try {
+      const nested = [...this.knownFolders].filter(
+        (folder) => folder !== fromPath && isWithinFolder(folder, fromPath),
+      );
+      nested.sort((a, b) => a.length - b.length);
+      for (const folder of nested) {
+        signal?.throwIfAborted();
+        const suffix = folder.slice(fromPath.length + 1);
+        await this.createFolder(rootId, joinRelative(destRelative, suffix));
+      }
+
+      const copies: Array<{ source: IndexedAsset; copy: IndexedAsset }> = [];
+      onProgress?.(0, assets.length);
+      for (const asset of assets) {
+        const parent = asset.path.includes("/")
+          ? asset.path.slice(0, asset.path.lastIndexOf("/"))
+          : "";
+        const suffix =
+          parent === fromPath ? "" : parent.slice(fromPath.length + 1);
+        const destFolder = suffix
+          ? joinRelative(destRelative, suffix)
+          : destRelative;
+        const copy = await this.withCreationWrite(() => this.duplicateAssetUnlocked(asset.header.guid, rootId, destFolder, signal));
+        copies.push({ source: asset, copy });
+        onProgress?.(copies.length, assets.length);
+      }
+      signal?.throwIfAborted();
+      const remapped = await this.remapFolderCopyReferences(copies);
+      // After the remap, so a copied Sprite or Tileset already samples its copied Texture.
+      await this.alignCreatedTextures(remapped);
+    } catch (error) {
+      if (signal?.aborted) await this.deleteFolder(rootId, destRelative);
+      throw error;
     }
-    const remapped = await this.remapFolderCopyReferences(copies);
-    // After the remap, so a copied Sprite or Tileset already samples its copied Texture.
-    await this.alignCreatedTextures(remapped);
     return destRelative;
   }
 
@@ -1222,11 +1252,12 @@ export class AssetRegistry {
   async duplicateFolder(
     rootId: string,
     relativeFolder: string,
+    options: AssetCopyOptions = {},
   ): Promise<string> {
     const parent = relativeFolder.includes("/")
       ? relativeFolder.slice(0, relativeFolder.lastIndexOf("/"))
       : "";
-    return this.copyFolder(rootId, relativeFolder, parent);
+    return this.copyFolder(rootId, relativeFolder, parent, options);
   }
 
   async moveFolder(

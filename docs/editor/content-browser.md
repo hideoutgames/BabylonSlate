@@ -46,6 +46,8 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 
 Double-tap empty space in the grid to open the **New Asset** menu there. Hold empty space for **New Folder**, **New Asset** and **Import**.
 
+While **Duplicate** or **Copy to Folder…** runs, a progress window shows the item being copied and how many files are done. Choose **Cancel** to stop; the copies made so far are removed, so the content is left as it was.
+
 A heavy asset can take a long time to draw on a slow device. A thumbnail that takes too long keeps the asset's type icon, and Haptic may try once more, with more time, when nothing else is waiting. Choose **Generate Thumbnail** to draw it again at any time.
 
 ## Move assets

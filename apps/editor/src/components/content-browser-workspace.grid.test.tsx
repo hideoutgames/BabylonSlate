@@ -481,6 +481,34 @@ describe("ContentBrowserWorkspace grid window", () => {
     await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
     expect(copied).toEqual(["tex-0", "tex-1"]);
   });
+  it("cancels a copy in progress from its progress dialog and removes the copies already made", async () => {
+    installRegistry([texture(0), texture(1)], ["Characters"]);
+    let secondSignal: AbortSignal | undefined;
+    const copyAsset = vi.fn(async (guid: string, _rootId: string, _folder: string, options?: { signal?: AbortSignal }) => {
+      if (guid === "tex-0") return texture(10);
+      secondSignal = options?.signal;
+      return new Promise<IndexedAsset>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal!.reason));
+      });
+    });
+    const deleteAsset = vi.fn(async () => {});
+    docs.assetRegistry = { ...(docs.assetRegistry as object), copyAsset, deleteAsset };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy to Folder…" }));
+    tapTreeRow(within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters"));
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    const progress = await screen.findByTestId("content-browser-copy-progress");
+    await waitFor(() => expect(secondSignal).toBeDefined());
+    expect(within(progress).getByText("1 / 2")).toBeTruthy();
+    fireEvent.click(within(progress).getByTestId("content-browser-copy-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
+    expect(secondSignal?.aborted).toBe(true);
+    expect(deleteAsset).toHaveBeenCalledWith("tex-10");
+    await waitFor(() => expect(screen.queryByTestId("content-browser-copy-progress")).toBeNull());
+  });
   it("keeps the chosen move destination after a failure so the move can be retried", async () => {
     const asset = texture(0);
     installRegistry([asset], ["Characters"]);
