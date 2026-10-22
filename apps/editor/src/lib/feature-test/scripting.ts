@@ -960,6 +960,7 @@ async function saveInterfaceProbe(
       delay("settle", 220, 0, 1),
       gNode("find-fast", "actor.getOfClass", 220, 180, { "default:classId": CLASS.spinnerFast }),
       gNode("find-base", "actor.getOfClass", 220, 300, { "default:classId": CLASS.spinner }),
+      gNode("assert-fast", "debug.assertIsValid", 340, 0, { "default:message": "Interface Probe found no Fast Spinner" }),
       gNode("describe-fast", "interface.call", 460, 0, describeCall(types.describable)),
       gNode("describe-base", "interface.call", 700, 0, describeCall(types.describable)),
       gNode("game-instance", "gameInstance.get", 700, 220),
@@ -970,7 +971,8 @@ async function saveInterfaceProbe(
       printText("report", 1640, 0, "ft-script-interface", undefined, 8),
     ],
     edges: [
-      ...gChain("begin", "settle", "describe-fast", "describe-base", "as-game-instance", "report"),
+      ...gChain("begin", "settle", "assert-fast", "describe-fast", "describe-base", "as-game-instance", "report"),
+      gWire("find-fast", "out", "assert-fast", "object"),
       gWire("find-fast", "out", "describe-fast", "target"),
       gWire("find-base", "out", "describe-base", "target"),
       gWire("game-instance", "gameInstance", "as-game-instance", "object"),
@@ -1037,7 +1039,7 @@ async function saveTouchProbe(ctx: FeatureTestContext, font: string, materialGui
   return { ref, components };
 }
 
-/** Read Data Entry `Weapons/Sword` + Break, and Get Data Children of `Weapons`. */
+/** Read Data Entry `Weapons/Sword` + Break and Get Data Children of `Weapons`; Asserts check both reads. */
 async function saveDataProbe(
   ctx: FeatureTestContext,
   types: ScriptingTypes,
@@ -1061,10 +1063,14 @@ async function saveDataProbe(
       gNode("children", "data.getChildren", 220, 400, { "default:tree": types.itemsTree, "default:entryPath": "Weapons" }),
       gNode("child-count", "array.length", 460, 400),
       format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
+      gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
+      gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
       printText("print", 940, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      gExec("begin", "print"),
+      ...gChain("begin", "assert-found", "assert-weapons", "print"),
+      gWire("read", "found", "assert-found", "condition"),
+      gWire("child-count", "out", "assert-weapons", "actual"),
       gWire("read", "value", "fields", "in"),
       gWire("fields", "Label", "text", fmtArg("label")),
       gWire("fields", "Damage", "text", fmtArg("damage")),

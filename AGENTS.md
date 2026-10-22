@@ -1,6 +1,6 @@
 # Agent instructions
 
-This is the entry point for every agent working in this repository. The engine is **Haptic** (formerly BabylonSlate); the repository, package scope `@haptic/*`, file extensions and other code identifiers keep the old name until a dedicated rename. Paths are relative to the repository root. `.agents/rules/` is a repository convention: read the files explicitly; do not assume your host loads them.
+This is the entry point for every agent working in this repository. The engine is **Haptic** (formerly BabylonSlate). Code uses the Haptic names (`@haptic/*`, `.hasset`, `HAPTIC_*`, `haptic:`); the GitHub repository and Pages URLs and the native app identity keep the old name ([naming](.agents/reference/engine-plan.md#naming)). Paths are relative to the repository root. `.agents/rules/` is a repository convention: read the files explicitly; do not assume your host loads them.
 
 ## Working agreements
 

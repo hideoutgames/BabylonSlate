@@ -11,7 +11,7 @@ Basic Particle Emitter, Particle Graph and Particle System assets, `ParticleComp
 - The look is a **particle-domain Material**; emitters have no Texture field (one look path). Textures are sampled in the Material ([shader-graph.md](shader-graph.md)). No default Material or Texture ships (no generated artwork): an emitter without a usable Material does not render.
 - Units are **seconds**: `updateSpeed = PARTICLE_UPDATE_SPEED` (1/60). Babylon's default 0.01 made one unit about 1.67 s.
 - Blend and billboard ids map to Babylon constants **by name** in [`particle-render-modes.ts`](../../../packages/render/src/particle-render-modes.ts), never repo-local numbers (an earlier numeric table swapped ONEONE and STANDARD).
-- **No migration** (unreleased): header versions stay 1; `schemaVersion` is a payload field; normalizers read only the current shape and fill defaults, so old assets may change look.
+- **Versioning**: headers follow the [schema versioning rules](../engine-plan.md#schema-versioning); `schemaVersion` is a payload field. Normalizers read the current shape and may fill defaults for new optional fields; any other change raises the header version and adds a migration step.
 - Lifecycle (Loop, Duration, Pre Warm) belongs to each emitter; the System owns slots, Space and Preview Skybox.
 - Out of scope: sprite-sheet flipbooks, noise, flow maps, sub-emitters and triggers, mesh/custom emitters, `textureMask`, ramp/remap gradients, a particle-age material node, attractors in Basic, script-settable graph parameters, live particles in the edit-mode viewport.
 
