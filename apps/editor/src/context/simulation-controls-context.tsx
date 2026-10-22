@@ -11,10 +11,14 @@ import {
 export interface SimulationControls {
   paused: boolean;
   pausePending: boolean;
+  /** A Step is running its tick; the next waits for it. */
+  stepPending: boolean;
   inputMode: "game" | "edit";
   inputPending: boolean;
   keepChanges: boolean;
   togglePause: () => void;
+  /** While paused: run one tick and stay paused. */
+  step: () => void;
   setInputMode: (mode: "game" | "edit") => void;
 }
 

@@ -672,6 +672,11 @@ class InProcessRuntime implements RuntimeDriver {
       takeDeferredOverlayLayout: () => this.overlay.takeDeferredLayout(),
       pauseReasons: () => this.pauseReasons,
       setPauseReason: (reason, paused) => this.setPauseReason(reason, paused),
+      stepPausedTick: () => {
+        this.resume();
+        // A throwing tick still returns to pause; Step never leaves the game running.
+        try { this.tick(); } finally { this.pause(); }
+      },
       resetInputState: () => this.resetInputState(),
       commandRevision: () => this.commandRevision,
       reportError: (error) => { this.reportError(error); },
