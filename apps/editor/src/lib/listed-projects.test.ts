@@ -21,21 +21,21 @@ describe("listedProjectsFromRecents", () => {
   it("uses recents order and labels while keeping stored folder names", () => {
     const listed = listedProjectsFromRecents(
       [
-        { id: "opfs:Game.babproject", name: "Pretty Game", tier: "opfs" },
+        { id: "opfs:Game.hproject", name: "Pretty Game", tier: "opfs" },
         { id: "ext-1", name: "External", tier: "external" },
       ],
       [
         {
-          id: "opfs:Game.babproject",
-          name: "Game.babproject",
+          id: "opfs:Game.hproject",
+          name: "Game.hproject",
           tier: "opfs",
         },
       ],
     );
     expect(listed).toEqual([
       {
-        id: "opfs:Game.babproject",
-        name: "Game.babproject",
+        id: "opfs:Game.hproject",
+        name: "Game.hproject",
         tier: "opfs",
         label: "Pretty Game",
       },
@@ -52,7 +52,7 @@ describe("listedProjectsFromRecents", () => {
     const listed = listedProjectsFromRecents(
       [
         {
-          id: "opfs:Game.babproject",
+          id: "opfs:Game.hproject",
           name: "Pretty Game",
           tier: "opfs",
           lastOpenedAt: "2026-08-18T12:00:00.000Z",
@@ -62,15 +62,15 @@ describe("listedProjectsFromRecents", () => {
       ],
       [
         {
-          id: "opfs:Game.babproject",
-          name: "Game.babproject",
+          id: "opfs:Game.hproject",
+          name: "Game.hproject",
           tier: "opfs",
         },
       ],
     );
     expect(listed[0]).toMatchObject({
-      id: "opfs:Game.babproject",
-      name: "Game.babproject",
+      id: "opfs:Game.hproject",
+      name: "Game.hproject",
       label: "Pretty Game",
       lastOpenedAt: "2026-08-18T12:00:00.000Z",
       createdAt: "2026-03-15T12:00:00.000Z",
@@ -82,7 +82,7 @@ describe("listedProjectsFromRecents", () => {
     expect(
       listedProjectsFromRecents(
         [],
-        [{ id: "opfs:Old.babproject", name: "Old.babproject", tier: "opfs" }],
+        [{ id: "opfs:Old.hproject", name: "Old.hproject", tier: "opfs" }],
       ),
     ).toEqual([]);
   });
@@ -124,8 +124,8 @@ function project(
 
 describe("filterListedProjects", () => {
   const mixed = [
-    project("Alpha.babproject", "opfs", { label: "Pretty Alpha" }),
-    project("Beta.babproject", "external"),
+    project("Alpha.hproject", "opfs", { label: "Pretty Alpha" }),
+    project("Beta.hproject", "external"),
   ];
 
   it("matches display label and folder name without requiring a query", () => {
@@ -136,12 +136,12 @@ describe("filterListedProjects", () => {
       filterListedProjects(mixed, { search: "pretty", locationFilters: [] }).map(
         (entry) => entry.id,
       ),
-    ).toEqual(["opfs:Alpha.babproject"]);
+    ).toEqual(["opfs:Alpha.hproject"]);
     expect(
-      filterListedProjects(mixed, { search: "Beta.bab", locationFilters: [] }).map(
+      filterListedProjects(mixed, { search: "Beta.hpro", locationFilters: [] }).map(
         (entry) => entry.id,
       ),
-    ).toEqual(["external:Beta.babproject"]);
+    ).toEqual(["external:Beta.hproject"]);
   });
 
   it("keeps every location when filters are empty and hides Chosen folder when asked", () => {
@@ -150,25 +150,25 @@ describe("filterListedProjects", () => {
         search: "",
         locationFilters: ["on-this-device"],
       }).map((entry) => entry.id),
-    ).toEqual(["opfs:Alpha.babproject"]);
+    ).toEqual(["opfs:Alpha.hproject"]);
     expect(
       filterListedProjects(mixed, {
         search: "",
         locationFilters: ["chosen-folder"],
       }).map((entry) => entry.id),
-    ).toEqual(["external:Beta.babproject"]);
+    ).toEqual(["external:Beta.hproject"]);
   });
 });
 
 describe("sortListedProjects", () => {
   it("sorts by display name and treats missing dates as oldest", () => {
-    const zebra = project("zebra.babproject", "opfs", { label: "Zebra" });
-    const alpha = project("alpha.babproject", "opfs", {
+    const zebra = project("zebra.hproject", "opfs", { label: "Zebra" });
+    const alpha = project("alpha.hproject", "opfs", {
       label: "Alpha",
       lastOpenedAt: "2026-08-18T12:00:00.000Z",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
-    const mid = project("mid.babproject", "opfs", {
+    const mid = project("mid.hproject", "opfs", {
       label: "Mid",
       lastOpenedAt: "2026-06-01T00:00:00.000Z",
       createdAt: "2026-03-01T00:00:00.000Z",

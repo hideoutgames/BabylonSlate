@@ -1,4 +1,4 @@
-import { ENGINE_VERSION } from "@babylonslate/core";
+import { ENGINE_VERSION } from "@haptic/core";
 import { stableStringify } from "./bytes";
 import { isPortablePackagePath } from "./package-path";
 

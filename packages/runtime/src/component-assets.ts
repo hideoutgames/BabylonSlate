@@ -1,4 +1,4 @@
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { Actor, ActorComponent } from "@haptic/object-model";
 
 type AssetComponent = {
   assetGuid: string | null;

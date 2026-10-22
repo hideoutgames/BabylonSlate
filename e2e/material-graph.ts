@@ -11,9 +11,9 @@ export async function guidForPath(
 ): Promise<string> {
   return page.evaluate((path) => {
     const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      __hapticTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath(path) ?? "";
+    return host.__hapticTest?.guidForPath(path) ?? "";
   }, assetPath);
 }
 
@@ -50,7 +50,7 @@ export async function importAlbedoTexture(
   page: Page,
   fixture = "albedo.png",
 ): Promise<string> {
-  const assetPath = `assets/${path.basename(fixture, ".png")}.babasset`;
+  const assetPath = `assets/${path.basename(fixture, ".png")}.hasset`;
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page

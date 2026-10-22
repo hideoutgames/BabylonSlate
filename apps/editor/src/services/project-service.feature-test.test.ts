@@ -7,15 +7,15 @@ import {
   type SerializedGraph,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
-import { validateAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
-import { DEFAULT_EDIT_BYTE_BUDGET, EditSession } from "@babylonslate/edit";
+} from "@haptic/core";
+import { validateAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import { DEFAULT_EDIT_BYTE_BUDGET, EditSession } from "@haptic/edit";
 import {
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
-} from "@babylonslate/particle-graph";
-import { physicsActorsDiagnostics } from "@babylonslate/physics";
-import { loadCompiledModule } from "@babylonslate/runtime";
+} from "@haptic/particle-graph";
+import { physicsActorsDiagnostics } from "@haptic/physics";
+import { loadCompiledModule } from "@haptic/runtime";
 import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check";
 import {
   lowerMaterialDocument,
@@ -25,8 +25,8 @@ import {
   normalizeMaterialInstanceDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/shader-graph";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   CREATABLE_ASSET_TYPES,
   ENGINE_BASE_CLASSES,

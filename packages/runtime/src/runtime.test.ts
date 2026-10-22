@@ -3,23 +3,23 @@ import { parseStackFrames, lookupAnchor, type AnchorEntry } from "./stack-map";
 import { LogRingBuffer } from "./log-ring";
 import { loadCompiledModule } from "./module-loader";
 import { createInProcessRuntime } from "./driver";
-import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
+import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 
 describe("stack parser", () => {
   it("parses V8 and WebKit frames", () => {
     const v8 = parseStackFrames(
-      "Error: boom\n    at foo (babylonslate:///abc.js:10:5)\n    at bar (file:///other.js:1:1)",
+      "Error: boom\n    at foo (haptic:///abc.js:10:5)\n    at bar (file:///other.js:1:1)",
     );
     expect(v8[0]).toMatchObject({
-      url: "babylonslate:///abc.js",
+      url: "haptic:///abc.js",
       line: 10,
       column: 5,
     });
     const webkit = parseStackFrames(
-      "foo@babylonslate:///abc.js:12:3\nbar@native",
+      "foo@haptic:///abc.js:12:3\nbar@native",
     );
     expect(webkit[0]).toMatchObject({
-      url: "babylonslate:///abc.js",
+      url: "haptic:///abc.js",
       line: 12,
       column: 3,
     });
@@ -66,7 +66,7 @@ describe("module loader", () => {
   it("evaluates a fixture module via Function fallback", async () => {
     const source = `
       export function run() { return 41 + 1; }
-      //# sourceURL=babylonslate:///fixture.js
+      //# sourceURL=haptic:///fixture.js
     `;
     const mod = await loadCompiledModule(source, "fixture");
     expect(mod.run?.()).toBe(42);
@@ -95,7 +95,7 @@ describe("in-process runtime driver", () => {
   }
 
   it("grows through multiple generations for more than 256 live Actors", async () => {
-    const commands: import("@babylonslate/bridge").CommandMessage[] = [];
+    const commands: import("@haptic/bridge").CommandMessage[] = [];
     const runtime = await createBulkRuntime((command) =>
       commands.push(command),
     );

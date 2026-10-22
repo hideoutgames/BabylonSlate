@@ -1,5 +1,5 @@
-import type { TracePayload } from "@babylonslate/debugger";
-import { TICK_BUDGET_MS } from "@babylonslate/debugger";
+import type { TracePayload } from "@haptic/debugger";
+import { TICK_BUDGET_MS } from "@haptic/debugger";
 
 export const TRACE_LOG_WINDOW_FRAMES = 30;
 

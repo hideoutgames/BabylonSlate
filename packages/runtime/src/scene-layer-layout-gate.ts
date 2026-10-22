@@ -1,5 +1,5 @@
-import type { OverlaySafeAreaInsets, Transform } from "@babylonslate/core";
-import { ActorComponent, type Actor } from "@babylonslate/object-model";
+import type { OverlaySafeAreaInsets, Transform } from "@haptic/core";
+import { ActorComponent, type Actor } from "@haptic/object-model";
 
 type Owner = Actor | ActorComponent;
 type TextureSizes = Readonly<Record<string, { width: number; height: number }>>;

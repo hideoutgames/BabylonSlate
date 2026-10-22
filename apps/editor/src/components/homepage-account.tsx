@@ -14,8 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@babylonslate/ui/components/dialog";
-import { getHostPlatform } from "@babylonslate/vfs";
+} from "@haptic/ui/components/dialog";
+import { getHostPlatform } from "@haptic/vfs";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
 import {
   nativeProfileEditing,

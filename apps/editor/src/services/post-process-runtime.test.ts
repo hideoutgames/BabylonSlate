@@ -1,25 +1,25 @@
 import { expect, it, vi } from "vitest";
 import { InputBlock, NodeMaterial, NullEngine } from "@babylonjs/core";
-import { createEngine } from "@babylonslate/render";
-import { adaptNullEngineFrameGraph } from "@babylonslate/render/framegraph-test-fixtures";
-import { createInProcessRuntime } from "@babylonslate/runtime";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createEngine } from "@haptic/render";
+import { adaptNullEngineFrameGraph } from "@haptic/render/framegraph-test-fixtures";
+import { createInProcessRuntime } from "@haptic/runtime";
+import { createActor, createDefaultScene } from "@haptic/core";
 import {
   isPlayEngineCommandType,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createDefaultMaterialDocument,
   buildMaterialParameterCatalog,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   compileGraph,
   type GraphNode,
   type LogicGraph,
-} from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+} from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { playLoadControl } from "./play-physics";
-import { runtimeOptionsFromLoadControl } from "@babylonslate/runtime";
+import { runtimeOptionsFromLoadControl } from "@haptic/runtime";
 
 /** Node's NullEngine needs the real view lifecycle, but no browser pixel surface. */
 class Canvas extends EventTarget {

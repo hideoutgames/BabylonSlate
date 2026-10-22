@@ -1,12 +1,12 @@
-import type { DataAssetCatalogEntry } from "@babylonslate/core";
-import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
-import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
+import type { DataAssetCatalogEntry } from "@haptic/core";
+import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
+import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
   parseAnimGraphDocument,
   resolveAnimGraphClips,
   type AnimClipCatalogEntry,
   type AnimGraphDocument,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   materialParameterTextureAssetGuids,
   applyTexturePixelSizesToSpriteAnimation,
@@ -38,13 +38,13 @@ import {
   type ModelPayload,
   complexCollisionModelGuids,
   cookComplexCollisionMeshes,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
-} from "@babylonslate/behaviour-tree";
-import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
-import type { CollisionTriangleMesh, ScenePostProcessEntry } from "@babylonslate/core";
+} from "@haptic/behaviour-tree";
+import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
+import type { CollisionTriangleMesh, ScenePostProcessEntry } from "@haptic/core";
 import {
   buildMaterialParameterCatalog,
   materializeMaterialInstances,
@@ -54,7 +54,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialInstanceDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import type { GameSourceContent } from "./source-content";
 
 const decoder = new TextDecoder();

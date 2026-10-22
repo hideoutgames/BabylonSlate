@@ -14,21 +14,21 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 | [`packages/object-model/`](../../../packages/object-model/src/) | `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` / `engineNativeEventsFor` (`engine-script-api.ts`), `TICK_PHASES` | React, Babylon, Capacitor |
 | [`apps/editor/`](../../../apps/editor/src/) | Class document panels, Compiler Results, `GraphScriptCompileCache` ([`services/script-compiler.ts`](../../../apps/editor/src/services/script-compiler.ts)), `collectPlayPreviewScripts` ([`services/play-content-service.ts`](../../../apps/editor/src/services/play-content-service.ts)) | Capacitor |
 
-- The compiler takes a **node registry injected at compile time**; `scripting` never depends on `scripting-nodes`. `scripting` may import only `instrumentJsLoops` from `@babylonslate/debugger`.
+- The compiler takes a **node registry injected at compile time**; `scripting` never depends on `scripting-nodes`. `scripting` may import only `instrumentJsLoops` from `@haptic/debugger`.
 - Node codegen emits `ctx.*` calls only. Navigation (Recast), physics and rendering live behind `ScriptHostServices`; nodes never import them.
 - `graph-ui` stays catalog-free: hosts hydrate pins (`__pins`, `__category`, `__pure`, `__latent`, `__editorOnly`) before handing graphs to it. Keep graph-kind specifics injectable; do not hardcode scripting assumptions into the canvas.
 
 ## Formats
 
-- Class assets are `.class.babasset`; parents include `BObject`, `Actor`, `ActorComponent`, `GameInstance`, `GameSubsystem`, `SceneSubsystem`, `FunctionLibrary`, `EditorFunctionLibrary`, `BDebugCommand`, `EditorUtilityObject` and the `BT*` bases. The hidden `Subsystem` base is never offered.
+- Class assets are `.class.hasset`; parents include `BObject`, `Actor`, `ActorComponent`, `GameInstance`, `GameSubsystem`, `SceneSubsystem`, `FunctionLibrary`, `EditorFunctionLibrary`, `BDebugCommand`, `EditorUtilityObject` and the `BT*` bases. The hidden `Subsystem` base is never offered.
 - IR: `LogicGraph { id, kind: "event" | "function", nodes, edges }`; nodes carry `typeId` (catalog id), typed `pins` and `properties`; edges name both pin ends. `SerializedGraph` adds `members` (variables, locals with `functionId`, functions with `pins[]`, interfaces, custom events), `functionGraphs[id]` and Actor prefab `components`.
 - Display units (`core/value-units.ts`, `VALUE_UNITS`): optional `unit` on Class variables (`GraphClassMember.unit`, stamped onto variable node data for the Set value pin), function and custom-event inputs (`GraphClassMemberPin.unit`, carried to Call pins by `memberPinUnit`), `StructField.unit` and `BlackboardKey.unit`. Only `int`, `float`, `vec2`-`vec4` keep one (`declaredValueUnit`); every closed-header and payload parser copies it. It reaches `GraphPin.unit` / `SerializedPin.unit` / `LiteralPinDefault.unit` and `PropertyRow.unit`; values are never converted, and the runtime inspector does not show units.
-- Schema changes bump the Class asset version. Older versions are refused with `AssetFormatVersionError`; there is no migration.
+- Schema changes raise the Class asset version and add a migration step ([schema versioning](../engine-plan.md#schema-versioning)). Versions older than the release are refused with `AssetFormatVersionError`.
 - Literal pin defaults are stored as `default:<pinId>` keyed by **pin id**, never display name. Lookup order: wire → `default:<pinId>` → catalog `GraphPin.defaultValue` → type default. Instance pins (`objectRef` / `actorRef`) take no literal (`pin.invalid_default`; compiles to `null`). Because the lookup always yields a value, `pin.missing_input` never fires for literal pins; it covers instance pins (error), Class/Asset pins with no authored or catalog default, other non-literal kinds, `reference: "required"` pins and interface-implementation Output pins (error).
 - Map variable defaults persist as `{ key, value }[]` JSON and hydrate to `Map` (later duplicates win). Arrays persist as `unknown[]`.
 - Tags: project `settings.tags` `{ tags: [{ id, path, parentId }], nextId }`; IDs are stable u32 (0 = None), never reallocated from display order; discarded IDs still advance `nextId`.
 - Asset/Class-typed declarations carry **Loading**: absent = Soft (referenced, never loaded with the owner); `"hard"` joins the owner's required closure (Class header `requiredVariableNames`). Synchronous readers (`input.*`, `data.readEntry`) still require their values. Dependency metadata is stamped on save.
-- Data Definitions (`.datadefinition.babasset`) and Data Trees (`.datatree.babasset`) address entries by exact, case-sensitive name paths; internal IDs are never lookup fallbacks.
+- Data Definitions (`.datadefinition.hasset`) and Data Trees (`.datatree.hasset`) address entries by exact, case-sensitive name paths; internal IDs are never lookup fallbacks.
 
 ## Pin types
 
@@ -55,7 +55,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 ## Compiler and codegen invariants
 
 - IR → plain JavaScript ES modules (no TypeScript in the browser). Output is deterministic text; golden tests are the primary gate. Compiled output is derived data outside the project folder.
-- Anchors: per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` plus `//# sourceURL=babylonslate:///<assetGuid>.js`. Anchor tables are position-based: any pass that moves lines must rewrite offsets. **Never minify compiled game scripts.**
+- Anchors: per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` plus `//# sourceURL=haptic:///<assetGuid>.js`. Anchor tables are position-based: any pass that moves lines must rewrite offsets. **Never minify compiled game scripts.**
 - Exec flow compiles to native `if`/`for`/`while`; back-edges restart through labeled loops, not recursion. Pure data inlines with CSE.
 - Latent work (Delay, async ExecuteJavaScript, latent Call Function, tweens, async loads) makes the entry `async`. Latency is transitive through Call Function and overrides. A node that emits `await` must call `ctx.requestAsync()` or declare `latent: true`. `ScriptHost` skips a latent entry that is still pending so Tick cannot stack runs.
 - Impure output slots are declared once at the top of each entry (never inside a branch), named from the pin **id** (`_n_<node>_<pinId>`). Never introduce fixed-name temporaries outside a block.
@@ -87,7 +87,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 - Wiring rules: exec inputs fan in; each exec output drives one wire in the Class graph (`singleExecOutputOnConnect`; replacing one shows a notice pointing to Sequence); a new data wire replaces the old one; wires persist output→input.
 - Generic catalog ids for Get/Set/Validated Get, Call Function, Call Custom Event, Cast, Make/Break, enum rows and Get `<Subsystem>` are hidden; the palette injects one row per member/class/type. Heavy injectors run only when Add Node opens and memoize on class-set identity.
 - Hydrate regenerates member, struct, enum and interface pins from live schemas, keeps wires whose pin ids still match, and prunes the rest. It also replaces the saved pins of the nodes whose Actor input reads Self (`SELF_ACTOR_NODE_IDS` in `graph-validation.ts`), so graphs saved before a pin was labelled `(Self)` show it. A new pin flag that the compiler reads (`subject`) needs no regeneration: the compiler takes it from the catalog pin. Seeding of native events and Call Parent wiring runs on create, never on hydrate.
-- Undo goes through `@babylonslate/edit` commands (`graph.setFunctionGraphs`, members, components); position drags commit once per gesture.
+- Undo goes through `@haptic/edit` commands (`graph.setFunctionGraphs`, members, components); position drags commit once per gesture.
 - Large lists (palette, Compiler Results) use the existing windowing components; do not add a virtualizer library.
 - Play never writes unsaved edits without asking (Save & Play / Play Without Saving / Cancel).
 

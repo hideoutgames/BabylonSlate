@@ -918,7 +918,7 @@ export function buildMinimalGlbFixture(options?: {
   // Using a hand-rolled 1x1 PNG keeps the fixture self-contained.
   const png = options?.imageRgba ?? ONE_BY_ONE_PNG;
   const json = {
-    asset: { version: "2.0", generator: "babylonslate-test" },
+    asset: { version: "2.0", generator: "haptic-test" },
     buffers: [{ byteLength: png.byteLength }],
     bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: png.byteLength }],
     images: [{ mimeType: "image/png", bufferView: 0, name: "FixtureImage" }],

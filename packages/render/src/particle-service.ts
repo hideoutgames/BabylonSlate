@@ -20,16 +20,16 @@ import {
   type ParticleLibraryEmitter,
   type ParticleSimBackend,
   type ParticleSystemPayload,
-} from "@babylonslate/assets";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { DEFAULT_SORTING_LAYERS, type ParticleSpace } from "@babylonslate/core";
+} from "@haptic/assets";
+import type { CommandMessage } from "@haptic/bridge";
+import { DEFAULT_SORTING_LAYERS, type ParticleSpace } from "@haptic/core";
 import {
   lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
   type ParticleBuildPlan,
   type ParticleGraphDocument,
   type ParticleGraphLowerResult,
-} from "@babylonslate/particle-graph";
+} from "@haptic/particle-graph";
 import type { ResourceLease } from "./resource-cache";
 import { createBasicEmissionDriver, type BasicEmissionDriver } from "./particle-emission-driver";
 import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileCode } from "./particle-graph-realize";
@@ -46,7 +46,7 @@ import {
 import { markSceneReadinessDirty } from "./scene-perf";
 import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerResolution } from "./sorting";
 
-export type { ParticleLibrary, ParticleLibraryEmitter } from "@babylonslate/assets";
+export type { ParticleLibrary, ParticleLibraryEmitter } from "@haptic/assets";
 export type ParticleDiagnosticCode =
   | "particle.unknown_system"
   | "particle.unknown_emitter"

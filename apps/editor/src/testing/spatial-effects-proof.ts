@@ -17,17 +17,17 @@ import {
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
   normalizeRenderingQuality,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   applyAuthoredLightProperties,
   createAppWebGpuEngine,
   MaterialLibrary,
   setSceneRenderSettings,
-} from "@babylonslate/render";
-import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
-import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
-import { removeFogVolumes, upsertFogVolumes } from "@babylonslate/render/fog-volumes";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+} from "@haptic/render";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
+import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { removeFogVolumes, upsertFogVolumes } from "@haptic/render/fog-volumes";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 
 async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => Promise<number[]>) {
   const root = new TransformNode("Local Fog Actor", scene);

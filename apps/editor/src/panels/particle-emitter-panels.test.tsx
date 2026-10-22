@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   createDefaultParticleEmitterPayload,
   normalizeParticleEmitterPayload,
   type ParticleEmitterPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { ParticleEmitterEditor, ParticleEmitterPreview } from "./particle-emitter-panels";
 
@@ -30,11 +30,11 @@ vi.mock("../context/document-context", async () => {
       list: () => [
         {
           header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
-          path: "assets/Rock.material.babasset",
+          path: "assets/Rock.material.hasset",
         },
         {
           header: { guid: "mat-particle", name: "SparksMat", type: "Material", payload: { domain: "particle" } },
-          path: "assets/SparksMat.material.babasset",
+          path: "assets/SparksMat.material.hasset",
         },
       ],
     },
@@ -160,8 +160,8 @@ describe("ParticleEmitterEditor", () => {
 
   it("keeps a document's closed cards for the project session and nothing longer", () => {
     const payload = createDefaultParticleEmitterPayload() as unknown as Doc;
-    const sparks = "particle-emitter:assets/Sparks.emitter.babasset";
-    const smoke = "particle-emitter:assets/Smoke.emitter.babasset";
+    const sparks = "particle-emitter:assets/Sparks.emitter.hasset";
+    const smoke = "particle-emitter:assets/Smoke.emitter.hasset";
     const session = (documentKey: string | null) => (
       <EditorSessionStateProvider>
         {documentKey ? (

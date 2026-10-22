@@ -1,5 +1,5 @@
-import { VALUE_UNITS, normalizeValueUnit, typeAcceptsUnit } from "@babylonslate/core";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import { VALUE_UNITS, normalizeValueUnit, typeAcceptsUnit } from "@haptic/core";
+import type { PropertyRow } from "@haptic/editor-kit";
 
 const NO_UNIT = "none";
 

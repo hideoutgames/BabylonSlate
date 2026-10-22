@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryOpfsRoot } from "./test-support/memory-opfs";
 import { webcrypto } from "node:crypto";
-import type { ProjectFolderHandle } from "@babylonslate/core";
+import type { ProjectFolderHandle } from "@haptic/core";
 
 const isMobile = vi.fn(() => false);
 const isElectron = vi.fn(() => false);
@@ -64,7 +64,7 @@ describe("createTemplateStorage", () => {
     isElectron.mockReturnValue(true);
     const writes: unknown[][] = [];
     const project = { writeBinary: vi.fn() };
-    vi.stubGlobal("babylonslate", {
+    vi.stubGlobal("haptic", {
       project,
       library: { writeBinary: async (...args: unknown[]) => { writes.push(args); } },
     });

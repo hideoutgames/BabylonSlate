@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createCommandRegistry } from "@babylonslate/debugger";
-import type { DebugInspectNode } from "@babylonslate/object-model";
+import { createCommandRegistry } from "@haptic/debugger";
+import type { DebugInspectNode } from "@haptic/object-model";
 import { createInspectWorldStore } from "../lib/inspect-world-store";
 import { PlayDebugConsole } from "./play-debug-console";
 

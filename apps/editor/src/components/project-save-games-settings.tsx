@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@babylonslate/core";
-import { createSaveGameStorage, pickImportFiles } from "@babylonslate/vfs";
-import { AssetPicker, AssetPickerControl } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
-import { Switch } from "@babylonslate/ui/components/switch";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
+import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
+import { createSaveGameStorage, pickImportFiles } from "@haptic/vfs";
+import { AssetPicker, AssetPickerControl } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Input } from "@haptic/ui/components/input";
+import { Switch } from "@haptic/ui/components/switch";
+import { Badge } from "@haptic/ui/components/badge";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import {
   useDocumentActions,
   useProjectState,

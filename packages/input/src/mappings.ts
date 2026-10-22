@@ -9,13 +9,13 @@ import type {
   BindingModifiers,
   ActionBinding,
   AxisBinding,
-} from "@babylonslate/core";
+} from "@haptic/core";
 export type {
   InputDevice,
   BindingModifiers,
   ActionBinding,
   AxisBinding,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 export interface ActionMapping {
   id?: string;

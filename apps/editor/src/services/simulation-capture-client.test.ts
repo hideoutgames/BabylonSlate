@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CommandMessage, SimulationCaptureRequest, SimulationQuiesceRequest } from "@babylonslate/bridge";
-import { createDefaultScene } from "@babylonslate/core";
+import type { CommandMessage, SimulationCaptureRequest, SimulationQuiesceRequest } from "@haptic/bridge";
+import { createDefaultScene } from "@haptic/core";
 import { simulationCaptureChunks } from "../../../../packages/runtime/src/simulation-capture-transport";
 import { SimulationCaptureClient } from "./simulation-capture-client";
 

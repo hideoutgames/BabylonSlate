@@ -60,10 +60,10 @@ const releaseNotes = buildIdentity
 
 export default defineConfig({
   define: {
-    __BABYLONSLATE_BUILD__: JSON.stringify(buildIdentity),
-    __BABYLONSLATE_BUILD_LABEL__: JSON.stringify(buildLabel),
-    __BABYLONSLATE_VERSION__: JSON.stringify(declaredVersion),
-    __BABYLONSLATE_RELEASE_NOTES__: JSON.stringify(releaseNotes),
+    __HAPTIC_BUILD__: JSON.stringify(buildIdentity),
+    __HAPTIC_BUILD_LABEL__: JSON.stringify(buildLabel),
+    __HAPTIC_VERSION__: JSON.stringify(declaredVersion),
+    __HAPTIC_RELEASE_NOTES__: JSON.stringify(releaseNotes),
   },
   base: process.env.VITE_BASE_PATH ?? "/",
   plugins: [
@@ -106,7 +106,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(rootDir, "./src"),
-      "@babylonslate/ui": path.resolve(rootDir, "../../packages/ui/src"),
+      "@haptic/ui": path.resolve(rootDir, "../../packages/ui/src"),
       ...(reactProfiling ? { "react-dom/client": "react-dom/profiling" } : {}),
     },
   },

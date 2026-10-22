@@ -1,5 +1,5 @@
-import type { SerializedScene } from "@babylonslate/core";
-import { parseNavMeshActorSettings } from "@babylonslate/navigation/settings";
+import type { SerializedScene } from "@haptic/core";
+import { parseNavMeshActorSettings } from "@haptic/navigation/settings";
 import type { ProjectSceneWriter } from "../services/project-write-admission";
 
 const flushes = new Set<(writer?: ProjectSceneWriter) => Promise<void>>();

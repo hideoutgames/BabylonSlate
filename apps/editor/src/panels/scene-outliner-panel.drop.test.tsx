@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedScene } from "@babylonslate/core";
-import { createDefaultScene } from "@babylonslate/core";
+import type { SerializedScene } from "@haptic/core";
+import { createDefaultScene } from "@haptic/core";
 import { actorRowId } from "../lib/outliner-drop";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 
@@ -41,7 +41,7 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "scene:assets/Main.scene.babasset" }),
+  useDocumentWorkspace: () => ({ documentId: "scene:assets/Main.scene.hasset" }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
@@ -58,8 +58,8 @@ vi.mock("../context/scene-editing-context", () => ({
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "scene:assets/Main.scene.babasset",
-      ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+      id: "scene:assets/Main.scene.hasset",
+      ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
       content: harness.scene,
       layout: null,
       dirty: false,

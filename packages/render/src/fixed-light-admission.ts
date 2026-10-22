@@ -19,7 +19,7 @@ import {
   type FixedLightInventory,
   type FixedLightKind,
   type FixedLightLayout,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import { installFixedLightBinding } from "./fixed-light-binding";
 import {

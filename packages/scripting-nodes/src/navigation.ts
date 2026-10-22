@@ -10,7 +10,7 @@ import {
   arrayOf,
   enumRef,
   ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 /**

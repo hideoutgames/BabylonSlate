@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
+import { compileGraph, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 type NodeSpec = [id: string, typeId: string, properties?: Record<string, unknown>];

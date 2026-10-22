@@ -6,9 +6,9 @@ import type {
   SessionPauseReason,
   SimulationCaptureRequest,
   SimulationQuiesceRequest,
-} from "@babylonslate/bridge";
-import type { DataAssetCatalogEntry, SerializedScene } from "@babylonslate/core";
-import { MaterialObject, getPostProcessMaterialObject, type Actor, type World } from "@babylonslate/object-model";
+} from "@haptic/bridge";
+import type { DataAssetCatalogEntry, SerializedScene } from "@haptic/core";
+import { MaterialObject, getPostProcessMaterialObject, type Actor, type World } from "@haptic/object-model";
 import { dataTypeSchemas } from "./data-catalog";
 import type { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";

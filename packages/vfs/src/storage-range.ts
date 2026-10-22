@@ -1,5 +1,5 @@
-import type { StorageRangeRead, StorageReadMetrics } from "@babylonslate/core";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import type { StorageRangeRead, StorageReadMetrics } from "@haptic/core";
+import { SourceRevisionChangedError } from "@haptic/core";
 
 /**
  * UTF-8 size of `text` as `TextEncoder` would produce it, without allocating the

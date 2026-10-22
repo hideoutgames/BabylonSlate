@@ -1,8 +1,8 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { assertUniqueSceneActorIds, type SerializedActor, type SerializedScene } from "@babylonslate/core";
-import { initNavigation } from "@babylonslate/navigation";
-import { hydrateScenePropertyReferences, type Actor, type Scene, type SceneLayer, type World } from "@babylonslate/object-model";
-import { isInfiniteLoopError } from "@babylonslate/debugger";
+import type { CommandMessage } from "@haptic/bridge";
+import { assertUniqueSceneActorIds, type SerializedActor, type SerializedScene } from "@haptic/core";
+import { initNavigation } from "@haptic/navigation";
+import { hydrateScenePropertyReferences, type Actor, type Scene, type SceneLayer, type World } from "@haptic/object-model";
+import { isInfiniteLoopError } from "@haptic/debugger";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";

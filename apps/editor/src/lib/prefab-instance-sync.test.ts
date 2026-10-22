@@ -5,7 +5,7 @@ import {
   createMeshComponent,
   identitySerializedTransform,
   normalizeScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   PREFAB_PARENT_OVERRIDE,
   PREFAB_TRANSFORM_OVERRIDE,
@@ -16,7 +16,7 @@ import {
   syncActorComponentsFromPrefab,
   syncSceneActorsFromPrefabs,
 } from "./prefab-instance-sync";
-import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalLines, serializeJournalLine } from "@babylonslate/edit";
+import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalLines, serializeJournalLine } from "@haptic/edit";
 import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 import { duplicateSceneActor, spawnPlacedActor } from "./place-actors";
@@ -304,7 +304,7 @@ describe("syncSceneActorsFromPrefabs", () => {
     expect(scene.actors[0]?.prefabGuid).toBe("rock-guid");
 
     const assets = [{
-      path: "assets/Rock.prefab.babasset",
+      path: "assets/Rock.prefab.hasset",
       header: { type: "Prefab", guid: "rock-guid", payload: { components: [createMeshComponent("prefab-mesh", "cylinder")] } },
     }];
     const saved = syncSceneActorsFromPrefabs(scene, prefabAssetTemplates({ assets, openDocuments: [] }));
@@ -313,7 +313,7 @@ describe("syncSceneActorsFromPrefabs", () => {
     const edited = syncSceneActorsFromPrefabs(scene, prefabAssetTemplates({
       assets,
       openDocuments: [{
-        ref: { kind: "prefab", path: "assets/Rock.prefab.babasset" },
+        ref: { kind: "prefab", path: "assets/Rock.prefab.hasset" },
         content: { components: [createMeshComponent("prefab-mesh", "sphere")] },
       }],
     }));

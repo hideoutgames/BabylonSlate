@@ -3,13 +3,13 @@ import {
   ariaKeyShortcuts,
   ShortcutKeys,
   type KeyChord,
-} from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 
 /** Icon-only control with aria-label plus a tooltip (hover is secondary). */
 export function IconActionButton({

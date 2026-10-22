@@ -5,7 +5,7 @@ import type {
   RenderEffectsSettings,
   RenderEffectsToneMapping,
   RenderMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Display Color stage inputs. The vignette also runs in Legacy Display and
  * CEL, where exposure, contrast and tone mapping stay at identity. */

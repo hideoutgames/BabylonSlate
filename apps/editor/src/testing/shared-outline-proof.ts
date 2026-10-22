@@ -1,9 +1,9 @@
 /** Pixel qualification of the production coordinator; no fixture-owned renderer. */
 import { Camera, Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
-import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
-import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
+import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@haptic/render";
+import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
+import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 
 export interface SharedOutlineProofProgress {
   stage: string;

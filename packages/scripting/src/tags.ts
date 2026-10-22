@@ -1,4 +1,4 @@
-import { normalizeTag, normalizeTagRegistry, type TagRegistry } from "@babylonslate/core";
+import { normalizeTag, normalizeTagRegistry, type TagRegistry } from "@haptic/core";
 
 export function tagCasesOf(properties: Record<string, unknown>): number[] {
   const cases = Array.isArray(properties.cases) ? properties.cases : [];

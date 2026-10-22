@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Textarea } from "@babylonslate/ui/components/textarea";
-import { buttonVariants } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Textarea } from "@haptic/ui/components/textarea";
+import { buttonVariants } from "@haptic/ui/components/button";
+import { cn } from "@haptic/ui/lib/utils";
 import { commitPickerOptionKeyDown } from "./search-dialog";
 import { useTouchUi } from "./touch-ui";
 import {

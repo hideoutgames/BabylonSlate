@@ -1,5 +1,5 @@
-import type { SerializedTransform, Transform } from "@babylonslate/core";
-import { Actor, ActorComponent, runtimeTransformFromSerialized, type World } from "@babylonslate/object-model";
+import type { SerializedTransform, Transform } from "@haptic/core";
+import { Actor, ActorComponent, runtimeTransformFromSerialized, type World } from "@haptic/object-model";
 import { actorChainWorldTransform, actorParentGuid, composeParentChildTransform, relativeTransform } from "./actor-world-transform";
 
 function runtimeEditParentTransform(world: World, target: Actor | ActorComponent): Transform | null {

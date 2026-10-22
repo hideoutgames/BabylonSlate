@@ -2,7 +2,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseLandscapeProperties, type LandscapeProperties } from "@babylonslate/core";
+import { parseLandscapeProperties, type LandscapeProperties } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { RENDERING_GROUP } from "./sorting";
 import { applyMaterialBounds } from "./material-bounds";

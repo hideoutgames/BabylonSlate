@@ -16,7 +16,7 @@ import {
   VEC3,
   VEC4,
   enumRef,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { enumGuidOf, enumMembersOf, titleCaseEnumMember } from "./enum";
 
 export const SELECT_OPTION_PIN_PREFIX = "option:";

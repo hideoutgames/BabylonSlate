@@ -2,8 +2,8 @@ import {
   collisionResponseTo,
   setCollisionResponse,
   type CollisionResponse,
-} from "@babylonslate/core";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/core";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface CollisionResponsesValue {
   /** Layers blocked. */

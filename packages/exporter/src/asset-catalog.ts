@@ -1,4 +1,4 @@
-import { classIdForAssetPath, type RuntimeAssetCatalogEntry } from "@babylonslate/core";
+import { classIdForAssetPath, type RuntimeAssetCatalogEntry } from "@haptic/core";
 import type { ExportIndexedAsset, GameAssetIndexEntry } from "./types";
 
 const isClassType = (type: string): boolean => type === "Class";

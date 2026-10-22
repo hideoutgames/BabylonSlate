@@ -62,7 +62,7 @@ describe("PluginSettings payload", () => {
     ]);
   });
 
-  it("round-trips through a .plugin.babasset document", async () => {
+  it("round-trips through a .plugin.hasset document", async () => {
     const payload = createDefaultPluginSettings({
       pluginGuid: "plug-1",
       displayName: "Pack",
@@ -77,6 +77,6 @@ describe("PluginSettings payload", () => {
     expect(normalizePluginSettings(decoded.payload, { pluginGuid: decoded.guid })).toEqual(
       payload,
     );
-    expect(PLUGIN_FILE_SUFFIX).toBe(".plugin.babasset");
+    expect(PLUGIN_FILE_SUFFIX).toBe(".plugin.hasset");
   });
 });

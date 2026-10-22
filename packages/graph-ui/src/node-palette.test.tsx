@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
+import { basicParticleStageRole } from "@haptic/ui/lib/data-types";
 import { NodePalette } from "./node-palette";
 import { nodeRoleClass } from "./node-theme";
 import type { PaletteNode, SerializedPin } from "./graph-types";

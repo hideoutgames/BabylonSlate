@@ -5,12 +5,12 @@ import {
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
-import { createDefaultRenderTargetCaptureProperties } from "@babylonslate/core";
+import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { beginManagedRenderAllocation, managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import * as normalMaterial from "./render-target-normal-material";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";
 import { createSceneStreamAdmission, registerSceneStreamParticle } from "./scene-stream-admission";

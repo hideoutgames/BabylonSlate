@@ -15,7 +15,7 @@ function fakeBridge(initial: string | null = null) {
 
 describe("Electron userData app settings", () => {
   beforeEach(() => {
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
+    delete (globalThis as { haptic?: unknown }).haptic;
   });
 
   it("persists settings through the userData bridge", async () => {
@@ -88,7 +88,7 @@ describe("Electron userData app settings", () => {
     expect(isElectronHost()).toBe(false);
     expect(getHostPlatform()).toBe("web");
 
-    (globalThis as { babylonslate?: unknown }).babylonslate = {
+    (globalThis as { haptic?: unknown }).haptic = {
       userData: fakeBridge(),
     };
     expect(isElectronHost()).toBe(true);

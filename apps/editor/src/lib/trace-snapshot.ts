@@ -1,5 +1,5 @@
-import type { TraceFrame } from "@babylonslate/debugger";
-import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import type { TraceFrame } from "@haptic/debugger";
+import { humanizePropertyLabel } from "@haptic/editor-kit";
 
 export type ParsedTraceSnapshot =
   { status: "ready"; value: unknown } | { status: "missing" | "invalid" };

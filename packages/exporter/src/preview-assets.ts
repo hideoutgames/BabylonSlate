@@ -1,6 +1,6 @@
 /** Preview transports only requested files; delivery archives remain in the host. */
-export const PREVIEW_ASSET_REQUEST = "babylonslate-preview-asset-request";
-export const PREVIEW_ASSET_RESPONSE = "babylonslate-preview-asset-response";
+export const PREVIEW_ASSET_REQUEST = "haptic-preview-asset-request";
+export const PREVIEW_ASSET_RESPONSE = "haptic-preview-asset-response";
 type AssetRequest = { type: typeof PREVIEW_ASSET_REQUEST; requestId: number; path: string };
 type AssetResponse = { type: typeof PREVIEW_ASSET_RESPONSE; requestId: number; bytes?: ArrayBuffer; error?: string };
 

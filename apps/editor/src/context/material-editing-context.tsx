@@ -1,5 +1,5 @@
-import { installedAssetIdentity, type IndexedAsset } from "@babylonslate/assets";
-import { encodeRgbaPng, installTextureBytes } from "@babylonslate/render";
+import { installedAssetIdentity, type IndexedAsset } from "@haptic/assets";
+import { encodeRgbaPng, installTextureBytes } from "@haptic/render";
 import {
   createContext,
   useCallback,
@@ -25,7 +25,7 @@ import {
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import {
   classifyMaterialCost,
   createMaterialPreviewState,
@@ -47,8 +47,8 @@ import {
   type MaterialInstanceDocument,
   type MaterialLowerResult,
   type MaterialPreviewState,
-} from "@babylonslate/shader-graph";
-import type { MaterialParameterValue } from "@babylonslate/core";
+} from "@haptic/shader-graph";
+import type { MaterialParameterValue } from "@haptic/core";
 import {
   useDocumentActions,
   useProjectState,

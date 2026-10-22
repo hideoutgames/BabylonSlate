@@ -16,16 +16,16 @@ import { clickPlayAndWaitForOverlay } from "./play";
 import { guidForPath } from "./material-graph";
 import { opfsProjectDirectory } from "./opfs-project";
 
-const CLASS_PATH = "assets/Mannequin.class.babasset";
-const ANIM_PATH = "assets/Mannequin/Mannequin.anim.babasset";
+const CLASS_PATH = "assets/Mannequin.class.hasset";
+const ANIM_PATH = "assets/Mannequin/Mannequin.anim.hasset";
 
 type TestHost = {
-  __babylonslateTest: {
+  __hapticTest: {
     readAssetChunk(path: string, chunk: string): Promise<Uint8Array>;
     setMainGraphContent(graph: SerializedGraph): Promise<boolean>;
     setActiveSceneContent(scene: SerializedScene): Promise<boolean>;
   };
-  __babylonslatePlayTest: {
+  __hapticPlayTest: {
     whenModelsReady(): Promise<void>;
     materialDefines?(): Array<{
       mesh: string;
@@ -39,7 +39,7 @@ type TestHost = {
 /** Shader/session/shadow state beside a pixel capture, for CI readouts. */
 async function playDebugReadout(page: Page) {
   return page.evaluate(() => {
-    const host = (globalThis as unknown as TestHost).__babylonslatePlayTest;
+    const host = (globalThis as unknown as TestHost).__hapticPlayTest;
     return {
       rendering: host.rendering?.() ?? null,
       defines: host.materialDefines?.() ?? [],
@@ -51,7 +51,7 @@ async function documentPayload<T>(page: Page, path: string): Promise<T> {
   return page.evaluate(async (assetPath) => {
     const bytes = await (
       globalThis as unknown as TestHost
-    ).__babylonslateTest.readAssetChunk(assetPath, "document");
+    ).__hapticTest.readAssetChunk(assetPath, "document");
     return JSON.parse(new TextDecoder().decode(bytes));
   }, path);
 }
@@ -140,7 +140,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
       await project.getDirectoryHandle("assets")
     ).getDirectoryHandle("Mannequin");
     for await (const name of folder.keys()) {
-      if (/(?:^|_)walk(?:[._]|$)/i.test(name) && name.endsWith(".babasset"))
+      if (/(?:^|_)walk(?:[._]|$)/i.test(name) && name.endsWith(".hasset"))
         return `assets/Mannequin/${name}`;
     }
     throw new Error("Imported Mannequin Walk Animation is missing");
@@ -192,7 +192,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
           Name: "Jump",
           Asset: await guidForPath(
             page,
-            "assets/Input/Jump.inputaction.babasset",
+            "assets/Input/Jump.inputaction.hasset",
           ),
         },
       },
@@ -205,7 +205,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
           Name: "Confirm",
           Asset: await guidForPath(
             page,
-            "assets/Input/Confirm.inputaction.babasset",
+            "assets/Input/Confirm.inputaction.hasset",
           ),
         },
       },
@@ -238,7 +238,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
       (next) =>
         (
           globalThis as unknown as TestHost
-        ).__babylonslateTest.setMainGraphContent(next),
+        ).__hapticTest.setMainGraphContent(next),
       graph,
     ),
   ).toBe(true);
@@ -269,7 +269,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await page.evaluate(() =>
     (
       globalThis as unknown as TestHost
-    ).__babylonslatePlayTest.whenModelsReady(),
+    ).__hapticPlayTest.whenModelsReady(),
   );
   const canvas = page.getByTestId("play-canvas");
   const prints = page.getByTestId("print-overlay");
@@ -347,7 +347,7 @@ test("D800: the authored trigger receives Begin Overlap when it is the second co
   await openMainScene(page);
   const scene = await documentPayload<SerializedScene>(
     page,
-    "assets/main.scene.babasset",
+    "assets/main.scene.hasset",
   );
   const mannequin = scene.actors.find(
     (actor) => actor.classId === "Mannequin",
@@ -392,7 +392,7 @@ test("D800: the authored trigger receives Begin Overlap when it is the second co
       (next) =>
         (
           globalThis as unknown as TestHost
-        ).__babylonslateTest.setMainGraphContent(next),
+        ).__hapticTest.setMainGraphContent(next),
       graph,
     ),
   ).toBe(true);
@@ -431,7 +431,7 @@ test("D800: the authored trigger receives Begin Overlap when it is the second co
       (next) =>
         (
           globalThis as unknown as TestHost
-        ).__babylonslateTest.setActiveSceneContent(next),
+        ).__hapticTest.setActiveSceneContent(next),
       scene,
     ),
   ).toBe(true);
@@ -443,7 +443,7 @@ test("D800: the authored trigger receives Begin Overlap when it is the second co
   await page.evaluate(() =>
     (
       globalThis as unknown as TestHost
-    ).__babylonslatePlayTest.whenModelsReady(),
+    ).__hapticPlayTest.whenModelsReady(),
   );
   await page
     .getByTestId("play-overlay")

@@ -1,5 +1,5 @@
-import { ArrayProperty } from "@babylonslate/editor-kit";
-import { TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_MODE_LABELS, type Text2DAppearMode } from "@babylonslate/core";
+import { ArrayProperty } from "@haptic/editor-kit";
+import { TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_MODE_LABELS, type Text2DAppearMode } from "@haptic/core";
 
 /** Shared Scene/Prefab constraint on the reusable array property. */
 export function RichTextAppearModesField({ value, onChange, defaultValue = [], "data-testid": testId }: {

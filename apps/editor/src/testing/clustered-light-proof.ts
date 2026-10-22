@@ -2,7 +2,7 @@ import {
   normalizeCelShadingSettings,
   normalizeShadowSettings,
   normalizeRenderingQuality,
-} from "@babylonslate/core";
+} from "@haptic/core";
 /** Real GPU contribution oracle; this hook is available only in test builds. */
 import {
   Color3,
@@ -25,19 +25,19 @@ import {
   readEngineDrawCalls,
   setSceneRenderSettings,
   type RenderShadingSettings,
-} from "@babylonslate/render";
-import { createAppWebGpuEngine } from "@babylonslate/render";
-import { ClusteredSceneLights } from "@babylonslate/render/clustered-scene-lights";
-import { clusteredLightCapabilities } from "@babylonslate/render/clustered-light-capabilities";
+} from "@haptic/render";
+import { createAppWebGpuEngine } from "@haptic/render";
+import { ClusteredSceneLights } from "@haptic/render/clustered-scene-lights";
+import { clusteredLightCapabilities } from "@haptic/render/clustered-light-capabilities";
 import {
   readbackChannelOrder,
   toRgbaPixels,
 } from "./readback-channels";
-import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 
 export async function runClusteredLightProof() {
   const canvas = document.createElement("canvas");

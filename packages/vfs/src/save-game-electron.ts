@@ -1,4 +1,4 @@
-import type { SaveGameStorage } from "@babylonslate/core";
+import type { SaveGameStorage } from "@haptic/core";
 import type { ElectronSaveGameBridge, SaveGameBridgeResult } from "./platform";
 import { normalizeSaveGameStorageError } from "./save-game-path";
 

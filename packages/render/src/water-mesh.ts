@@ -8,7 +8,7 @@ import {
   normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
   waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
   type Transform, type WaterBlendBody, type WaterBodyProperties, type WaterDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";

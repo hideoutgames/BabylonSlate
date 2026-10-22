@@ -13,15 +13,15 @@ The command system is always present; only the debugger UI and debug-tier comman
 | Registry, parser, tiers, autocomplete, stats cadence, loop guard, `TraceRecorder`, performance/session diagnostics | [`packages/debugger/src/`](../../../packages/debugger/src/) |
 | `ConsoleCommandHost` implementation, tick/trace wiring | [`packages/runtime/src/`](../../../packages/runtime/src/) (`runtime-console.ts`, `driver.ts`) |
 | Inspect snapshot (`createDebugInspectSnapshot`) | [`packages/object-model/src/`](../../../packages/object-model/src/) |
-| Trace documents (`.babtrace` under `derived/{projectGuid}/traces/`, [containers.md](containers.md)) | [`packages/assets/src/trace.ts`](../../../packages/assets/src/trace.ts) |
+| Trace documents (`.htrace` under `derived/{projectGuid}/traces/`, [containers.md](containers.md)) | [`packages/assets/src/trace.ts`](../../../packages/assets/src/trace.ts) |
 | GL error trace (`installGlErrorTrace`) | [`packages/render/src/gl-error-trace.ts`](../../../packages/render/src/gl-error-trace.ts) |
 | Host memory (`getHostMemoryStats`) | [`packages/vfs/src/device-memory.ts`](../../../packages/vfs/src/device-memory.ts) |
 | Play overlay, console, Inspector, Stats HUD, probes, load reports | [`apps/editor/src/components/`](../../../apps/editor/src/components/), [`services/runtime-probes.ts`](../../../apps/editor/src/services/runtime-probes.ts), [`lib/scene-load-report.ts`](../../../apps/editor/src/lib/scene-load-report.ts) |
 
 ## Package boundary
 
-- `@babylonslate/debugger` imports nothing: no React, Babylon, Capacitor or scripting. New behavior goes through `ConsoleCommandHost` plus bridge commands; rendering, audio and camera stay in render / the Play overlay.
-- `@babylonslate/scripting` may import only `instrumentJsLoops` from it.
+- `@haptic/debugger` imports nothing: no React, Babylon, Capacitor or scripting. New behavior goes through `ConsoleCommandHost` plus bridge commands; rendering, audio and camera stay in render / the Play overlay.
+- `@haptic/scripting` may import only `instrumentJsLoops` from it.
 - `CommandRegistry.execute` never throws: parse/coercion failures, unknown names and stripped names return `{ success: false, output }`.
 
 ## Tiers

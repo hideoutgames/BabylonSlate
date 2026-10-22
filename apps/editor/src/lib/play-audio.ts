@@ -7,7 +7,7 @@ import {
   type AudioMixerPayload,
   type AudioPayload,
   type SoundAttenuationPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 
 export type PlayAudioLibrary = {
   mixerGuid: string | null;

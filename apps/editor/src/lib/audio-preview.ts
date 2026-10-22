@@ -3,8 +3,8 @@ import {
   pickWeightedAudioClip,
   resolveAudioPitch,
   type AudioPayload,
-} from "@babylonslate/assets";
-import { attachAudioLifecycle, type AudioPlaybackBackend } from "@babylonslate/render";
+} from "@haptic/assets";
+import { attachAudioLifecycle, type AudioPlaybackBackend } from "@haptic/render";
 
 export type AudioPreviewPlayResult = {
   ok: boolean;

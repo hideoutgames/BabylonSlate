@@ -243,7 +243,7 @@ async function runFallScenario(backend: PhysicsBackend): Promise<number> {
   return t?.position.y ?? NaN;
 }
 
-describe("@babylonslate/physics", () => {
+describe("@haptic/physics", () => {
   beforeEach(() => {
     resetLoadedBackendModules();
   });

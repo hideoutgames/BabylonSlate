@@ -1,5 +1,5 @@
 import type { Mesh, Scene } from "@babylonjs/core";
-import { emptySkyboxFaces } from "@babylonslate/core";
+import { emptySkyboxFaces } from "@haptic/core";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 
 export const PREVIEW_SKYBOX_MESH_NAME = "previewSkybox";

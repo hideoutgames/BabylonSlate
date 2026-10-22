@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
-import { pickImportFiles } from "@babylonslate/vfs";
-import { Button } from "@babylonslate/ui/components/button";
+import { pickImportFiles } from "@haptic/vfs";
+import { Button } from "@haptic/ui/components/button";
 import {
   FieldDescription,
   FieldError,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import { useDocumentActions, useEditorShellState } from "../context/document-context";
 import { importTemplateArchive } from "../services/template-service";
 import { homepageTemplates } from "./homepage-template-browser";

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import { Textarea } from "@babylonslate/ui/components/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/dialog";
+import { Textarea } from "@haptic/ui/components/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useActiveDocumentId, useDocumentActions } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
@@ -111,7 +111,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const restorePlayFromScene = playRef.current.playFromScene;
     if (!restorePlayFromScene) playRef.current.setPlayFromScene(true);
     const deps: FeatureTestCheckDeps = {
-      openScene: (path) => openDocument({ kind: "scene", path, label: path.split("/").pop()?.replace(".scene.babasset", "") ?? path }),
+      openScene: (path) => openDocument({ kind: "scene", path, label: path.split("/").pop()?.replace(".scene.hasset", "") ?? path }),
       activeDocumentId: () => activeRef.current,
       viewport: (documentId) => viewportProbes.get(documentId),
       startPlay: () => playRef.current.requestPlay({ saveChoice: "skip" }),

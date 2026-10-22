@@ -1,6 +1,6 @@
-import { createSessionSaveStorage, type SaveGameStorage, type SerializedScene } from "@babylonslate/core";
+import { createSessionSaveStorage, type SaveGameStorage, type SerializedScene } from "@haptic/core";
 import type { OpenDocument } from "./document-service";
-import type { SimulationSceneCaptureResult } from "@babylonslate/runtime";
+import type { SimulationSceneCaptureResult } from "@haptic/runtime";
 import type { SimulationDocumentTransaction } from "./simulation-document";
 import type { GameSessionOwner, GameSessionTicket } from "./game-session-owner";
 import type { PlaySessionResult } from "./play-session";

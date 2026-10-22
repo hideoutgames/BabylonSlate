@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 
 export function useTexturePreview(textureGuid: string | null | undefined) {

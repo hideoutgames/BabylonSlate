@@ -18,7 +18,7 @@ import {
   type AbstractEngine,
   type AbstractMesh,
 } from "@babylonjs/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   parseSceneLayerHitTest,
   sceneLayerCanvasToLayer,
@@ -31,7 +31,7 @@ import {
   type SceneLayerHitTest,
   type ScenePostProcessEntry,
   type MaterialParameterValue,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";

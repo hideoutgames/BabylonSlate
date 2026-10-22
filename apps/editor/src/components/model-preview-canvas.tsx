@@ -1,5 +1,5 @@
-import { installedAssetIdentity } from "@babylonslate/assets";
-import { installTextureBytes } from "@babylonslate/render";
+import { installedAssetIdentity } from "@haptic/assets";
+import { installTextureBytes } from "@haptic/render";
 import { useEffect, useRef, useState } from "react";
 import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
 import {
@@ -7,8 +7,8 @@ import {
   normalizeModelPayload,
   simpleColliderToPhysicsShape,
   type ModelSimpleCollider,
-} from "@babylonslate/assets";
-import type { ColliderShape } from "@babylonslate/physics";
+} from "@haptic/assets";
+import type { ColliderShape } from "@haptic/physics";
 import {
   MaterialLibrary,
   bindResourceCacheToHandle,
@@ -33,20 +33,20 @@ import {
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ViewportShadingMode,
-} from "@babylonslate/render";
+} from "@haptic/render";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+} from "@haptic/ui/components/empty";
+import { NestedMenu, type NestedMenuItem } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { Toggle } from "@haptic/ui/components/toggle";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import {
   useDocumentActions,
   useProjectState,

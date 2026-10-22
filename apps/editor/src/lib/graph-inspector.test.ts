@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin, type PinType } from "@babylonslate/scripting";
+import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin, type PinType } from "@haptic/scripting";
 import {
   collectEnumMemberNames,
   commandParameterRows,

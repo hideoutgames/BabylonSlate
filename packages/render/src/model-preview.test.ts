@@ -11,16 +11,16 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeCelShadingSettings } from "@babylonslate/core";
+import { normalizeCelShadingSettings } from "@haptic/core";
 import {
   buildBoxGlbFixture,
   cookGeneratedCollisionFromGltf,
   encodeGlbJsonBin,
   splitGlbJsonBin,
-  decodeBabasset,
+  decodeHasset,
   embedGlbExternalImages,
-  encodeBabasset,
-} from "@babylonslate/assets";
+  encodeHasset,
+} from "@haptic/assets";
 import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import {
@@ -520,11 +520,11 @@ describe("loadModelPreviewSource", () => {
     loaded?.dispose();
   });
 
-  it("loads a Model.source view after a babasset round-trip", async () => {
+  it("loads a Model.source view after a hasset round-trip", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const glb = encodeTriangleGlb();
-    const encoded = await encodeBabasset({
+    const encoded = await encodeHasset({
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "model-1",
@@ -546,7 +546,7 @@ describe("loadModelPreviewSource", () => {
       ],
       blobThreshold: 1024 * 1024,
     });
-    const source = (await decodeBabasset(encoded)).chunks.get("source")!;
+    const source = (await decodeHasset(encoded)).chunks.get("source")!;
     expect(
       source.byteOffset > 0 || source.buffer.byteLength > source.byteLength,
     ).toBe(true);

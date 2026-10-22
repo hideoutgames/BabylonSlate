@@ -2,8 +2,8 @@ import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   AssetCreateProvider,
   type AssetCreateApi,
-} from "@babylonslate/editor-kit";
-import type { MaterialDomain } from "@babylonslate/shader-graph";
+} from "@haptic/editor-kit";
+import type { MaterialDomain } from "@haptic/shader-graph";
 import {
   useActiveDocumentId,
   useDocumentActions,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewPackFromFiles } from "@babylonslate/exporter";
+import { previewPackFromFiles } from "@haptic/exporter";
 import { previewPackFromExpectedHostMessage } from "./preview-protocol";
 
 describe("preview pack protocol", () => {

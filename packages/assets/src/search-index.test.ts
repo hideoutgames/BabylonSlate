@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { encodeBabasset } from "./babasset";
+import { encodeHasset } from "./hasset";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry, type IndexedAsset } from "./registry";
 import { ProjectSearchIndex } from "./search-index";
@@ -22,7 +22,7 @@ vi.mock("./asset-document", async (importOriginal) => {
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("search.babproject");
+  await storage.openDocumentsProject("search.hproject");
   return storage;
 }
 
@@ -56,7 +56,7 @@ async function writeTexture(
 ): Promise<void> {
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   if (dir) await storage.mkdir(dir, true);
-  const bytes = await encodeBabasset({
+  const bytes = await encodeHasset({
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: options.guid,
@@ -84,7 +84,7 @@ async function writeTexture(
 describe("ProjectSearchIndex", () => {
   it("returns no rows for an empty query", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.scene.babasset", {
+    await writeDocument(storage, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
@@ -105,12 +105,12 @@ describe("ProjectSearchIndex", () => {
 
   it("indexes asset headers and scene actors without loading texture payloads", async () => {
     const storage = await createStorage();
-    await writeTexture(storage, "assets/hero.babasset", {
+    await writeTexture(storage, "assets/hero.hasset", {
       guid: "tex-1",
       name: "HeroTex",
       payloadBytes: new Uint8Array(512).fill(9),
     });
-    await writeDocument(storage, "assets/main.scene.babasset", {
+    await writeDocument(storage, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
@@ -155,7 +155,7 @@ describe("ProjectSearchIndex", () => {
     const actor = actorHits.find((hit) => hit.kind === "actor");
     expect(actor?.target).toEqual({
       kind: "scene-actor",
-      scenePath: "assets/main.scene.babasset",
+      scenePath: "assets/main.scene.hasset",
       actorId: "actor-1",
     });
 
@@ -169,7 +169,7 @@ describe("ProjectSearchIndex", () => {
 
   it("indexes graph nodes, variable names, and skips ExecuteJavaScript bodies", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.class.babasset", {
+    await writeDocument(storage, "assets/main.class.hasset", {
       guid: "graph-1",
       type: "Class",
       name: "MainGraph",
@@ -178,7 +178,7 @@ describe("ProjectSearchIndex", () => {
           {
             id: "log-1",
             type: "debug.log",
-            data: { "default:message": "Hello from BabylonSlate" },
+            data: { "default:message": "Hello from Haptic" },
           },
           {
             id: "var-1",
@@ -220,7 +220,7 @@ describe("ProjectSearchIndex", () => {
       hello.find((hit) => hit.kind === "graph-node")?.target,
     ).toMatchObject({
       kind: "graph-node",
-      graphPath: "assets/main.class.babasset",
+      graphPath: "assets/main.class.hasset",
       nodeId: "log-1",
     });
 
@@ -239,7 +239,7 @@ describe("ProjectSearchIndex", () => {
 
   it("indexes logic graph nodes stored on Class assets", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/hero.class.babasset", {
+    await writeDocument(storage, "assets/hero.class.hasset", {
       guid: "class-1",
       type: "Class",
       name: "Hero",
@@ -265,14 +265,14 @@ describe("ProjectSearchIndex", () => {
         (hit) =>
           hit.kind === "graph-node" &&
           hit.target.kind === "graph-node" &&
-          hit.target.graphPath === "assets/hero.class.babasset",
+          hit.target.graphPath === "assets/hero.class.hasset",
       ),
     ).toBe(true);
   });
 
   it("indexes catalog class ids and Class asset headers", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/my-hero.babasset", {
+    await writeDocument(storage, "assets/my-hero.hasset", {
       guid: "class-1",
       type: "Class",
       name: "MyHero",
@@ -291,14 +291,14 @@ describe("ProjectSearchIndex", () => {
         (hit) =>
           hit.kind === "class" &&
           hit.target.kind === "class" &&
-          hit.target.path === "assets/my-hero.babasset",
+          hit.target.path === "assets/my-hero.hasset",
       ),
     ).toBe(true);
   });
 
   it("upserts in-memory document content and removes deleted assets", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.scene.babasset", {
+    await writeDocument(storage, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
@@ -319,7 +319,7 @@ describe("ProjectSearchIndex", () => {
     expect(index.query("cube")).toEqual([]);
     expect(index.query("spherehero").some((hit) => hit.kind === "actor")).toBe(true);
 
-    index.removeAsset("assets/main.scene.babasset");
+    index.removeAsset("assets/main.scene.hasset");
     expect(index.query("spherehero")).toEqual([]);
     expect(index.query("main").every((hit) => hit.kind !== "asset")).toBe(true);
   });
@@ -328,7 +328,7 @@ describe("ProjectSearchIndex", () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     for (let i = 0; i < 12; i++) {
-      await writeDocument(storage, `assets/n${i}.babasset`, {
+      await writeDocument(storage, `assets/n${i}.hasset`, {
         guid: `g-${i}`,
         type: "Enum",
         name: i === 0 ? "Needle" : `OtherNeedle${i}`,
@@ -349,7 +349,7 @@ describe("ProjectSearchIndex", () => {
     const project = await createStorage();
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
-    await writeDocument(engine, "starter/assets/StarterActor.class.babasset", {
+    await writeDocument(engine, "starter/assets/StarterActor.class.hasset", {
       guid: "hero-1",
       type: "Class",
       name: "StarterActor",
@@ -385,7 +385,7 @@ describe("ProjectSearchIndex", () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     const bake = new Uint8Array(256 * 1024);
-    await storage.writeBinary("assets/baked.scene.babasset", await encodeAssetDocument(
+    await storage.writeBinary("assets/baked.scene.hasset", await encodeAssetDocument(
       {
         type: "Scene", name: "Baked", guid: "baked", version: 1,
         payload: { actors: [{ id: "actor-1", name: "BakedHero", classId: "Actor", components: [] }] },
@@ -410,7 +410,7 @@ describe("ProjectSearchIndex", () => {
     await storage.mkdir("assets", true);
     for (let i = 0; i < 2; i++) {
       const kind = i % 2 === 0 ? "Scene" : "Class";
-      await writeDocument(storage, `assets/doc-${i}.babasset`, {
+      await writeDocument(storage, `assets/doc-${i}.hasset`, {
         guid: `doc-${i}`,
         type: kind,
         name: `Doc${i}`,
@@ -463,7 +463,7 @@ describe("ProjectSearchIndex", () => {
       const storage = await createStorage();
       await storage.mkdir("assets", true);
       for (let i = 0; i < 6; i++) {
-        await writeDocument(storage, `assets/s${i}.scene.babasset`, {
+        await writeDocument(storage, `assets/s${i}.scene.hasset`, {
           guid: `scene-${i}`,
           type: "Scene",
           name: `Level${i}`,
@@ -512,7 +512,7 @@ describe("ProjectSearchIndex", () => {
       const { storage, registry } = await sixScenes();
       const real = readStoredAssetDocument.getMockImplementation()!;
       readStoredAssetDocument.mockImplementation(async (...args: unknown[]) => {
-        if ((args[1] as string).endsWith("s2.scene.babasset")) throw new Error("corrupt chunk");
+        if ((args[1] as string).endsWith("s2.scene.hasset")) throw new Error("corrupt chunk");
         return real(...args);
       });
       try {
@@ -528,7 +528,7 @@ describe("ProjectSearchIndex", () => {
 
   it("overlays open-document JSON so unsaved names win, then a second rebuild sees the new snapshot", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.scene.babasset", {
+    await writeDocument(storage, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
@@ -543,7 +543,7 @@ describe("ProjectSearchIndex", () => {
     await index.rebuild(registry, {
       openDocuments: [
         {
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
           payload: {
             actors: [
               {
@@ -565,7 +565,7 @@ describe("ProjectSearchIndex", () => {
     await index.rebuild(registry, {
       openDocuments: [
         {
-          path: "assets/main.scene.babasset",
+          path: "assets/main.scene.hasset",
           payload: {
             actors: [
               {
@@ -587,7 +587,7 @@ describe("ProjectSearchIndex", () => {
 
   it("keeps the previous snapshot when an in-flight rebuild is aborted", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.scene.babasset", {
+    await writeDocument(storage, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
@@ -601,7 +601,7 @@ describe("ProjectSearchIndex", () => {
     await index.rebuild(registry);
     expect(index.query("cube").some((hit) => hit.kind === "actor")).toBe(true);
 
-    await writeDocument(storage, "assets/main.scene.babasset", {
+    await writeDocument(storage, "assets/main.scene.hasset", {
       guid: "scene-1",
       type: "Scene",
       name: "Main",
@@ -611,7 +611,7 @@ describe("ProjectSearchIndex", () => {
         ],
       },
     });
-    await registry.reindexPath("assets/main.scene.babasset");
+    await registry.reindexPath("assets/main.scene.hasset");
 
     const controller = new AbortController();
     const pending = index.rebuild(registry, { signal: controller.signal });
@@ -629,7 +629,7 @@ describe("ProjectSearchIndex", () => {
 
   it.each([false, true])("keeps the newer search snapshot when an older read finishes (aborted: %s)", async (abortOlder) => {
     const storage = await createStorage();
-    const path = "assets/main.scene.babasset";
+    const path = "assets/main.scene.hasset";
     await writeDocument(storage, path, {
       guid: "scene-1", type: "Scene", name: "Main",
       payload: { actors: [{ id: "actor-1", name: "OldHero", components: [] }] },
@@ -708,7 +708,7 @@ afterEach(() => {
 describe("ProjectSearchIndex ranking", () => {
   const scene: IndexedAsset = {
     rootId: "project",
-    path: "assets/level.scene.babasset",
+    path: "assets/level.scene.hasset",
     header: {
       dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "scene-1",

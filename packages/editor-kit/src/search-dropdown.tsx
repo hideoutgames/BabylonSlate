@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
+} from "@haptic/ui/components/dropdown-menu";
 import { SearchInput } from "./search-input";
 import {
   filterSearchItems,
@@ -14,7 +14,7 @@ import {
   type SearchDialogItem,
 } from "./search-dialog";
 import { PickerIdentity } from "./picker-identity";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface SearchDropdownProps {
   open?: boolean;

@@ -1,5 +1,5 @@
 import { Material, type AbstractMesh, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import type { CelShadingSettings, OutlineBinding, RenderMode, SerializedActor, SerializedScene } from "@babylonslate/core";
+import type { CelShadingSettings, OutlineBinding, RenderMode, SerializedActor, SerializedScene } from "@haptic/core";
 import { isColliderVisualTree } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { isViewportShadingTarget } from "./viewport-shading-mode";

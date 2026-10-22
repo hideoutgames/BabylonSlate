@@ -7,8 +7,8 @@ import {
   parseSpringArmProperties,
   type SerializedComponent,
   type SerializedScene,
-} from "@babylonslate/core";
-import type { ActorSlot } from "@babylonslate/bridge";
+} from "@haptic/core";
+import type { ActorSlot } from "@haptic/bridge";
 import { createTestEngine } from "./create-null-engine";
 import {
   actorVisualFingerprint,

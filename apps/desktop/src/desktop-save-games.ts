@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { NodeSaveGameStorage } from "@babylonslate/vfs/save-game-node";
+import { NodeSaveGameStorage } from "@haptic/vfs/save-game-node";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { name: string; message: string; code?: string } };
 interface Lease {

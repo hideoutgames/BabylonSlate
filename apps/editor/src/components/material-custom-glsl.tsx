@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@babylonslate/editor-kit";
-import { Field, FieldLabel, FieldDescription } from "@babylonslate/ui/components/field";
-import { customGlslInterface, customGlslInterfaceError, type CustomGlslPin, type MaterialGraphNode } from "@babylonslate/shader-graph";
+import { MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@haptic/editor-kit";
+import { Field, FieldLabel, FieldDescription } from "@haptic/ui/components/field";
+import { customGlslInterface, customGlslInterfaceError, type CustomGlslPin, type MaterialGraphNode } from "@haptic/shader-graph";
 import { CodeBodyEditor } from "./js-body-editor";
 import { GlslCodePreview } from "./glsl-code-preview";
 

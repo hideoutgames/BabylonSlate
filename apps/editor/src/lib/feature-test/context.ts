@@ -3,7 +3,7 @@ import {
   type AssetRegistry,
   type ImportResult,
   type IndexedAsset,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   createActor,
   createMeshComponent,
@@ -19,10 +19,10 @@ import {
   type SerializedSceneLayer,
   type SerializedTransform,
   type SkyboxFaces,
-} from "@babylonslate/core";
-import type { NavMeshGenerateInput } from "@babylonslate/navigation";
-import { isLockedEngineClassId } from "@babylonslate/object-model";
-import { defaultComponentAuthoringProperties } from "@babylonslate/runtime";
+} from "@haptic/core";
+import type { NavMeshGenerateInput } from "@haptic/navigation";
+import { isLockedEngineClassId } from "@haptic/object-model";
+import { defaultComponentAuthoringProperties } from "@haptic/runtime";
 import {
   buildNewAssetResult,
   newAssetFileName,
@@ -164,7 +164,7 @@ export const SCENE_SAVE_ORDER = { sceneLayer: 10, subScene: 20, scene: 30 } as c
 export interface FeatureTestContext {
   readonly host: FeatureTestHost;
   readonly registry: AssetRegistry;
-  /** `assets/main.scene.babasset`, mutated in memory and saved last. */
+  /** `assets/main.scene.hasset`, mutated in memory and saved last. */
   readonly mainScene: SerializedScene;
   readonly mainScenePath: string;
   /**
@@ -208,7 +208,7 @@ export interface FeatureTestContext {
     content: SerializedGraph | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<{ guid: string; path: string }>;
-  /** Save a Class (`<name>.class.babasset`); the class id is the file stem. */
+  /** Save a Class (`<name>.class.hasset`); the class id is the file stem. */
   saveClass(options: {
     folder: string;
     name: string;
@@ -469,7 +469,7 @@ export function createFeatureTestContext(options: {
       return ref;
     },
     async addSceneDocument({ kind, folder, name, content, order }) {
-      const suffix = kind === "scene" ? ".scene.babasset" : ".scenelayer.babasset";
+      const suffix = kind === "scene" ? ".scene.hasset" : ".scenelayer.hasset";
       const path = storagePath(folder, `${name}${suffix}`);
       if (sceneDocuments.some((entry) => entry.path === path)) {
         throw new Error(`FeatureTest scene document "${path}" already exists.`);

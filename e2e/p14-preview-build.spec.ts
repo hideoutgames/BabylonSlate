@@ -10,14 +10,14 @@ async function previewSlotMaterialNames(page: Page): Promise<string[]> {
     .getByTestId("player-root");
   return root.evaluate(() => {
     const host = globalThis as unknown as {
-      __babylonslatePlayerTest?: {
+      __hapticPlayerTest?: {
         meshMaterialNames?: () => string[];
         visuals: () => Array<{ materialName: string | null }>;
       };
     };
-    const named = host.__babylonslatePlayerTest?.meshMaterialNames?.() ?? [];
+    const named = host.__hapticPlayerTest?.meshMaterialNames?.() ?? [];
     if (named.length > 0) return named;
-    return (host.__babylonslatePlayerTest?.visuals() ?? [])
+    return (host.__hapticPlayerTest?.visuals() ?? [])
       .map((visual) => visual.materialName)
       .filter((name): name is string => typeof name === "string");
   });
@@ -136,17 +136,17 @@ test.describe("P14 Preview Build", () => {
     await createContentBrowserAsset(page, "Scene", "LevelTwo");
     const guids = await page.evaluate(() => {
       const host = globalThis as unknown as {
-        __babylonslateTest?: {
+        __hapticTest?: {
           guidForPath: (path: string) => string | null;
           projectStartupSceneGuid: () => string;
         };
       };
       return {
         open:
-          host.__babylonslateTest?.guidForPath(
-            "assets/LevelTwo.scene.babasset",
+          host.__hapticTest?.guidForPath(
+            "assets/LevelTwo.scene.hasset",
           ) ?? "",
-        startup: host.__babylonslateTest?.projectStartupSceneGuid() ?? "",
+        startup: host.__hapticTest?.projectStartupSceneGuid() ?? "",
       };
     });
     expect(guids.open).not.toBe(guids.startup);

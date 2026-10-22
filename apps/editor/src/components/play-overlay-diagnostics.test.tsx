@@ -2,7 +2,7 @@ import { Profiler } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
-import type { RenderDiagnostics } from "@babylonslate/render";
+import type { RenderDiagnostics } from "@haptic/render";
 import { startPlaySession, type PlaySession } from "../services/play-session";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { PlayOverlay } from "./play-overlay";
@@ -14,8 +14,8 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   createAppSettingsStore: () => ({ load: () => new Promise(() => {}) }),
   getHostMemoryStats: () => Promise.resolve(null),
 }));

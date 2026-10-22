@@ -1,10 +1,10 @@
 import {
   parseBehaviourTreeDocument,
   titleForBtClassId,
-} from "@babylonslate/behaviour-tree";
-import type { SerializedGraph } from "@babylonslate/core";
-import { displayNodeTitle } from "@babylonslate/graph-ui";
-import type { SessionReportEntry } from "@babylonslate/runtime";
+} from "@haptic/behaviour-tree";
+import type { SerializedGraph } from "@haptic/core";
+import { displayNodeTitle } from "@haptic/graph-ui";
+import type { SessionReportEntry } from "@haptic/runtime";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 
 /**

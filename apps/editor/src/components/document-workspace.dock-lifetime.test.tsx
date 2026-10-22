@@ -10,8 +10,8 @@ import {
   within,
 } from "@testing-library/react";
 import type { DockviewApi, IDockviewPanelProps } from "dockview-react";
-import { createDefaultSpritePayload } from "@babylonslate/assets";
-import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { createDefaultSpritePayload } from "@haptic/assets";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { DocumentWorkspace } from "./document-workspace";
 import {
   parseAnimDocumentLayout,
@@ -22,11 +22,11 @@ import { dockviewApiKey, type DockviewSurface } from "../shell/dockview-surface"
 import { captureAdaptiveDockviewLayout } from "../shell/phone-dock-layout";
 import type { DocumentsOverrides } from "../testing/document-context-mock";
 
-const SPRITE = "sprite:assets/Hero.sprite.babasset";
-const ANIM = "anim-graph:assets/Loco.anim.babasset";
+const SPRITE = "sprite:assets/Hero.sprite.hasset";
+const ANIM = "anim-graph:assets/Loco.anim.hasset";
 const DOCUMENTS = [
-  { id: SPRITE, ref: { kind: "sprite", path: "assets/Hero.sprite.babasset" }, content: createDefaultSpritePayload() },
-  { id: ANIM, ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" }, content: createDefaultAnimGraph("Loco") },
+  { id: SPRITE, ref: { kind: "sprite", path: "assets/Hero.sprite.hasset" }, content: createDefaultSpritePayload() },
+  { id: ANIM, ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" }, content: createDefaultAnimGraph("Loco") },
 ];
 
 const harness = vi.hoisted(() => ({

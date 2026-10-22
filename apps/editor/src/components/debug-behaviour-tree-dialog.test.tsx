@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { TagProvider } from "@babylonslate/editor-kit";
+import { TagProvider } from "@haptic/editor-kit";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 
 afterEach(cleanup);

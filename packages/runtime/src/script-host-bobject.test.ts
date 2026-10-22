@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   Actor,
   ActorComponent,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
 function stubServices(

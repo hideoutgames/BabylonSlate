@@ -26,15 +26,15 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backe
   await page.waitForFunction(
     () =>
       typeof (
-        window as unknown as { __babylonslateFrameGraphForwardProof?: unknown }
-      ).__babylonslateFrameGraphForwardProof === "function",
+        window as unknown as { __hapticFrameGraphForwardProof?: unknown }
+      ).__hapticFrameGraphForwardProof === "function",
   );
   const result = await page.evaluate(({ backend, output }) =>
     (
       window as unknown as {
-        __babylonslateFrameGraphForwardProof: typeof runFrameGraphForwardProof;
+        __hapticFrameGraphForwardProof: typeof runFrameGraphForwardProof;
       }
-    ).__babylonslateFrameGraphForwardProof(backend, output), { backend, output },
+    ).__hapticFrameGraphForwardProof(backend, output), { backend, output },
   );
   await testInfo.attach("framegraph-forward-proof", {
     body: JSON.stringify(result),

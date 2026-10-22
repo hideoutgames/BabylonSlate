@@ -48,11 +48,11 @@ for (const backend of ["webgl2"] as const) {
       { id: "red", sourceNodeId: "scale", sourcePinId: "out", targetNodeId: "color", targetPinId: "x" },
       { id: "surface", sourceNodeId: "color", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "emissive" },
     ];
-    files.set("assets/WaterEffect.material.babasset", await encodeAssetDocument({ guid: materialGuid, type: "Material", name: "Water Effect", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown> }));
+    files.set("assets/WaterEffect.material.hasset", await encodeAssetDocument({ guid: materialGuid, type: "Material", name: "Water Effect", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown> }));
     // Stylized compiles one look per material: Painted (the default) and Toon (`SLATE_WATER_TOON`) are separate shaders.
     for (const [index, style] of ["realistic", "stylized", "toon", "custom"].entries()) {
       const definition = style === "toon" ? createDefaultWaterDefinition("stylized", "toon") : createDefaultWaterDefinition(style === "stylized" ? "stylized" : "realistic");
-      files.set(`assets/${style}.water.babasset`, await encodeAssetDocument({
+      files.set(`assets/${style}.water.hasset`, await encodeAssetDocument({
         guid: `00000000-0000-4000-8000-00000000001${index}`, type: "Water", name: style, version: 1,
         payload: { ...definition, ...(style === "custom" ? { materialGuid } : {}) },
       }, { dependencies: style === "custom" ? [materialGuid] : [] }));
@@ -60,7 +60,7 @@ for (const backend of ["webgl2"] as const) {
     await openMinimalTestProject(page, files);
     await openMainScene(page);
     for (const style of ["realistic", "stylized", "toon", "custom"]) {
-      await openAssetFromBrowser(page, `assets/${style}.water.babasset`);
+      await openAssetFromBrowser(page, `assets/${style}.water.hasset`);
       const canvas = page.getByTestId("water-preview-canvas").filter({ visible: true });
       await expect(canvas).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId("water-details-panel").filter({ visible: true })).toBeVisible({ timeout: 30_000 });

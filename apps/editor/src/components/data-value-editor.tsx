@@ -1,9 +1,9 @@
 import { useId, useState } from "react";
-import { parseMapDefaultEntries } from "@babylonslate/core";
-import { defaultValueForMember, structInstanceDefault, type StructField } from "@babylonslate/scripting";
-import { AssetPicker, ClassPicker, EntryListEditor, PropertyGrid, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
+import { parseMapDefaultEntries } from "@haptic/core";
+import { defaultValueForMember, structInstanceDefault, type StructField } from "@haptic/scripting";
+import { AssetPicker, ClassPicker, EntryListEditor, PropertyGrid, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
+import { FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { assetPickerAllowedTypes, variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import type { useDataCatalog } from "../lib/use-data-catalog";

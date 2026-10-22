@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyLogicGraph } from "@babylonslate/scripting";
-import type { CodegenContext } from "@babylonslate/scripting";
+import { createEmptyLogicGraph } from "@haptic/scripting";
+import type { CodegenContext } from "@haptic/scripting";
 import { behaviourTreeNodes } from "./behaviour-tree";
 
 function mockCtx(overrides?: Partial<CodegenContext>): CodegenContext {

@@ -5,8 +5,8 @@ import {
   type RuntimeAssetLoadState,
   type RuntimeAssetPreloadOptions,
   type RuntimeAssetPreloadResult,
-} from "@babylonslate/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+} from "@haptic/core";
+import type { CommandMessage } from "@haptic/bridge";
 
 let nextSessionId = 0;
 interface Preload {

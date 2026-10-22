@@ -10,9 +10,9 @@ import {
 } from "@testing-library/react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { RefreshCwIcon } from "lucide-react";
-import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { ActionFeedbackButton } from "../components/action-feedback-button";
-import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import {
   MaterialEditingProvider,
   MANUAL_RENDER_COOLDOWN_MS,
@@ -119,7 +119,7 @@ const harness = vi.hoisted(() => ({
       chunkId === "pixels" ? new Uint8Array([1, 2, 3, 4]) : null,
   ),
   textureAsset: {
-    path: "assets/albedo.babasset",
+    path: "assets/albedo.hasset",
     header: { guid: "tex-1", type: "Texture", name: "albedo", payload: {}, chunks: [{ id: "pixels", sha256: "original-pixels" }] },
   },
   cachedTextures: [] as Array<{ guid: string; bytes: Blob }>,
@@ -147,15 +147,15 @@ const assetRegistry = {
 vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "material:assets/Rock.material.babasset",
-      ref: { kind: "material", path: "assets/Rock.material.babasset" },
+      id: "material:assets/Rock.material.hasset",
+      ref: { kind: "material", path: "assets/Rock.material.hasset" },
       get content() {
         return harness.content;
       },
     },
     {
-      id: "material-instance:assets/RockInstance.material-instance.babasset",
-      ref: { kind: "material-instance", path: "assets/RockInstance.material-instance.babasset" },
+      id: "material-instance:assets/RockInstance.material-instance.hasset",
+      ref: { kind: "material-instance", path: "assets/RockInstance.material-instance.hasset" },
       get content() {
         return harness.instanceContent;
       },
@@ -169,8 +169,8 @@ vi.mock("./document-context", async () => (await import("../testing/document-con
   readAssetChunk: harness.readAssetChunk,
 })));
 
-vi.mock("@babylonslate/render", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+vi.mock("@haptic/render", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/render")>();
   const cache = {
     acquireTexture(guid: string, _engine: unknown, bytes: Blob) {
       harness.cachedTextures.push({ guid, bytes });
@@ -272,7 +272,7 @@ function materialTree(active = true, children?: ReactNode) {
   return (
     <MaterialRenderControlProvider>
       <MaterialEditingProvider
-        documentId="material:assets/Rock.material.babasset"
+        documentId="material:assets/Rock.material.hasset"
         active={active}
       >
         {children ?? <AttachCanvas />}
@@ -316,7 +316,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.rootMaterialAsset = null;
     harness.content = createDefaultMaterialDocument("Rock");
     harness.textureAsset = {
-      path: "assets/albedo.babasset",
+      path: "assets/albedo.hasset",
       header: { guid: "tex-1", type: "Texture", name: "albedo", payload: {}, chunks: [{ id: "pixels", sha256: "original-pixels" }] },
     };
     harness.readAssetChunk.mockClear();
@@ -332,7 +332,7 @@ describe("MaterialEditingProvider preview isolation", () => {
 
   it("loads a closed Material Function from its saved document chunk", async () => {
     harness.content!.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "wave" } });
-    harness.functionAssets = [{ path: "assets/Wave.material-function.babasset", header: { guid: "wave", type: "MaterialFunction", payload: {} } }];
+    harness.functionAssets = [{ path: "assets/Wave.material-function.hasset", header: { guid: "wave", type: "MaterialFunction", payload: {} } }];
     harness.readAssetChunk.mockImplementation(async (_path, chunkId) => chunkId === "document" ? new TextEncoder().encode(JSON.stringify({ name: "Saved Wave", nodes: [], edges: [], inputs: [], outputs: [] })) : null);
     mount();
     await waitFor(() => expect(harness.libraryOptions?.functions?.()).toMatchObject({ wave: { name: "Saved Wave" } }));
@@ -341,7 +341,7 @@ describe("MaterialEditingProvider preview isolation", () => {
   it("does not reload saved Material Functions when the registry epoch advances without function changes", async () => {
     harness.content!.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "wave" } });
     const asset = {
-      path: "assets/Wave.material-function.babasset",
+      path: "assets/Wave.material-function.hasset",
       header: { guid: "wave", type: "MaterialFunction", payload: {} },
     };
     harness.functionAssets = [asset];
@@ -371,7 +371,7 @@ describe("MaterialEditingProvider preview isolation", () => {
   it("keeps unused functions unread and deduplicates a cyclic required function closure", async () => {
     harness.content!.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "outer" } });
     harness.functionAssets = ["outer", "inner", "unused"].map((guid) => ({
-      path: `assets/${guid}.material-function.babasset`, header: { guid, type: "MaterialFunction", payload: {} },
+      path: `assets/${guid}.material-function.hasset`, header: { guid, type: "MaterialFunction", payload: {} },
     }));
     harness.readAssetChunk.mockImplementation(async (path) => new TextEncoder().encode(JSON.stringify({
       name: path, nodes: [{ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: path.includes("outer") ? "inner" : "outer" } }],
@@ -380,13 +380,13 @@ describe("MaterialEditingProvider preview isolation", () => {
     mount();
     await waitFor(() => expect(Object.keys(harness.libraryOptions?.functions?.() ?? {})).toEqual(["outer", "inner"]));
     expect(harness.readAssetChunk.mock.calls.map(([path]) => path)).toEqual([
-      "assets/outer.material-function.babasset", "assets/inner.material-function.babasset",
+      "assets/outer.material-function.hasset", "assets/inner.material-function.hasset",
     ]);
   });
 
   it("leaves a cold restored material tab and its function library unrealized", async () => {
     harness.content = null;
-    harness.functionAssets = [{ path: "assets/Unused.material-function.babasset", header: { guid: "unused", type: "MaterialFunction", payload: {} } }];
+    harness.functionAssets = [{ path: "assets/Unused.material-function.hasset", header: { guid: "unused", type: "MaterialFunction", payload: {} } }];
     mount(false);
     await act(async () => { await Promise.resolve(); });
     expect(harness.readAssetChunk).not.toHaveBeenCalled();
@@ -577,16 +577,16 @@ describe("MaterialEditingProvider preview isolation", () => {
     mount();
     await waitFor(() => {
       expect(harness.readAssetChunk).toHaveBeenCalledWith(
-        "assets/albedo.babasset",
+        "assets/albedo.hasset",
         "pixels",
-        { ownerDocumentId: "material:assets/Rock.material.babasset" },
+        { ownerDocumentId: "material:assets/Rock.material.hasset" },
       );
     });
     await waitFor(() => {
       expect(harness.readAssetChunk).toHaveBeenCalledWith(
-        "assets/albedo.babasset",
+        "assets/albedo.hasset",
         "source",
-        { ownerDocumentId: "material:assets/Rock.material.babasset" },
+        { ownerDocumentId: "material:assets/Rock.material.hasset" },
       );
     });
     await waitFor(() => {
@@ -822,7 +822,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     const broken = createDefaultMaterialDocument("Broken");
     broken.edges.push({ id: "dangling", sourceNodeId: "missing", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" });
     harness.rootMaterialAsset = {
-      path: "assets/Broken.material.babasset",
+      path: "assets/Broken.material.hasset",
       header: { guid: "broken-root", type: "Material", name: "Broken", payload: broken },
     };
     harness.instanceContent = { kind: "materialInstance", name: "Rock Instance", parentGuid: "broken-root", overrides: {} };
@@ -833,7 +833,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     render(
       <MaterialRenderControlProvider>
         <MaterialEditingProvider
-          documentId="material-instance:assets/RockInstance.material-instance.babasset"
+          documentId="material-instance:assets/RockInstance.material-instance.hasset"
           active
         >
           <InstanceStatus />

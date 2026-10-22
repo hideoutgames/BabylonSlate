@@ -1,19 +1,19 @@
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import {
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
   type TypeVisual,
-} from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
+} from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
 import {
   Card,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@babylonslate/ui/components/card";
-import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/card";
+import { typeColorThumbAccent } from "@haptic/ui/lib/data-types";
+import { cn } from "@haptic/ui/lib/utils";
 import {
   compressionBadgeLabel,
   textureCompressionState,

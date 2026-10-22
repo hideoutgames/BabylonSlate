@@ -27,7 +27,7 @@ import {
   type AnimState,
   type AnimTransition,
   type AnimVariableTypeId,
-} from "@babylonslate/anim-graph";
+} from "@haptic/anim-graph";
 import {
   AssetPicker,
   PanelFrame,
@@ -37,22 +37,22 @@ import {
   ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
-} from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import { ChevronRightIcon, Trash2Icon } from "lucide-react";
 import {
   GRAPH_DEFAULT_ZOOM,
   GraphEditor,
   animGraphEdgeTypes,
   animGraphNodeTypes,
-} from "@babylonslate/graph-ui";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/graph-ui";
+import type { Diagnostic } from "@haptic/scripting";
 import {
   useActiveDocumentState,
   useDocumentActions,

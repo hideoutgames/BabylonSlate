@@ -9,7 +9,7 @@ import {
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   type ProjectStorage,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { encodeAssetDocument } from "../asset-document";
 
 /** Small deterministic authored project. It intentionally does not exercise New Project scaffolding. */
@@ -76,7 +76,7 @@ export async function minimalProjectFiles(
   ] of createDefaultInputAssets().entries()) {
     const extension = type === "InputAction" ? "inputaction" : "inputaxis";
     files.set(
-      `assets/Input/${inputName}.${extension}.babasset`,
+      `assets/Input/${inputName}.${extension}.hasset`,
       await encodeAssetDocument(
         {
           // Keep Input IDs separate from assets added by specialized fixtures.

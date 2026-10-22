@@ -1,5 +1,5 @@
-import type { ProjectStorage } from "@babylonslate/core";
-import { ASSETS_DIR } from "./babproject";
+import type { ProjectStorage } from "@haptic/core";
+import { ASSETS_DIR } from "./hproject";
 
 /**
  * Content roots make the registry root-aware from the first commit
@@ -11,7 +11,7 @@ export type ContentRootKind = "project" | "plugin" | "synthetic";
 export interface ContentRoot {
   id: string;
   kind: ContentRootKind;
-  /** Path prefix inside ProjectStorage holding this root's `.babasset` tree. */
+  /** Path prefix inside ProjectStorage holding this root's `.hasset` tree. */
   pathPrefix: string;
   /** Engine plugin roots refuse create/delete/move. */
   readOnly?: boolean;

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { useTraceTouch } from "../lib/use-trace-touch";
 
 export function TraceEmptyState({

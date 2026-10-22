@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { customGlslFunctionName, materialGlslDiagnostic } from "./material-glsl-diagnostics";
-import type { MaterialOperation } from "@babylonslate/shader-graph";
+import type { MaterialOperation } from "@haptic/shader-graph";
 
 describe("Custom GLSL source diagnostics", () => {
   it("maps driver lines into an inlined function without colliding with sanitized node IDs", () => {

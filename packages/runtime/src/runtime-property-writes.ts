@@ -1,11 +1,11 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage } from "@haptic/bridge";
 import {
   CUSTOM_COLLISION_PRESET,
   isUIControl2DClass,
   parseOverlayVisualStyle,
   supportsOverlayVisualStyle,
   type MaterialParameterValue,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   MaterialObject,
   PostProcessMaterialObject,
@@ -13,7 +13,7 @@ import {
   type ActorComponent,
   type MaterialInstanceObject,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RagdollWorldSync } from "./ragdoll-sync";

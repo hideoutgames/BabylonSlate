@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@babylonslate/core";
-import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@haptic/core";
+import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
-import { BObject, dispatchInterface } from "@babylonslate/object-model";
+import { BObject, dispatchInterface } from "@haptic/object-model";
 
 function script(classId: string, parentClassId: string): CompiledScript {
   return { assetGuid: `${classId}-script`, classId, parentClassId, anchors: [],

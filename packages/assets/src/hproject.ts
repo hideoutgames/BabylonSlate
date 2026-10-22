@@ -1,5 +1,5 @@
 import { unzipSync, zipSync } from "fflate";
-import { ENGINE_VERSION, type ProjectStorage, type ProjectDocument } from "@babylonslate/core";
+import { ENGINE_VERSION, type ProjectStorage, type ProjectDocument } from "@haptic/core";
 import { stableStringify } from "./bytes";
 
 export type ManifestKind = "project" | "plugin";
@@ -9,7 +9,7 @@ export interface ProjectTreeFile {
   data: Uint8Array;
 }
 
-export interface BabprojectManifest {
+export interface HprojectManifest {
   kind: ManifestKind;
   guid: string;
   name: string;
@@ -102,13 +102,13 @@ export function createEmptyProjectFiles(options: {
   engineVersion?: string;
 }): ProjectTreeFile[] {
   const kind = options.kind ?? "project";
-  const manifest: BabprojectManifest = {
+  const manifest: HprojectManifest = {
     kind,
     guid: options.guid,
     name: options.name,
     engineVersion: options.engineVersion ?? ENGINE_VERSION,
     version: 1,
-    startupScene: kind === "project" ? "assets/main.scene.babasset" : undefined,
+    startupScene: kind === "project" ? "assets/main.scene.hasset" : undefined,
   };
   const files: ProjectTreeFile[] = [
     {

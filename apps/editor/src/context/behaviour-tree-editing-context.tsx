@@ -10,7 +10,7 @@ import {
 import {
   createDefaultBehaviourTree,
   parseBehaviourTreeDocument,
-} from "@babylonslate/behaviour-tree";
+} from "@haptic/behaviour-tree";
 import { useDocumentActions } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 

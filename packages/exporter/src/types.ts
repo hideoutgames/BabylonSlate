@@ -3,8 +3,8 @@ import type {
   SerializedGraph,
   SerializedScene,
   ConsoleCommandMetadata,
-} from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+} from "@haptic/core";
+import type { ScriptBundleEntry } from "@haptic/bridge";
 
 export type ExportIndexedAsset = {
   guid: string;
@@ -83,7 +83,7 @@ export type ExportAssetBytes = {
   encoding?: "json" | "bytes";
   /** Asset display name; FontFace family falls back to this. */
   name?: string;
-  /** Authored storage path of an asset from the project or a plugin, such as `assets/Weapons/Rifle.class.babasset`. */
+  /** Authored storage path of an asset from the project or a plugin, such as `assets/Weapons/Rifle.class.hasset`. */
   assetPath?: string;
   /** Authored Texture payload pixels for overlay 2DTexture layout. */
   width?: number;
@@ -120,11 +120,11 @@ export type GameAssetIndexEntry = {
 export type GameManifest = {
   /** Independent asset files and required-edge loading. */
   assetCatalogVersion: 1;
-  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
+  saveGame?: import("@haptic/core").SaveGameConfiguration;
   /** Authored build identity; every export writes it. Editor Play's in-memory catalog has none. */
   project?: { name: string; version: string };
-  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  inputAssets?: import("@haptic/core").InputAssetDefinition[];
+  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
@@ -143,7 +143,7 @@ export type GameManifest = {
   pixelPerfect: boolean;
   physicsWorld: "2d" | "3d";
   /** Project Collision Presets. */
-  collisionPresets: import("@babylonslate/core").CollisionPreset[];
+  collisionPresets: import("@haptic/core").CollisionPreset[];
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;
@@ -155,10 +155,10 @@ export type ExportGameOptions = {
   /** Editor-hosted Preview only; never enables diagnostics in ordinary exports. */
   includePreviewDiagnostics?: boolean;
   defaultFontGuid?: string | null;
-  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
+  saveGame?: import("@haptic/core").SaveGameConfiguration;
   project?: { name: string; version: string };
-  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  inputAssets?: import("@haptic/core").InputAssetDefinition[];
+  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   bundleDebugger: boolean;
   startupSceneGuid: string;
   gameInstanceClass?: string | null;
@@ -176,7 +176,7 @@ export type ExportGameOptions = {
   pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
-  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
+  collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   scripts: readonly ScriptBundleEntry[];

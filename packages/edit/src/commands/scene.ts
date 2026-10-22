@@ -6,9 +6,9 @@ import type {
   SerializedScene,
   SerializedTransform,
   ViewportMode,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import type { EditCommand } from "../command";
-import { isSceneLayerAnchorActor } from "@babylonslate/core";
+import { isSceneLayerAnchorActor } from "@haptic/core";
 import type { ReplaceSceneCommand } from "./replace-scene";
 import type { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./scene-instance";
 import type {

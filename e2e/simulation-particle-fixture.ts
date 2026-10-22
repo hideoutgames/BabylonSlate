@@ -54,10 +54,10 @@ export async function simulationParticleProject() {
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const assets = [
     { path: MAIN_SCENE_FILE, guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main", payload: scene, dependencies: [systemGuid, blueMaterialGuid] },
-    { path: "assets/PauseParticles.material.babasset", guid: particleMaterialGuid, type: "Material", name: "Pause Particles", payload: particleMaterial, dependencies: [] },
-    { path: "assets/RedrawControl.material.babasset", guid: blueMaterialGuid, type: "Material", name: "Redraw Control", payload: blueMaterial, dependencies: [] },
-    { path: "assets/PauseParticles.emitter.babasset", guid: emitterGuid, type: "ParticleEmitter", name: "Pause Particles", payload: emitter, dependencies: [particleMaterialGuid] },
-    { path: "assets/PauseParticles.particles.babasset", guid: systemGuid, type: "ParticleSystem", name: "Pause Particles", payload: { emitterGuids: [emitterGuid], space: "world" }, dependencies: [emitterGuid] },
+    { path: "assets/PauseParticles.material.hasset", guid: particleMaterialGuid, type: "Material", name: "Pause Particles", payload: particleMaterial, dependencies: [] },
+    { path: "assets/RedrawControl.material.hasset", guid: blueMaterialGuid, type: "Material", name: "Redraw Control", payload: blueMaterial, dependencies: [] },
+    { path: "assets/PauseParticles.emitter.hasset", guid: emitterGuid, type: "ParticleEmitter", name: "Pause Particles", payload: emitter, dependencies: [particleMaterialGuid] },
+    { path: "assets/PauseParticles.particles.hasset", guid: systemGuid, type: "ParticleSystem", name: "Pause Particles", payload: { emitterGuids: [emitterGuid], space: "world" }, dependencies: [emitterGuid] },
   ];
   for (const asset of assets) files.set(asset.path, await encodeAssetDocument({
     ...asset, version: migrations.currentVersion(asset.type), payload: asset.payload as unknown as Record<string, unknown>,

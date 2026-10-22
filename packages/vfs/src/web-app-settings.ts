@@ -7,7 +7,7 @@ import {
   runSerializedAppSettingsUpdate,
 } from "./app-settings";
 
-export const ENGINE_SETTINGS_STORAGE_KEY = "babylonslate:engine-settings";
+export const ENGINE_SETTINGS_STORAGE_KEY = "haptic:engine-settings";
 const KEY = ENGINE_SETTINGS_STORAGE_KEY;
 
 /**

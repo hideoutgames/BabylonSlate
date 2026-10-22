@@ -7,7 +7,7 @@ import {
   WATER_WAVE_SHADER_STRIDE, waterBankFadeLength, waterSwellWarpShaderConstants, waterWaveQ, waterWaveSet, waterWaveShaderConstants, waterWaveSurge,
   type WaterBodyProperties, type WaterDefinition,
   type WaterShadingDetail, type WaterWaveSet,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { waterFftForSurface, type WaterFftResult } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS, waterFftLayout } from "./water-fft-spectrum";

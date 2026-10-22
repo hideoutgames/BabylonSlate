@@ -1,13 +1,19 @@
+import { existsSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
+import { readGoldenBinary } from "@haptic/test-kit";
+import { decodeAssetDocument } from "./asset-document";
 import {
   AssetFormatVersionError,
-  MATERIAL_PAYLOAD_VERSION,
   MigrationRegistry,
+  RELEASED_VERSIONS,
   createDefaultMigrationRegistry,
   type MigrationFn,
 } from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
+
+const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 
 const appendStep =
   (step: number): MigrationFn =>
@@ -29,7 +35,7 @@ describe("migration harness", () => {
       type: "Thing",
       version: 1,
       payload: { steps: [] },
-      path: "assets/Thing.babasset",
+      path: "assets/Thing.hasset",
     });
     expect(loaded.payload).toEqual({ steps: [2, 3] });
     expect(loaded.version).toBe(3);
@@ -37,7 +43,7 @@ describe("migration harness", () => {
       type: "Thing",
       fromVersion: 1,
       toVersion: 3,
-      path: "assets/Thing.babasset",
+      path: "assets/Thing.hasset",
     });
     expect(registryWithSteps().migrate("Thing", 2, { steps: [] })).toEqual({
       version: 3,
@@ -82,25 +88,33 @@ describe("migration harness", () => {
 });
 
 describe("default migration registry", () => {
-  it("refuses every older stored version instead of upgrading it", () => {
+  it("upgrades every released version, each step proven on a committed golden", async () => {
     const registry = createDefaultMigrationRegistry();
-    const old = [
-      ["Class", 0],
-      ["Scene", 0],
-      ["Scene", SCENE_SCHEMA_VERSION - 1],
-      ["Material", MATERIAL_PAYLOAD_VERSION - 1],
-      ["Project", 0],
-      ["DataTree", 0],
-      ["Audio", 0],
-      ["ParticleSystem", 0],
-    ] as const;
-    for (const [type, version] of old) {
+    // A versioned type without a released version would never be held to this.
+    expect(registry.types().sort()).toEqual(Object.keys(RELEASED_VERSIONS).sort());
+    for (const [type, released] of Object.entries(RELEASED_VERSIONS)) {
+      const current = registry.currentVersion(type);
+      expect(current, `${type} current version`).toBeGreaterThanOrEqual(released);
+      for (let version = released; version < current; version++) {
+        const relative = `__fixtures__/migrations/${type}-v${version}.hasset`;
+        expect(existsSync(`${FIXTURE_DIR}/${relative}`), `${relative} must hold a ${type} saved at version ${version}`).toBe(true);
+        const stored = await decodeAssetDocument(readGoldenBinary(FIXTURE_DIR, relative));
+        expect([stored.type, stored.version]).toEqual([type, version]);
+        expect(registry.migrate(type, version, stored.payload).version).toBe(current);
+      }
+    }
+  });
+
+  it("refuses versions from before the release instead of upgrading them", () => {
+    const registry = createDefaultMigrationRegistry();
+    for (const [type, released] of Object.entries(RELEASED_VERSIONS)) {
+      const version = released - 1;
       const load = () =>
         loadPayloadWithMigration(registry, {
           type,
           version,
           payload: {},
-          path: "assets/Old.babasset",
+          path: "assets/Old.hasset",
         });
       // The editor shows this error type's message to the user.
       expect(load).toThrow(AssetFormatVersionError);
@@ -115,7 +129,7 @@ describe("default migration registry", () => {
       schemaVersion: 7,
       fields: [{ id: "stable-score", name: "Coins", type: "int", defaultValue: 0 }],
     };
-    const options = { type: "SaveGame", payload, path: "assets/Progress.savegame.babasset" };
+    const options = { type: "SaveGame", payload, path: "assets/Progress.savegame.hasset" };
     const loaded = loadPayloadWithMigration(registry, { ...options, version: 1 });
     expect(loaded.pending).toBeNull();
     expect(loaded.payload).toBe(payload);

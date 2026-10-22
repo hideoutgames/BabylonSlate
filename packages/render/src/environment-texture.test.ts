@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { CubeTexture, NullEngine, Scene, type Texture } from "@babylonjs/core";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { validMaterialParameterValue } from "./material-parameters";
 

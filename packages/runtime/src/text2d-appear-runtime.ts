@@ -1,5 +1,5 @@
-import { countText2DRevealCharacters, parseText2DProperties, text2DAppearDuration } from "@babylonslate/core";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+import { countText2DRevealCharacters, parseText2DProperties, text2DAppearDuration } from "@haptic/core";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { componentOwners } from "./world-component-index";
 

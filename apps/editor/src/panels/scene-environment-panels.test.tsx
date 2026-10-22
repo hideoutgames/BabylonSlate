@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { FoliageGroup, SerializedScene } from "@babylonslate/core";
+import type { FoliageGroup, SerializedScene } from "@haptic/core";
 import { FoliageGroupsPanel } from "./scene-environment-panels";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -24,7 +24,7 @@ vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "scene:main", ref: { kind: "scene" }, content: scene() }],
   applySceneChange: harness.applySceneChange,
-  assetRegistry: { list: () => [{ path: "assets/tree.babasset", header: { guid: MODEL, name: "Tree", type: "Model" } }] },
+  assetRegistry: { list: () => [{ path: "assets/tree.hasset", header: { guid: MODEL, name: "Tree", type: "Model" } }] },
 })));
 vi.mock("../context/scene-editing-context", () => ({ useSceneEditing: () => ({ selectedActorIds: [], selectActor: vi.fn(), frameActor: vi.fn() }) }));
 vi.mock("../context/scene-tools-context", () => ({ useSceneTools: () => harness.tools }));

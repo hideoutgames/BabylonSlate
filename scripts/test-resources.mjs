@@ -108,9 +108,9 @@ export async function resourceReport(options = {}) {
       "CI",
       "GITHUB_ACTIONS",
       "RUNNER_ENVIRONMENT",
-      "BL_EXECUTION_POLICY",
-      "BL_TEST_PROFILE",
-      "BL_LOCAL_RESOURCE_CONFIG",
+      "HAPTIC_EXECUTION_POLICY",
+      "HAPTIC_TEST_PROFILE",
+      "HAPTIC_LOCAL_RESOURCE_CONFIG",
     ]
       .filter((key) => env[key] !== undefined)
       .map((key) => [key, env[key]]),
@@ -121,7 +121,7 @@ export async function resourceReport(options = {}) {
       "CI=true enables test semantics only; local admission and worker limits still apply.",
     );
   conflicts.push(...(plan?.messages ?? []));
-  if (env.BL_LOCAL_RESOURCE_CONFIG === "")
+  if (env.HAPTIC_LOCAL_RESOURCE_CONFIG === "")
     conflicts.push(
       "An empty config override is rejected; it cannot disable the machine policy.",
     );

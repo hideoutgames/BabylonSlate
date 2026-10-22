@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createMeshComponent, type MaterialParameterCatalog } from "@babylonslate/core";
-import { ClassRegistry, MaterialObject, World, createActorFromSerialized } from "@babylonslate/object-model";
+import { createActor, createMeshComponent, type MaterialParameterCatalog } from "@haptic/core";
+import { ClassRegistry, MaterialObject, World, createActorFromSerialized } from "@haptic/object-model";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 
 const catalog: MaterialParameterCatalog = { surface: { domain: "surface", planHash: "surface-plan", parameters: {

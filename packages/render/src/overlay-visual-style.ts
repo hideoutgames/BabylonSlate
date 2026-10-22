@@ -2,7 +2,7 @@ import {
   MaterialPluginBase, StandardMaterial,
   type AbstractMesh, type MaterialDefines, type Scene, type ShaderLanguage, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
-import { parseOverlayVisualStyle, type OverlayVisualStyle } from "@babylonslate/core";
+import { parseOverlayVisualStyle, type OverlayVisualStyle } from "@haptic/core";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 type VisualStyleBinding = { style: OverlayVisualStyle; meshes: AbstractMesh[] };

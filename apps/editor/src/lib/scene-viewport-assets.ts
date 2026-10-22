@@ -1,5 +1,5 @@
-import type { IndexedAsset } from "@babylonslate/assets";
-import { areaEmissionTextureGuids, type SerializedScene } from "@babylonslate/core";
+import type { IndexedAsset } from "@haptic/assets";
+import { areaEmissionTextureGuids, type SerializedScene } from "@haptic/core";
 import {
   environmentTextureGuidsFromScenes, materialGuidsFromScenes, modelAssetGuidsFromScene,
   overlayTextureGuidsFromScene, playFontGuidsFromScenes, postProcessTextureGuidsFromScenes, materialInstanceTextureGuidsFromScenes,

@@ -21,7 +21,7 @@ const manifest = JSON.parse(await readFile(join(desktop, "dist/public/build-mani
 if (manifest.platform !== platform) throw new Error("Packaged manifest platform differs from smoke host");
 // A package left from an earlier commit must not pass as this checkout's build.
 if (manifest.sourceSha !== execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim()) throw new Error("Packaged manifest source differs from the checked-out commit");
-const sandbox = await mkdtemp(join(tmpdir(), "BabylonSlate-installed-check-"));
+const sandbox = await mkdtemp(join(tmpdir(), "Haptic-installed-check-"));
 const installDir = join(sandbox, "installed");
 const userData = join(sandbox, "user-data");
 const hidden = [];
@@ -57,7 +57,7 @@ try {
     const zip = join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-${arch}.zip`);
     await mkdir(installDir);
     await run("ditto", ["-x", "-k", zip, installDir]);
-    executable = join(installDir, "BabylonSlate.app/Contents/MacOS/BabylonSlate");
+    executable = join(installDir, "BabylonSlate.app/Contents/MacOS/Haptic");
     archive = join(installDir, "BabylonSlate.app/Contents/Resources/app.asar");
     const mount = join(sandbox, "dmg");
     await mkdir(mount);
@@ -80,7 +80,7 @@ try {
   const names = listPackage(archive).map(name => name.replaceAll("\\", "/").replace(/^\//, ""));
   for (const name of names) {
     assert.ok(/^(?:package.json|host(?:\/|$)|renderer(?:\/|$))/.test(name), "Unexpected packaged root");
-    assert.ok(!/(?:^|\/)(?:\.env|\.git|node_modules)(?:\/|$)|\.(?:p8|p12|mobileprovision|ipa|keychain-db|babproject)$/i.test(name), "Forbidden packaged file");
+    assert.ok(!/(?:^|\/)(?:\.env|\.git|node_modules)(?:\/|$)|\.(?:p8|p12|mobileprovision|ipa|keychain-db|hproject)$/i.test(name), "Forbidden packaged file");
   }
   const extracted = join(sandbox, "extracted");
   extractAll(archive, extracted);
@@ -145,7 +145,7 @@ try {
   await page.getByTestId("create-project-submit").click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
   await page.getByTestId("content-browser-search").fill("main");
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
+  await page.locator('[data-asset-path="assets/main.scene.hasset"]').dblclick();
   await expect(page.getByTestId("viewport-panel")).toHaveAttribute("data-scene-ready", "true");
   const workers = [];
   page.on("worker", worker => workers.push(worker.url()));
@@ -171,16 +171,16 @@ try {
   await expect(player).not.toHaveAttribute("data-error", /.+/);
   await expect.poll(() => player.getAttribute("data-ticks")).not.toBe("0");
   await page.getByTestId("preview-build-close").click();
-  await page.evaluate(async () => { await window.babylonslate.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
+  await page.evaluate(async () => { await window.haptic.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
   await app.close();
   app = await launch();
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
   await expect(page.locator('[data-testid="release-news"][data-mode="news"]')).toHaveCount(0);
-  await page.getByTestId(/^open-listed-project-DistributionSmoke(?:\.babproject)?$/).click();
+  await page.getByTestId(/^open-listed-project-DistributionSmoke(?:\.hproject)?$/).click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-  assert.deepEqual(await page.evaluate(async () => [...new Uint8Array(await window.babylonslate.project.readBinary("distribution-smoke.bin"))]), [17, 42, 99]);
+  assert.deepEqual(await page.evaluate(async () => [...new Uint8Array(await window.haptic.project.readBinary("distribution-smoke.bin"))]), [17, 42, 99]);
   console.log(`Installed ${platform} checks passed: identity, production storage/persistence, editor, player, workers, wasm, and package allowlist.`);
 } catch (error) {
   failure = error;

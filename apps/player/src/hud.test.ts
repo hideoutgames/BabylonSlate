@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   snapshotFloatCount,
   writeSnapshotHeader,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   applyPlayerFpsSample,
   applyPlayerSnapshotTick,

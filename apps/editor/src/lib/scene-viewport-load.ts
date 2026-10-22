@@ -9,7 +9,7 @@ import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** Requested path changes enter the same shader/presentation barrier as other structural settings. */
 export function sceneViewportRenderSettingsKey(
@@ -74,8 +74,8 @@ export function isSceneViewportRemountLoad(
   return engineGeneration !== completedGeneration;
 }
 
-export { waitForSceneLoadingPaint } from "@babylonslate/render/scene-load-readiness";
-import { waitForSceneLoadingPaint } from "@babylonslate/render/scene-load-readiness";
+export { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
+import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;

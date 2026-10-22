@@ -8,8 +8,8 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
-} from "@babylonslate/bridge";
-import { createDefaultScene } from "@babylonslate/core";
+} from "@haptic/bridge";
+import { createDefaultScene } from "@haptic/core";
 import { createEngine } from "./create-engine";
 import { describeEngineTexture } from "./resource-cache";
 

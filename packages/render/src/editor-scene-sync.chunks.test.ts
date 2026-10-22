@@ -6,7 +6,7 @@ import {
   normalizeShadowSettings,
   type SerializedActor,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync, type EditorSceneSyncOptions } from "./editor-scene-sync";
 import { DirectionalLight, Mesh, StandardMaterial } from "@babylonjs/core";

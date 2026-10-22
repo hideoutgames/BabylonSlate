@@ -1,4 +1,4 @@
-import { compileText2DFontStacks } from "@babylonslate/assets";
+import { compileText2DFontStacks } from "@haptic/assets";
 
 export function packedFontCssStacks(
   fontFamilies: ReadonlyMap<string, string>,

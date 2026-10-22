@@ -1,4 +1,4 @@
-import type { BObject } from "@babylonslate/object-model";
+import type { BObject } from "@haptic/object-model";
 import type { SceneStreams } from "./scene-streams";
 import type { SessionBoundaries } from "./session-boundaries";
 import type { SimulationBlocks } from "./simulation-blocks";
