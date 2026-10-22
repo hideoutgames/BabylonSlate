@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import {
   buildMinimalGlbFixture,
@@ -1764,6 +1765,180 @@ describe("AssetRegistry generation", () => {
     await writeScene("scene-c", ["Orc"]);
     await registry.reindexPath("assets/scene-c.scene.babasset");
     expect(registry.showReferences("class-orc").inbound).toEqual(["scene-c"]);
+  });
+});
+
+describe("AssetRegistry moves between content roots", () => {
+  const PLUGIN = "plugins/tools/assets";
+  const pluginRoot: ContentRoot = { id: "plugin:tools", kind: "plugin", pathPrefix: PLUGIN };
+  /** Above the blob threshold, so the chunk lives in its root's blob store. */
+  const bigPayload = new Uint8Array(70 * 1024).map((_, index) => index % 251);
+
+  async function writeBlobAsset(storage: MemoryStorageAdapter, path: string, options: { guid: string; type: string; name: string }): Promise<string> {
+    await storage.mkdir(path.slice(0, path.lastIndexOf("/")), true);
+    const blobs = createVfsBlobStore(storage, "assets/.blobs");
+    const bytes = await encodeBabasset({
+      header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
+        guid: options.guid, type: options.type, name: options.name, engineVersion: "0.0.0",
+        version: 1, mode: "thin", dependencies: [], parentClass: null, payload: {},
+      },
+      chunks: [{ id: "payload", kind: "payload", mime: "application/octet-stream", data: bigPayload }],
+      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
+    });
+    await storage.writeBinary(path, bytes);
+    const locator = readBabassetHeader(bytes).chunks[0]!.locator;
+    if (!("blob" in locator)) throw new Error("The fixture chunk was stored inline");
+    return locator.blob;
+  }
+
+  async function mountBoth(storage: MemoryStorageAdapter): Promise<AssetRegistry> {
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot(pluginRoot);
+    return registry;
+  }
+
+  it("moves an asset into a plugin with its blob chunks, keeping its guid and the references to it", async () => {
+    const storage = await createStorage();
+    const blob = await writeBlobAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
+    await writeAsset(storage, "assets/main.scene.babasset", { guid: "scene", type: "Scene", name: "main", dependencies: ["rock"] });
+    const registry = await mountBoth(storage);
+    const original = await storage.readBinary("assets/Rock.babasset");
+
+    const moved = await registry.moveAsset("rock", "plugin:tools", "Textures/Rock.babasset");
+
+    expect(moved).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Textures/Rock.babasset` });
+    expect(moved.header.guid).toBe("rock");
+    expect(registry.getByGuid("rock")).toBe(moved);
+    expect(registry.getByPath(moved.path)).toBe(moved);
+    expect(registry.getByPath("assets/Rock.babasset")).toBeUndefined();
+    expect(registry.list({ rootId: "project" }).map((asset) => asset.header.guid)).toEqual(["scene"]);
+    expect(await storage.exists("assets/Rock.babasset")).toBe(false);
+    expect(await storage.readBinary(moved.path)).toEqual(original);
+    expect(await storage.exists(`${PLUGIN}/.blobs/${blob}`)).toBe(true);
+    expect(registry.showReferences("rock").inbound).toEqual(["scene"]);
+    expect(await registry.readChunk("rock", "payload")).toEqual(bigPayload);
+
+    // Without the project's copy of the blob, a fresh scan still reads it from the plugin.
+    await storage.remove(`assets/.blobs/${blob}`);
+    const rescanned = await mountBoth(storage);
+    expect(rescanned.getByGuid("rock")?.rootId).toBe("plugin:tools");
+    expect(await rescanned.readChunk("rock", "payload")).toEqual(bigPayload);
+  });
+
+  it("moves a Scene out of the project's document list and back into it", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/Level.scene.babasset", { guid: "level", type: "Scene", name: "Level" });
+    const registry = await mountBoth(storage);
+
+    await registry.moveAsset("level", "plugin:tools", "Level.scene.babasset");
+    expect(registry.listDocumentPaths({ rootId: "project" }).scenes).toEqual([]);
+
+    const back = await registry.moveAsset("level", "project", "Levels/Level.scene.babasset");
+    expect(back.rootId).toBe("project");
+    expect(registry.listDocumentPaths({ rootId: "project" }).scenes).toEqual(["assets/Levels/Level.scene.babasset"]);
+    expect(await storage.exists(`${PLUGIN}/Level.scene.babasset`)).toBe(false);
+  });
+
+  it("refuses to move into or out of a read-only root and leaves both roots as they were", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/Wood.babasset", { guid: "wood", type: "Material", name: "Wood" });
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    await writeAsset(engine, "starter/assets/Hero.class.babasset", { guid: "hero", type: "Class", name: "Hero" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot({ id: "plugin:starter", kind: "plugin", pathPrefix: "starter/assets", readOnly: true, storage: engine });
+    await registry.createFolder("project", "Props");
+
+    await expect(registry.moveAsset("wood", "plugin:starter", "Wood.babasset")).rejects.toThrow(/read-only/i);
+    await expect(registry.moveAsset("hero", "project", "Hero.class.babasset")).rejects.toThrow(/read-only/i);
+    await expect(registry.moveFolder("project", "Props", "", undefined, "plugin:starter")).rejects.toThrow(/read-only/i);
+
+    expect(registry.getByGuid("wood")?.path).toBe("assets/Wood.babasset");
+    expect(registry.getByGuid("hero")?.rootId).toBe("plugin:starter");
+    expect(await storage.exists("assets/Wood.babasset")).toBe(true);
+    expect(await storage.exists("assets/Props")).toBe(true);
+    expect(await storage.exists("assets/Hero.class.babasset")).toBe(false);
+    expect(await engine.exists("starter/assets/Hero.class.babasset")).toBe(true);
+    expect(await engine.exists("starter/assets/Wood.babasset")).toBe(false);
+  });
+
+  it("refuses to replace a file or folder already at the destination, even one the index does not list", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/Wood.babasset", { guid: "wood", type: "Material", name: "Wood" });
+    const registry = await mountBoth(storage);
+    await storage.mkdir(PLUGIN, true);
+    await storage.writeBinary(`${PLUGIN}/Wood.babasset`, new Uint8Array([7]));
+    await registry.createFolder("project", "Props");
+    await registry.createFolder("plugin:tools", "Props");
+
+    await expect(registry.moveAsset("wood", "plugin:tools", "Wood.babasset")).rejects.toThrow(`Target path already exists: ${PLUGIN}/Wood.babasset`);
+    await expect(registry.moveFolder("project", "Props", "", undefined, "plugin:tools")).rejects.toThrow(`Target path already exists: ${PLUGIN}/Props`);
+
+    expect(await storage.readBinary(`${PLUGIN}/Wood.babasset`)).toEqual(new Uint8Array([7]));
+    expect(registry.getByGuid("wood")).toMatchObject({ rootId: "project", path: "assets/Wood.babasset" });
+    expect(await storage.exists("assets/Wood.babasset")).toBe(true);
+    expect(await storage.exists("assets/Props")).toBe(true);
+  });
+
+  it("refuses to move an asset whose blob is missing and writes nothing into the target root", async () => {
+    const storage = await createStorage();
+    const blob = await writeBlobAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
+    const registry = await mountBoth(storage);
+    await storage.remove(`assets/.blobs/${blob}`);
+
+    await expect(registry.moveAsset("rock", "plugin:tools", "Rock.babasset")).rejects.toThrow(blob);
+
+    expect(await storage.exists(`${PLUGIN}/Rock.babasset`)).toBe(false);
+    expect(await storage.exists("assets/Rock.babasset")).toBe(true);
+    expect(registry.getByGuid("rock")).toMatchObject({ rootId: "project", path: "assets/Rock.babasset" });
+  });
+
+  it("moves a folder into a plugin with its subfolders, empty folders and blob chunks", async () => {
+    const storage = await createStorage();
+    const blob = await writeBlobAsset(storage, "assets/Characters/Hero.babasset", { guid: "hero", type: "Texture", name: "Hero" });
+    await writeAsset(storage, "assets/Characters/Armor/Plate.babasset", { guid: "plate", type: "Material", name: "Plate", dependencies: ["hero"] });
+    await writeAsset(storage, "assets/main.scene.babasset", { guid: "scene", type: "Scene", name: "main", dependencies: ["plate"] });
+    const registry = await mountBoth(storage);
+    await registry.createFolder("project", "Characters/Empty");
+
+    await registry.moveFolder("project", "Characters", "", undefined, "plugin:tools");
+
+    expect(registry.getByGuid("hero")).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Characters/Hero.babasset` });
+    expect(registry.getByGuid("plate")).toMatchObject({ rootId: "plugin:tools", path: `${PLUGIN}/Characters/Armor/Plate.babasset` });
+    expect(registry.showReferences("plate").inbound).toEqual(["scene"]);
+    expect(registry.showReferences("hero").inbound).toEqual(["plate"]);
+    expect(await storage.exists("assets/Characters")).toBe(false);
+    expect(registry.folderTree("project").children).toEqual([]);
+    const subfolders = (registry: AssetRegistry) =>
+      registry.folderTree("plugin:tools").children.find((child) => child.name === "Characters")?.children.map((child) => child.name).sort();
+    expect(subfolders(registry)).toEqual(["Armor", "Empty"]);
+
+    await storage.remove(`assets/.blobs/${blob}`);
+    const rescanned = await mountBoth(storage);
+    expect(rescanned.getByGuid("hero")?.rootId).toBe("plugin:tools");
+    expect(await rescanned.readChunk("hero", "payload")).toEqual(bigPayload);
+    expect(subfolders(rescanned)).toEqual(["Armor", "Empty"]);
+  });
+
+  it("will not carry a folder's unlisted copy of another file's guid to another root, and follows the listed file when it moves", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/a/hero.babasset", { guid: "hero", type: "Material", name: "Hero" });
+    await storage.mkdir("assets/b", true);
+    await storage.writeBinary("assets/b/hero.babasset", await storage.readBinary("assets/a/hero.babasset"));
+    const registry = await mountBoth(storage);
+    expect(registry.listGuidConflicts().map((conflict) => conflict.path)).toEqual(["assets/b/hero.babasset"]);
+
+    await expect(registry.moveFolder("project", "b", "", undefined, "plugin:tools")).rejects.toThrow(/assets\/b\/hero\.babasset/);
+    expect(await storage.exists("assets/b/hero.babasset")).toBe(true);
+    expect(await storage.exists(`${PLUGIN}/b`)).toBe(false);
+
+    await registry.moveFolder("project", "a", "", undefined, "plugin:tools");
+    expect(registry.listGuidConflicts()).toEqual([
+      { rootId: "project", path: "assets/b/hero.babasset", guid: "hero", indexedPath: `${PLUGIN}/a/hero.babasset` },
+    ]);
   });
 });
 
