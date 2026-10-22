@@ -462,6 +462,9 @@ function handleControl(msg: ControlMessage): void {
     case "debugObserve":
       runtime?.applyDebugObserve(msg.target, msg.instanceId);
       return;
+    case "setBreakpoints":
+      runtime?.applyBreakpoints(msg.breakpoints);
+      return;
     case "console": {
       const rt = ensureRuntime();
       const generation = bootGeneration;

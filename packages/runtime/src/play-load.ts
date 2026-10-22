@@ -50,6 +50,7 @@ export function runtimeOptionsFromLoadControl(
   | "infiniteLoopDetection"
   | "loopCount"
   | "pauseOnErrors"
+  | "breakpoints"
   | "materialParameterCatalog"
   | "materialTextureAssetGuids"
   | "renderTargets"
@@ -125,6 +126,7 @@ export function runtimeOptionsFromLoadControl(
     infiniteLoopDetection: msg.infiniteLoopDetection,
     loopCount: msg.loopCount,
     ...(msg.pauseOnErrors ? { pauseOnErrors: true } : {}),
+    ...(msg.breakpoints && msg.breakpoints.length > 0 ? { breakpoints: msg.breakpoints } : {}),
     ...(msg.audioAssetGuids && msg.audioAssetGuids.length > 0
       ? { audioAssetGuids: msg.audioAssetGuids }
       : {}),
