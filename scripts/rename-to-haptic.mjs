@@ -55,6 +55,7 @@ const PROTECTED_TOKENS = [
   /babylonslate-(?:notarization|distribution|android|apple)-?/g,
   /BABYLONSLATE_(?:ANDROID|APNS|DISTRIBUTION|PROVISIONING)[A-Z_]*/g,
   /formerly BabylonSlate/g,
+  /BabylonSlate(?=\*)/g,
 ];
 
 /** Ordered rewrites applied outside protected tokens. */
@@ -77,10 +78,10 @@ function rename(text) {
   const kept = [];
   let masked = text;
   for (const pattern of PROTECTED_TOKENS) {
-    masked = masked.replace(pattern, (match) => `\u0000${kept.push(match) - 1}\u0000`);
+    masked = masked.replace(pattern, (match) => `\uE000${kept.push(match) - 1}\uE000`);
   }
   for (const [pattern, replacement] of REWRITES) masked = masked.replace(pattern, replacement);
-  return masked.replace(/\u0000(\d+)\u0000/g, (_, index) => kept[Number(index)]);
+  return masked.replace(/\uE000(\d+)\uE000/g, (_, index) => kept[Number(index)]);
 }
 
 const isProtected = (path) => PROTECTED_PATHS.some((pattern) => pattern.test(path));
