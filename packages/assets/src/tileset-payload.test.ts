@@ -44,6 +44,36 @@ describe("tileset payload", () => {
     ]);
   });
 
+  it("decodes terrains and drops memberships of terrains the Tileset does not define", () => {
+    const payload = ensureTilesetTiles(normalizeTilesetPayload({
+      atlasWidth: 48,
+      terrains: [
+        { id: "grass", name: "Grass", style: "blob" },
+        { id: "grass", name: "Copy", style: "sides" },
+        { id: "rock", name: "", style: "hex" },
+        { name: "No Id" },
+      ],
+      tiles: [
+        { id: 1, terrain: { id: "grass", mask: 0x1ff } },
+        { id: 2, terrain: { id: "sand", mask: 4 } },
+        { id: 3, terrain: { id: "rock", mask: -1 } },
+      ],
+    }));
+    expect(payload.terrains).toEqual([
+      { id: "grass", name: "Grass", style: "blob" },
+      { id: "rock", name: "rock", style: "sides" },
+    ]);
+    expect(payload.tiles.map((tile) => tile.terrain)).toEqual([
+      { id: "grass", mask: 0xff },
+      undefined,
+      { id: "rock", mask: 0 },
+    ]);
+    // A Tileset saved before terrains decodes with no terrain keys at all.
+    const legacy = normalizeTilesetPayload({ tiles: [{ id: 1, collision: "full" }] });
+    expect("terrains" in legacy).toBe(false);
+    expect("terrain" in legacy.tiles[0]!).toBe(false);
+  });
+
   it("normalizes invalid sizes and drops tile id 0", () => {
     const payload = normalizeTilesetPayload({
       tileWidth: 0,

@@ -27,7 +27,25 @@ export {
   applyConsoleCompletion,
   suggestConsoleCompletions,
 } from "./autocomplete";
-export { STAT_GROUP_LABELS, STAT_GROUPS, STATS_COMMAND_INTERVAL_MS, TICK_BUDGET_MS, isStatGroup, isTickOverBudget, nextStatGroups, shouldEmitStatsCommand, type StatGroup } from "./stats";
+export {
+  STAT_GROUP_LABELS,
+  STAT_GROUPS,
+  STATS_COMMAND_INTERVAL_MS,
+  TICK_BUDGET_MS,
+  createMessageRateMeter,
+  formatStatBytes,
+  isStatGroup,
+  isTickOverBudget,
+  nextStatGroups,
+  shouldEmitStatsCommand,
+  statsHudModel,
+  type StatGroup,
+  type StatsHudInput,
+  type StatsHudMetric,
+  type StatsHudModel,
+  type StatsHudRendering,
+  type StatsHudRow,
+} from "./stats";
 export {
   DEFAULT_INFINITE_LOOP_COUNT,
   INFINITE_LOOP_DIAGNOSTIC_CODE,

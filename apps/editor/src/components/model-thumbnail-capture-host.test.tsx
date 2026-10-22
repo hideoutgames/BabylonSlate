@@ -3,6 +3,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import type { ThumbnailCaptureResult } from "@haptic/render";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { holdBlockingSceneLoad } from "../lib/blocking-scene-loads";
+import { setEditorQuiet } from "../lib/editor-quiet";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
 
 function captured(bytes: number[] = [137, 80, 78, 71]): ThumbnailCaptureResult {
@@ -204,6 +205,24 @@ describe("ModelThumbnailCaptureHost", () => {
   });
 
   // Uncached captures compile shaders on the shared Engine, which a blocking scene load would count as its own progress.
+  it("starts no capture while a game covers the editor, and captures once it is back", async () => {
+    const material = { guid: "asset", path: "assets/preview.hasset", type: "Material" as const, payload: {}, cacheKey: "asset.revision-1", projectGuid };
+    assets.set("asset", { path: material.path, header: { type: "Material", payload: {} } });
+    setEditorQuiet(true);
+    try {
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([material]);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(createAssetLoadScope).not.toHaveBeenCalled();
+      expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
+      setEditorQuiet(false);
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { cacheKey: "asset.revision-1", projectGuid: "project-a" }));
+      expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
+    } finally {
+      setEditorQuiet(false);
+    }
+  });
+
   describe("while a blocking scene load is open", () => {
     const holds: Array<() => void> = [];
     afterEach(() => { for (const release of holds.splice(0)) release(); });

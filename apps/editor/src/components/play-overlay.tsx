@@ -42,6 +42,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 import { createAppSettingsStore } from "@haptic/vfs";
 import {
   startPlaySession,
+  type PlayHudStats,
   type PlaySession,
   type PlaySessionResult,
   type PlaySceneSourceLoader,
@@ -68,7 +69,7 @@ import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
 import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
-import type { ScriptBundleEntry } from "@haptic/bridge";
+import type { ScriptBundleEntry, SessionPauseCause } from "@haptic/bridge";
 import {
   applyPlayPreviewCanvasLayout,
   clampRenderResolution,
@@ -205,6 +206,10 @@ export interface PlayOverlayProps {
     >
   >;
   pauseOnPlay?: boolean;
+  /** Simulation: pause the first time each node reports an error. */
+  pauseOnErrors?: boolean;
+  /** A Simulation paused on an error: show its source. */
+  onPausedOnError?: (cause: SessionPauseCause) => void;
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
@@ -311,6 +316,8 @@ function PlayOverlayView({
   audioReverbBytes,
   audioProjectSettings,
   pauseOnPlay = false,
+  pauseOnErrors = false,
+  onPausedOnError,
   onClose,
 }: PlayOverlayProps) {
   const { appendLog, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
@@ -344,6 +351,7 @@ function PlayOverlayView({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
+  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity">>({});
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -658,6 +666,9 @@ function PlayOverlayView({
   };
   const initialFrameCapRef = useRef(frameCap);
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
+  const initialPauseOnErrorsRef = useRef(pauseOnErrors);
+  const onPausedOnErrorRef = useRef(onPausedOnError);
+  onPausedOnErrorRef.current = onPausedOnError;
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
@@ -832,11 +843,17 @@ function PlayOverlayView({
           audioReverbBytes: audioReverbBytesRef.current,
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
+          pauseOnErrors: simulating && initialPauseOnErrorsRef.current,
           onSceneLoading: setSceneLoading,
           onSceneLoadFailed: () => setSceneLoadFailed(true),
-          onSessionPaused: (next) => {
+          onSessionPaused: (next, cause) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
+            if (!simulating || !cause) return;
+            // The runtime paused itself on an error: take the user pause through the session
+            // boundary so Resume and Step treat it like Pause, then show the error's source.
+            pauseRef.current("user", true);
+            onPausedOnErrorRef.current?.(cause);
           },
           onShowFps: (enabled) => {
             setStatsOpen(enabled);
@@ -856,6 +873,7 @@ function PlayOverlayView({
               setScriptMs(stats.scriptMs);
               setPhysicsMs(stats.physicsMs);
               setPublishMs(stats.publishMs);
+              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity });
             }
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },
@@ -1072,6 +1090,7 @@ function PlayOverlayView({
           z: number;
         }[];
         visuals: () => ReturnType<PlaySession["handle"]["playVisualStates"]>;
+        text2dLayouts: () => ReturnType<PlaySession["handle"]["playText2DLayouts"]>;
         liveObjectCounts: () => { meshes: number; textures: number } | null;
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
@@ -1102,6 +1121,7 @@ function PlayOverlayView({
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
+      text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
       whenModelsReady: () =>
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
@@ -1228,6 +1248,7 @@ function PlayOverlayView({
             draws={draws}
             rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
+            {...threadStats}
             groups={statGroups}
             visible={statsVisible}
           />

@@ -30,6 +30,7 @@ In **Project Settings > Fonts**, **Default Font** is used when a requested font 
 
 - 2D Text and 2D Rich Text draw with **Renderer** set to **Bitmap** or **MSDF**. **MSDF** is available only when the Font has both the MSDF JSON and the MSDF Atlas.
 - 3D Text uses the Font's typeface data. Without it, the text uses a built-in typeface with basic ASCII characters.
+- Play, Preview Build and exported games load each Font before they draw the text that uses it, and 2D Text with no Font uses the **Default Font**. If a Font cannot be loaded, for example because its file is damaged, loading stops with an error that names the Font instead of drawing the text in another font.
 
 ## Related
 

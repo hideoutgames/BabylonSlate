@@ -30,6 +30,7 @@ import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
+import { setEditorQuiet } from "../lib/editor-quiet";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -1434,6 +1435,37 @@ describe("DocumentProvider closed document history", () => {
       expect(documents().autoSaveStatus).toEqual({ state: "saved" });
       expect(documents().dirtyDocuments).toHaveLength(0);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves nothing while a game covers the editor, and starts a new interval once it is back", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      act(() => setEditorQuiet(true));
+      // The save that comes due during Play waits for the editor.
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+
+      act(() => setEditorQuiet(false));
+      await act(() => vi.advanceTimersByTimeAsync(119_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state !== "saved"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(documents().dirtyDocuments).toHaveLength(0);
+    } finally {
+      setEditorQuiet(false);
       vi.useRealTimers();
     }
   });

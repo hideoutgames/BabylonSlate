@@ -451,6 +451,41 @@ describe("Play source ownership", () => {
     loading.dispose();
   });
 
+  it("publishes the project's Text 2D font stacks, with fallbacks and the default Font, from every acquisition", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    for (const [guid, family, fallbackGuids] of [["display", "Display", ["body"]], ["body", "Body", []]] as const) {
+      await storage.writeBinary(`assets/${guid}.hasset`, await encodeHasset({
+        header: {
+          guid, name: `${family} Font`, type: "Font", version: 1, engineVersion: "0.0.0", mode: "thin",
+          payload: { family, fallbackGuids: [...fallbackGuids], representations: { source: true } },
+          dependencies: [...fallbackGuids], requiredDependencies: [...fallbackGuids], dependencyMetadataVersion: 1,
+        }, chunks: [{ id: "source", kind: "font", mime: "font/ttf", data: new Uint8Array(100) }],
+      }));
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const project = createEmptyProject("Play");
+    project.settings.fonts.defaultFontGuid = "body";
+    project.settings.fonts.globalFallback = "serif";
+    const host = { registry, project, createScope: (owner: string) => loading.createScope(owner), compile: async () => ({ bundles: [], diagnostics: [] }) };
+    const signal = new AbortController().signal;
+    const display = await acquirePlayAssetSources(host, [], {
+      consumer: "Display label", signal, fontModes: new Map([["display", new Set(["bitmap" as const])]]),
+    });
+    const defaultLabel = await acquirePlayAssetSources(host, [], {
+      consumer: "Default label", signal, fontModes: new Map([["", new Set(["bitmap" as const])]]),
+    });
+    expect(display.sources.assets?.fontCssStackByGuid?.get("display")).toBe('"Display", "Body", serif');
+    // Engine source unions keep the last acquisition's default stack, so each one names the default Font.
+    expect(display.sources.assets?.fontCssStack).toBe('"Body", serif');
+    expect(defaultLabel.sources.assets?.fontCssStack).toBe('"Body", serif');
+    display.release(); defaultLabel.release();
+    loading.dispose();
+  });
+
   it("refreshes bounded catalog dependencies before preparing a scene changed outside the registry", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
