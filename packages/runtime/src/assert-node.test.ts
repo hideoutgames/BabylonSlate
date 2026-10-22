@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor } from "@babylonslate/core";
-import type { CompileOptions, LogicGraph } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createActor } from "@haptic/core";
+import type { CompileOptions, LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { compileClassScript, graphNode, startGraphScenario, wire } from "./testing/graph-scenario";
 
 const registry = createDefaultNodeRegistry();
