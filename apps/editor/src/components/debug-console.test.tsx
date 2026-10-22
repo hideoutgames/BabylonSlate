@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import {
   createCommandRegistry,
   createUserCommand,
-} from "@babylonslate/debugger";
+} from "@haptic/debugger";
 import { DebugConsole } from "./debug-console";
 
 describe("DebugConsole", () => {

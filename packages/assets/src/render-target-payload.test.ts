@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
-import { importBabasset } from "./importers/babasset";
+import { importHasset } from "./importers/hasset";
 import { remapImportResultGuids } from "./importers/guid-remap";
 import { renderTargetAssetDependencies } from "./render-target-payload";
 
@@ -16,8 +16,8 @@ it("preserves the live sampler's target through save, load, and colliding cross-
     payload: { mode: "DepthPass", width: 256, height: 128 },
   });
   const imported = [
-    ...await importBabasset(targetBytes, { fileName: "Depth.rendertarget.babasset", existingGuids: new Set() }),
-    ...await importBabasset(textureBytes, { fileName: "Depth Texture.rendertargettexture.babasset", existingGuids: new Set() }),
+    ...await importHasset(targetBytes, { fileName: "Depth.rendertarget.hasset", existingGuids: new Set() }),
+    ...await importHasset(textureBytes, { fileName: "Depth Texture.rendertargettexture.hasset", existingGuids: new Set() }),
   ];
   const remapped = remapImportResultGuids(imported, new Set(["target-guid"]));
   const target = remapped.find((asset) => asset.type === "RenderTarget")!;
@@ -56,7 +56,7 @@ it("remaps colliding captures across scenes, graph defaults and material sampler
     const bytes = await encodeAssetDocument({ ...document, name: document.guid, version: 1, payload: document.payload as Record<string, unknown> }, {
       dependencies: document.type === "RenderTarget" ? [] : [targetGuid, textureGuid],
     });
-    imports.push(...await importBabasset(bytes, { fileName: `${document.guid}.babasset`, existingGuids: new Set() }));
+    imports.push(...await importHasset(bytes, { fileName: `${document.guid}.hasset`, existingGuids: new Set() }));
   }
   const remapped = remapImportResultGuids(imports, new Set([targetGuid, textureGuid]));
   const target = remapped.find((asset) => asset.type === "RenderTarget")!.guid;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyProject, normalizeProjectSettings } from "@babylonslate/core";
-import { createEmptyProjectFiles, createExtensionSettings, writeProjectExtension, type ExtensionDescriptor } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { createEmptyProject, normalizeProjectSettings } from "@haptic/core";
+import { createEmptyProjectFiles, createExtensionSettings, writeProjectExtension, type ExtensionDescriptor } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { lowerMaterialDocument } from "@haptic/shader-graph";
 import { ProjectService } from "./project-service";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 
@@ -31,12 +31,12 @@ describe("Editor Extensions in a project", () => {
           if (!first.ok || !second.ok) throw new Error("Fixture conversion failed");
           const document = { type: "Material", name: "Shared", payload: first.document };
           const results = await Promise.allSettled([
-            api.assets.create("assets/Shared.material.babasset", document),
-            api.assets.create("assets/Shared.material.babasset", { ...document, payload: second.document }),
+            api.assets.create("assets/Shared.material.hasset", document),
+            api.assets.create("assets/Shared.material.hasset", { ...document, payload: second.document }),
           ]);
           await api.code.write("code/results.js", JSON.stringify(results.map((result) => result.status)));
-          await api.assets.create("assets/Retry.material.babasset", { ...document, type: "Unsupported" }).catch(() => {});
-          await api.assets.create("assets/Retry.material.babasset", document);
+          await api.assets.create("assets/Retry.material.hasset", { ...document, type: "Unsupported" }).catch(() => {});
+          await api.assets.create("assets/Retry.material.hasset", document);
         } });
       }
     `);
@@ -44,9 +44,9 @@ describe("Editor Extensions in a project", () => {
     await service.extensions.run(entry.extensionGuid, "write", {});
 
     expect(JSON.parse(await storage.readText("code/results.js"))).toEqual(["fulfilled", "rejected"]);
-    const material = await service.loadDocument("material", "assets/Shared.material.babasset") as unknown as Parameters<typeof lowerMaterialDocument>[0];
+    const material = await service.loadDocument("material", "assets/Shared.material.hasset") as unknown as Parameters<typeof lowerMaterialDocument>[0];
     expect(material.nodes.find((node) => node.type === "const.float")?.properties.value).toEqual([0.25]);
-    expect(service.registry?.getByPath("assets/Retry.material.babasset")?.header.type).toBe("Material");
+    expect(service.registry?.getByPath("assets/Retry.material.hasset")?.header.type).toBe("Material");
     await service.closeProject();
   });
 
@@ -57,14 +57,14 @@ describe("Editor Extensions in a project", () => {
     await service.extensions.run(bundled.extensionGuid, "glsl-to-material", {
       name: "Converted", source: "void main() { gl_FragColor = vec4(0.25, 0.5, 0.75, 1.0); }",
     });
-    const material = await service.loadDocument("material", "assets/Converted.material.babasset");
+    const material = await service.loadDocument("material", "assets/Converted.material.hasset");
     const graph = material as unknown as Parameters<typeof lowerMaterialDocument>[0];
     expect(graph.nodes.some((node) => node.type === "custom.glsl")).toBe(false);
     expect(lowerMaterialDocument(graph).ok).toBe(true);
-    expect(service.registry?.getByPath("assets/Converted.material.babasset")?.header.type).toBe("Material");
+    expect(service.registry?.getByPath("assets/Converted.material.hasset")?.header.type).toBe("Material");
     await service.extensions.refresh({ [bundled.extensionGuid]: { enabled: false } });
     expect(service.extensions.getSnapshot().commands).toEqual([]);
-    expect(await storage.exists("assets/Converted.material.babasset")).toBe(true);
+    expect(await storage.exists("assets/Converted.material.hasset")).toBe(true);
     await expect(service.extensions.run(bundled.extensionGuid, "glsl-to-material", {})).rejects.toThrow(/unavailable/);
     await service.closeProject();
   });
@@ -75,15 +75,15 @@ describe("Editor Extensions in a project", () => {
     await expect(service.extensions.run(bundled.extensionGuid, "glsl-to-material", {
       name: "Result", source: "void main() { for (;;) {} }",
     })).rejects.toThrow();
-    expect(await storage.exists("assets/Result.material.babasset")).toBe(false);
+    expect(await storage.exists("assets/Result.material.hasset")).toBe(false);
     await service.extensions.run(bundled.extensionGuid, "glsl-to-material", {
       name: "Result", source: "void main() { gl_FragColor = vec4(1.0); }",
     });
-    const original = await storage.readBinary("assets/Result.material.babasset");
+    const original = await storage.readBinary("assets/Result.material.hasset");
     await expect(service.extensions.run(bundled.extensionGuid, "glsl-to-material", {
       name: "Result", source: "void main() { gl_FragColor = vec4(0.0); }",
     })).rejects.toThrow(/already exists/);
-    expect(await storage.readBinary("assets/Result.material.babasset")).toEqual(original);
+    expect(await storage.readBinary("assets/Result.material.hasset")).toEqual(original);
     await service.closeProject();
   });
 
@@ -95,8 +95,8 @@ describe("Editor Extensions in a project", () => {
           await api.code.write(values.path, 'export const amount: number = 2;');
         }});
         api.registerCommand({ id: 'update', title: 'Update', execute: async () => {
-          const asset = await api.assets.read('assets/main.scene.babasset');
-          await api.assets.update('assets/main.scene.babasset', asset);
+          const asset = await api.assets.read('assets/main.scene.hasset');
+          await api.assets.update('assets/main.scene.hasset', asset);
         }});
       }
     `);

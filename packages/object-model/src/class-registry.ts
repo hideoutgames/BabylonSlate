@@ -1,4 +1,4 @@
-import { err, ok, mapFromDefaultEntries, type Result } from "@babylonslate/core";
+import { err, ok, mapFromDefaultEntries, type Result } from "@haptic/core";
 import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,

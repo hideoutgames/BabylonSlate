@@ -7,7 +7,7 @@ import {
 
 /**
  * Header role of a node. The editor maps it onto the shared particle stage
- * tokens (`PARTICLE_STAGE_ROLE` in `@babylonslate/ui`), so the graph spine and
+ * tokens (`PARTICLE_STAGE_ROLE` in `@haptic/ui`), so the graph spine and
  * the Basic module stack use one colour sequence.
  */
 export type ParticleNodeRole =

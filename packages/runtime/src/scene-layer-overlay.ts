@@ -1,4 +1,4 @@
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import {
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   identityTransform,
@@ -13,8 +13,8 @@ import {
   sceneLayerViewBounds,
   type FocusNavigationSettings,
   type OverlaySafeAreaInsets,
-} from "@babylonslate/core";
-import type { RawInputEvent, ResolvedInputTick } from "@babylonslate/input";
+} from "@haptic/core";
+import type { RawInputEvent, ResolvedInputTick } from "@haptic/input";
 import {
   Actor,
   attachSerializedComponents,
@@ -23,7 +23,7 @@ import {
   type SceneActorHooks,
   type SceneLayer,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import { actorParentGuid } from "./actor-world-transform";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";

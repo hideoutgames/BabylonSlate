@@ -20,7 +20,7 @@ import {
 import {
   MAX_PROJECT_IMAGE_DATA_URL_LENGTH,
   type ProjectAppearance,
-} from "@babylonslate/core";
+} from "@haptic/core";
 
 /** New projects start grey with the generic shapes icon. */
 export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearance = {

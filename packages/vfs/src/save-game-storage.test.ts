@@ -21,7 +21,7 @@ function lockManager() {
 }
 
 async function opfsFile(root: FileSystemDirectoryHandle, logical: string) {
-  let directory = await root.getDirectoryHandle("babylonslate-game-saves");
+  let directory = await root.getDirectoryHandle("haptic-game-saves");
   const parts = logical.split("/");
   for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(encodeSaveGameSegment(part));
   return directory.getFileHandle(encodeSaveGameSegment(parts.at(-1)!));

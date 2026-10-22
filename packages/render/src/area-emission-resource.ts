@@ -1,5 +1,5 @@
 import { Constants, RawTexture, type AbstractEngine } from "@babylonjs/core";
-import type { AreaEmissionPixels } from "@babylonslate/assets";
+import type { AreaEmissionPixels } from "@haptic/assets";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 
 // RGBA8 1024-square, complete native mip chain including 1x1.

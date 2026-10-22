@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { GraphCanvasDropApi } from "@babylonslate/graph-ui";
+import type { GraphCanvasDropApi } from "@haptic/graph-ui";
 import { useOptionalPrefabEditing } from "./prefab-editing-context";
 
 export interface GraphEditingContextValue {

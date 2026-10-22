@@ -1,13 +1,13 @@
-import type { BlackboardDocument, BlackboardValues } from "@babylonslate/behaviour-tree";
-import type { Transform } from "@babylonslate/core";
+import type { BlackboardDocument, BlackboardValues } from "@haptic/behaviour-tree";
+import type { Transform } from "@haptic/core";
 import {
   Actor,
   ActorComponent,
   BObject,
   sanitizeInspectValue,
   type World,
-} from "@babylonslate/object-model";
-import type { NavPoint } from "@babylonslate/navigation";
+} from "@haptic/object-model";
+import type { NavPoint } from "@haptic/navigation";
 import { actorWorldTransform, composeParentChildTransform, actorGuidIndex } from "./actor-world-transform";
 
 /** Keep live objects inside the evaluator; only transport/trace copies use references. */

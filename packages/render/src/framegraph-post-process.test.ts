@@ -15,7 +15,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   type MaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { addAuthoredPostProcessTasks } from "./framegraph-post-process";
 import type { PostProcessStackDiagnostic } from "./post-process-material";
@@ -93,7 +93,7 @@ function host(
   documents: Array<MaterialDocument | null>,
   functions = {},
   disabled: number[] = [],
-  parameters: Array<Record<string, import("@babylonslate/core").MaterialParameterValue>> = [],
+  parameters: Array<Record<string, import("@haptic/core").MaterialParameterValue>> = [],
 ) {
   const engine = new NullEngine({
     renderWidth: 16,

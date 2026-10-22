@@ -1,7 +1,7 @@
-import { useToolbarOverflowEntry } from "@babylonslate/editor-kit";
+import { useToolbarOverflowEntry } from "@haptic/editor-kit";
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue,
-} from "@babylonslate/ui/components/select";
+} from "@haptic/ui/components/select";
 import { useActiveDocumentState, useDocumentActions } from "../context/document-context";
 import { SCENE_MODES, SCENE_MODE_LABELS, normalizeSceneMode } from "../shell/scene-document-layout";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";

@@ -1,5 +1,5 @@
-import { emptyWaterSample } from "@babylonslate/core";
-import { Actor, ActorComponent, SceneLayer, type BObject, type World } from "@babylonslate/object-model";
+import { emptyWaterSample } from "@haptic/core";
+import { Actor, ActorComponent, SceneLayer, type BObject, type World } from "@haptic/object-model";
 import type { MovementWorldSync } from "./movement";
 import type { PhysicsWorldSync } from "./physics-sync";
 import type { RagdollWorldSync } from "./ragdoll-sync";

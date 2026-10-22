@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NodeStorageAdapter } from "@babylonslate/vfs/node";
-import { LIBRARY_FOLDERS } from "@babylonslate/vfs/library-folders";
+import { NodeStorageAdapter } from "@haptic/vfs/node";
+import { LIBRARY_FOLDERS } from "@haptic/vfs/library-folders";
 import { DesktopLibraries, libraryIpcHandlers } from "./desktop-storage-ipc";
 import { knownProjectFolder, validateIpcArguments } from "./packaged-security";
 
@@ -22,7 +22,7 @@ async function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
 }
 
 beforeEach(async () => {
-  userData = await realpath(await mkdtemp(join(tmpdir(), "babylonslate-libraries-")));
+  userData = await realpath(await mkdtemp(join(tmpdir(), "haptic-libraries-")));
   projectsHome = join(userData, "projects");
   librariesHome = join(userData, "libraries");
   await mkdir(projectsHome);
@@ -59,7 +59,7 @@ describe("desktop user library IPC", () => {
   });
 
   it("refuses scopes outside the allowlist and paths that leave the library", async () => {
-    for (const scope of ["projects", "__babylonslate_derived__", "../projects", "__slate_templates__/..", "", "/etc", {}, null]) {
+    for (const scope of ["projects", "__haptic_derived__", "../projects", "__slate_templates__/..", "", "/etc", {}, null]) {
       await expect(invoke("library:exists", scope, "project.json")).rejects.toThrow("Invalid desktop request");
     }
     for (const path of ["../__slate_engine_plugins__/catalog.json", "../../projects/Game/project.json", "/etc/passwd", "C:\\secret", "a/../../b"]) {

@@ -1,8 +1,8 @@
 import {
   isOverlayLayoutClass, parseOverlayLayoutProperties, supportsOverlayVisualStyle,
   type TweenValueType,
-} from "@babylonslate/core";
-import { Actor, ActorComponent, BObject, SceneLayer, engineScriptApiFor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import { Actor, ActorComponent, BObject, SceneLayer, engineScriptApiFor } from "@haptic/object-model";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenReference } from "./tween-runtime";
 import { applyTweenTransform, tweenWorldTransformDepth, type TweenTransformChannel } from "./tween-transforms";

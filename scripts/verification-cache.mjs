@@ -43,7 +43,7 @@ export async function cachedVerificationPhase(phase, execute, options = {}) {
   const emit =
     options.emit ??
     ((record) => process.stdout.write(JSON.stringify(record) + "\n"));
-  if (env.CI === "true" || env.BL_VERIFY_CACHE === "0") {
+  if (env.CI === "true" || env.HAPTIC_VERIFY_CACHE === "0") {
     await execute();
     return { cached: false };
   }

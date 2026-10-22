@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createFontPayload } from "@babylonslate/assets";
+import { createFontPayload } from "@haptic/assets";
 import { FontInspector, FontPreview } from "./font-editor";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -19,8 +19,8 @@ const fontHarness = vi.hoisted(() => ({
   pickImportFiles: vi.fn(async (): Promise<Array<{ name: string; bytes: Uint8Array }>> => []),
 }));
 
-vi.mock("@babylonslate/vfs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
   pickImportFiles: fontHarness.pickImportFiles,
 }));
 const readAssetChunk = vi.hoisted(() =>
@@ -30,10 +30,10 @@ const readAssetChunk = vi.hoisted(() =>
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "font:assets/Display.font.babasset",
+      id: "font:assets/Display.font.hasset",
       ref: {
         kind: "font",
-        path: "assets/Display.font.babasset",
+        path: "assets/Display.font.hasset",
         label: "Display Font",
       },
       content: fontHarness.content ?? createFontPayload("Display"),
@@ -57,7 +57,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Font",
           payload: { family: "Display" },
         },
-        path: "assets/Display.font.babasset",
+        path: "assets/Display.font.hasset",
       },
       {
         header: {
@@ -66,7 +66,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           type: "Font",
           payload: { family: "Body" },
         },
-        path: "assets/Body.font.babasset",
+        path: "assets/Body.font.hasset",
       },
     ],
     getByGuid: (guid: string) =>
@@ -78,7 +78,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
               type: "Font",
               payload: { family: "Body" },
             },
-            path: "assets/Body.font.babasset",
+            path: "assets/Body.font.hasset",
           }
         : guid === "font-1"
           ? {
@@ -93,7 +93,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
                   representations: { msdfJson: true, msdfPng: true },
                 },
               },
-              path: "assets/Display.font.babasset",
+              path: "assets/Display.font.hasset",
             }
           : undefined,
     importFile: fontHarness.importFile,
@@ -110,9 +110,9 @@ afterEach(() => {
   fontHarness.pickImportFiles.mockResolvedValue([]);
 });
 
-const PATH = "assets/Display.font.babasset";
+const PATH = "assets/Display.font.hasset";
 const payload = () => (fontHarness.content ?? createFontPayload("Display")) as unknown as Record<string, unknown>;
-const commit = (next: Record<string, unknown>) => void applyAssetDocumentChange("font:assets/Display.font.babasset", next, undefined);
+const commit = (next: Record<string, unknown>) => void applyAssetDocumentChange("font:assets/Display.font.hasset", next, undefined);
 
 describe("Font editor", () => {
   it("reports an unavailable font source instead of claiming the preview is ready", async () => {
@@ -160,7 +160,7 @@ describe("Font editor", () => {
     expect(screen.queryByTestId("search-item-font-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-font-2"));
     expect(applyAssetDocumentChange).toHaveBeenCalledWith(
-      "font:assets/Display.font.babasset",
+      "font:assets/Display.font.hasset",
       expect.objectContaining({ fallbackGuids: ["font-2"] }),
       undefined,
     );
@@ -185,7 +185,7 @@ describe("Font editor", () => {
       expect.objectContaining({ attachToGuid: "font-1" }),
     );
     expect(applyAssetDocumentChange).toHaveBeenLastCalledWith(
-      "font:assets/Display.font.babasset",
+      "font:assets/Display.font.hasset",
       expect.objectContaining({
         fallbackGuids: ["font-2"],
         representations: expect.objectContaining({ source: true, msdf: true }),

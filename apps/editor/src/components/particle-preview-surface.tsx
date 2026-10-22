@@ -1,20 +1,20 @@
 import type { ReactNode } from "react";
 import { PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react";
-import type { ParticlePreviewStats } from "@babylonslate/render";
-import { Button } from "@babylonslate/ui/components/button";
+import type { ParticlePreviewStats } from "@haptic/render";
+import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { Separator } from "@babylonslate/ui/components/separator";
+} from "@haptic/ui/components/empty";
+import { Separator } from "@haptic/ui/components/separator";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+} from "@haptic/ui/components/tooltip";
 import { IconActionButton } from "./icon-action-button";
 
 type PreviewAction = { label: string; onClick: () => void };

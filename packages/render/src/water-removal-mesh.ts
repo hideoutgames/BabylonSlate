@@ -7,7 +7,7 @@ import {
   Vector3,
   type Scene,
 } from "@babylonjs/core";
-import { normalizeWaterRemoval, type WaterRemovalProperties } from "@babylonslate/core";
+import { normalizeWaterRemoval, type WaterRemovalProperties } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
 
 export const WATER_REMOVAL_COLOR = new Color3(0.25, 0.85, 1);

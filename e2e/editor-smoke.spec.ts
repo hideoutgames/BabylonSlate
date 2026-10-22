@@ -4,7 +4,7 @@ import { openListedTestProject, openTestProject } from "./open-test-project";
 import { expect, test } from "./profile-context";
 import { saveAllIfEnabled } from "./save-all";
 
-test.describe("BabylonSlate editor smoke", () => {
+test.describe("Haptic editor smoke", () => {
   test("loads shell, opens project, and shows viewport canvas", { tag: WEBKIT_SMOKE_TAG }, async ({
     page,
   }) => {
@@ -37,12 +37,12 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(location).toContainText("Content");
     await expect(location).not.toContainText("assets");
     await expect(
-      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+      page.locator('[data-asset-path="assets/main.scene.hasset"]'),
     ).toBeVisible();
     await expect(page.locator("canvas:visible")).toHaveCount(0);
 
     await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .locator('[data-asset-path="assets/main.scene.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(page.getByTestId("viewport-panel")).toBeVisible();
@@ -54,7 +54,7 @@ test.describe("BabylonSlate editor smoke", () => {
       .getByTestId("document-tab-select")
       .click();
     await page
-      .locator('[data-asset-path="assets/Mannequin.class.babasset"]')
+      .locator('[data-asset-path="assets/Mannequin.class.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await expect(page.getByTestId("graph-panel")).toBeVisible();
@@ -122,7 +122,7 @@ test.describe("BabylonSlate editor smoke", () => {
   }) => {
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/Mannequin.class.babasset"]')
+      .locator('[data-asset-path="assets/Mannequin.class.hasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
 

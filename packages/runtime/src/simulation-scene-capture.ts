@@ -1,6 +1,6 @@
-import { normalizeScene } from "@babylonslate/core";
-import type { MaterialParameterValue, SceneSettings, SerializedActor, SerializedComponent, SerializedScene, SerializedTransform, Transform } from "@babylonslate/core";
-import { Actor, ActorComponent, BObject, engineScriptApiFor, sceneActorProvenance, sceneComponentProvenance, type VariableDef, type World } from "@babylonslate/object-model";
+import { normalizeScene } from "@haptic/core";
+import type { MaterialParameterValue, SceneSettings, SerializedActor, SerializedComponent, SerializedScene, SerializedTransform, Transform } from "@haptic/core";
+import { Actor, ActorComponent, BObject, engineScriptApiFor, sceneActorProvenance, sceneComponentProvenance, type VariableDef, type World } from "@haptic/object-model";
 import { defaultComponentAuthoringProperties } from "./component-authoring";
 
 export interface SimulationCaptureIdentity {

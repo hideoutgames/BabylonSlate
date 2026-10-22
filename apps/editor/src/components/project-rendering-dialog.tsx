@@ -1,6 +1,6 @@
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@babylonslate/ui/components/dialog";
-import { Button } from "@babylonslate/ui/components/button";
-import { Progress, ProgressLabel } from "@babylonslate/ui/components/progress";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@haptic/ui/components/dialog";
+import { Button } from "@haptic/ui/components/button";
+import { Progress, ProgressLabel } from "@haptic/ui/components/progress";
 import type { ProjectEngineState } from "../lib/project-engine";
 
 export function ProjectRenderingDialog({ state, retrying = false, onRetry, onDismiss }: {

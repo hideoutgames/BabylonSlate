@@ -3,9 +3,9 @@ import {
   createDefaultScene,
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
-} from "@babylonslate/core";
-import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@babylonslate/exporter";
-import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@babylonslate/assets";
+} from "@haptic/core";
+import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
+import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@haptic/assets";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
@@ -282,7 +282,7 @@ describe("loadGameFromFiles", () => {
   });
 
   it("peels packed Model payload so importScale reaches the player", async () => {
-    const { encodePackedModelAsset } = await import("@babylonslate/assets");
+    const { encodePackedModelAsset } = await import("@haptic/assets");
     const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3]);
     const packedModel = encodePackedModelAsset(
       {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { textureEncodeSize } from "@babylonslate/assets";
+import { textureEncodeSize } from "@haptic/assets";
 import workerSource from "../../public/basis/encode-worker.js?raw";
 
 type WorkerReply = { type: string; id?: number; error?: string };

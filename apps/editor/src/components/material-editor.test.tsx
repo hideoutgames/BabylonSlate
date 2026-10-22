@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { AssetRegistry, projectContentRoot } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -13,7 +13,7 @@ import {
   normalizeMaterialDocument,
   type MaterialDocument,
   type MaterialPreviewState,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 
 const harness: {
   content: Record<string, unknown>;
@@ -40,14 +40,14 @@ const harness: {
 let assetRegistry: AssetRegistry;
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.babasset" }),
+  useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.hasset" }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "material:assets/Rock.material.babasset",
-      ref: { kind: harness.kind, path: "assets/Rock.material.babasset" },
+      id: "material:assets/Rock.material.hasset",
+      ref: { kind: harness.kind, path: "assets/Rock.material.hasset" },
       content: harness.content,
     },
   ],
@@ -87,7 +87,7 @@ const panelProps = {} as IDockviewPanelProps;
 
 beforeEach(async () => {
   const storage = new MemoryStorageAdapter("documents");
-  await storage.openDocumentsProject("material-pickers.babproject");
+  await storage.openDocumentsProject("material-pickers.hproject");
   assetRegistry = new AssetRegistry(storage);
   await assetRegistry.mountRoot(projectContentRoot());
   for (const asset of [
@@ -97,7 +97,7 @@ beforeEach(async () => {
     { guid: "model-1", name: "Statue", type: "Model", payload: {} },
     { guid: "function-1", name: "Blend", type: "MaterialFunction", payload: {} },
   ]) {
-    await assetRegistry.createAsset("project", `${asset.guid}.babasset`, {
+    await assetRegistry.createAsset("project", `${asset.guid}.hasset`, {
       ...asset, version: 1, dependencies: [], chunks: [],
     });
   }
@@ -390,7 +390,7 @@ describe("Material details panel", () => {
     expect(renamedOption.textContent).toContain(renamed.path);
     expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain(renamed.header.name);
     await assetRegistry.deleteAsset(guid);
-    await assetRegistry.createAsset("project", "new.babasset", {
+    await assetRegistry.createAsset("project", "new.hasset", {
       guid: "new", name: "New Asset", type, version: 1, dependencies: [], payload: {}, chunks: [],
     });
     harness.registryEpoch += 1;

@@ -1,5 +1,5 @@
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
-import { ENGINE_BT_BUILTIN_CLASSES } from "@babylonslate/object-model";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { ENGINE_BT_BUILTIN_CLASSES } from "@haptic/object-model";
 import { ENGINE_BASE_CLASSES } from "./content-browser-helpers";
 
 /** Engine class ids indexed as catalog hits (shipped types only; unbuilt P11 nav stays gated). */

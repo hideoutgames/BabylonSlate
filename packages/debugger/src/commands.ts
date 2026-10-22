@@ -1,4 +1,4 @@
-import { isRenderPath, QUALITY_GROUPS, QUALITY_LEVELS, RENDER_PATHS, WATER_QUALITY_FIELDS, type QualityGroup, type RenderPath } from "@babylonslate/core";
+import { isRenderPath, QUALITY_GROUPS, QUALITY_LEVELS, RENDER_PATHS, WATER_QUALITY_FIELDS, type QualityGroup, type RenderPath } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,

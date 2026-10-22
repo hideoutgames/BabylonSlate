@@ -30,7 +30,7 @@ import { quatToPlanarAngle } from "./collider-bake";
 import { queryAdmitsEveryShape, queryAdmitsShape } from "./query-filter";
 import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
 import { colliderPairResponse } from "./collision-response";
-import type { CollisionResponse } from "@babylonslate/core";
+import type { CollisionResponse } from "@haptic/core";
 import { copyConstraintDesc } from "./constraint-validation";
 
 type RapierEventQueue = {
@@ -264,7 +264,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.world = new RAPIER.World({ x: gravity.x, y: gravity.y });
     this.eventQueue = new RAPIER.EventQueue(true);
     // Rapier interaction groups only contain 16 membership bits; authored
-    // BabylonSlate masks have 32. Hooks retain all bits for contacts and sensors.
+    // Haptic masks have 32. Hooks retain all bits for contacts and sensors.
     // An Overlap pair keeps its contact (and its events) with the solver off.
     this.collisionHooks = {
       filterContactPair: (a, b) => {

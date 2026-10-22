@@ -1,4 +1,4 @@
-import type { RenderDiagnostics } from "@babylonslate/render";
+import type { RenderDiagnostics } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 
 /** Read-only view of the running Play session for in-app diagnostics. */

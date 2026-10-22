@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseSceneDocumentLayout } from "./scene-document-layout";
 import { listDockWindows } from "./window-catalog";
 import { applyFocusLayout, focusKeepPanelIds } from "./layout-ops";
-import { engineSettingsSchema } from "@babylonslate/vfs";
+import { engineSettingsSchema } from "@haptic/vfs";
 
 describe("Scene mode layouts", () => {
   it("round-trips independent per-mode layouts", () => {

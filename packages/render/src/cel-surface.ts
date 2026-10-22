@@ -9,7 +9,7 @@ import {
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
-import type { MaterialBuildPlan } from "@babylonslate/shader-graph";
+import type { MaterialBuildPlan } from "@haptic/shader-graph";
 import { CelLightBlock } from "./cel-light-block";
 import {
   createConstantBlock,

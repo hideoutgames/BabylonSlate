@@ -1,4 +1,4 @@
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import { materialAssetDependencies } from "./content-browser-helpers";
 import { textureUploadSignature } from "./texture-upload-signature";
 

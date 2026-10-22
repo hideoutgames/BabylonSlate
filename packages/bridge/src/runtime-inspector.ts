@@ -1,4 +1,4 @@
-import type { MaterialParameterValue, SerializedTransform } from "@babylonslate/core";
+import type { MaterialParameterValue, SerializedTransform } from "@haptic/core";
 
 /** GUIDs locate candidates; lifetime tokens and scene identity authorize the exact object. */
 export type RuntimeObjectIdentity = {

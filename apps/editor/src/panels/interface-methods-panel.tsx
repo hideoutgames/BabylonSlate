@@ -1,11 +1,11 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { PanelFrame } from "@babylonslate/editor-kit";
+import { PanelFrame } from "@haptic/editor-kit";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
+} from "@haptic/ui/components/empty";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";

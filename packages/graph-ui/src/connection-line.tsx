@@ -5,7 +5,7 @@ import {
   type Position,
 } from "@xyflow/react";
 import { useMemo, type CSSProperties } from "react";
-import { Badge } from "@babylonslate/ui/components/badge";
+import { Badge } from "@haptic/ui/components/badge";
 import {
   collectDisplayConnectPins,
   containerPointerToClient,

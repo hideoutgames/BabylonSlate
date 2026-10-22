@@ -9,13 +9,13 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { scalabilityGraphScripts } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 const command = (page: Page, line: string) => page.evaluate((line) =>
-  (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.executeConsoleCommand(line), line);
+  (window as unknown as { __hapticPlayerTest: PlayerTestHandle }).__hapticPlayerTest.executeConsoleCommand(line), line);
 const read = (page: Page) => page.evaluate(() => {
-  const host = (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest;
+  const host = (window as unknown as { __hapticPlayerTest: PlayerTestHandle }).__hapticPlayerTest;
   return { rendering: host.rendering(), visuals: host.visuals(), tasks: host.renderTasks(), scalability: host.scalability() };
 });
 // Capture the presented surface. Reading a non-preserved GPU canvas with
@@ -228,7 +228,7 @@ for (const variant of [{ backend: "webgl2" }] as const) {
         body: JSON.stringify({ errors, rendererMessages, servedRequests: server.requests, blockedOrigins,
           state: await read(page).catch((error: unknown) => ({ unavailable: String(error) })),
           shutdown: await page.evaluate(() =>
-            (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.stop()
+            (window as unknown as { __hapticPlayerTest: PlayerTestHandle }).__hapticPlayerTest.stop()
           ).catch((error: unknown) => ({ unavailable: String(error) })),
           evidence: renderingEvidence("e2e/render-settings-export.spec.ts"),
         }), contentType: "application/json",

@@ -1,5 +1,5 @@
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
-import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedComponent, type SerializedScene } from "@babylonslate/core";
+import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "./create-engine";
 import { FoliageEraseSession } from "./foliage-erase";
 import { RENDERING_GROUP } from "./sorting";

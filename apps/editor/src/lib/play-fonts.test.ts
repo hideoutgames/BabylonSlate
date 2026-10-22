@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene } from "@haptic/core";
 import {
   collectFontAssetEntries,
   collectFontCssStacks,
@@ -32,19 +32,19 @@ describe("collectFontAssetEntries", () => {
       [
         {
           guid: "font-1",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           type: "Font",
           payload: { family: "Display Face", weight: 700, style: "italic" },
         },
         {
           guid: "font-empty",
-          path: "assets/Empty.font.babasset",
+          path: "assets/Empty.font.hasset",
           type: "Font",
           payload: { family: "Empty" },
         },
         {
           guid: "tex-1",
-          path: "assets/Icon.texture.babasset",
+          path: "assets/Icon.texture.hasset",
           type: "Texture",
           payload: {},
         },
@@ -72,17 +72,17 @@ describe("collectFontAssetEntries", () => {
       [
         {
           guid: "font-1",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           type: "Font",
         },
         {
           guid: "font-2",
-          path: "assets/Body.font.babasset",
+          path: "assets/Body.font.hasset",
           type: "Font",
         },
         {
           guid: "tex-1",
-          path: "assets/Icon.texture.babasset",
+          path: "assets/Icon.texture.hasset",
           type: "Texture",
         },
       ],
@@ -108,12 +108,12 @@ describe("collectFontMsdfPair", () => {
       [
         {
           guid: "font-1",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           type: "Font",
         },
         {
           guid: "font-2",
-          path: "assets/Body.font.babasset",
+          path: "assets/Body.font.hasset",
           type: "Font",
         },
       ],
@@ -143,19 +143,19 @@ describe("collectFontCssStacks", () => {
       [
         {
           guid: "display",
-          path: "assets/Display.font.babasset",
+          path: "assets/Display.font.hasset",
           type: "Font",
           payload: { family: "Display", fallbackGuids: ["body"] },
         },
         {
           guid: "body",
-          path: "assets/Body.font.babasset",
+          path: "assets/Body.font.hasset",
           type: "Font",
           payload: { family: "Body" },
         },
         {
           guid: "tex-1",
-          path: "assets/Icon.texture.babasset",
+          path: "assets/Icon.texture.hasset",
           type: "Texture",
           payload: {},
         },

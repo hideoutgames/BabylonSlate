@@ -1,5 +1,5 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { createActor, createDefaultScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import { createPlayPauseGate } from "./play-pause-gate";
 import { describe, expect, it, vi } from "vitest";

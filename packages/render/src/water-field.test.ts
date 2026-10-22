@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, Scene, Vector3, type Mesh } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";

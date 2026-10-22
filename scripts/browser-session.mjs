@@ -17,9 +17,9 @@ const server = await startBrowserServer(directory, identity);
 try {
   const env = {
     ...process.env,
-    BL_TEST_BASE_URL: server.url,
-    BL_TEST_BUILD_KEY: identity.key,
-    BL_TEST_SERVER_NONCE: server.nonce,
+    HAPTIC_TEST_BASE_URL: server.url,
+    HAPTIC_TEST_BUILD_KEY: identity.key,
+    HAPTIC_TEST_SERVER_NONCE: server.nonce,
   };
   const args = await browserPartitionArgs(process.argv.slice(3), {
     signal: lifetime.signal,

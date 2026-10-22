@@ -216,7 +216,7 @@ const appNoCapacitor = boundary(
     {
       group: CAPACITOR_PATTERNS,
       message:
-        "UI must not call Capacitor directly; go through @babylonslate/vfs.",
+        "UI must not call Capacitor directly; go through @haptic/vfs.",
     },
   ],
 );

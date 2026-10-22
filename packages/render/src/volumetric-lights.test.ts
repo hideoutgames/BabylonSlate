@@ -9,7 +9,7 @@ import {
   Vector3,
   type Effect,
 } from "@babylonjs/core";
-import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings } from "@babylonslate/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings } from "@haptic/core";
 import { expect, it, vi } from "vitest";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";

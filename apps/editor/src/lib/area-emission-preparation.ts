@@ -1,4 +1,4 @@
-import { currentAreaEmissionChunk, type IndexedAsset } from "@babylonslate/assets";
+import { currentAreaEmissionChunk, type IndexedAsset } from "@haptic/assets";
 
 export type AreaEmissionPreparation = { state: "preparing" } | { state: "failed"; message: string };
 type Prepare = (guid: string) => Promise<void>;

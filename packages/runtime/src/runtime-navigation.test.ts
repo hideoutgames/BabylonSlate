@@ -5,7 +5,7 @@ import {
   eulerDegreesToQuaternion,
   type SerializedActor,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   generateNavMesh,
   initNavigation,
@@ -13,14 +13,14 @@ import {
   recastWalkableQuadFromXy,
   solidBlockerMesh,
   type NavCostVolume,
-} from "@babylonslate/navigation";
+} from "@haptic/navigation";
 import { actorGuidIndex, actorWorldTransform } from "./actor-world-transform";
 import { createInProcessRuntime } from "./driver";
 
 const costVolumesReceived = vi.hoisted(() => [] as NavCostVolume[]);
 
-vi.mock("@babylonslate/navigation", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/navigation")>();
+vi.mock("@haptic/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/navigation")>();
   return {
     ...actual,
     // The real backend, with each cost volume the runtime hands it recorded.

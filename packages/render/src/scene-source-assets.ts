@@ -1,4 +1,4 @@
-import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
+import type { MaterialDocument, MaterialFunctionDocument } from "@haptic/shader-graph";
 import type { AudioLibrary } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import type { FontAssetEntry } from "./font-registry";

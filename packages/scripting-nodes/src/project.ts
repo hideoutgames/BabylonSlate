@@ -1,4 +1,4 @@
-import { pin, STRING, type NodeDefinition } from "@babylonslate/scripting";
+import { pin, STRING, type NodeDefinition } from "@haptic/scripting";
 
 /** Authored identity, available equally in Play and packaged games. */
 export const projectNodes: NodeDefinition[] = [

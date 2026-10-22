@@ -447,13 +447,13 @@ describe("AssetPicker", () => {
             guid: "g1",
             name: "main",
             type: "Scene",
-            path: "assets/main.scene.babasset",
+            path: "assets/main.scene.hasset",
           },
           {
             guid: "g2",
             name: "main",
             type: "Scene",
-            path: "assets/levels/main.scene.babasset",
+            path: "assets/levels/main.scene.hasset",
           },
         ]}
         allowNone={false}
@@ -463,14 +463,14 @@ describe("AssetPicker", () => {
     const row = screen.getByTestId("search-item-g1");
     expect(within(row).getByText("main")).toBeTruthy();
     expect(row.textContent).toContain("Scene");
-    expect(row.textContent).toContain("assets/main.scene.babasset");
+    expect(row.textContent).toContain("assets/main.scene.hasset");
     expect(
       row.querySelector("[data-type-family]")?.getAttribute("data-type-family"),
     ).toBe("scene");
     const otherRow = screen.getByTestId("search-item-g2");
     expect(within(otherRow).getByText("main")).toBeTruthy();
-    expect(otherRow.textContent).toContain("Scene · assets/levels/main.scene.babasset");
-    expect(otherRow.title).toBe("main · assets/levels/main.scene.babasset");
+    expect(otherRow.textContent).toContain("Scene · assets/levels/main.scene.hasset");
+    expect(otherRow.title).toBe("main · assets/levels/main.scene.hasset");
     fireEvent.click(otherRow);
     expect(onPick).toHaveBeenCalledWith("g2");
   });

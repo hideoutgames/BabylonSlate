@@ -1,6 +1,6 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createDefaultRenderTargetCaptureProperties, resolveActorDefaults, type Transform } from "@babylonslate/core";
-import { isInfiniteLoopError } from "@babylonslate/debugger";
+import type { CommandMessage } from "@haptic/bridge";
+import { createDefaultRenderTargetCaptureProperties, resolveActorDefaults, type Transform } from "@haptic/core";
+import { isInfiniteLoopError } from "@haptic/debugger";
 import {
   attachSerializedComponents,
   isLockedEngineClassId,
@@ -10,8 +10,8 @@ import {
   type LifecycleHooks,
   type SceneActorHooks,
   type World,
-} from "@babylonslate/object-model";
-import { parseColliderProperties, type PhysicsWorldKind } from "@babylonslate/physics";
+} from "@haptic/object-model";
+import { parseColliderProperties, type PhysicsWorldKind } from "@haptic/physics";
 import { actorLabel, breakParentCycles } from "./actor-world-transform";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
-import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
-import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
+import { createActor, createDefaultScene, createDefaultSceneLayer } from "@haptic/core";
+import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
+import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 

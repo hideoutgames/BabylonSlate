@@ -2,7 +2,7 @@ import { act, cleanup } from "@testing-library/react";
 import {
   MemoryStorageAdapter,
   createReadOnlyProjectStorage,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
 
 /*
@@ -12,7 +12,7 @@ import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/
  * - `../lib/engine-plugins`, `../lib/engine-extensions` and their `-library`
  *   modules: engine plugins and extensions are fetched from the app's public
  *   folder, so projects here start without any.
- * - `@babylonslate/render`: the KTX2 transcoder probe and the scene loading
+ * - `@haptic/render`: the KTX2 transcoder probe and the scene loading
  *   paint wait need a GPU page.
  */
 

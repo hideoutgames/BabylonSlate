@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { DebugInspectNode, DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { DebugInspectNode, DebugInspectSnapshot } from "@haptic/object-model";
 import {
   PropertyGrid,
   SearchInput,
@@ -9,22 +9,22 @@ import {
   resolveActorTypeVisual,
   resolveTypeVisual,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { Button } from "@babylonslate/ui/components/button";
-import type { CommandResult } from "@babylonslate/debugger";
+} from "@haptic/ui/components/empty";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
+import { Button } from "@haptic/ui/components/button";
+import type { CommandResult } from "@haptic/debugger";
 import {
   flattenInspectTree,
   nextInspectSelection,

@@ -7,7 +7,7 @@ describe("compiled module loading", () => {
       "// export function commentGhost() {}",
       "/* export async function blockGhost() {} */",
       "const template = `export function templateGhost",
-      "//# sourceURL=babylonslate:///authored-template.js",
+      "//# sourceURL=haptic:///authored-template.js",
       '${`export function nested ${"export function expressionGhost"}`}`;',
       "export function run() {",
       '  return ["export function stringGhost", "export async function asyncGhost", template, /export function regexGhost/.source];',
@@ -17,7 +17,7 @@ describe("compiled module loading", () => {
     expect(Object.keys(module)).toEqual(["run"]);
     expect(module.run?.()).toEqual([
       "export function stringGhost", "export async function asyncGhost",
-      "export function templateGhost\n//# sourceURL=babylonslate:///authored-template.js\nexport function nested export function expressionGhost",
+      "export function templateGhost\n//# sourceURL=haptic:///authored-template.js\nexport function nested export function expressionGhost",
       "export function regexGhost",
     ]);
   });

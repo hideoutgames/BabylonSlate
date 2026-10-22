@@ -1,5 +1,5 @@
-import type { QualityOverrides } from "@babylonslate/core";
-import { ENGINE_SETTINGS_CHANGED_EVENT } from "@babylonslate/vfs";
+import type { QualityOverrides } from "@haptic/core";
+import { ENGINE_SETTINGS_CHANGED_EVENT } from "@haptic/vfs";
 import {
   receiveActiveAppSettingsUpdate,
   subscribeAppSettings,

@@ -1,5 +1,5 @@
-import type { SerializedScene } from "@babylonslate/core";
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import type { SerializedScene } from "@haptic/core";
+import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 
 /** Required source dependencies must be prepared before returning the document. */
 export interface RuntimeSceneSource {

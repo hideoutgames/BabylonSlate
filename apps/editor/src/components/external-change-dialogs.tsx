@@ -1,6 +1,6 @@
-import type { ExternalChangeClassification } from "@babylonslate/assets";
-import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import type { ExternalChangeClassification } from "@haptic/assets";
+import { SelectableText } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+} from "@haptic/ui/components/alert-dialog";
 
 export function ExternalChangeDialogs({
   prompt,

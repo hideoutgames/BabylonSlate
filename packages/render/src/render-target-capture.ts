@@ -12,7 +12,7 @@ import {
   normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload,
   type RenderTargetCaptureProperties, type RenderTargetCaptureQuality, type RenderTargetPayload,
   type RenderTargetTexturePayload, type SerializedScene, type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";

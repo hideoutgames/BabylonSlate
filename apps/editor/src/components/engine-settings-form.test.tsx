@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { defaultEngineSettings, MemoryAppSettingsStore } from "@babylonslate/vfs";
-import { GraphEditor, type GraphDocument } from "@babylonslate/graph-ui";
-import { TagProvider } from "@babylonslate/editor-kit";
+import { defaultEngineSettings, MemoryAppSettingsStore } from "@haptic/vfs";
+import { GraphEditor, type GraphDocument } from "@haptic/graph-ui";
+import { TagProvider } from "@haptic/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";
 import { AppSettingsProvider, useAppSettings } from "../context/app-settings-context";
 
@@ -31,7 +31,7 @@ afterEach(() => {
 
 describe("EngineSettingsForm build identity", () => {
   it("lets desktop users turn automatic updates off and back on", () => {
-    vi.stubGlobal("babylonslate", { userData: {} });
+    vi.stubGlobal("haptic", { userData: {} });
     const onChange = vi.fn();
     const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="about" />);
     fireEvent.click(view.getByRole("switch", { name: "Automatic Updates" }));
@@ -42,7 +42,7 @@ describe("EngineSettingsForm build identity", () => {
   });
 
   it("shows the exact channel, version, Apple build and source for support", () => {
-    vi.stubGlobal("__BABYLONSLATE_BUILD__", { applicationVersion: "1.2.3", channel: "release", appleBuildNumber: "418.1.1", packageVersion: "1.2.3-release", androidVersionCode: 418101, sourceSha: "a".repeat(40), runNumber: 418, runAttempt: 1 });
+    vi.stubGlobal("__HAPTIC_BUILD__", { applicationVersion: "1.2.3", channel: "release", appleBuildNumber: "418.1.1", packageVersion: "1.2.3-release", androidVersionCode: 418101, sourceSha: "a".repeat(40), runNumber: 418, runAttempt: 1 });
     const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={() => {}} categoryId="about" />);
     expect(view.getByTestId("build-identity").textContent).toContain("Release");
     expect(view.getByTestId("build-identity").textContent).toContain("1.2.3");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
+import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
 import { runtimeAssetCatalogFromIndexed, runtimeAssetCatalogFromManifest } from "./asset-catalog";
 import { exportGame } from "./export-game";
 import type { ExportIndexedAsset } from "./types";
@@ -9,20 +9,20 @@ const header = (partial: Partial<ExportIndexedAsset> & Pick<ExportIndexedAsset, 
 
 describe("runtimeAssetCatalogFromIndexed", () => {
   const assets = [
-    header({ guid: "rifle", name: "Rifle", type: "Class", path: "assets/Weapons/rifle-v2.class.babasset", parentClass: "Weapon",
+    header({ guid: "rifle", name: "Rifle", type: "Class", path: "assets/Weapons/rifle-v2.class.hasset", parentClass: "Weapon",
       dependencies: ["tex"], requiredDependencies: ["tex"] }),
-    header({ guid: "tex", name: "Scope", type: "Texture", path: "assets/Weapons/scope.texture.babasset", parentClass: "NotAClass" }),
+    header({ guid: "tex", name: "Scope", type: "Texture", path: "assets/Weapons/scope.texture.hasset", parentClass: "NotAClass" }),
     header({ guid: "missing", name: "Missing Asset", type: "Unresolved" }),
   ];
 
   it("describes each header with its storage path and, for Classes, the class id the runtime knows", () => {
     expect(runtimeAssetCatalogFromIndexed(assets)).toEqual([
       {
-        guid: "rifle", name: "Rifle", type: "Class", path: "assets/Weapons/rifle-v2.class.babasset",
+        guid: "rifle", name: "Rifle", type: "Class", path: "assets/Weapons/rifle-v2.class.hasset",
         classId: "rifle_v2", parentClass: "Weapon", dependencies: ["tex"], requiredDependencies: ["tex"],
       },
       {
-        guid: "tex", name: "Scope", type: "Texture", path: "assets/Weapons/scope.texture.babasset",
+        guid: "tex", name: "Scope", type: "Texture", path: "assets/Weapons/scope.texture.hasset",
         dependencies: [], requiredDependencies: [],
       },
     ]);
@@ -40,22 +40,22 @@ describe("runtimeAssetCatalogFromManifest", () => {
       scripts: [{ assetGuid: "hero", classId: "Hero", parentClassId: "Actor", source: "export function onTick() {}", anchors: [], entryPoints: [] }],
       assets: [
         { guid: "scene", type: "Scene", sceneGuid: "scene", name: "Main", bytes: new TextEncoder().encode("{}"),
-          assetPath: "assets/Levels/Main.scene.babasset", dependencies: ["hero"], requiredDependencies: [] },
+          assetPath: "assets/Levels/Main.scene.hasset", dependencies: ["hero"], requiredDependencies: [] },
         { guid: "hero", type: "Class", sceneGuid: "scene", name: "Hero", parentClass: "Actor", bytes: new TextEncoder().encode("{}"),
-          assetPath: "plugins/Foo/assets/Hero.class.babasset", dependencies: ["tex"], requiredDependencies: ["tex"] },
+          assetPath: "plugins/Foo/assets/Hero.class.hasset", dependencies: ["tex"], requiredDependencies: ["tex"] },
         { guid: "tex", type: "Texture", sceneGuid: "scene", name: "Skin", bytes: new Uint8Array([1]),
-          assetPath: "assets/Skin.texture.babasset" },
+          assetPath: "assets/Skin.texture.hasset" },
         { guid: "nav:scene", type: "NavMesh", sceneGuid: "scene", bytes: new Uint8Array([2]), encoding: "bytes" },
       ],
     });
     if (!result.ok) throw new Error(result.error);
     // Sidecars (a Class's compiled script, a Scene's navigation) stay references of their owner; they are not assets.
     expect(runtimeAssetCatalogFromManifest(result.value.manifest.assets)).toEqual([
-      { guid: "scene", name: "Main", type: "Scene", path: "assets/Levels/Main.scene.babasset",
+      { guid: "scene", name: "Main", type: "Scene", path: "assets/Levels/Main.scene.hasset",
         dependencies: ["hero", "nav:scene"], requiredDependencies: ["nav:scene"] },
-      { guid: "hero", name: "Hero", type: "Class", path: "plugins/Foo/assets/Hero.class.babasset", classId: "Hero", parentClass: "Actor",
+      { guid: "hero", name: "Hero", type: "Class", path: "plugins/Foo/assets/Hero.class.hasset", classId: "Hero", parentClass: "Actor",
         dependencies: ["tex", "script:hero:Hero"], requiredDependencies: ["tex", "script:hero:Hero"] },
-      { guid: "tex", name: "Skin", type: "Texture", path: "assets/Skin.texture.babasset", dependencies: [], requiredDependencies: [] },
+      { guid: "tex", name: "Skin", type: "Texture", path: "assets/Skin.texture.hasset", dependencies: [], requiredDependencies: [] },
     ]);
   });
 });

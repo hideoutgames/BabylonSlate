@@ -1,12 +1,12 @@
-import type { CommandMessage } from "@babylonslate/bridge";
-import { isSceneLayerDeniedComponent, type Transform } from "@babylonslate/core";
+import type { CommandMessage } from "@haptic/bridge";
+import { isSceneLayerDeniedComponent, type Transform } from "@haptic/core";
 import {
   isLockedEngineClassId,
   isSceneLayerExclusiveComponent,
   type Actor,
   type BObject,
   type World,
-} from "@babylonslate/object-model";
+} from "@haptic/object-model";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import { sceneRealizationCancelled } from "./scene-realization-work";

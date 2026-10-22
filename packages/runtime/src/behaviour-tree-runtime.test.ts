@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
-import { createActor, createDefaultSceneSettings, quaternionToEulerDegrees, type SerializedScene } from "@babylonslate/core";
-import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
+import type { CommandMessage } from "@haptic/bridge";
+import { createActor, createDefaultSceneSettings, quaternionToEulerDegrees, type SerializedScene } from "@haptic/core";
+import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviour-tree";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

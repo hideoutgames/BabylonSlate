@@ -5,9 +5,9 @@ Main thread ↔ game worker transport: snapshot buffer layout, channels, scene-l
 ## Ownership
 
 - Protocol types and buffers: [`packages/bridge/src/`](../../../packages/bridge/src/) (`layout.ts`, `snapshot-buffer.ts`, `seq-lock.ts`, `transferable.ts`, `channels.ts`, `command-batch.ts`, `simulation-capture.ts`).
-- Worker: [`packages/runtime/src/worker-entry.ts`](../../../packages/runtime/src/worker-entry.ts) (`@babylonslate/runtime/worker-entry`). In-process fallback: `createInProcessRuntime` ([`driver.ts`](../../../packages/runtime/src/driver.ts)).
+- Worker: [`packages/runtime/src/worker-entry.ts`](../../../packages/runtime/src/worker-entry.ts) (`@haptic/runtime/worker-entry`). In-process fallback: `createInProcessRuntime` ([`driver.ts`](../../../packages/runtime/src/driver.ts)).
 - Hosts: `createGameWorkerHost` ([`apps/editor/src/services/game-worker-host.ts`](../../../apps/editor/src/services/game-worker-host.ts)), `createPlayerWorkerHost` ([`apps/player/src/worker-host.ts`](../../../apps/player/src/worker-host.ts)). Session: [`apps/editor/src/services/play-session.ts`](../../../apps/editor/src/services/play-session.ts), `GameSessionOwner` ([`game-session-owner.ts`](../../../apps/editor/src/services/game-session-owner.ts)).
-- Input capture is owned by `@babylonslate/input`; the correlated session-boundary client is in bridge.
+- Input capture is owned by `@haptic/input`; the correlated session-boundary client is in bridge.
 
 ## Transports
 
@@ -53,7 +53,7 @@ Seq-lock: writer sets `seq` odd, writes header + rows, sets `seq` even; reader s
 - `BridgeHostMessage` (main → worker): `control`, `input` (tick-stamped ring), `snapshotLayoutAck`, `recycleSnapshot`.
 - `BridgeWorkerMessage` (worker → main): `command`, `commands` (ordered batch), `snapshot` (+ `generation`).
 - Control and command payload types are the unions in [`channels.ts`](../../../packages/bridge/src/channels.ts); do not duplicate them here.
-- Input is stamped with the last snapshot header `tickIndex` (`snapshotTickIndex`), never with `stats`. `stats` is ~5 Hz (`STATS_COMMAND_INTERVAL_MS` = 200, `@babylonslate/debugger`) and not a hot path.
+- Input is stamped with the last snapshot header `tickIndex` (`snapshotTickIndex`), never with `stats`. `stats` is ~5 Hz (`STATS_COMMAND_INTERVAL_MS` = 200, `@haptic/debugger`) and not a hot path.
 - `loadScripts` registers classes without creating Actors; explicit `spawn` requests are filtered by `shouldSpawnScriptedActor` so GameInstance, FunctionLibrary, editor utility, SceneLayer and Scene classes never spawn.
 
 ## Scene load handshake
@@ -78,5 +78,5 @@ Seq-lock: writer sets `seq` odd, writes header + rows, sets `seq` even; reader s
 - Worker Stop posts `stop` and keeps the worker (and its save storage server) until `runtimeStopped` or `WORKER_STOP_TIMEOUT_MS` = 3000, then terminates, so End Play saves cannot interleave with the next session. The exported player terminates at Stop.
 - A runtime that stops itself (console `quit`) emits `sessionEnded` after its End Play and On Game End work; the worker holds it until its save writes are answered. Editor Play, Simulation and Preview Build then stop through their normal Stop path, and a standalone player stops itself.
 - After Stop, editor Play applies no queued commands or snapshots; logs and diagnostics still arrive. Worker uncaught errors emit the same `diagnostic` shape as the in-process `reportError`.
-- Simulation (internal, public launch gated): `quiesceSimulation` → host drains render revision → `captureSimulationState` → ordered UTF-8 chunks ≤ 64 KiB + correlated summary, validated before publication. Inspector/trace snapshots are never a fallback. `__babylonslateSimulationTest` is test-only.
+- Simulation (internal, public launch gated): `quiesceSimulation` → host drains render revision → `captureSimulationState` → ordered UTF-8 chunks ≤ 64 KiB + correlated summary, validated before publication. Inspector/trace snapshots are never a fallback. `__hapticSimulationTest` is test-only.
 - Runtime inspection: tree ≤ 4096 identities or 512 KiB, ≤ 5 Hz polling while visible; request client bounds 32 pending, 256 KiB total, 64 KiB per value. Writes never create authoring history.

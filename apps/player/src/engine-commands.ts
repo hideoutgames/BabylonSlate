@@ -1,5 +1,5 @@
-import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
-import type { SerializedScene } from "@babylonslate/core";
+import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
+import type { SerializedScene } from "@haptic/core";
 
 export function applyPlayerEngineCommand(
   handle: { applyCommand: (command: CommandMessage) => void },

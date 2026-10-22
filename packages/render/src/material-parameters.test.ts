@@ -11,7 +11,7 @@ import {
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import * as snapshots from "./snapshot-apply";

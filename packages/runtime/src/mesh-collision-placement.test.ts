@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildBoxGlbFixture, cookComplexCollisionMesh, normalizeModelPayload } from "@babylonslate/assets";
-import { createActor, createDefaultSceneSettings, type SerializedComponent } from "@babylonslate/core";
+import { buildBoxGlbFixture, cookComplexCollisionMesh, normalizeModelPayload } from "@haptic/assets";
+import { createActor, createDefaultSceneSettings, type SerializedComponent } from "@haptic/core";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
 

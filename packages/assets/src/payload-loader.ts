@@ -1,12 +1,12 @@
-import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@haptic/core";
+import { SourceRevisionChangedError } from "@haptic/core";
 import {
-  BABASSET_PREFIX_BYTES,
-  readBabassetHeader,
-  readBabassetHeaderLength,
-  type BabassetHeader,
+  HASSET_PREFIX_BYTES,
+  readHassetHeader,
+  readHassetHeaderLength,
+  type HassetHeader,
   type ChunkEntry,
-} from "./babasset";
+} from "./hasset";
 import { concatBytes, sha256Hex } from "./bytes";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 
@@ -22,24 +22,24 @@ export interface AssetSourceLocator {
 }
 
 export interface AssetCatalogRead {
-  header: BabassetHeader;
+  header: HassetHeader;
   locator: AssetSourceLocator;
 }
 
 /** Read only the bounded prefix and JSON header; never allocate an inline payload. */
 export async function readAssetCatalog(storage: ProjectStorageReader, path: string, options: StorageReadOptions = {}): Promise<AssetCatalogRead> {
   options.signal?.throwIfAborted();
-  const prefix = await storage.readBinaryRange(path, 0, BABASSET_PREFIX_BYTES, undefined, options);
+  const prefix = await storage.readBinaryRange(path, 0, HASSET_PREFIX_BYTES, undefined, options);
   options.signal?.throwIfAborted();
-  const headerLength = readBabassetHeaderLength(prefix.bytes);
-  const payloadOffset = BABASSET_PREFIX_BYTES + headerLength;
-  if (payloadOffset > prefix.totalSize) throw new Error(`Truncated .babasset header: ${path}`);
-  const body = await storage.readBinaryRange(path, BABASSET_PREFIX_BYTES, headerLength, prefix.revision, options);
+  const headerLength = readHassetHeaderLength(prefix.bytes);
+  const payloadOffset = HASSET_PREFIX_BYTES + headerLength;
+  if (payloadOffset > prefix.totalSize) throw new Error(`Truncated .hasset header: ${path}`);
+  const body = await storage.readBinaryRange(path, HASSET_PREFIX_BYTES, headerLength, prefix.revision, options);
   options.signal?.throwIfAborted();
   if (body.totalSize !== prefix.totalSize || body.revision !== prefix.revision) throw new SourceRevisionChangedError(`Asset changed while reading its header: ${path}`);
-  if (body.bytes.byteLength !== headerLength) throw new Error(`Truncated .babasset header: ${path}`);
+  if (body.bytes.byteLength !== headerLength) throw new Error(`Truncated .hasset header: ${path}`);
   const headerBytes = concatBytes([prefix.bytes, body.bytes]);
-  const header = readBabassetHeader(headerBytes);
+  const header = readHassetHeader(headerBytes);
   const locator = {
     path,
     revision: JSON.stringify([prefix.revision, await sha256Hex(headerBytes)]),

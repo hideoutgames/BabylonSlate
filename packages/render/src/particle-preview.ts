@@ -9,7 +9,7 @@ import {
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+} from "@haptic/shader-graph";
 import {
   createMaterialPreviewScene,
   type MaterialPreviewScene,

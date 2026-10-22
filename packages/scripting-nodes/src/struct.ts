@@ -9,7 +9,7 @@ import {
   ROTATOR,
   TRANSFORM,
   VEC3,
-} from "@babylonslate/scripting";
+} from "@haptic/scripting";
 import { objectLiteralKey } from "./member-pins";
 import { titleCaseEnumMember } from "./enum";
 

@@ -8,7 +8,7 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedTransform,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { complexCollisionMeshForMeshKind } from "./mesh-collision";
 import {
   AUDIO_GEOMETRY_COLLECT_SLICE,

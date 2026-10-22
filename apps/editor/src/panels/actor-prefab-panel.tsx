@@ -13,9 +13,9 @@ import {
   walkAncestry,
   type NestedMenuItem,
   type TreeViewNode,
-} from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
+} from "@haptic/editor-kit";
+import { Badge } from "@haptic/ui/components/badge";
+import { Button } from "@haptic/ui/components/button";
 import { MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";

@@ -2,8 +2,8 @@ import {
   applyNodePositions,
   serializedToBehaviourTree,
   type BehaviourTreeDocument,
-} from "@babylonslate/behaviour-tree";
-import type { SerializedGraph } from "@babylonslate/core";
+} from "@haptic/behaviour-tree";
+import type { SerializedGraph } from "@haptic/core";
 
 export function attachNewBehaviourTreeNodes(
   next: BehaviourTreeDocument,

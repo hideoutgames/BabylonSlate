@@ -4,9 +4,9 @@ import {
   type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
-} from "@babylonslate/bridge";
-import { encodeInputEvents } from "@babylonslate/input";
-import type { RawInputEvent } from "@babylonslate/input";
+} from "@haptic/bridge";
+import { encodeInputEvents } from "@haptic/input";
+import type { RawInputEvent } from "@haptic/input";
 
 export type PlayerWorkerHost = {
   postControl: (message: ControlMessage) => void;
@@ -19,7 +19,7 @@ export type PlayerWorkerHost = {
 
 export function createPlayerWorkerHost(): PlayerWorkerHost {
   const worker = new Worker(
-    new URL("@babylonslate/runtime/worker-entry", import.meta.url),
+    new URL("@haptic/runtime/worker-entry", import.meta.url),
     { type: "module" },
   );
   const commandHandlers: Array<(command: CommandMessage) => void> = [];

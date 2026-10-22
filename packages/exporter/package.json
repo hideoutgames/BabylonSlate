@@ -1,5 +1,5 @@
 {
-  "name": "@babylonslate/exporter",
+  "name": "@haptic/exporter",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,14 +11,14 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/exporter"
   },
   "dependencies": {
-    "@babylonslate/assets": "workspace:*",
-    "@babylonslate/bridge": "workspace:*",
-    "@babylonslate/core": "workspace:*",
-    "@babylonslate/object-model": "workspace:*",
+    "@haptic/assets": "workspace:*",
+    "@haptic/bridge": "workspace:*",
+    "@haptic/core": "workspace:*",
+    "@haptic/object-model": "workspace:*",
     "fflate": "^0.8.3",
-    "@babylonslate/anim-graph": "workspace:*",
-    "@babylonslate/behaviour-tree": "workspace:*",
-    "@babylonslate/shader-graph": "workspace:*"
+    "@haptic/anim-graph": "workspace:*",
+    "@haptic/behaviour-tree": "workspace:*",
+    "@haptic/shader-graph": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~6.0.3"

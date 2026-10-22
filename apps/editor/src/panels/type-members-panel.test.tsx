@@ -42,16 +42,16 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "enum:assets/Colors.babasset" }),
+  useDocumentWorkspace: () => ({ documentId: "enum:assets/Colors.hasset" }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "enum:assets/Colors.babasset",
+      id: "enum:assets/Colors.hasset",
       ref: {
         kind: harness.kind,
-        path: "assets/Colors.babasset",
+        path: "assets/Colors.hasset",
         label: "Colors Enum",
       },
       content: harness.content,
@@ -60,7 +60,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   applyAssetDocumentChange,
-  assetRegistry: { list: () => [{ path: "assets/Item.datadefinition.babasset", header: {
+  assetRegistry: { list: () => [{ path: "assets/Item.datadefinition.hasset", header: {
     type: "DataDefinition", guid: "item", name: "Item", payload: { kind: "dataDefinition", fields: [
       { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
     ] },
@@ -90,7 +90,7 @@ describe("type asset member table", () => {
     expect(screen.getByTestId("tree-row-member:0")).toBeTruthy();
     fireEvent.click(screen.getByTestId("enum-add-member"));
     expect(applyAssetDocumentChange).toHaveBeenCalledWith(
-      "enum:assets/Colors.babasset",
+      "enum:assets/Colors.hasset",
       expect.objectContaining({
         members: expect.arrayContaining([
           expect.objectContaining({ name: "NewMember" }),
@@ -198,7 +198,7 @@ describe("type asset member table", () => {
     selectRow("member:0");
     fireEvent.click(screen.getByTestId("structure-field-type-asset"));
     fireEvent.click(await screen.findByTestId("search-item-item"));
-    expect(applyAssetDocumentChange).toHaveBeenCalledWith("enum:assets/Colors.babasset", expect.objectContaining({ fields: [{
+    expect(applyAssetDocumentChange).toHaveBeenCalledWith("enum:assets/Colors.hasset", expect.objectContaining({ fields: [{
       id: "item-field", name: "Item", typeId: "struct", typeClassId: "item", defaultValue: { Price: 12 },
     }] }));
   });

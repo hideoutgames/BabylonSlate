@@ -1,17 +1,17 @@
 import {
   Field,
   FieldLabel,
-} from "@babylonslate/ui/components/field";
+} from "@haptic/ui/components/field";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import { PinTypePicker } from "./pin-type-picker";
 import { PinShapeGlyph } from "./pin-shape-glyph";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
 import { AssetPickerControl } from "./asset-picker-control";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button } from "@haptic/ui/components/button";
 import {
   assetRowIdentity,
   classRowIdentity,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { A16_ENCODE_FIXTURES, A16_POLICY } from "@babylonslate/test-kit";
+import { A16_ENCODE_FIXTURES, A16_POLICY } from "@haptic/test-kit";
 import { read as readKtx2 } from "ktx-parse";
 import {
   createNodeBasisEncodeFn,

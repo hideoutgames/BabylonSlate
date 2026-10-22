@@ -1,8 +1,8 @@
 import {
   formatEventTitle,
   humanizePropertyLabel,
-} from "@babylonslate/editor-kit";
-import { pinTypeEquals, type PinType } from "@babylonslate/scripting";
+} from "@haptic/editor-kit";
+import { pinTypeEquals, type PinType } from "@haptic/scripting";
 import {
   hasSerializedPins,
   type PaletteNode,

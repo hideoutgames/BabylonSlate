@@ -1,5 +1,5 @@
 import { Color3, MeshBuilder, VertexData, type AbstractMesh, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
-import { parseUIControl2DProperties, uiControl2DFraction, type UIControl2DProperties } from "@babylonslate/core";
+import { parseUIControl2DProperties, uiControl2DFraction, type UIControl2DProperties } from "@haptic/core";
 import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from "./mesh-assets";
 import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "./overlay-visual-style";

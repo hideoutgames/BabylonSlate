@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { SaveGameStorage } from "@babylonslate/core";
+import type { SaveGameStorage } from "@haptic/core";
 import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, normalizeSaveGameStorageError, saveGameSegments } from "./save-game-path";
 
 /** Paths of granted locks, and requests waiting in arrival order. */

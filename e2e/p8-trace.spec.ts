@@ -7,9 +7,9 @@ async function playTickIndex(
 ): Promise<number> {
   return page.evaluate(() => {
     const host = globalThis as unknown as {
-      __babylonslatePlayTest?: { tickIndex?: () => number };
+      __hapticPlayTest?: { tickIndex?: () => number };
     };
-    return host.__babylonslatePlayTest?.tickIndex?.() ?? 0;
+    return host.__hapticPlayTest?.tickIndex?.() ?? 0;
   });
 }
 

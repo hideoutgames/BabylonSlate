@@ -1,4 +1,4 @@
-import type { BObject } from "@babylonslate/object-model";
+import type { BObject } from "@haptic/object-model";
 import type { LatentDelays } from "./latent-delays";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenRuntime } from "./tween-runtime";

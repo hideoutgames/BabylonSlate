@@ -1,7 +1,7 @@
 import {
   normalizeMaterialParameterOverrides,
   type MaterialParameterValue,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { parseMaterialDomain, type MaterialDomain } from "./catalog";
 import {
   normalizeMaterialPreviewSettings,

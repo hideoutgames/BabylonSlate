@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { newCollisionPresetId, type CollisionPreset } from "@babylonslate/core";
-import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
+import { newCollisionPresetId, type CollisionPreset } from "@haptic/core";
+import { Button } from "@haptic/ui/components/button";
+import { Input } from "@haptic/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@babylonslate/ui/components/select";
-import { cn } from "@babylonslate/ui/lib/utils";
+} from "@haptic/ui/components/select";
+import { cn } from "@haptic/ui/lib/utils";
 import { CollisionResponsesField } from "./collision-responses-field";
 import { ListRowActions } from "./list-row-actions";
 

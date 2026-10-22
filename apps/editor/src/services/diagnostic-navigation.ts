@@ -2,9 +2,9 @@ import {
   documentId,
   documentKindForAssetType,
   type DocumentRef,
-} from "@babylonslate/core";
-import type { SessionReportEntry } from "@babylonslate/runtime";
-import type { Diagnostic } from "@babylonslate/scripting";
+} from "@haptic/core";
+import type { SessionReportEntry } from "@haptic/runtime";
+import type { Diagnostic } from "@haptic/scripting";
 import type { SessionReportAsset } from "../lib/session-report-locations";
 import type { AnimEditorMode } from "../shell/anim-document-layout";
 

@@ -1,4 +1,4 @@
-import { parseRagdollProperties, type RagdollBonePose, type RagdollProperties } from "@babylonslate/core";
+import { parseRagdollProperties, type RagdollBonePose, type RagdollProperties } from "@haptic/core";
 import type { PhysicsBackend } from "./backend";
 import { multiplyQuat, rotateQuatVec } from "./collider-bake";
 import { normalizedPhysicsPose } from "./collider-validation";

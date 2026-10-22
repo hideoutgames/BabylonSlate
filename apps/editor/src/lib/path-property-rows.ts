@@ -1,4 +1,4 @@
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import type { PropertyRow } from "@haptic/editor-kit";
 
 type PathPropertyRowsOptions = {
   idPrefix: string;

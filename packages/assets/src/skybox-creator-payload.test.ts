@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
+import { SKYBOX_FACE_KEYS } from "@haptic/core";
 import {
   SKYBOX_CREATOR_COMPASS_TO_BABYLON,
   SKYBOX_CREATOR_NET_ASPECT,
@@ -106,18 +106,18 @@ describe("SkyboxCreator payload", () => {
   it("writes generated faces next to the helper document", () => {
     expect(
       skyboxCreatorFaceRelativePath(
-        "assets/skies/Day.skyboxcreator.babasset",
+        "assets/skies/Day.skyboxcreator.hasset",
         "px",
       ),
-    ).toBe("assets/skies/Day_px.babasset");
-    expect(skyboxCreatorFaceRelativePath("Day.skyboxcreator.babasset", "nz")).toBe(
-      "Day_nz.babasset",
+    ).toBe("assets/skies/Day_px.hasset");
+    expect(skyboxCreatorFaceRelativePath("Day.skyboxcreator.hasset", "nz")).toBe(
+      "Day_nz.hasset",
     );
   });
 
   it("reuses previous face guids and paths when they still exist", () => {
     const writes = planSkyboxCreatorFaceWrites({
-      helperPath: "assets/Day.skyboxcreator.babasset",
+      helperPath: "assets/Day.skyboxcreator.hasset",
       generatedFaces: {
         px: "old-px",
         py: null,
@@ -127,9 +127,9 @@ describe("SkyboxCreator payload", () => {
         nz: "missing-nz",
       },
       existingByGuid: new Map([
-        ["old-px", { path: "assets/Day_px.babasset" }],
+        ["old-px", { path: "assets/Day_px.hasset" }],
       ]),
-      occupiedPaths: new Set(["assets/Day_px.babasset", "assets/Day_py.babasset"]),
+      occupiedPaths: new Set(["assets/Day_px.hasset", "assets/Day_py.hasset"]),
       newGuid: (() => {
         let n = 0;
         return () => `new-${++n}`;
@@ -137,19 +137,19 @@ describe("SkyboxCreator payload", () => {
     });
     expect(writes.find((row) => row.key === "px")).toEqual({
       key: "px",
-      path: "assets/Day_px.babasset",
+      path: "assets/Day_px.hasset",
       guid: "old-px",
       replace: true,
     });
     expect(writes.find((row) => row.key === "py")).toEqual({
       key: "py",
-      path: "assets/Day_py_1.babasset",
+      path: "assets/Day_py_1.hasset",
       guid: "new-1",
       replace: false,
     });
     expect(writes.find((row) => row.key === "nz")).toEqual({
       key: "nz",
-      path: "assets/Day_nz.babasset",
+      path: "assets/Day_nz.hasset",
       guid: "new-5",
       replace: false,
     });

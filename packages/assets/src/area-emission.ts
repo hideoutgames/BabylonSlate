@@ -1,4 +1,4 @@
-import type { BabassetHeader } from "./babasset";
+import type { HassetHeader } from "./hasset";
 import { concatBytes, readU32LE, sha256Hex, writeU32LE } from "./bytes";
 
 /** Version includes native encoding, filtering, color space and row orientation. */
@@ -22,7 +22,7 @@ export function areaEmissionChunkId(sourceHash: string): string {
 }
 
 /** Source hash is authoritative; a replaced image can never reuse stale lighting. */
-export function currentAreaEmissionChunk(header: BabassetHeader) {
+export function currentAreaEmissionChunk(header: HassetHeader) {
   if (header.type !== "Texture") return undefined;
   const source = header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
   return source && header.chunks.find((chunk) => chunk.id === areaEmissionChunkId(source.sha256) && chunk.kind === AREA_EMISSION_CHUNK_KIND);

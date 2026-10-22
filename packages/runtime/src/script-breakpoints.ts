@@ -1,5 +1,5 @@
-import type { BreakpointLocation } from "@babylonslate/bridge";
-import type { BObject } from "@babylonslate/object-model";
+import type { BreakpointLocation } from "@haptic/bridge";
+import type { BObject } from "@haptic/object-model";
 
 /**
  * Node breakpoints for the editor's Simulation. A breakpoint-instrumented script looks up its graph's

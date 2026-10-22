@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { runGpuPickProof } from "../apps/editor/src/testing/gpu-pick-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 // `editor` renders like the editor viewport: a floating-origin engine with the gizmo's utility layer

@@ -13,7 +13,7 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 
 ## Boundaries
 
-- `@babylonslate/behaviour-tree` imports only `@babylonslate/core`, `@babylonslate/scripting` (pin types, `Diagnostic`) and `d3-hierarchy`. No React, Babylon or Capacitor; the evaluator runs in the game worker.
+- `@haptic/behaviour-tree` imports only `@haptic/core`, `@haptic/scripting` (pin types, `Diagnostic`) and `d3-hierarchy`. No React, Babylon or Capacitor; the evaluator runs in the game worker.
 - BT diagnostics come from `validateBehaviourTree`, called directly by the editor for canvas badges and Compiler Results. They do not run through the scripting `validateGraphs` hook.
 - Undo goes through `applyAssetDocumentChange`.
 
@@ -22,7 +22,7 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 - Parent–child edges, not exec wires; sibling order is `children[]`. Decorators and services are attached rows on a node, not tree positions.
 - Each node has one parent: the evaluator uses the first parent a depth-first walk reaches and drops back-references (`bt.multiple_parents`, `bt.cycle` diagnostics).
 - Kinds: `selector`, `sequence`, `parallel`, `task`. Custom `BTComposite` subclasses are data: `kind` comes from ancestry (`kindForCatalogClassId`; bare `BTComposite` → sequence). There is no scripted composite VM.
-- Default document: selector root → sequence → `bt.task.succeed`. Files: `.bt.babasset`, `.blackboard.babasset`.
+- Default document: selector root → sequence → `bt.task.succeed`. Files: `.bt.hasset`, `.blackboard.hasset`.
 - `editorPositions` is optional editor data; runtime ignores it. A finished move writes positions and re-sorts siblings by X; Auto Arrange writes positions and never changes `children[]`. Each finished move is its own undo step (no shared merge key).
 
 ## Evaluator rules

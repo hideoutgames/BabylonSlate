@@ -37,7 +37,7 @@ export function initializeCapacitorAudioLifecycle(): () => void {
     (event: AudioLifecycleEvent) => {
       if (disposed) return;
       window.dispatchEvent(
-        new CustomEvent<AudioLifecycleEvent>("babylonslate:audiointerruption", {
+        new CustomEvent<AudioLifecycleEvent>("haptic:audiointerruption", {
           detail: event,
         }),
       );
@@ -54,7 +54,7 @@ export function initializeCapacitorAudioLifecycle(): () => void {
     (event: AudioLifecycleEvent) => {
       if (disposed) return;
       window.dispatchEvent(
-        new CustomEvent<AudioLifecycleEvent>("babylonslate:audioroutechange", {
+        new CustomEvent<AudioLifecycleEvent>("haptic:audioroutechange", {
           detail: event,
         }),
       );

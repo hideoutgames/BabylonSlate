@@ -1,7 +1,7 @@
 import type { Key, ReactNode } from "react";
-import { Button } from "@babylonslate/ui/components/button";
-import { FieldGroup } from "@babylonslate/ui/components/field";
-import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@haptic/ui/components/button";
+import { FieldGroup } from "@haptic/ui/components/field";
+import { cn } from "@haptic/ui/lib/utils";
 import { ListRowActions } from "./list-row-actions";
 
 export type EntryListItemRenderArgs<T> = {

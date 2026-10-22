@@ -7,7 +7,7 @@ A Haptic project is an ordinary folder that holds your game's settings and asset
 | Item | Contains |
 | --- | --- |
 | `project.json` | The project's name and Project Settings. |
-| `assets/` | Every asset, one `.babasset` file each, in the same folders the Content Browser shows. |
+| `assets/` | Every asset, one `.hasset` file each, in the same folders the Content Browser shows. |
 | `plugins/` | The project's [plugins](plugins.md). |
 | `extensions/` | The project's [editor extensions](extensions.md). |
 

@@ -1,11 +1,11 @@
 import { rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { SourceRevisionChangedError, StorageNotFoundError } from "@babylonslate/core";
+import { SourceRevisionChangedError, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   getElectronLibraryBridge,
   getElectronProjectBridge,

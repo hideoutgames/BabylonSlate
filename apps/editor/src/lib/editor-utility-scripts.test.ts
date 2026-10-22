@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ScriptHost } from "@babylonslate/runtime";
+import { ScriptHost } from "@haptic/runtime";
 import { compileGraphDocuments } from "../services/script-compiler";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -24,29 +24,29 @@ describe("selectEditorUtilityGraphs", () => {
     const selected = selectEditorUtilityGraphs(
       [
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           content: emptyGraph,
         },
         {
-          path: "assets/Tools.class.babasset",
+          path: "assets/Tools.class.hasset",
           content: emptyGraph,
         },
         {
-          path: "assets/OtherTools.class.babasset",
+          path: "assets/OtherTools.class.hasset",
           content: emptyGraph,
         },
       ],
       {
         headers: {
-          "assets/Hero.class.babasset": {
+          "assets/Hero.class.hasset": {
             type: "Class",
             parentClass: "Actor",
           },
-          "assets/Tools.class.babasset": {
+          "assets/Tools.class.hasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
           },
-          "assets/OtherTools.class.babasset": {
+          "assets/OtherTools.class.hasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
           },
@@ -56,7 +56,7 @@ describe("selectEditorUtilityGraphs", () => {
       },
     );
     expect(selected.map((graph) => graph.path)).toEqual([
-      "assets/Tools.class.babasset",
+      "assets/Tools.class.hasset",
     ]);
   });
 
@@ -64,13 +64,13 @@ describe("selectEditorUtilityGraphs", () => {
     const selected = selectEditorUtilityGraphs(
       [
         {
-          path: "assets/Hero.class.babasset",
+          path: "assets/Hero.class.hasset",
           content: emptyGraph,
         },
       ],
       {
         headers: {
-          "assets/Hero.class.babasset": {
+          "assets/Hero.class.hasset": {
             type: "Class",
             parentClass: "Actor",
           },
@@ -85,13 +85,13 @@ describe("selectEditorUtilityGraphs", () => {
   it("matches a class whose display name is not an identifier by its registered path class id", () => {
     // Registry headers carry the display name; the class picker stores the path id.
     const headers = {
-      "assets/Level Tools.class.babasset": { type: "Class", parentClass: "EditorUtilityObject", name: "Level Tools" },
+      "assets/Level Tools.class.hasset": { type: "Class", parentClass: "EditorUtilityObject", name: "Level Tools" },
     };
     const selected = selectEditorUtilityGraphs(
-      [{ path: "assets/Level Tools.class.babasset", content: emptyGraph }],
+      [{ path: "assets/Level Tools.class.hasset", content: emptyGraph }],
       { headers, parentOf, registeredClassIds: ["Level_Tools"] },
     );
-    expect(selected.map((graph) => graph.path)).toEqual(["assets/Level Tools.class.babasset"]);
+    expect(selected.map((graph) => graph.path)).toEqual(["assets/Level Tools.class.hasset"]);
   });
 
   it("keeps plugin-registered EUO graphs when merged with project ids", () => {
@@ -101,21 +101,21 @@ describe("selectEditorUtilityGraphs", () => {
     const selected = selectEditorUtilityGraphs(
       [
         {
-          path: "assets/Tools.class.babasset",
+          path: "assets/Tools.class.hasset",
           content: emptyGraph,
         },
         {
-          path: "plugins/pack/assets/PackTools.class.babasset",
+          path: "plugins/pack/assets/PackTools.class.hasset",
           content: emptyGraph,
         },
       ],
       {
         headers: {
-          "assets/Tools.class.babasset": {
+          "assets/Tools.class.hasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
           },
-          "plugins/pack/assets/PackTools.class.babasset": {
+          "plugins/pack/assets/PackTools.class.hasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
           },
@@ -125,8 +125,8 @@ describe("selectEditorUtilityGraphs", () => {
       },
     );
     expect(selected.map((graph) => graph.path)).toEqual([
-      "assets/Tools.class.babasset",
-      "plugins/pack/assets/PackTools.class.babasset",
+      "assets/Tools.class.hasset",
+      "plugins/pack/assets/PackTools.class.hasset",
     ]);
   });
 });
@@ -148,7 +148,7 @@ describe("editor utility ScriptHost events", () => {
     });
     const scripts = compileGraphDocuments([
       {
-        path: "assets/Tools.class.babasset",
+        path: "assets/Tools.class.hasset",
         content: {
           nodes: [
             {

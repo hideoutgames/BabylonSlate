@@ -11,17 +11,17 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
-} from "@babylonslate/core";
-import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@babylonslate/assets";
+} from "@haptic/core";
+import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
   EditSession,
   serializeJournalLine,
   SetSceneNameCommand,
-} from "@babylonslate/edit";
-import { FakeLockProvider } from "@babylonslate/source-control";
-import { MemorySecretStore, MemoryStorageAdapter } from "@babylonslate/vfs";
+} from "@haptic/edit";
+import { FakeLockProvider } from "@haptic/source-control";
+import { MemorySecretStore, MemoryStorageAdapter } from "@haptic/vfs";
 import { JournalBuffer } from "../lib/journal-buffer";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
@@ -127,7 +127,7 @@ describe("DocumentEditingService", () => {
 
   it("applies asset edits over the Undo memory limit, clears history and reports it once per gesture", async () => {
     const { documents, editSession, editing, historyCleared, open } = createEditing({ maxBytes: 1_000 });
-    const ref: DocumentRef = { kind: "material", path: "assets/Rock.material.babasset", label: "Rock" };
+    const ref: DocumentRef = { kind: "material", path: "assets/Rock.material.hasset", label: "Rock" };
     const id = await open(ref, { name: "Rock", roughness: 0.5 });
     await editing.applyAssetDocumentChange(id, { name: "Rock", roughness: 0.6 });
     expect(editSession.getStack(id).canUndo).toBe(true);
@@ -163,8 +163,8 @@ describe("DocumentEditingService", () => {
     },
   ])("refuses a $kind edit inside a read-only plugin and leaves it unchanged", async ({ kind, content, apply }) => {
     const { documents, editing, open, journaled } = createEditing();
-    const lockedId = await open({ kind, path: "plugins/Locked/Asset.babasset", label: "Locked" }, content);
-    const editableId = await open({ kind, path: "assets/Asset.babasset", label: "Editable" }, content);
+    const lockedId = await open({ kind, path: "plugins/Locked/Asset.hasset", label: "Locked" }, content);
+    const editableId = await open({ kind, path: "assets/Asset.hasset", label: "Editable" }, content);
     const locked = documents.getDocument(lockedId)!.content;
 
     expect(await apply(editing, lockedId, locked)).toBe(false);
@@ -175,9 +175,9 @@ describe("DocumentEditingService", () => {
   });
 
   it.each([
-    { scene: "a writable Scene", path: "assets/Level.babasset", teammateLock: false, saved: true },
-    { scene: "a read-only plugin Scene", path: "plugins/Locked/Level.babasset", teammateLock: false, saved: false },
-    { scene: "a Scene a teammate locked", path: "assets/Level.babasset", teammateLock: true, saved: false },
+    { scene: "a writable Scene", path: "assets/Level.hasset", teammateLock: false, saved: true },
+    { scene: "a read-only plugin Scene", path: "plugins/Locked/Level.hasset", teammateLock: false, saved: false },
+    { scene: "a Scene a teammate locked", path: "assets/Level.hasset", teammateLock: true, saved: false },
   ])("leaves only $scene for Save after the open-time prefab sync updates its instance", async ({ path, teammateLock, saved }) => {
     const fake = new FakeLockProvider();
     if (teammateLock) fake.addTheirs(path, "Teammate");
@@ -191,7 +191,7 @@ describe("DocumentEditingService", () => {
       sourceControl.pausePolling();
       await sourceControl.refresh();
       const { documents, editing, open } = createEditing({ sourceControl, scheduleDebouncedSave: saves });
-      const classPath = "assets/Hero.class.babasset";
+      const classPath = "assets/Hero.class.hasset";
       const sprite: SerializedComponent = { id: "component-sprite", classId: "SpriteComponent", properties: {}, parentId: null };
       await open({ kind: "graph", path: classPath, label: "Hero" }, { nodes: [], edges: [], components: [sprite] });
       const instance = createActor("hero", "Hero", { classId: classIdForGraphPath(classPath) });
@@ -212,7 +212,7 @@ describe("DocumentEditingService", () => {
   it("leaves a Scene, its Undo history and Auto-Save alone when its instances differ from the Class only by key order", async () => {
     const saves = vi.fn();
     const { documents, editSession, editing, open } = createEditing({ scheduleDebouncedSave: saves });
-    const classPath = "assets/Hero.class.babasset";
+    const classPath = "assets/Hero.class.hasset";
     const properties = { speed: 2, tint: { r: 1, g: 0.5, b: 0 }, mode: "walk" };
     const sprite: SerializedComponent = {
       id: "component-sprite", classId: "SpriteComponent", properties, parentId: null,
@@ -230,7 +230,7 @@ describe("DocumentEditingService", () => {
     };
     const instance = { ...createActor("hero", "Hero", { classId: classIdForGraphPath(classPath) }), components: [instanceRow] };
     const sceneId = await open(
-      { kind: "scene", path: "assets/Level.scene.babasset", label: "Level" },
+      { kind: "scene", path: "assets/Level.scene.hasset", label: "Level" },
       { ...createDefaultScene("2d"), actors: [instance] },
     );
     const edited = { ...(documents.getDocument(sceneId)!.content as SerializedScene), name: "Edited" };

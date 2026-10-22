@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CreateBox, FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRenderer, Vector3, type Mesh } from "@babylonjs/core";
-import { createActor, createDefaultScene, parseDeformerProperties } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseDeformerProperties } from "@haptic/core";
 import { createDeformerHandles, deformerHandleBody, deformerOutline } from "./deformer-handles";
 import { selectedShapeComponent } from "./shape-edit-target";
 

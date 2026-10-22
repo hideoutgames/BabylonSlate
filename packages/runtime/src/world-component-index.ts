@@ -1,4 +1,4 @@
-import type { Actor, World } from "@babylonslate/object-model";
+import type { Actor, World } from "@haptic/object-model";
 
 /** Actors owning at least one component of each class, in world order, for one structure revision. */
 export class WorldComponentIndex {

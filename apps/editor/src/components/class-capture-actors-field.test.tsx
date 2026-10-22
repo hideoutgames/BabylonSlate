@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createActor, type SerializedScene } from "@babylonslate/core";
+import { createActor, type SerializedScene } from "@haptic/core";
 import { ClassCaptureActorsField } from "./class-capture-actors-field";
 
 const harness = vi.hoisted(() => ({
@@ -22,19 +22,19 @@ function openScene(path: string, content: SerializedScene) {
 
 const REGISTRY = {
   list: () => [
-    { path: "scenes/Alpha.scene.babasset", header: { type: "Scene", name: "Alpha", guid: "scene-alpha" } },
-    { path: "scenes/Beta.scene.babasset", header: { type: "Scene", name: "Beta", guid: "scene-beta" } },
-    { path: "scenes/Gamma.scene.babasset", header: { type: "Scene", name: "Gamma", guid: "scene-gamma" } },
-    { path: "classes/Camera.class.babasset", header: { type: "Class", name: "Camera", guid: "class-camera" } },
+    { path: "scenes/Alpha.scene.hasset", header: { type: "Scene", name: "Alpha", guid: "scene-alpha" } },
+    { path: "scenes/Beta.scene.hasset", header: { type: "Scene", name: "Beta", guid: "scene-beta" } },
+    { path: "scenes/Gamma.scene.hasset", header: { type: "Scene", name: "Gamma", guid: "scene-gamma" } },
+    { path: "classes/Camera.class.hasset", header: { type: "Class", name: "Camera", guid: "class-camera" } },
   ],
 };
 const CLASS_TAB = {
-  id: "graph:classes/Camera.class.babasset",
-  ref: { kind: "graph", path: "classes/Camera.class.babasset", label: "Camera" },
+  id: "graph:classes/Camera.class.hasset",
+  ref: { kind: "graph", path: "classes/Camera.class.hasset", label: "Camera" },
   content: { nodes: [], edges: [] }, layout: null, dirty: false,
 };
-const ALPHA = openScene("scenes/Alpha.scene.babasset", scene(["hero", "Hero"]));
-const BETA = openScene("scenes/Beta.scene.babasset", scene(["wall", "Wall"]));
+const ALPHA = openScene("scenes/Alpha.scene.hasset", scene(["hero", "Hero"]));
+const BETA = openScene("scenes/Beta.scene.hasset", scene(["wall", "Wall"]));
 
 function renderField(options: { openDocuments: unknown[]; activeDocumentId: string; saved?: Record<string, SerializedScene> }) {
   const loadAssetDocument = vi.fn(async (_kind: string, path: string) => options.saved?.[path] ?? null);
@@ -93,12 +93,12 @@ describe("Class Render Target Capture actors", () => {
   it("reads a Scene that is not open when no Scene tab is open", async () => {
     const field = renderField({
       openDocuments: [CLASS_TAB], activeDocumentId: CLASS_TAB.id,
-      saved: { "scenes/Gamma.scene.babasset": scene(["crate", "Crate"]) },
+      saved: { "scenes/Gamma.scene.hasset": scene(["crate", "Crate"]) },
     });
     expect(screen.getByTestId("property-capture-source-scene").textContent).toContain("None");
     expect(await actorOptions()).toEqual([]);
     await pickScene("Gamma");
-    expect(field.loadAssetDocument).toHaveBeenCalledWith("scene", "scenes/Gamma.scene.babasset");
+    expect(field.loadAssetDocument).toHaveBeenCalledWith("scene", "scenes/Gamma.scene.hasset");
     fireEvent.click(screen.getByRole("button", { name: "Add Actor" }));
     fireEvent.click(await screen.findByRole("option", { name: /Crate/ }));
     expect(field.stored()).toEqual(["crate"]);

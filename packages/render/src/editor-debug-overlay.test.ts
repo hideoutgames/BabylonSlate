@@ -19,7 +19,7 @@ import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOr
 import {
   createDefaultAudioPayload,
   createDefaultSoundAttenuationPayload,
-} from "@babylonslate/assets";
+} from "@haptic/assets";
 import {
   createActor,
   createDefaultRenderTargetCaptureProperties,
@@ -28,7 +28,7 @@ import {
   identitySerializedTransform,
   type RenderTargetPayload,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   CAMERA_PREVIEW_HEIGHT,

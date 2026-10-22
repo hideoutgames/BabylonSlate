@@ -1,6 +1,6 @@
-import type { CommandMessage, ControlMessage, RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeMaterialEditPreparation } from "@babylonslate/bridge";
-import { ActorComponent, MaterialObject } from "@babylonslate/object-model";
-import type { MaterialParameterValue } from "@babylonslate/core";
+import type { CommandMessage, ControlMessage, RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeMaterialEditPreparation } from "@haptic/bridge";
+import { ActorComponent, MaterialObject } from "@haptic/object-model";
+import type { MaterialParameterValue } from "@haptic/core";
 import type { RuntimeInspector } from "./runtime-inspector";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 

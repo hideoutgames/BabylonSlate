@@ -1,4 +1,4 @@
-import { waveformFromPcmBuffer, type AudioWaveformPeak } from "@babylonslate/assets";
+import { waveformFromPcmBuffer, type AudioWaveformPeak } from "@haptic/assets";
 
 export async function decodeAudioWaveformPeaks(
   bytes: Uint8Array,

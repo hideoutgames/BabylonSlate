@@ -6,12 +6,12 @@ import {
   LoaderCircleIcon,
   XIcon,
 } from "lucide-react";
-import { type ProjectAppearance } from "@babylonslate/core";
-import { NumberField } from "@babylonslate/editor-kit";
-import type { HostPlatform } from "@babylonslate/vfs";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import { type ProjectAppearance } from "@haptic/core";
+import { NumberField } from "@haptic/editor-kit";
+import type { HostPlatform } from "@haptic/vfs";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
+import { Checkbox } from "@haptic/ui/components/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Field,
   FieldDescription,
@@ -28,12 +28,12 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+} from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+} from "@haptic/ui/components/toggle-group";
 import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
 import {
   ProjectCover,

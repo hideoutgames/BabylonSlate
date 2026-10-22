@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { PanelFrame } from "@babylonslate/editor-kit";
-import { GraphEditor } from "@babylonslate/graph-ui";
+import { PanelFrame } from "@haptic/editor-kit";
+import { GraphEditor } from "@haptic/graph-ui";
 import { useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";

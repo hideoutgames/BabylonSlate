@@ -10,9 +10,9 @@ import {
   SquareIcon,
   TerminalIcon,
 } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
+import { Button } from "@haptic/ui/components/button";
+import { Separator } from "@haptic/ui/components/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 
 export type PlayOverlayChromeProps = {

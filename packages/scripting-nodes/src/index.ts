@@ -1,5 +1,5 @@
 import { waterNodes } from "./water";
-import { NodeRegistry, type NodeDefinition } from "@babylonslate/scripting";
+import { NodeRegistry, type NodeDefinition } from "@haptic/scripting";
 import { flowNodes } from "./flow";
 import { mathNodes } from "./math";
 import { vectorNodes } from "./vector";

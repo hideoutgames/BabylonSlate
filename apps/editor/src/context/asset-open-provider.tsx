@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from "react";
-import { AssetOpenProvider } from "@babylonslate/editor-kit";
+import { AssetOpenProvider } from "@haptic/editor-kit";
 import { useDocumentActions, useRegistryState, useTabOrder } from "./document-context";
 import {
   canOpenAssetDocument,

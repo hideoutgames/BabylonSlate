@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeObjectIdentity } from "@babylonslate/bridge";
-import { identitySerializedTransform } from "@babylonslate/core";
+import type { RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeObjectIdentity } from "@haptic/bridge";
+import { identitySerializedTransform } from "@haptic/core";
 import { RuntimeInspectorClient } from "./runtime-inspector-client";
 
 const target: RuntimeObjectIdentity = { sceneInstanceId: "root:1", actorGuid: "actor", actorToken: 7 };

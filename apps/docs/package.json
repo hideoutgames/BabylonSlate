@@ -12,12 +12,12 @@
     "preview:nodes": "node scripts/node-previews.mjs"
   },
   "devDependencies": {
-    "@babylonslate/behaviour-tree": "workspace:*",
-    "@babylonslate/editor-kit": "workspace:*",
-    "@babylonslate/graph-ui": "workspace:*",
-    "@babylonslate/particle-graph": "workspace:*",
-    "@babylonslate/scripting-nodes": "workspace:*",
-    "@babylonslate/shader-graph": "workspace:*",
+    "@haptic/behaviour-tree": "workspace:*",
+    "@haptic/editor-kit": "workspace:*",
+    "@haptic/graph-ui": "workspace:*",
+    "@haptic/particle-graph": "workspace:*",
+    "@haptic/scripting-nodes": "workspace:*",
+    "@haptic/shader-graph": "workspace:*",
     "@fontsource-variable/onest": "^5.3.1",
     "@tailwindcss/node": "^4.3.3",
     "@types/node": "^22.13.10",

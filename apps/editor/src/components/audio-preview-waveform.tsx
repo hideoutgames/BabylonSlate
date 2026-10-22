@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { AudioWaveformPeak } from "@babylonslate/assets";
-import { cn } from "@babylonslate/ui/lib/utils";
+import type { AudioWaveformPeak } from "@haptic/assets";
+import { cn } from "@haptic/ui/lib/utils";
 
 const WAVEFORM_WIDTH = 256;
 const WAVEFORM_HEIGHT = 56;

@@ -7,8 +7,8 @@ import {
   type CSSProperties,
 } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -16,14 +16,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+} from "@haptic/ui/components/dialog";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from "@babylonslate/ui/components/empty";
-import type { SessionReportEntry } from "@babylonslate/runtime";
+} from "@haptic/ui/components/empty";
+import type { SessionReportEntry } from "@haptic/runtime";
 import {
   EMPTY_SESSION_REPORT_LABELS,
   NO_SOURCE_LABEL,

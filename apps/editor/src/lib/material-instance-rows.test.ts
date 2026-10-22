@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultMaterialInstanceDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialInstanceDocument } from "@haptic/shader-graph";
 import { setMaterialInstanceOverride, unusedMaterialInstanceOverrides } from "./material-instance-rows";
 
 describe("material instance overrides", () => {

@@ -6,7 +6,7 @@ import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
   type CommandMessage,
-} from "@babylonslate/bridge";
+} from "@haptic/bridge";
 import {
   createActor,
   createDefaultScene,
@@ -15,8 +15,8 @@ import {
   eulerDegreesToQuaternion,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
-import type { Actor } from "@babylonslate/object-model";
+} from "@haptic/core";
+import type { Actor } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
 

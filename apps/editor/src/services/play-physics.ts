@@ -1,11 +1,11 @@
-import type { ControlMessage } from "@babylonslate/bridge";
+import type { ControlMessage } from "@haptic/bridge";
 import {
   normalizeScene,
   type MaterialParameterCatalog,
   type PhysicsWorldKind,
   type SerializedScene,
   type SerializedSceneLayer,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { publicAssetUrl } from "../lib/branding";
 
 /** Public path of the self-hosted Havok wasm (same pattern as `/ktx2/`). */
@@ -179,19 +179,19 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
-  sessionMode?: import("@babylonslate/bridge").GameSessionMode;
+  sessionMode?: import("@haptic/bridge").GameSessionMode;
   simulationAssetGuids?: string[];
   sessionGeneration?: number;
-  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
+  saveGame?: import("@haptic/core").SaveGameConfiguration;
   frameCap?: number;
   traceByteBudget?: number;
-  renderSettings?: Partial<import("@babylonslate/core").RenderProjectSettings>;
+  renderSettings?: Partial<import("@haptic/core").RenderProjectSettings>;
   project?: { name: string; version: string };
-  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  inputAssets?: import("@haptic/core").InputAssetDefinition[];
+  dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query. */
-  assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
+  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   pixelsPerUnit?: number;
   texturePixelSizes?: Record<string, { width: number; height: number }>;
   sceneAssetGuid?: string;
@@ -199,7 +199,7 @@ export function playLoadControl(options: {
   seed?: number;
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
-  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
+  collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
@@ -211,8 +211,8 @@ export function playLoadControl(options: {
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: string[];
-  renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
-  renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
+  renderTargets?: Record<string, import("@haptic/core").RenderTargetPayload>;
+  renderTargetTextures?: Record<string, import("@haptic/core").RenderTargetTexturePayload>;
   animClipCatalog?: Array<{
     guid: string;
     type: string;

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Mesh, NullEngine, Scene } from "@babylonjs/core";
-import { createActor, createDefaultScene, parseDeformerProperties, type DeformerBinding } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseDeformerProperties, type DeformerBinding } from "@haptic/core";
 
 // The host owns identity and transactions. GPU allocation is the boundary;
 // shader, texture and pixels are exercised by the renderer/browser proofs.

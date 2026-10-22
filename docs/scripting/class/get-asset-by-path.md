@@ -10,7 +10,7 @@ Looks up an asset by its full storage path and returns its details.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Path | String | The full storage path, such as assets/Weapons/Rifle.class.babasset. Matching is case sensitive. |
+| Path | String | The full storage path, such as assets/Weapons/Rifle.class.hasset. Matching is case sensitive. |
 
 ## Outputs
 

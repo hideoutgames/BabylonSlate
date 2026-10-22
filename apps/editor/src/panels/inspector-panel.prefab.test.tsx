@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
-import { createMeshComponent } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
+import { createMeshComponent } from "@haptic/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
@@ -30,17 +30,17 @@ const classState = vi.hoisted(() => ({ parentClass: "Actor" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
+    documentId: "graph:assets/Hero.class.hasset",
   }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "graph:assets/Hero.class.babasset",
+      id: "graph:assets/Hero.class.hasset",
       ref: {
         kind: "graph",
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
       content: {
@@ -59,8 +59,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       dirty: false,
     },
     {
-      id: "graph:assets/Quiet.class.babasset",
-      ref: { kind: "graph", path: "assets/Quiet.class.babasset", label: "Quiet Class" },
+      id: "graph:assets/Quiet.class.hasset",
+      ref: { kind: "graph", path: "assets/Quiet.class.hasset", label: "Quiet Class" },
       content: { nodes: [], edges: [], actorDefaults: { generateHitEvents: false, eventTick: "disabled" } },
       layout: null,
       dirty: false,
@@ -70,7 +70,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   assetRegistry: {
     list: () => [
       {
-        path: "assets/Hero.class.babasset",
+        path: "assets/Hero.class.hasset",
         header: {
           type: "Class",
           name: "Hero",
@@ -79,7 +79,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         },
       },
       {
-        path: "assets/Quiet.class.babasset",
+        path: "assets/Quiet.class.hasset",
         header: { type: "Class", name: "Quiet", parentClass: "Actor", guid: "quiet-1" },
       },
     ],

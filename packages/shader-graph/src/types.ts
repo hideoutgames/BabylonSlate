@@ -2,7 +2,7 @@
  * Material value types (engineplan §2.3).
  *
  * Colors are float vectors with a display hint on the pin, not separate types:
- * the Babylon boundary in `@babylonslate/render` picks Color3 / Color4 versus
+ * the Babylon boundary in `@haptic/render` picks Color3 / Color4 versus
  * Vector3 / Vector4 when it lowers a build plan. Booleans are floats so the
  * catalog stays inside the portable Babylon block set.
  */

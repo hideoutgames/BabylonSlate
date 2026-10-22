@@ -6,7 +6,7 @@ import {
   type NativeHttpImageType,
   type NativeHttpImageUpload,
   type SecretStore,
-} from "@babylonslate/vfs";
+} from "@haptic/vfs";
 
 export interface NativeClerkSession {
   id: string;

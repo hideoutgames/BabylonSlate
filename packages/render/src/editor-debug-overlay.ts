@@ -29,7 +29,7 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import {
   composeActorComponentTransform,
   composeAuthoredComponentTransform,

@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@haptic/core";
 import { SceneLayerSwitcherFields } from "./scene-layer-switcher-fields";
 
 const documents = vi.hoisted(() => {
   const assets = [
-    { path: "assets/Base.class.babasset", header: { guid: "base", name: "Base", type: "Class", parentClass: "SceneLayerActor" } },
-    { path: "assets/Screen.class.babasset", header: { guid: "screen", name: "Screen", type: "Class", parentClass: "Base" } },
-    { path: "assets/WorldActor.class.babasset", header: { guid: "world", name: "WorldActor", type: "Class", parentClass: "Actor" } },
-    { path: "assets/Menu.class.babasset", header: { guid: "menu", name: "Menu", type: "Class", parentClass: "SceneLayerActorSwitcher" } },
+    { path: "assets/Base.class.hasset", header: { guid: "base", name: "Base", type: "Class", parentClass: "SceneLayerActor" } },
+    { path: "assets/Screen.class.hasset", header: { guid: "screen", name: "Screen", type: "Class", parentClass: "Base" } },
+    { path: "assets/WorldActor.class.hasset", header: { guid: "world", name: "WorldActor", type: "Class", parentClass: "Actor" } },
+    { path: "assets/Menu.class.hasset", header: { guid: "menu", name: "Menu", type: "Class", parentClass: "SceneLayerActorSwitcher" } },
   ];
   return { assetRegistry: { list: () => assets }, registryEpoch: 0, openDocuments: [], loadGraphDocument: vi.fn(async (path: string): Promise<SerializedGraph> => ({
     nodes: [], edges: [],
-    members: path.endsWith("Base.class.babasset") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [],
-    ...(path.endsWith("Menu.class.babasset") ? { actorDefaults: { properties: { initialIndex: 0, sceneLayerActors: [{ classId: "Screen", defaults: {} }] } } } : {}),
+    members: path.endsWith("Base.class.hasset") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [],
+    ...(path.endsWith("Menu.class.hasset") ? { actorDefaults: { properties: { initialIndex: 0, sceneLayerActors: [{ classId: "Screen", defaults: {} }] } } } : {}),
   })) };
 });
 vi.mock("../context/document-context", async () =>

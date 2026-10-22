@@ -28,7 +28,7 @@ Typed Save Game definitions, the save/load service shared by Play, Preview Build
 
 ## Definitions
 
-- Asset type `SaveGame`, `.savegame.babasset`. Field types: `bool`, `int`, `float`, `string`, `vector3`, `actor`, `asset`, and arrays of those. Actor and Asset values persist stable ids or `null`. Map fields are not definition types.
+- Asset type `SaveGame`, `.savegame.hasset`. Field types: `bool`, `int`, `float`, `string`, `vector3`, `actor`, `asset`, and arrays of those. Actor and Asset values persist stable ids or `null`. Map fields are not definition types.
 - Each field has an immutable internal id separate from its editable name: renaming keeps existing saves; delete-and-add creates a different field. Raw ids are not shown in authoring controls. Added fields take their defaults when an older save loads.
 - `schemaVersion` describes gameplay data and is separate from the save file format version and the project release version.
 - The default definition generates **Get/Set Save _Field_** nodes keyed by field id, and a `SaveData` interface (`generateSaveGameTypes`) for code tooling. JavaScript reads fields by name, so renames need code updates.
@@ -72,7 +72,7 @@ Typed Save Game definitions, the save/load service shared by Play, Preview Build
 
 | Host | Location |
 | --- | --- |
-| Web editor and exported web player | OPFS (`babylonslate-game-saves`), separate preview/game namespaces; subject to quota, eviction and user deletion |
+| Web editor and exported web player | OPFS (`haptic-game-saves`), separate preview/game namespaces; subject to quota, eviction and user deletion |
 | Electron editor | Dedicated subdirectory of `userData`, through desktop IPC |
 | Capacitor editor | iOS `Library/Application Support`, Android internal files. Capacitor Filesystem removes the destination before moving, so the adapter replaces only the inactive generation and claims no atomic rename |
 

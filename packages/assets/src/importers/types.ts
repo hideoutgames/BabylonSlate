@@ -16,7 +16,7 @@ export interface ImportResult {
   requiredVariableNames?: string[];
   classReferences?: string[];
   requiredClassReferences?: string[];
-  consoleCommand?: import("@babylonslate/core").ConsoleCommandMetadata;
+  consoleCommand?: import("@haptic/core").ConsoleCommandMetadata;
   dependencyMetadataVersion?: number;
   parentClass?: string | null;
   payload: Record<string, unknown>;

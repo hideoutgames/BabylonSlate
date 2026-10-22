@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene } from "@haptic/core";
 import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,

@@ -1,17 +1,17 @@
 import { saveGamePropertyRows } from "./save-game-property-rows";
-import { isUIControl2DClass } from "@babylonslate/core";
+import { isUIControl2DClass } from "@haptic/core";
 import { uiControlPropertyRows } from "./ui-control-property-rows";
-import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
-import { humanizePropertyLabel } from "@babylonslate/editor-kit";
-import { isOverlayLayoutClass } from "@babylonslate/core";
-import { CUSTOM_COLLISION_PRESET, DEFAULT_COLLISION_PRESETS, findCollisionPreset, resolveCollisionFilter, type CollisionPreset } from "@babylonslate/core";
+import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@haptic/core";
+import { humanizePropertyLabel } from "@haptic/editor-kit";
+import { isOverlayLayoutClass } from "@haptic/core";
+import { CUSTOM_COLLISION_PRESET, DEFAULT_COLLISION_PRESETS, findCollisionPreset, resolveCollisionFilter, type CollisionPreset } from "@haptic/core";
 import { overlayLayoutPropertyRows } from "./overlay-layout-property-rows";
-import type { PropertyRow } from "@babylonslate/editor-kit";
+import type { PropertyRow } from "@haptic/editor-kit";
 import {
   assetRowIdentity,
   walkAncestry,
   type ClassPickerEntry,
-} from "@babylonslate/editor-kit";
+} from "@haptic/editor-kit";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   normalizeRenderTargetCaptureProperties,
@@ -58,19 +58,19 @@ import {
   SKYBOX_FACE_KEYS,
   type SerializedComponent,
   type SkyboxFaceKey,
-} from "@babylonslate/core";
-import { parseMeshCollisionMode, type ModelMaterialSlot } from "@babylonslate/assets";
+} from "@haptic/core";
+import { parseMeshCollisionMode, type ModelMaterialSlot } from "@haptic/assets";
 import { MODEL_MATERIALS_PICKER_VALUE } from "./mesh-material-properties";
 import {
   parseColliderProperties,
   type ColliderShape,
-} from "@babylonslate/physics";
+} from "@haptic/physics";
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
   isHiddenEngineBaseClassId,
-} from "@babylonslate/object-model";
-import { parseNavMeshActorSettings } from "@babylonslate/navigation";
+} from "@haptic/object-model";
+import { parseNavMeshActorSettings } from "@haptic/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 import { fittedColliderShape } from "./fitted-collider";

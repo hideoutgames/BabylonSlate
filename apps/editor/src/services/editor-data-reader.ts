@@ -1,5 +1,5 @@
-import { RuntimeDataCatalog, type RuntimeDataApi } from "@babylonslate/runtime";
-import type { DataAssetCatalogEntry } from "@babylonslate/core";
+import { RuntimeDataCatalog, type RuntimeDataApi } from "@haptic/runtime";
+import type { DataAssetCatalogEntry } from "@haptic/core";
 import type { useDocuments } from "../context/document-context";
 
 type Host = Pick<ReturnType<typeof useDocuments>, "assetRegistry" | "getOpenDocuments">;

@@ -6,7 +6,7 @@ import {
 import {
   WATER_WAVE_MAX_COMPONENTS, RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeRenderingQuality, normalizeWaterBody,
   normalizeWaterDefinition, qualityPresetPatch, waterWaveSet, waterWaveSurge, type QualityLevel, type WaterDefinition,
-} from "@babylonslate/core";
+} from "@haptic/core";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";

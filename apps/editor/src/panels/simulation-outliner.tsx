@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { PanelFrame, SearchInput, TreeView, TypeVisualIcon, resolveTypeVisual, type TreeViewNode } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { PanelFrame, SearchInput, TreeView, TypeVisualIcon, resolveTypeVisual, type TreeViewNode } from "@haptic/editor-kit";
+import { Button } from "@haptic/ui/components/button";
 import { useSimulationInspection } from "../context/simulation-inspection-context";
 import { runtimeIdentityKey, type SimulationInspectionStore } from "../services/simulation-inspection-store";
 

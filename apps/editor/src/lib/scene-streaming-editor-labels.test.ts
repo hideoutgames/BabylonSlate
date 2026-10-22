@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createSceneStreamingActor, createText3DComponent } from "@babylonslate/core";
+import { createActor, createDefaultScene, createSceneStreamingActor, createText3DComponent } from "@haptic/core";
 import { sceneStreamingEditorComponents, sceneStreamingEditorScene } from "./scene-streaming-editor-labels";
 
 describe("streaming editor scene names", () => {
