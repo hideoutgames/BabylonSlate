@@ -1,3 +1,4 @@
+import { breakpointStopText, useBreakpointStop } from "../lib/breakpoint-stop";
 import { SceneModeSelect } from "./scene-mode-select";
 import {
   DndContext,
@@ -321,10 +322,12 @@ export function EditorChromeBar({
     sessionState,
     sessionOwner,
     simulationDocumentId,
+    openSessionSource,
   } = usePlay();
   // A running Simulation turns Simulate into Stop with its controls beside it.
   const simulationRunning = sessionState.mode === "simulate" && !sessionState.quarantined;
   const simulationControls = useSimulationControls();
+  const breakpointStop = useBreakpointStop(simulationControls?.stoppedAt);
   const graphDebug = useGraphDebugStore();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
@@ -989,6 +992,11 @@ export function EditorChromeBar({
                   onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
                     ? () => setActiveDocument(simulationDocumentId)
                     : undefined}
+                  stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
+                  onOpenStop={() => {
+                    const cause = simulationControls?.stoppedAt;
+                    if (cause) void openSessionSource({ severity: "info", ...cause });
+                  }}
                 />
                 {debugTarget ? (
                   <ToolbarOverflowItem id="debug-instance">

@@ -69,7 +69,7 @@ import { StatsHud } from "./stats-hud";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
-import type { ScriptBundleEntry, SessionPauseCause } from "@haptic/bridge";
+import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
 import {
   applyPlayPreviewCanvasLayout,
   clampRenderResolution,
@@ -367,6 +367,8 @@ function PlayOverlayView({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
+  /** The breakpoint the Simulation stopped at, until it resumes. */
+  const [stoppedAt, setStoppedAt] = useState<SessionPauseCause | null>(null);
   const [pausePending, setPausePending] = useState(false);
   const [inputMode, setInputMode] = useState<"game" | "edit">("game");
   const [inputPending, setInputPending] = useState(false);
@@ -466,6 +468,7 @@ function PlayOverlayView({
       if (!result.success) { setControlError(result.reason ?? "Pause could not reach a completed runtime boundary."); return; }
       userPausedRef.current = result.pauseReasons.includes("user");
       setPaused(result.paused);
+      if (!result.paused) setStoppedAt(null);
       if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
       if (result.paused) session.requestPausedRedraw();
       // Pause keeps Simulation's input mode; resumed game input returns to the canvas.
@@ -482,6 +485,8 @@ function PlayOverlayView({
     if (!session || closedRef.current || !userPausedRef.current) return;
     setStepPending(true);
     setControlError(null);
+    // The tick runs past the stop; a breakpoint it hits stops it again.
+    setStoppedAt(null);
     void session.stepPaused().then((result) => {
       if (sessionRef.current !== session) return;
       if (!result.success) { setControlError(result.reason ?? "Step could not reach a completed runtime boundary."); return; }
@@ -503,13 +508,18 @@ function PlayOverlayView({
           inputMode,
           inputPending,
           keepChanges: simulationKeepChanges,
+          stoppedAt,
           togglePause: () => pauseRef.current("user", !userPausedRef.current),
           step: () => stepRef.current(),
           setInputMode: (mode: "game" | "edit") => changeInputModeRef.current(mode),
         }
       : null,
-    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges],
+    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges, stoppedAt],
   );
+  // While a Simulation is paused, its graphs keep what ran last lit.
+  useEffect(() => {
+    if (simulating) graphDebug?.setHeld(paused);
+  }, [graphDebug, paused, simulating]);
   usePublishSimulationControls(simulationControls);
 
   useEffect(() => {
@@ -850,7 +860,13 @@ function PlayOverlayView({
           onSessionPaused: (next, cause) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
+            if (!next) setStoppedAt(null);
             if (!simulating || !cause) return;
+            if (cause.code === BREAKPOINT_PAUSE_CODE) {
+              setStoppedAt(cause);
+              // The graph shows the object that stopped: its path and values from its next tick on.
+              if (cause.instanceId) graphDebug?.follow(cause.instanceId);
+            }
             // The runtime paused itself on an error or at a breakpoint: take the user pause through
             // the session boundary so Resume and Step treat it like Pause, then show where it stopped.
             pauseRef.current("user", true);
@@ -1077,7 +1093,10 @@ function PlayOverlayView({
         detachLifecycle();
         unsubscribeGraphDebug?.();
         unsubscribeBreakpoints?.();
-        if (simulating) graphDebug?.setTarget(null);
+        if (simulating) {
+          graphDebug?.setHeld(false);
+          graphDebug?.setTarget(null);
+        }
         finishSessionRef.current();
       };
     });

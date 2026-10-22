@@ -58,8 +58,10 @@ export function GraphRunOverlay({
     if (!element) return undefined;
     const flasher = createRunFlasher(element, graph);
     const unsubscribe = trace.subscribe((run) => flasher.flash(run));
+    const unsubscribeHold = trace.subscribeHold?.((held) => flasher.hold(held));
     return () => {
       unsubscribe();
+      unsubscribeHold?.();
       flasher.dispose();
     };
   }, [root, trace, graph]);

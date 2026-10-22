@@ -24,6 +24,11 @@ export interface GraphRunTrace {
   status?(nodeId: string): string | undefined;
   /** Calls `listener` when that node's status changes, until the returned function is called. */
   subscribeStatus?(nodeId: string, listener: () => void): () => void;
+  /**
+   * Whether the owner is paused, so what ran last stays lit instead of fading. Calls `listener` at
+   * once with the current state, then on each change, until the returned function is called.
+   */
+  subscribeHold?(listener: (held: boolean) => void): () => void;
 }
 
 /** The part of a canvas graph the trace needs: React Flow's node and edge shapes. */

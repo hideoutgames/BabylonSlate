@@ -44,6 +44,8 @@ const PIN_FRAMES: Frames = {
 export interface RunFlasher {
   /** Highlights what ran. Calls within one animation frame coalesce. */
   flash(run: GraphRunEvent): void;
+  /** While held, what ran last keeps its highlight at full strength; released, it fades as usual. */
+  hold(held: boolean): void;
   dispose(): void;
 }
 
@@ -63,6 +65,9 @@ function attributeValue(value: string): string {
  *
  * Under `prefers-reduced-motion` the highlight does not fade: it holds at full strength for
  * the same time and clears.
+ *
+ * While held (the owner is paused) the last run's highlights stay at full strength, including a
+ * run that arrives while held (a Step); releasing them starts their fade and lets them go.
  */
 export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunFlasher {
   const animations = new WeakMap<Element, { animation: Animation; reduced: boolean }>();
@@ -70,6 +75,14 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
   let pending: { nodes: Set<string>; edges: Set<string> } | null = null;
   let frame: number | null = null;
   let disposed = false;
+  let held = false;
+  /** The animations of the last run, which a hold keeps lit. */
+  let lastRun = new Set<Animation>();
+  let batchRun: Set<Animation> | null = null;
+  const freeze = (animation: Animation) => {
+    animation.pause();
+    animation.currentTime = 0;
+  };
 
   const find = (key: string, selector: string, within: ParentNode = root): Element | null => {
     const cached = found.get(key);
@@ -88,6 +101,7 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
       // The same element ran before: start its fade over from full strength.
       running.animation.cancel();
       running.animation.play();
+      batchRun?.add(running.animation);
       return;
     }
     running?.animation.cancel();
@@ -96,6 +110,7 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
       easing: reduced ? "steps(1, end)" : "linear",
     });
     animations.set(element, { animation, reduced });
+    batchRun?.add(animation);
   };
 
   const flashNode = (id: string, reduced: boolean) => {
@@ -120,6 +135,7 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
     pending = null;
     if (!batch || disposed) return;
     const reduced = prefersReducedMotion();
+    batchRun = new Set();
     const current = graph();
     const edgesById = new Map(current.edges.map((edge) => [edge.id, edge]));
     const wires = new Map<string, RunGraph["edges"][number]>();
@@ -136,6 +152,14 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
       flashWire(id, reduced);
       for (const [nodeId, pinId] of wireEnds(edge)) flashPin(nodeId, pinId, reduced);
     }
+    const ran = batchRun;
+    batchRun = null;
+    if (held) {
+      // What the previous run lit and this one did not fades; this run stays lit.
+      for (const animation of lastRun) if (!ran.has(animation)) animation.play();
+      for (const animation of ran) freeze(animation);
+    }
+    lastRun = ran;
   };
 
   return {
@@ -146,10 +170,22 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
       for (const id of event.edges) pending.edges.add(id);
       frame ??= requestAnimationFrame(run);
     },
+    hold(next) {
+      if (disposed || next === held) return;
+      held = next;
+      if (held) {
+        for (const animation of lastRun) freeze(animation);
+        return;
+      }
+      // Released, the run fades and is let go: a later hold keeps only what runs after it.
+      for (const animation of lastRun) animation.play();
+      lastRun = new Set();
+    },
     dispose() {
       disposed = true;
       if (frame !== null) cancelAnimationFrame(frame);
       found.clear();
+      lastRun.clear();
     },
   };
 }
