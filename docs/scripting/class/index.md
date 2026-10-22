@@ -501,14 +501,21 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event Input Action](event-input-action.md) | Runs when a chosen Input Action starts, stays held or is released. |
 | [Event Input Axis](event-input-axis.md) | Runs when a chosen Input Axis moves away from zero, stays active or returns to zero. |
 | [Export Input Bindings](export-input-bindings.md) | Returns the player's binding changes as text that can be saved. |
+| [Find Touch](find-touch.md) | Returns the touch with a given finger number this tick. |
 | [Get Cursor Position](get-cursor-position.md) | Returns the pointer position over the game view. |
 | [Get Input Bindings](get-input-bindings.md) | Returns the current bindings of an Input Action or Input Axis. |
+| [Get Touch](get-touch.md) | Returns one of this tick's touches by its place in the list. |
+| [Get Touch Count](get-touch-count.md) | Returns how many touches the game view has this tick. |
 | [Hide Cursor](hide-cursor.md) | Hides the mouse pointer over the game view. |
 | [Import Input Bindings](import-input-bindings.md) | Applies binding changes exported earlier, replacing the current changes. |
 | [On Any Key Pressed](on-any-key-pressed.md) | Runs for each key, mouse button or gamepad control that is newly pressed. |
 | [On Gamepad Connected](on-gamepad-connected.md) | Runs when a gamepad connects, with its index. |
 | [On Gamepad Disconnected](on-gamepad-disconnected.md) | Runs when a gamepad disconnects, with its index. |
+| [On Touch Began](on-touch-began.md) | Runs when a finger, a pen or the left mouse button touches the game view. |
+| [On Touch Ended](on-touch-ended.md) | Runs when a touch lifts from the game view or is cancelled. |
+| [On Touch Moved](on-touch-moved.md) | Runs when a touch moves across the game view. |
 | [Project Cursor To Scene](project-cursor-to-scene.md) | Casts a ray from the active camera through the cursor and returns what it hits. |
+| [Project Touch To Scene](project-touch-to-scene.md) | Casts a ray from the active camera through a touch and returns what it hits. |
 | [Remove Input Action Binding](remove-input-action-binding.md) | Removes every binding of a key from an Input Action. |
 | [Remove Input Axis Binding](remove-input-axis-binding.md) | Removes every binding of a key from an Input Axis. |
 | [Reset All Input Bindings](reset-all-input-bindings.md) | Removes all player binding changes and restores every authored binding. |

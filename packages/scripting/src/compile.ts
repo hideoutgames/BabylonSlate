@@ -103,7 +103,22 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "input.onAnyKeyPressed": "onTick",
   "input.onGamepadConnected": "onTick",
   "input.onGamepadDisconnected": "onTick",
+  "input.onTouchBegan": "onTick",
+  "input.onTouchMoved": "onTick",
+  "input.onTouchEnded": "onTick",
 };
+
+/** Touch event nodes and the `engine:TouchPhase` records each one runs for. */
+const TOUCH_EVENT_PHASES: Readonly<Record<string, readonly string[]>> = {
+  "input.onTouchBegan": ["Began"],
+  "input.onTouchMoved": ["Moved"],
+  "input.onTouchEnded": ["Ended", "Cancelled"],
+};
+
+/** On Touch Began, On Touch Moved and On Touch Ended. */
+export function isTouchEventNodeType(typeId: string): boolean {
+  return Object.hasOwn(TOUCH_EVENT_PHASES, typeId);
+}
 
 /** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */
 export function eventNameForEntry(
@@ -294,6 +309,7 @@ const GATED_EVENT_TYPE_IDS: ReadonlySet<string> = new Set([
   "input.onAnyKeyPressed",
   "input.onGamepadConnected",
   "input.onGamepadDisconnected",
+  ...Object.keys(TOUCH_EVENT_PHASES),
 ]);
 
 /** An exec wire followed to its target; `GraphEdge` fits. */
@@ -1427,6 +1443,44 @@ export function compileGraph(
           emitOutputProbe(node, ctx);
         }
         emitAlong(execSuccessorEdges(index, node.id, "Then"), visited);
+        emitBody("  }", anchor);
+        break;
+      }
+
+      const touchPhases = TOUCH_EVENT_PHASES[node.typeId];
+      if (touchPhases) {
+        const ctx = makeCtx(node);
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
+        declareDataOuts(node, ctx);
+        const touch = `__touch_${jsIdent(node.id)}`;
+        const matches = touchPhases.map((phase) => `${touch}.Phase === ${JSON.stringify(phase)}`).join(" || ");
+        emitBody(
+          `  for (const ${touch} of (ctx.getTouchEvents?.() ?? [])) {`,
+          anchor,
+        );
+        emitBody(`    if (!(${matches})) continue;`, anchor);
+        if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
+        const outputs: Record<string, string> = {
+          touch,
+          finger: `${touch}.Finger`,
+          position: `${touch}.Position`,
+          delta: `${touch}.Delta`,
+          cancelled: `${touch}.Phase === "Cancelled"`,
+        };
+        for (const pin of node.pins) {
+          const value = pin.kind === "data" && pin.direction === "out" ? outputs[pin.id] : undefined;
+          if (value) emitBody(`    ${ctx.output(pin.id)} = ${value};`, anchor);
+        }
+        if (traceExecution) {
+          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
+          emitOutputProbe(node, ctx);
+        }
+        emitAlong(execSuccessorEdges(index, node.id, "execOut"), visited);
         emitBody("  }", anchor);
         break;
       }

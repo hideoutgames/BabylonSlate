@@ -117,8 +117,9 @@ describe("ScriptContext shape", () => {
     "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
     "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "invokeEvent",
     "invokeFunction", "isActionHeld", "inputBindings", "getInputState", "wasActionPressed", "wasActionReleased",
-    "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "setCursorVisible", "setGamepadRumble",
-    "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "sphereOverlap", "shapeSweep",
+    "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "getTouches", "getTouchEvents", "setCursorVisible",
+    "setGamepadRumble", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",
+    "sphereOverlap", "shapeSweep",
     "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "createSceneLayerAsync",
     "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",
   ] as const satisfies readonly (keyof ScriptContext)[];

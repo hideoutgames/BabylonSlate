@@ -55,6 +55,7 @@ export * from "./input-assets";
 export * from "./data-assets";
 export * from "./data-tree-index";
 export * from "./input-keys";
+export * from "./touch-input";
 
 export * from "./default-input-assets";
 export * from "./scene-layer-focus";

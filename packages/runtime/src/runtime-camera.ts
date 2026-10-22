@@ -13,6 +13,13 @@ import { componentOwners } from "./world-component-index";
 /** The Scene Layer camera's distance in front of the layer plane (`SceneLayerCompositor`'s HUD camera at z = -10). */
 const SCENE_LAYER_CAMERA_DISTANCE = 10;
 
+function noTouchProjection() {
+  return {
+    hit: false, location: null, normal: null, distance: 0, actorId: null, bodyId: null,
+    worldOrigin: { x: 0, y: 0, z: 0 }, worldDirection: { x: 0, y: 0, z: 0 },
+  };
+}
+
 interface RuntimeCameraHost {
   world(): World;
   /** The main Scene, for its default camera and per-camera possession options. */
@@ -27,9 +34,11 @@ interface RuntimeCameraHost {
   streams(): Pick<SceneStreams, "isStreamActor">;
   /** The cursor of the most recent resolved input tick. */
   cursor(): ResolvedInputTick["cursor"];
+  /** The touches of the most recent resolved input tick. */
+  touches(): ResolvedInputTick["touches"];
   overlay(): Pick<SceneLayerOverlay, "canvasSize" | "viewBounds">;
   physics(): Pick<RuntimePhysicsWorlds, "main" | "layer">;
-  /** False strips Project Cursor To Scene's debug lines whatever `drawDebug` says; true when omitted. */
+  /** False strips Project Cursor and Touch To Scene's debug lines whatever `drawDebug` says; true when omitted. */
   traceDebugDraw?: boolean;
   emit(command: CommandMessage): void;
 }
@@ -39,8 +48,8 @@ interface RuntimeCameraHost {
  * script `Possess Camera` choice and the possessed slot, the authored
  * `attemptPossessViewTarget` fallback the Scene realizer runs after a
  * Scene's actors spawn, the Play camera actor the snapshot and cursor
- * projection read, and `Project Cursor To Scene` (through a Scene Layer's
- * own camera for that layer's scripts). Its `releaseSlot` hook
+ * projection read, and `Project Cursor To Scene` and `Project Touch To
+ * Scene` (through a Scene Layer's own camera for that layer's scripts). Its `releaseSlot` hook
  * forgets a possession whose slot was released.
  */
 export class RuntimeCamera implements RuntimeSubsystem {
@@ -136,6 +145,29 @@ export class RuntimeCamera implements RuntimeSubsystem {
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
   ) {
+    return this.projectPointToScene(this.host.cursor(), channel, options);
+  }
+
+  /** A finger that is not down this tick hits nothing and casts no ray. */
+  projectTouchToScene(
+    finger: number,
+    channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+  ) {
+    const touch = this.touch(finger);
+    return touch ? this.projectPointToScene(touch.Position, channel, options) : noTouchProjection();
+  }
+
+  private touch(finger: number) {
+    return this.host.touches().find((touch) => touch.Finger === finger);
+  }
+
+  /** A ray from the Play camera through `point`, in game view CSS pixels. */
+  private projectPointToScene(
+    point: { x: number; y: number },
+    channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+  ) {
     const miss = {
       hit: false,
       location: null,
@@ -156,7 +188,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
     // local transform is relative to its parent.
     const pose = actorChainWorldTransform(camera, (guid) => this.host.world().findActor(guid)) ?? camera.transform;
     const ray = deprojectCursorRay(
-      this.host.cursor(),
+      point,
       this.host.overlay().canvasSize(),
       {
         position: pose.position,
@@ -218,7 +250,8 @@ export class RuntimeCamera implements RuntimeSubsystem {
   }
 
   /**
-   * `Project Cursor To Scene` from a Scene Layer's script: the cursor through
+   * `Project Cursor To Scene` (and `Project Touch To Scene`, with the
+   * finger's position) from a Scene Layer's script: the cursor through
    * that layer's orthographic camera (z = -10 looking along +Z, Layer Width ×
    * Height widened to the Play canvas aspect, then the camera's zoom, roll and
    * centre, as the compositor draws and picks it) to a point on the layer
@@ -227,12 +260,20 @@ export class RuntimeCamera implements RuntimeSubsystem {
    * render in the main Scene, not in layers.
    */
   projectCursorToSceneLayer(layerGuid: string, channel?: string) {
+    return this.projectPointToSceneLayer(layerGuid, this.host.cursor(), channel);
+  }
+
+  projectTouchToSceneLayer(layerGuid: string, finger: number, channel?: string) {
+    const touch = this.touch(finger);
+    return touch ? this.projectPointToSceneLayer(layerGuid, touch.Position, channel) : noTouchProjection();
+  }
+
+  private projectPointToSceneLayer(layerGuid: string, screen: { x: number; y: number }, channel?: string) {
     const layer = this.host.world().findSceneLayer(layerGuid);
     const bounds = this.host.overlay().viewBounds(layer);
     const canvas = this.host.overlay().canvasSize();
-    const cursor = this.host.cursor();
     const point = {
-      ...sceneLayerCanvasToLayer(cursor.x, cursor.y, canvas.width, canvas.height, bounds, layer?.camera ?? SCENE_LAYER_DEFAULT_CAMERA),
+      ...sceneLayerCanvasToLayer(screen.x, screen.y, canvas.width, canvas.height, bounds, layer?.camera ?? SCENE_LAYER_DEFAULT_CAMERA),
       z: 0,
     };
     const worldOrigin = { x: point.x, y: point.y, z: -SCENE_LAYER_CAMERA_DISTANCE };

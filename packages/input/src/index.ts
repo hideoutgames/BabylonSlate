@@ -3,6 +3,7 @@ export {
   decodeInputEvents,
   encodeInputEvents,
   type KeyPhase,
+  type PointerKind,
   type PointerPhase,
   type RawInputEvent,
 } from "./ring-buffer";
