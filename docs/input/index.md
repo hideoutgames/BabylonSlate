@@ -35,7 +35,7 @@ For an Input Axis, set **Value** to **1D · Number** or **2D · X and Y**. **Add
 
 - **Gamepads:** up to four. Buttons use layout-neutral names such as **Face Button Down**, **Left Bumper** and **D-Pad Up**, so one binding works for any standard controller.
 - **Mouse:** Left, Middle, Right, Back and Forward buttons.
-- **Touch:** the first finger on the screen acts as **Mouse Left**, so a Mouse Left binding also responds to taps. For on-screen controls, build a [Scene Layer](../scenes/scene-layers.md) with buttons, or add a [2D Joystick](../components/2d-joystick.md) and bind its **Joystick X**, **Joystick Y**, **D-Pad X** or **D-Pad Y** axis with a **Touch** control.
+- **Touch:** the first finger on the screen acts as **Mouse Left**, so a Mouse Left binding also responds to taps. Every finger is also available to graphs, see [Touch](#touch). For on-screen controls, build a [Scene Layer](../scenes/scene-layers.md) with buttons, or add a [2D Joystick](../components/2d-joystick.md) and bind its **Joystick X**, **Joystick Y**, **D-Pad X** or **D-Pad Y** axis with a **Touch** control. A finger on a 2D Joystick or another on-screen control is used only by that control: it does not also act as Mouse Left.
 
 ## Respond to input in a graph
 
@@ -66,6 +66,31 @@ Input events work in the event graphs of classes that tick, such as Actors. They
 | [On Gamepad Connected](../scripting/class/on-gamepad-connected.md), [On Gamepad Disconnected](../scripting/class/on-gamepad-disconnected.md) | Run when a pad appears or goes away. |
 
 Menus in Scene Layers can also be driven by your inputs: **Project Settings > Focus Navigation** picks the Input assets that move focus between buttons.
+
+## Touch
+
+The touch nodes see every finger on the game view, plus pen tips and the left mouse button, so a touch game also works with a mouse. Each touch has a **Finger** number: the lowest number not in use when it begins, starting at 0. It keeps that number until it ends.
+
+| Node | Use |
+| --- | --- |
+| [On Touch Began](../scripting/class/on-touch-began.md), [On Touch Moved](../scripting/class/on-touch-moved.md), [On Touch Ended](../scripting/class/on-touch-ended.md) | Run once for each touch that begins, moves or ends in a tick. |
+| [Get Touch Count](../scripting/class/get-touch-count.md), [Get Touch](../scripting/class/get-touch.md) | Read every touch this tick, lowest finger first. |
+| [Find Touch](../scripting/class/find-touch.md) | Read the touch with a given finger number, to follow one finger. |
+| [Project Touch To Scene](../scripting/class/project-touch-to-scene.md) | What is under a touch in the world. |
+
+Each node also returns the whole touch as a **Touch** structure:
+
+| Field | Description |
+| --- | --- |
+| Finger | The touch's finger number. |
+| Position | Where the touch is, in pixels from the top-left corner of the game view. |
+| Delta | How far it moved this tick, in pixels. |
+| Start Position | Where it began. |
+| Pressure | From 0 to 1. A pen reports how hard it presses; fingers and mice without pressure report 0.5. |
+| Phase | **Began**, **Moved**, **Stationary**, **Ended** or **Cancelled** this tick. |
+| Type | **Finger**, **Pen** or **Mouse**. |
+
+A touch that ends is still listed for that one tick, with its **Phase** set to **Ended**, or **Cancelled** when the device or a Scene Layer scroll box took it over. Touches on a 2D Joystick or another on-screen control in a Scene Layer are left to that control and never appear in the touch nodes.
 
 ## In this section
 
