@@ -6,6 +6,7 @@ import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@h
 import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
+import { createMessageRateMeter } from "@haptic/debugger";
 import { encodeInputEvents } from "@haptic/input";
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import {
@@ -107,6 +108,7 @@ export type PlayerBootHandle = {
   shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
+  text2dLayouts: () => ReturnType<EngineHandle["playText2DLayouts"]>;
   /** Active owned post-process/effect passes, or null once halted. */
   postProcessPassCount: () => number | null;
   /** Prepared FrameGraph task names, or null once halted. */
@@ -126,7 +128,7 @@ export type PlayerBootHandle = {
  * a tick rate from either host.
  */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
-  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" |
+  "visuals" | "meshMaterialNames" | "text2dLayouts" | "rendering" | "shadowDiagnostics" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 > & { tickIndex: () => number };
 
@@ -149,14 +151,9 @@ export type PlayerBootOptions = {
    */
   onStopped?: (viewReleased?: Promise<void>) => void;
   onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
-  onStats?: (stats: {
-    ticks: number;
-    fps: number;
-    scriptMs: number;
-    physicsMs: number;
-    draws: number;
-    lightsDebugText?: string | null;
-  }) => void;
+  onStats?: (stats: PlayerHudStats) => void;
+  /** Whether the host shows Stats; memory, object counts and render timings are read only then. */
+  statsVisible?: () => boolean;
   onDiagnostic?: (diagnostics: readonly PlayerDiagnostic[]) => void;
   onConsoleEvent?: (
     command: { type: string } & Record<string, unknown>,
@@ -620,12 +617,25 @@ function initializePlayer(
   own(() => pauseGate?.reset());
   own(() => detachLifecycle());
 
+  const bridgeRate = createMessageRateMeter(() => performance.now());
   const emitHudStats = (next: PlayerHudStats) => {
+    const statsVisible = manifest.bundleDebugger && options.statsVisible?.() === true;
+    const lights = manifest.bundleDebugger && handle.lightsDebugEnabled();
+    // Rendering diagnostics scan the Scene, and each read keeps frame-phase timing on.
+    const rendering = statsVisible || lights ? handle.renderDiagnostics() : undefined;
+    const counts = statsVisible ? handle.liveObjectCounts() : undefined;
     hudStats = {
       ...next,
       draws: handle.drawCalls(),
       geometryBytes: handle.accountedGeometryBytes(),
-      lightsDebugText: manifest.bundleDebugger ? lightsDebugText(handle.renderDiagnostics()) : null,
+      lightsDebugText: lights && rendering ? lightsDebugText(rendering) : null,
+      ...(statsVisible ? {
+        memoryBytes: handle.resourceCache.accountedBytes(),
+        meshCount: counts?.meshes,
+        textureCount: counts?.textures,
+        rendering,
+        bridgeMessagesPerSec: bridgeRate.perSecond(),
+      } : {}),
     };
     options.onStats?.(hudStats);
   };
@@ -921,6 +931,7 @@ function initializePlayer(
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command as never)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@haptic/core").SaveStorageRequest); return; }
+    bridgeRate.note();
     if (halted) return;
     if (command.type === "requestComplexCollision") { answerComplexCollision(String(command.assetGuid)); return; }
     if (command.type === "simulationBlocking") handle.setSceneStreamingPaused(command.blocking === true);
@@ -1089,6 +1100,8 @@ function initializePlayer(
   // The subscription above fired before the runtime existed; report the
   // current status now that the worker or in-process runtime can store it.
   publishRenderPathStatus(handle.renderPathStatus());
+  // The view size too: two-finger drags, cursor projection and Scene Layers measure against it.
+  handle.publishSceneLayerSize();
   const initialScalability = handle.scalabilityStatus?.();
   if (initialScalability) publishScalabilityStatus(initialScalability);
 
@@ -1245,6 +1258,7 @@ function initializePlayer(
       shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
+      text2dLayouts: () => handle.playText2DLayouts(),
       postProcessPassCount: () =>
         halted ? null : handle.postProcessPassCount(),
       renderTasks: () => (halted ? null : handle.renderTaskNames()),

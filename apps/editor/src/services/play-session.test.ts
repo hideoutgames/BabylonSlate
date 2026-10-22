@@ -355,6 +355,7 @@ describe("Play HUD stats merge", () => {
       physicsMs: 1.8,
       publishMs: 0.6,
       frameId: 12,
+      ticks: 40,
       liveActors: 300,
       snapshotCapacity: 512,
     });
@@ -364,6 +365,7 @@ describe("Play HUD stats merge", () => {
       physicsMs: 1.8,
       publishMs: 0.6,
       frameId: 12,
+      ticks: 40,
       liveActors: 300,
       snapshotCapacity: 512,
     });
@@ -373,6 +375,7 @@ describe("Play HUD stats merge", () => {
     expect(afterFps.physicsMs).toBe(1.8);
     expect(afterFps.publishMs).toBe(0.6);
     expect(afterFps.frameId).toBe(12);
+    expect(afterFps.ticks).toBe(40);
     expect(afterFps.liveActors).toBe(300);
     expect(afterFps.snapshotCapacity).toBe(512);
   });
@@ -447,14 +450,21 @@ describe("applyPlaySessionPausedCommand", () => {
         onSessionPaused,
       ),
     ).toBe(true);
-    expect(onSessionPaused).toHaveBeenCalledWith(true);
+    expect(onSessionPaused).toHaveBeenCalledWith(true, undefined);
     expect(
       applyPlaySessionPausedCommand(
         { type: "sessionPaused", paused: false },
         onSessionPaused,
       ),
     ).toBe(true);
-    expect(onSessionPaused).toHaveBeenCalledWith(false);
+    expect(onSessionPaused).toHaveBeenCalledWith(false, undefined);
+  });
+
+  it("forwards the error a Simulation paused on", () => {
+    const onSessionPaused = vi.fn();
+    const cause = { code: "runtime.assert", message: "Assertion failed", assetGuid: "Hero.class", graphId: "event-graph", nodeId: "check" };
+    applyPlaySessionPausedCommand({ type: "sessionPaused", paused: true, cause }, onSessionPaused);
+    expect(onSessionPaused).toHaveBeenCalledWith(true, cause);
   });
 
   it("ignores other commands", () => {

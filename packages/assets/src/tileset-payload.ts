@@ -7,6 +7,31 @@ export type TilesetChainCollision = {
 
 export type TilesetCollision = "none" | "full" | TilesetChainCollision;
 
+/**
+ * Autotile style of a terrain: `sides` matches the 4 edge neighbours (16
+ * variants); `blob` also matches corners whose two adjacent sides join (47).
+ */
+export type TilesetTerrainStyle = "sides" | "blob";
+
+export const TILESET_TERRAIN_STYLES: readonly TilesetTerrainStyle[] = ["sides", "blob"];
+
+/** A terrain the Tilemap terrain brush paints; its member tiles carry `terrain`. */
+export interface TilesetTerrain {
+  id: string;
+  name: string;
+  style: TilesetTerrainStyle;
+}
+
+/**
+ * Terrain membership of one tile. `mask` holds the neighbours the tile joins,
+ * clockwise from north (`TERRAIN_N` = 1 … `TERRAIN_NW` = 128); the terrain's
+ * style decides which bits count, so switching style keeps corner bits.
+ */
+export interface TilesetTileTerrain {
+  id: string;
+  mask: number;
+}
+
 export interface TilesetTile {
   id: number;
   collision: TilesetCollision;
@@ -14,6 +39,8 @@ export interface TilesetTile {
   animation: number[];
   /** Loop duration per frame; omitted legacy values use 100 ms. */
   animationFrameDurationMs?: number;
+  /** Omitted for tiles outside every terrain. */
+  terrain?: TilesetTileTerrain;
 }
 
 export const DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS = 100;
@@ -38,6 +65,8 @@ export interface TilesetPayload {
   margin: number;
   spacing: number;
   tiles: TilesetTile[];
+  /** Autotile terrains; omitted when the Tileset has none. */
+  terrains?: TilesetTerrain[];
 }
 
 export interface TileUv {
@@ -76,6 +105,7 @@ export function normalizeTilesetPayload(value: unknown): TilesetPayload {
   const tileHeight = positiveInt(source.tileHeight, DEFAULT_TILE);
   const atlasWidth = positiveInt(source.atlasWidth, tileWidth);
   const atlasHeight = positiveInt(source.atlasHeight, tileHeight);
+  const terrains = normalizeTerrains(source.terrains);
   return {
     textureGuid: stringOrNull(source.textureGuid),
     atlasWidth,
@@ -84,8 +114,16 @@ export function normalizeTilesetPayload(value: unknown): TilesetPayload {
     tileHeight,
     margin: nonNegativeInt(source.margin, 0),
     spacing: nonNegativeInt(source.spacing, 0),
-    tiles: normalizeTiles(source.tiles),
+    tiles: normalizeTiles(source.tiles, new Set(terrains.map((terrain) => terrain.id))),
+    ...(terrains.length > 0 ? { terrains } : {}),
   };
+}
+
+export function tilesetTerrainById(
+  tileset: TilesetPayload,
+  terrainId: string,
+): TilesetTerrain | null {
+  return tileset.terrains?.find((terrain) => terrain.id === terrainId) ?? null;
 }
 
 export function tilesetTileById(
@@ -228,7 +266,40 @@ function roundUv(value: number): number {
   return Math.round(value * 1e10) / 1e10;
 }
 
-function normalizeTiles(value: unknown): TilesetTile[] {
+function normalizeTerrains(value: unknown): TilesetTerrain[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const terrains: TilesetTerrain[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const id = stringOrNull(row.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    terrains.push({
+      id,
+      name: typeof row.name === "string" && row.name.trim() !== "" ? row.name : id,
+      style: TILESET_TERRAIN_STYLES.includes(row.style as TilesetTerrainStyle)
+        ? (row.style as TilesetTerrainStyle)
+        : "sides",
+    });
+  }
+  return terrains;
+}
+
+/** Membership of a terrain the Tileset defines; any other membership is dropped. */
+function normalizeTileTerrain(
+  value: unknown,
+  terrainIds: ReadonlySet<string>,
+): TilesetTileTerrain | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const id = stringOrNull(row.id);
+  if (!id || !terrainIds.has(id)) return null;
+  return { id, mask: nonNegativeInt(row.mask, 0) & 0xff };
+}
+
+function normalizeTiles(value: unknown, terrainIds: ReadonlySet<string>): TilesetTile[] {
   if (!Array.isArray(value)) return createDefaultTilesetPayload().tiles;
   const seen = new Set<number>();
   const tiles: TilesetTile[] = [];
@@ -246,9 +317,14 @@ function normalizeTiles(value: unknown): TilesetTile[] {
         ? row.animation.map((n) => Number(n) || 0).filter((n) => n > 0)
         : [],
       animationFrameDurationMs: Math.max(1, positiveInt(row.animationFrameDurationMs, DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS)),
+      ...withTerrain(normalizeTileTerrain(row.terrain, terrainIds)),
     });
   }
   return tiles;
+}
+
+function withTerrain(terrain: TilesetTileTerrain | null): { terrain?: TilesetTileTerrain } {
+  return terrain ? { terrain } : {};
 }
 
 function normalizeCollision(value: unknown): TilesetCollision {

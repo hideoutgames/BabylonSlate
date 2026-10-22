@@ -33,6 +33,7 @@ export {
   type CommandMessage,
   type GameSessionMode,
   type SessionPauseReason,
+  type SessionPauseCause,
   type SessionBoundaryRequest,
   type SessionBoundaryResult,
   type MaterialParameterValue,
