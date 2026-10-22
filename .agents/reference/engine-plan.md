@@ -292,6 +292,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Mappings live in InputAction / InputAxis assets with stable binding ids so player overrides survive renames. Only the Basic 3D template ships starter Input assets.
 - Touch axes come from SceneLayer `2DJoystickComponent` controls (test hook: `injectTestTouchAxis`). There is no Set Input Mode.
 - Every finger, pen tip and left mouse button is a touch with a stable finger slot, read by the touch nodes; the first one is still Mouse Left and the cursor. Pointers that SceneLayer joysticks, 2D controls or scroll drags own never reach game input.
+- Gestures (tap, double tap, long press, swipes, pinch, two-finger rotate and drag) are `touch` binding codes recognized in the resolver with fixed thresholds; there are no gesture nodes or settings.
 - Every event is stamped with the tick it applies to; input is tested by feeding synthetic streams to the deterministic harness.
 - The game canvas uses pointer capture and `touch-action: none`. Focused UI (text fields, buttons, modals) owns keys before gameplay.
 - Text: 3D Text is a flat TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + `earcut`); 2D text uses Bitmap FontFace quads with optional MSDF; CSS FontFace registration from bytes is the only way custom fonts reach rendering. Fonts load before first paint and fail loudly. Font metrics are main-thread only.
