@@ -95,7 +95,7 @@ The graphs stay read-only: watching never changes your assets or the running gam
 
 ## Stats
 
-Stats shows **fps**, the frame time, and the **script** and **physics** time of the last tick. When script and physics together take more than 8 ms, Stats shows **over 8 ms budget**. Add more rows with the `stat unit`, `stat memory`, `stat draws` and `stat threads` [console commands](console.md).
+Stats shows **fps**, the frame time, and the **script** and **physics** time of the last tick. When script and physics together take more than 8 ms, Stats shows **over 8 ms budget**. Add more rows with the `stat unit`, `stat memory`, `stat draws` and `stat threads` [console commands](console.md). Play, Simulation, Preview Build and exported games that include the debugger show the same rows.
 
 ## Inspector
 

@@ -96,6 +96,7 @@ import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   SessionDiagnostics,
   createDiagnosticOperationClient,
+  createMessageRateMeter,
   type PerformanceProfile,
   type TracePayload,
 } from "@haptic/debugger";
@@ -514,6 +515,8 @@ export interface PlayHudStats {
   /** Snapshot publish time, reported apart from the tick's script/physics budget. */
   publishMs: number;
   frameId: number;
+  /** The worker's tick index, from its latest `stats` command. */
+  ticks?: number;
   liveActors?: number;
   snapshotCapacity?: number;
 }
@@ -527,6 +530,7 @@ export function applyWorkerPlayStats(
     physicsMs: number;
     publishMs?: number;
     frameId: number;
+    ticks?: number;
     liveActors?: number;
     snapshotCapacity?: number;
   },
@@ -537,6 +541,7 @@ export function applyWorkerPlayStats(
     physicsMs: command.physicsMs,
     publishMs: command.publishMs ?? 0,
     frameId: command.frameId,
+    ticks: command.ticks ?? previous?.ticks ?? 0,
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
     snapshotCapacity:
       command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
@@ -554,6 +559,7 @@ export function applyPlayFpsSample(
     physicsMs: previous?.physicsMs ?? 0,
     publishMs: previous?.publishMs ?? 0,
     frameId: previous?.frameId ?? 0,
+    ticks: previous?.ticks ?? 0,
     liveActors: previous?.liveActors ?? 0,
     snapshotCapacity: previous?.snapshotCapacity ?? 0,
   };
@@ -616,13 +622,7 @@ export function startPlaySession(options: {
   getAssetLoadState?: (guid: string) => import("@haptic/core").RuntimeAssetLoadState;
   getSourceControls?: () => ControlMessage[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
-  onStats?: (stats: {
-    fps: number;
-    scriptMs: number;
-    physicsMs: number;
-    publishMs: number;
-    frameId: number;
-  }) => void;
+  onStats?: (stats: PlayHudStats) => void;
   onLog?: (message: string, severity: string) => void;
   /** Each log the runtime raises (Log nodes included), with its category; the host's Output Log feed. */
   onRuntimeLog?: (entry: { category: string; severity: string; message: string }) => void;
@@ -1322,9 +1322,7 @@ export function startPlaySession(options: {
   > = [];
   const inspectWaiters: Array<(snapshot: DebugInspectSnapshot) => void> = [];
   let recordedTrace: TracePayload | null = null;
-  let commandCount = 0;
-  let commandWindowStart = performance.now();
-  let bridgeRate = 0;
+  const bridgeRate = createMessageRateMeter(() => performance.now());
   let hudStats: PlayHudStats | undefined;
   let lastWorkerTickIndex = 0;
   let input: InputCaptureHandle | null = null;
@@ -1332,17 +1330,6 @@ export function startPlaySession(options: {
   const emitHudStats = (next: PlayHudStats) => {
     hudStats = next;
     options.onStats?.(next);
-  };
-
-  const noteCommand = () => {
-    commandCount += 1;
-    const now = performance.now();
-    const elapsed = (now - commandWindowStart) / 1000;
-    if (elapsed >= 0.2) {
-      bridgeRate = commandCount / elapsed;
-      commandCount = 0;
-      commandWindowStart = now;
-    }
   };
 
   const simulationSaveStorage = options.mode === "simulate"
@@ -1490,7 +1477,7 @@ export function startPlaySession(options: {
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
-    noteCommand();
+    bridgeRate.note();
     if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
     if (command.type === "despawn") { inspectorClient.invalidateActor(command.actorGuid); materialEditHost.invalidateActor(command.actorGuid); }
     if (command.type === "simulationBlocking") handle.setSceneStreamingPaused(command.blocking);
@@ -1525,6 +1512,8 @@ export function startPlaySession(options: {
           physicsMs: command.physicsMs ?? 0,
           publishMs: command.publishMs,
           frameId: command.frameId ?? 0,
+          // A dropped snapshot must not leave the count behind the simulation.
+          ticks: command.tickIndex ?? lastWorkerTickIndex,
           liveActors: command.liveActors,
           snapshotCapacity: command.snapshotCapacity,
         }),
@@ -1980,16 +1969,7 @@ export function startPlaySession(options: {
     whenModelsReady: async () => { await sessionSourcesReady; await handle.whenEditorModelsReady(); },
     modelLoadCount: () => handle.modelLoadCount(),
     drawCalls: () => handle.drawCalls(),
-    bridgeMessagesPerSec: () => {
-      const now = performance.now();
-      const elapsed = (now - commandWindowStart) / 1000;
-      if (elapsed >= 0.2) {
-        bridgeRate = commandCount / Math.max(elapsed, 0.001);
-        commandCount = 0;
-        commandWindowStart = now;
-      }
-      return Math.round(bridgeRate);
-    },
+    bridgeMessagesPerSec: () => bridgeRate.perSecond(),
     stop: () => {
       if (stopped && stopResult) return stopResult;
       void performanceDiagnostics?.dispose().finally(() => diagnosticClient.dispose());
