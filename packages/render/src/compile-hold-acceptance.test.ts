@@ -493,6 +493,19 @@ describe("compile holds after the first frame", () => {
     expectSwapped(await measure(world, () => world.handle.setMeshAssets({ areaEmissions: new Map([["panel-texture", pixels]]) })), model);
   });
 
+  it.each(SWAP_MODELS)("a frozen graph Material adopts its new variant: %s", async (model) => {
+    // The editor freezes library Materials; a frozen NodeMaterial adopts a ready variant only when probed.
+    const barrel: Actor = { slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } };
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), barrel], ["surface-a"], "actor-20");
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    const record = await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false })), () => {
+      const material = world.handle.scene.getMeshByName("actor-20")!.material!;
+      expect(material.getClassName()).toBe("NodeMaterial");
+      material.freeze();
+    });
+    expectSwapped(record, model);
+  });
+
   it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
     // Receivers swap, but the new map's casters compile their depth variants first and the graph prepares the map.
     const world = playWorld(model, [spot(10, [0, 5, 0])]);
