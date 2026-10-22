@@ -478,7 +478,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.components[0]!.properties.offsetX).toBe(3);
   });
 
-  it("poses Scene Layer 3D geometry in full 3D and keeps 2D actors and mixed selections in 2D", () => {
+  it("rotates and scales Scene Layer 3D geometry in 3D with 2D placement, and keeps 2D actors and mixed selections 2D", () => {
     scene().viewportMode = "2d";
     scene().actors = [
       createActor("model", "Model", { components: [createMeshComponent("mesh", "box")] }),
@@ -487,9 +487,9 @@ describe("SceneDetailsPanel authoring", () => {
     harness.documentKind = "scene-layer";
     harness.selectedActorIds = ["model"];
     const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.queryByTestId("property-actor-z-order")).toBeNull();
+    expect(screen.queryByTestId("property-actor-position-z")).toBeNull();
     const edited = () => harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.transform;
-    fireEvent.change(screen.getByTestId("property-actor-position-z"), { target: { value: "-2" } });
+    fireEvent.change(screen.getByTestId("property-actor-z-order"), { target: { value: "2" } });
     expect(edited().position).toEqual([0, 0, -2]);
     fireEvent.change(screen.getByTestId("property-actor-rotation-x"), { target: { value: "30" } });
     expect(quaternionToEulerDegrees(edited().rotation)[0]).toBeCloseTo(30);

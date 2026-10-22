@@ -134,7 +134,7 @@ import {
   isPostProcessMaterialForPicker,
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
-import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { spatialTransformPropertyRows, type TransformRowsMode } from "../lib/transform-property-rows";
 import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
 import {
   fontAssetHasFacetype,
@@ -1201,9 +1201,9 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     );
   const multiSelection = selectedActors.length > 1;
   const spatialActors = selectedActors.filter((entry) => !isSceneLayerAnchorActor(entry));
-  // Layer 3D geometry is posed in full 3D here; the viewport keeps the 2D box.
-  const transformMode = overlay && spatialActors.length > 0 && spatialActors.every(isSceneLayer3DActor)
-    ? "3d"
+  // Layer 3D geometry rotates and scales in 3D but keeps 2D placement; the viewport keeps the 2D box.
+  const transformMode: TransformRowsMode = overlay && spatialActors.length > 0 && spatialActors.every(isSceneLayer3DActor)
+    ? "layer3d"
     : scene.viewportMode;
   const shapeComponents = actor.components.filter((component) =>
     component.classId === "SplineComponent" || component.classId === DEFORMER_COMPONENT_CLASS_ID || waterKindForClass(component.classId) !== null,

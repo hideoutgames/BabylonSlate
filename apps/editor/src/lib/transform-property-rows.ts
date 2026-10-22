@@ -7,15 +7,22 @@ import {
   type ViewportMode,
 } from "@babylonslate/core";
 
+/**
+ * `layer3d` is Scene Layer 3D geometry: placed like 2D (Position XY plus
+ * Z-Order) but rotated and scaled on all three axes.
+ */
+export type TransformRowsMode = ViewportMode | "layer3d";
+
 /** Position / rotation / scale rows; 2D splits Position Z out as Z-Order. */
 export function spatialTransformPropertyRows(
   idPrefix: string,
-  viewportMode: ViewportMode,
+  mode: TransformRowsMode,
   transform: SerializedTransform,
   onUpdateTransform: (next: SerializedTransform) => void,
   defaults?: SerializedTransform,
 ): PropertyRow[] {
-  const twoD = viewportMode === "2d";
+  const planar = mode !== "3d";
+  const twoD = mode === "2d";
   const reset = defaults ?? identitySerializedTransform();
   const defaultEuler = quaternionToEulerDegrees(reset.rotation);
   const rows: PropertyRow[] = [
@@ -25,7 +32,7 @@ export function spatialTransformPropertyRows(
       label: "Position",
       value: transform.position,
       defaultValue: [...reset.position] as [number, number, number],
-      axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
+      axes: planar ? ["X", "Y"] : ["X", "Y", "Z"],
       onChange: (position) =>
         onUpdateTransform({
           ...transform,
@@ -33,7 +40,7 @@ export function spatialTransformPropertyRows(
         }),
     },
   ];
-  if (twoD) {
+  if (planar) {
     rows.push({
       kind: "number",
       id: `${idPrefix}-z-order`,

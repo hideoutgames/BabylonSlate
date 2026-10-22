@@ -71,8 +71,8 @@ export const SCENE_LAYER_3D_COMPONENT_CLASS_IDS = [
 ] as const;
 
 /**
- * A layer actor carrying 3D geometry is posed in full 3D in the Inspector (X/Y
- * tilt, depth, Z scale); the viewport still edits it with the 2D box.
+ * A layer actor carrying 3D geometry rotates and scales on all three axes in
+ * the Inspector; it keeps 2D placement and the viewport's 2D box.
  */
 export function isSceneLayer3DActor(actor: {
   components: readonly { classId: string; destroyed?: boolean }[];
