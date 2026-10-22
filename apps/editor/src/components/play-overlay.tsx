@@ -1082,7 +1082,7 @@ function PlayOverlayView({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, breakpointStore, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
