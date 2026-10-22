@@ -10,10 +10,10 @@ Locked on-disk formats: `.hasset`, `.htrace`, the project / `.hplugin` tree, der
 ## .hasset
 
 ```
-"BABA" (4) | format version u32 LE (= 1) | headerLen u32 LE | header JSON (UTF-8, sorted keys) | chunk bytes…
+"HAPT" (4) | format version u32 LE (= 1) | headerLen u32 LE | header JSON (UTF-8, sorted keys) | chunk bytes…
 ```
 
-- `HASSET_MAGIC` "BABA", `HASSET_FORMAT_VERSION` = 1, `HASSET_PREFIX_BYTES` = 12, `MAX_HASSET_HEADER_BYTES` = 16 MiB. Sorted keys make headers byte-stable for hashing and goldens.
+- `HASSET_MAGIC` "HAPT", `HASSET_FORMAT_VERSION` = 1, `HASSET_PREFIX_BYTES` = 12, `MAX_HASSET_HEADER_BYTES` = 16 MiB. Sorted keys make headers byte-stable for hashing and goldens.
 
 | Header field | Meaning |
 | --- | --- |
@@ -42,7 +42,7 @@ Locked on-disk formats: `.hasset`, `.htrace`, the project / `.hplugin` tree, der
 
 - Blob locators resolve to `{pathPrefix}/.blobs/<sha256>` inside the asset's content root (`assets/.blobs` for the project, `plugins/<folder>/assets/.blobs` per plugin, so a `.hplugin` is self-contained). An existing blob is never rewritten.
 - Thin saves externalise chunks ≥ `DEFAULT_BLOB_THRESHOLD` (64 KiB); bundled mode always inlines and embeds dependencies as nested `asset` chunks. Anything leaving the project is self-contained.
-- **Current layout only.** `readHassetHeader` (so every decode, catalog scan and project open) refuses headers missing chunk `byteLength`, `dependencies`, `requiredDependencies`, `dependencyMetadataVersion: 1` or, for a Class, `requiredVariableNames`, with `AssetFormatVersionError`. `encodeHasset` applies the same check. The engine is unreleased, so old files are refused, not upgraded.
+- **Current layout only.** `readHassetHeader` (so every decode, catalog scan and project open) refuses headers missing chunk `byteLength`, `dependencies`, `requiredDependencies`, `dependencyMetadataVersion: 1` or, for a Class, `requiredVariableNames`, with `AssetFormatVersionError`. `encodeHasset` applies the same check. These are the released layout; a later layout change raises `HASSET_FORMAT_VERSION` or `ASSET_DEPENDENCY_METADATA_VERSION` and keeps reading the released layout (the `class-v1` and `audio-v1` goldens pin it byte for byte).
 - `readHassetHeader` never allocates chunk payloads; the registry indexes headers only.
 
 ## Documents

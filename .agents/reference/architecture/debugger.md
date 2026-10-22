@@ -48,7 +48,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 - Worker emits `{ type: "stats" }` every `STATS_COMMAND_INTERVAL_MS` (200 ms), not per tick. `isTickOverBudget` sums script + physics against `TICK_BUDGET_MS` (8); `publishMs` is excluded.
 - Chrome must not React-update at 60 Hz. Stats HUD starts collapsed; while hidden, the overlay skips HUD-only reads (render diagnostics, memory, draw calls). Test-mode attributes are polled only when `isTestModeEnabled()`.
 - Draw calls come from Babylon `_drawCalls.current` after Play `scene.render()`, not `engine.drawCalls`.
-- Every runtime `log` command (Log nodes, driver and captured console logs; never `print` or the `diagnostic` an error log also raises) reaches the editor Output Log once through `onRuntimeLog` / `formatRuntimeLogLine` (`[Category] Warning: message`), in Play and Preview Build, besides the overlay console.
+- Every runtime `log` command (Log nodes, failed Assert nodes, driver and captured console logs; never `print` or the `diagnostic` an error log also raises) reaches the editor Output Log once through `onRuntimeLog` / `formatRuntimeLogLine` (`[Category] Warning: message`), in Play and Preview Build, besides the overlay console.
 - Output Log and live BT state live in an isolated diagnostics provider; log lines commit once per animation frame (250 ms timer while hidden). The console transcript caps at 500 rows.
 - Inspector is read-only (no `setVariable`); Use Camera / Destroy Actor send the debug commands with the selected GUID. Compose it from catalog components only.
 - Print HUD and Draw Debug are not debugger chrome: they apply even without `bundleDebugger`. Stats, console and inspect are debugger-bundled.

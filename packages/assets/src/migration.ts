@@ -38,6 +38,11 @@ export class MigrationRegistry {
     this.chains.set(chain.type, chain);
   }
 
+  /** Registered type names. */
+  types(): string[] {
+    return [...this.chains.keys()];
+  }
+
   currentVersion(type: string): number {
     return this.chains.get(type)?.currentVersion ?? 0;
   }
@@ -104,11 +109,40 @@ export class MigrationRegistry {
 export const MATERIAL_PAYLOAD_VERSION = 2;
 
 /**
- * Current schema version of each versioned asset type. The engine is
- * unreleased, so no type registers a migration step: a file at an older
- * version is refused rather than upgraded. Add steps here when a released
- * format must be read again.
+ * Schema version each versioned asset type was released at. Released files
+ * stay readable: a format change raises the type's version in
+ * `CURRENT_VERSIONS` and adds a step from the previous version to
+ * `MIGRATIONS`, each tested with a committed golden of the version it reads
+ * (`__fixtures__/migrations/<Type>-v<N>.hasset`). Never lower an entry; a
+ * type added later joins at its first version. Versions older than these
+ * predate the release and are refused.
  */
+export const RELEASED_VERSIONS: Readonly<Record<string, number>> = {
+  Class: 1,
+  Scene: 4,
+  Project: 1,
+  Material: 2,
+  MaterialFunction: 1,
+  MaterialInstance: 1,
+  DataDefinition: 1,
+  DataTree: 1,
+  InputAction: 1,
+  InputAxis: 1,
+  Prefab: 1,
+  SaveGame: 1,
+  Audio: 1,
+  AudioMixer: 1,
+  AudioChannel: 1,
+  SoundAttenuation: 1,
+  ParticleEmitter: 1,
+  ParticleGraph: 1,
+  ParticleSystem: 1,
+  Water: 1,
+  SkyboxCreator: 1,
+  SceneLayer: 1,
+};
+
+/** Current schema version of each versioned asset type. */
 const CURRENT_VERSIONS: Readonly<Record<string, number>> = {
   Class: 1,
   Scene: SCENE_SCHEMA_VERSION,
@@ -135,11 +169,17 @@ const CURRENT_VERSIONS: Readonly<Record<string, number>> = {
   SceneLayer: 1,
 };
 
-/** Default registry: every versioned type at its current version, with no migration steps. */
+/**
+ * Migration steps per type, oldest first, ending at its current version:
+ * the last step reads `CURRENT_VERSIONS[type] - 1`.
+ */
+const MIGRATIONS: Readonly<Record<string, readonly MigrationFn[]>> = {};
+
+/** Default registry: every versioned type at its current version with its migration steps. */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
   for (const [type, currentVersion] of Object.entries(CURRENT_VERSIONS)) {
-    registry.register({ type, currentVersion });
+    registry.register({ type, currentVersion, migrations: MIGRATIONS[type] });
   }
   return registry;
 }

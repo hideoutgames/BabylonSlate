@@ -2,9 +2,15 @@
 
 Authoritative product and architecture plan for Haptic: goals, non-goals, binding decisions with their reasons, open work and deliberate behaviour.
 
-- The product is **Haptic**. Code identifiers are not renamed yet: keep `@haptic/*`, `.hasset` / `.hplugin` / `.htrace` / `.hextension`, `BL_*` env vars and `haptic:` URLs verbatim.
+- The product is **Haptic**; naming rules are under [Naming](#naming).
 - Package map, data flow and contributor rules: [architecture.md](architecture.md). Per-subsystem notes: [architecture/](architecture/). Import boundaries: `no-restricted-imports` in `eslint.config.js`.
 - When this file and the code disagree, the code wins; fix this file in the same change.
+
+## Naming
+
+- Code uses the Haptic names: the `@haptic/*` package scope, `.hasset` / `.hproject` / `.hplugin` / `.hextension` / `.htrace` files with the `HAPT` container magic, `HAPTIC_*` environment variables, `haptic:` keys, events and script URLs, and `__haptic*` test hooks.
+- These keep the old name, because changing them changes an identity outside the code: the GitHub repository and its Pages URLs (`/BabylonSlate/` base path); the bundle and app id `no.hideout.babylonslate`; the native `BabylonSlate*` Capacitor plugins, Keychain service and `BabylonSlate/projects` / `BabylonSlate/game-saves` storage folders; the desktop app name, executable and `app://babylonslate` origin; and the signing and distribution variables (`BABYLONSLATE_ANDROID_*`, `BABYLONSLATE_DISTRIBUTION`, …). Rename them only as an explicit distribution change.
+- Files and settings saved under the old names are not read: the rename was a clean break before the first release.
 
 ## Overview and goals
 
@@ -148,13 +154,13 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 - Basic Particle Emitter (module stack): `GPUParticleSystem` where supported, else CPU `ParticleSystem` capped at 512. Particle Graph: own IR, CPU-only in Babylon 9.29, Compiler Results warning above 512; documents never store a backend. Particle System: up to 8 slots of either kind.
 - The look is a particle-domain Material; emitters have no Texture field. A missing Material skips the emitter with `particle.missing_material`; no default Material ships.
 - Units are seconds (`updateSpeed = 1/60`). Blend and billboard modes map to Babylon constants by name.
-- Unreleased engine: header versions stay 1 and normalizers fill new defaults (no migration).
+- Header versions follow [schema versioning](#schema-versioning): a normalizer may fill the default of a new optional field; any other payload change raises the version and adds a migration step.
 
 ## Asset system
 
 ### The .hasset container
 
-- `magic "BABA" | version u32 | headerLen u32 | header JSON | chunk bytes`. The header holds guid, type, name, engine version, optional parent class, `dependencies`, `requiredDependencies`, `dependencyMetadataVersion`, a metadata `payload` and a chunk table (id, kind, mime, length, locator, sha256). Document bodies live in a `document` chunk.
+- `magic "HAPT" | version u32 | headerLen u32 | header JSON | chunk bytes`. The header holds guid, type, name, engine version, optional parent class, `dependencies`, `requiredDependencies`, `dependencyMetadataVersion`, a metadata `payload` and a chunk table (id, kind, mime, length, locator, sha256). Document bodies live in a `document` chunk.
 - Header keys serialise sorted, so files are byte-stable (hashing, dedup, goldens).
 - Header-only reads are a first-class codec operation; the registry indexes a whole project without touching payloads.
 - **thin** (in-project, deps by guid) vs **bundled** (deps embedded as nested chunks, deduped by hash on import).
@@ -174,9 +180,11 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Schema versioning
 
-- Every header carries `version`; each type may own ordered N → N+1 migration steps applied on load.
-- The engine is unreleased: no type registers a step and backward compatibility is not a goal. Older versions are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
-- A step added later is tested with a committed golden of the released version it reads. Migration prompts once and never rewrites untouched files without saying so.
+- Every header carries `version`; each type owns ordered N → N+1 migration steps applied on load.
+- Migrations are on from the first release. `RELEASED_VERSIONS` in `packages/assets/src/migration.ts` records the version each type was released at, and every released version stays readable: a format change raises the type's current version and adds a step from the previous one to `MIGRATIONS`. A type added later joins `RELEASED_VERSIONS` at its first version.
+- Each step is tested with a committed golden of the version it reads (`packages/assets/src/__fixtures__/migrations/<Type>-v<N>.hasset`, written before the format changes); `migration.test.ts` fails without it.
+- Versions older than the release are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
+- Migration prompts once and never rewrites untouched files without saying so.
 
 ### Texture compression decision
 
@@ -231,8 +239,9 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
   - Log: severity + category to the Output Log and a capped ring buffer that survives without the console UI.
   - Print: wildcard value through `formatValue`, keyed entries replace in place, newest first, clipped; HUD in Play and the player regardless of debugger bundling.
   - Draw Debug: world-space wireframes through commands; duration 0 lasts one simulation tick.
+  - Assert, Assert Equal, Assert Is Valid: a failed check reports `Assertion failed: <message> (<detail>)` as an Error log (category Assert) plus a `runtime.assert` diagnostic mapped to the node, every time, and never throws; execution continues at `then`. Assert Equal compares with `scriptValuesEqual` (plain data by value, other objects by identity); Assert Is Valid matches Is Valid (`!= null`).
   - ExecuteConsoleCommand: works in every build; a stripped command returns failure with a message rather than throwing.
-  - Print, Print String and Draw Debug default to **Development Only**: kept in editor Play and Preview Build, skipped by release export codegen (`stripDevelopmentOnly`). Any node can carry the flag.
+  - Print, Print String, the Assert family and Draw Debug default to **Development Only**: kept in editor Play and Preview Build, skipped by release export codegen (`stripDevelopmentOnly`). Any node can carry the flag.
 - **Validation**: one pure validator in `scripting` (catalog packages register rules through a hook; BT structure uses `validateBehaviourTree` with the same diagnostic shape). Same code runs on edit (250 ms debounce), on save, before Preview (the scene being played, GameInstance, subsystems, the classes they reference, enabled plugin editor objects), on export and in CI.
 - Diagnostic shape: severity, message, `assetGuid`, `graphId`, `nodeId`, optional `pinId` / `relatedNodeId`, stable `code` (`type.mismatch`, `exec.cycle`, …). Compiler Results, node badges, Content Browser overlays and the session report share it.
 - Rule families: structural (unrooted nodes are omitted, not warned), pin typing (data inputs take one wire; exec inputs fan in; scripting exec outputs drive one wire), references, signatures, semantic, ExecuteJavaScript parse, behaviour tree. Export-preset rules (for example a debug-tier `ExecuteConsoleCommand`) run only at export.
@@ -272,7 +281,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Stats HUD on the main thread at about 5 Hz, splitting render, script and physics time; memory shown as accounted bytes; per-channel bridge traffic. HUDs never `setState` at 60 Hz.
 - The trace recorder spills `.htrace` (same container format) to derived data; with input stream and RNG seed it replays through the headless harness.
 - Release exports honour bundle-debugger and `stripDevelopmentOnly`; Preview Build always bundles the debugger and keeps Development Only nodes.
-- Preview session report: uncaught worker errors, Error logs, engine assertions and BT node throws (a BT Failure is control flow, never an error), deduplicated by `(code, assetGuid, nodeId)` with counts and a per-session cap; stack frames map to nodes through anchor tables; WebKit and V8 stack formats both parse. The report is nonmodal and only its own Close, title-bar close or Escape pressed while focus is inside it dismiss it; Escape elsewhere reaches the editor. A row opens the asset that owns the entry (Class scripts report their asset path; trees, Scenes, Scene Layers and Models their guid), focuses the node (a function graph's tab comes forward) and moves the keyboard into that document; an entry with no openable asset reads **No Source**, and a refused open is explained in the report.
+- Preview session report: uncaught worker errors, Error logs, failed Assert nodes and BT node throws (a BT Failure is control flow, never an error), deduplicated by `(code, assetGuid, nodeId)` with counts and a per-session cap; stack frames map to nodes through anchor tables; WebKit and V8 stack formats both parse. The report is nonmodal and only its own Close, title-bar close or Escape pressed while focus is inside it dismiss it; Escape elsewhere reaches the editor. A row opens the asset that owns the entry (Class scripts report their asset path; trees, Scenes, Scene Layers and Models their guid), focuses the node (a function graph's tab comes forward) and moves the keyboard into that document; an entry with no openable asset reads **No Source**, and a refused open is explained in the report.
 - **Simulate** is a Debug-menu **Play Mode** that runs the open world Scene in its Scene Viewport with live runtime edits. **Keep Simulation Changes** (Engine Settings > Debugger, off by default) applies the complete final persistable scene as one **Apply Simulation Changes** undo step when it stops; a session holding unsupported scene instances, scene transitions or resources can only be discarded, never partially applied.
 - Simulation graph debugging: with a Class, Behaviour Tree or Animation Graph open, a toolbar **Debug Instance** select follows one live object that runs it (a Class's exact instances, or the components that run the tree or graph); its nodes, wires and pins flash for a quarter second when they run. Class pins show their last value on hover or label tap; Behaviour Tree nodes show **Running**, **Success** or **Failure**; an Animation Graph flashes the states it samples and the transitions it takes. Editor-only, read-only, Simulation-only and free when unobserved.
 
