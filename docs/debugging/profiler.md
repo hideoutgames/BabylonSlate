@@ -24,7 +24,9 @@ Choose a view:
 | Timeline | Every sample as a table. Switch between **Completed Frames**, **Runtime Ticks** and, when available, **GPU Queries**. **Previous Over Budget** and **Next Over Budget** jump between slow samples. |
 | Frame Report | The result of **Capture Frame**. |
 
-Only one recording or frame capture runs at a time. The window keeps the latest result. **Copy** puts it on the clipboard as JSON, **Export** downloads it as a file, and **Open Profile** loads a saved one.
+Only one recording or frame capture runs at a time. The window keeps the latest recording and the latest frame capture, so capturing a frame does not replace a recording. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report.
+
+In **Timeline**, select any sample in the chart, the table or the **Sample** field; the table scrolls to it. On a narrow screen the sample's details sit under the table.
 
 ## Capture a frame
 
