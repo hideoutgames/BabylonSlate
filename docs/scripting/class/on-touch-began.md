@@ -19,5 +19,5 @@ Runs when a finger, a pen or the left mouse button touches the game view.
 
 - Runs once for each new touch in a tick, in the order the touches began.
 - A new touch takes the lowest finger number not in use, starting at 0. Use [Find Touch](find-touch.md) to follow it in later ticks.
-- Touches that start on a [2D Joystick](../../components/2d-joystick.md) or another on-screen control in a Scene Layer are not reported.
+- Touches that start on a [2D Joystick](../../components/2d-joystick.md), or on a Scene Layer control such as a [2D Slider](../../components/2d-slider.md), [2D Checkbox](../../components/2d-checkbox.md) or [2D Text Input](../../components/2d-text-input.md), belong to that control and are not reported. A [2D Button](../../components/2d-button.md) press is still reported.
 - Only in event graphs of classes that support [**Event Tick**](event-tick.md), not in functions or Animation Graphs.

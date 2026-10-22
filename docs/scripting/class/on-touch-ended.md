@@ -18,6 +18,6 @@ Runs when a touch lifts from the game view or is cancelled.
 
 ## Notes
 
-- A touch is cancelled when the device takes it over for a system gesture, when the game loses focus, or when a scroll box in a Scene Layer starts scrolling with it. A cancelled touch ends where it last moved.
+- A touch is cancelled when the device interrupts it, for example for a system gesture, or when a [2D Scroll Box](../../components/2d-scroll-box.md) starts scrolling with it. A cancelled touch ends where it last moved.
 - A tap that begins and ends within one tick runs [On Touch Began](on-touch-began.md) and then this node.
 - Only in event graphs of classes that support [**Event Tick**](event-tick.md), not in functions or Animation Graphs.

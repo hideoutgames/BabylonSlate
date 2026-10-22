@@ -35,7 +35,7 @@ For an Input Axis, set **Value** to **1D · Number** or **2D · X and Y**. **Add
 
 - **Gamepads:** up to four. Buttons use layout-neutral names such as **Face Button Down**, **Left Bumper** and **D-Pad Up**, so one binding works for any standard controller.
 - **Mouse:** Left, Middle, Right, Back and Forward buttons.
-- **Touch:** the first finger on the screen acts as **Mouse Left**, so a Mouse Left binding also responds to taps. Every finger is also available to graphs, see [Touch](#touch). For on-screen controls, build a [Scene Layer](../scenes/scene-layers.md) with buttons, or add a [2D Joystick](../components/2d-joystick.md) and bind its **Joystick X**, **Joystick Y**, **D-Pad X** or **D-Pad Y** axis with a **Touch** control. A finger on a 2D Joystick or another on-screen control is used only by that control: it does not also act as Mouse Left.
+- **Touch:** the first finger on the screen acts as **Mouse Left**, so a Mouse Left binding also responds to taps. Every finger is also available to graphs, see [Touch](#touch). For on-screen controls, build a [Scene Layer](../scenes/scene-layers.md) with buttons, or add a [2D Joystick](../components/2d-joystick.md) and bind its **Joystick X**, **Joystick Y**, **D-Pad X** or **D-Pad Y** axis with a **Touch** control. A finger on a 2D Joystick, or on a Scene Layer control such as a 2D Slider, 2D Checkbox or 2D Text Input, is used only by that control: it does not also act as Mouse Left. A 2D Button press still does.
 
 ## Respond to input in a graph
 
@@ -90,7 +90,7 @@ Each node also returns the whole touch as a **Touch** structure:
 | Phase | **Began**, **Moved**, **Stationary**, **Ended** or **Cancelled** this tick. |
 | Type | **Finger**, **Pen** or **Mouse**. |
 
-A touch that ends is still listed for that one tick, with its **Phase** set to **Ended**, or **Cancelled** when the device or a Scene Layer scroll box took it over. Touches on a 2D Joystick or another on-screen control in a Scene Layer are left to that control and never appear in the touch nodes.
+A touch that ends is still listed for that one tick, with its **Phase** set to **Ended**, or **Cancelled** when the device or a 2D Scroll Box took it over. Touches on a 2D Joystick or a Scene Layer control such as a 2D Slider are left to that control and never appear in the touch nodes.
 
 ## In this section
 
