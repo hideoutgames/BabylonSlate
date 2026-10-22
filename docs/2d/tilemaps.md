@@ -21,9 +21,20 @@ Select one or more tiles, then edit them in the **Inspector**. Edits apply to ev
 | Chain Points | For Chain collision: points written as `x,y x,y …` in tile units, from 0,0 at the tile's bottom-left to 1,1 at its top-right. |
 | Tile Flags | Eight on/off flags stored with the tile. |
 | Animation Frames | Tile numbers to cycle through, separated by commas. Leave empty for a still tile. |
-| Frame Duration MS | Length of each animation frame. Default 100. |
+| Frame Duration | Length of each animation frame. Default 100. |
+| Terrain, Terrain Neighbours | Put the tile in a terrain and mark where its artwork continues. See [Terrains](#terrains). |
 
 Turn on **Paint Collision** in the **Preview** toolbar to copy the current tile's collision onto each tile you tap or select.
+
+## Terrains
+
+A terrain paints edges and corners for you. Instead of placing each left end, top and corner piece by hand, you paint with the terrain and every cell takes the tile that matches its neighbours.
+
+1. In the Tileset's **Inspector**, under **Terrains**, tap **Add Terrain** and choose its **Style**: **4 Sides (16)** matches the four side neighbours; **Blob (47)** also matches corners and gives inner corners.
+2. Select the terrain's tiles and set **Terrain** on them.
+3. For each tile, press the **Terrain Neighbours** its artwork continues into.
+
+Your sheet does not need every piece. Where one is missing, the terrain paints the closest tile it has, preferring a tile that draws no edge inside the terrain. The [Tileset](../assets/tileset.md#terrains) page has the details.
 
 ## Paint a Tilemap
 
@@ -42,6 +53,19 @@ Turn on **Paint Collision** in the **Preview** toolbar to copy the current tile'
 | Picker | Picks the tile you tap as the brush. |
 
 One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step.
+
+## Paint with terrains
+
+1. In the **Palette**, tap a terrain. Terrains sit above their Tileset's tiles, and the **Paint** toolbar shows the terrain's name.
+2. Paint with **Brush**, **Rect**, **Bucket** or **Stamp**. The cells you paint, and the terrain tiles around them, switch to the pieces that fit. The whole stroke is still one undo step.
+3. Use the **Eraser** to clear cells; the terrain tiles around them update too.
+4. Tap a single tile, or tap the terrain again, to go back to painting single tiles.
+
+- Only tiles of the same terrain join. Single tiles and other terrains count as empty.
+- Beyond the edge of the map counts as the same terrain, so ground painted up to the edge carries on past it.
+- **Bucket** with a terrain fills the connected tiles of the terrain you tap, whatever their pieces.
+- Painting single tiles never changes the tiles around them, so you can place a special piece by hand.
+- Changing a terrain in its Tileset does not repaint existing maps. Paint over the cells to update them.
 
 ## Map and layer settings
 
