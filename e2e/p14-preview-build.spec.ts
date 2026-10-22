@@ -1,8 +1,107 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import {
+  createActor,
+  createDefaultScene,
+  createDefaultSceneLayer,
+  createText2DComponent,
+  MAIN_SCENE_FILE,
+  PROJECT_FILE,
+} from "../packages/core/src/index.ts";
+import { encodeAssetDocument } from "../packages/assets/src/asset-document";
+import { createFontPayload } from "../packages/assets/src/font-payload";
+import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
+import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
+import { openMinimalTestProject } from "./minimal-project";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 import { previewPhysicsScene, previewManyLightsScene } from "./preview-scene-fixture";
 import { expectGreenIllumination, expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
+
+const COLD_FONT_GUID = "00000000-0000-4000-8000-0000000000f1";
+const COLD_FONT_FAMILY = "Cold Load Onest";
+const COLD_GLYPHS = 10;
+type Text2DLayout = { name: string; fontStack: string; width: number };
+
+/**
+ * A Font used by explicit and project-default 2D Text on a Scene Layer. Each
+ * pair draws ten "0"s and ten "1"s: Onest's "1" is far narrower than its "0",
+ * while generic fallback faces draw both digits at one width.
+ */
+async function coldFontProject(fontBytes: Uint8Array) {
+  const files = await minimalProjectFiles();
+  const versions = createDefaultMigrationRegistry();
+  const font = createFontPayload(COLD_FONT_FAMILY, { representations: { source: true } }) as unknown as Record<string, unknown>;
+  files.set("assets/ColdLoadOnest.babasset", await encodeAssetDocument(
+    { guid: COLD_FONT_GUID, type: "Font", name: COLD_FONT_FAMILY, version: versions.currentVersion("Font") || 1, payload: font },
+    { headerPayload: font, extraChunks: [{ id: "source", kind: "font", mime: "font/woff2", data: fontBytes }] },
+  ));
+  const layerGuid = "00000000-0000-4000-8000-0000000000f2";
+  const layer = createDefaultSceneLayer();
+  layer.actors = (["explicit", "default"] as const).flatMap((route, row) =>
+    (["narrow", "wide"] as const).map((digits, column) => {
+      const text = createText2DComponent(`${route}-${digits}`);
+      text.properties = {
+        ...text.properties, text: (digits === "narrow" ? "1" : "0").repeat(COLD_GLYPHS), size: 48,
+        fontAssetGuid: route === "explicit" ? COLD_FONT_GUID : null, wrapWidth: 0, wrapHeight: 0,
+      };
+      return createActor(`${route}-${digits}`, `${route} ${digits}`, {
+        classId: "SceneLayerActor",
+        transform: { position: [column * 8 - 4, 3 - row * 6, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [text],
+      });
+    }));
+  files.set("assets/ColdFont.scenelayer.babasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "ColdFont",
+    version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }));
+  const scene = createDefaultScene();
+  scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+  scene.settings.sceneLayers = [{ assetGuid: layerGuid, zOrder: 0, enabled: true }];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main",
+    version: versions.currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }));
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.fonts.defaultFontGuid = COLD_FONT_GUID;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  return files;
+}
+
+/** Per-glyph "0" minus "1" advance with the Font loaded under its own probe family, and with the generic fallback alone. */
+async function referenceDigitSpread(page: Page, fontBytes: Uint8Array) {
+  return page.evaluate(async (bytes) => {
+    const face = new FontFace("Cold Load Probe", new Uint8Array(bytes));
+    document.fonts.add(face);
+    await face.load();
+    const context = document.createElement("canvas").getContext("2d")!;
+    const spread = (stack: string) => {
+      context.font = `normal 400 48px ${stack}`;
+      return context.measureText("0").width - context.measureText("1").width;
+    };
+    const result = { custom: spread('"Cold Load Probe"'), fallback: spread("sans-serif") };
+    document.fonts.delete(face);
+    return result;
+  }, [...fontBytes]);
+}
+
+/**
+ * The laid-out width of drawn glyph cells. Both runs of a pair have the same
+ * glyph count, so per-cell padding cancels and their difference is the face's
+ * own advances: a silent fallback face gives about zero.
+ */
+async function expectCustomFaceLaidOut(read: () => Promise<Text2DLayout[]>, perGlyphSpread: number) {
+  let rows: Text2DLayout[] = [];
+  const ids = ["explicit-narrow", "explicit-wide", "default-narrow", "default-wide"];
+  const row = (id: string) => rows.find((entry) => entry.name.endsWith(`|${id}`) && entry.width > 0);
+  await expect.poll(async () => {
+    rows = await read();
+    return ids.every((id) => row(id)) || JSON.stringify(rows);
+  }, { timeout: 30_000 }).toBe(true);
+  for (const route of ["explicit", "default"]) {
+    const spread = row(`${route}-wide`)!.width - row(`${route}-narrow`)!.width;
+    // Glyph cells are whole pixels, so each of the ten glyphs may round by up to one.
+    expect(Math.abs(spread - COLD_GLYPHS * perGlyphSpread), `${route} Font text: ${JSON.stringify(rows)}`)
+      .toBeLessThanOrEqual(COLD_GLYPHS);
+  }
+}
 
 async function previewSlotMaterialNames(page: Page): Promise<string[]> {
   const root = page
@@ -125,6 +224,34 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("play-preview").click();
     await waitForPreviewBuildBoot(page);
     await expectGreenIllumination(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas"));
+    await page.getByTestId("preview-build-close").click();
+  });
+
+  test("custom Fonts lay out their own faces on a cold load in Play and Preview Build", async ({ page }) => {
+    test.setTimeout(180_000);
+    const fontBytes = new Uint8Array(await readFile(path.join(process.cwd(), "engine-content/fonts/Onest/Onest-Latin-Variable.woff2")));
+    const probe = await page.context().newPage();
+    const reference = await referenceDigitSpread(probe, fontBytes);
+    await probe.close();
+    // Otherwise a silent fallback could not be told apart from the Font.
+    expect(Math.abs(reference.custom - reference.fallback)).toBeGreaterThan(4);
+    await openMinimalTestProject(page, await coldFontProject(fontBytes));
+    await openMainScene(page);
+    // Play must register the face itself: nothing in the editor has loaded it yet.
+    expect(await page.evaluate((family) => [...document.fonts].some((face) => face.family.replace(/"/g, "") === family), COLD_FONT_FAMILY)).toBe(false);
+    await clickPlayAndWaitForOverlay(page);
+    await expectCustomFaceLaidOut(() => page.evaluate(() =>
+      (globalThis as unknown as { __babylonslatePlayTest?: { text2dLayouts: () => Text2DLayout[] } })
+        .__babylonslatePlayTest?.text2dLayouts() ?? []), reference.custom);
+    await page.getByTestId("play-overlay-close").click();
+    // The Preview Build player is a fresh document, so its faces load cold as in a served export.
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    const root = await waitForPreviewBuildBoot(page);
+    await expectCustomFaceLaidOut(() => root.evaluate(() =>
+      (globalThis as unknown as { __babylonslatePlayerTest?: { text2dLayouts: () => Text2DLayout[] } })
+        .__babylonslatePlayerTest?.text2dLayouts() ?? []), reference.custom);
     await page.getByTestId("preview-build-close").click();
   });
 

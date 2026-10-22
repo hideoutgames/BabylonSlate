@@ -107,6 +107,7 @@ export type PlayerBootHandle = {
   shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
+  text2dLayouts: () => ReturnType<EngineHandle["playText2DLayouts"]>;
   /** Active owned post-process/effect passes, or null once halted. */
   postProcessPassCount: () => number | null;
   /** Prepared FrameGraph task names, or null once halted. */
@@ -126,7 +127,7 @@ export type PlayerBootHandle = {
  * a tick rate from either host.
  */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
-  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" |
+  "visuals" | "meshMaterialNames" | "text2dLayouts" | "rendering" | "shadowDiagnostics" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 > & { tickIndex: () => number };
 
@@ -1243,6 +1244,7 @@ function initializePlayer(
       shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
+      text2dLayouts: () => handle.playText2DLayouts(),
       postProcessPassCount: () =>
         halted ? null : handle.postProcessPassCount(),
       renderTasks: () => (halted ? null : handle.renderTaskNames()),
