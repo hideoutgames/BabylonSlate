@@ -77,6 +77,16 @@ describe("SceneLayer joystick", () => {
     expect(value()).toEqual({ x: 0, y: 0 });
   });
 
+  it("measures travel through a moved, turned and zoomed layer camera", () => {
+    const { compositor, input, hits, value } = setup({ deadZone: 0 });
+    // 50 px per unit; turned 90° counter-clockwise, the stick at layer (0, 0) is 1 unit right of the view centre.
+    compositor.setCamera("controls", { x: 0, y: -1, rotation: 90, zoom: 2 });
+    expect(input.down(1, hits(450, 225), 450, 225)).toBe(true);
+    input.move(1, 475, 225); // half a unit along the view's right: layer +Y.
+    expect(value().x).toBeCloseTo(0);
+    expect(value().y).toBeCloseTo(0.5);
+  });
+
   it("keeps another held joystick's contribution when one finger releases", () => {
     const { layer, input, hits, value } = setup({ deadZone: 0 });
     const second = createJoystick2DMesh(layer.scene, "second", { radius: 2, joystickRadius: 1, deadZone: 0 });

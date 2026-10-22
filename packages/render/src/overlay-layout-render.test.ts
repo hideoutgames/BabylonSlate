@@ -415,4 +415,13 @@ describe("SceneLayer clip draw hooks", () => {
     apply(rect);
     expect(drawn(glyph)).toEqual(clipped);
   });
+
+  it("bounds a clip seen through a turned Scene Layer camera by all four of its corners", () => {
+    const { scene, apply, glyph, drawn } = clippedPanel("runtime");
+    (scene.activeCamera as UniversalCamera).rotation.z = Math.PI / 4;
+    scene.updateTransformMatrix(true);
+    apply(rect);
+    // The 4-unit square turned 45° spans 4√2 units (pixels 41.4..86.6) on both axes.
+    expect(drawn(glyph)).toEqual([41, 41, 46, 46]);
+  });
 });

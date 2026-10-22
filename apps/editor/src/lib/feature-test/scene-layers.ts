@@ -19,7 +19,7 @@ import {
   type FeatureTestClassRef,
   type FeatureTestContext,
 } from "./context";
-import { classGraph, getVar, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
+import { classGraph, gChain, getVar, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
@@ -38,6 +38,7 @@ export const FEATURE_TEST_SCENE_LAYER_NAMES = {
   switcher: "FT_UICardSwitcher",
   clickButton: "FT_UIClickButton",
   pitCounter: "FT_UIPitCounter",
+  cameraRig: "FT_UICameraRig",
 } as const;
 
 /**
@@ -55,6 +56,8 @@ export const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   painterPixelsPerUnit: 64,
   hudZOrder: 10,
   overlayPhysicsZOrder: 5,
+  /** Seconds each FT_UICameraRig tween takes. */
+  cameraTweenSeconds: 1.5,
 } as const;
 
 const NAMES = FEATURE_TEST_SCENE_LAYER_NAMES;
@@ -83,7 +86,7 @@ interface LayerRefs {
   overlayMaterial: string;
   panelTexture: string;
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
-  classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter", PlacedClass>;
+  classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
 }
 
 /** A Class plus the prefab components its layer instances copy. */
@@ -133,6 +136,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
       switcher: await saveSwitcher(ctx, base),
       clickButton: await saveClickButton(ctx, base),
       pitCounter: await savePitCounter(ctx, base),
+      cameraRig: await saveCameraRig(ctx),
     },
   };
 
@@ -671,6 +675,7 @@ function overlayPhysicsLayer(refs: LayerRefs): SerializedSceneLayer {
     }));
   }
   add(classInstance(refs.classes.pitCounter, "ft-ui-physics-pit-counter", "Pit Counter", { position: [0, -6.1] }));
+  add(classInstance(refs.classes.cameraRig, "ft-ui-physics-camera-rig", "Camera Rig"));
   return layer;
 }
 
@@ -719,6 +724,41 @@ async function savePitCounter(ctx: FeatureTestContext, refs: ClassBase): Promise
   });
   const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.pitCounter, parentClass: "SceneLayerActor", graph });
   return { ref, components };
+}
+
+/**
+ * Begin Play moves this layer's camera through every Scene Layer camera node:
+ * it tweens the location, zoom and rotation from their current values (Get
+ * nodes into A), then sets them back so the pit ends where it was authored.
+ */
+async function saveCameraRig(ctx: FeatureTestContext): Promise<PlacedClass> {
+  const seconds = { "default:duration": KNOBS.cameraTweenSeconds, "default:curve": "sineInOut" };
+  const graph = classGraph({
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("layer", "scene-layer.getOwningSceneLayer", 0, 200),
+      gNode("location", "scene-layer.getCameraLocation", 240, 300),
+      gNode("zoom", "scene-layer.getCameraZoom", 480, 300),
+      gNode("rotation", "scene-layer.getCameraRotation", 720, 300),
+      gNode("pan", "tween.sceneLayerCameraLocation", 240, 0, { ...seconds, "default:b": { x: 0, y: -0.6 } }),
+      gNode("zoom-in", "tween.sceneLayerCameraZoom", 480, 0, { ...seconds, "default:b": 1.15 }),
+      gNode("turn", "tween.sceneLayerCameraRotation", 720, 0, { ...seconds, "default:b": 4 }),
+      gNode("reset-rotation", "scene-layer.setCameraRotation", 960, 0, { "default:rotation": 0 }),
+      gNode("reset-zoom", "scene-layer.setCameraZoom", 1200, 0, { "default:zoom": 1 }),
+      gNode("reset-location", "scene-layer.setCameraLocation", 1440, 0, { "default:location": { x: 0, y: -0.3 } }),
+      gNode("offset", "scene-layer.addCameraOffset", 1680, 0, { "default:delta": { x: 0, y: 0.3 } }),
+    ],
+    edges: [
+      ...gChain("begin", "pan", "zoom-in", "turn", "reset-rotation", "reset-zoom", "reset-location", "offset"),
+      ...["location", "zoom", "rotation", "reset-rotation", "reset-zoom", "reset-location", "offset"]
+        .map((target) => gWire("layer", "out", target, "layer")),
+      ...["pan", "zoom-in", "turn"].map((target) => gWire("layer", "out", target, "target")),
+      gWire("location", "out", "pan", "a"),
+      gWire("zoom", "out", "zoom-in", "a"),
+      gWire("rotation", "out", "turn", "a"),
+    ],
+  });
+  return saveOverlayClass(ctx, NAMES.cameraRig, "SceneLayerActor", [], graph);
 }
 
 function body(id: string, motionType: "static" | "dynamic"): SerializedComponent {

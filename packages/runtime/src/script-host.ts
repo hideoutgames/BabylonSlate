@@ -15,6 +15,8 @@ import {
   inverseQuat,
   inverseRotator,
   isSceneLayerAnchorActor,
+  SCENE_LAYER_DEFAULT_CAMERA,
+  type SceneLayerCamera,
   lerpRotator,
   lookAtRotator,
   multiplyQuats,
@@ -65,6 +67,7 @@ import {
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
 import { actorLabel } from "./actor-world-transform";
+import { splineComponentFunction } from "./spline-script";
 import { isInfiniteLoopError, type ScriptLoopLocation } from "@babylonslate/debugger";
 import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
@@ -260,6 +263,12 @@ export interface ScriptHostServices {
     layerGuid: string,
     materialGuid: string,
   ): void;
+  /** A live Scene Layer instance's camera; null once the layer is gone. */
+  getSceneLayerCamera?(layerGuid: string): SceneLayerCamera | null;
+  /** Change any of a layer camera's centre, roll and zoom; values that are not finite numbers keep the current ones. */
+  setSceneLayerCamera?(layerGuid: string, changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown }): void;
+  /** The live Scene Layer an actor (or a component's actor) belongs to; null for world actors. */
+  getOwningSceneLayer?(target: BObject | null): SceneLayer | null;
   playSound?(
     asset: string,
     volume?: number,
@@ -659,6 +668,14 @@ export interface ScriptContext {
     layer: BObject | string | null | undefined,
     materialGuid: string,
   ): void;
+  setSceneLayerCameraLocation(layer: BObject | string | null | undefined, location: unknown): void;
+  addSceneLayerCameraOffset(layer: BObject | string | null | undefined, delta: unknown): void;
+  getSceneLayerCameraLocation(layer: BObject | string | null | undefined): { x: number; y: number };
+  setSceneLayerCameraRotation(layer: BObject | string | null | undefined, degrees: unknown): void;
+  getSceneLayerCameraRotation(layer: BObject | string | null | undefined): number;
+  setSceneLayerCameraZoom(layer: BObject | string | null | undefined, zoom: unknown): void;
+  getSceneLayerCameraZoom(layer: BObject | string | null | undefined): number;
+  getOwningSceneLayer(target: unknown): SceneLayer | null;
   getScalability(): ScalabilitySnapshot | null;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
   setMaterialFloatParameter(
@@ -792,6 +809,8 @@ export type HostContextKey =
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
+  | "setSceneLayerCameraLocation" | "addSceneLayerCameraOffset" | "getSceneLayerCameraLocation" | "setSceneLayerCameraRotation"
+  | "getSceneLayerCameraRotation" | "setSceneLayerCameraZoom" | "getSceneLayerCameraZoom" | "getOwningSceneLayer"
   | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"
   | "getRenderTargetTextureTarget" | "captureRenderTarget" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
@@ -1429,6 +1448,15 @@ export class ScriptHost {
       if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
       return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
     };
+    const layerCamera = (layer: BObject | string | null | undefined): SceneLayerCamera => {
+      const guid = sceneLayerGuidOf(layer);
+      return (guid ? services.getSceneLayerCamera?.(guid) : null) ?? SCENE_LAYER_DEFAULT_CAMERA;
+    };
+    const setLayerCamera = (layer: BObject | string | null | undefined, changes: Parameters<NonNullable<ScriptHostServices["setSceneLayerCamera"]>>[1]) => {
+      const guid = sceneLayerGuidOf(layer);
+      if (guid) services.setSceneLayerCamera?.(guid, changes);
+    };
+    const vector2 = (value: unknown) => value as { x?: unknown; y?: unknown } | null | undefined;
     const members: HostContextMembers = {
       getSaveData: <TData extends object>() => this.saveGameService().getSaveData() as TData,
       getSaveField: (id, type, array) => readField(this.saveGameService().getField(id), type, array),
@@ -1695,6 +1723,22 @@ export class ScriptHost {
           );
         }
       },
+      setSceneLayerCameraLocation: (layer, location) => {
+        setLayerCamera(layer, { x: vector2(location)?.x, y: vector2(location)?.y });
+      },
+      addSceneLayerCameraOffset: (layer, delta) => {
+        const camera = layerCamera(layer);
+        setLayerCamera(layer, { x: camera.x + Number(vector2(delta)?.x), y: camera.y + Number(vector2(delta)?.y) });
+      },
+      getSceneLayerCameraLocation: (layer) => {
+        const camera = layerCamera(layer);
+        return { x: camera.x, y: camera.y };
+      },
+      setSceneLayerCameraRotation: (layer, degrees) => { setLayerCamera(layer, { rotation: degrees }); },
+      getSceneLayerCameraRotation: (layer) => layerCamera(layer).rotation,
+      setSceneLayerCameraZoom: (layer, zoom) => { setLayerCamera(layer, { zoom }); },
+      getSceneLayerCameraZoom: (layer) => layerCamera(layer).zoom,
+      getOwningSceneLayer: (target) => services.getOwningSceneLayer?.(target instanceof BObject ? target : null) ?? null,
       getScalability: () => services.getScalability?.() ?? null,
       requestScalability: (request) => services.requestScalability?.(request) ?? {
         revision: 0, status: "unsupported", message: "Scalability requires an active Play or player session.",
@@ -2514,6 +2558,10 @@ export class ScriptHost {
       component.setVariable("offsets", properties.offsets);
       this.applyComponentVariable(component, "offsets", properties.offsets);
       return { success: true };
+    }
+    if (component.classId === "SplineComponent") {
+      const result = splineComponentFunction(component, name, args);
+      if (result) return result;
     }
     if (component.classId === "MovementComponent") {
       if (!this.canInvokeOwner(component)) return {};

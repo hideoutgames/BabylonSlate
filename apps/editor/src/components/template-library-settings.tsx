@@ -49,14 +49,14 @@ export function TemplateLibrarySettings() {
         {BUILT_IN_TEMPLATE_NAMES.map((name) => (
           <div
             key={name}
-            className="flex min-h-11 items-center justify-between gap-3 text-sm"
+            className="flex min-h-[var(--chrome-row,28px)] items-center justify-between gap-3 text-sm pointer-coarse:min-h-11"
           >
             <span>{name}</span>
             <span className="text-xs text-muted-foreground">Built-in</span>
           </div>
         ))}
         {templates.map((template) => (
-          <div key={template.id} className="flex min-h-11 items-center text-sm">
+          <div key={template.id} className="flex min-h-[var(--chrome-row,28px)] items-center text-sm pointer-coarse:min-h-11">
             {template.name}
           </div>
         ))}

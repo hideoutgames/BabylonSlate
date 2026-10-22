@@ -17,24 +17,27 @@ export interface FolderPickerDialogProps {
   confirmLabel: string;
   /** One tree per content root. */
   folderTrees: readonly FolderNode[];
+  /** Folder chosen when the dialog opens (the current location); none by default. */
+  initialPath?: string | null;
   /** Folders that show muted and cannot be chosen. */
   isDisabled?: (path: string) => boolean;
   onConfirm: (path: string) => void;
   "data-testid"?: string;
 }
 
-/** Choose one folder of the registry's content roots. Mount it per use so the choice starts empty. */
+/** Choose one folder of the registry's content roots. Mount it per use so the choice starts from `initialPath`. */
 export function FolderPickerDialog({
   open,
   onOpenChange,
   title,
   confirmLabel,
   folderTrees,
+  initialPath = null,
   isDisabled,
   onConfirm,
   "data-testid": testId = "folder-picker-dialog",
 }: FolderPickerDialogProps) {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialPath);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" data-testid={testId}>

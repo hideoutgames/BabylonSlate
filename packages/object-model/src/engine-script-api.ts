@@ -617,6 +617,24 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "SplineComponent",
+    variables: [
+      { name: "Closed Loop", typeId: "bool", propertyKey: "closed", getOnly: true },
+      { name: "Curvature", typeId: "float", propertyKey: "curvature", getOnly: true },
+    ],
+    functions: [
+      { name: "Get Spline Length", runtime: "getSplineLength",
+        description: "Length of the path in world units, following its curve and the actor's and component's transforms.",
+        searchAliases: ["path", "curve", "length"],
+        pins: [EXEC_IN, EXEC_OUT, { name: "length", typeId: "float", direction: "out" }] },
+      { name: "Get Location At Distance Along Spline", runtime: "getSplineLocationAtDistance",
+        description: "World location and travel direction this far along the path from its first point. A Closed Loop wraps around; an open path stops at its ends.",
+        searchAliases: ["path", "curve", "follow", "travel", "direction", "tangent"],
+        pins: [EXEC_IN, EXEC_OUT, { name: "distance", typeId: "float", direction: "in" },
+          { name: "location", typeId: "vec3", direction: "out" }, { name: "direction", typeId: "vec3", direction: "out" }] },
+    ],
+  },
+  {
     classId: "CableComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },

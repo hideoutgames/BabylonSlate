@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   openTestProject,
+  enableTouchLayout,
   waitForSceneViewportReady,
 } from "./open-test-project";
 
@@ -17,6 +18,7 @@ async function expectWithinPhoneViewport(page: Page, locator: Locator) {
 
 test.describe("Phone Content Browser", () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  test.beforeEach(({ page }) => enableTouchLayout(page));
 
   test("browses Assets in the drawer and opens a scene from its selection action", async ({
     page,

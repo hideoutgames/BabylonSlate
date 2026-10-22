@@ -65,7 +65,6 @@ vi.mock("../context/validation-context", () => ({
 }));
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => state.phone,
-  useCoarsePointer: () => false,
 }));
 // Keep document navigation real; isolate unrelated project tools and dialogs.
 vi.mock("./settings-modal", () => ({ SettingsModal: () => null }));

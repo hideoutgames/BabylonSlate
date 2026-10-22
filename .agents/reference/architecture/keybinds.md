@@ -5,7 +5,7 @@ Desktop keyboard shortcuts for Haptic editor commands: chord format, catalog, di
 ## Product decisions
 
 - Buttons and menus stay the primary (touch) affordance. Keybinds only add a desktop path; every command keeps a visible control.
-- Shortcuts are shown as keycaps wherever the command appears and hidden on coarse pointers.
+- Shortcuts are shown as keycaps wherever the command appears and hidden in the touch layout (Compact Mode off).
 - W/A/S/D fly the viewport camera, so viewport tools default to 1 / 2 / 3; settings warn when a tool is bound to W/A/S/D.
 
 ## Ownership
@@ -45,7 +45,7 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 ## Display
 
 - Tooltips show the label plus `ShortcutKeys`; visual keycaps are decorative, `aria-keyshortcuts` carries the semantics.
-- Dropdown, document and pointer-anchored menus hide keycaps on coarse pointers.
+- Dropdown and document menus hide keycaps in the touch layout; pointer-anchored menus hide them on touch-only devices (`hover: none`).
 
 ## Settings and storage
 

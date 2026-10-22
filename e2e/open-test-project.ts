@@ -3,6 +3,21 @@ import { acceptUnsavedPlayPrompts } from "./unsaved-play";
 
 const PROJECT_BOOT_TIMEOUT_MS = 30_000;
 
+/**
+ * Phone specs run on the desktop user agent, where Compact Mode defaults on.
+ * Turn it off on every load so they exercise the touch layout a phone gets.
+ */
+export async function enableTouchLayout(page: Page): Promise<void> {
+  await page.addInitScript((key) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+      localStorage.setItem(key, JSON.stringify({ ...stored, compactMode: false }));
+    } catch {
+      // Frames without storage (about:blank) keep their defaults.
+    }
+  }, "babylonslate:engine-settings");
+}
+
 /** The editor mounts beneath the splash before it accepts input. */
 export async function waitForEditorInteractive(page: Page): Promise<void> {
   await acceptUnsavedPlayPrompts(page);

@@ -21,7 +21,7 @@ Use **Search settings** in either window to find a setting by name. Choosing a r
 
 | Group | Pages |
 | --- | --- |
-| Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, About |
+| Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, Interface, About |
 | Projects | Templates, Engine Plugins, Engine Extensions |
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
@@ -32,10 +32,31 @@ Use **Search settings** in either window to find a setting by name. Choosing a r
 - **Thumbnails**: turn Content Browser thumbnails on or off.
 - **Focus**: which windows stay visible in Focus. See [Windows and Layout](index.md).
 - **Keybinds**: change shortcuts. See [Keyboard Shortcuts](../start/shortcuts.md).
+- **Interface**: **Compact Mode**. See [Compact Mode](#compact-mode).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Editor Extensions](../projects/extensions.md).
 
-Haptic always uses its dark theme.
+## Theme
+
+Choose the editor's colors in **Manage Account > Application** on the Homepage, under **Theme**. Themes belong to this device, like Engine Settings.
+
+- The preview at the top shows how the editor looks with the selected theme. It is a picture only; you can't click it.
+- Pick a theme from the list below the preview. **Default** is the built-in dark theme.
+- Open **Style** to see the color of every part of the editor, grouped into surfaces, text, accents, status, graph, pin and asset type colors.
+- Built-in themes can't be changed. Changing a color while a built-in theme is selected creates a custom theme from it, such as **Default Copy**, and selects it. Later changes edit that custom theme.
+- Custom themes have **Rename** and **Delete**. Deleting the selected theme switches the editor back to **Default**.
+- **Export Theme** saves the selected theme as a `.haptic-theme.json` file. **Import Theme** adds a theme file as a new custom theme and selects it. Colors the file leaves out use **Default**'s colors.
+
+## Compact Mode
+
+**Compact Mode** sets how large the editor's controls are on this device.
+
+- **On**: small buttons, menus and list rows for a mouse, trackpad or keyboard.
+- **Off**: the touch layout, with larger buttons, menu items and rows that are easy to tap.
+
+It is on by default everywhere except on iPhone, iPad and Android. Change it under **Engine Settings > Interface**, or in **Manage Account > Application** on the Homepage. The editor updates as soon as you switch it.
+
+Compact Mode changes only sizes. Touch gestures, such as holding to open a menu or to drag, work in both modes.
 
 ## Project Settings pages
 

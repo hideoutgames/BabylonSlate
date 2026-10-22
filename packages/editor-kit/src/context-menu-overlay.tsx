@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { NestedMenu } from "./nested-menu";
+import { useTouchUi } from "./touch-ui";
 import type { ContextMenuState } from "./use-context-menu";
 
 export interface ContextMenuOverlayProps {
@@ -14,6 +15,7 @@ export function ContextMenuOverlay({
   onClose,
   contentTestId = "context-menu-panel",
 }: ContextMenuOverlayProps) {
+  const touch = useTouchUi();
   useEffect(() => {
     if (!menu?.open) return;
     let awaitingFreshPress = true;
@@ -57,7 +59,7 @@ export function ContextMenuOverlay({
           if (!nextOpen) onClose();
         }}
         anchor={{ x: menu.x, y: menu.y }}
-        size="touch"
+        size={touch ? "touch" : "chrome"}
         contentTestId={contentTestId}
       />
     </>,

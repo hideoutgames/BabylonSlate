@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { normalizeScene } from "./scene";
-import { parseSplineProperties, splineCentreline, type SplinePoint } from "./spline-component";
+import {
+  parseSplineProperties,
+  sampleSplineArcPath,
+  sampleSplinePath,
+  splineArcPath,
+  splineCentreline,
+  type SplinePoint,
+} from "./spline-component";
 
 describe("SplineComponent", () => {
   it("normalizes authored scene points and bounds malformed inputs before sampling", () => {
@@ -61,5 +68,46 @@ describe("SplineComponent", () => {
       expect(line.flat().every(Number.isFinite)).toBe(true);
       for (const point of points) expect(line.some((sample) => sample.every((coordinate, axis) => Math.abs(coordinate - point[axis]!) < 1e-9))).toBe(true);
     }
+  });
+});
+
+describe("Spline travel by distance", () => {
+  const square: SplinePoint[] = [[0, 0, 0], [10, 0, 0], [10, 0, 10], [0, 0, 10]];
+
+  it("wraps a closed loop and clamps an open path to its ends", () => {
+    const loop = splineArcPath(splineCentreline({ points: square, curvature: 0, closed: true }), true);
+    expect(loop.length).toBeCloseTo(40, 10);
+    expect(sampleSplineArcPath(loop, 45).position).toEqual(sampleSplineArcPath(loop, 5).position);
+    expect(sampleSplineArcPath(loop, -5).position).toEqual([0, 0, 5]);
+    const open = splineArcPath(splineCentreline({ points: square, curvature: 0, closed: false }), false);
+    expect(open.length).toBeCloseTo(30, 10);
+    expect(sampleSplineArcPath(open, 99).position).toEqual([0, 0, 10]);
+    expect(sampleSplineArcPath(open, -1).position).toEqual([0, 0, 0]);
+  });
+
+  it("turns the direction smoothly through a corner instead of snapping", () => {
+    const open = splineArcPath(splineCentreline({ points: square, curvature: 0, closed: false }), false);
+    expect(sampleSplineArcPath(open, 1).direction[0]).toBeGreaterThan(0.9);
+    const corner = sampleSplineArcPath(open, 10).direction;
+    expect(corner[0]).toBeCloseTo(Math.SQRT1_2, 10);
+    expect(corner[2]).toBeCloseTo(Math.SQRT1_2, 10);
+    // Along a 100 m curved loop, a sampled direction that snapped at each of its 128 vertices would jump
+    // about 2.8°; blended tangents turn well under 1° per quarter metre.
+    const large = square.map(([x, y, z]): SplinePoint => [x * 10, y, z * 10]);
+    const curved = splineArcPath(sampleSplinePath({ points: large, curvature: 1, closed: true }, { subdivisions: 32 })
+      .map((sample) => sample.position), true);
+    let previous = sampleSplineArcPath(curved, 0).direction;
+    for (let distance = 0.25; distance <= curved.length + 1; distance += 0.25) {
+      const direction = sampleSplineArcPath(curved, distance).direction;
+      const dot = direction[0] * previous[0] + direction[1] * previous[1] + direction[2] * previous[2];
+      expect(dot).toBeGreaterThan(Math.cos(Math.PI / 180));
+      previous = direction;
+    }
+  });
+
+  it("drops repeated points and reports a still direction for a path with no length", () => {
+    const point = splineArcPath([[1, 2, 3], [1, 2, 3]], false);
+    expect(point.length).toBe(0);
+    expect(sampleSplineArcPath(point, 4)).toEqual({ position: [1, 2, 3], direction: [0, 0, 0] });
   });
 });

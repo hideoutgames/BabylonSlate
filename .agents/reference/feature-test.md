@@ -8,7 +8,7 @@ Inventory and rules for the built-in **Feature Test** starter (`apps/editor/src/
 - `index.ts` runs areas in a fixed order so every referenced asset exists before its referrer: imports, audio, materials, scripting types, scripting, rendering, physics, world, animation, particles, AI, 2D, Scene Layers. Area modules then place actors in their zones. Scene documents save last (Scene Layers, sub-scenes, scenes, then the main scene), then the navmesh bake and project settings.
 - Content is deterministic: fixed ids, positions and counts. Only asset guids differ between projects, so tooling finds assets by path or name.
 - Feature Test's own assets live under `assets/FeatureTest/<Area>/`, an Always Package Folder, so Preview Build and export ship the whole showcase. The Basic 3D scaffold keeps its files where it writes them: the startup scene `assets/main.scene.babasset`, Input assets under `assets/Input/`, and the Mannequin (`assets/Mannequin/` plus `assets/Mannequin.class.babasset`), which the areas reuse.
-- Zones sit on a 32 m grid in [`layout.ts`](../../apps/editor/src/lib/feature-test/layout.ts) (`FEATURE_TEST_ZONES`); each has an Outliner folder and a 3D Text label. The static main camera `ft-camera-main` looks over the three zone rows. Landscape and water live in the separate `FT_World` scene.
+- Zones sit on a 32 m grid in [`layout.ts`](../../apps/editor/src/lib/feature-test/layout.ts) (`FEATURE_TEST_ZONES`); each has an Outliner folder and a 3D Text label. The main camera `ft-camera-main` (`FT_RenderCameraTour`) starts at the head of the closed `FEATURE_TEST_CAMERA_TOUR` Spline (`Camera Tour Path`, `FT_RenderCameraPath`) and, in Play, Preview and export, rides it at 6 m/s (about 2.5 min a lap) on a lagging Spring Arm: in front of the first row, low through both gaps between rows, high behind the back row and down the left side. Play-frame measurements of the main scene therefore see a moving view. Landscape and water live in the separate `FT_World` scene.
 
 ## Source content
 
@@ -58,7 +58,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 
 | Zone (center x, z) | Module | Contents |
 | --- | --- | --- |
-| Feature Test hub (0, 0) | `index.ts` | Basic 3D Mannequin (idle Animation Graph, kinematic capsule) and floor. Scene-wide: texture-face skybox, shadowed sun, post-process entry `FT_MatPostGrade`, exponential fog. |
+| Feature Test hub (0, 0) | `index.ts` | Basic 3D Mannequin (idle Animation Graph, kinematic capsule) and floor. Scene-wide: texture-face skybox, shadowed sun, post-process entry `FT_MatPostGrade`, exponential fog, and the camera tour (`rendering.ts`): `FT_RenderCameraTour` Tick wraps Distance with Get Spline Length and follows Get Location At Distance Along Spline on the `FT_RenderCameraPath` Spline. |
 | Meshes And Materials (-32, 0) | `materials.ts` | Every primitive kind; `FT_MatSurface` (colormap, Material Function tint, pulse), `FT_MatSurfaceInstance` and a chained metal instance, scene-owned instance overrides, `FT_MatEmissive` (scrolling bands), `FT_MatGlass` (translucent, WPO ripple, Fresnel rim glow), `FT_MatNoiseMasked` (alpha clip). Holiday models keep their slot Materials; one uses a `materialGuid` override. |
 | Lights And Shadows (32, 0) | `rendering.ts` | Shadowed spot, shadowed point (cube shadows from a pillar ring), three unshadowed color point lights, unshadowed spot, Area Rect Light, Hemispheric Fill Light. |
 | Effects (-64, 0) | `rendering.ts` | Fog Volume around a glowing sphere; x-ray Outline through an occluder wall; lattice Deformer; 3D Text with the facetype Font and the bundled face; Dynamic Runtime Mesh pyramid (`FT_RenderDynamicMesh`, Play only); Spring Arm rig with lag (`FT_RenderSpringArmRig`); orthographic `Effects Ortho Camera`. |
@@ -83,7 +83,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 | `FT_2D` | Orthographic camera over a 16x9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks), decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump, Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area, form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
-| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. `FT_UIPitCounter` counts them each tick with Sphere Overlap Actors (Dynamic) from a layer actor's script, which reads the layer's world rather than main-Scene bodies at the same coordinates; its label updates only on change. `showcollision` draws the pit and boxes in the layer. |
+| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. `FT_UIPitCounter` counts them each tick with Sphere Overlap Actors (Dynamic) from a layer actor's script, which reads the layer's world rather than main-Scene bodies at the same coordinates; its label updates only on change. `showcollision` draws the pit and boxes in the layer. `FT_UICameraRig` runs every Scene Layer camera node on Begin Play: Get Owning Scene Layer, then tweens the layer camera's location, zoom and rotation from their Get values and sets them back to the default, so the pit ends where it was authored. |
 
 ## Scripting, data and settings
 
@@ -118,8 +118,9 @@ Counts are constants in the area modules; changing one changes performance basel
 | `STRESS_FOLIAGE_GRID` | 72x72 | `world.ts` |
 | `LAKE_CAPTURES` | 1 Full Quality capture, 256², every frame (plus its own sun shadow maps each frame) | `world.ts` |
 | `GUARD_COUNT` | 4 (crowd cap 32) | `ai.ts` |
-| `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400 | `scene-layers.ts` |
+| `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400, camera tweens 1.5 s | `scene-layers.ts` |
 | `CLUSTER_*`, `CAPTURES`, `LOD_DISTANCES` | 48 lights, 3 captures, 5 menorahs | `rendering.ts` |
+| `FEATURE_TEST_CAMERA_TOUR` | 22-point loop at 6 m/s | `layout.ts` |
 
 ## On-device check and benchmark
 
@@ -206,7 +207,7 @@ A feature that cannot be showcased is recorded here with its reason; never skip 
 - Project plugins (PluginSettings): the scaffold host has no plugin API, so no project plugin is authored.
 - Environment IBL: no `.env` or prefiltered cube exists in `engine-content`.
 - WebGPU is not the default backend because Clustered Forward is WebGL2-only.
-- Editor-only by design: Splines, the EditorFunctionLibrary, BObject classes (not instantiable), and Simulation graph debugging, which adds no authored data: simulate the starter and open any Class, Behaviour Tree or Animation Graph with live instances.
+- Editor-only by design: Spline drawing (the camera tour still travels its Spline in Play), the EditorFunctionLibrary, BObject classes (not instantiable), and Simulation graph debugging, which adds no authored data: simulate the starter and open any Class, Behaviour Tree or Animation Graph with live instances.
 - Physics query channels: the only authored query is the `FT_UIPitCounter` Sphere Overlap Actors on Dynamic. Line Trace, Sphere Shape Sweep, Project Cursor To Scene and the Static, Character, Solid and Triggers channels are not authored in any zone yet.
 - `FT_World` cold open on a real GPU is slow: its Water bodies compile large fragment shaders that ANGLE/D3D11 builds one variant after another, taking many seconds each with an empty shader cache; the loading budgets renew while the driver is still compiling. A view that draws Water through its scene copy compiles only the variants it draws (copy-sampling colour variant and its depth pre-pass, during graph preparation under the `Forward transparent` pass id), but colour and depth still compile sequentially because the depth pre-pass is probed only once the colour variant is ready.
 - Main-scene Play on software GL (the `perf-software` project, SwiftShader) does not finish loading in reasonable time; this is the recorded exception to the "first frame on software GL" requirement. Every scene cold-opens within the `SCENE_FIRST_FRAME_TIMEOUT_MS` first-draw budget, and `FT_World`, `FT_Clustered`, `FT_2D` and `FT_Stress` Play load. In main-scene Play the world layer is ready and keeps drawing under the `FT_HUD` layer's loading UI; each frame costs seconds of main-thread time, almost all of it the registered-view canvas copy waiting for SwiftShader, and each HUD slot acquisition re-checks its dependency closure in storage so every storage completion queues behind such a frame. Engine follow-ups: throttle a ready layer while another owner loads; share catalog revision checks between concurrent slot acquisitions. `FT_Stress` Play loads but then runs at one frame every few seconds on software GL.

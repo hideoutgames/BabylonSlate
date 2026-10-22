@@ -1,5 +1,6 @@
 import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, PickingInfo, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sceneLayerCanvasToLayer } from "@babylonslate/core";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
@@ -160,6 +161,55 @@ describe("SceneLayerCompositor", () => {
     expect(scene.activeCamera).toBe(camera);
     expect(camera.getViewMatrix().m[12]).toBeCloseTo(0);
     expect(camera.getViewMatrix().m[14]).toBeCloseTo(10);
+  });
+
+  it("poses the HUD camera at the layer camera's centre, roll and zoom, and restores that pose", () => {
+    const { compositor } = world();
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0,
+      ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 20, height: 10 },
+    });
+    const { camera } = layer;
+    compositor.setCamera("hud", { x: 3, y: -2, rotation: 90, zoom: 2 });
+    expect(camera.position.asArray()).toEqual([3, -2, -10]);
+    expect(camera.orthoRight).toBe(layer.viewBounds.width / 4);
+    expect(camera.orthoTop).toBe(layer.viewBounds.height / 4);
+    // Turned 90° counter-clockwise, the point one unit above the centre is on the view's right.
+    const above = Vector3.TransformCoordinates(new Vector3(3, -1, 0), camera.getViewMatrix());
+    expect(above.x).toBeCloseTo(1);
+    expect(above.y).toBeCloseTo(0);
+
+    camera.position.set(0, 0, -10);
+    camera.rotation.z = 0;
+    camera.orthoRight = 99;
+    compositor.render();
+    expect(camera.position.asArray()).toEqual([3, -2, -10]);
+    expect(camera.rotation.z).toBeCloseTo(Math.PI / 2);
+    expect(camera.orthoRight).toBe(layer.viewBounds.width / 4);
+  });
+
+  it("picks through a moved and turned layer camera where the canvas maps into the layer", () => {
+    const { engine, compositor } = world();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0,
+      ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 9, height: 9 },
+    });
+    const mesh = MeshBuilder.CreatePlane("actor-1", { width: 1, height: 1 }, layer.scene);
+    mesh.position.set(5, 3, 0);
+    // Babylon reuses a mesh's matrix within a render id; no frame renders here.
+    mesh.computeWorldMatrix(true);
+    mesh.isPickable = true;
+    mesh.metadata = { overlayActorGuid: "card", overlayHitTest: "block" };
+    // 3 units right of the canvas centre: layer (3, 0) under the default camera, so nothing is there.
+    const canvasX = 128 + 3 * 256 / 9;
+    expect(compositor.pickHits(canvasX, 128)).toEqual([]);
+    compositor.setCamera("hud", { x: 5, y: 0, rotation: 90, zoom: 1 });
+    const point = sceneLayerCanvasToLayer(canvasX, 128, 256, 256, layer.viewBounds, layer.cameraState);
+    expect(point.x).toBeCloseTo(5);
+    expect(point.y).toBeCloseTo(3);
+    expect(compositor.pickHits(canvasX, 128)).toEqual([{ layerId: "hud", actorGuid: "card", hitTest: "block", hasButton: false }]);
   });
 
   it("sorts overlay draw order by zOrder and stable layer id on ties", () => {

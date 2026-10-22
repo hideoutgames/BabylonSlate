@@ -33,4 +33,4 @@ Casts a ray from the active camera through the cursor and returns what it hits.
 
 - Uses the possessed camera, otherwise the main camera set in the Scene; with no camera, the result is a miss.
 - On a miss, **Hit** is false and **Location** and **Normal** are zero.
-- Called from a Scene Layer, it uses that layer's own view and finds objects only when the layer has physics enabled.
+- Called from a Scene Layer, it uses that layer's own view, including its camera's location, rotation and zoom, and finds objects only when the layer has physics enabled.

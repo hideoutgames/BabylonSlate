@@ -44,7 +44,7 @@ export function PlayBlockedDialog({
             <button
               key={`${d.code}-${i}`}
               type="button"
-              className="min-h-11 rounded-md px-2 py-2 text-left hover:bg-muted"
+              className="min-h-7 rounded-md px-2 py-1.5 text-left hover:bg-muted pointer-coarse:min-h-11 pointer-coarse:py-2"
               data-testid="play-blocked-row"
               onClick={() => onNavigate(d)}
             >

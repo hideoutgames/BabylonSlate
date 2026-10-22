@@ -14,7 +14,11 @@ import {
   parseOutlineProperties,
   parseSpringArmProperties,
   RENDER_TARGET_MODE_LABELS,
+  sampleSplineArcPath,
+  sampleSplinePath,
   SKYBOX_FACE_KEYS,
+  SPLINE_DISTANCE_SUBDIVISIONS,
+  splineArcPath,
   type ProjectSettings,
   type RenderTargetMode,
   type SerializedActor,
@@ -42,16 +46,17 @@ import {
   getVar,
   gNode,
   gWire,
+  setVar,
   varMember,
   type GraphNode,
 } from "./graph";
-import { FEATURE_TEST_MAIN_CAMERA, type FeatureTestZoneId } from "./layout";
+import { FEATURE_TEST_CAMERA_TOUR, FEATURE_TEST_MAIN_CAMERA, type FeatureTestZoneId } from "./layout";
 
 /**
  * Rendering area: lights and shadows, effects (fog volume, outline, lattice
  * deformer, 3D text, dynamic runtime mesh, spring arm), render targets, the
- * automatic Model LOD lane, the main camera / sky / sun, project render
- * settings, scalability console commands and the `FT_Clustered` scene.
+ * automatic Model LOD lane, the touring main camera / sky / sun, project
+ * render settings, scalability console commands and the `FT_Clustered` scene.
  */
 
 const RENDER_FOLDER = "Rendering";
@@ -81,6 +86,8 @@ const POST_PROCESS_ENTRY_ID = "ft-render-post-process";
 interface RenderingRefs {
   targets: Record<RenderTargetMode, { renderTarget: string; monitorMaterial: string }>;
   springArm: PlacedClass;
+  tourPath: PlacedClass;
+  cameraTour: PlacedClass;
   dynamicMesh: PlacedClass;
   manualCapture: PlacedClass;
 }
@@ -95,18 +102,19 @@ const refsByContext = new WeakMap<FeatureTestContext, RenderingRefs>();
 
 /**
  * Create rendering assets: Skybox Creator, Render Targets with their sampler
- * Textures and monitor Materials, the spring arm / dynamic mesh / manual
- * capture Classes, the `ft_*` scalability commands and the `FT_Clustered` scene.
+ * Textures and monitor Materials, the spring arm / camera tour / dynamic mesh /
+ * manual capture Classes, the `ft_*` scalability commands and the `FT_Clustered` scene.
  */
 export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promise<void> {
   await createSkyboxCreator(ctx);
   const targets = await createRenderTargets(ctx);
   const springArm = await saveSpringArmRig(ctx);
+  const { tourPath, cameraTour } = await saveCameraTour(ctx);
   const dynamicMesh = await saveDynamicMesh(ctx);
   const manualCapture = await saveManualCapture(ctx, targets.WorldNormal.renderTarget);
   await saveScalabilityCommands(ctx);
   await addClusteredScene(ctx);
-  refsByContext.set(ctx, { targets, springArm, dynamicMesh, manualCapture });
+  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture });
 }
 
 /**
@@ -116,7 +124,7 @@ export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promis
 export async function placeFeatureTestRendering(ctx: FeatureTestContext): Promise<void> {
   const refs = refsByContext.get(ctx);
   if (!refs) throw new Error("FeatureTest rendering assets must be built before placement.");
-  placeGlobals(ctx);
+  placeGlobals(ctx, refs);
   placeLights(ctx);
   placeEffects(ctx, refs);
   placeRenderTargets(ctx, refs);
@@ -245,6 +253,116 @@ async function saveSpringArmRig(ctx: FeatureTestContext): Promise<PlacedClass> {
   });
   const ref = await ctx.saveClass({ folder: RENDER_FOLDER, name: "FT_RenderSpringArmRig", parentClass: "Actor", graph });
   return { ref, components };
+}
+
+/** World start pose of the camera tour: the Spline's first point, facing along it. */
+function cameraTourStart(): { position: Vec3; ahead: Vec3 } {
+  const body = { points: FEATURE_TEST_CAMERA_TOUR.points, curvature: 1, closed: true };
+  const samples = sampleSplinePath(body, { subdivisions: SPLINE_DISTANCE_SUBDIVISIONS });
+  const start = sampleSplineArcPath(splineArcPath(samples.map((sample) => sample.position), true), 0);
+  const [x, y, z] = start.position;
+  return { position: [x, y, z], ahead: [x + start.direction[0], y + start.direction[1], z + start.direction[2]] };
+}
+
+/**
+ * Camera tour: `FT_RenderCameraPath` carries the closed tour Spline, and the
+ * main camera `FT_RenderCameraTour` rides it. Each Tick advances Distance by
+ * TourSpeed (wrapped by Get Spline Length), moves the actor to Get Location At
+ * Distance Along Spline and faces the travel direction; the camera sits on a
+ * lagging Spring Arm, so it trails the path smoothly in Play.
+ */
+async function saveCameraTour(ctx: FeatureTestContext): Promise<{ tourPath: PlacedClass; cameraTour: PlacedClass }> {
+  const pathComponents: SerializedComponent[] = [
+    comp("prefab-spline", "SplineComponent", { points: FEATURE_TEST_CAMERA_TOUR.points, curvature: 1, closed: true }),
+  ];
+  const pathRef = await ctx.saveClass({
+    folder: RENDER_FOLDER,
+    name: "FT_RenderCameraPath",
+    parentClass: "Actor",
+    graph: classGraph({ components: pathComponents }),
+  });
+  const splineFunction = (name: string) => {
+    const fn = engineScriptApiFor("SplineComponent")?.functions?.find((entry) => entry.name === name);
+    if (!fn) throw new Error(`SplineComponent has no "${name}" function.`);
+    return gNode(name === "Get Spline Length" ? "length" : "sample", "functions.call", 0, 0, {
+      functionName: fn.name,
+      classId: "SplineComponent",
+      implicitSelf: false,
+      pins: fn.pins.map((pin) => ({ ...pin })),
+      runtime: fn.runtime,
+    });
+  };
+  const speed = varMember("ft-render-var-tour-speed", "TourSpeed", "float", FEATURE_TEST_CAMERA_TOUR.speed, { category: "Camera Tour" });
+  const distance = varMember("ft-render-var-tour-distance", "Distance", "float", 0, { category: "Camera Tour" });
+  const components: SerializedComponent[] = [
+    comp("prefab-arm", "SpringArmComponent", {
+      ...parseSpringArmProperties({
+        armLength: 9,
+        enableLocationLag: true,
+        locationLagSpeed: 1.5,
+        enableRotationLag: true,
+        rotationLagSpeed: 1.2,
+      }),
+    }, tf([0, 0, 0], { rotationDeg: [18, 0, 0] })),
+    comp("prefab-cam", "CameraComponent", {
+      projectionMode: "perspective",
+      fieldOfView: 60,
+      nearClip: 0.1,
+      farClip: 1000,
+      attemptPossessViewTarget: true,
+    }, undefined, { parentId: "prefab-arm" }),
+  ];
+  const at = (node: GraphNode, x: number, y: number): GraphNode => ({ ...node, position: { x, y } });
+  const graph = classGraph({
+    members: [speed, distance],
+    components,
+    nodes: [
+      gNode("tick", "flow.event.tick", 0, 0),
+      gNode("path", "actor.getOfClass", 0, 200, { "default:classId": pathRef.classId }),
+      gNode("spline", "component.getNamed", 240, 200, { componentClassId: "SplineComponent", implicitSelf: false }),
+      at(splineFunction("Get Spline Length"), 480, 0),
+      getVar("get-distance", distance, 480, 260),
+      getVar("get-speed", speed, 480, 360),
+      gNode("step", "math.mul", 700, 320),
+      gNode("advance", "math.add", 900, 260),
+      gNode("wrap", "math.mod", 1100, 200),
+      setVar("set-distance", distance, 1300, 0),
+      at(splineFunction("Get Location At Distance Along Spline"), 1540, 0),
+      gNode("ahead", "vector.add3", 1800, 240),
+      gNode("face", "rotator.lookAt", 2020, 200),
+      gNode("self", "actor.getSelf", 2020, 360),
+      gNode("move", "transform.setLocation", 1800, 0),
+      gNode("turn", "transform.setRotation", 2260, 0),
+    ],
+    edges: [
+      gWire("tick", "execOut", "length", "exec"),
+      gWire("length", "then", "set-distance", "execIn"),
+      gWire("set-distance", "execOut", "sample", "exec"),
+      gWire("sample", "then", "move", "execIn"),
+      ...gChain("move", "turn"),
+      gWire("path", "out", "spline", "actor"),
+      gWire("spline", "out", "length", "target"),
+      gWire("spline", "out", "sample", "target"),
+      gWire("tick", "deltaSeconds", "step", "a"),
+      gWire("get-speed", "value", "step", "b"),
+      gWire("get-distance", "value", "advance", "a"),
+      gWire("step", "out", "advance", "b"),
+      gWire("advance", "out", "wrap", "a"),
+      gWire("length", "length", "wrap", "b"),
+      gWire("wrap", "out", "set-distance", "value"),
+      gWire("set-distance", "out", "sample", "distance"),
+      gWire("sample", "location", "ahead", "a"),
+      gWire("sample", "direction", "ahead", "b"),
+      gWire("sample", "location", "face", "from"),
+      gWire("ahead", "out", "face", "target"),
+      gWire("self", "out", "move", "target"),
+      gWire("sample", "location", "move", "location"),
+      gWire("self", "out", "turn", "target"),
+      gWire("face", "out", "turn", "rotation"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: RENDER_FOLDER, name: "FT_RenderCameraTour", parentClass: "Actor", graph });
+  return { tourPath: { ref: pathRef, components: pathComponents }, cameraTour: { ref, components } };
 }
 
 /** Flat-shaded four-sided pyramid (2 m base, 2.2 m tall) wound for outward front faces. */
@@ -456,24 +574,21 @@ function zoneAdder(ctx: FeatureTestContext, zone: FeatureTestZoneId) {
 // ---------------------------------------------------------------------------
 // Main scene placement
 
-/** Static main camera, the texture-face skybox and the tuned default sun. */
-function placeGlobals(ctx: FeatureTestContext): void {
+/** Touring main camera and its path, the texture-face skybox and the tuned default sun. */
+function placeGlobals(ctx: FeatureTestContext, refs: RenderingRefs): void {
   const scene = ctx.mainScene;
   const previous = scene.actors.findIndex(
     (entry) => entry.id === scene.settings.mainCameraActorId &&
       entry.components.some((component) => component.classId === "CameraComponent"),
   );
   if (previous >= 0) scene.actors.splice(previous, 1);
-  const { actorId, componentId, position, target } = FEATURE_TEST_MAIN_CAMERA;
-  ctx.addActor(actor(actorId, "Main Camera", tf(position, { rotation: lookAtRotation(position, target) }), [
-    comp(componentId, "CameraComponent", {
-      projectionMode: "perspective",
-      fieldOfView: 60,
-      nearClip: 0.1,
-      farClip: 1000,
-      attemptPossessViewTarget: true,
-    }),
-  ]));
+  const { actorId, componentId } = FEATURE_TEST_MAIN_CAMERA;
+  const { pathActorId } = FEATURE_TEST_CAMERA_TOUR;
+  ctx.addActor(actor(pathActorId, "Camera Tour Path", tf(), instanceComponents(pathActorId, refs.tourPath.components),
+    { classId: refs.tourPath.ref.classId }));
+  const start = cameraTourStart();
+  ctx.addActor(actor(actorId, "Main Camera", tf(start.position, { rotation: lookAtRotation(start.position, start.ahead) }),
+    instanceComponents(actorId, refs.cameraTour.components), { classId: refs.cameraTour.ref.classId }));
   scene.settings.mainCameraActorId = actorId;
   scene.settings.mainCameraComponentId = componentId;
 

@@ -9,6 +9,7 @@ import {
   Color4,
   Constants,
   MeshBuilder,
+  Quaternion,
   RenderTargetTexture,
   Scene,
   StandardMaterial,
@@ -20,10 +21,13 @@ import {
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
   parseSceneLayerHitTest,
+  sceneLayerCanvasToLayer,
   sceneLayerOrthoBounds,
   sceneLayerViewBounds,
   walkOverlayPointerHits,
+  SCENE_LAYER_DEFAULT_CAMERA,
   type OverlayPointerHit,
+  type SceneLayerCamera,
   type SceneLayerHitTest,
   type ScenePostProcessEntry,
   type MaterialParameterValue,
@@ -34,7 +38,6 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import {
-  overlayCanvasToWorld,
   overlayMinTargetWorldSize,
   pointInInflatedWorldAabb,
 } from "./overlay-touch-target";
@@ -52,8 +55,10 @@ export interface SceneLayerView {
   zOrder: number;
   scene: Scene;
   camera: UniversalCamera;
-  /** The ortho extent drawn and picked: Layer Width × Height widened to the output aspect. */
+  /** The ortho extent at zoom 1: Layer Width × Height widened to the output aspect. */
   viewBounds: { width: number; height: number };
+  /** The camera centre, roll and zoom scripts set; with `viewBounds` it maps the canvas into the layer (`sceneLayerCanvasToLayer`). */
+  cameraState: SceneLayerCamera;
 }
 
 export interface SceneLayerCompositorOptions {
@@ -66,6 +71,8 @@ export interface SceneLayerCompositorOptions {
     renderer: SceneRenderCoordinator,
   ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
 }
+
+const scratchTarget = new Vector3();
 
 /** The pose bindHudCamera leaves; any other reading means another owner moved the camera. */
 interface HudCameraPose {
@@ -148,6 +155,7 @@ export class SceneLayerCompositor {
       renderer: new SceneRenderCoordinator(scene),
       designBounds: sceneLayerOrthoBounds(command.layerBounds),
       viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
+      cameraState: { ...SCENE_LAYER_DEFAULT_CAMERA },
       hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
@@ -216,6 +224,14 @@ export class SceneLayerCompositor {
     if (!layer) return;
     layer.postProcessStack = stack.map((entry) => ({ ...entry }));
     this.rebuildPostProcess(layer);
+  }
+
+  /** Move, turn or zoom a layer's camera (`sceneLayerCamera`); the next pick and draw use it. */
+  setCamera(layerId: string, camera: Readonly<SceneLayerCamera>): void {
+    const layer = this.byId.get(layerId);
+    if (!layer) return;
+    layer.cameraState = { ...camera };
+    this.bindHudCamera(layer, true);
   }
 
   setPostProcessParameter(layerId: string, entryId: string, materialGuid: string, name: string, value: MaterialParameterValue, validate: () => boolean): boolean {
@@ -425,11 +441,11 @@ export class SceneLayerCompositor {
       this.bindHudCamera(layer);
       // The pointer is in pick space (render size x hardware scaling level), as `scene.pick` expects.
       const pickSize = pickBufferSize(layer.scene);
-      const pickWorld = overlayCanvasToWorld(canvasX, canvasY, pickSize.width, pickSize.height, layer.viewBounds.width / 2, layer.viewBounds.height / 2);
+      const pickWorld = sceneLayerCanvasToLayer(canvasX, canvasY, pickSize.width, pickSize.height, layer.viewBounds, layer.cameraState);
       const minWorld = overlayMinTargetWorldSize(
         options?.minTargetPx ?? 0,
         options?.canvasCssHeight ?? 0,
-        layer.viewBounds.height,
+        layer.viewBounds.height / layer.cameraState.zoom,
       );
       const touch = minWorld > 0;
       const pickable = (mesh: AbstractMesh) => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y);
@@ -589,23 +605,31 @@ export class SceneLayerCompositor {
   whenReleased(): Promise<void> { return this.retiredLayers.whenReleased(); }
 
   /**
-   * Pin the camera to the layer's fixed orthographic pose. Per-frame callers
-   * leave a camera alone while its parent, position, rotation, mode, active-camera
-   * status and orthographic bounds still match what the last bind wrote; Babylon
+   * Pin the camera to the layer's orthographic pose: 10 units in front of its
+   * `cameraState` centre, looking along +Z, rolled by its rotation, with the
+   * view bounds divided by its zoom. Per-frame callers leave a camera alone
+   * while its parent, position, rotation, mode, active-camera status and
+   * orthographic bounds still match what the last bind wrote; Babylon
    * re-derives its view and projection when anything they read changes. A
-   * mismatch, and create, resize and preparation (force), rebind those fields and
-   * force both matrices. Nothing else is restored (target lock, up vector, near
-   * and far planes), as before.
+   * mismatch, and create, resize, a camera change and preparation (force),
+   * rebind those fields and force both matrices. Nothing else is restored
+   * (target lock, near and far planes), as before; Babylon re-derives the up
+   * vector from the roll.
    */
   private bindHudCamera(layer: LayerRecord, force = false): void {
     if (!force && this.hudCameraIntact(layer)) return;
+    const { x, y } = layer.cameraState;
     layer.camera.parent = null;
-    layer.camera.position.set(0, 0, -10);
+    layer.camera.position.set(x, y, -10);
     layer.camera.rotation.set(0, 0, 0);
     if (layer.camera.rotationQuaternion) {
       layer.camera.rotationQuaternion.set(0, 0, 0, 1);
     }
-    layer.camera.setTarget(Vector3.ZeroReadOnly);
+    layer.camera.setTarget(scratchTarget.set(x, y, 0));
+    // setTarget clears the roll, so it is applied afterwards.
+    const roll = layer.cameraState.rotation * Math.PI / 180;
+    if (layer.camera.rotationQuaternion) Quaternion.RotationYawPitchRollToRef(0, 0, roll, layer.camera.rotationQuaternion);
+    else layer.camera.rotation.z = roll;
     layer.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
     layer.scene.activeCamera = layer.camera;
     this.applyOrtho(layer);
@@ -632,14 +656,14 @@ export class SceneLayerCompositor {
       const posed = pose.quaternion;
       if (!posed || quaternion.x !== posed[0] || quaternion.y !== posed[1] || quaternion.z !== posed[2] || quaternion.w !== posed[3]) return false;
     } else if (pose.quaternion) return false;
-    const halfW = layer.viewBounds.width / 2;
-    const halfH = layer.viewBounds.height / 2;
+    const halfW = layer.viewBounds.width / 2 / layer.cameraState.zoom;
+    const halfH = layer.viewBounds.height / 2 / layer.cameraState.zoom;
     return camera.orthoTop === halfH && camera.orthoBottom === -halfH && camera.orthoLeft === -halfW && camera.orthoRight === halfW;
   }
 
   private applyOrtho(layer: LayerRecord): void {
-    const halfW = layer.viewBounds.width / 2;
-    const halfH = layer.viewBounds.height / 2;
+    const halfW = layer.viewBounds.width / 2 / layer.cameraState.zoom;
+    const halfH = layer.viewBounds.height / 2 / layer.cameraState.zoom;
     layer.camera.orthoTop = halfH;
     layer.camera.orthoBottom = -halfH;
     layer.camera.orthoLeft = -halfW;
