@@ -8,6 +8,7 @@ import {
 } from "@haptic/core";
 import { inputMappingKey } from "./input-assets";
 import type { PointerKind, RawInputEvent } from "./ring-buffer";
+import { GestureRecognizer, TOUCH_PULSE_GESTURES } from "./gestures";
 import { InputBindingProfile } from "./input-bindings";
 import type {
   ActionBinding,
@@ -84,6 +85,8 @@ interface ResolverInternals {
   contacts: Map<number, Contact>;
   /** Contacts lifted this tick; their fingers stay taken until the next tick. */
   liftedContacts: Contact[];
+  /** This tick's gesture values by `touch` binding code. */
+  gestureValues: Map<string, number>;
 }
 
 function modifiersMatch(
@@ -129,7 +132,7 @@ function actionBindingHeld(
     case "gamepadButton":
       return state.heldGamepadButtons.has(binding.code);
     case "touch":
-      return (state.touchAxes.get(binding.code) ?? 0) > 0.5;
+      return touchControlValue(state, binding.code) > 0.5;
     case "gamepadAxis":
       return Math.abs(state.gamepadAxes.get(binding.code) ?? 0) > 0.5;
     default:
@@ -159,7 +162,7 @@ function axisBindingValue(
       return applyAxisShape(binding.digitalValue ?? 1, binding);
     }
     case "touch": {
-      const raw = state.touchAxes.get(binding.code) ?? 0;
+      const raw = touchControlValue(state, binding.code);
       return applyAxisShape(raw, binding);
     }
     case "gamepadAxis": {
@@ -173,11 +176,18 @@ function axisBindingValue(
 
 const TOUCH_TYPE: Record<PointerKind, TouchType> = { mouse: "Mouse", touch: "Finger", pen: "Pen" };
 
+/** A `touch` binding code: an on-screen control's axis, or a gesture. */
+function touchControlValue(state: ResolverInternals, code: string): number {
+  // A released joystick axis stores 0; it must not hide a gesture with the same code.
+  return (state.touchAxes.get(code) ?? 0) || (state.gestureValues.get(code) ?? 0);
+}
+
 function copyTouch(touch: TouchInput): TouchInput {
   return {
     ...touch,
     Position: { ...touch.Position },
     Delta: { ...touch.Delta },
+    Velocity: { ...touch.Velocity },
     StartPosition: { ...touch.StartPosition },
   };
 }
@@ -223,8 +233,12 @@ export class InputResolver {
     primaryPointerId: null,
     contacts: new Map(),
     liftedContacts: [],
+    gestureValues: new Map(),
   };
 
+  private readonly gestures = new GestureRecognizer();
+  /** The tick being resolved, for touch velocities. */
+  private tickSeconds = 0;
   private mappings: InputMappings;
   private inputStates: Record<string, InputValueState> = {};
   readonly bindings: InputBindingProfile;
@@ -251,14 +265,26 @@ export class InputResolver {
     this.state.primaryPointerId = null;
     this.state.contacts.clear();
     this.state.liftedContacts.length = 0;
+    this.state.gestureValues.clear();
+    this.gestures.reset();
     this.inputStates = {};
     return this.resolve([]);
   }
 
-  /** Apply one tick's events and return the resolved action / axis snapshot. */
+  /** The game view's CSS size, which two-finger drags are measured against. */
+  setViewSize(width: number, height: number): void {
+    this.gestures.setViewSize(width, height);
+  }
+
+  /**
+   * Apply one tick's events and return the resolved action / axis snapshot.
+   * `deltaSeconds` is game time (Held Seconds); `inputSeconds`, real time for
+   * human gestures and touch velocity, so time dilation does not change them.
+   */
   resolve(
     events: readonly RawInputEvent[],
     deltaSeconds = 0,
+    inputSeconds = deltaSeconds,
   ): ResolvedInputTick {
     const inputs: Record<string, InputValueState> = {};
     const pressedKeys: InputKey[] = [];
@@ -298,6 +324,9 @@ export class InputResolver {
     };
     const connections: GamepadConnectionEvent[] = [];
     const touchEvents: TouchInput[] = [];
+    const dt = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
+    const inputDt = Number.isFinite(inputSeconds) ? Math.max(0, inputSeconds) : 0;
+    this.tickSeconds = inputDt;
     this.beginTouchTick();
     // Name lookups (`isActionHeld("Jump")`) cover every asset with that display
     // name; `inputs` keeps each asset's own state.
@@ -344,6 +373,9 @@ export class InputResolver {
       });
     };
 
+    // Pulse gestures last one tick. Releasing them before the first sample
+    // lets a pulse on the very next tick start the input again.
+    for (const code of TOUCH_PULSE_GESTURES) this.state.gestureValues.delete(code);
     // A mapping change can release an action before the first new event arrives.
     // Observe that boundary so a fresh press of the replacement key keeps its edge.
     sample();
@@ -496,6 +528,11 @@ export class InputResolver {
       }
     }
 
+    this.settleTouchVelocities();
+    const touches = [...this.state.contacts.values(), ...this.state.liftedContacts]
+      .map((contact) => copyTouch(contact.touch))
+      .sort((a, b) => a.Finger - b.Finger);
+    this.state.gestureValues = this.gestures.step(touchEvents, touches, inputDt);
     sample();
     this.state.previousHeldActions = new Set(
       this.mappings.actions
@@ -524,7 +561,6 @@ export class InputResolver {
     }
     for (const [name, sum] of sums1D) axes[name] = clamp(sum);
 
-    const dt = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
     for (const [key, value] of Object.entries(inputs)) {
       if (value.held && !value.started && this.inputStates[key]?.held)
         value.heldSeconds += dt;
@@ -538,9 +574,7 @@ export class InputResolver {
       axes2D,
       gamepadConnections: connections,
       cursor: { ...this.state.cursor },
-      touches: [...this.state.contacts.values(), ...this.state.liftedContacts]
-        .map((contact) => copyTouch(contact.touch))
-        .sort((a, b) => a.Finger - b.Finger),
+      touches,
       touchEvents,
     };
   }
@@ -555,6 +589,24 @@ export class InputResolver {
       contact.moved = null;
       touch.Delta = { x: 0, y: 0 };
       touch.Phase = "Stationary";
+    }
+  }
+
+  /** Halfway between the last velocity and this tick's movement, so one uneven tick does not dominate. */
+  private settleVelocity(contact: Contact): void {
+    if (this.tickSeconds <= 0) return;
+    const touch = contact.touch;
+    touch.Velocity = {
+      x: (touch.Velocity.x + touch.Delta.x / this.tickSeconds) / 2,
+      y: (touch.Velocity.y + touch.Delta.y / this.tickSeconds) / 2,
+    };
+  }
+
+  /** Live contacts take this tick's velocity; lifted ones took it as they lifted. */
+  private settleTouchVelocities(): void {
+    for (const contact of this.state.contacts.values()) {
+      this.settleVelocity(contact);
+      if (contact.moved) contact.moved.Velocity = { ...contact.touch.Velocity };
     }
   }
 
@@ -583,6 +635,7 @@ export class InputResolver {
         Finger: this.freeFinger(),
         Position: { x: event.x, y: event.y },
         Delta: { x: 0, y: 0 },
+        Velocity: { x: 0, y: 0 },
         StartPosition: { x: event.x, y: event.y },
         Pressure: contactPressure(event.pressure, 0.5),
         Phase: "Began",
@@ -603,6 +656,8 @@ export class InputResolver {
       touch.Pressure = contactPressure(event.pressure, touch.Pressure);
     }
     if (!holdsPrimary) {
+      this.settleVelocity(contact);
+      if (contact.moved) contact.moved.Velocity = { ...touch.Velocity };
       touch.Phase = event.phase === "cancel" ? "Cancelled" : "Ended";
       this.state.contacts.delete(event.pointerId);
       this.state.liftedContacts.push(contact);

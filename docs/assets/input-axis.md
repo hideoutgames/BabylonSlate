@@ -11,7 +11,7 @@ In the **Content Browser**, choose **New Asset > Input > Input Axis**.
 Double-tap the asset to open it. The window has **Bindings** and an **Inspector**.
 
 - Set **Value** to **1D · Number** or **2D · X and Y**.
-- **Add Control** adds a **Keyboard**, **Mouse Button**, **Gamepad Button**, **Gamepad Axis** or **Touch** control. Touch controls are the axes a [2D Joystick](../components/2d-joystick.md) drives: **Joystick X**, **Joystick Y**, **D-Pad X** and **D-Pad Y**. **Add Preset** adds **WASD**, **Arrow Keys**, **Left Stick** or **Right Stick** in one step.
+- **Add Control** adds a **Keyboard**, **Mouse Button**, **Gamepad Button**, **Gamepad Axis** or **Touch** control. Touch controls are the axes a [2D Joystick](../components/2d-joystick.md) drives: **Joystick X**, **Joystick Y**, **D-Pad X** and **D-Pad Y**, and the [gestures](../input/index.md#gestures), such as **Pinch** and **Two-Finger Drag X**. **Add Preset** adds **WASD**, **Arrow Keys**, **Left Stick** or **Right Stick** in one step.
 - Select a control to edit it in the **Inspector**. The values of all active controls add up and are clamped to -1 to 1.
 
 ## Settings

@@ -1099,6 +1099,8 @@ function initializePlayer(
   // The subscription above fired before the runtime existed; report the
   // current status now that the worker or in-process runtime can store it.
   publishRenderPathStatus(handle.renderPathStatus());
+  // The view size too: two-finger drags, cursor projection and Scene Layers measure against it.
+  handle.publishSceneLayerSize();
   const initialScalability = handle.scalabilityStatus?.();
   if (initialScalability) publishScalabilityStatus(initialScalability);
 
