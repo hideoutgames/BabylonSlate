@@ -9,6 +9,15 @@ import {
   type SerializedSceneLayer,
 } from "@babylonslate/core";
 import { validateAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import {
+  decodeTileGid,
+  normalizeTilemapPayload,
+  normalizeTilesetPayload,
+  TILESET_TERRAIN_STYLES,
+  tilesetTerrainById,
+  tilesetTileById,
+  type TilesetPayload,
+} from "@babylonslate/assets";
 import { DEFAULT_EDIT_BYTE_BUDGET, EditSession } from "@babylonslate/edit";
 import {
   normalizeParticleGraphDocument,
@@ -118,6 +127,25 @@ describe("FeatureTest starter", () => {
       assets.filter((asset) => asset.header.type === "Class").map((asset) => asset.header.parentClass ?? ""),
     );
     expect(ENGINE_BASE_CLASSES.filter((base) => !parents.has(base))).toEqual([]);
+  });
+
+  it("paints a Tilemap with a terrain of every autotile style", async () => {
+    const registry = reopened.registry!;
+    const tilesets = new Map<string, TilesetPayload>();
+    for (const asset of registry.list().filter((entry) => entry.header.type === "Tileset")) {
+      tilesets.set(asset.header.guid, normalizeTilesetPayload(await reopened.loadDocument("tileset", asset.path)));
+    }
+    const painted = new Set<string>();
+    for (const asset of registry.list().filter((entry) => entry.header.type === "Tilemap")) {
+      const map = normalizeTilemapPayload(await reopened.loadDocument("tilemap", asset.path));
+      for (const gid of new Set(map.layers.flatMap((layer) => layer.chunks.flatMap((chunk) => chunk.tiles)))) {
+        const hit = decodeTileGid(map, gid, tilesets);
+        const terrain = hit ? tilesetTileById(hit.tileset, hit.localId)?.terrain : undefined;
+        const style = hit && terrain ? tilesetTerrainById(hit.tileset, terrain.id)?.style : undefined;
+        if (style) painted.add(style);
+      }
+    }
+    expect(TILESET_TERRAIN_STYLES.filter((style) => !painted.has(style))).toEqual([]);
   });
 
   it("opens every scene without rewriting its Class and Prefab instances", async () => {
