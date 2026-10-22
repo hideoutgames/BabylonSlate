@@ -10,6 +10,7 @@ import {
 } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
 import { useAppSettings } from "../context/app-settings-context";
+import { ThemeSettingsFields } from "./homepage-theme-settings";
 
 /** Application-wide preferences for the Account dialog's Application section. */
 export function ApplicationSettingsFields() {
@@ -17,6 +18,7 @@ export function ApplicationSettingsFields() {
   const desktop = getHostPlatform() === "electron";
   return (
     <FieldGroup>
+      <ThemeSettingsFields />
       <FieldSet>
         <FieldLegend>Updates</FieldLegend>
         <Field orientation="horizontal" className="settings-field">
