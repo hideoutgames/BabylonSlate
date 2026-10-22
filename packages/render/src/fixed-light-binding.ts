@@ -1,4 +1,5 @@
 import {
+  CascadedShadowGenerator,
   Color3,
   DirectionalLight,
   HemisphericLight,
@@ -12,13 +13,21 @@ import {
   UniformBuffer,
   type AbstractEngine,
   type AbstractMesh,
+  type BaseTexture,
   type Effect,
   type MaterialDefines,
   type Scene,
+  type ShadowGenerator,
 } from "@babylonjs/core";
 import type { FixedLightKind, FixedLightLayout } from "@babylonslate/core";
+import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import type { FixedLightSeat } from "./fixed-light-seats";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import {
+  existingShadowSamplerPlaceholders,
+  shadowSamplerPlaceholders,
+  type ShadowSamplerPlaceholders,
+} from "./shadow-sampler-placeholders";
 
 /**
  * Fixed-shape light binding: native PBR and Standard materials of a world
@@ -44,6 +53,10 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
  *
  * Node materials and the CEL adapter keep Babylon's path: their shaders use
  * other light includes.
+ *
+ * The same hooks bind a Babylon-path Effect that no longer matches its mesh's
+ * lights: a Material drawing its previous Effect while a changed variant
+ * compiles (a variant swap, `variant-swaps.ts`). See `bindsLikeBabylon`.
  */
 
 /** The slot table a Scene's hooks bind from; null keeps Babylon's light path. */
@@ -304,6 +317,11 @@ export function emptyLightSeatBuffer(engine: AbstractEngine, kind: FixedLightKin
       buffer.updateFloat4("vLightData", 0, EMPTY_SEAT_HEIGHT, 0, kind === "spot" ? 1 : 0);
       buffer.updateFloat4("vLightFalloff", EMPTY_SEAT_HEIGHT, 1 / (EMPTY_SEAT_HEIGHT * EMPTY_SEAT_HEIGHT), 1, 0);
       if (kind === "spot") buffer.updateFloat4("vLightDirection", 0, -1, 0, 0.5);
+    } else if (kind === "area") {
+      // A small quad far overhead: the area integral stays finite, and black light scales it to zero.
+      buffer.updateFloat4("vLightData", 0, EMPTY_SEAT_HEIGHT, 0, 0);
+      buffer.updateFloat4("vLightWidth", 0.5, 0, 0, 0);
+      buffer.updateFloat4("vLightHeight", 0, 0, 0.5, 0);
     }
     buffer.update();
     buffers.set(kind, buffer);
@@ -433,10 +451,16 @@ export function installFixedLightBinding(scene: Scene, table: FixedLightTableSou
       }
       return prepareSeatDefines(scene, mesh, defines, specularSupported, maxSimultaneousLights, current);
     },
-    bindLights(_scene, mesh, effect, defines) {
+    bindLights(_scene, mesh, effect, defines, maxSimultaneousLights) {
       const seats = effectLightSeats(effect);
-      if (!seats) return false;
-      bindSeats(scene, mesh, effect, defines, seats, table());
+      if (seats) {
+        bindSeats(scene, mesh, effect, defines, seats, table());
+        return true;
+      }
+      const lights = compiledLights(effect);
+      if (!lights || !scene.getEngine().supportsUniformBuffers || bindsLikeBabylon(scene, mesh, lights, maxSimultaneousLights))
+        return false;
+      bindCompiledLights(scene, mesh, effect, lights, typeof defines === "boolean" ? defines : !!defines.SPECULARTERM);
       return true;
     },
     areLightsTexturesReady(_scene, mesh) {
@@ -447,4 +471,190 @@ export function installFixedLightBinding(scene: Scene, table: FixedLightTableSou
     },
   };
   (scene as HookedScene)._materialLightHooks = hooks;
+  hookedScenes.add(scene);
+}
+
+const hookedScenes = new WeakSet<Scene>();
+
+/**
+ * Whether a world view may draw a Material's previous Effect while its changed variant compiles: the Scene binds such
+ * an Effect by its own light layout (these hooks), on an Engine with uniform buffers, outside Clustered Forward (whose
+ * cluster bindings follow the current lights).
+ */
+export function sceneBindsPreviousEffects(scene: Scene): boolean {
+  return hookedScenes.has(scene) && scene.getEngine().supportsUniformBuffers && !hasClusteredLightPolicy(scene);
+}
+
+/**
+ * Allocates what a previous Effect's bindings may need (the sampler placeholders) before a frame's passes: a render
+ * target allocated inside a pass would rebind the framebuffer it draws to.
+ */
+export function preparePreviousEffectBindings(scene: Scene): void {
+  if (!scene.isDisposed) shadowSamplerPlaceholders(scene);
+}
+
+/** Light textures a shader light samples, as flags. */
+const PROJECTION = 1;
+const IES = 2;
+const EMISSION = 4;
+
+type ShadowSampling = { readonly cube: boolean; readonly cascades: boolean; readonly pcf: boolean; readonly pcss: boolean };
+
+/** A Babylon-path Effect's lights as compiled: per shader light, its Babylon type id, shadow sampling and textures. */
+type CompiledLights = {
+  readonly types: readonly number[];
+  readonly shadows: readonly (ShadowSampling | null)[];
+  readonly textures: readonly number[];
+};
+
+/** `Light.LIGHTTYPEID_*` by kind, and back. */
+const TYPE_IDS = { point: 0, directional: 1, spot: 2, hemispheric: 3, area: 4 } as const satisfies Record<FixedLightKind, number>;
+const KIND_BY_TYPE: readonly FixedLightKind[] = ["point", "directional", "spot", "hemispheric", "area"];
+const AREA_TYPE = TYPE_IDS.area;
+const SHADOW_TEXTURE = names("shadowTexture");
+const DEPTH_TEXTURE = names("depthTexture");
+const PROJECTION_TEXTURE = names("projectionLightTexture");
+const IES_TEXTURE = names("iesLightTexture");
+const EMISSION_TEXTURE = names("rectAreaLightEmissionTexture");
+
+const compiledLightsCache = new WeakMap<Effect, { defines: string; lights: CompiledLights | null }>();
+
+/** Parsed once per Effect: null for a seat-bound or unlit Effect, or one with a light kind no stand-in exists for. */
+function compiledLights(effect: Effect): CompiledLights | null {
+  const cached = compiledLightsCache.get(effect);
+  if (cached?.defines === effect.defines) return cached.lights;
+  const lines = new Set(effect.defines.split("\n"));
+  let lights: CompiledLights | null = null;
+  if (!lines.has("#define SLATE_FIXED_LIGHTS") && lines.has(`#define ${LIGHT[0]}`)) {
+    const types: number[] = [];
+    const shadows: (ShadowSampling | null)[] = [];
+    const textures: number[] = [];
+    for (let index = 0; index < MAX_SEATS && lines.has(`#define ${LIGHT[index]}`); index++) {
+      const kind = (Object.keys(KIND_DEFINES) as FixedLightKind[]).find((entry) => lines.has(`#define ${KIND_DEFINES[entry]}${index}`));
+      types.push(kind ? TYPE_IDS[kind] : -1);
+      shadows.push(lines.has(`#define SHADOW${index}`)
+        ? {
+          cube: lines.has(`#define SHADOWCUBE${index}`),
+          cascades: lines.has(`#define SHADOWCSM${index}`),
+          pcf: lines.has(`#define SHADOWPCF${index}`),
+          pcss: lines.has(`#define SHADOWPCSS${index}`),
+        }
+        : null);
+      textures.push(
+        (lines.has(`#define PROJECTEDLIGHTTEXTURE${index}`) ? PROJECTION : 0) |
+        (lines.has(`#define IESLIGHTTEXTURE${index}`) ? IES : 0) |
+        (lines.has(`#define RECTAREALIGHTEMISSIONTEXTURE${index}`) ? EMISSION : 0),
+      );
+    }
+    // A clustered container (or any kind without a stand-in) stays on Babylon's own binding.
+    if (!types.includes(-1)) lights = { types, shadows, textures };
+  }
+  compiledLightsCache.set(effect, { defines: effect.defines, lights });
+  return lights;
+}
+
+/** The light binds the shadow map `sampling` reads, as Babylon's `_bindLight` would bind it here. */
+function shadowMatches(scene: Scene, mesh: AbstractMesh, light: Light, sampling: ShadowSampling): boolean {
+  if (!mesh.receiveShadows || !scene.shadowsEnabled || !light.shadowEnabled) return false;
+  const generator = (light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator()) as ShadowGenerator | null;
+  if (!generator?.getShadowMap()) return false;
+  // Only point lights render cube maps.
+  return (light.getTypeID() === TYPE_IDS.point) === sampling.cube &&
+    generator instanceof CascadedShadowGenerator === sampling.cascades &&
+    generator.usePercentageCloserFiltering === sampling.pcf &&
+    generator.useContactHardeningShadow === sampling.pcss;
+}
+
+/** The light binds every light texture `flags` reads (`transferTexturesToEffect` binds only ready ones). */
+function texturesMatch(light: Light, flags: number): boolean {
+  if (flags & (PROJECTION | IES)) {
+    if (!(light instanceof SpotLight)) return false;
+    if (flags & PROJECTION && !light.projectionTexture?.isReady()) return false;
+    if (flags & IES && !(light as unknown as { _iesProfileTexture: BaseTexture | null })._iesProfileTexture?.isReady()) return false;
+  }
+  if (flags & EMISSION && !(light instanceof RectAreaLight &&
+    (light as unknown as { _emissionTextureTexture: BaseTexture | null })._emissionTextureTexture?.isReady())) return false;
+  return true;
+}
+
+/**
+ * Whether Babylon's `BindLights` binds `effect` correctly for `mesh`: the first lights it binds (`lightSources`, up to
+ * `maxSimultaneousLights`) are of the Effect's kinds in order, and bind every shadow map and light texture it samples.
+ * That holds whenever the Effect was built from the mesh's current lights. A previous Effect (a variant swap) can
+ * differ: Light blocks differ in size by kind, so another kind's buffer is an INVALID_OPERATION on WebGL2 and a
+ * validation error on WebGPU, and a sampler left without its map keeps whatever texture its unit last held.
+ */
+function bindsLikeBabylon(scene: Scene, mesh: AbstractMesh, lights: CompiledLights, maxSimultaneousLights: number): boolean {
+  const sources = mesh.lightSources;
+  if (Math.min(sources.length, maxSimultaneousLights) < lights.types.length) return false;
+  for (let index = 0; index < lights.types.length; index++) {
+    const light = sources[index]!;
+    if (light.getTypeID() !== lights.types[index]) return false;
+    const sampling = lights.shadows[index];
+    if (sampling && !shadowMatches(scene, mesh, light, sampling)) return false;
+    const textures = lights.textures[index]!;
+    if (textures && !texturesMatch(light, textures)) return false;
+  }
+  return true;
+}
+
+const usedLights = new Set<Light>();
+
+/**
+ * Binds a previous Effect by its own light layout: each shader light takes the mesh's light at its index when that
+ * light is of its kind, else the next unused light of its kind, else the empty buffer of its kind (black, so it adds
+ * nothing). A shadow map or light texture the bound light cannot supply gets a placeholder of the sampler's type.
+ */
+function bindCompiledLights(scene: Scene, mesh: AbstractMesh, effect: Effect, lights: CompiledLights, useSpecular: boolean): void {
+  const engine = scene.getEngine();
+  const sources = mesh.lightSources;
+  const placeholders = existingShadowSamplerPlaceholders(scene);
+  try {
+    for (let index = 0; index < lights.types.length; index++) {
+      const type = lights.types[index]!;
+      let light: Light | undefined = sources[index];
+      if (!light || usedLights.has(light) || light.getTypeID() !== type) {
+        light = undefined;
+        for (const candidate of sources) {
+          if (usedLights.has(candidate) || candidate.getTypeID() !== type) continue;
+          light = candidate;
+          break;
+        }
+      }
+      const sampling = lights.shadows[index];
+      const shadowed = !!light && !!sampling && shadowMatches(scene, mesh, light, sampling);
+      if (light) {
+        usedLights.add(light);
+        light._bindLight(index, scene, effect, useSpecular, shadowed);
+      } else {
+        const empty = emptyLightSeatBuffer(engine, KIND_BY_TYPE[type]!).getBuffer();
+        if (empty) effect.bindUniformBuffer(empty, LIGHT_BLOCK[index]!);
+      }
+      // Without placeholders (a swap no probe saw) a missing map keeps its unit's last texture, as Babylon does.
+      if (!placeholders) continue;
+      if (sampling && !shadowed) bindShadowPlaceholder(effect, index, sampling, placeholders);
+      const textures = lights.textures[index]!;
+      if (textures && !(light && texturesMatch(light, textures))) {
+        if (textures & PROJECTION) effect.setTexture(PROJECTION_TEXTURE[index]!, placeholders.plain);
+        if (textures & IES) effect.setTexture(IES_TEXTURE[index]!, placeholders.plain);
+        if (textures & EMISSION) effect.setTexture(EMISSION_TEXTURE[index]!, placeholders.plain);
+      }
+      // An area light binds the Scene's lookup tables itself; an empty area light leaves them to the placeholders.
+      if (type === AREA_TYPE && !light) {
+        const tables = (scene as unknown as { _ltcTextures?: { LTC1: BaseTexture; LTC2: BaseTexture } })._ltcTextures;
+        effect.setTexture("areaLightsLTC1Sampler", tables?.LTC1 ?? placeholders.plain);
+        effect.setTexture("areaLightsLTC2Sampler", tables?.LTC2 ?? placeholders.plain);
+      }
+    }
+  } finally {
+    usedLights.clear();
+  }
+}
+
+function bindShadowPlaceholder(effect: Effect, index: number, sampling: ShadowSampling, placeholders: ShadowSamplerPlaceholders): void {
+  const compares = sampling.pcf || sampling.pcss;
+  if (sampling.cube) effect.setTexture(SHADOW_TEXTURE[index]!, placeholders.cube);
+  else if (sampling.cascades) effect.setTexture(SHADOW_TEXTURE[index]!, compares ? placeholders.cascades : placeholders.plainCascades);
+  else effect.setTexture(SHADOW_TEXTURE[index]!, compares ? placeholders.compare : placeholders.plain);
+  if (sampling.pcss) effect.setTexture(DEPTH_TEXTURE[index]!, sampling.cascades ? placeholders.plainCascades : placeholders.plain);
 }

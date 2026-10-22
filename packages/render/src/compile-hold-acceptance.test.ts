@@ -17,11 +17,15 @@
  *
  * It records counts and states only, never timings: Effects compiled, frames
  * the world view held its image, whether the hold signal and the game-time
- * pause were raised, and pipelines the WebGPU model waited for.
+ * pause were raised, which Effect the changed mesh drew, and pipelines the
+ * WebGPU model waited for. Time is Vitest's fake clock, advanced a fixed step
+ * per frame, so graph preparation's polls run deterministically.
  *
- * Baseline: the expectations below describe today's behaviour. The later
- * compile-hold phases flip them (no held frame and no pause for an existing
- * material's variant change; spawned meshes hidden per mesh).
+ * A change to an existing Material's variant keeps drawing its previous Effect
+ * while the new one compiles: no held frame, no hold signal, no pause. Causes
+ * that still hold (a new shadow map's casters and graph preparation, a spawned
+ * Material, any WebGPU pipeline) assert only that the view recovers; their holds
+ * are in the failure message.
  */
 import { NullEngine, NullEngineOptions, type AbstractEngine, type Effect } from "@babylonjs/core";
 import {
@@ -213,9 +217,10 @@ const DOWN: Quat = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];
  * A Play world: a crate on a floor, a sun, a camera, plus the scenario's own actors. Every actor is posed through
  * the snapshot, as the game worker poses them.
  */
-function playWorld(model: Model, actors: Actor[], materials: string[] = []) {
-  let now = 1_000;
-  vi.spyOn(performance, "now").mockImplementation(() => now);
+function playWorld(model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2") {
+  // Preparation polls every 16 ms and the Play pause waits 250 ms: both run on this clock.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
+  cleanups.push(() => vi.useRealTimers());
   const engine = headlessEngine();
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
@@ -261,6 +266,13 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = []) {
     }
     pose();
   };
+  /** Despawns an actor; the worker's later snapshots leave its slot out. */
+  const remove = (slotId: number) => {
+    const index = world.findIndex((entry) => entry.slotId === slotId);
+    const [actor] = world.splice(index, 1);
+    handle.applyCommand({ type: "despawn", slotId, actorGuid: actor!.guid });
+    pose();
+  };
   for (const actor of world) handle.applyCommand({ type: "spawn", slotId: actor.slotId, actorGuid: actor.guid, classId: "Actor" });
   for (const actor of world) assign(actor);
   place(...actors);
@@ -274,8 +286,8 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = []) {
       views.push({ rendered: result.rendered, reason: result.reason, holding: this.holdingForPipelines });
     return result;
   });
-  const frame = () => {
-    now += FRAME_MS;
+  /** One Play frame, then `FRAME_MS` of timers and microtasks (preparation, presentation, material preparation). */
+  const frame = async () => {
     handle.scheduler.invalidate("manual");
     engine.onBeginFrameObservable.notifyObservers(engine);
     if (!engine.getRenderingCanvas())
@@ -283,9 +295,16 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = []) {
     engine._renderViews();
     engine.onEndFrameObservable.notifyObservers(engine);
     const view = views.at(-1);
-    return { view, holding: view?.holding ?? false, paused: isSceneGameTimePaused(handle.scene) };
+    const state = { view, holding: view?.holding ?? false, paused: isSceneGameTimePaused(handle.scene), effect: subjectEffect() };
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    return state;
   };
-  return { engine, handle, driver, holds, world, place, frame, views };
+  /** The Effect the subject's submesh draws with in the camera's pass: the crate by default (it receives every light). */
+  const subjectEffect = () => {
+    const pass = handle.scene.activeCamera?.renderPassId;
+    return pass === undefined ? null : handle.scene.getMeshByName(subject)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
+  };
+  return { engine, handle, driver, holds, world, place, remove, frame, views, subjectEffect };
 }
 
 type PlayWorld = ReturnType<typeof playWorld>;
@@ -308,6 +327,10 @@ interface CauseRecord {
   pausedFrames: number;
   /** WebGPU model: Effects whose pipeline a skipped draw waited for. */
   pipelines: number;
+  /** In a frame the view drew while the cause's compiles were pending, the subject drew the Effect it had before the cause. */
+  previousEffectDrawn: boolean;
+  /** After release the subject draws an Effect the cause compiled. */
+  adopted: boolean;
   /** After release the view drew within three frames and nothing stayed paused. */
   recovered: boolean;
   /** Frames after release until the view drew unpaused (recorded, not asserted: graph preparation polls on real 16 ms timers). */
@@ -316,59 +339,64 @@ interface CauseRecord {
   reasons: string[];
 }
 
+/** Awaits `work` while the fake clock runs, in 16 ms steps (its waits poll on timers). */
+async function withClock<T>(work: Promise<T>): Promise<T> {
+  let settled = false;
+  const done = work.finally(() => { settled = true; });
+  for (let step = 0; step < 4_000 && !settled; step++) await vi.advanceTimersByTimeAsync(16);
+  return done;
+}
+
 async function settle(world: PlayWorld): Promise<void> {
-  await world.handle.prewarmSceneMaterials();
+  await withClock(world.handle.prewarmSceneMaterials());
   const presented = world.handle.presentFirstFrame();
-  for (let index = 0; index < 4; index++) world.frame();
+  for (let index = 0; index < 4; index++) await world.frame();
   await presented;
   // A few steady frames: shadow maps render once, lighting settles.
-  for (let index = 0; index < 4; index++) world.frame();
-  expect(world.frame().view?.rendered, "the scene draws before the cause").toBe(true);
+  for (let index = 0; index < 4; index++) await world.frame();
+  expect((await world.frame()).view?.rendered, "the scene draws before the cause").toBe(true);
 }
 
 /**
  * Applies `cause` to a settled view, keeps the new compiles or pipelines pending for `PENDING_FRAMES` frames,
- * releases them and lets the view recover. `cause` may return a promise (a spawn's material preparation), which is
- * awaited after the pending window and before the recovery frames.
+ * releases them and lets the view recover (up to 30 frames). `settled` runs once the view has settled.
  */
-/** Real time between frames, so graph preparation (it polls readiness every 16 ms) runs about once per frame. */
-const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
-
 async function measure(world: PlayWorld, cause: () => unknown, settled?: () => void): Promise<CauseRecord> {
   await settle(world);
   settled?.();
+  const before = world.subjectEffect();
   world.driver.arm();
   const holdsBefore = world.holds.length;
-  const outcome = cause();
+  cause();
   let heldFrames = 0;
   let drawnFrames = 0;
   let pausedFrames = 0;
   let holdReported = false;
+  let previousEffectDrawn = false;
   const reasons = new Set<string>();
   for (let index = 0; index < PENDING_FRAMES; index++) {
-    const { view, holding, paused } = world.frame();
-    if (view?.rendered) drawnFrames++;
-    else {
+    const { view, holding, paused, effect } = await world.frame();
+    if (view?.rendered) {
+      drawnFrames++;
+      previousEffectDrawn ||= effect === before && world.driver.created.length > 0;
+    } else {
       heldFrames++;
       reasons.add(view?.reason ?? "no frame");
     }
     if (paused) pausedFrames++;
     holdReported ||= holding;
-    // Let asynchronous work (graph preparation, a spawned material's compile poll) run between frames.
-    await nextTask();
   }
   world.driver.release();
-  await outcome;
   let recovered = false;
   let recoveryFrames = 0;
   for (let index = 0; index < 30 && !recovered; index++, recoveryFrames++) {
-    const { view, paused } = world.frame();
+    const { view, paused } = await world.frame();
     if (paused) pausedFrames++;
     recovered = !!view?.rendered && !paused;
     if (!view?.rendered) reasons.add(`after release: ${view?.reason ?? "no frame"}`);
-    await nextTask();
   }
   const created = world.driver.created;
+  const after = world.subjectEffect();
   return {
     effects: created.length,
     litEffects: created.filter((effect) => /#define LIGHT0\b/.test(effect.defines)).length,
@@ -378,6 +406,8 @@ async function measure(world: PlayWorld, cause: () => unknown, settled?: () => v
     holdRaised: world.holds.slice(holdsBefore).includes(true),
     pausedFrames,
     pipelines: world.driver.pipelines.size,
+    previousEffectDrawn,
+    adopted: !!after && created.includes(after),
     recovered,
     recoveryFrames,
     reasons: [...reasons],
@@ -391,60 +421,57 @@ const spot = (slotId: number, position: Vec3, properties: Partial<PlayLightPrope
 
 const MODELS: readonly Model[] = ["sync", "parallel", "webgpu"];
 
-/** Whether the world view held its image in none, some or all of the pending window's frames. */
-type Held = "none" | "some" | "all";
-type Expected = { held: Held; holdReported: boolean; holdRaised: boolean; paused: boolean };
-
-/** The states a later phase flips; compile counts are recorded in the failure message, not asserted. */
-function expectBaseline(record: CauseRecord, model: Model, expected: Expected): void {
-  const held: Held = record.heldFrames === 0 ? "none" : record.heldFrames === PENDING_FRAMES ? "all" : "some";
+/** The view keeps drawing, raises no hold and pauses nothing; the subject drew its previous Effect while the new one compiled. */
+function expectSwapped(record: CauseRecord, model: Model): void {
   const detail = JSON.stringify(record);
-  // The cause really compiled a lit variant (and, on WebGPU, waited for its pipeline), so the states below mean something.
+  // The cause really compiled a lit variant, so the states below mean something.
   expect(record.litEffects, detail).toBeGreaterThan(0);
-  expect(record.pipelines > 0, detail).toBe(model === "webgpu" && expected.held !== "none");
-  expect({ held, holdReported: record.holdReported, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered }, detail)
-    .toEqual({ ...expected, recovered: true });
+  expect({
+    heldFrames: record.heldFrames, holdReported: record.holdReported, holdRaised: record.holdRaised,
+    paused: record.pausedFrames > 0, recovered: record.recovered,
+    // Only a pending compile leaves a previous Effect drawing; a synchronous link draws the new one at once.
+    previousEffectDrawn: record.previousEffectDrawn, adopted: record.adopted,
+  }, detail).toEqual({
+    heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
+    previousEffectDrawn: model === "parallel", adopted: true,
+  });
 }
 
-/** Today's behaviour per driver model for a cause that changes an existing Material's variant. */
-const HELD_AND_PAUSED: Record<Model, Expected> = {
-  // A link that completes inside the call blocks the thread instead; nothing is left to hold for.
-  sync: { held: "none", holdReported: false, holdRaised: false, paused: false },
-  // Strict readiness holds the image until the pending variant links, and Play pauses its game time meanwhile.
-  parallel: { held: "all", holdReported: true, holdRaised: true, paused: true },
-  // The deferral skips the frame until the new pipeline exists, with the same pause.
-  webgpu: { held: "all", holdReported: true, holdRaised: true, paused: true },
-};
+/** A cause this harness does not yet require to swap: it compiled, and the view recovers once its work is done. */
+function expectRecovers(record: CauseRecord): void {
+  const detail = JSON.stringify(record);
+  expect(record.litEffects, detail).toBeGreaterThan(0);
+  expect(record.recovered, detail).toBe(true);
+}
 
-describe("compile-hold baseline", () => {
-  it.each(MODELS)("a point light switches off: %s", async (model) => {
+/** WebGPU's Effects are ready once created, so a new pipeline still holds the view (pipeline swaps are separate work). */
+const SWAP_MODELS: readonly Model[] = ["sync", "parallel"];
+
+describe("compile holds after the first frame", () => {
+  it.each(SWAP_MODELS)("a point light switches off: %s", async (model) => {
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
-    const record = await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false })));
-    expectBaseline(record, model, HELD_AND_PAUSED[model]);
+    expectSwapped(await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))), model);
   });
 
-  it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
-    const world = playWorld(model, [spot(10, [0, 5, 0])]);
-    const record = await measure(world, () => world.place(spot(10, [0, 5, 0], { castShadows: true })));
-    // A new shadow map also re-prepares the graph, which holds the image for a frame even where links are synchronous;
-    // that wait compiles nothing pending, so it raises no hold signal and pauses nothing.
-    expectBaseline(record, model, model === "sync" ? { held: "some", holdReported: false, holdRaised: false, paused: false } : HELD_AND_PAUSED[model]);
+  it.each(SWAP_MODELS)("a point light is removed: %s", async (model) => {
+    // Babylon will not draw a previous Effect after one of its lights was disposed; the view binds it without that light.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
+    expectSwapped(await measure(world, () => world.remove(11)), model);
   });
 
-  it.each(MODELS)("a spot light stops casting shadows: %s", async (model) => {
-    const world = playWorld(model, [spot(10, [0, 5, 0], { castShadows: true })]);
-    const record = await measure(world, () => world.place(spot(10, [0, 5, 0])));
-    expectBaseline(record, model, HELD_AND_PAUSED[model]);
+  it.each(SWAP_MODELS)("a spot light stops casting shadows: %s", async (model) => {
+    // The floor receives the crate's shadow; its unshadowed variant is new.
+    const world = playWorld(model, [spot(10, [0, 5, 0], { castShadows: true })], [], "actor-1");
+    expectSwapped(await measure(world, () => world.place(spot(10, [0, 5, 0]))), model);
   });
 
-  it.each(MODELS)("the light inventory grows past its high-water mark: %s", async (model) => {
+  it.each(SWAP_MODELS)("the light inventory grows past its high-water mark: %s", async (model) => {
     // The sun and three points: four lights. A fifth, switched off, still raises every lit Material's light capacity.
     const world = playWorld(model, [point(10, [-2, 2.5, -1]), point(11, [2, 2.5, -1]), point(12, [0, 2.5, 2])]);
-    const record = await measure(world, () => world.place(point(13, [0, 2.5, -3], { enabled: false })));
-    expectBaseline(record, model, HELD_AND_PAUSED[model]);
+    expectSwapped(await measure(world, () => world.place(point(13, [0, 2.5, -3], { enabled: false }))), model);
   });
 
-  it.each(MODELS)("the Forward budget swaps a point light for a spot light: %s", async (model) => {
+  it.each(SWAP_MODELS)("the Forward budget swaps a point light for a spot light: %s", async (model) => {
     // The sun and eight points fill the nine shader slots; the spot, far away, is limited until it moves near the camera.
     const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
     const world = playWorld(model, [...points, spot(30, [0, 5, 40])]);
@@ -456,24 +483,38 @@ describe("compile-hold baseline", () => {
     // The swap happened: the spot took a point's place.
     expect([limitedBefore, isForwardLightExcluded(lightOf(30))]).toEqual([true, false]);
     expect(points.filter((actor) => isForwardLightExcluded(lightOf(actor.slotId)))).toHaveLength(1);
-    expectBaseline(record, model, HELD_AND_PAUSED[model]);
+    expectSwapped(record, model);
   });
 
-  it.each(MODELS)("an area light's emission texture arrives: %s", async (model) => {
+  it.each(SWAP_MODELS)("an area light's emission texture arrives: %s", async (model) => {
+    const pixels = await areaEmissionPixels();
     const world = playWorld(model, []);
-    const pixels = await decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
     world.handle.applyCommand({ type: "setAreaLights", slotId: 2, lights: areaRectLightBindings([{ id: "panel", classId: "AreaRectLightComponent", properties: { textureGuid: "panel-texture" } }]) });
-    const record = await measure(world, () => world.handle.setMeshAssets({ areaEmissions: new Map([["panel-texture", pixels]]) }));
-    expectBaseline(record, model, HELD_AND_PAUSED[model]);
+    expectSwapped(await measure(world, () => world.handle.setMeshAssets({ areaEmissions: new Map([["panel-texture", pixels]]) })), model);
+  });
+
+  it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
+    // Receivers swap, but the new map's casters compile their depth variants first and the graph prepares the map.
+    const world = playWorld(model, [spot(10, [0, 5, 0])]);
+    expectRecovers(await measure(world, () => world.place(spot(10, [0, 5, 0], { castShadows: true }))));
   });
 
   it.each(MODELS)("a spawned actor uses a Material no mesh drew before: %s", async (model) => {
+    // A mesh with no previous Effect has nothing to draw meanwhile.
     const world = playWorld(model, [], ["surface-a"]);
-    const record = await measure(world, () => {
+    expectRecovers(await measure(world, () => {
       world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
-    });
-    // The whole frame waits for the new mesh, also for one frame where links are synchronous.
-    expectBaseline(record, model, model === "sync" ? { held: "some", holdReported: false, holdRaised: false, paused: false } : HELD_AND_PAUSED[model]);
+    }));
+  });
+
+  it("a variant change on WebGPU recovers once its pipeline exists", async () => {
+    const world = playWorld("webgpu", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
+    expectRecovers(await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))));
   });
 });
+
+/** Prepared area emission pixels, as the derived chunk holds them. */
+async function areaEmissionPixels() {
+  return decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
+}
