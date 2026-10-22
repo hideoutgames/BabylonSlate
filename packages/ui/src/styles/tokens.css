@@ -240,7 +240,8 @@
     --graph-state-selected: oklch(0.83 0.14 80);
     --graph-state-entry: oklch(0.74 0.12 155);
     --surface-shadow: 0 2px 6px rgb(0 0 0 / 18%);
-    --list-stripe: oklch(0 0 0 / 0.035);
+    /* A light lift: a dark tint does not show on the near-black panels. */
+    --list-stripe: oklch(1 0 0 / 0.03);
     --trace-selected: oklch(0.76 0.18 55);
     --trace-script: oklch(0.70 0.14 260);
     --trace-physics: oklch(0.72 0.12 185);
