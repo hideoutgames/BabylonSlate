@@ -1,16 +1,12 @@
 import {
-  BaseTexture,
   CascadedShadowGenerator,
   Constants,
   DirectionalLight,
   PointLight,
   SpotLight,
   Vector3,
-  type AbstractEngine,
   type Camera,
   type Effect,
-  type InternalTexture,
-  type RenderTargetWrapper,
   type Scene,
   type ShadowGenerator,
 } from "@babylonjs/core";
