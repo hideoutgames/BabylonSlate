@@ -38,7 +38,7 @@ function readHassetHeader(bytes: Uint8Array): {
 } {
   if (bytes.byteLength < 12) return {};
   const magic = String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!);
-  if (magic !== "BABA") return {};
+  if (magic !== "HAPT") return {};
   const headerLen = new DataView(
     bytes.buffer,
     bytes.byteOffset,
