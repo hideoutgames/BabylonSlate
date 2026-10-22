@@ -9,6 +9,7 @@ const curve = enumRef(ENGINE_EASING_CURVE_ENUM_ID);
 const space = enumRef(ENGINE_TWEEN_SPACE_ENUM_ID);
 const actor = actorRef("Actor");
 const component = objectRef("ActorComponent");
+const sceneLayer = objectRef("SceneLayer");
 const identityTransform = {
   position: { x: 0, y: 0, z: 0 },
   rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -18,6 +19,7 @@ const identityTransform = {
 function tweenNode(
   id: string, title: string, value: PinType, target?: PinType,
   property?: string, transformSpace = false,
+  initial: unknown = value.kind === "transform" ? identityTransform : defaultJsValue(value),
 ): NodeDefinition {
   return {
     id: `tween.${id}`, title: `Tween ${title}`, category: "tween", latent: true,
@@ -28,8 +30,8 @@ function tweenNode(
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Completed", "out", EXEC),
       { ...pin("target", "Target", "in", target ?? value), ...(target ? { subject: true } : { reference: "required" as const }) },
-      pin("a", "A", "in", value, "data", true, value.kind === "transform" ? identityTransform : defaultJsValue(value)),
-      pin("b", "B", "in", value, "data", true, value.kind === "transform" ? identityTransform : defaultJsValue(value)),
+      pin("a", "A", "in", value, "data", true, initial),
+      pin("b", "B", "in", value, "data", true, initial),
       pin("duration", "Duration", "in", FLOAT, "data", true, 2),
       pin("curve", "Curve", "in", curve, "data", true, "linear"),
       ...(transformSpace ? [pin("space", "Space", "in", space, "data", true, "local")] : []),
@@ -75,4 +77,7 @@ export const tweenNodes: NodeDefinition[] = [
   tweenNode("textOutline", "Text Outline", FLOAT, component, "text.outline"),
   tweenNode("textOutlineColor", "Text Outline Color", COLOR, component, "text.outlineColor"),
   tweenNode("textWrapSize", "Text Wrap Size", VEC2, component, "text.wrapSize"),
+  tweenNode("sceneLayerCameraLocation", "Scene Layer Camera Location", VEC2, sceneLayer, "sceneLayer.cameraLocation"),
+  tweenNode("sceneLayerCameraRotation", "Scene Layer Camera Rotation", FLOAT, sceneLayer, "sceneLayer.cameraRotation"),
+  tweenNode("sceneLayerCameraZoom", "Scene Layer Camera Zoom", FLOAT, sceneLayer, "sceneLayer.cameraZoom", false, 1),
 ];
