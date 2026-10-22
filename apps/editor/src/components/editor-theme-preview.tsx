@@ -394,13 +394,13 @@ const PREVIEW_GRAPH = {
     {
       id: "event-begin-play",
       type: "flow.event.beginPlay",
-      position: { x: 80, y: 80 },
+      position: { x: 0, y: 0 },
       data: { title: "Event Begin Play", __pins: [execPin("execOut", "then", "out")], __category: "flow", __pure: true },
     },
     {
       id: "call-begin-play-parent",
       type: "flow.event.callParent",
-      position: { x: 360, y: 80 },
+      position: { x: 440, y: 0 },
       data: {
         title: "Call Begin Play Parent",
         __pins: [execPin("execIn", "exec", "in"), execPin("execOut", "then", "out")],
@@ -410,7 +410,7 @@ const PREVIEW_GRAPH = {
     {
       id: "event-tick",
       type: "flow.event.tick",
-      position: { x: 80, y: 240 },
+      position: { x: 0, y: 200 },
       data: {
         title: "Event Tick",
         __pins: [execPin("execOut", "then", "out"), floatPin("deltaSeconds", "out")],
@@ -421,7 +421,7 @@ const PREVIEW_GRAPH = {
     {
       id: "call-tick-parent",
       type: "flow.event.callParent",
-      position: { x: 360, y: 240 },
+      position: { x: 440, y: 200 },
       data: {
         title: "Call Tick Parent",
         __pins: [
@@ -441,7 +441,7 @@ const PREVIEW_GRAPH = {
   ],
 } as unknown as GraphDocument;
 
-const PREVIEW_VIEWPORT = { x: 240, y: 200, zoom: 0.5 };
+const PREVIEW_VIEWPORT = { x: 150, y: 190, zoom: 0.8 };
 
 /** Shows the toolbar's Add Node; the palette never opens in the preview. */
 const PREVIEW_PALETTE = [{ id: "flow.event.beginPlay", title: "Event Begin Play", category: "flow" }];
