@@ -3188,6 +3188,30 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("takes no camera preview passes while a game pauses the editor Engine, and resumes after", () => {
+    const engine = sharedEngine();
+    const previewRenders = vi.spyOn(RenderTargetTexture.prototype, "render");
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+      handles.push(editor);
+      const camera = createActor("cam", "Camera", {
+        components: [{ id: "camera", classId: "CameraComponent", properties: { fieldOfView: 60 } }],
+      });
+      editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [camera] }, selectedActorIds: [camera.id] });
+      syncEditorPlayState(editor, true);
+      previewRenders.mockClear();
+      vi.advanceTimersByTime(3000);
+      expect(previewRenders).not.toHaveBeenCalled();
+      syncEditorPlayState(editor, false);
+      vi.advanceTimersByTime(1000);
+      expect(previewRenders).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      previewRenders.mockRestore();
+    }
+  });
+
   it("sizes a selected Render Target Capture preview from the installed target assets", () => {
     const engine = sharedEngine();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });

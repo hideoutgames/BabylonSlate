@@ -111,6 +111,7 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { requeueWithEditLock } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { moveKeyedEntry } from "../lib/move-keyed-entry";
@@ -894,6 +895,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavePausedRef = useRef(false);
+  /** An auto-save came due while a game covered the editor. */
+  const autoSaveDeferredRef = useRef(false);
   const projectWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const enqueueProjectWrite = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
     const pending = projectWriteQueue.current.then(operation);
@@ -1147,15 +1150,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
   }, [projectService, settingsStore, sourceControlEnabled]);
 
+  // Lock polling and the foreground rescan wait while the app is hidden or a game covers the editor.
   useEffect(() => {
-    return attachLifecyclePause((paused) => {
-      if (paused) {
+    let hidden = false;
+    let rescanPending = false;
+    const apply = () => {
+      if (hidden || editorQuiet()) {
         sourceControlRef.current.pausePolling();
         return;
       }
       sourceControlRef.current.resumePolling();
+      if (!rescanPending) return;
+      rescanPending = false;
       void runForegroundRescanRef.current();
+    };
+    const detachQuiet = subscribeEditorQuiet(apply);
+    const detachLifecycle = attachLifecyclePause((paused) => {
+      hidden = paused;
+      // Coming back to the app rescans the project, once the editor is back too.
+      if (!paused) rescanPending = true;
+      apply();
     });
+    return () => {
+      detachQuiet();
+      detachLifecycle();
+    };
   }, []);
 
   const disposeDockSubscriptions = useCallback((id?: string) => {
@@ -2027,6 +2046,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectDocumentRef.current?.settings.autoSaveIntervalMs ?? 120_000;
     saveDebounceRef.current = setTimeout(() => {
       saveDebounceRef.current = null;
+      // A game covers the editor: the save waits for it, then a fresh interval.
+      if (editorQuiet()) {
+        autoSaveDeferredRef.current = true;
+        return;
+      }
       const guid = projectService.guid;
       setAutoSaveStatus({ state: "saving" });
       void saveProject().then(
@@ -2062,6 +2086,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       scheduleDebouncedSave();
     }
   }, [documentService, projectService, scheduleDebouncedSave]);
+
+  useEffect(() => subscribeEditorQuiet(() => {
+    if (editorQuiet() || !autoSaveDeferredRef.current) return;
+    autoSaveDeferredRef.current = false;
+    if (
+      projectService.guid &&
+      (documentService.getDirtyDocuments().length > 0 || projectSaveState.current.isDirty(projectDocumentRef.current))
+    ) {
+      scheduleDebouncedSave();
+    }
+  }), [documentService, projectService, scheduleDebouncedSave]);
 
   // The edit pipeline (apply*, Undo / Redo, Simulation apply, journal append
   // and recovery replay, prefab sync). Every input is stable, so it is built
@@ -3168,6 +3203,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ensureMainGraphOpen: () => Promise<boolean>;
         nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
+        /** A game covers the editor, so its background work waits (`editor-quiet`). */
+        editorQuiet: () => boolean;
         assetLoading: () => { sources: ReturnType<import("@haptic/assets").AssetLoadingService["snapshot"]>; storage: import("@haptic/core").StorageReadMetrics | null; chunks: ReturnType<import("@haptic/assets").AccountedPayloadLoader["snapshot"]> | null; requestedPayloadBytes: number };
         trimAssetSources: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
@@ -3243,6 +3280,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     host.__hapticTest = {
       assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, chunks: projectService.registry?.payloadLoader.snapshot() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
       trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
+      editorQuiet,
       cancelDebouncedSave: () => {
         if (saveDebounceRef.current) {
           clearTimeout(saveDebounceRef.current);

@@ -47,7 +47,7 @@ If an auto-save fails or pauses, the status bar shows **Auto-Save Failed — Use
 
 Auto-save pauses while the **Unsaved Documents** prompt is open, so **Discard** drops what the prompt lists. It starts a new interval when you choose **Cancel**.
 
-When you start **Play** with unsaved changes, **Play Without Saving** runs your current edits without saving them first. Auto-save can still save them later.
+When you start **Play** with unsaved changes, **Play Without Saving** runs your current edits without saving them first. Auto-save can still save them later. It waits while **Play** or **Preview Build** runs, and starts a new interval once you are back in the editor.
 
 ## Closing with unsaved changes
 
