@@ -133,7 +133,8 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             Real-Time Reflections
           </FieldLabel>
           <FieldDescription>
-            Reflect visible scene objects on PBR surfaces. Environment lighting
+            Reflect visible scene objects on lit metal and smooth surfaces. CEL
+            also needs Real-Time Reflections in CEL Shading. Environment lighting
             remains available outside the view. Runs where Post Processing
             quality allows it (High and above by default).
           </FieldDescription>
