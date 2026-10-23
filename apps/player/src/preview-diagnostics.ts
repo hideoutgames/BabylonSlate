@@ -1,4 +1,4 @@
-import { SessionDiagnostics, createDiagnosticOperationClient } from "@haptic/debugger";
+import { SessionDiagnostics, createDiagnosticOperationClient, observeBrowserLongTasks } from "@haptic/debugger";
 import { createPreviewDiagnosticServer, type PreviewDiagnosticEndpoint, type PreviewDiagnosticResult } from "@haptic/exporter";
 import type { DiagnosticOperationResult, PerformanceTickChunk } from "@haptic/bridge";
 import type { RenderFrameReport } from "@haptic/render";
@@ -14,13 +14,15 @@ export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, e
     send: async (request) => { const reply = await ports.send(request); if (reply) client.receive(reply); } });
   const session = new SessionDiagnostics<RenderFrameReport>({ mode: "preview", identity: ports.identity,
     observeFrames: ports.observeFrames, observeGpuTiming: ports.observeGpuTiming, captureFrame: ports.captureFrame,
+    sampleMemory: ports.sampleMemory, observeLongTasks: observeBrowserLongTasks,
     runtimeOperation: (request) => client.request(request),
     onProfile: (profile) => {
-      const { frames, ticks, gpu, ...metadata } = profile;
-      transfer = server.publishProfile({ metadata: { ...metadata,
-        frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
-        gpu: { columns: gpu.columns, count: gpu.count } },
-        frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks }).finally(() => session.forgetProfile(profile));
+      const { frames, ticks, gpu, memory, longTasks, ...metadata } = profile;
+      const streams = { frames, ticks, gpu, memory, longTasks };
+      transfer = server.publishProfile({
+        metadata: { ...metadata, ...Object.fromEntries(Object.entries(streams).map(([name, stream]) => [name, { columns: stream.columns, count: stream.count }])) },
+        frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks, memory: memory.chunks, longTasks: longTasks.chunks,
+      }).finally(() => session.forgetProfile(profile));
     },
   });
   const server = createPreviewDiagnosticServer(endpoint, {

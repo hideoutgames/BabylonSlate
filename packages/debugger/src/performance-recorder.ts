@@ -29,6 +29,10 @@ export const PERFORMANCE_TICK_PHASE_COLUMNS = [
 /** Version 2 keeps version 1's columns first (script still sums every phase but physics). */
 export const PERFORMANCE_TICK_COLUMNS = [...PERFORMANCE_TICK_COLUMNS_V1, ...PERFORMANCE_TICK_PHASE_COLUMNS] as const;
 export const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequence", "coalescedQueries"] as const;
+/** Version 3: the host's accounted texture and geometry memory, sampled while recording. */
+export const PERFORMANCE_MEMORY_COLUMNS = ["sampledAtMs", "textureBytes", "geometryBytes"] as const;
+/** Version 3: main-thread tasks of 50 ms or more, where the browser reports them (not Safari). */
+export const PERFORMANCE_LONG_TASK_COLUMNS = ["startedAtMs", "durationMs"] as const;
 export const DEFAULT_PROFILE_DURATION_MS = 10_000;
 export const DEFAULT_PROFILE_BYTE_BUDGET = 16 * 1024 * 1024;
 export const MAX_PROFILE_BYTE_BUDGET = 64 * 1024 * 1024;
@@ -71,6 +75,10 @@ export type PerformanceTickSample = {
   elapsedMs: number;
   scriptMs: number; physicsMs: number; publishMs: number; otherMs: number;
 } & Record<(typeof PERFORMANCE_TICK_PHASE_COLUMNS)[number], number>;
+/** Host performance.now(), converted to a recording-relative origin on admission. */
+export type PerformanceMemorySample = { sampledAtMs: number; textureBytes: number; geometryBytes: number };
+/** Host performance.now() start, converted to a recording-relative origin on admission. */
+export type PerformanceLongTaskSample = { startedAtMs: number; durationMs: number };
 export type PerformanceStopReason = "requested" | "duration" | "budget" | "session-ended" | "error";
 export type PerformanceStream = {
   columns: readonly string[];
@@ -79,8 +87,11 @@ export type PerformanceStream = {
   chunks: Float64Array[];
 };
 export type PerformanceProfile = {
-  /** Version 1 profiles keep their tick rows (`PERFORMANCE_TICK_COLUMNS_V1`); recordings write version 2. */
-  kind: "haptic-performance"; version: 1 | 2;
+  /**
+   * Version 1 profiles keep their tick rows (`PERFORMANCE_TICK_COLUMNS_V1`); version 2 adds the tick phases;
+   * recordings write version 3, which adds memory and long tasks (empty when opening an earlier version).
+   */
+  kind: "haptic-performance"; version: 1 | 2 | 3;
   identity: PerformanceIdentity;
   requestedDurationMs: number; durationMs: number;
   byteBudget: number;
@@ -88,6 +99,7 @@ export type PerformanceProfile = {
   retainedBytes: number;
   droppedRecords: number; stopReason: PerformanceStopReason;
   frames: PerformanceStream; ticks: PerformanceStream; gpu: PerformanceStream;
+  memory: PerformanceStream; longTasks: PerformanceStream;
 };
 
 type BufferStream = PerformanceStream & { tailUsed: number };
@@ -102,6 +114,7 @@ export class PerformanceRecorder {
     identity: PerformanceIdentity; startedAtMs: number; durationMs: number;
     byteBudget: number; retainedBytes: number; previousCompletedAt: number | null; droppedRecords: number;
     frames: BufferStream; ticks: BufferStream; gpu: BufferStream; previousGpuAt: number | null; previousGpuSequence: number;
+    memory: BufferStream; previousMemoryAt: number | null; longTasks: BufferStream;
   } | undefined;
   private result: PerformanceProfile | undefined;
   private readonly now: () => number;
@@ -127,7 +140,8 @@ export class PerformanceRecorder {
     this.active = { identity: copyIdentity(identity),
       startedAtMs: this.now(), durationMs, byteBudget, retainedBytes, previousCompletedAt: null, droppedRecords: 0,
       frames: newStream(PERFORMANCE_FRAME_COLUMNS), ticks: newStream(PERFORMANCE_TICK_COLUMNS), gpu: newStream(PERFORMANCE_GPU_COLUMNS),
-      previousGpuAt: null, previousGpuSequence: 0 };
+      previousGpuAt: null, previousGpuSequence: 0,
+      memory: newStream(PERFORMANCE_MEMORY_COLUMNS), previousMemoryAt: null, longTasks: newStream(PERFORMANCE_LONG_TASK_COLUMNS) };
     this.result = undefined;
   }
 
@@ -177,16 +191,37 @@ export class PerformanceRecorder {
     return accepted;
   }
 
+  recordMemory(sample: PerformanceMemorySample): boolean {
+    if (!this.advance()) return false;
+    const state = this.active!;
+    if (![sample.sampledAtMs, sample.textureBytes, sample.geometryBytes].every(finite) ||
+      sample.sampledAtMs < state.startedAtMs || (state.previousMemoryAt !== null && sample.sampledAtMs < state.previousMemoryAt))
+      throw new Error("Memory samples require finite, monotonic times and non-negative byte counts.");
+    const accepted = this.append(state.memory, [sample.sampledAtMs - state.startedAtMs, sample.textureBytes, sample.geometryBytes]);
+    if (accepted) state.previousMemoryAt = sample.sampledAtMs;
+    return accepted;
+  }
+
+  /** The browser reports a long task after it ends, so one that started before the recording is left out. */
+  recordLongTask(sample: PerformanceLongTaskSample): boolean {
+    if (!this.advance()) return false;
+    const state = this.active!;
+    if (![sample.startedAtMs, sample.durationMs].every(finite)) throw new Error("Long tasks require a finite start and duration.");
+    if (sample.startedAtMs < state.startedAtMs) return false;
+    return this.append(state.longTasks, [sample.startedAtMs - state.startedAtMs, sample.durationMs]);
+  }
+
   stop(reason: PerformanceStopReason = "requested", stoppedAtMs = this.now()): PerformanceProfile | undefined {
     const state = this.active;
     if (!state) return this.result;
     this.active = undefined;
     const finish = (stream: BufferStream): PerformanceStream => ({ columns: stream.columns, count: stream.count,
       chunks: stream.chunks.map((chunk, index) => index === stream.chunks.length - 1 ? chunk.subarray(0, stream.tailUsed) : chunk) });
-    this.result = { kind: "haptic-performance", version: 2, identity: state.identity,
+    this.result = { kind: "haptic-performance", version: 3, identity: state.identity,
       requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
       byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: state.droppedRecords,
-      stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu) };
+      stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu),
+      memory: finish(state.memory), longTasks: finish(state.longTasks) };
     this.onStopped?.(this.result);
     return this.result;
   }
@@ -241,7 +276,7 @@ export function serializePerformanceProfile(profile: PerformanceProfile): string
 export function parsePerformanceProfile(value: unknown): PerformanceProfile | null {
   if (!value || typeof value !== "object") return null;
   const data = value as PerformanceProfile;
-  if (data.kind !== "haptic-performance" || (data.version !== 1 && data.version !== 2) || !validIdentity(data.identity) ||
+  if (data.kind !== "haptic-performance" || (data.version !== 1 && data.version !== 2 && data.version !== 3) || !validIdentity(data.identity) ||
     data.identity.mode === "simulate" || !finite(data.durationMs) || !finite(data.requestedDurationMs) ||
     data.requestedDurationMs < 1000 || data.requestedDurationMs > 60_000 ||
     !safeId(data.byteBudget) || data.byteBudget > MAX_PROFILE_BYTE_BUDGET || !safeId(data.retainedBytes) ||
@@ -267,11 +302,16 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
   const ticks = frames && parseStream(data.ticks, data.version === 1 ? PERFORMANCE_TICK_COLUMNS_V1 : PERFORMANCE_TICK_COLUMNS);
   const gpu = ticks && parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS);
-  if (!frames || !ticks || !gpu || bytes > data.retainedBytes || (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
+  // Earlier versions recorded neither, so they open with both empty.
+  const emptyStream = (columns: readonly string[]): PerformanceStream => ({ columns, count: 0, chunks: [] });
+  const memory = gpu && (data.version === 3 ? parseStream(data.memory, PERFORMANCE_MEMORY_COLUMNS) : emptyStream(PERFORMANCE_MEMORY_COLUMNS));
+  const longTasks = memory && (data.version === 3 ? parseStream(data.longTasks, PERFORMANCE_LONG_TASK_COLUMNS) : emptyStream(PERFORMANCE_LONG_TASK_COLUMNS));
+  if (!frames || !ticks || !gpu || !memory || !longTasks || bytes > data.retainedBytes ||
+    (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
   return { kind: "haptic-performance", version: data.version, identity: copyIdentity(data.identity),
     requestedDurationMs: data.requestedDurationMs, durationMs: data.durationMs,
     byteBudget: data.byteBudget, retainedBytes: data.retainedBytes,
-    droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu };
+    droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu, memory, longTasks };
 }
 
 function validIdentity(value: unknown): value is PerformanceIdentity {

@@ -220,11 +220,22 @@ export interface PlayOverlayProps {
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
-/** The previous array when a poll found nothing new, so identical values do not re-render the overlay. */
-function keepIfEqual<T>(previous: readonly T[], next: T[]): T[] {
-  return previous.length === next.length && previous.every((value, index) => Object.is(value, next[index]))
-    ? (previous as T[])
-    : next;
+/**
+ * Tracks what a poll last set, so it sets state only for values that changed. Setting state to an
+ * unchanged value can still re-render the whole overlay before React skips its children, and the
+ * poll runs five times a second. Arrays compare by their items.
+ */
+function polledValues() {
+  const last = new Map<string, unknown>();
+  return <T,>(key: string, value: T, set: (value: T) => void) => {
+    const previous = last.get(key);
+    const same = last.has(key) && (Array.isArray(value) && Array.isArray(previous)
+      ? previous.length === value.length && previous.every((item, index) => Object.is(item, value[index]))
+      : Object.is(previous, value));
+    if (same) return;
+    last.set(key, value);
+    set(value);
+  };
 }
 
 function emptyPlayResult(): PlaySessionResult {
@@ -1077,31 +1088,30 @@ function PlayOverlayView({
       const detachLifecycle = attachLifecyclePause((hidden) => {
         pauseRef.current("lifecycle", hidden);
       });
+      const update = polledValues();
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;
         if (testMode) {
-          setMoveX(current?.lastMoveX() ?? null);
-          const nextGuids = [...(current?.spawnedActorGuids() ?? [])];
-          setActorGuids((previous) => keepIfEqual(previous, nextGuids));
-          const nextYs = (current?.lastActorPositions() ?? []).map((entry) => entry.y);
-          setActorYs((previous) => keepIfEqual(previous, nextYs));
+          update("moveX", current?.lastMoveX() ?? null, setMoveX);
+          update("guids", [...(current?.spawnedActorGuids() ?? [])], setActorGuids);
+          update("ys", (current?.lastActorPositions() ?? []).map((entry) => entry.y), setActorYs);
         }
-        setAudioQueued(audioStats.queued);
-        setAudioUnlocked(audioStats.unlocked);
+        update("audioQueued", audioStats.queued, setAudioQueued);
+        update("audioUnlocked", audioStats.unlocked, setAudioUnlocked);
         if (current) {
           // Rendering diagnostics scan the Scene's meshes and lights, and the first read keeps
           // frame-phase timing on. Only the Stats HUD and the lights debug overlay show them.
           const lights = current.handle.lightsDebugEnabled();
-          setLightsDebug(lights);
+          update("lights", lights, setLightsDebug);
           if (statsVisibleRef.current || lights) setRendering(current.handle.renderDiagnostics());
           if (testMode) {
-            setPostProcessPasses(current.handle.postProcessPassCount());
-            setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+            update("passes", current.handle.postProcessPassCount(), setPostProcessPasses);
+            update("materials", current.handle.assignedMaterialGuids().join(","), setAssignedMaterials);
           }
-          setFreeCamEnabled(current.handle.isFreeCamEnabled());
+          update("freeCam", current.handle.isFreeCamEnabled(), setFreeCamEnabled);
           // Only the Stats HUD shows these; skip their reads while it is hidden.
           if (statsVisibleRef.current) {
-            setMemoryBytes(current.accountedBytes());
+            update("memory", current.accountedBytes(), setMemoryBytes);
             if (!hostMemoryInFlight.current) {
               hostMemoryInFlight.current = true;
               void getHostMemoryStats()
@@ -1111,12 +1121,12 @@ function PlayOverlayView({
                   hostMemoryInFlight.current = false;
                 });
             }
-            setGeometryBytes(current.handle.accountedGeometryBytes());
+            update("geometry", current.handle.accountedGeometryBytes(), setGeometryBytes);
             const counts = current.liveObjectCounts();
-            setMeshCount(counts.meshes);
-            setTextureCount(counts.textures);
-            setDraws(current.drawCalls());
-            setBridgeRate(current.bridgeMessagesPerSec());
+            update("meshes", counts.meshes, setMeshCount);
+            update("textures", counts.textures, setTextureCount);
+            update("draws", current.drawCalls(), setDraws);
+            update("bridgeRate", current.bridgeMessagesPerSec(), setBridgeRate);
           }
         }
       }, 200);
@@ -1167,6 +1177,8 @@ function PlayOverlayView({
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
+        /** Play's load-time warm-up of what it may spawn. */
+        spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1184,6 +1196,7 @@ function PlayOverlayView({
       },
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
+      spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

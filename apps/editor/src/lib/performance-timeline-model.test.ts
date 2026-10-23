@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PERFORMANCE_FRAME_COLUMNS, PERFORMANCE_TICK_COLUMNS_V1, type PerformanceProfile, type PerformanceStream } from "@haptic/debugger";
-import { linkedRow, profileMarkers, streamColumn, summarizeRange, tickTimes } from "./performance-timeline-model";
+import {
+  PERFORMANCE_FRAME_COLUMNS,
+  PERFORMANCE_LONG_TASK_COLUMNS,
+  PERFORMANCE_MEMORY_COLUMNS,
+  PERFORMANCE_TICK_COLUMNS_V1,
+  type PerformanceProfile,
+  type PerformanceStream,
+} from "@haptic/debugger";
+import { accountedMemoryMiB, linkedRow, profileMarkers, streamColumn, summarizeRange, tickTimes } from "./performance-timeline-model";
 
 const stream = (columns: readonly string[], rows: Record<string, number>[]): PerformanceStream => ({
   columns,
@@ -11,11 +18,13 @@ const frame = (tickId: number, completedAtMs: number, extra: Record<string, numb
   ({ tickId, completedAtMs, intervalMs: 16, sceneGeneration: 1, loading: 0, ...extra });
 const tick = (tickId: number, elapsedMs: number, scriptMs = 1) => ({ tickId, elapsedMs, scriptMs, physicsMs: 2 });
 
-function profile(frames: Record<string, number>[], ticks: Record<string, number>[]): PerformanceProfile {
+function profile(frames: Record<string, number>[], ticks: Record<string, number>[], longTasks: Record<string, number>[] = []): PerformanceProfile {
   return {
     frames: stream(PERFORMANCE_FRAME_COLUMNS, frames),
     ticks: stream(PERFORMANCE_TICK_COLUMNS_V1, ticks),
     gpu: { columns: [], count: 0, chunks: [] },
+    memory: { columns: PERFORMANCE_MEMORY_COLUMNS, count: 0, chunks: [] },
+    longTasks: stream(PERFORMANCE_LONG_TASK_COLUMNS, longTasks),
   } as unknown as PerformanceProfile;
 }
 
@@ -48,6 +57,27 @@ describe("performance timeline model", () => {
       { atMs: 16, endMs: 48, label: "Loading", color: "--muted-foreground" },
       { atMs: 64, label: "Scene Changed", color: "--foreground" },
     ]);
+  });
+
+  it("marks long tasks as spans named by their length, in time order with the other markers", () => {
+    const recording = profile(
+      [frame(1, 16), frame(2, 32, { loading: 1 }), frame(3, 48)],
+      [],
+      [{ startedAtMs: 40, durationMs: 120.4 }, { startedAtMs: 5, durationMs: 55 }],
+    );
+    expect(profileMarkers(recording)).toEqual([
+      { atMs: 5, endMs: 60, label: "Long Task 55 ms", color: "--warning" },
+      { atMs: 16, endMs: 32, label: "Loading", color: "--muted-foreground" },
+      { atMs: 40, endMs: 160.4, label: "Long Task 120 ms", color: "--warning" },
+    ]);
+  });
+
+  it("adds each memory sample's accounted textures and geometry, in MiB", () => {
+    const memory = stream(PERFORMANCE_MEMORY_COLUMNS, [
+      { sampledAtMs: 0, textureBytes: 3 * 1024 * 1024, geometryBytes: 1024 * 1024 },
+      { sampledAtMs: 200, textureBytes: 512 * 1024, geometryBytes: 0 },
+    ]);
+    expect([...accountedMemoryMiB(memory)]).toEqual([4, 0.5]);
   });
 
   it("summarizes only the samples in a range, as the Summary does", () => {

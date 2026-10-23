@@ -99,6 +99,7 @@ import {
   SessionDiagnostics,
   createDiagnosticOperationClient,
   createMessageRateMeter,
+  observeBrowserLongTasks,
   type PerformanceProfile,
   type TracePayload,
 } from "@haptic/debugger";
@@ -1118,7 +1119,10 @@ export function startPlaySession(options: {
     });
     if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
   };
-  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: import("@haptic/core").RuntimeAssetSchedulerPriority = "gameplay") => {
+  const prepareSources = async (
+    prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false,
+    priority: import("@haptic/core").RuntimeAssetSchedulerPriority = "gameplay", warm = false,
+  ) => {
     let releaseRender: (() => void) | undefined;
     const scope = { guids: [...(prepared.required ?? [])], ready: false };
     preparedSourceScopes.set(prepared, scope);
@@ -1132,7 +1136,7 @@ export function startPlaySession(options: {
     };
     try {
       signal.throwIfAborted();
-      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, signal, priority });
+      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, warm, signal, priority });
       signal.throwIfAborted();
       await publishSourceBatch(() => prepared.getControls?.() ?? prepared.controls);
       signal.throwIfAborted();
@@ -1227,7 +1231,8 @@ export function startPlaySession(options: {
       onProgress: (progress) => {
         if (preloads.get(preloadId) === request) publishPreloadResult({ preloadId, success: true, progress: Math.min(0.9, progress * 0.9) });
       },
-    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, priority)).then((release) => {
+    // A preload is a latent spawn's (Spawn Actor, a Class load): it resolves with the actor's variants compiled.
+    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, priority, true)).then((release) => {
       if (preloads.get(preloadId) !== request) { release(); return; }
       request.release = release;
       publishAssetStates(assetGuids, "ready");
@@ -1860,6 +1865,8 @@ export function startPlaySession(options: {
     },
     observeFrames: (listener) => handle.observePerformance(listener),
     observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+    sampleMemory: () => ({ textureBytes: handle.resourceCache.accountedBytes(), geometryBytes: handle.accountedGeometryBytes() }),
+    observeLongTasks: observeBrowserLongTasks,
     runtimeOperation: (request) => diagnosticClient.request(request),
     captureFrame: async (signal) => {
       const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");

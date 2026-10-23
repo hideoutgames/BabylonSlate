@@ -125,18 +125,49 @@ describe("PerformanceRecorder", () => {
     expect(parsePerformanceProfile({ ...JSON.parse(json), frames: { ...JSON.parse(json).frames, count: 100 } })).toBeNull();
   });
 
-  it("records every tick phase as version 2, and opens it again", () => {
+  it("records every tick phase, and opens it again", () => {
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start(identity);
     recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, actorsMs: 1.25, sceneSystemsMs: 0.75 }));
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)));
-    expect(reopened?.version).toBe(2);
+    expect(reopened?.version).toBe(3);
     expect(reopened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
     expect(summarizePerformanceColumn(reopened!.ticks, "actorsMs").median).toBe(1.25);
     expect(summarizePerformanceColumn(reopened!.ticks, "sceneSystemsMs").median).toBe(0.75);
     // Version 2 tick rows are the full width; version 1 rows under a version 2 label are not.
     const json = JSON.parse(serializePerformanceProfile(reopened!));
     expect(parsePerformanceProfile({ ...json, ticks: { ...json.ticks, columns: [...PERFORMANCE_TICK_COLUMNS_V1] } })).toBeNull();
+  });
+
+  it("records memory and long tasks as version 3, leaving out a long task that started before the recording", () => {
+    let now = 1000;
+    const recorder = new PerformanceRecorder({ now: () => now });
+    recorder.start(identity);
+    expect(recorder.recordMemory({ sampledAtMs: 1000, textureBytes: 4096, geometryBytes: 1024 })).toBe(true);
+    expect(recorder.recordMemory({ sampledAtMs: 1200, textureBytes: 8192, geometryBytes: 1024 })).toBe(true);
+    expect(() => recorder.recordMemory({ sampledAtMs: 1100, textureBytes: 0, geometryBytes: 0 })).toThrow();
+    // The browser reports a task once it ends, so one that began before Start arrives late.
+    expect(recorder.recordLongTask({ startedAtMs: 990, durationMs: 80 })).toBe(false);
+    expect(recorder.recordLongTask({ startedAtMs: 1050, durationMs: 120 })).toBe(true);
+    now = 1300;
+    const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)))!;
+    expect(reopened.version).toBe(3);
+    expect(Array.from(reopened.memory.chunks[0]!)).toEqual([0, 4096, 1024, 200, 8192, 1024]);
+    expect(Array.from(reopened.longTasks.chunks[0]!)).toEqual([50, 120]);
+    // A version 3 profile without them is incomplete.
+    const json = JSON.parse(serializePerformanceProfile(reopened));
+    expect(parsePerformanceProfile({ ...json, longTasks: undefined })).toBeNull();
+  });
+
+  it("opens a version 2 profile with no memory or long tasks, and exports it as it was", () => {
+    const golden = JSON.parse(readFileSync(new URL("./__fixtures__/profile-v2.golden.json", import.meta.url), "utf8"));
+    const opened = parsePerformanceProfile(golden);
+    expect(opened?.version).toBe(2);
+    expect(opened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
+    expect(summarizePerformanceColumn(opened!.ticks, "actorsMs").median).toBe(2);
+    expect(opened?.memory.count).toBe(0);
+    expect(opened?.longTasks.count).toBe(0);
+    expect(parsePerformanceProfile(JSON.parse(serializePerformanceProfile(opened!)))).toEqual(opened);
   });
 
   it("opens a version 1 profile with its script and physics split, and exports it as it was", () => {

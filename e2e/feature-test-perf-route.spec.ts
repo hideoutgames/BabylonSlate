@@ -49,6 +49,7 @@ type PlayHost = {
     tickIndex: () => number | null;
     rendering: () => Record<string, unknown>;
     liveObjectCounts: () => Record<string, number>;
+    spawnableWarm: () => { materials: number; models: number; ms: number } | null;
   };
 };
 
@@ -191,6 +192,8 @@ async function measurePlay(page: Page, cdp: CDPSession) {
     )
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
+  // The share of the boot spent compiling what Play may spawn, before the first frame.
+  const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
@@ -210,7 +213,7 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
-  return { playBootMs, windows, liveObjects };
+  return { playBootMs, spawnableWarm, windows, liveObjects };
 }
 
 test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
