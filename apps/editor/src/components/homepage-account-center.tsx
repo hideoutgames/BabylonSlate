@@ -271,9 +271,14 @@ function SubscriptionSection({
         })}
       </div>
       <p className="homepage-account-center-note">
-        Desktop is free while you, or the company you work for, makes less than
-        $50,000 a year. One Haptic Pro subscription covers every phone and
-        tablet you sign in on. Teams need one subscription per seat.{" "}
+        Haptic is free on desktop for people and organizations with less than
+        $50,000 in revenue a year. Revenue is what the studio, company or other
+        organization using Haptic earns from games, film, architectural
+        visualization, simulation or similar work, made with Haptic or any
+        other tool. A personal salary or income from an unrelated job does not
+        count. Above $50,000 a year, every seat needs Haptic Pro, which also
+        covers every phone and tablet you sign in on. Enterprise has individual
+        terms: contact us to agree them.{" "}
         <a href={HAPTIC_PRICING_URL} target="_blank" rel="noreferrer">
           Pricing Details
           <ExternalLinkIcon aria-hidden="true" />

@@ -40,4 +40,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Vibrate Device in Play: the WebView's navigator.vibrate needs it. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

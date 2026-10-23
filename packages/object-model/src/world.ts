@@ -46,6 +46,7 @@ export type WorldInputProvider = Pick<
   | "calibrateTilt"
   | "setCursorVisible"
   | "setGamepadRumble"
+  | "vibrateDevice"
   | "gamepadConnections"
 >;
 

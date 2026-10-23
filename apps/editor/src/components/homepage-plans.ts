@@ -32,7 +32,7 @@ export const HAPTIC_PLANS: ReadonlyArray<{
     summary: "Haptic on iPhone, iPad and Android",
     features: [
       "One account for all your devices",
-      "For revenue over $50,000 a year",
+      "Required above $50,000 revenue a year",
     ],
     icon: SmartphoneIcon,
   },
@@ -42,7 +42,7 @@ export const HAPTIC_PLANS: ReadonlyArray<{
     name: "Enterprise",
     price: "Let’s Talk",
     summary: "Everything in Haptic Pro",
-    features: ["Seats for your whole team"],
+    features: ["Seats for your whole team", "Individual terms"],
     icon: BuildingIcon,
   },
 ];

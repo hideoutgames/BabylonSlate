@@ -3,6 +3,7 @@ import type {
   BlackboardValues,
   BtDecorator,
   BtDecoratorHost,
+  BtEvalBreakpoints,
   BtEvalState,
   BtNode,
   BtResult,
@@ -848,6 +849,25 @@ function runningLeaf(
   return null;
 }
 
+/**
+ * `results` reporting each failure of a node with a breakpoint. Every way a node fails, including the
+ * abort and Time Limit helpers, writes "failure" to the results, some more than once; a run starts from
+ * a cleared result, so a change to "failure" is one failure.
+ */
+function reportFailures(
+  results: Record<string, BtResult>,
+  breakpoints: BtEvalBreakpoints,
+): Record<string, BtResult> {
+  return new Proxy(results, {
+    set(target, key, value: BtResult) {
+      const failed = value === "failure" && target[key as string] !== "failure";
+      target[key as string] = value;
+      if (failed && typeof key === "string" && breakpoints.has(key)) breakpoints.hit(key, "failed");
+      return true;
+    },
+  });
+}
+
 export function evaluateBehaviourTree(
   tree: BehaviourTreeDocument,
   previous: BtEvalState | null,
@@ -859,7 +879,9 @@ export function evaluateBehaviourTree(
     options?.blackboard !== undefined
       ? { ...options.blackboard }
       : { ...(previous?.blackboard ?? {}) };
-  const lastResults: Record<string, BtResult> = { ...(previous?.lastResults ?? {}) };
+  const results: Record<string, BtResult> = { ...(previous?.lastResults ?? {}) };
+  const breakpoints = options?.breakpoints;
+  const lastResults = breakpoints ? reportFailures(results, breakpoints) : results;
   const nodeMemory = cloneMemory(previous?.nodeMemory);
   const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
   const seed = options?.seed ?? 0;
@@ -963,6 +985,7 @@ export function evaluateBehaviourTree(
           continue;
         }
         frame.opened = true;
+        if (breakpoints?.has(node.id)) breakpoints.hit(node.id, "started");
         if (advanceTimeLimits(node, nodeMemory, stepDt())) {
           lastResults[node.id] = "failure";
           startCooldowns(node, nodeMemory);
@@ -1000,6 +1023,7 @@ export function evaluateBehaviourTree(
       }
       frame.opened = true;
       frame.childIndex = 0;
+      if (breakpoints?.has(node.id)) breakpoints.hit(node.id, "started");
       if (advanceTimeLimits(node, nodeMemory, stepDt())) {
         lastResults[node.id] = "failure";
         startCooldowns(node, nodeMemory);
@@ -1128,8 +1152,8 @@ export function evaluateBehaviourTree(
   return {
     stack,
     status,
-    lastResults,
-    btNodeId: status === "running" ? runningLeaf(stack, nodes, lastResults) : null,
+    lastResults: results,
+    btNodeId: status === "running" ? runningLeaf(stack, nodes, results) : null,
     blackboard,
     nodeMemory,
   };

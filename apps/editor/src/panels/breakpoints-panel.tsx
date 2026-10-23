@@ -24,7 +24,7 @@ const unsubscribed = () => () => {};
 const noBreakpoints = () => NO_BREAKPOINTS;
 
 /**
- * Every node breakpoint of the project, including those in Classes that are not open: switch one
+ * Every node breakpoint of the project, including those in assets that are not open: switch one
  * on or off, remove it, or open its node. Set them from a node's menu or the Toggle Breakpoint key.
  */
 export function BreakpointsPanel() {
@@ -57,9 +57,9 @@ export function BreakpointsPanel() {
         <Empty>
           <EmptyTitle>No Breakpoints</EmptyTitle>
           <EmptyDescription>
-            Add one from a node&apos;s menu in a Class graph
+            Add one from a node&apos;s menu in a Class graph, a Behaviour Tree or a State Machine
             {toggleChord ? <>, or select the node and press <ShortcutKeys chord={toggleChord} /></> : null}.
-            A Simulation stops at the end of the tick that runs it.
+            A Simulation or Play stops at the end of the tick that reaches it.
           </EmptyDescription>
         </Empty>
       ) : (

@@ -16,6 +16,7 @@ export type {
   BtStackFrame,
   BtTaskHost,
   BtEvalTrace,
+  BtEvalBreakpoints,
   EvaluateBehaviourTreeOptions,
 } from "./types";
 

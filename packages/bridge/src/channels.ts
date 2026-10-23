@@ -29,11 +29,19 @@ export type SessionPauseCause = {
   /** The object a breakpoint stopped on, and its name as the Debug Instance list shows it. */
   instanceId?: string;
   instanceLabel?: string;
+  /** What a Behaviour Tree or State Machine breakpoint stopped on. */
+  breakpointEvent?: BreakpointEvent;
 };
 /** `SessionPauseCause.code` of a breakpoint stop. */
 export const BREAKPOINT_PAUSE_CODE = "runtime.breakpoint";
-/** A node breakpoint: editor state sent to the session, never stored in the asset. */
+/**
+ * A node breakpoint: editor state sent to the session, never stored in the asset. In a Behaviour Tree
+ * (`graphId` "behaviour-tree") `nodeId` is a tree node; in a State Machine ("state-machine") it is a state
+ * or a transition.
+ */
 export type BreakpointLocation = { assetGuid: string; graphId: string; nodeId: string };
+/** A tree node started running or failed; a state machine entered a state or took a transition. */
+export type BreakpointEvent = "started" | "failed" | "entered" | "taken";
 export type SessionBoundaryRequest = {
   sessionGeneration: number;
   /** Strictly increasing within this session; acknowledgments never use FIFO correlation. */
@@ -180,6 +188,8 @@ export type ControlMessage =
       traceByteBudget?: number;
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
+      /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin), for Get Third-Party Notices. */
+      thirdPartyNoticesUrl?: string;
       sceneAssetGuid: string;
       /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@haptic/core").InputAssetDefinition[];
@@ -850,6 +860,8 @@ export type CommandMessage =
    * starts motion input, asking permission on the next tap where required.
    */
   | { type: "requestDeviceMotion"; frameId: number }
+  /** Vibrate the phone or tablet for `durationMs` (0 stops it); ignored where the browser cannot. */
+  | { type: "vibrateDevice"; durationMs: number; frameId: number }
   /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
   | {
       type: "setGamepadRumble";

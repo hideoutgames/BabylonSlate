@@ -15,17 +15,16 @@ import {
 } from "react";
 import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
 import {
-  ContextMenuOverlay,
   humanizePropertyLabel,
   PinShapeGlyph,
   tagDisplayName,
   useTags,
-  useContextMenu,
 } from "@haptic/editor-kit";
 import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@haptic/scripting";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
-import { canBreakOnNode, useNodeBreakpoint } from "./graph-breakpoints";
+import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
+import { useNodeMenu } from "./use-node-menu";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";
 import {
@@ -364,14 +363,19 @@ function NodeErrorBadge({
 }
 
 /**
- * A node's breakpoint at the start of its title bar: a red dot, hollow while disabled. With a mouse
- * the dot toggles it, and a faint dot on title-bar hover adds one; touch uses the node menu, and the
- * keyboard the canvas's Toggle Breakpoint key.
+ * A node's breakpoint at the start of its title bar, or on the left edge of a card node's header: a red
+ * dot, hollow while disabled. With a mouse the dot toggles it, and a faint dot on title-bar (or card)
+ * hover adds one; touch uses the node menu, and the keyboard the canvas's Toggle Breakpoint key.
  */
-function NodeBreakpointDot({ nodeId, data }: { nodeId: string; data?: Record<string, unknown> }) {
+export function NodeBreakpointDot({ nodeId, data, className }: {
+  nodeId: string;
+  data?: Record<string, unknown>;
+  /** Places the dot; the default sits at the start of a title bar. */
+  className?: string;
+}) {
   const { breakpoints } = useGraphEditorContext();
   const state = useNodeBreakpoint(nodeId);
-  if (!breakpoints || !canBreakOnNode(data)) return null;
+  if (!breakpoints || !nodeCanBreak(breakpoints, nodeId, data)) return null;
   const label = state ? "Remove Breakpoint" : "Add Breakpoint";
   return (
     <button
@@ -381,7 +385,8 @@ function NodeBreakpointDot({ nodeId, data }: { nodeId: string; data?: Record<str
       title={label}
       data-breakpoint={state ?? undefined}
       className={cn(
-        "nodrag absolute left-1 top-1/2 flex size-3 -translate-y-1/2 items-center justify-center pointer-coarse:pointer-events-none",
+        "nodrag absolute flex size-3 -translate-y-1/2 items-center justify-center pointer-coarse:pointer-events-none",
+        className ?? "left-1 top-1/2",
         !state && "opacity-0 group-hover/title:opacity-40 pointer-coarse:hidden",
       )}
       onPointerDown={(event) => event.stopPropagation()}
@@ -466,8 +471,10 @@ export function BlueprintNodeShell({
   const marker = nodeCornerMarker(data);
 
   return (
-    <div className="relative">
+    <div className={cn("relative", card && "group/title")}>
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker} />
+      {/* Outside the card's clipped body, straddling its left border at the header. */}
+      {card ? <NodeBreakpointDot nodeId={nodeId} data={data} className="-left-1.5 top-6 z-10" /> : null}
       {marker ? (
         <span
           role="img"
@@ -524,27 +531,6 @@ export function BlueprintNodeShell({
       </div>
     </div>
   );
-}
-
-/**
- * Right-click and long-press menu of a script-style node. The items are built
- * when the menu opens, after the selection rule has run for this node.
- */
-function useNodeMenu(nodeId: string) {
-  const { nodeMenu } = useGraphEditorContext();
-  const enabled = nodeMenu?.enabled === true;
-  const menu = useContextMenu({
-    items: () => nodeMenu?.resolve(nodeId) ?? [],
-    enabled,
-  });
-  const bind = {
-    ...menu.bind,
-    onContextMenu: (event: MouseEvent) => {
-      if (enabled) event.stopPropagation();
-      menu.bind.onContextMenu(event);
-    },
-  };
-  return { bind, overlay: <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} /> };
 }
 
 export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {

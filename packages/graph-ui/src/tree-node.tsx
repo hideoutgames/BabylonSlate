@@ -1,5 +1,5 @@
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
-import { useCallback, useMemo, useRef, type MouseEvent } from "react";
+import { useCallback, useRef, type MouseEvent } from "react";
 import {
   Columns3Icon,
   ListOrderedIcon,
@@ -131,11 +131,11 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   // Only this node renders when its status changes; a run never re-renders the canvas.
   const state = treeState(useRunNodeStatus(id));
   const running = state === "running";
-  const nodeMenuItems = useMemo(
-    () => contextMenuItemsForNode?.(id) ?? [],
-    [contextMenuItemsForNode, id],
-  );
-  const nodeMenu = useContextMenu({ items: nodeMenuItems, enabled: nodeMenuItems.length > 0 });
+  // Built when the menu opens, so items that read host state (a breakpoint's) are current.
+  const nodeMenu = useContextMenu({
+    items: () => contextMenuItemsForNode?.(id) ?? [],
+    enabled: Boolean(contextMenuItemsForNode),
+  });
 
   const handleHeaderClick = useCallback(
     (event: MouseEvent) => {

@@ -106,6 +106,7 @@ export function runtimeOptionsFromLoadControl(
     renderTargets: msg.renderTargets,
     renderTargetTextures: msg.renderTargetTextures,
     ...(msg.project ? { project: msg.project } : {}),
+    ...(msg.thirdPartyNoticesUrl ? { thirdPartyNoticesUrl: msg.thirdPartyNoticesUrl } : {}),
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],

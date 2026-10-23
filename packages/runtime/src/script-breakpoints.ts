@@ -1,10 +1,11 @@
-import type { BreakpointLocation } from "@haptic/bridge";
+import type { BreakpointEvent, BreakpointLocation } from "@haptic/bridge";
 import type { BObject } from "@haptic/object-model";
 
 /**
- * Node breakpoints for the editor's Simulation. A breakpoint-instrumented script looks up its graph's
+ * Node breakpoints for the editor's Simulation and Play. A breakpoint-instrumented script looks up its graph's
  * breakpoints once per run (`ctx.breakpoints.graph`) and checks each exec node it reaches against them,
  * for every instance. With no breakpoint set, `ctx.breakpoints` is null and a check is one null check.
+ * Behaviour Trees and State Machines look up theirs once per component and tick.
  */
 
 /** Where a breakpoint stopped, and on which object. */
@@ -12,6 +13,9 @@ export type BreakpointHit = BreakpointLocation & {
   /** The event or function entry node the run started from. */
   entryNodeId: string;
   instance: BObject | null;
+  /** The actor that names a Behaviour Tree or Animation Graph component in the Debug Instance list. */
+  owner?: BObject;
+  event?: BreakpointEvent;
 };
 
 /** The breakpoints of one graph. */
@@ -32,8 +36,13 @@ export class GraphBreakpoints {
   }
 
   /** A node with a breakpoint ran. */
-  hit(nodeId: string, entryNodeId: string, instance: BObject | null): void {
-    this.onHit({ assetGuid: this.assetGuid, graphId: this.graphId, nodeId, entryNodeId, instance });
+  hit(
+    nodeId: string,
+    entryNodeId: string,
+    instance: BObject | null,
+    detail?: { owner?: BObject; event?: BreakpointEvent },
+  ): void {
+    this.onHit({ assetGuid: this.assetGuid, graphId: this.graphId, nodeId, entryNodeId, instance, ...detail });
   }
 
   /** @internal */

@@ -526,6 +526,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Input Action Binding](set-input-action-binding.md) | Changes the key of an existing Input Action binding. |
 | [Set Input Axis Binding](set-input-axis-binding.md) | Changes the key of an existing Input Axis binding. |
 | [Show Cursor](show-cursor.md) | Shows the mouse pointer over the game view. |
+| [Vibrate Device](vibrate-device.md) | Vibrates the phone or tablet for a set time. |
 
 ## Audio
 
@@ -789,6 +790,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Project Name](get-project-name.md) | Returns the name of the project. |
 | [Get Project Version](get-project-version.md) | Returns the version of the project as text. |
+| [Get Third-Party Notices](get-third-party-notices.md) | Reads the licence notices of the open-source software the game runs on. |
 
 ## Debug
 

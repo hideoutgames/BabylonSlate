@@ -73,6 +73,8 @@ export interface RuntimeDriverOptions {
   /** Serialized trace retention budget in bytes for this session. */
   traceByteBudget?: number;
   project?: { name: string; version: string };
+  /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin); Get Third-Party Notices fails without one. */
+  thirdPartyNoticesUrl?: string;
   seed: number;
   dt?: number;
   maxActors?: number;
@@ -129,8 +131,9 @@ export interface RuntimeDriverOptions {
    */
   pauseOnErrors?: boolean;
   /**
-   * Node breakpoints from the first run on (scripts compiled with `instrumentBreakpoints`). A hit pauses
-   * the session at the end of the tick and sends `sessionPaused` with its location and object.
+   * Node breakpoints from the first run on: in Class graphs (scripts compiled with `instrumentBreakpoints`),
+   * Behaviour Trees and State Machines. A hit pauses the session at the end of the tick and sends
+   * `sessionPaused` with its location and object.
    */
   breakpoints?: readonly BreakpointLocation[];
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */

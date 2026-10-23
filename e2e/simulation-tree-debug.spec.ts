@@ -4,6 +4,7 @@ import { pickCatalogItem } from "./pick-catalog-item";
 
 type TestHost = typeof globalThis & {
   __hapticSimulationTest: { start(): Promise<void> };
+  __hapticPlayTest: { tickIndex(): number };
   __hapticTest: { guidForPath(path: string): string | null };
 };
 
@@ -121,4 +122,66 @@ test("a Simulation shows a Behaviour Tree and an Animation Graph run for the ins
   await expect(select(page)).toContainText("Empty", { timeout: 15_000 });
   const machine = await watchCanvas(page, "anim-graph-editor", 1000);
   expect(machine.nodes).toEqual(["idle"]);
+});
+
+test("a breakpoint on a Behaviour Tree node stops a Simulation when the node starts, naming the tree, node and object", async ({ page }) => {
+  test.setTimeout(240_000);
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "BehaviourTree", "Patrol");
+  await openAsset(page, "assets/Patrol.bt.hasset", "behaviour-tree-editor");
+  const treeGuid = await page.evaluate(() => (globalThis as TestHost).__hapticTest.guidForPath("assets/Patrol.bt.hasset") ?? "");
+  expect(treeGuid).not.toBe("");
+  const task = page.getByTestId("behaviour-tree-editor").locator('.react-flow__node[data-id="task"]');
+  await page.getByTestId("bt-node-task").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add Breakpoint" }).click();
+  await expect(task.locator('[data-breakpoint="enabled"]')).toHaveCount(1);
+
+  await openMainScene(page);
+  await placeEmptyActor(page);
+  await addAssetComponent(page, "BehaviourTreeComponent", "Behaviour Tree", "treeGuid", treeGuid);
+
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
+  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
+  // The first tick starts the task: the Simulation pauses and the tree opens, following the actor that stopped.
+  await expect(page.getByTestId("simulation-step")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At Patrol › Succeed (Started) on Empty");
+  await expect(select(page)).toContainText("Empty", { timeout: 15_000 });
+  const tickIndex = () => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex());
+  const stoppedAt = await tickIndex();
+  await page.waitForTimeout(300);
+  expect(await tickIndex()).toBe(stoppedAt);
+
+  // Switched off while the tree is read-only, it no longer stops the Simulation.
+  await page.getByTestId("bt-node-task").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Disable Breakpoint" }).click();
+  await expect(task.locator('[data-breakpoint="disabled"]')).toHaveCount(1);
+  await page.getByTestId("simulation-pause").click();
+  await expect.poll(tickIndex, { timeout: 30_000 }).toBeGreaterThan(stoppedAt + 2);
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveCount(0);
+});
+
+test("a breakpoint on a State Machine state stops a Simulation when the graph enters it", async ({ page }) => {
+  test.setTimeout(240_000);
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "AnimationGraph", "Loco");
+  await openAsset(page, "assets/Loco.anim.hasset", "anim-graph-editor");
+  const graphGuid = await page.evaluate(() => (globalThis as TestHost).__hapticTest.guidForPath("assets/Loco.anim.hasset") ?? "");
+  expect(graphGuid).not.toBe("");
+  const idle = page.getByTestId("anim-state-node-idle");
+  await idle.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add Breakpoint" }).click();
+  await expect(idle.locator('[data-breakpoint="enabled"]')).toHaveCount(1);
+
+  await openMainScene(page);
+  await placeEmptyActor(page);
+  await addAssetComponent(page, "AnimationGraphComponent", "Animation Graph", "graphGuid", graphGuid);
+
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
+  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
+  // The graph starts in its entry state on the first tick: the Simulation pauses and the State Machine opens.
+  await expect(page.getByTestId("simulation-step")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At Loco › Idle (Entered) on Empty");
+  await expect(select(page)).toContainText("Empty", { timeout: 15_000 });
 });

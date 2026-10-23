@@ -26,6 +26,7 @@ export {
 export { RUN_FLASH_MS } from "./run-flash";
 export {
   canBreakOnNode,
+  nodeCanBreak,
   type GraphBreakpoints,
   type GraphBreakpointState,
 } from "./graph-breakpoints";

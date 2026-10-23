@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BREAKPOINT_PAUSE_CODE, type CommandMessage } from "@haptic/bridge";
+import type { BehaviourTreeDocument } from "@haptic/behaviour-tree";
+import { BREAKPOINT_PAUSE_CODE, BT_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/bridge";
 import { createActor } from "@haptic/core";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { compileClassScript, graphNode, startGraphScenario, wire } from "./testing/graph-scenario";
@@ -109,6 +110,42 @@ describe("node breakpoints", () => {
       await scenario.tick(2);
       expect(pauses(scenario.commands)).toEqual([]);
       expect(scenario.logs("Scenario")).toEqual(["begin", "a", "b", "a", "b"]);
+    } finally { scenario.stop(); }
+  });
+});
+
+describe("Behaviour Tree breakpoints", () => {
+  type BtNode = BehaviourTreeDocument["nodes"][number];
+  const btNode = (id: string, kind: BtNode["kind"], classId: string, children: string[] = []): BtNode =>
+    ({ id, kind, classId, children, decorators: [], services: [], properties: {} });
+
+  it("stop when a tree node fails, naming the tree's component and its actor", async () => {
+    const blocked = btNode("blocked", "task", "bt.task.succeed");
+    blocked.decorators.push({
+      id: "need", classId: "bt.decorator.blackboardIsSet", abortMode: "none", observedKeys: ["target"], properties: { key: "target" },
+    });
+    const wait = { ...btNode("wait", "task", "bt.task.wait"), properties: { durationMs: 10_000 } };
+    const guard = createActor("guard", "Guard", {
+      components: [{ id: "bt-1", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
+    });
+    const scenario = await startGraphScenario({
+      scripts: [],
+      actors: [guard],
+      runtime: {
+        behaviourTrees: { "tree-1": {
+          name: "Patrol", rootId: "root", blackboardGuid: null,
+          nodes: [btNode("root", "selector", "bt.composite.selector", ["blocked", "wait"]), blocked, wait],
+        } },
+        breakpoints: [{ assetGuid: "tree-1", graphId: BT_DEBUG_GRAPH_ID, nodeId: "blocked" }],
+      },
+    });
+    try {
+      await scenario.tick();
+      const component = scenario.runtime.getWorld().getActors().find((actor) => actor.guid === "guard")!.components[0]!;
+      expect(pauses(scenario.commands)).toEqual([{
+        code: BREAKPOINT_PAUSE_CODE, message: "Breakpoint", assetGuid: "tree-1", graphId: BT_DEBUG_GRAPH_ID,
+        nodeId: "blocked", instanceId: component.guid, instanceLabel: "Guard", breakpointEvent: "failed",
+      }]);
     } finally { scenario.stop(); }
   });
 });

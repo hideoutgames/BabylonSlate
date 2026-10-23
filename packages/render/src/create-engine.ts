@@ -1,4 +1,5 @@
 import { applyGamepadRumble } from "./gamepad-rumble";
+import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
@@ -3694,6 +3695,7 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "setGamepadRumble") applyGamepadRumble(command);
+      if (command.type === "vibrateDevice") applyDeviceVibration(command);
       if (command.type === "requestDeviceMotion") options.onDeviceMotionRequest?.();
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
