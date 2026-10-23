@@ -10,7 +10,7 @@ Adding, removing, renaming or changing the authored data or runtime behaviour of
 
 1. **Update the scaffold.** Author the feature in the owning area module so it is visible in its zone (or in `FT_World`, `FT_2D`, `FT_HUD`, `FT_Clustered`, `FT_Stress`) and exercised in Play. Changed formats update the authored data; removed features leave the scaffold.
 2. **Update [the FeatureTest reference](../reference/feature-test.md)**, the inventory of scenes, zones, performance knobs and known gaps.
-3. **Pass the gate:** `apps/editor/src/services/project-service.feature-test.test.ts`, which fails on missing features, unresolved references, undecodable documents and validation errors.
+3. **Pass the gate:** `apps/editor/src/services/project-service.feature-test.test.ts`, which fails on missing features, unresolved references, undecodable documents and validation errors, and plays each Feature Test scene headlessly, failing on session errors and failed asserts.
 4. **Keep it a fair workload.** Deterministic content (no random values, stable ids); a moderate main scene with heavy load in `FT_Stress`; every scene presents its first frame on software GL (`perf-software`), so move content that breaks the loading deadline into its own scene rather than dropping it. Say in the PR when workload size or render settings change performance baselines.
 5. **No generated artwork** ([no-ai-artwork.md](no-ai-artwork.md)): use human-made `engine-content/`, runtime primitives and numeric data. New third-party packs follow the reference's Source content section.
 6. A new or renamed Feature Test scene joins `FEATURE_TEST_CHECK_SCENES` in `apps/editor/src/services/feature-test-check.ts`.

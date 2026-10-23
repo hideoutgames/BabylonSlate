@@ -36,7 +36,6 @@ import type { Diagnostic } from "@haptic/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
 import { createFrameFlush } from "../lib/use-debug-console-logs";
-import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
@@ -136,7 +135,7 @@ import {
 import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
-import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
+import { playRegistryViews } from "../lib/play-registry-views";
 import { useAppSettings } from "./app-settings-context";
 import {
   isUsableEngine,
@@ -1731,34 +1730,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   // The running game's registry lists: rebuilt when the registry changes, not
   // on every render of this provider, and only while a game is open.
-  const playRegistryViews = useMemo(() => {
+  const registryViews = useMemo(() => {
     if (!playOpen) return null;
     void registryEpoch; // Registry headers mutate without replacing the registry.
-    const assets = assetRegistry?.list() ?? [];
-    return {
-      sceneCatalog: assets
-        .filter((asset) => asset.header.type === "Scene")
-        .map((asset) => ({ guid: asset.header.guid, name: asset.header.name })),
-      classAssetGuids: Object.fromEntries(
-        assets
-          .filter((asset) => asset.header.type === "Class")
-          .map((asset) => [classIdFromClassAsset(asset), asset.header.guid]),
-      ),
-      consoleCommands: assets.flatMap((asset) =>
-        asset.header.consoleCommand
-          ? [{
-              ...asset.header.consoleCommand,
-              classId: classIdFromClassAsset(asset),
-              assetGuid: asset.header.guid,
-              name: asset.header.consoleCommand.name || classIdFromClassAsset(asset).toLowerCase(),
-            }]
-          : [],
-      ),
-      audioAssetGuids: assets
-        .filter((asset) => asset.header.type === "Audio")
-        .map((asset) => asset.header.guid),
-      animClipCatalog: animClipCatalogFromAssets(assets),
-    };
+    return playRegistryViews(assetRegistry?.list() ?? []);
   }, [assetRegistry, playOpen, registryEpoch]);
 
   // Session report rows and a Simulation paused on an error open their source the same way.
@@ -1795,10 +1770,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             saveGame={playSaveGame}
             gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             scenes={playSceneLibrary}
-            sceneCatalog={playRegistryViews?.sceneCatalog}
-            classAssetGuids={playRegistryViews?.classAssetGuids}
-            consoleCommands={playRegistryViews?.consoleCommands}
-            audioAssetGuids={playRegistryViews?.audioAssetGuids}
+            sceneCatalog={registryViews?.sceneCatalog}
+            classAssetGuids={registryViews?.classAssetGuids}
+            consoleCommands={registryViews?.consoleCommands}
+            audioAssetGuids={registryViews?.audioAssetGuids}
             getAssetLoadState={documents.getAssetLoadState}
             getSourceControls={mergedSourceControls}
             acquireSceneSources={acquireSceneSources}
@@ -1833,7 +1808,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             retargetAnimationLoads={playRetargetAnimationLoads}
             loadAudioSourceBytes={playAudioSourceLoader}
             audioLibrary={playAudioLibrary}
-            animClipCatalog={playRegistryViews?.animClipCatalog}
+            animClipCatalog={registryViews?.animClipCatalog}
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
