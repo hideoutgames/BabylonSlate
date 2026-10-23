@@ -8,13 +8,17 @@ Record frame and tick timings, capture the render stages of one frame, and recor
 2. Press **Play**, or run a [Preview Build](../publishing/preview-build.md).
 3. Tap **Profiler** in the toolbar over the game.
 
-The **Profiler and Frame Debugger** window opens. Opening it does not record anything.
+The **Profiler and Frame Debugger** window opens over the game. Opening it does not record anything. The game keeps running underneath, and the toolbar over it stays usable. Tap the game to play it again: it gets the keyboard back and the window stays open. Close the window with **Close** or <kbd>Esc</kbd>.
 
 ## Record performance
 
 1. Tap **Record Performance**.
 2. Play the part of the game you want to measure.
 3. Tap **Stop Recording**, or wait: recording stops on its own after the **Recording Duration**, when its data budget is full, or when the session ends.
+
+A recording keeps running when you close the window. While it runs, the toolbar over the game shows **Recording**; its **Stop Recording** button stops it and opens the window at its **Summary**.
+
+You can also record from the [console](console.md): `profile start` and `profile stop`. `capture frame` captures a frame.
 
 Choose a view:
 

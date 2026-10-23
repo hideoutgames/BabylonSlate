@@ -71,6 +71,9 @@ The game keeps running while the console is open, and pressing the game does not
 | `dumplog` |  | Prints the session log. | Yes |
 | `snapshot start` |  | Starts a trace recording. See [Profiler](profiler.md#trace-recording). | Yes |
 | `snapshot stop` |  | Stops the trace recording. | Yes |
+| `profile start` |  | Starts a performance recording, like **Record Performance** in the [Profiler](profiler.md#record-performance). Play and Preview Build only. | Yes |
+| `profile stop` |  | Stops the performance recording and opens its **Summary**. Play and Preview Build only. | Yes |
+| `capture frame` |  | Captures the render stages of the next frame, like **Capture Frame**. Play and Preview Build only. | Yes |
 
 Actor names must match exactly and belong to one actor; use the GUID when names repeat.
 

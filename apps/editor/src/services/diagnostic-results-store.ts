@@ -10,8 +10,6 @@ export type DiagnosticSessionPorts = {
   stopProfile(): Promise<PerformanceProfile | null>;
   captureFrame(): Promise<RenderFrameReport>;
   stopSession?(): void | Promise<unknown>;
-  releaseInput?(): void | Promise<unknown>;
-  setSurfaceOpen?(open: boolean): void | Promise<unknown>;
 };
 export type DiagnosticResultsSnapshot = {
   open: boolean; view: DiagnosticView; mode: DiagnosticSessionPorts["mode"] | null;
@@ -21,25 +19,23 @@ export type DiagnosticResultsSnapshot = {
   frame: RenderFrameReport | null;
 };
 
-/** The latest result of each kind and event-driven UI state. No observer, timer or world polling. */
+/**
+ * The latest result of each kind and event-driven UI state. No observer, timer or world polling. The
+ * window floats over the game and never takes its input.
+ */
 export class DiagnosticResultsStore {
   private state: DiagnosticResultsSnapshot = {
     open: false, view: "summary", mode: null, active: null, busy: false, error: null, profile: null, frame: null,
   };
   private readonly listeners = new Set<() => void>();
   private session: { ports: DiagnosticSessionPorts; token: object } | null = null;
-  private surfaceRevision = 0;
   readonly getSnapshot = () => this.state;
   readonly subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   open(view: DiagnosticView = "summary"): void {
     this.update({ open: true, view });
-    const session = this.session;
-    if (session) this.updateInputSurface(session, true);
   }
   close(): void {
     this.update({ open: false });
-    const session = this.session;
-    if (session) this.updateInputSurface(session, false);
   }
   selectView(view: DiagnosticView): void { this.update({ view }); }
   importResult(result: DiagnosticResult): void {
@@ -51,7 +47,6 @@ export class DiagnosticResultsStore {
     const session = { ports, token: {} };
     this.session = session;
     this.update({ mode: ports.mode, active: null, busy: false, error: null });
-    if (this.state.open) this.updateInputSurface(session, true);
     return {
       publishProfile: (profile: PerformanceProfile) => {
         if (this.session !== session) return;
@@ -109,19 +104,6 @@ export class DiagnosticResultsStore {
     }
     if (this.state.active || this.state.busy) { this.update({ error: "Finish the current diagnostic operation first." }); return null; }
     return this.session;
-  }
-  private updateInputSurface(session: NonNullable<DiagnosticResultsStore["session"]>, open: boolean) {
-    const revision = ++this.surfaceRevision;
-    void (async () => {
-      // Returning from a game gesture must complete before handing input to the
-      // dialog. A close or replacement during that boundary supersedes this open.
-      if (open) await session.ports.releaseInput?.();
-      if (this.session !== session || revision !== this.surfaceRevision) return;
-      await session.ports.setSurfaceOpen?.(open);
-    })().catch(error => {
-      if (this.session === session && revision === this.surfaceRevision)
-        this.update({ error: error instanceof Error ? error.message : String(error) });
-    });
   }
   private fail(session: NonNullable<DiagnosticResultsStore["session"]>, error: unknown) {
     if (this.session === session) this.update({ active: null, busy: false, error: error instanceof Error ? error.message : String(error) });

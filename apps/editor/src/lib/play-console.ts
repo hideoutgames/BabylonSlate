@@ -5,12 +5,14 @@ import {
   type RegisteredCommand,
 } from "@haptic/debugger";
 import type { ScriptBundleEntry } from "@haptic/bridge";
+import { PROFILER_CONSOLE_COMMANDS } from "./profiler-console";
 
-/** Built-in registry plus user commands compiled from OnCommandRun graphs. */
+/** Built-in registry, the editor's Profiler commands, and user commands compiled from OnCommandRun graphs. */
 export function playConsoleCommands(
   scripts: readonly ScriptBundleEntry[] = [],
 ): RegisteredCommand[] {
   const registry = createCommandRegistry({ includeDebug: true });
+  for (const command of PROFILER_CONSOLE_COMMANDS) registry.register(command);
   for (const script of scripts) {
     if (!script.command) continue;
     registry.register(
