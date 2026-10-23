@@ -498,6 +498,7 @@ function initializePlayer(
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
+    thirdPartyNoticesUrl: new URL("legal/THIRD-PARTY-NOTICES.txt", document.baseURI).href,
     saveGame: manifest.saveGame,
     type: "load" as const,
     sceneAssetGuid: startup,

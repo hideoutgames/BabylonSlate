@@ -123,6 +123,8 @@ export interface ScriptHostServices {
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
   getProjectVersion?(): string;
+  /** The game's third-party notices text; rejects when the host has none or cannot read them. */
+  getThirdPartyNotices?(): Promise<string>;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
   interfaceRegistry?: InterfaceRegistry;
   /** Live-object `ctx.isA` uses ClassRegistry ancestry, not string equality. */
@@ -584,6 +586,8 @@ export interface ScriptContext {
   getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
+  /** Get Third-Party Notices: the notices text, or an error message when they cannot be read. */
+  getThirdPartyNotices(): Promise<{ success: boolean; text: string; errorMessage: string }>;
   getSceneReference(): Scene | null;
   /** Live subsystem whose class isA `classId`, or null (`Get <Subsystem>`). */
   getSubsystem(classId: string): BObject | null;
@@ -842,7 +846,7 @@ export type HostContextKey =
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
-  | "getProjectVersion" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
+  | "getProjectVersion" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
@@ -1712,6 +1716,16 @@ export class ScriptHost {
       getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
       getProjectName: () => services.getProjectName?.() ?? "",
       getProjectVersion: () => services.getProjectVersion?.() ?? "",
+      getThirdPartyNotices: async () => {
+        if (!services.getThirdPartyNotices) {
+          return { success: false, text: "", errorMessage: "Third-party notices are not available here." };
+        }
+        try {
+          return { success: true, text: await services.getThirdPartyNotices(), errorMessage: "" };
+        } catch (error) {
+          return { success: false, text: "", errorMessage: error instanceof Error ? error.message : String(error) };
+        }
+      },
       getSubsystem: (classId) => {
         const id = typeof classId === "string" ? classId.trim() : "";
         return id ? (services.getSubsystem?.(id) ?? null) : null;

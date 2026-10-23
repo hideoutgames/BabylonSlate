@@ -1129,6 +1129,21 @@ class InProcessRuntime implements RuntimeDriver {
   private createScriptHost(options: RuntimeDriverOptions, registry: ClassRegistry): ScriptHost {
     const projectName = options.project?.name ?? "";
     const projectVersion = options.project?.version ?? "";
+    const noticesUrl = options.thirdPartyNoticesUrl;
+    let notices: Promise<string> | null = null;
+    const getThirdPartyNotices = noticesUrl
+      ? (): Promise<string> => {
+          // One read per session; a failed read is retried on the next call.
+          notices ??= fetch(noticesUrl).then(async (response) => {
+            if (!response.ok) throw new Error(`Third-party notices could not be read (HTTP ${response.status}).`);
+            return response.text();
+          });
+          return notices.catch((error: unknown) => {
+            notices = null;
+            throw error;
+          });
+        }
+      : undefined;
     const emit = (command: CommandMessage): void => this.emit(command);
     const frameId = (): number => this.frameId;
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
@@ -1245,6 +1260,7 @@ class InProcessRuntime implements RuntimeDriver {
       waitForSimulation: (owner) => this.waits.continueSimulation(owner) ?? Promise.resolve(),
       getProjectName: () => projectName,
       getProjectVersion: () => projectVersion,
+      ...(getThirdPartyNotices ? { getThirdPartyNotices } : {}),
       setWorldGravity: (gravity) => {
         this.setWorldGravity(gravity);
       },

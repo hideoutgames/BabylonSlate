@@ -22,3 +22,12 @@ export function editorMeshoptPublicBase(): string {
   const base = publicAssetUrl("meshopt/");
   return base.endsWith("/") ? base : `${base}/`;
 }
+
+/**
+ * The notices exported games ship, served by the editor for Get Third-Party Notices in Play.
+ * Absolute, because the game worker resolves relative URLs against its own script.
+ */
+export function editorThirdPartyNoticesUrl(): string {
+  const path = publicAssetUrl("legal/THIRD-PARTY-NOTICES.txt");
+  return typeof location === "undefined" ? path : new URL(path, location.href).href;
+}

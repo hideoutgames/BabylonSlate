@@ -187,6 +187,7 @@ export function playLoadControl(options: {
   traceByteBudget?: number;
   renderSettings?: Partial<import("@haptic/core").RenderProjectSettings>;
   project?: { name: string; version: string };
+  thirdPartyNoticesUrl?: string;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query. */
@@ -240,6 +241,7 @@ export function playLoadControl(options: {
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),
+    ...(options.thirdPartyNoticesUrl ? { thirdPartyNoticesUrl: options.thirdPartyNoticesUrl } : {}),
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
     assetCatalog: options.assetCatalog,

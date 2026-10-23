@@ -92,6 +92,7 @@ import {
   editorDracoPublicBase,
   editorKtx2PublicBase,
   editorMeshoptPublicBase,
+  editorThirdPartyNoticesUrl,
 } from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
@@ -1606,6 +1607,7 @@ export function startPlaySession(options: {
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
     project: options.project,
+    thirdPartyNoticesUrl: editorThirdPartyNoticesUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
