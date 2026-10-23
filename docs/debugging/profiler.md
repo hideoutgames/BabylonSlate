@@ -28,7 +28,9 @@ Choose a view:
 | Timeline | A chart of every frame, tick and GPU query on one time axis, with a **Markers** row for loading screens and scene changes, then the samples as a table. |
 | Frame Report | The result of **Capture Frame**. |
 
-Only one recording or frame capture runs at a time. The window keeps the latest recording and the latest frame capture, so capturing a frame does not replace a recording. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report. A recording saved before tick phases were recorded opens with script and physics only.
+Only one recording or frame capture runs at a time. The window keeps your last five recordings and last five frame captures until you close the editor, so capturing a frame does not replace a recording. Very large recordings are kept fewer at a time. When it holds more than one, a second row picks which **Recording** or **Frame Capture** to show.
+
+To compare two recordings, show the newer one in **Summary** and pick the older one in **Compare With**. Each row then shows the older value, the newer value and the change; a slower value is marked in red. The comparison stays while you record again, so you can record, change something, record, and compare. A saved recording you open joins the list under its file name, so you can compare with a baseline you exported earlier. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report. A recording saved before tick phases were recorded opens with script and physics only.
 
 In **Timeline**:
 
