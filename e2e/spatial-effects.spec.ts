@@ -217,3 +217,43 @@ for (const backend of ["webgl2"] as const) {
     }
   });
 }
+
+/** Pixels whose red channel the red box's reflection raises. */
+function reflected(off: number[], on: number[]) {
+  return off.filter((value, i) => i % 4 === 0 && on[i]! > value + 8).length;
+}
+
+for (const backend of ["webgl2"] as const) {
+  test(`reflections draw on lit and opted-in CEL surfaces but never unlit ones on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type()) &&
+        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        errors.push(message.text());
+    });
+    await page.goto("/?test=1&spatialEffectsProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as {
+      __spatialEffectsProof?: unknown;
+    }).__spatialEffectsProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __spatialEffectsProof: typeof runSpatialEffectsProof;
+    }).__spatialEffectsProof(backend, "reflections"), backend).catch(async (error: unknown) => {
+      await testInfo.attach("reflection-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+      throw error;
+    });
+    await testInfo.attach("reflection-pixels", { body: JSON.stringify(result), contentType: "application/json" });
+    expect(errors).toEqual([]);
+    expect(result.reservations.reservedBytes).toBe(0);
+    expect(result.reflectionCaptures).toHaveLength(1);
+    for (const { pbr, celDefault, cel, celNative, unlitStandard } of result.reflectionCaptures) {
+      expect(reflected(pbr.off, pbr.on), "a PBR graph mirror reflects").toBeGreaterThan(20);
+      expect(pixelDifference(celDefault.off, celDefault.on), "CEL stays flat by default").toBeLessThan(0.5);
+      expect(reflected(cel.off, cel.on), "an opted-in CEL graph mirror reflects").toBeGreaterThan(20);
+      expect(reflected(celNative.off, celNative.on), "a native metal reflects through the CEL adapter").toBeGreaterThan(20);
+      expect(reflected(unlitStandard.off, unlitStandard.on), "an unlit Standard surface never reflects").toBe(0);
+      expect(pixelDifference(unlitStandard.off, unlitStandard.on), "unlit Standard color is unchanged").toBeLessThan(0.5);
+    }
+  });
+}

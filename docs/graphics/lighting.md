@@ -107,8 +107,11 @@ When **Render Mode** is **CEL**, **Project Settings > Rendering > CEL Shading** 
 | **Light Mixing** | Strongest Light | **Strongest Light** keeps the dominant light's colour, **Additive** sums lights, **Blend** mixes colours at the strongest light's brightness. |
 | **Outlines**, **Outline Color**, **Outline Width** | On, near black, 1 px | Silhouette outlines on eligible geometry. |
 | **Outline Distance Fade**, **Outline Fade Start**, **Outline Fade End** | Off, 50, 100 | Shrinks outlines with camera distance. |
+| **Real-Time Reflections** | Off | Lets [Real-Time Reflections](post-processing.md#project-effects) draw on CEL surfaces. Off keeps CEL flat. |
 
 Bands and shadow edges are always hard steps. For per-actor outlines, use the [Outline](../components/outline.md) component; see [Geometry](geometry.md#outlines).
+
+With **Real-Time Reflections** on, and the effect on in **Post Processing**, CEL surfaces reflect as their Materials do in PBR: metal and smooth surfaces reflect, unlit surfaces never do. Imported models reflect from their metal and roughness values; a model whose metalness comes from a texture does not reflect in CEL.
 
 ## Control lights from scripts
 

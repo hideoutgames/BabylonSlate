@@ -32,6 +32,8 @@ export interface SceneEffectsInputs {
    * Omitted allows every effect the project enables.
    */
   allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
+  /** CEL's Real-Time Reflections opt-in (CEL Shading settings); PBR always allows them. */
+  celReflections?: boolean;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -68,8 +70,9 @@ export function upscaledRenderSize(
  * Resolve the normalized settings into the renderable chain. CEL renders
  * display-space by construction, so the Scene Linear stage (and therefore
  * tone mapping, exposure and contrast) only applies to PBR projects; vignette,
- * bloom and FXAA remain available in every mode. Ambient occlusion and
- * reflections are PBR-only so CEL keeps its hard-stepped shading.
+ * bloom and FXAA remain available in every mode. Ambient occlusion is
+ * PBR-only so CEL keeps its hard-stepped shading; CEL reflections are an
+ * opt-in (`celReflections`), off by default for the same reason.
  */
 export function planSceneEffects(
   effects: RenderEffectsSettings,
@@ -93,7 +96,8 @@ export function planSceneEffects(
   const allowed = inputs.allowed;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
     ? effects.ambientOcclusion : null;
-  const reflections = mode === "pbr" && effects.reflections.enabled && allowed?.reflections !== false ? effects.reflections : null;
+  const reflections = (mode === "pbr" || inputs.celReflections === true) && effects.reflections.enabled && allowed?.reflections !== false
+    ? effects.reflections : null;
   // A tier without volumetric lighting keeps authored Fog Volumes: the pass
   // then runs exactly as with the project's scene-wide volumetrics off.
   const volumetricLighting = effects.volumetricLighting.enabled && allowed?.volumetricLighting !== false
@@ -178,5 +182,6 @@ export function sceneEffectsKey(
   const skipped = allowed
     ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
     : "";
-  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}`;
+  const celReflections = mode === "cel" && inputs.celReflections === true ? ":celReflections" : "";
+  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${celReflections}`;
 }
