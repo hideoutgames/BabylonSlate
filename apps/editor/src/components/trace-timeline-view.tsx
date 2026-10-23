@@ -1,7 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo } from "react";
 import type { TracePayload } from "@haptic/debugger";
 import { TICK_BUDGET_MS } from "@haptic/debugger";
-import { NumberField, SelectableText } from "@haptic/editor-kit";
+import { NumberField, SelectableText, TimelineChart, type TimelineMarker, type TimelineTrack } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
 import { FieldLabel } from "@haptic/ui/components/field";
@@ -16,7 +16,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
-import { frameTickMs, traceGraphBuckets, traceRetentionSummary } from "../lib/trace-view";
+import { frameTickMs, traceRetentionSummary } from "../lib/trace-view";
 import { TraceEmptyState } from "./trace-inspection-controls";
 import { useTraceTouch } from "../lib/use-trace-touch";
 
@@ -34,8 +34,6 @@ export function TraceTimelineView({
   onWindowSizeChange: (size: number | null) => void;
 }) {
   const frameId = useId();
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
   const touch = useTraceTouch();
   const size = touch ? "touch-icon" : "icon-sm";
   const length = payload.frames.length;
@@ -49,22 +47,11 @@ export function TraceTimelineView({
     Math.min(length - count, index - Math.floor(count / 2)),
   );
   const end = start + count - 1;
-  const limit = width
-    ? Math.max(1, Math.min(200, Math.floor(width / (touch ? 12 : 4))))
-    : 160;
-  const buckets = useMemo(
-    () => traceGraphBuckets(payload, start, end, limit),
-    [payload, start, end, limit],
-  );
-  const selectedBucketIndex = buckets.findIndex(
-    (bucket) => index >= bucket.start && index <= bucket.end,
-  );
-  const selectionFraction = count ? (index - start + 0.5) / count : 0;
-  const scale =
-    Math.max(
-      TICK_BUDGET_MS,
-      ...buckets.map((bucket) => bucket.scriptMs + bucket.physicsMs),
-    ) * 1.12;
+  const { tracks, markers } = useMemo(() => traceTimeline(payload), [payload]);
+  const frameLabel = (position: number) => {
+    const at = Math.min(end, Math.max(start, Math.round(position)));
+    return `Frame ${at} · Tick ${payload.frames[at]?.tickIndex ?? "?"}`;
+  };
   const budgetTicks = useMemo(
     () =>
       payload.frames.flatMap((entry, i) =>
@@ -74,15 +61,6 @@ export function TraceTimelineView({
   );
   const previousSpike = budgetTicks.findLast((i) => i < index);
   const nextSpike = budgetTicks.find((i) => i > index);
-  useEffect(() => {
-    const element = chartRef.current;
-    if (!element) return;
-    setWidth(element.clientWidth);
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   return (
     <div
@@ -220,84 +198,21 @@ export function TraceTimelineView({
         )}
       </div>
       {!frame && <TraceEmptyState title="No Recorded Frames" />}
-      <div className="shrink-0 rounded-md border bg-background p-1">
-      <div
-        ref={chartRef}
-        className="trace-timing-chart relative flex h-40 min-h-40 w-full items-end gap-px overflow-hidden"
-        data-testid="trace-playback-graph"
-        aria-label="Script And Physics Tick Times"
-      >
-        {buckets.map((bucket) => {
-          const selected = index >= bucket.start && index <= bucket.end;
-          const selectedFrame = payload.frames[index];
-          const title = `Frames ${bucket.start}–${bucket.end} · Peak Tick ${payload.frames[bucket.peak]!.tickIndex} · Script ${bucket.scriptMs.toFixed(2)} ms · Physics ${bucket.physicsMs.toFixed(2)} ms${bucket.overBudget ? " · Over Budget" : ""}${bucket.hasEvents ? " · Recorded Events" : ""}`;
-          return (
-            <Button
-              key={bucket.start}
-              variant="ghost"
-              className="trace-timing-bar relative h-full min-w-0 flex-1"
-              style={{ flexGrow: bucket.end - bucket.start + 1 }}
-              aria-label={title}
-              title={title}
-              aria-current={selected ? "true" : undefined}
-              data-selected={selected ? "true" : "false"}
-              data-over-budget={bucket.overBudget ? "true" : "false"}
-              data-testid={`trace-playback-graph-bar-${bucket.start}`}
-              onClick={() => onIndexChange(bucket.peak)}
-            >
-              <span
-                className="trace-physics-segment absolute inset-x-0"
-                style={{
-                  bottom: `${(bucket.scriptMs / scale) * 100}%`,
-                  height: `${(bucket.physicsMs / scale) * 100}%`,
-                }}
-              />
-              <span
-                className="trace-script-segment absolute inset-x-0 bottom-0 min-h-px"
-                style={{ height: `${(bucket.scriptMs / scale) * 100}%` }}
-              />
-              {bucket.overBudget && (
-                <span
-                  className="absolute inset-x-0 top-0 h-1 bg-destructive"
-                  aria-hidden="true"
-                />
-              )}
-              {bucket.hasEvents && (
-                <span
-                  className="absolute bottom-0 left-1/2 size-1 -translate-x-1/2 rounded-full bg-foreground"
-                  aria-hidden="true"
-                />
-              )}
-              {selected && (
-                <span className="sr-only">
-                  Selected Tick {selectedFrame?.tickIndex}
-                </span>
-              )}
-            </Button>
-          );
-        })}
-        {frame && (
-          <>
-            <div
-              data-testid="trace-budget-line"
-              className="pointer-events-none absolute inset-x-0 border-t border-dashed border-destructive/70"
-              style={{ bottom: `${(TICK_BUDGET_MS / scale) * 100}%` }}
-            >
-              <span className="absolute right-0 bottom-0.5 rounded-sm bg-background/80 px-1 text-[0.65rem] text-destructive tabular-nums">
-                {TICK_BUDGET_MS} ms Budget
-              </span>
-            </div>
-            <div
-              data-testid="trace-selection-indicator"
-              className="pointer-events-none absolute inset-y-0 w-0.5 bg-trace-selected"
-              style={{
-                left: `calc(${selectionFraction * 100}% + ${selectedBucketIndex - selectionFraction * (buckets.length - 1) - 1}px)`,
-              }}
-            />
-          </>
-        )}
-      </div>
-      </div>
+      {frame ? (
+        <div className="shrink-0 overflow-hidden rounded-md border" data-testid="trace-playback-graph">
+          <TimelineChart
+            tracks={tracks}
+            markers={markers}
+            domain={[start - 0.5, end + 0.5]}
+            selected={{ track: "ticks", index }}
+            onSelect={(selection) => onIndexChange(selection.index)}
+            formatTime={frameLabel}
+            trackHeight={TRACE_TRACK_PX}
+            aria-label="Script And Physics Tick Times"
+            className="border-b-0"
+          />
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="size-2 rounded-[2px] bg-trace-script" />
@@ -313,18 +228,15 @@ export function TraceTimelineView({
         </span>
         <span className="flex items-center gap-1">
           <span className="h-0.5 w-2 bg-destructive" />
-          Over Budget
+          Over Budget · {TICK_BUDGET_MS} ms
         </span>
         <span className="flex items-center gap-1">
-          <span className="size-1 rounded-full bg-foreground" />
-          Recorded Events
+          <span className="h-2 w-0.5 bg-foreground" />
+          Logs, Prints And Input
         </span>
-        <SelectableText>Scale 0–{scale.toFixed(1)} ms</SelectableText>
         <span data-testid="trace-visible-range" className="ml-auto">
           <SelectableText>
-            {frame
-              ? `Frames ${start}–${end}${buckets.some((bucket) => bucket.end > bucket.start) ? " · Group Peaks — Select A Bar To Inspect Its Slowest Tick" : " · One Bar Per Frame"}`
-              : "No Frames"}
+            {frame ? `Frames ${start}–${end} · Each Bar Is The Slowest Tick It Covers` : "No Frames"}
           </SelectableText>
         </span>
       </div>
@@ -360,4 +272,36 @@ export function TraceTimelineView({
       </div>
     </div>
   );
+}
+
+/** The Ticks track is the Trace timeline's main view, so it stands taller than a Profiler track. */
+const TRACE_TRACK_PX = 112;
+
+const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
+
+/** One Ticks track (script and physics, stacked, against the tick budget) on a frame-index axis, and a marker for each frame that recorded logs, prints or input. */
+function traceTimeline(payload: TracePayload): { tracks: TimelineTrack[]; markers: TimelineMarker[] } {
+  const frames = payload.frames;
+  const times = frames.map((_, index) => index);
+  const tracks: TimelineTrack[] = [{
+    id: "ticks",
+    label: "Ticks",
+    unit: "ms",
+    times,
+    threshold: TICK_BUDGET_MS,
+    segments: [
+      { label: "Script", color: "--trace-script", values: frames.map((frame) => Math.max(0, frame.scriptMs)) },
+      { label: "Physics", color: "--trace-physics", values: frames.map((frame) => Math.max(0, frame.physicsMs)) },
+    ],
+  }];
+  const markers: TimelineMarker[] = [];
+  frames.forEach((frame, index) => {
+    const parts = [
+      frame.logs.length ? plural(frame.logs.length, "Log") : "",
+      frame.prints.length ? plural(frame.prints.length, "Print") : "",
+      frame.inputEvents?.length ? plural(frame.inputEvents.length, "Input") : "",
+    ].filter(Boolean);
+    if (parts.length) markers.push({ atMs: index, label: parts.join(" · "), color: "--foreground" });
+  });
+  return { tracks, markers };
 }
