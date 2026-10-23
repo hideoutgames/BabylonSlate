@@ -68,6 +68,7 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
+import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -533,13 +534,15 @@ function expectSwapped(record: CauseRecord, model: Model): void {
   expect({
     heldFrames: record.heldFrames, holdReported: record.holdReported, holdRaised: record.holdRaised,
     paused: record.pausedFrames > 0, recovered: record.recovered,
-    // Only a pending compile leaves a previous Effect drawing; a synchronous link draws the new one at once.
-    previousEffectDrawn: record.previousEffectDrawn, adopted: record.adopted,
+    // Only a pending compile (or pipeline) leaves a previous Effect drawing; a synchronous link draws the new one at
+    // once, unless more new variants arrive together than a frame admits (`FIRST_DRAWS_PER_FRAME`).
+    previousEffectDrawn: model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME ? true : record.previousEffectDrawn,
+    adopted: record.adopted,
     // One probe per frame while a swap is pending, not one per readiness question.
     probesAtMostOnePerFrame: record.probesPerFrame <= 1,
   }, detail).toEqual({
     heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
-    previousEffectDrawn: model !== "sync", adopted: true, probesAtMostOnePerFrame: true,
+    previousEffectDrawn: model !== "sync" || record.effects > FIRST_DRAWS_PER_FRAME, adopted: true, probesAtMostOnePerFrame: true,
   });
 }
 
@@ -615,6 +618,39 @@ describe("compile holds after the first frame", () => {
       material.freeze();
     });
     expectSwapped(record, model);
+  });
+
+  it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {
+    // Six barrels with Materials of their own under two points: one point switching off asks every Material for a new
+    // variant at once. Their first draws spread over frames, previous Effects drawing meanwhile.
+    const guids = ["surface-a", "surface-b", "surface-c", "surface-d", "surface-e", "surface-f"];
+    const barrels: Actor[] = guids.map((_, index) =>
+      ({ slotId: 20 + index, guid: `barrel-${index}`, position: [-5 + index * 2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } }));
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), ...barrels], guids);
+    guids.forEach((guid, index) => world.handle.applyCommand({ type: "assignMaterial", slotId: 20 + index, materialAssetGuid: guid }));
+    await settle(world);
+    const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+    const effects = () => barrels.map((actor) =>
+      world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
+    const before = effects();
+    world.driver.arm();
+    world.place(point(11, [1.5, 2.5, -1], { enabled: false }));
+    let current = before;
+    const adoptedPerFrame: number[] = [];
+    // Two frames with the links pending (a parallel driver, WebGPU pipelines), then they all finish at once.
+    for (let index = 0; index < 14 && current.some((effect, at) => effect === before[at]); index++) {
+      if (index === 2) world.driver.release();
+      const { view } = await world.frame();
+      expect(view?.rendered).toBe(true);
+      const next = effects();
+      adoptedPerFrame.push(next.filter((effect, at) => effect !== current[at]).length);
+      current = next;
+    }
+    expect({
+      allAdopted: current.every((effect, at) => effect !== before[at] && world.driver.created.includes(effect!)),
+      atMostPerFrame: Math.max(...adoptedPerFrame) <= FIRST_DRAWS_PER_FRAME,
+      spread: adoptedPerFrame.filter((count) => count > 0).length >= Math.ceil(barrels.length / FIRST_DRAWS_PER_FRAME),
+    }, JSON.stringify(adoptedPerFrame)).toEqual({ allAdopted: true, atMostPerFrame: true, spread: true });
   });
 
   it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
