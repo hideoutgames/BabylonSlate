@@ -330,6 +330,9 @@ export class ScriptDebugObserver {
   /** The roster last sent, to send only changes. Null before the first send for this target. */
   private sent: Map<string, DebugInstance> | null = null;
   private basis: RosterBasis | null = null;
+  /** The followed instance's variable texts last sent, and its variables revision then (NaN: unversioned). */
+  private variableTexts = new Map<string, string>();
+  private variablesRevision = Number.NaN;
 
   private readonly host: ScriptDebugObserverHost;
 
@@ -357,6 +360,7 @@ export class ScriptDebugObserver {
     if (instanceId === null) this.follow(null);
     else if (changed || this.followed?.guid !== instanceId || this.followed.destroyed) {
       this.follow(findInstance(this.host.world(), target, instanceId));
+      this.publishVariables(this.host.world().clock.tickIndex);
     }
   }
 
@@ -368,6 +372,7 @@ export class ScriptDebugObserver {
     if (this.followed && graphs.length > 0) {
       this.host.emit({ type: "executionTrace", target, instanceId: this.followed.guid, tickIndex, graphs });
     }
+    this.publishVariables(tickIndex);
     // Its On Destroyed run was the last thing worth reporting.
     if (this.followed?.destroyed) this.follow(null);
     this.publishRoster();
@@ -383,7 +388,30 @@ export class ScriptDebugObserver {
     this.sink?.close();
     this.followed = object;
     this.sink = object ? new ExecutionTraceSink() : null;
+    this.variableTexts = new Map();
+    this.variablesRevision = Number.NaN;
     this.host.setDebugTrace(object, this.sink);
+  }
+
+  /**
+   * The followed instance's declared variables whose text changed. Any object's script can set them, so
+   * this does not wait for the instance's own graphs to run; an unchanged variables revision skips it.
+   */
+  private publishVariables(tickIndex: number): void {
+    const object = this.followed;
+    const target = this.target;
+    if (!object || target?.kind !== "class") return;
+    const revision = object.variablesRevision;
+    if (revision === this.variablesRevision) return;
+    this.variablesRevision = revision;
+    const values: Array<[string, string]> = [];
+    for (const { name } of this.host.world().classRegistry.inheritedVariables(object.classId)) {
+      const text = formatDebugValue(object.variables.get(name));
+      if (this.variableTexts.get(name) === text) continue;
+      this.variableTexts.set(name, text);
+      values.push([name, text]);
+    }
+    if (values.length > 0) this.host.emit({ type: "debugVariables", target, instanceId: object.guid, tickIndex, values });
   }
 
   private publishRoster(): void {

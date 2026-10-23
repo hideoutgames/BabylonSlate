@@ -158,7 +158,7 @@ function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tileset
 }
 
 /** The graph debugger's views: editor-bound, not scene state, so they stay out of the command revision a final capture compares. */
-const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "btState"]);
+const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "debugVariables", "btState"]);
 
 /** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
 function createClassRegistry(): ClassRegistry {

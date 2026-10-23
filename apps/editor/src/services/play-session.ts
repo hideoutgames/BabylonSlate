@@ -752,6 +752,7 @@ export function startPlaySession(options: {
   ) => void;
   onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
   onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
+  onDebugVariables?: (report: Extract<CommandMessage, { type: "debugVariables" }>) => void;
   onBtState?: (state: Extract<CommandMessage, { type: "btState" }>) => void;
 }): PlaySession {
   options = { ...options };
@@ -1488,6 +1489,7 @@ export function startPlaySession(options: {
     // Debug views are not activity and never reach the renderer.
     if (command.type === "debugRoster") { options.onDebugRoster?.(command); return; }
     if (command.type === "executionTrace") { options.onExecutionTrace?.(command); return; }
+    if (command.type === "debugVariables") { options.onDebugVariables?.(command); return; }
     if (command.type === "btState") { options.onBtState?.(command); return; }
     if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
     if (materialEditHost.receive(command)) return;

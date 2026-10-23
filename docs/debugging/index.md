@@ -134,6 +134,21 @@ The **Blackboard** window lists the current values of the object's Blackboard.
 
 The **State Machine** lights each state the graph plays in a tick: the active state, and the state a blend is leaving. A transition's wire lights up when the transition is taken. A Both Ways pair is one wire, so it lights for either direction. [Jump To State](../scripting/class/jump-to-state.md) changes the active state without a transition. Transition rule graphs do not show a run.
 
+### Watches
+
+The **Watches** window, opened from a Class's **Windows** menu, keeps chosen values of the object you picked in view:
+
+- To watch a pin, choose **Watch Pin** in a Class graph node's menu, then the pin. It lists the node's outputs and the inputs that have a wire. Choose the pin again to stop watching it.
+- To watch a variable, choose **Add Watch** in the variable's menu in the **Class** panel. Inherited variables work too. A function's local variables and a component's variables can't be watched.
+
+Each row shows the latest value, as text with the same limits as a pin's tip. A variable updates whenever it changes, even when another object's script changes it. While the Simulation is paused, values hold, and a **Step** updates them. Instead of a value, a row shows:
+
+- **Not Debugged** when no Simulation, or Play stopped in the editor, is showing that Class. Watches update only for the Class you have open, and running Play updates none until it stops at a breakpoint or an error.
+- **No Object** when **Debug Instance** is **None**.
+- **No Value Yet** before the node has run for the object.
+
+**Remove All** clears the list. Watches are kept with the project on this device, like breakpoints.
+
 The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Simulation and Play compile Class graphs and Animation Object graphs with these checks; while nothing is watched or set, each costs a quick check per node. Preview Build and exported games do not include them, so they pay nothing for it.
 
 ## Stats

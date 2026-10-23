@@ -30,6 +30,8 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { watchablePins, watchPinMenuItems } from "../lib/watch-menu";
+import { useWatchStore } from "../context/watch-store-context";
 import { conditionPins } from "../lib/breakpoint-settings";
 import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { useKeybindChord } from "../context/keybind-context";
@@ -245,6 +247,9 @@ export function GraphPanel(
   // Breakpoints use the compiler's terms: the Class path and the graph's run id.
   const breakpointStore = useBreakpointStore();
   const breakpointAsset = breakpointStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
+  // Pin watches use the same terms.
+  const watchStore = useWatchStore();
+  const watchAsset = watchStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
   const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
   const graphName = activeFunctionId
     ? graphContent?.members?.find((member) => member.id === activeFunctionId)?.name ?? activeFunctionId
@@ -264,7 +269,7 @@ export function GraphPanel(
     [breakpointAsset, breakpointLabel, breakpointStore, runGraphId],
   );
   const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
-  // A function graph runs under its name, so renaming a function moves its breakpoints with it.
+  // A function graph runs under its name, so renaming a function moves its breakpoints and watches with it.
   const functionRunIds = useMemo(() => new Map(
     Object.keys(graphContent?.functionGraphs ?? {}).map((id) => [id, functionGraphExportName({
       id,
@@ -275,14 +280,15 @@ export function GraphPanel(
   useEffect(() => {
     const before = previousFunctionRunIds.current;
     previousFunctionRunIds.current = functionRunIds;
-    if (!breakpointStore || !breakpointAsset || before === functionRunIds) return;
+    if (before === functionRunIds) return;
     for (const [id, runId] of functionRunIds) {
       const previous = before.get(id);
       if (previous === undefined || previous === runId) continue;
-      breakpointStore.renameGraph(breakpointAsset, previous, runId,
-        graphContent?.members?.find((member) => member.id === id)?.name ?? id);
+      const name = graphContent?.members?.find((member) => member.id === id)?.name ?? id;
+      if (breakpointStore && breakpointAsset) breakpointStore.renameGraph(breakpointAsset, previous, runId, name);
+      if (watchStore && watchAsset) watchStore.renameGraph(watchAsset, previous, runId, name);
     }
-  }, [breakpointAsset, breakpointStore, functionRunIds, graphContent?.members]);
+  }, [breakpointAsset, breakpointStore, functionRunIds, graphContent?.members, watchAsset, watchStore]);
 
   useEffect(() => {
     if (!panelApi) return;
@@ -524,7 +530,15 @@ export function GraphPanel(
       const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
         ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
         : [];
-      const node = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
+      const { nodes, edges } = latestGraph.current;
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      if (watchStore && watchAsset) {
+        const pins = watchablePins(node?.data, (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId));
+        items.push(...watchPinMenuItems(watchStore, pins, (pin) => ({
+          kind: "pin", assetGuid: watchAsset, graphId: runGraphId, nodeId, pinId: pin.id, direction: pin.direction,
+          label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
+        })));
+      }
       if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return items;
       const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
       const edit = () => {
@@ -542,7 +556,7 @@ export function GraphPanel(
         ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord, edit),
       ];
     },
-    [breakpointAsset, breakpointLabel, breakpointStore, editBreakpoint, graphContent, runGraphId, toggleBreakpointChord],
+    [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
   );
 
   const preparePaste = useCallback(

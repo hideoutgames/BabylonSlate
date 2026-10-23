@@ -47,6 +47,8 @@ function valueKey(assetGuid: string, graphId: string, nodeId: string, pinId: str
  *   `subscribe` / `getSnapshot` (the toolbar's instance select).
  * - Execution traces go straight to `subscribeTrace` listeners, which draw into the DOM
  *   themselves (graph canvases), and the latest value of each pin stays readable through `value`.
+ *   The followed instance's variables stay readable through `variable`; `subscribeValues` hears
+ *   about both (the Watches window).
  * - A followed Behaviour Tree's `btState` becomes each node's status and the Blackboard's
  *   values. A node subscribes to its own status (`subscribeStatus`), so a change renders that
  *   node alone; the Blackboard panel subscribes to the values.
@@ -63,6 +65,8 @@ export class GraphDebugStore {
   /** The user chose None: a new spawn no longer takes over. */
   private chosenNone = false;
   private values = new Map<string, string>();
+  private variables = new Map<string, string>();
+  private readonly valueListeners = new Set<() => void>();
   /** The followed Behaviour Tree's node statuses, and the Blackboard it last reported. */
   private statuses = new Map<string, BtNodeStatus>();
   private blackboardValues: Readonly<Record<string, unknown>> | null = null;
@@ -100,6 +104,20 @@ export class GraphDebugStore {
   /** The latest text of one pin of the followed instance, or undefined before a node has run. */
   value(assetGuid: string, graphId: string, nodeId: string, pinId: string, direction: "in" | "out"): string | undefined {
     return this.values.get(valueKey(assetGuid, graphId, nodeId, pinId, direction));
+  }
+
+  /** The latest text of the followed instance's variable `name`, or undefined before the runtime reported it. */
+  variable(name: string): string | undefined {
+    return this.variables.get(name);
+  }
+
+  /**
+   * Calls `listener` after a trace or a variables report of the followed instance arrives, and when the values
+   * are forgotten. At most once per tick while a Simulation runs: the listener must compare before it renders.
+   */
+  subscribeValues(listener: () => void): () => void {
+    this.valueListeners.add(listener);
+    return () => { this.valueListeners.delete(listener); };
   }
 
   /** The status of a node of the followed instance of the Behaviour Tree `assetGuid`, or undefined before it has one. */
@@ -211,6 +229,15 @@ export class GraphDebugStore {
     }
     const trace: GraphDebugTrace = { instanceId: message.instanceId, tickIndex: message.tickIndex, graphs: message.graphs };
     for (const listener of [...this.traceListeners]) listener(trace);
+    this.notifyValues();
+  }
+
+  /** The runtime's `debugVariables`. A report of an instance no longer followed is dropped. */
+  receiveVariables(message: { target: DebugObserveTarget; instanceId: string; tickIndex: number; values: ReadonlyArray<readonly [string, string]> }): void {
+    const { target, selectedId } = this.snapshot;
+    if (!sameDebugObserveTarget(message.target, target) || message.instanceId !== selectedId) return;
+    for (const [name, text] of message.values) this.variables.set(name, text);
+    this.notifyValues();
   }
 
   /** The `btState` of the followed Behaviour Tree. A message of an instance no longer followed is dropped. */
@@ -235,11 +262,18 @@ export class GraphDebugStore {
     if (this.held) for (const listener of [...this.holdListeners]) { listener(false); listener(true); }
     const had = [...this.statuses.keys()];
     const hadBlackboard = this.blackboardValues !== null;
+    const hadValues = this.values.size > 0 || this.variables.size > 0;
     this.values = new Map();
+    this.variables = new Map();
     this.statuses = new Map();
     this.blackboardValues = null;
     this.notifyStatuses(had);
     if (hadBlackboard) for (const listener of [...this.blackboardListeners]) listener();
+    if (hadValues) this.notifyValues();
+  }
+
+  private notifyValues(): void {
+    for (const listener of [...this.valueListeners]) listener();
   }
 
   private notifyStatuses(nodeIds: readonly string[]): void {

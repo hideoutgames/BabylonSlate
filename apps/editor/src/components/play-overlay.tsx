@@ -968,6 +968,7 @@ function PlayOverlayView({
           onBtState: (state) => graphDebug?.receiveBtState(state),
           onDebugRoster: (roster) => graphDebug?.receiveRoster(roster),
           onExecutionTrace: (trace) => graphDebug?.receiveTrace(trace),
+          onDebugVariables: (report) => graphDebug?.receiveVariables(report),
           onRenderOutputChanged: (settings) => {
             runtimeRenderRef.current = settings;
             liveSizeRef.current = null;
