@@ -108,6 +108,7 @@ export type PlayerBootHandle = {
   shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
+  text2dLayouts: () => ReturnType<EngineHandle["playText2DLayouts"]>;
   /** Active owned post-process/effect passes, or null once halted. */
   postProcessPassCount: () => number | null;
   /** Prepared FrameGraph task names, or null once halted. */
@@ -127,7 +128,7 @@ export type PlayerBootHandle = {
  * a tick rate from either host.
  */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
-  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" |
+  "visuals" | "meshMaterialNames" | "text2dLayouts" | "rendering" | "shadowDiagnostics" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 > & { tickIndex: () => number };
 
@@ -1100,6 +1101,8 @@ function initializePlayer(
   // The subscription above fired before the runtime existed; report the
   // current status now that the worker or in-process runtime can store it.
   publishRenderPathStatus(handle.renderPathStatus());
+  // The view size too: two-finger drags, cursor projection and Scene Layers measure against it.
+  handle.publishSceneLayerSize();
   const initialScalability = handle.scalabilityStatus?.();
   if (initialScalability) publishScalabilityStatus(initialScalability);
 
@@ -1256,6 +1259,7 @@ function initializePlayer(
       shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
+      text2dLayouts: () => handle.playText2DLayouts(),
       postProcessPassCount: () =>
         halted ? null : handle.postProcessPassCount(),
       renderTasks: () => (halted ? null : handle.renderTaskNames()),

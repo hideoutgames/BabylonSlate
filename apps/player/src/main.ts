@@ -238,6 +238,7 @@ async function launchLoaded(
       scalability: () => session.scalability(),
       shadowDiagnostics: () => session.shadowDiagnostics(),
       meshMaterialNames: () => session.meshMaterialNames(),
+      text2dLayouts: () => session.text2dLayouts(),
       postProcessPassCount: () => session.postProcessPassCount(),
       renderTasks: () => session.renderTasks(),
       setRenderSettings: (settings) => session.setRenderSettings(settings),

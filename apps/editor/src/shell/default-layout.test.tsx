@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDockview } from "dockview-react";
 import { createDefaultLayoutForKind } from "./default-layout";
+import { listDockWindows } from "./window-catalog";
 
 describe("createDefaultLayoutForKind", () => {
   it("sizes Sprite Animation Details to 75% of the DockView host", () => {
@@ -79,5 +80,23 @@ describe("createDefaultLayoutForKind", () => {
       "behaviour-tree-graph",
     );
     expect(panels.get("behaviour-tree-graph")?.api.setActive).toHaveBeenCalled();
+  });
+
+  it("leaves Breakpoints out of a new Scene or Class layout, which the Windows menu still lists", () => {
+    for (const kind of ["scene", "graph"] as const) {
+      const panels = new Map<string, { id: string; api: { setActive: ReturnType<typeof vi.fn> } }>();
+      const api = {
+        getPanel: (id: string) => panels.get(id),
+        addPanel: (options: { id: string }) => {
+          const panel = { id: options.id, api: { setActive: vi.fn() } };
+          panels.set(options.id, panel);
+          return panel;
+        },
+      };
+      createDefaultLayoutForKind(api as never, kind);
+      expect(panels.has("compiler-results")).toBe(true);
+      expect(panels.has("breakpoints")).toBe(false);
+      expect(listDockWindows(kind).some((entry) => entry.id === "breakpoints")).toBe(true);
+    }
   });
 });

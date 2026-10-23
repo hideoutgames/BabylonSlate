@@ -569,6 +569,8 @@ function holdWaterLinks(engine: NullEngine) {
   });
   return {
     requested: () => held.map((effect) => effect.defines.includes("#define PREPASS\n") ? "geometry" : waterVariant(effect.defines)),
+    /** The defines of every link requested so far. */
+    requestedDefines: () => held.map((effect) => effect.defines),
     /** Finish the first `count` links requested. */
     release: (count: number) => { for (const effect of held.slice(0, count)) released.add(effect); },
     /** Finish every link, and later ones as they are requested. */
@@ -674,16 +676,22 @@ it.each([["transparent", false], ["geometry", true]] as const)(
     /** Whether the pass holds `mesh`'s fog variant. */
     const fogged = (mesh: Mesh) => /#define FOG\n/.test(mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect?.defines ?? "");
     expect([fogged(first!), fogged(second!)]).toEqual([false, false]);
+    /** Whether the pass's fog variant of the Realistic (first) or Painted (second) body was requested. */
+    const fogLinked = (painted: boolean) => links.requestedDefines().some((defines) =>
+      defines.includes("#define FOG\n") && defines.includes("#define PREPASS\n") === geometry
+      && !defines.includes("#define DEPTHPREPASS\n") && !defines.includes("#define SLATE_WATER_TOON\n")
+      && defines.includes("#define SLATE_WATER_STYLIZED\n") === painted);
     // Fog gives every body new variants before the load is ready (outside Scene observables, so the change marks
     // readiness dirty itself) and the links requested so far finish. The probe waits on the first body's new
-    // variant, and the second body's link ahead again meanwhile.
+    // variant, and the second body's link ahead again meanwhile; both keep their previous variants until then.
     scene.fogMode = Scene.FOGMODE_EXP2;
     graph.markReadinessDirty();
     links.release(links.requested().length);
-    await vi.waitFor(() => expect(fogged(first!)).toBe(true));
-    await vi.waitFor(() => expect(fogged(second!)).toBe(true));
+    await vi.waitFor(() => expect([fogLinked(false), fogLinked(true)]).toEqual([true, true]));
+    expect([fogged(first!), fogged(second!)]).toEqual([false, false]);
     links.releaseAll();
     expect(await prepared).toEqual({ path: "frameGraph" });
+    expect([fogged(first!), fogged(second!)]).toEqual([true, true]);
     graph.dispose();
   },
 );

@@ -203,6 +203,8 @@ export function compileGraphDocument(
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
         instrumentExecutionTrace: options.instrumentExecutionTrace,
+        // A Simulation also stops at breakpoints; one flag keeps the compile caches whole.
+        instrumentBreakpoints: options.instrumentExecutionTrace,
         isLatentFunction,
       }),
     );
@@ -231,6 +233,7 @@ export function compileGraphDocument(
           stripDevelopmentOnly: options.stripDevelopmentOnly,
           instrumentInfiniteLoops,
           instrumentExecutionTrace: options.instrumentExecutionTrace,
+          instrumentBreakpoints: options.instrumentExecutionTrace,
           localPreamble: localVariablePreamble(locals),
           isLatentFunction,
         }),
@@ -247,6 +250,8 @@ export function compileGraphDocument(
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
         instrumentExecutionTrace: options.instrumentExecutionTrace,
+        // A Simulation also stops at breakpoints; one flag keeps the compile caches whole.
+        instrumentBreakpoints: options.instrumentExecutionTrace,
         isLatentFunction,
       }),
     );

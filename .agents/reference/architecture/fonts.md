@@ -29,16 +29,26 @@ Font assets, optional facetype/MSDF chunks, CSS fallback stacks and the main-thr
 
 - Duplicates drop. Families are always quoted, so a Font named `serif` still names its own face.
 - The stack always ends in a generic family so a failed load is never a silent Arial.
-- `compileText2DFontStacks` gives editor viewport, Play and player a project default stack plus a per-Font map (`fontCssStack` / `fontCssStackByGuid`).
+- `compileText2DFontStacks` gives editor viewport, Play and player a project default stack plus a per-Font map (`fontCssStack` / `fontCssStackByGuid`). Play compiles them from every project Font in each source acquisition (`playText2DFontStacks` in `play-asset-sources.ts`), because engine source unions keep the last acquisition's `fontCssStack`; the player compiles them from the manifest's Fonts.
+- A stack that leaves out the Font draws the generic face without any error, so all three hosts must compile stacks the same way.
 
 ## FontRegistry rules
 
 - Injectable `FontFaceHost` so Node tests mock `FontFace` and `document.fonts`.
 - `register` awaits that face's own `FontFace.load()`; a family-wide `document.fonts.load` would only cover the regular face.
-- One document face per registered content (family, weight, style and a byte fingerprint). Changed bytes replace the face only after the new one loads; failed loads warn in the editor and are removed — never silently substituted.
-- Late resolution sets `consumeDirty()` so hosts can mark the render scheduler dirty. `createEngine({ fontFaceEntries })` registers at construction.
+- One document face per registered content (family, weight, style and a byte fingerprint). Changed bytes replace the face only after the new one loads; a failed load is removed and recorded in `getWarnings()`, never silently substituted.
+- Late resolution sets `consumeDirty()` so hosts can mark the render scheduler dirty. That only redraws: it never re-rasterizes Bitmap 2D Text already built.
 - `dispose()` removes only that registry's faces. Engine dispose, construction rollback and the Font document preview dispose their registries.
-- Editor viewports await `registerFonts` before `setMeshAssets` so Bitmap 2D Text rasterizes loaded faces.
+
+## Cold load
+
+Bitmap 2D Text measures and rasterizes its glyphs once, when its mesh is built, so a face must be loaded before that build.
+
+- Editor viewports await `registerFonts` before `setMeshAssets`.
+- Play and the player install a command source loader before the game worker starts. `CommandSourcePreparation` holds every text `assignMesh` (an empty Font guid means the project default) until `acquireSceneSources` has registered the slot's faces through the Engine's native preparation queue. A face that fails to load rejects the slot with the registry's reason (`Font "<family>" failed to load: …`), and Scene or Scene Layer readiness reports `Scene loading failed` (Play: the session ends and its report lists the error; player: diagnostic, `[player]` console error, playback halts).
+- `createEngine({ fontFaceEntries })` also registers the startup faces and world readiness awaits them, but its failures stay registry warnings; the per-slot gate is what fails loudly.
+- Proof (`e2e/p14-preview-build.spec.ts`): on a cold load, Play and Preview Build lay out explicit- and default-Font text with the Font's own advances, read as each Text mesh's laid-out width (`EngineHandle.playText2DLayouts`, the test hosts' `text2dLayouts`) and compared, as equal-length digit runs, with an independently loaded copy of the Font. A Font that cannot load ends Play with the error in its session report.
+- Gaps: Play and player FontFace entries carry no weight or style (every face registers as 400 normal); the export manifest carries no Global Fallback, so the player always ends stacks in `sans-serif`.
 
 ## 3D Text
 

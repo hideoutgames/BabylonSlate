@@ -6,6 +6,7 @@ import type { PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import type { PinTypeNames } from "./pin-default-preview";
 import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
 import type { GraphRunTrace } from "./run-trace";
+import type { GraphBreakpoints } from "./graph-breakpoints";
 
 export type GraphEditorContextValue = {
   renderPinDefaultEditor?: PinDefaultEditorRenderer;
@@ -33,6 +34,8 @@ export type GraphEditorContextValue = {
   connectionLineKind?: "default" | "animTransition";
   /** What the running owner of the graph reports; nodes with a live status read theirs from it. */
   runTrace?: GraphRunTrace;
+  /** The graph's breakpoints; each node reads its own through `useNodeBreakpoint`. */
+  breakpoints?: GraphBreakpoints;
   /**
    * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
    * Break Links plus the host's items. `resolve` first applies the selection
