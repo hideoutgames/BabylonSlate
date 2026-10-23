@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
 import {
   ActivityIcon,
   CameraIcon,
@@ -14,6 +14,7 @@ import { Button } from "@haptic/ui/components/button";
 import { Separator } from "@haptic/ui/components/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
+import type { DiagnosticResultsSnapshot } from "../services/diagnostic-results-store";
 
 export type PlayOverlayChromeProps = {
   paused: boolean;
@@ -67,6 +68,7 @@ export function PlayOverlayChrome({
       </div>
       {simulating && !showStats && !showConsole ? null : (
         <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
+          {simulating ? null : <ProfilerRecordingChip testId="play-profiler-recording" />}
           <div className="toolbar-island toolbar-island-touch" role="toolbar" aria-label="Play Controls">
             {simulating ? null : <>
               <PlayChromeTool
@@ -118,6 +120,38 @@ export function PlayOverlayChrome({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const unsubscribed = () => () => {};
+const notRecording = (): DiagnosticResultsSnapshot | null => null;
+
+/**
+ * While a performance recording runs, whether the Profiler or the console started it: **Recording**
+ * and **Stop Recording**, which opens the Profiler at the recording's Summary.
+ */
+export function ProfilerRecordingChip({ testId }: { testId: string }) {
+  const store = useDiagnosticResultsStore();
+  const state = useSyncExternalStore(store?.subscribe ?? unsubscribed, store?.getSnapshot ?? notRecording, store?.getSnapshot ?? notRecording);
+  if (!store || state?.active !== "profile") return null;
+  return (
+    <div className="toolbar-island toolbar-island-touch" role="group" aria-label="Performance Recording" data-testid={testId}>
+      <span className="flex items-center gap-1.5 px-1.5 text-xs font-medium text-destructive">
+        <span className="size-2 rounded-full bg-destructive motion-safe:animate-pulse" aria-hidden="true" />
+        Recording
+      </span>
+      <PlayChromeTool
+        label="Stop Recording"
+        data-testid={`${testId}-stop`}
+        disabled={state.busy}
+        onClick={() => {
+          store.open("summary");
+          void store.stopProfile();
+        }}
+      >
+        <SquareIcon className="fill-destructive text-destructive" />
+      </PlayChromeTool>
     </div>
   );
 }
