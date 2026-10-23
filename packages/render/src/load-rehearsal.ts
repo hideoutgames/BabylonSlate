@@ -2,6 +2,7 @@ import { DirectionalLight, PointLight, SpotLight, type Effect, type Light, type 
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import { isAuthoredLightEnabled, setAuthoredLightEnabled } from "./light-policy";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
+import { renewOnCompileProgress } from "./driver-compile";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { findSceneShadowController } from "./shadow-controller";
 
@@ -10,14 +11,20 @@ import { findSceneShadowController } from "./shadow-controller";
  * reports the rest as left out.
  */
 export const LOAD_REHEARSAL_STEP_BUDGET = 48;
-/** A rehearsal step whose variants are not ready to draw after this long is reverted, skipped and reported. */
+/**
+ * A rehearsal step whose variants are not ready to draw after this long is reverted, skipped and reported, unless a
+ * shader finished meanwhile: compile progress grants another budget (as loading waits renew), up to the preparation
+ * ceiling.
+ */
 export const LOAD_REHEARSAL_STEP_MS = 10_000;
 
 type RehearsalStep = { label: string; apply(): void; revert(): void };
 
 export interface LoadRehearsalReport {
-  /** Light changes rehearsed (drawn once each). */
+  /** Light changes rehearsed. */
   steps: number;
+  /** Rehearsed changes that drew: the others drew with Effects an earlier frame drew (or the first frame draws). */
+  drawn: number;
   /** Changes the step budget left out. */
   omitted: string[];
   /** Changes whose variants were not ready to draw within `LOAD_REHEARSAL_STEP_MS`. */
@@ -81,16 +88,18 @@ function castsShadows(light: Light): boolean {
  * Keeps every Effect the meshes of `scene` draw with, in any pass, compiled for the scene's lifetime (one reference
  * each, released when it is disposed). Babylon releases an Effect, its program and its WebGPU pipelines, once the last
  * draw wrapper using it is disposed: a shadow map that stops disposes its casters' depth wrappers, so starting it again
- * would compile them anew mid-game.
+ * would compile them anew mid-game. The returned call retains the Effects the meshes hold now, and says whether any
+ * was new.
  */
-function effectRetainer(scene: Scene): () => void {
+function effectRetainer(scene: Scene): () => boolean {
   const retained = new Set<Effect>();
   scene.onDisposeObservable.addOnce(() => {
     for (const effect of retained) effect.dispose();
     retained.clear();
   });
   return () => {
-    if (scene.isDisposed) return;
+    if (scene.isDisposed) return false;
+    let added = false;
     for (const mesh of scene.meshes) {
       for (const subMesh of mesh.subMeshes ?? []) {
         for (const wrapper of subMesh._drawWrappers) {
@@ -98,9 +107,11 @@ function effectRetainer(scene: Scene): () => void {
           if (!effect || effect.isDisposed || retained.has(effect)) continue;
           effect._refCount += 1;
           retained.add(effect);
+          added = true;
         }
       }
     }
+    return added;
   };
 }
 
@@ -108,9 +119,10 @@ function effectRetainer(scene: Scene): () => void {
  * Rehearses a loaded Play scene's enumerable light changes behind its loading screen, so their variants are compiled
  * and drawn once before the first presented frame: each change is applied, the view's strict readiness requests its
  * variants on the meshes' own draw wrappers (the variants a real change asks for, defines order included), one frame
- * draws them (a program's first use, a WebGPU pipeline), and the change is reverted. The Effects drawn in the starting
- * state and in each step stay compiled while the scene lives. The caller draws only on frames the view is ready for,
- * and hides what they draw.
+ * draws them (a program's first use, a WebGPU pipeline), and the change is reverted. A change whose meshes then hold
+ * only Effects an earlier rehearsal frame drew, or the starting state's (which the first presented frame draws), is
+ * not drawn. The Effects of the starting state and of each step stay compiled while the scene lives. The caller draws
+ * only on frames the view is ready for, and hides what they draw.
  */
 export function createLoadRehearsal(scene: Scene): LoadRehearsal {
   const all = rehearsalSteps(scene);
@@ -125,6 +137,10 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
   let index = 0;
   let applied = false;
   let appliedAt = 0;
+  let renew: ((now: number) => boolean) | undefined;
+  /** The applied step's meshes hold an Effect no rehearsal frame drew yet. */
+  let undrawn = false;
+  let drawn = 0;
   let startedAt: number | undefined;
   let endedAt: number | undefined;
   let variants = 0;
@@ -141,6 +157,8 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
     markSceneReadinessDirty(scene);
     if (timed) timedOut.push(step.label);
     applied = false;
+    undrawn = false;
+    renew = undefined;
     index += 1;
     if (index >= steps.length) finish();
   };
@@ -163,14 +181,24 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
         markSceneReadinessDirty(scene);
         applied = true;
         appliedAt = performance.now();
+        renew = renewOnCompileProgress(engine);
         return;
       }
-      if (!draw()) return;
-      retain();
+      undrawn = retain() || undrawn;
+      if (undrawn) {
+        if (!draw()) return;
+        // The draw's own Effects (a shadow map's casters drawn for the first time).
+        retain();
+        drawn += 1;
+      }
       advance(false);
     },
     check() {
-      if (applied && performance.now() - appliedAt >= LOAD_REHEARSAL_STEP_MS) advance(true);
+      if (!applied) return;
+      const now = performance.now();
+      if (now - appliedAt < LOAD_REHEARSAL_STEP_MS) return;
+      if (renew?.(now)) appliedAt = now;
+      else advance(true);
     },
     cancel() {
       if (applied) {
@@ -182,7 +210,7 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
       finish();
     },
     report: () => ({
-      steps: Math.min(index, steps.length) - timedOut.length, omitted, timedOut, variants, pipelines,
+      steps: Math.min(index, steps.length) - timedOut.length, drawn, omitted, timedOut, variants, pipelines,
       ms: (endedAt ?? performance.now()) - (startedAt ?? performance.now()),
     }),
   };
