@@ -63,7 +63,7 @@ A different mix of light kinds needs new shaders the first time. On WebGL2 the o
 
 Image-based lighting lights surfaces from a prefiltered environment texture.
 
-1. Import a prefiltered environment cube as a `.env` or `.dds` file. See [Importing](../editor/importing.md).
+1. Import a prefiltered environment cube as a `.env` or `.dds` file, or an equirectangular `.hdr` panorama, which Haptic prefilters on import. See [Importing](../editor/importing.md#environment-cubes).
 2. Open the scene and clear the selection so the **Inspector** shows the scene's settings.
 3. Under **Environment Lighting**, pick the texture in **Environment Texture**.
 

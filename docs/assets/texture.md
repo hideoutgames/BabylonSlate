@@ -4,7 +4,7 @@ An image used by Materials, Sprites, Tilesets, Skyboxes and particles, with a us
 
 ## Import
 
-Textures are not created from **New Asset**. In the **Content Browser**, choose **Import** and pick a PNG, JPEG, WebP or GIF file. ENV and DDS prefiltered cube maps become an environment cube Texture. [Skybox Creator](skybox-creator.md) also creates Textures. Haptic chooses a **Usage** from the file name. See [Importing Assets](../editor/importing.md).
+Textures are not created from **New Asset**. In the **Content Browser**, choose **Import** and pick a PNG, JPEG, WebP or GIF file. ENV and DDS prefiltered cube maps, and HDR panoramas (converted and prefiltered on import), become an environment cube Texture. [Skybox Creator](skybox-creator.md) also creates Textures. Haptic chooses a **Usage** from the file name. See [Importing Assets](../editor/importing.md).
 
 ## Editor
 
@@ -26,7 +26,7 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 
 **Area Light Emission** prepares the Texture for a textured [Rectangular Area Light](../components/area-rect-light.md). Picking the Texture as a light's **Emission Texture** prepares it automatically (the state shows **Preparing**), or choose **Prepare Emission**; **Cancel** stops a preparation you started here. Prepared data is saved with the asset and included in game exports.
 
-A cube Texture has no editable settings. Its Inspector shows the cube's container, encoding, face size and roughness mip levels. Pick it in **Environment Texture** under **Environment Lighting** in the scene's settings.
+A cube Texture has no editable settings. Its Inspector shows the cube's container, encoding, face size and roughness mip levels. A Texture imported from an HDR panorama shows **DDS** and **Linear RGBA16F**. Pick it in **Environment Texture** under **Environment Lighting** in the scene's settings.
 
 ## Related
 
