@@ -4,20 +4,16 @@ import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import { sampleSplinePath, SPLINE_SUBDIVISIONS } from "./spline-component";
 import { evaluateWaterSpectrum, waterSpectrum, type WaterSpectrum } from "./water-spectrum";
 
-/**
- * Render only: Realistic, or Stylized (shown as Painted). Assets saved with the removed Toon look load as Painted, keeping
- * their colours and waves.
- */
-export type WaterStyle = "realistic" | "stylized";
 export type WaterKind = "global" | "ocean" | "lake" | "river" | "puddle";
 export type WaterColor = [number, number, number];
 
 /**
  * Version 1 Water asset. Distances are metres and time is simulation seconds. Every water's waves are one FFT ocean
- * spectrum (`waterSpectrum`): a wind sea and an optional swell, shared by rendering, physics and queries.
+ * spectrum (`waterSpectrum`): a wind sea and an optional swell, shared by rendering, physics and queries. Built-in
+ * shading is Realistic; a stylized look is a Custom Material (`materialGuid`). Assets saved with the removed Style
+ * (Stylized, Painted or Toon) keep their colours and waves and draw Realistic.
  */
 export interface WaterDefinition {
-  style: WaterStyle;
   shallowColor: WaterColor;
   deepColor: WaterColor;
   foamColor: WaterColor;
@@ -49,10 +45,6 @@ export interface WaterDefinition {
   surfaceFoam: number;
   /** Sunlight scattered through wave crests seen toward the sun. */
   subsurface: number;
-  /** Render only, Painted: the light steps painted across each wave (0 or 1 is smooth shading). */
-  colorBands: number;
-  /** Render only, Painted: twinkling sun glints. */
-  sparkles: number;
   density: number;
   materialGuid: string | null;
   /** Gerstner horizontal motion (0-1): 0 moves water only vertically; physics and rendering share it. */
@@ -117,33 +109,22 @@ const tuple = (value: unknown, fallback: WaterColor, min: number, max: number): 
     : [...fallback];
 };
 
-/** Defaults of a new Water asset: Realistic, or Stylized (Painted) with its own palette, waves and foam. */
-export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): WaterDefinition {
-  const stylized = style === "stylized";
-  // A wind sea with a longer swell across it.
+/** Defaults of a new Water asset: a wind sea with a longer swell across it. */
+export function createDefaultWaterDefinition(): WaterDefinition {
   return {
-    style,
-    shallowColor: stylized ? [0.1, 0.72, 0.66] : [0.43, 0.95, 1],
-    deepColor: stylized ? [0.04, 0.21, 0.31] : [0.1, 0.26, 0.35],
-    foamColor: stylized ? [0.97, 0.99, 1] : [1, 1, 1],
-    opacity: stylized ? 1 : 0.97, roughness: stylized ? 0.3 : 0.08,
-    reflectionStrength: 1, depthColorDistance: stylized ? 4 : 6.5,
-    waveHeight: stylized ? 0.4 : 0.45, waveLength: stylized ? 22 : 18, waveSpeed: 1, waveDirection: 25,
-    swellHeight: stylized ? 0.3 : 0.35, swellLength: stylized ? 55 : 45, swellDirection: 70,
-    waveSpread: 0.5,
-    foamAmount: stylized ? 1 : 0.6, foamWidth: stylized ? 1.2 : 0.8,
-    crestFoam: 0.2, contactFoamWidth: stylized ? 0.6 : 1.2,
-    surfaceFoam: stylized ? 0.4 : 0.15, subsurface: 1,
-    colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.5 : 0, density: 1000, materialGuid: null,
-    steepness: 0.5, peakSharpness: 3.3, waveSeed: 0,
-    detailWaves: stylized ? 0 : 1, refraction: stylized ? 0.15 : 0.35, objectReflections: !stylized,
-    colorVariation: 0.5,
+    shallowColor: [0.43, 0.95, 1], deepColor: [0.1, 0.26, 0.35], foamColor: [1, 1, 1],
+    opacity: 0.97, roughness: 0.08, reflectionStrength: 1, depthColorDistance: 6.5,
+    waveHeight: 0.45, waveLength: 18, waveSpeed: 1, waveDirection: 25,
+    swellHeight: 0.35, swellLength: 45, swellDirection: 70, waveSpread: 0.5,
+    foamAmount: 0.6, foamWidth: 0.8, crestFoam: 0.2, contactFoamWidth: 1.2, surfaceFoam: 0.15, subsurface: 1,
+    density: 1000, materialGuid: null, steepness: 0.5, peakSharpness: 3.3, waveSeed: 0,
+    detailWaves: 1, refraction: 0.35, objectReflections: true, colorVariation: 0.5,
   };
 }
 
 export function normalizeWaterDefinition(value: unknown): WaterDefinition {
   const v = record(value);
-  const d = createDefaultWaterDefinition(v.style === "stylized" ? "stylized" : "realistic");
+  const d = createDefaultWaterDefinition();
   return {
     ...d,
     shallowColor: tuple(v.shallowColor, d.shallowColor, 0, 1),
@@ -167,8 +148,6 @@ export function normalizeWaterDefinition(value: unknown): WaterDefinition {
     contactFoamWidth: number(v.contactFoamWidth, d.contactFoamWidth, 0, 8),
     surfaceFoam: number(v.surfaceFoam, d.surfaceFoam, 0, 1),
     subsurface: number(v.subsurface, d.subsurface, 0, 2),
-    colorBands: Math.round(number(v.colorBands, d.colorBands, 0, 12)),
-    sparkles: number(v.sparkles, d.sparkles, 0, 1),
     density: number(v.density, d.density, 1, 20000),
     materialGuid: guid(v.materialGuid),
     steepness: number(v.steepness, d.steepness, 0, 1),

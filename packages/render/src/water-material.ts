@@ -29,8 +29,6 @@ const SOFT_SHORE_DEPTH = 0.4;
 /** Largest refracted screen shift (pixels of the scene copy) near the camera, and far away, over `REFRACTION_FAR` metres of view depth. */
 const REFRACTION_SHIFT_PX = [28, 3] as const;
 const REFRACTION_FAR = [6, 60] as const;
-/** Compile-time style switch: each material compiles only its own look's shading (Realistic, or Stylized's Painted). */
-const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 /**
  * Built-in water displaces its rest grid with the FFT spectrum in its vertex shader: the mesh uploads a static rest grid
  * and only the spectrum's textures change. Custom Material water keeps CPU-displaced vertices, unless its graph holds a
@@ -620,7 +618,7 @@ vec3 swvNormal = normalize(vec3(swvBase.x / max(swvBase.y, 0.001) - swvSlope.x, 
 }
 
 /**
- * The shared fragment stage (Realistic and Painted), after FFT-Ocean: every cascade
+ * The fragment stage's waves and foam, after FFT-Ocean: every cascade
  * at this fragment's rest point (the field is Lagrangian: detail rides the waves) through its mips. The slope comes from
  * the summed derivatives through the displaced surface's Jacobian (FFT-Ocean's (∂H/∂x / (1 + λ·∂Dx/∂x), …), with the
  * cross term), small cascades fading with eye distance as in the vertex stage. Foam is FFT-Ocean's: each cascade's
@@ -861,133 +859,6 @@ ${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * 
 #if ${REFLECTS_OBJECTS}
 swObjRefl.a *= smoothstep(-0.01, 0.03, swReflRawY) * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swReflRay)) / max(length(fwidth(swV)), 0.00001)));
 #endif
-`;
-}
-
-/**
- * Painted spectrum water (Stylized Painted, unlit): the same FFT-Ocean waves, normals and foam, painted in the spirit
- * of Sea of Thieves. The body runs from Deep Color in the troughs to a lighter mix toward Shallow Color on the crests,
- * lit by a soft two-step wrap of the sun over the ambient light; crests seen toward the sun glow with Shallow Color
- * (Subsurface, stronger and more saturated than Realistic's); the sky is a soft painted gradient by a gentle Fresnel; the
- * sun is a crisp glint; foam is clean opaque paint with soft broken edges. Shallows show what lies below, tinted toward
- * Shallow Color; far water takes the horizon's colour.
- */
-function spectrumPaintedSource(): string {
-  return spectrumSurfaceSource() + `
-vec3 swV = viewDirectionW;
-vec3 swL = U.slateWaterSun.xyz;
-vec3 swSunC = U.slateWaterSunColor.rgb * min(U.slateWaterSun.w, 2.5);
-vec3 swAmb = U.slateWaterLight.rgb;
-vec3 swLumW = vec3(0.3, 0.59, 0.11);
-float swGraze = 1.0 - clamp(swV.y, 0.0, 1.0);
-// Far away the painted waves calm toward the base normal (no shimmer) and the colour takes the horizon's.
-float swPaintFar = smoothstep(0.4, 2.5, swFoot);
-vec3 swN = normalize(mix(normalW, swBaseNormal, swPaintFar * 0.6));
-// Scene brightness (about 1 in daylight), so a dim scene keeps a dim sea while the palette stays the asset's own.
-float swSceneK = clamp(dot(swAmb, swLumW) * 1.1 + dot(swSunC, swLumW) * max(swL.y, 0.0) * 0.45, 0.12, 1.4);
-// Soft two-step wrap lighting of the wave toward the sun.
-// Each step's edge is antialiased over about a pixel and a half of its own change, so bands stay crisp but never alias.
-// The key light is flattened toward the horizon for the banding, so gentle slopes under a high sun still read as faces.
-vec3 swKeyL = normalize(vec3(swL.x, max(swL.y, 0.0) * 0.3 + 0.05, swL.z));
-float swWrap = dot(swN, swKeyL) * 0.5 + 0.5;
-// Color Bands posterizes the light into that many flat steps (0 or 1 shades smoothly); each edge is antialiased.
-float swBandsN = max(U.slateWaterLook.x, 1.0);
-float swWrapN = swWrap * swBandsN;
-float swWrapW = min(fwidth(swWrapN) * 1.5 + 0.03, 1.0);
-float swStepped = (floor(swWrapN) + smoothstep(1.0 - swWrapW, 1.0, fract(swWrapN))) / swBandsN;
-float swBand = clamp(mix(swWrap, swStepped, step(1.5, swBandsN)), 0.0, 1.0);
-vec3 swLight = mix(vec3(1.0), U.slateWaterSunColor.rgb, 0.3) * (swSceneK * mix(0.62, 1.22, swBand));
-// Troughs to crests: Deep Color in the troughs rising toward Shallow Color on the tops of the waves.
-float swHeightT = clamp(0.5 + (swSpLarge + swSpSmall) * swSp.x * swBlendH / max(U.slateWaterWaves.x * 2.0, 0.05), 0.0, 1.0);
-vec3 swDeepC = U.slateWaterDeep.rgb;
-vec3 swShallowC = U.slateWaterShallow.rgb;
-// The small waves' crests (their height over the swell) light up as well as the swell's tops, so every wave shape reads.
-float swSmallT = clamp(swSpCrest / max(U.slateWaterWaves.x * 0.6, 0.05), 0.0, 1.0);
-vec3 swBodyC = mix(swDeepC, mix(swDeepC, swShallowC, 0.75), clamp(smoothstep(0.45, 0.95, swHeightT) * 0.7 + smoothstep(0.25, 0.8, swSmallT) * 0.5, 0.0, 1.0));
-vec3 swLit = swBodyC * swLight * 1.6;
-// Subsurface glow through crests toward the sun (FFT-Ocean's term and a backlit one), on the small waves' crests:
-// Painted's signature luminous teal.
-vec3 swSssH = normalize(swWaveN + swL);
-float swSssV = clamp(dot(swV, swSssH), 0.0, 1.0);
-float swSssBack = clamp(dot(-swV, normalize(swL + swWaveN * 0.6)), 0.0, 1.0);
-float swCrestLift = clamp(0.3 + swSpCrest / max(U.slateWaterWaves.x * 0.5, 0.05), 0.0, 1.6);
-// Only the tops of the waves glow, so the light reads on the crests rather than as broad patches.
-float swGlowAmt = (swSssV * swSssV * swSssV * 1.6 + swSssBack * swSssBack * 1.4) * swCrestLift * U.slateWaterLook.w * clamp(swSp.x, 0.0, 1.0) * smoothstep(0.4, 0.85, swHeightT + swSmallT * 0.4);
-swLit += swShallowC * (swSceneK * swGlowAmt * 0.8 * (1.0 - swPaintFar));
-// Painted colour stays rich: a little more saturation than the lighting leaves it.
-swLit = max(mix(vec3(dot(swLit, swLumW)), swLit, 1.2), vec3(0.0));
-// Shallows: what lies below shows through, tinted toward Shallow Color; deep water keeps its painted body.
-float swNdotV = clamp(dot(swN, swV), 0.0, 1.0);
-float swPath = swDepth * 2.0 / swAbsorb;
-vec3 swTransRgb = exp(-swPath * U.slateWaterAbsorb.rgb) * (1.0 - smoothstep(0.5, 1.0, swDepth / swAbsorb));${ifDefined(REFRACTION, `
-swTransRgb *= 1.0 - step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
-swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);`)}
-float swTrans = dot(swTransRgb, swLumW);
-swLit = mix(swLit, swShallowC * swLight * 1.5, (1.0 - smoothstep(0.0, swAbsorb * 0.6, swDepth)) * 0.55);
-// Painted sky by a gentle Fresnel: the horizon colour low, a deeper sky above.
-vec3 swRefl = reflect(-swV, swN);
-swRefl.y = max(swRefl.y, 0.02);
-float swSkyT = clamp(swRefl.y * 1.6, 0.0, 1.0);
-vec3 swSky = mix(U.slateWaterHorizon.rgb, mix(U.slateWaterHorizon.rgb, U.slateWaterSky.rgb, 0.7), swSkyT);
-float swFx = 1.0 - swNdotV;
-// The reflection steps softly, as painted bands of sky on the faces tilted away from the eye.
-float swReflRaw = 0.03 + 0.6 * swFx * swFx * swFx;
-float swReflAA = fwidth(swReflRaw) * 0.75 + 0.005;
-float swReflStep = 0.04 + 0.16 * smoothstep(0.1 - swReflAA, 0.1 + swReflAA, swReflRaw) + 0.25 * smoothstep(0.3 - swReflAA, 0.3 + swReflAA, swReflRaw);
-// Capped so the sky never washes the painted colour out toward the horizon.
-float swReflAmt = clamp(mix(swReflRaw, swReflStep, 0.7) * U.slateWaterDeep.w, 0.0, 0.6);
-// The sun: a crisp glint, and a soft sheen around it.
-float swRL = max(dot(swRefl, swL), 0.0);
-float swGlint = smoothstep(0.9975, 0.9992, swRL) * (1.0 - swPaintFar * 0.6);
-float swSheen = pow(swRL, 90.0) * 0.35 + pow(swRL, 12.0) * 0.12;
-// Sparkles: round glints that twinkle on the faces turned toward the sun, one chance per cell of the flowing surface;
-// they fade before a cell shrinks to a pixel.
-vec2 swSparkP = swFlowed * 2.2;
-vec2 swSparkCell = floor(swSparkP);
-float swSparkSeed = swHash(swSparkCell + vec2(floor(swTime * 2.5 + swHash(swSparkCell + vec2(17.0, 3.0)) * 9.0), 7.0));
-vec2 swSparkAt = vec2(swHash(swSparkCell + vec2(5.0, 11.0)), swHash(swSparkCell + vec2(13.0, 2.0))) * 0.6 + vec2(0.2);
-float swSparkD = length(fract(swSparkP) - swSparkAt);
-float swSparkAA = length(fwidth(swSparkP)) * 0.7;
-float swSparkDot = 1.0 - smoothstep(0.07 - swSparkAA, 0.07 + swSparkAA, swSparkD);
-float swSparkFace = pow(swRL, 12.0);
-float swSpark = swSparkDot * step(0.9, swSparkSeed) * swSparkFace * U.slateWaterLook.z * (1.0 - smoothstep(0.08, 0.3, swSparkAA));
-vec3 swSpec = swSunC * ((swGlint * 2.2 + swSheen + swSpark * 2.5) * step(0.0, swL.y));
-vec3 swPremul = swLit * ((1.0 - swReflAmt) * (1.0 - swTrans)) + swSky * swReflAmt + swSpec * (1.0 - swFoam);
-float swCover = 1.0 - (1.0 - swReflAmt) * swTrans;
-alpha = clamp(max(swCover, min(dot(swSpec, swLumW) * (1.0 - swFoam), 1.0)), 0.001, 1.0);
-vec3 swEmissive = swPremul / alpha;
-// Aerial perspective: far water takes the painted horizon, opaque, and its foam thins.
-float swPaintHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
-swEmissive = mix(swEmissive, U.slateWaterHorizon.rgb, swPaintHaze);
-alpha = mix(alpha, 1.0, swPaintHaze);
-// Foam: clean paint with softly broken edges, lit by the sun's wrap: the caps, and thin lines along the tops of the
-// crests where the turbulence starts to dip (Crest Foam), which draw the wave shapes as Painted's line work.
-float swCrestSignal = ((swCrestBias + 0.28 - swTurb) * 2.5 + (swFoamNoise - 0.5) * 0.5) * smoothstep(0.5, 0.8, swHeightT + swSmallT * 0.3);
-float swCrestAA = fwidth(swCrestSignal) * 0.75 + 0.02;
-float swFoamGate = clamp(swFoamAmount * 1.6, 0.0, 1.0) * (1.0 - swPaintFar) * swPatchFar;
-// A solid cap, and a thin ring of lace a little way outside it.
-float swCrestLine = smoothstep(0.55 - swCrestAA, 0.55 + swCrestAA, swCrestSignal);
-float swCrestLace = (smoothstep(0.22 - swCrestAA, 0.22 + swCrestAA, swCrestSignal) - smoothstep(0.32 - swCrestAA, 0.32 + swCrestAA, swCrestSignal)) * smoothstep(0.35, 0.6, swFoamNoise);
-float swFoamPaint = max(smoothstep(0.55, 0.75, swFoam + (swFoamNoise - 0.5) * 0.3), max(swCrestLine, swCrestLace * 0.85) * swFoamGate) * (1.0 - 0.7 * swPaintHaze);
-// Foam is bright paint: white in the light, a cool tint on the shaded faces, never greyed by a dim band.
-vec3 swFoamC = U.slateWaterFoam.rgb * max(swSceneK * 1.35, max(dot(U.slateWaterHorizon.rgb, swLumW) * 1.2, 0.9)) * mix(0.9, 1.06, swBand) * mix(vec3(1.0), U.slateWaterSunColor.rgb, 0.2);
-swFoamC = mix(swFoamC * vec3(0.84, 0.92, 1.0), swFoamC, 0.4 + 0.6 * swBand);
-swEmissive = mix(swEmissive, swFoamC, swFoamPaint);
-alpha = max(alpha, swFoamPaint) * swEdgeFade;
-surfaceAlbedo = vec3(0.0);
-${objectReflectionSource("swRefl", "U.slateWaterOrigin.w")}
-#if ${REFLECTS_OBJECTS}
-// Reflected objects replace the sky by its Fresnel weight, never over foam.
-float swReflWeight = clamp(swObjRefl.a * swReflAmt * (1.0 - swFoamPaint), 0.0, 1.0);
-swEmissive = mix(swEmissive, swObjRefl.rgb, swReflWeight);
-alpha = max(alpha, swReflWeight);
-#endif${ifDefined(REFRACTION, `
-// With the copy the water is opaque and adds what lies below through the transmittance, outside reflection and foam.
-swRefracts *= 1.0 - swPaintHaze;
-vec3 swRefracted = swBackground * swTransRgb * ((1.0 - swReflAmt) * (1.0 - swFoamPaint) * swRefracts);
-float swRefractedWeight = (1.0 - alpha) * swRefracts;
-swEmissive = swEmissive * mix(1.0, alpha, swRefracts);
-alpha = mix(alpha, 1.0, swRefracts);`)}
 `;
 }
 
@@ -1553,7 +1424,6 @@ export function toWgsl(source: string): string {
  * refracted light is pre-divided by the fog factor, less the fog colour at its share, so the result equals blending
  * (the water's fog on its own light only). The factor is the weight Babylon's PBR fog mixes with
  * (`toLinearSpace(CalcFogFactor())` under `PBR`, which water materials are).
- * Stylized water is opaque where it refracts and only adds it.
  */
 function beforeFogSource(wgsl: boolean): string {
   const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4", f1 = wgsl ? "f32" : "float";
@@ -1565,7 +1435,6 @@ function beforeFogSource(wgsl: boolean): string {
     "if (swRemoved) { discard; }",
     "#endif",
     // Realistic coverage, before the refracted light takes its fog: the raise below can add to it.
-    `#ifndef ${WATER_STYLIZED_DEFINE}`,
     "#ifdef IMAGEPROCESSINGPOSTPROCESS",
     declare(f1, "swCover", "clamp(finalColor.a, 0.02, 1.0)"),
     `#elif defined(${REFRACTION})`,
@@ -1578,7 +1447,6 @@ function beforeFogSource(wgsl: boolean): string {
     "#else",
     declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
     "#endif",
-    "#endif",
     `#ifdef ${REFRACTION}`,
     declare(v3, "swRefractedOut", "swRefracted"),
     "#ifdef FOG",
@@ -1586,12 +1454,6 @@ function beforeFogSource(wgsl: boolean): string {
     `swRefractedOut = (swRefracted - ${wgsl ? "uniforms." : ""}vFogColor * ((1.0 - swFogKeep) * swRefractedWeight)) / swFogKeep;`,
     "#endif",
     "#endif",
-    `#ifdef ${WATER_STYLIZED_DEFINE}`,
-    `#ifdef ${REFRACTION}`,
-    `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
-    "#endif",
-    "finalColor.a *= swShoreSoft;",
-    "#else",
     `#ifdef ${REFRACTION}`,
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
     "#endif",
@@ -1599,29 +1461,9 @@ function beforeFogSource(wgsl: boolean): string {
     `#if ${SAMPLES_COPY}`,
     `finalColor = ${v4}(mix(finalColor.rgb, swHorC, swHorW), mix(finalColor.a, 1.0, swHorW));`,
     "#endif",
-    "#endif",
-    // Open-water edges fade out (`swOpenFade`, every look).
+    // Open-water edges fade out (`swOpenFade`).
     "finalColor.a *= swOpenFade;",
   ].join("\n");
-}
-
-/** The two looks: Realistic, and Stylized's Painted (`SLATE_WATER_STYLIZED`). */
-export type WaterLook = "realistic" | "painted";
-const LOOK_SOURCES: Readonly<Record<WaterLook, () => string>> = { realistic: spectrumRealisticSource, painted: spectrumPaintedSource };
-
-/** The look a compile's defines select: the one `fragmentSource`'s directives would keep. */
-function lookOfDefines(defines: readonly string[]): WaterLook {
-  return defines.some((line) => line === `#define ${WATER_STYLIZED_DEFINE}` || line.startsWith(`#define ${WATER_STYLIZED_DEFINE} `)) ? "painted" : "realistic";
-}
-
-/**
- * The look's shading, or with no look both, selected by `SLATE_WATER_STYLIZED` so each material compiles only one. A
- * compile knows its defines (`WaterMaterialPlugin.getCustomCode`), so it asks for its look alone; the look sources never
- * test the look define.
- */
-function fragmentSource(look: WaterLook | null): string {
-  if (look) return `\n${LOOK_SOURCES[look]()}\n`;
-  return `\n#ifdef ${WATER_STYLIZED_DEFINE}\n${spectrumPaintedSource()}\n#else\n${spectrumRealisticSource()}\n#endif\n`;
 }
 
 /** One more read of the contact field at an explicit level, legal in any control flow (Realistic's wake taps). */
@@ -1638,7 +1480,7 @@ function blendColors(source: string): string {
   return out;
 }
 
-export function waterShaderSource(language: ShaderLanguage, look: WaterLook | null = null): { helpers: string; cut: string; main: string } {
+export function waterShaderSource(language: ShaderLanguage): { helpers: string; cut: string; main: string } {
   const wgsl = language === ShaderLanguage.WGSL;
   const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "").replace(/\bS\./g, wgsl ? "scene." : "")
     // The fragment's framebuffer position (on render targets both backends store rows in the same order as uv).
@@ -1654,11 +1496,11 @@ export function waterShaderSource(language: ShaderLanguage, look: WaterLook | nu
   return wgsl
     ? {
       helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + CONTACT_TAP_WGSL + objectHelpers(true) + fftHelpers(true) + spectrumHelpers(true),
-      cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(blendColors(fragmentSource(look)))),
+      cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(blendColors(spectrumRealisticSource()))),
     }
     : {
       helpers: samplerDeclaration + roughnessGlobals + HELPERS + REMOVAL_HELPER + CONTACT_TAP_GLSL + objectHelpers(false) + fftHelpers(false) + spectrumHelpers(false),
-      cut: bind(cutSource(false)), main: bind(blendColors(fragmentSource(look))),
+      cut: bind(cutSource(false)), main: bind(blendColors(spectrumRealisticSource())),
     };
 }
 
@@ -1728,12 +1570,12 @@ const FRAME_UNIFORMS: readonly string[] = [
 const FRAME_BLEND_START = FRAME_UNIFORMS.length - BLEND_COLOR_UNIFORMS.length;
 /** The numeric definition fields the packed vec4s read besides the colours (`frameInputsChanged`). */
 const FRAME_DEFINITION_FIELDS = [
-  "opacity", "reflectionStrength", "foamAmount", "foamWidth", "colorBands", "depthColorDistance", "sparkles",
+  "opacity", "reflectionStrength", "foamAmount", "foamWidth", "depthColorDistance",
   "subsurface", "waveHeight", "waveLength", "waveSpeed", "waveDirection", "surfaceFoam", "roughness", "colorVariation", "waveSpread",
   "crestFoam", "contactFoamWidth",
 ] as const satisfies readonly (keyof WaterDefinition)[];
-/** Render, clock, origin, scale, tier, reflection source, style and bank fade; the fields; three colours; the partner's six and nine. */
-const FRAME_KEY_LENGTH = 11 + FRAME_DEFINITION_FIELDS.length + 9 + 3 + 9;
+/** Render, clock, origin, scale, tier, reflection source and bank fade; the fields; three colours; the partner's six and nine. */
+const FRAME_KEY_LENGTH = 10 + FRAME_DEFINITION_FIELDS.length + 9 + 3 + 9;
 const REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemovalShape${i}`);
 const REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemoval${i}`);
 
@@ -1766,12 +1608,6 @@ type WaterLighting = {
   sunGlitter: number;
   /** A sky light the sun does not outshine (overcast, storm; slateWaterHorizon.w): Realistic water's body greys. */
   overcast: number;
-  /**
-   * What Stylized water binds in place of `horizon` and `sunGlitter`, the values its looks were tuned with: the fog
-   * colour or the plain background (no sky light share), and the sun against the ambient light.
-   */
-  stylizedHorizon: Float64Array;
-  stylizedGlitter: number;
   /** `waterHazeConstants` of the active camera's far plane (`slateWaterHaze`). */
   haze: Float64Array;
 };
@@ -1784,11 +1620,6 @@ const linearScratch = new Color3(), gammaScratch = new Color3();
  * turn turquoise and deeper water blue rather than green.
  */
 const absorbCoefficient = (channel: number, top: number) => top > 0 ? 0.2 - Math.log(Math.max(channel / top, 0.02)) : 1;
-/**
- * Stylized water's relative absorption (Painted's shallows): channels within 15% of the brightest absorb alike, so a
- * turquoise Shallow Color passes blue as well as green.
- */
-const stylizedAbsorbCoefficient = (channel: number, top: number) => top > 0 ? 0.2 + Math.max(0, 1 - channel / top - 0.15) / 0.85 : 1;
 /**
  * The gentler absorption the light through thin crests sees (`slateWaterThrough`): Beer-Lambert's −ln of the linear
  * channel plus a constant that keeps the channels' ratios mild (the fastest at most `GLOW_RATIO_CAP` times the
@@ -1842,8 +1673,6 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   horizon[0] = fog ? linearScratch.r : cr * (1 - lit) + hr * hemiHorizon * lit;
   horizon[1] = fog ? linearScratch.g : cg * (1 - lit) + hg * hemiHorizon * lit;
   horizon[2] = fog ? linearScratch.b : cb * (1 - lit) + hb * hemiHorizon * lit;
-  const plain = out.stylizedHorizon;
-  plain[0] = fog ? linearScratch.r : cr; plain[1] = fog ? linearScratch.g : cg; plain[2] = fog ? linearScratch.b : cb;
   const shape = out.sunShape, horizontal = Math.hypot(toSun[0]!, toSun[2]!), up = toSun[1]!;
   shape[0] = horizontal > 1e-4 ? toSun[0]! / horizontal : 0;
   shape[1] = horizontal > 1e-4 ? toSun[2]! / horizontal : 0;
@@ -1858,8 +1687,6 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   const skyLight = hemispheres > 0 ? 0.3 * hr + 0.59 * hg + 0.11 * hb : 0.3 * ambient[0]! + 0.59 * ambient[1]! + 0.11 * ambient[2]!;
   out.sunGlitter = smoothstep(1.05, 1.5, toSun[3]! / Math.max(skyLight, 0.05));
   out.overcast = hemispheres > 0 ? 1 - out.sunGlitter : 0;
-  const ambientLight = 0.3 * ambient[0]! + 0.59 * ambient[1]! + 0.11 * ambient[2]!;
-  out.stylizedGlitter = smoothstep(0.8, 1.6, toSun[3]! / Math.max(ambientLight, 0.05));
   waterHazeConstants(scene.activeCamera?.maxZ ?? 0, out.haze);
 }
 
@@ -1910,7 +1737,7 @@ function sceneWaterBindingData(scene: Scene): WaterBindingData {
       frame, render, removals: NO_REMOVALS,
       lighting: {
         ambient: new Float64Array(3), sun: new Float64Array(4), sunColor: new Float64Array(3), sky: new Float64Array(3), horizon: new Float64Array(3),
-        sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0, overcast: 0, stylizedHorizon: new Float64Array(3), stylizedGlitter: 0, haze: new Float64Array(4),
+        sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0, overcast: 0, haze: new Float64Array(4),
       },
     };
     waterBindings.set(scene, data);
@@ -1943,7 +1770,6 @@ export interface WaterVariantRequest {
   /** `engine.currentRenderPassId` when the variant was requested, and whether that is a scene-copy (main water) pass. */
   pass: number;
   mainPass: boolean;
-  look: WaterLook;
   refraction: boolean;
   ssr: boolean;
   planar: boolean;
@@ -1961,14 +1787,13 @@ export interface WaterVariantRequest {
 const WATER_COMPILE_LOG = "__slateWaterCompileLog";
 
 /** Appends one request to the compile log when one is installed. Called when a pass's defines change, i.e. per variant. */
-function recordWaterVariant(defines: MaterialDefines, water: WaterDefinition, mesh: AbstractMesh | null, scene: Scene): void {
+function recordWaterVariant(defines: MaterialDefines, mesh: AbstractMesh | null, scene: Scene): void {
   const log = (globalThis as unknown as Record<string, WaterVariantRequest[] | undefined>)[WATER_COMPILE_LOG];
   if (!log) return;
   const pass = scene.getEngine().currentRenderPassId;
   const on = (name: string) => Boolean(defines[name]);
   log.push({
     at: performance.now(), mesh: mesh?.name ?? "", pass, mainPass: isMainWaterPass(scene, pass),
-    look: waterLook(water),
     refraction: on(REFRACTION), ssr: on(SSR), planar: on(PLANAR), fft: on(FFT), blend: on(WATER_BLEND_DEFINE),
     shadows: Object.keys(defines).filter((name) => name.startsWith("SHADOW") && defines[name]),
     depthPrePass: on("DEPTHPREPASS"), prePass: on("PREPASS"),
@@ -1981,11 +1806,8 @@ const FRAGMENT_POINTS = [
   "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_UPDATE_ALPHA", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS",
   "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FOG",
 ] as const;
-/**
- * The code a stage injects into the PBR shader, by injection point. `look` (fragment only) keeps that look's shading
- * alone; null keeps every look under its defines.
- */
-function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage, look: WaterLook | null): Record<string, string> {
+/** The code a stage injects into the PBR shader, by injection point. */
+function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage): Record<string, string> {
   const wgsl = language === ShaderLanguage.WGSL;
   const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4";
   // Babylon's shader processors are line-based: every attribute, varying and sampler needs its own line.
@@ -2004,7 +1826,7 @@ function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage, 
       CUSTOM_VERTEX_MAIN_END: vertex.end,
     } satisfies Record<VertexPoint, string>;
   }
-  const source = waterShaderSource(language, look);
+  const source = waterShaderSource(language);
   return {
     CUSTOM_FRAGMENT_DEFINITIONS: varyings + source.helpers,
     CUSTOM_FRAGMENT_UPDATE_ALPHA: source.cut,
@@ -2017,7 +1839,6 @@ function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage, 
     // Fresnel and Reflection Strength.
     CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: [
       "finalEmissive += swEmissive;",
-      `#ifndef ${WATER_STYLIZED_DEFINE}`,
       "#ifdef REFLECTION",
       // The facet's own Fresnel (`swFres`) replaces the environment BRDF's, which the lifted shading normal and the
       // filtered roughness would dim toward the horizon.
@@ -2041,7 +1862,6 @@ function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage, 
       // The glitter's weight rises smoothly with the lobe's luminance (a threshold on it drew an outline around every contour of the slope).
       `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * 0.6 * dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) + 0.15));`,
       "#endif",
-      "#endif",
     ].join("\n"),
     CUSTOM_FRAGMENT_BEFORE_FOG: beforeFogSource(wgsl),
   } satisfies Record<(typeof FRAGMENT_POINTS)[number], string>;
@@ -2063,15 +1883,15 @@ export function stripShaderComments(source: string): string {
 
 const injections = new Map<string, Readonly<Record<string, string>>>();
 /**
- * `waterInjection`'s points with comments stripped, built once per stage, language and look. Every look is for Babylon
- * collecting the point names when the plugin is added (no compile yet), so it builds on the first read of a value.
+ * `waterInjection`'s points with comments stripped, built once per stage and language. Babylon collects the fragment's
+ * point names when the plugin is added (no compile yet), so the fragment builds on the first read of a value.
  */
-function injectionFor(stage: "vertex" | "fragment", language: ShaderLanguage, look: WaterLook | null): Readonly<Record<string, string>> {
-  const key = `${stage}:${language === ShaderLanguage.WGSL ? "wgsl" : "glsl"}:${look ?? "all"}`;
+function injectionFor(stage: "vertex" | "fragment", language: ShaderLanguage): Readonly<Record<string, string>> {
+  const key = `${stage}:${language === ShaderLanguage.WGSL ? "wgsl" : "glsl"}`;
   let injection = injections.get(key);
   if (!injection) {
-    const build = () => Object.fromEntries(Object.entries(waterInjection(stage, language, look)).map(([point, code]) => [point, stripShaderComments(code)]));
-    injection = stage === "fragment" && !look ? lazyInjection(FRAGMENT_POINTS, build) : Object.freeze(build());
+    const build = () => Object.fromEntries(Object.entries(waterInjection(stage, language)).map(([point, code]) => [point, stripShaderComments(code)]));
+    injection = stage === "fragment" ? lazyInjection(FRAGMENT_POINTS, build) : Object.freeze(build());
     injections.set(key, injection);
   }
   return injection;
@@ -2079,52 +1899,6 @@ function injectionFor(stage: "vertex" | "fragment", language: ShaderLanguage, lo
 function lazyInjection(points: readonly string[], build: () => Record<string, string>): Readonly<Record<string, string>> {
   let built: Record<string, string> | undefined;
   return Object.defineProperties({}, Object.fromEntries(points.map((point) => [point, { enumerable: true, get: () => (built ??= build())[point] }])));
-}
-
-/** The look a definition draws: Realistic, or Stylized's Painted. */
-const waterLook = (w: WaterDefinition): WaterLook => (w.style !== "stylized" ? "realistic" : "painted");
-const resolvesUltra = new Map<string, boolean>();
-/**
- * Whether a look's code (either stage) tests the shading tier for anything but `>= 0` to `>= 2`, i.e. tells Ultra from
- * High. Painted has no Ultra term; any other test, or a use of the define outside `#if`, counts as one.
- */
-function lookResolvesUltra(look: WaterLook, language: ShaderLanguage): boolean {
-  const key = `${language === ShaderLanguage.WGSL ? "wgsl" : "glsl"}:${look}`;
-  let resolves = resolvesUltra.get(key);
-  if (resolves === undefined) {
-    const code = [injectionFor("vertex", language, null), injectionFor("fragment", language, look)].flatMap((injection) => Object.values(injection));
-    resolves = code.some((text) => [...text.matchAll(new RegExp(`${WATER_QUALITY_DEFINE}(.*)`, "g"))].some((use) => !/^ >= [012]\s*$/.test(use[1]!)));
-    resolvesUltra.set(key, resolves);
-  }
-  return resolves;
-}
-
-/** Defines of the effect whose shader code Babylon is assembling at this moment (synchronously, see below), else null. */
-let compileDefines: readonly string[] | null = null;
-type ProcessShaderCode = (shaderType: string, code: string, defines?: string[]) => string;
-/** The part of Babylon's `MaterialPluginManager` that makes the callback an effect assembles its code with (`protected` there). */
-interface CodeInjectingManager { _injectCustomCode(eventData: unknown, existingCallback?: ProcessShaderCode): ProcessShaderCode }
-const trackedManagers = new WeakSet<object>();
-/**
- * Makes the defines of the effect being compiled visible to `getCustomCode` while it runs. Babylon's effect calls the
- * manager's callback with the defines that make up its cache key (`engine.createEffect` keys by name and defines) but
- * the manager drops them before `getCustomCode(shaderType, language)`. Reading the look from the plugin's own state
- * instead could disagree with the key: the effect assembles its code asynchronously, and a Stylized Look edit in place
- * changes the state meanwhile. Wrapped once per manager, as `eventData.customCode` is created per effect.
- */
-function trackCompileDefines(material: Material): void {
-  const manager = material.pluginManager as unknown as CodeInjectingManager | null;
-  if (!manager || trackedManagers.has(manager)) return;
-  trackedManagers.add(manager);
-  const injectCustomCode = manager._injectCustomCode;
-  manager._injectCustomCode = function (this: CodeInjectingManager, eventData, existingCallback) {
-    const process = injectCustomCode.call(this, eventData, existingCallback);
-    return (shaderType, code, defines) => {
-      const outer = compileDefines;
-      compileDefines = defines ?? null;
-      try { return process(shaderType, code, defines); } finally { compileDefines = outer; }
-    };
-  };
 }
 
 /** World-space water shading on native PBR; both backends use the same wave spectrum. */
@@ -2179,12 +1953,11 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private framePartner: WaterDefinition | null = null;
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, {
-      SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
+      SLATE_WATER: true, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
       [REFRACTION]: false, [SSR]: false, [SSR_STEPS]: 0, [PLANAR]: false, [FFT]: 1, [WATER_BLEND_DEFINE]: false,
     }, true, false);
     this.water = water;
     this.body = body;
-    trackCompileDefines(material);
     this.doNotSerialize = true;
     this.registerForExtraEvents = true;
     this._enable(true);
@@ -2213,21 +1986,13 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       this.syncObjectFeatures();
     }
     const material = this._material as PBRMaterial;
-    if (this.water.style === "stylized" || material.unlit) return;
+    if (material.unlit) return;
     const unlit = this.tier === WATER_SHADING_TIERS.low;
     if (material.disableLighting === unlit) return;
     material.disableLighting = unlit;
     if (material.isFrozen) material.markDirty(true);
     // Lit again: the scene's light-slot capacity reaches this material at its next lighting sync.
     invalidateSceneLighting(scene);
-  }
-  /**
-   * The tier `SLATE_WATER_QUALITY` compiles: the shading tier, but Ultra compiles as High for a look with no Ultra term
-   * (Painted: `lookResolvesUltra`), so both tiers share one effect and the shader is the same either way.
-   */
-  private compiledTier(): number {
-    const look = waterLook(this.water);
-    return this.tier > WATER_SHADING_TIERS.high && look !== "realistic" && !lookResolvesUltra(look, this._material.shaderLanguage) ? WATER_SHADING_TIERS.high : this.tier;
   }
   /** Defines changed outside define preparation; a frozen Play material re-prepares only when marked dirty. */
   private markDefinesDirty(): void {
@@ -2296,10 +2061,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    * (`TransparentDepthPrePass`) and compiles neither: its variant returns before them, with the same vertex stage.
    */
   override prepareDefines(defines: MaterialDefines, scene: Scene): void {
-    const w = this.water;
-    let changed = setDefine(defines, WATER_STYLIZED_DEFINE, w.style === "stylized");
-    changed = setDefine(defines, WATER_GPU_WAVES_DEFINE, this._gpuWaves) || changed;
-    changed = setDefine(defines, Q, this.compiledTier()) || changed;
+    let changed = setDefine(defines, WATER_GPU_WAVES_DEFINE, this._gpuWaves);
+    changed = setDefine(defines, Q, this.tier) || changed;
     const copy = (this.refracts || this.marches) && isMainWaterPass(scene, scene.getEngine().currentRenderPassId);
     changed = setDefine(defines, REFRACTION, this.refracts && copy) || changed;
     changed = setDefine(defines, SSR, this.marches && copy) || changed;
@@ -2312,7 +2075,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     changed = setDefine(defines, WATER_BLEND_DEFINE, this._blend) || changed;
     if (changed) {
       defines.markAsUnprocessed();
-      recordWaterVariant(defines, w, this.mesh, scene);
+      recordWaterVariant(defines, this.mesh, scene);
     }
   }
   /**
@@ -2481,7 +2244,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const s = this.frameScratch, w = this.water;
     let n = 0;
     s[n++] = data.frame; s[n++] = data.render; s[n++] = this.time; s[n++] = origin.x; s[n++] = origin.y; s[n++] = origin.z;
-    s[n++] = scale; s[n++] = this.tier; s[n++] = reflective ? 1 : 0; s[n++] = w.style === "stylized" ? 1 : 0; s[n++] = bankFade;
+    s[n++] = scale; s[n++] = this.tier; s[n++] = reflective ? 1 : 0; s[n++] = bankFade;
     for (let i = 0; i < FRAME_DEFINITION_FIELDS.length; i++) s[n++] = w[FRAME_DEFINITION_FIELDS[i]!];
     for (let c = 0; c < 3; c++) { s[n++] = w.shallowColor[c]!; s[n++] = w.deepColor[c]!; s[n++] = w.foamColor[c]!; }
     if (partner) {
@@ -2511,13 +2274,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     o = putLinear(v, o, w.deepColor, w.reflectionStrength, exact);
     o = putLinear(v, o, w.foamColor, w.foamAmount, exact);
     o = put4(v, o, this.time, 0, 0, w.foamWidth);
-    o = put4(v, o, w.colorBands, w.depthColorDistance, w.sparkles, w.subsurface);
+    o = put4(v, o, 0, w.depthColorDistance, 0, w.subsurface);
     o = put4(v, o, w.waveHeight * scale, w.waveLength, w.waveSpeed, w.waveDirection * Math.PI / 180);
-    const stylized = w.style === "stylized";
-    const sun = lighting.sun, sunColor = lighting.sunColor, sky = lighting.sky, horizon = stylized ? lighting.stylizedHorizon : lighting.horizon;
+    const sun = lighting.sun, sunColor = lighting.sunColor, sky = lighting.sky, horizon = lighting.horizon;
     o = put4(v, o, sun[0]!, sun[1]!, sun[2]!, sun[3]!);
     o = put4(v, o, sunColor[0]!, sunColor[1]!, sunColor[2]!, w.surfaceFoam);
-    o = put4(v, o, sky[0]!, sky[1]!, sky[2]!, stylized ? lighting.stylizedGlitter : lighting.sunGlitter);
+    o = put4(v, o, sky[0]!, sky[1]!, sky[2]!, lighting.sunGlitter);
     o = put4(v, o, horizon[0]!, horizon[1]!, horizon[2]!, lighting.overcast);
     const shape = lighting.sunShape;
     o = put4(v, o, shape[0]!, shape[1]!, shape[2]!, shape[3]!);
@@ -2543,16 +2305,14 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    * Per-channel absorption for Realistic transmittance (`slateWaterAbsorb`) from Shallow Color, the colour shallows
    * take, in linear space: channels it lacks absorb fastest (`absorbCoefficient`), normalized so the slowest channel
    * absorbs over five Depth Color Distances: clear shallows keep the bed's light in the colour the water keeps. A grey
-   * Shallow Color absorbs evenly. Stylized water (Painted's shallows) keeps its own `stylizedAbsorbCoefficient` (`w`
-   * is spare, 0). The light through thin crests (`slateWaterThrough`, Subsurface) is
+   * Shallow Color absorbs evenly (`w` is spare, 0). The light through thin crests (`slateWaterThrough`, Subsurface) is
    * the sun's colour times what a crest transmits, by the gentler `glowCoefficient`. Allocation-free.
    */
   private absorption(v: Float64Array, o: number, lighting: WaterLighting, water: WaterDefinition, exact: boolean): void {
     const tint = water.shallowColor;
     gammaScratch.set(Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])).toLinearSpaceToRef(linearScratch, exact);
     const r = linearScratch.r, g = linearScratch.g, b = linearScratch.b, top = Math.max(r, g, b);
-    // The look's coefficients follow this material's style (a partner of the other style is coloured, not restyled).
-    const k = this.water.style === "stylized" ? stylizedAbsorbCoefficient : absorbCoefficient;
+    const k = absorbCoefficient;
     const kr = k(r, top), kg = k(g, top), kb = k(b, top), weight = Math.min(kr, kg, kb);
     const ar = kr / weight, ag = kg / weight, ab = kb / weight;
     put4(v, o, ar, ag, ab, 0);
@@ -2587,22 +2347,18 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     bindWaterVertexUniforms(effect, scene, waterGridOffset(mesh), this.bankFade(), this.fftValues, band);
   }
   /**
-   * Injected code is a pure function of (stage, language, look), so it is built and stripped once per key
-   * (`injectionFor`). Babylon calls this at every effect compile, once per injection point. The look comes from the
-   * defines of the effect being assembled (`trackCompileDefines`), the same defines its cache key is made of, so two
-   * effects of different looks never share code; outside a compile (Babylon collecting the injection points when the
-   * plugin is added) it keeps both looks.
+   * Injected code is a pure function of (stage, language), so it is built and stripped once per key (`injectionFor`).
+   * Babylon calls this at every effect compile, once per injection point.
    */
   override getCustomCode(shaderType: string, language = ShaderLanguage.GLSL): Record<string, string> | null {
     if (shaderType !== "vertex" && shaderType !== "fragment") return null;
-    return injectionFor(shaderType, language, shaderType === "fragment" && compileDefines ? lookOfDefines(compileDefines) : null);
+    return injectionFor(shaderType, language);
   }
 }
 
 export function configureWaterMaterial(material: PBRMaterial, water: WaterDefinition): void {
-  // Painted water is emissive only: no PBR light loop or reflection, so scene lights do not grow its shader.
-  // Realistic water drops the light loop at Low Water Shading Detail (`WaterMaterialPlugin.syncQuality`).
-  material.unlit = material.disableLighting = water.style === "stylized";
+  // Water drops the light loop at Low Water Shading Detail (`WaterMaterialPlugin.syncQuality`).
+  material.unlit = material.disableLighting = false;
   // Realistic output is premultiplied (see CUSTOM_FRAGMENT_BEFORE_FOG), which raises coverage for bright light itself.
   material.useRadianceOverAlpha = false;
   material.useSpecularOverAlpha = false;

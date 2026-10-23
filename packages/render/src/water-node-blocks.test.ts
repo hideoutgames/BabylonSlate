@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MeshBuilder, NullEngine, Scene, ShaderLanguage, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
+import { Color3, FreeCamera, Matrix, MeshBuilder, Vector3, NullEngine, Scene, ShaderLanguage, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
@@ -84,21 +84,43 @@ describe("Water material nodes", () => {
     }
   });
 
-  it.each([["realistic", ShaderLanguage.GLSL], ["realistic", ShaderLanguage.WGSL], ["painted", ShaderLanguage.GLSL], ["painted", ShaderLanguage.WGSL]] as const)(
-    "build the %s starter Material in language %s, displacing and shading Custom Material water", async (look, language) => {
+  it.each([["realistic", ShaderLanguage.GLSL], ["realistic", ShaderLanguage.WGSL], ["basic", ShaderLanguage.GLSL], ["basic", ShaderLanguage.WGSL]] as const)(
+    "build the %s starter Material in language %s, displacing and shading every kind of water body", async (look, language) => {
       const scene = host(language === ShaderLanguage.WGSL), doc = createWaterMaterialDocument("Sea", look);
       const plan = lowerMaterialDocument(doc);
       expect(plan.ok && plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
       const result = compile(scene, doc);
       expect(await result.ready).toEqual([]);
-      expect(result.material.needAlphaBlending()).toBe(true);
       // NullEngine has no lit WGSL includes to draw a mesh with.
       if (language === ShaderLanguage.WGSL) return;
-      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(look === "painted" ? "stylized" : "realistic"), result.material);
-      expect(await definesFor(result.material, lake)).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
-      (await import("node:fs")).writeFileSync(`/tmp/claude-0/-home-user-BabylonSlate/d0bf190e-63f9-5c3c-ba10-f777c4c7bd3a/scratchpad/${look}.frag`, lake.subMeshes[0]!.effect!.fragmentSourceCode);
-      expect(meshWaterNodeSurface(lake)?.contacts).not.toBeNull();
+      for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
+        const body = createWaterMesh(scene, kind, normalizeWaterBody({ resolution: 8 }, kind), createDefaultWaterDefinition(), result.material);
+        expect(await definesFor(result.material, body), kind).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
+        // Realistic shows what lies below through the scene copy, which only a translucent Material can read.
+        expect(result.material.needAlphaBlendingForMesh(body), kind).toBe(look === "realistic");
+        // Only a graph that reads terrain and contacts (Realistic's foam and depth) has the water mesh build them.
+        expect(meshWaterNodeSurface(body)?.contacts != null, kind).toBe(look === "realistic");
+        body.dispose();
+      }
     });
+
+  it("give Water Colors the asset's own colours beside a Water Waves node", async () => {
+    const scene = host(), water = { ...createDefaultWaterDefinition(), foamColor: [0.9, 0.5, 0.1] as [number, number, number] };
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    new FreeCamera("camera", new Vector3(0, 6, -12), scene);
+    const result = compile(scene, graph(["waterWaves", "waterColors"], [["waterWaves", "offset", "worldPositionOffset"], ["waterWaves", "crestFoam", "roughness"], ["waterColors", "foamColor", "baseColor"]]));
+    expect(await result.ready).toEqual([]);
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), water, result.material);
+    await definesFor(result.material, lake);
+    const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[][]>();
+    vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [...bound.get(name) ?? [], [x, y, z, w]]); return effect; });
+    result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
+    // The Foam Color output reads its own uniform: every block that binds it writes the linear Foam Color.
+    const read = /(\w+) = (\w+)\.rgb;/.exec(result.material.compiledShaders.split("// Fragment shader")[1]!.match(/\w+ = slateWaterNode\w*Foam\w*\.rgb;/)![0])![2]!;
+    const linear = new Color3(0.9, 0.5, 0.1).toLinearSpace(scene.getEngine().useExactSrgbConversions);
+    const expected = [linear.r, linear.g, linear.b].map((v) => Number(v.toFixed(5)));
+    expect(bound.get(read)!.map((value) => value.slice(0, 3).map((v) => Number(v.toFixed(5))))).toEqual(bound.get(read)!.map(() => expected));
+  });
 
   it("compile without Water Waves, where Crest Foam and the per-pixel Normal fall back", async () => {
     const result = compile(host(), graph(["waterFoam", "waterReflection", "waterSceneColor"],

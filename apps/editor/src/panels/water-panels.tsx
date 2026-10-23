@@ -42,14 +42,12 @@ const waveControls = [
 ] as const satisfies readonly NumberControl[];
 const surfaceControls = [
   ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["crestFoam", 0, 1], ["surfaceFoam", 0, 1],
-  ["contactFoamWidth", 0, 8], ["subsurface", 0, 2], ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
+  ["contactFoamWidth", 0, 8], ["subsurface", 0, 2], ["density", 1, 20000],
 ] as const satisfies readonly NumberControl[];
-/** Painted-only rows; Realistic hides them. */
-const paintedOnly = new Set<NumberKey>(["colorBands", "sparkles"]);
 const descriptions: Partial<Record<NumberKey, string>> = {
   opacity: "Maximum opacity of deep water. Shallow water near banks stays clearer.",
-  roughness: "Realistic: how far the sun glint and sky reflection spread. Painted: width of the sun's highlight.",
-  reflectionStrength: "Realistic: strength of the sky reflection. Painted: strength of the soft painted sky reflection, strongest at grazing views.",
+  roughness: "How far the sun glint and sky reflection spread.",
+  reflectionStrength: "Strength of the sky reflection.",
   depthColorDistance: "Metres of water that absorb most light. Smaller values look deeper and darker sooner.",
   refraction: "Render only: how strongly the water bends the view of objects below it. 0 never samples the scene; needs the Water Refraction quality setting. Visible in scene viewports and Play, not in this preview.",
   colorVariation: "Render only: slow tint variation across open water.",
@@ -70,8 +68,6 @@ const descriptions: Partial<Record<NumberKey, string>> = {
   surfaceFoam: "Thin foam left lingering behind breaking crests.",
   subsurface: "Sunlight glowing through the crests of the waves.",
   contactFoamWidth: "Metres of foam around objects and terrain that cross the surface.",
-  colorBands: "Painted: light steps painted across each wave. 0 or 1 shades smoothly.",
-  sparkles: "Painted: twinkling sun glints on the waves.",
   density: "Kilograms per cubic metre. Fresh water is approximately 1000.",
 };
 
@@ -83,7 +79,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   const [picking, setPicking] = useState(false);
   const doc = useOpenDocument(documentId);
   const water = normalizeWaterDefinition(doc?.content);
-  const defaults = createDefaultWaterDefinition(water.style);
+  const defaults = createDefaultWaterDefinition();
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
   const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
   // Surface Materials change with the registry, not with edits of this Water.
@@ -102,16 +98,15 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     };
   };
   const rows: PropertyRow[] = [
-    { id: "water-style", kind: "enum", label: "Style", value: water.style, options: [{ value: "realistic", label: "Realistic" }, { value: "stylized", label: "Painted" }], description: "Realistic is lit, physically shaded water. Painted is soft, hand-painted-looking water with stepped light and clean foam. Your colors and wave settings are retained.", onChange: (style) => commit({ ...water, style: style === "stylized" ? "stylized" : "realistic" }) },
     ...(["shallowColor", "deepColor", "foamColor"] as const).map((key): PropertyRow => ({ id: `water-${key}`, kind: "color", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], onChange: (value) => commit({ ...water, [key]: [value[0], value[1], value[2]] }, key) })),
     ...lookControls.map(numberRow),
     { id: "water-objectReflections", kind: "boolean", label: "Object Reflections", value: water.objectReflections, defaultValue: defaults.objectReflections, description: "Render only: also reflect scene objects (screen-space or planar, per the Water Reflections quality setting). Off reflects only the sky. Visible in scene viewports and Play, not in this preview.", onChange: (objectReflections) => commit({ ...water, objectReflections }) },
     ...waveControls.map(numberRow),
-    ...surfaceControls.filter(([key]) => water.style === "stylized" || !paintedOnly.has(key)).map(numberRow),
+    ...surfaceControls.map(numberRow),
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material that replaces the built-in shading. Buoyancy keeps working; add a Water Waves node to displace the surface with the full waves.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>
-    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} createTypes={["Material"]} createOptions={{ waterMaterial: water.style === "stylized" ? "painted" : "realistic" }} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
+    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} createTypes={["Material"]} createOptions={{ waterMaterial: "realistic" }} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
   </PanelFrame>;
 }
 
@@ -127,7 +122,7 @@ function previewRenderSettings(render: RenderProjectSettings | undefined): Rende
 const PREVIEW_BODY = { width: 24, length: 24, waveScale: 1, depth: 5 };
 
 /**
- * Live preview of the open Water asset. The scene and mesh are built once per engine, Style, Custom Material and
+ * Live preview of the open Water asset. The scene and mesh are built once per engine, Custom Material and
  * revision of everything that material reaches; other edits, such as each step of a Details scrub, apply to the
  * existing mesh, so the wave clock keeps running. Project render settings (Water quality included) also apply to the
  * existing scene.
@@ -150,7 +145,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   /** The latest definition, for a mesh whose Custom Material finishes loading after later edits. */
   const definitionRef = useRef(definition);
   definitionRef.current = definition;
-  const { style, materialGuid } = definition;
+  const { materialGuid } = definition;
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_CLOSURE_KINDS);
   const closureKey = useMemo(() => {
     void registryEpoch; // Registry contents change without replacing its instance.
@@ -170,8 +165,8 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !engine) return;
-    // Style compiles into the water shader; the Custom Material reloads when it or anything it reaches changes.
-    void style; void closureKey;
+    // The Custom Material reloads when it or anything it reaches changes.
+    void closureKey;
     const host = createParticlePreviewScene(engine, { skybox: true });
     setSceneRenderSettings(host.scene, previewRenderSettings(renderSettingsRef.current));
     sceneRef.current = host.scene;
@@ -246,7 +241,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
       resizeObserver?.disconnect(); document.removeEventListener("visibilitychange", resume); stopQuietWatch();
       cancelAnimationFrame(frame); gestures.dispose(); presenter.dispose(); host.dispose(); materials?.dispose();
     };
-  }, [engine, style, materialGuid, closureKey]);
+  }, [engine, materialGuid, closureKey]);
 
   useEffect(() => {
     const mesh = meshRef.current;

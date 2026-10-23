@@ -1,4 +1,4 @@
-import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle } from "@haptic/core";
+import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph } from "@haptic/core";
 import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@haptic/core";
 import type { ImportResult, IndexedAsset } from "@haptic/assets";
 import {
@@ -1593,7 +1593,6 @@ export function defaultParentClassForType(
 }
 
 export function buildNewAssetResult(options: {
-  waterStyle?: WaterStyle;
   type: CreatableAssetType;
   name: string;
   guid: string;
@@ -1621,7 +1620,7 @@ export function buildNewAssetResult(options: {
   }
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
-  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
+  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition() as unknown as Record<string, unknown>);
   if (type === "Prefab") {
     const result = documentAsset(type, name, guid, { components: defaultPrefabComponents(options.viewportMode) });
     result.dependencies = assetHeaderDependencies(type, result.payload);

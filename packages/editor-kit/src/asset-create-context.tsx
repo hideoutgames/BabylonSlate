@@ -14,7 +14,7 @@ export type AssetCreateRequest = {
   name?: string;
   materialDomain?: AssetCreateMaterialDomain;
   /** A new Surface Material starts as the starter Water Material of this look. */
-  waterMaterial?: "realistic" | "painted";
+  waterMaterial?: "realistic" | "basic";
   /** Data Definition constraint when creating a Data Tree. */
   defaultDefinitionGuid?: string | null;
   /**

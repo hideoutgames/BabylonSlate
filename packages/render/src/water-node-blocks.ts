@@ -643,7 +643,9 @@ swnSky = mix(swnSky, swnHit.rgb, swnHit.a * (1.0 - smoothstep(0.2, 0.45, swnRoug
 }
 RegisterClass("BABYLON.WaterReflectionBlock", WaterReflectionBlock);
 
-const COLOR_UNIFORMS = ["slateWaterNodeShallow", "slateWaterNodeDeep", "slateWaterNodeFoam"] as const;
+/** Water Colors' uniforms, apart from every other water uniform (the Water Waves node's foam terms are `slateWaterNodeFoam`). */
+export const WATER_NODE_COLOR_UNIFORMS = ["slateWaterNodeShallowColor", "slateWaterNodeDeepColor", "slateWaterNodeFoamColor"] as const;
+const COLOR_UNIFORMS = WATER_NODE_COLOR_UNIFORMS;
 const COLOR_FIELDS = ["shallowColor", "deepColor", "foamColor"] as const;
 /** The Realistic defaults a material preview shows. */
 const PREVIEW_WATER = createDefaultWaterDefinition();

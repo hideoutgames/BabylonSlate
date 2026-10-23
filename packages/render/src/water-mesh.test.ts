@@ -308,8 +308,7 @@ describe("Water rendering", () => {
       expect(vectors.get("slateWaterFoam")![3]).toBe(0.2);
       expect(vectors.get("slateWaterShape")).toEqual([0, water.waveSpread, 0.8, 2.5]);
       expect(vectors.get("slateWaterContactInfo")!.slice(0, 2)).toEqual([1, 7.5]);
-      // Style compiles into the shader and a Custom Material replaces it: those edits change nothing here.
-      expect(updateWaterMeshDefinition(mesh, { ...edited, style: "stylized", roughness: 0.9 })).toBe(false);
+      // A Custom Material replaces the shader: that edit changes nothing here.
       expect(updateWaterMeshDefinition(mesh, { ...edited, materialGuid: "custom", roughness: 0.9 })).toBe(false);
       expect(material.roughness).toBe(0.5);
       expect(updateWaterMeshDefinition(MeshBuilder.CreateBox("box", {}, scene), edited)).toBe(false);
@@ -571,7 +570,7 @@ describe("Water rendering", () => {
     noBlending(scene);
     try {
       const plain = await customWaterMaterial(scene, false), waves = await customWaterMaterial(scene, true);
-      const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
+      const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
       const lake = createWaterMesh(scene, "lake", body, water, plain), reference = createWaterMesh(scene, "reference", body, water, plain);
       setSceneWaterTime(scene, 2); updateSceneWater(scene);
       const positions = (mesh: Mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind)!);
@@ -660,7 +659,7 @@ describe("Water rendering", () => {
   it("animates built-in water on the GPU from the clock alone, keeps the CPU path for parity, and releases owned resources", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     // Half-metre cells resolve every swell component (the mesh filter fades none), so vertices sit on the queried surface.
-    const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
+    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
     try {
       const mesh = createWaterMesh(scene, "lake", body, water);
       const material = mesh.material, plugin = pluginOf(mesh);

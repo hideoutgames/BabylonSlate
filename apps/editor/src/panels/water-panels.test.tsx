@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import { createDefaultWaterDefinition, normalizeWaterDefinition } from "@haptic/core";
@@ -49,7 +49,7 @@ afterEach(() => {
   cleanup();
 });
 
-function renderWithHistory(definition: unknown = createDefaultWaterDefinition("realistic")) {
+function renderWithHistory(definition: unknown = createDefaultWaterDefinition()) {
   const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 10_000_000 });
   const initial = normalizeWaterDefinition(definition) as unknown as Record<string, unknown>;
   harness.content = initial;
@@ -100,25 +100,12 @@ describe("WaterDetailsPanel", () => {
 
   it("edits the wind sea and swell lengths apart from their heights, over a puddle's ripples to an ocean's swell", () => {
     const history = renderWithHistory();
-    for (const key of ["waveModel", "choppiness", "rippleScale", "stylizedLook"]) expect(screen.queryByTestId(`property-water-${key}`), key).toBeNull();
+    for (const key of ["style", "waveModel", "choppiness", "rippleScale", "stylizedLook", "colorBands", "sparkles"]) expect(screen.queryByTestId(`property-water-${key}`), key).toBeNull();
     fireEvent.change(screen.getByTestId("property-water-swellLength"), { target: { value: "1500" } });
     fireEvent.change(screen.getByTestId("property-water-waveLength"), { target: { value: "0.3" } });
     expect(history.read()).toMatchObject({ swellLength: 1500, waveLength: 0.3, waveHeight: createDefaultWaterDefinition().waveHeight });
     fireEvent.click(screen.getByTestId("property-water-objectReflections"));
     expect(history.read().objectReflections).toBe(!createDefaultWaterDefinition().objectReflections);
-  });
-
-  it("offers Painted as the other Style, keeps colors and waves when it switches, and shows its bands and glints", async () => {
-    const history = renderWithHistory({ ...createDefaultWaterDefinition(), shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
-    expect(screen.queryByTestId("property-water-colorBands")).toBeNull();
-    fireEvent.click(screen.getByTestId("property-water-style"));
-    const painted = await screen.findByRole("option", { name: "Painted" });
-    fireEvent.pointerDown(painted);
-    fireEvent.click(painted);
-    await waitFor(() => expect(history.read().style).toBe("stylized"));
-    expect(history.read()).toMatchObject({ shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
-    expect(screen.getByTestId("property-water-colorBands")).toBeTruthy();
-    expect(screen.getByTestId("property-water-sparkles")).toBeTruthy();
   });
 
   it("records a color picker drag as one undo step", () => {

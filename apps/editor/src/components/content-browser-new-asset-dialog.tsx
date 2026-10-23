@@ -1,5 +1,4 @@
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
-import type { WaterStyle } from "@haptic/core";
 import type { WaterMaterialLook } from "@haptic/shader-graph";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChevronRightIcon, FolderIcon } from "lucide-react";
@@ -60,8 +59,6 @@ export interface ContentBrowserNewAssetDialogProps {
   onNameChange: (name: string) => void;
   parentClass: string;
   onParentClassChange: (parentClass: string) => void;
-  waterStyle?: WaterStyle;
-  onWaterStyleChange?: (style: WaterStyle) => void;
   /** A new Material's starter graph: empty, or a water Material for a Water asset's Custom Material. */
   materialStarter?: WaterMaterialLook | null;
   onMaterialStarterChange?: (starter: WaterMaterialLook | null) => void;
@@ -201,8 +198,6 @@ export function ContentBrowserNewAssetDialog({
   onNameChange,
   parentClass,
   onParentClassChange,
-  waterStyle = "realistic",
-  onWaterStyleChange,
   materialStarter = null,
   onMaterialStarterChange,
   definitionGuid = null,
@@ -323,23 +318,13 @@ export function ContentBrowserNewAssetDialog({
                 ) : null}
               </Field>
             </FieldGroup>
-            {type === "Water" ? (
-              <FieldGroup>
-                <Field><FieldLabel>Water Style</FieldLabel>
-                  <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
-                    <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
-                    <ToggleGroupItem value="stylized">Painted</ToggleGroupItem>
-                  </ToggleGroup>
-                </Field>
-              </FieldGroup>
-            ) : null}
             {type === "Material" ? (
               <FieldGroup>
                 <Field><FieldLabel>Starter</FieldLabel>
-                  <ToggleGroup value={[materialStarter ?? "empty"]} onValueChange={(values) => { const value = values[0]; if (value === "empty") onMaterialStarterChange?.(null); else if (value === "realistic" || value === "painted") onMaterialStarterChange?.(value); }} variant="outline" size="sm" aria-label="Starter">
+                  <ToggleGroup value={[materialStarter ?? "empty"]} onValueChange={(values) => { const value = values[0]; if (value === "empty") onMaterialStarterChange?.(null); else if (value === "realistic" || value === "basic") onMaterialStarterChange?.(value); }} variant="outline" size="sm" aria-label="Starter">
                     <ToggleGroupItem value="empty">Empty</ToggleGroupItem>
                     <ToggleGroupItem value="realistic">Realistic Water</ToggleGroupItem>
-                    <ToggleGroupItem value="painted">Painted Water</ToggleGroupItem>
+                    <ToggleGroupItem value="basic">Basic Water</ToggleGroupItem>
                   </ToggleGroup>
                   {materialStarter ? <FieldDescription>Use it as a Water asset's Custom Material.</FieldDescription> : null}
                 </Field>

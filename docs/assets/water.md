@@ -4,7 +4,7 @@ The look and waves shared by oceans, lakes, rivers and puddles. The same waves d
 
 ## Create
 
-In the **Content Browser**, choose **New Asset > Rendering > Water**. Choose a **Water Style** of **Realistic** or **Painted**. Each style starts with its own colours and wave defaults. Both draw a simulated ocean of many wave trains, with foam that gathers on breaking crests and fades slowly.
+In the **Content Browser**, choose **New Asset > Rendering > Water**. Water draws a simulated ocean of many wave trains, with foam that gathers on breaking crests and fades slowly. For a look of your own, such as stylized water, set a **Custom Material** (see [Custom water Materials](../graphics/water.md#custom-water-materials)).
 
 ## Editor
 
@@ -18,7 +18,6 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 
 | Setting | Description |
 | --- | --- |
-| Style | **Realistic** or **Painted**. Switching styles keeps your colours and wave settings. |
 | Shallow Color, Deep Color, Foam Color | The water colours. |
 | Opacity, Roughness, Reflection Strength, Refraction, Color Variation, Depth Color Distance | Water look. Depth Color Distance is the metres of water that absorb most light. |
 | Object Reflections | Also reflects scene objects, following the project's Water Reflections quality. Off reflects only the sky. |
@@ -28,7 +27,7 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 | Peak Sharpness, Wave Seed | Shape and arrangement of the sea. Peak Sharpness gathers the waves around Wave Length. |
 | Detail Waves | The share of short waves on top of the sea. |
 | Foam Amount, Foam Width, Crest Foam, Surface Foam, Contact Foam Width | Shoreline, whitecap, open-water and contact foam. |
-| Subsurface, Color Bands, Sparkles | Light through crests. Painted only: light steps painted across each wave, and sun glints. |
+| Subsurface | Sunlight glowing through the crests of the waves. |
 | Density | Kilograms per cubic metre, about 1000 for fresh water. Sets how much a floating object can carry. |
 | Custom Material | An optional Surface Material that replaces the built-in shading. Waves and buoyancy still work; see [Custom water Materials](../graphics/water.md#custom-water-materials). |
 

@@ -94,36 +94,34 @@ describe("Water surfaces", () => {
     const next = sampleWaterSurface(flat, body, { ...point, x: point.x + 0.001 }, 0, transform);
     expect(-sample.normal.x / sample.normal.y).toBeCloseTo((next.height - sample.height) / 0.001, 4);
   });
-  it("fills Surface Foam and Subsurface from the chosen style and clamps authored values", () => {
-    // Assets saved before these properties existed take the defaults of their own style.
-    const legacyStylized = normalizeWaterDefinition({ style: "stylized", foamAmount: 0.5 });
+  it("fills Surface Foam and Subsurface from the defaults and clamps authored values", () => {
+    // Assets saved before these properties existed take the defaults.
     const legacyRealistic = normalizeWaterDefinition({ foamAmount: 0.5 });
-    expect(legacyStylized).toMatchObject({ surfaceFoam: createDefaultWaterDefinition("stylized").surfaceFoam, subsurface: createDefaultWaterDefinition("stylized").subsurface });
     expect(legacyRealistic).toMatchObject({ surfaceFoam: createDefaultWaterDefinition().surfaceFoam, subsurface: createDefaultWaterDefinition().subsurface });
     expect(normalizeWaterDefinition({ surfaceFoam: 3, subsurface: -1 })).toMatchObject({ surfaceFoam: 1, subsurface: 0 });
     expect(normalizeWaterDefinition({ surfaceFoam: 0.25, subsurface: 5 })).toMatchObject({ surfaceFoam: 0.25, subsurface: 2 });
     expect(normalizeWaterDefinition({ surfaceFoam: "lots", subsurface: NaN })).toMatchObject({ surfaceFoam: createDefaultWaterDefinition().surfaceFoam, subsurface: createDefaultWaterDefinition().subsurface });
   });
-  it("loads assets saved with the removed Toon look or wave model as Painted, keeping their colours and waves", () => {
-    const toon = normalizeWaterDefinition({ style: "stylized", stylizedLook: "toon", shallowColor: [0.2, 0.86, 0.9], waveHeight: 2, waveModel: "ocean", rippleStrength: 0.4, choppiness: 0.7 });
-    expect(toon).toEqual({ ...createDefaultWaterDefinition("stylized"), shallowColor: [0.2, 0.86, 0.9], waveHeight: 2 });
-    expect(normalizeWaterDefinition({ style: "stylized", colorBands: 5, sparkles: 0.2 })).toMatchObject({ colorBands: 5, sparkles: 0.2 });
+  it("loads assets saved with a removed Style, look or wave model as Realistic, keeping their colours and waves", () => {
+    const legacy = normalizeWaterDefinition({
+      style: "stylized", stylizedLook: "toon", shallowColor: [0.2, 0.86, 0.9], waveHeight: 2, waveModel: "ocean", rippleStrength: 0.4, choppiness: 0.7,
+      colorBands: 5, sparkles: 0.2,
+    });
+    expect(legacy).toEqual({ ...createDefaultWaterDefinition(), shallowColor: [0.2, 0.86, 0.9], waveHeight: 2 });
   });
   it("bounds malformed asset inputs before they reach sampling and rendering", () => {
-    const water = normalizeWaterDefinition({ style: "stylized", waveLength: 0, waveHeight: NaN, shallowColor: [-1, 4, 0.2], density: -20 });
-    expect(water).toMatchObject({ style: "stylized", shallowColor: [0, 1, 0.2], density: 1 });
+    const water = normalizeWaterDefinition({ waveLength: 0, waveHeight: NaN, shallowColor: [-1, 4, 0.2], density: -20 });
+    expect(water).toMatchObject({ shallowColor: [0, 1, 0.2], density: 1 });
     expect(water.waveLength).toBeGreaterThan(0);
     expect(Number.isFinite(sampleWaterWaves(water, 1, 2, 3).height)).toBe(true);
   });
-  it("fills the wave and render-only fields from the style and bounds authored values", () => {
-    // Assets saved before these fields existed take their own style's defaults, like Surface Foam.
-    for (const style of ["realistic", "stylized"] as const) {
-      const defaults = createDefaultWaterDefinition(style);
-      expect(normalizeWaterDefinition({ style, waveHeight: 0.5 })).toMatchObject({
-        steepness: defaults.steepness, peakSharpness: 3.3, waveSeed: 0, detailWaves: defaults.detailWaves, swellHeight: defaults.swellHeight,
-        refraction: defaults.refraction, objectReflections: defaults.objectReflections, colorVariation: defaults.colorVariation,
-      });
-    }
+  it("fills the wave and render-only fields from the defaults and bounds authored values", () => {
+    // Assets saved before these fields existed take the defaults, like Surface Foam.
+    const defaults = createDefaultWaterDefinition();
+    expect(normalizeWaterDefinition({ waveHeight: 0.5 })).toMatchObject({
+      steepness: defaults.steepness, peakSharpness: 3.3, waveSeed: 0, detailWaves: defaults.detailWaves, swellHeight: defaults.swellHeight,
+      refraction: defaults.refraction, objectReflections: defaults.objectReflections, colorVariation: defaults.colorVariation,
+    });
     expect(normalizeWaterDefinition({ steepness: 4, peakSharpness: 0, waveSeed: 70000.4, detailWaves: -1, refraction: 2, objectReflections: "yes", colorVariation: NaN }))
       .toMatchObject({ steepness: 1, peakSharpness: 1, waveSeed: 65535, detailWaves: 0, refraction: 1, objectReflections: true, colorVariation: 0.5 });
     // Wave lengths span a puddle's ripples to an ocean's long swell.
@@ -197,7 +195,7 @@ describe("Water surfaces", () => {
   });
   it("keeps every sampled wave inside the vertical and horizontal envelopes", () => {
     const out = createWaterWaveOutput();
-    for (const water of [realistic, createDefaultWaterDefinition("stylized"), storm, { ...storm, peakSharpness: 7 }]) {
+    for (const water of [realistic, { ...realistic, waveHeight: 0.4, waveLength: 22, detailWaves: 0 }, storm, { ...storm, peakSharpness: 7 }]) {
       for (const scale of [0.35, 1, 3]) {
         const spectrum = waterSpectrum(water), vertical = waterWaveEnvelope(water, scale), horizontal = waterHorizontalEnvelope(water, scale);
         let highest = 0, widest = 0;

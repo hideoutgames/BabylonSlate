@@ -1638,13 +1638,13 @@ function attachFields(surface: Surface): void {
  * bounds for the new wave envelopes, refreshes the contact range of both fields and resamples CPU vertices, also under a
  * paused clock. A Wave Length edit changes the grid step, so the placement below builds a new rest grid in place
  * (Global Water too). The scene's water clock keeps running. Returns false, changing nothing, for other meshes and for
- * edits that need a rebuild: Style compiles into the shader and Custom Material replaces it.
+ * edits that need a rebuild: Custom Material replaces the shader.
  */
 export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   const surface = surfaceByMesh.get(mesh);
   if (!surface) return false;
   const water = surface.water, next = normalizeWaterDefinition(input);
-  if (next.style !== water.style || next.materialGuid !== water.materialGuid) return false;
+  if (next.materialGuid !== water.materialGuid) return false;
   const scene = mesh.getScene(), range = contactRange(water);
   Object.assign(water, next);
   // The copy intent counts this surface by its asset's Refraction and Object Reflections.
@@ -1722,12 +1722,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
     plugin.gpuWaves = true;
-    // Unlit Stylized water never samples a reflection.
-    if (water.style !== "stylized") {
-      let reflection = reflections.get(scene);
-      if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
-      reflection.add(material);
-    }
+    let reflection = reflections.get(scene);
+    if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
+    reflection.add(material);
     mesh.material = material;
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }

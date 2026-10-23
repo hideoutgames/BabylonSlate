@@ -4,7 +4,7 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@haptic/assets";
-import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle } from "@haptic/core";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode } from "@haptic/core";
 import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@haptic/scripting";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
 import {
@@ -39,7 +39,6 @@ export async function createProjectAsset(options: {
   type: CreatableAssetType;
   name: string;
   parentClass?: string | null;
-  waterStyle?: WaterStyle;
   materialDomain?: MaterialDomain;
   /** A new Surface Material starts as the starter Water Material of this look. */
   waterMaterial?: WaterMaterialLook;
@@ -90,7 +89,6 @@ export async function createProjectAsset(options: {
     parentClass,
     parentOf: options.classParentOf,
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
-    waterStyle: options.waterStyle,
     materialDomain: options.materialDomain,
     waterMaterial: options.waterMaterial,
     defaultDefinitionGuid,

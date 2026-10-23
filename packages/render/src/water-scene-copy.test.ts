@@ -29,7 +29,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { configureEditorRenderingGroups } from "./sorting";
 import type { WaterMaterialPlugin } from "./water-material";
-import { createWaterMesh, isBuiltInWaterMesh } from "./water-mesh";
+import { createWaterMesh, isBuiltInWaterMesh, setWaterGpuWaves } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 
 const DEFAULT_TASKS = [
@@ -581,16 +581,21 @@ function holdWaterLinks(engine: NullEngine) {
 }
 
 /**
- * Realistic, Painted and a Realistic body that refracts but reflects no objects, side by side, warmed as a load warms:
- * three bodies whose variants all differ and all sample the scene copy.
+ * A body that refracts and reflects objects, one that only refracts with CPU-displaced vertices and one that only
+ * refracts, side by side, warmed as a load warms: three bodies whose variants all differ and all sample the scene copy.
  */
 async function threeWaterBodies(scene: Scene): Promise<Mesh[]> {
-  const looks = [createDefaultWaterDefinition(), createDefaultWaterDefinition("stylized"), { ...createDefaultWaterDefinition(), objectReflections: false }];
+  const refracting = { ...createDefaultWaterDefinition(), objectReflections: false };
+  const looks = [createDefaultWaterDefinition(), refracting, refracting];
   const bodies = looks.map((water, index) => {
-    const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water);
+    const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), { ...water });
     mesh.position.x = (index - 1) * 4;
     return mesh;
   });
+  setWaterGpuWaves(bodies[1]!, false);
+  // The switch holds the material's previous program back until its next bind (its vertex layout changed); nothing has
+  // drawn the previous one here, so it keeps hot swapping like the others.
+  bodies[1]!.material!.allowShaderHotSwapping = true;
   await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
   return bodies;
 }
@@ -679,11 +684,10 @@ it.each([["transparent", false], ["geometry", true]] as const)(
     /** Whether the pass holds `mesh`'s fog variant. */
     const fogged = (mesh: Mesh) => /#define FOG\n/.test(mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect?.defines ?? "");
     expect([fogged(first!), fogged(second!)]).toEqual([false, false]);
-    /** Whether the pass's fog variant of the Realistic (first) or Painted (second) body was requested. */
-    const fogLinked = (painted: boolean) => links.requestedDefines().some((defines) =>
+    /** Whether the pass's fog variant of a GPU-displaced body (first) or the CPU-displaced second body was requested. */
+    const fogLinked = (second: boolean) => links.requestedDefines().some((defines) =>
       defines.includes("#define FOG\n") && defines.includes("#define PREPASS\n") === geometry
-      && !defines.includes("#define DEPTHPREPASS\n") && !defines.includes("#define SLATE_WATER_TOON\n")
-      && defines.includes("#define SLATE_WATER_STYLIZED\n") === painted);
+      && !defines.includes("#define DEPTHPREPASS\n") && defines.includes("#define SLATE_WATER_GPU_WAVES\n") === !second);
     // Fog gives every body new variants before the load is ready (outside Scene observables, so the change marks
     // readiness dirty itself) and the links requested so far finish. The probe waits on the first body's new
     // variant, and the second body's link ahead again meanwhile; both keep their previous variants until then.

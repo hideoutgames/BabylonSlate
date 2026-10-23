@@ -942,11 +942,11 @@ describe("Play createEngine view", () => {
 
   /**
    * Two water assets that sample no scene copy, so their bodies draw in the main pass and a graph that is already
-   * prepared probes one as soon as it appears. "glitter" adds a shader feature, so its variants differ from "calm".
+   * prepared probes one as soon as it appears. "glitter" is a second asset with more whitecaps.
    */
   const waterAssets = () => {
     const calm = { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false };
-    return new Map([["calm", calm], ["glitter", { ...calm, sparkles: 0.5 }]]);
+    return new Map([["calm", calm], ["glitter", { ...calm, crestFoam: 0.5 }]]);
   };
 
   /** Frames with time for the graph's asynchronous preparation to finish in between. */

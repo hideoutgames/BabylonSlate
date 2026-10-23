@@ -11,7 +11,7 @@ import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import {
   WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, WaterMaterialPlugin,
-  WaterVertexWaves, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource, type WaterLook,
+  WaterVertexWaves, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
 } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -124,7 +124,7 @@ describe("Water material binding", () => {
       expect(grey[0]).toBeCloseTo(grey[1]!, 6); expect(grey[1]).toBeCloseTo(grey[2]!, 6);
       // Turquoise shallows (the Realistic default) pass blue at least as well as green, as water does (blue absorbing
       // faster turned them mint), and the colour they keep travels Depth Color Distance (its coefficient is 1).
-      const turquoise = absorb(createDefaultWaterDefinition("realistic").shallowColor);
+      const turquoise = absorb(createDefaultWaterDefinition().shallowColor);
       expect(turquoise[2]).toBeLessThanOrEqual(turquoise[1]!);
       expect(turquoise[0]).toBeGreaterThan(turquoise[1]!);
       expect(Math.min(...turquoise)).toBeCloseTo(1, 6);
@@ -202,15 +202,15 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
-  it("compiles only the asset's style: lit, reflective Realistic and unlit Stylized that ignores scene lights", async () => {
+  it("compiles lit, reflective water that displaces on the GPU, one program for every sea", async () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
       new FreeCamera("camera", new Vector3(0, 5, -10), scene);
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
       new PointLight("lamp", new Vector3(0, 3, 0), scene);
-      // Preview, editor scenes and Play all build water through createWaterMesh; a Style edit rebuilds it everywhere.
-      const compiled = async (style: "realistic" | "stylized", waveHeight = 0.45) => {
-        const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(style), waveHeight });
+      // Preview, editor scenes and Play all build water through createWaterMesh.
+      const compiled = async (waveHeight = 0.45) => {
+        const mesh = createWaterMesh(scene, "water", normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(), waveHeight });
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
         await material.forceCompilationAsync(mesh);
         expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
@@ -218,39 +218,29 @@ describe("Water material binding", () => {
         mesh.dispose();
         return defines;
       };
-      const stylized = await compiled("stylized");
-      expect(stylized).toContain("#define SLATE_WATER_STYLIZED");
-      expect(stylized).toContain("#define UNLIT");
-      expect(stylized).not.toContain("#define LIGHT0");
-      const realistic = await compiled("realistic");
-      expect(realistic).not.toContain("#define SLATE_WATER_STYLIZED");
+      const realistic = await compiled();
       expect(realistic).not.toContain("#define UNLIT");
       expect(realistic).toContain("#define LIGHT1");
       // Built-in water displaces its static rest grid in the vertex shader.
       expect(realistic).toContain("#define SLATE_WATER_GPU_WAVES");
       // Waves are uniforms and textures: another sea compiles the same program.
-      expect(await compiled("realistic", 2)).toBe(realistic);
+      expect(await compiled(2)).toBe(realistic);
     } finally { scene.dispose(); engine.dispose(); }
   });
 
-  it("injects only the compiled look's shading, keyed by the effect's own defines, and no comments in any language or stage", async () => {
+  it("injects the water shading with no comments in any language or stage", async () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
       new FreeCamera("camera", new Vector3(0, 5, -10), scene);
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
-      const looks: WaterLook[] = ["realistic", "painted"];
-      const main = (look: WaterLook) => stripShaderComments(waterShaderSource(ShaderLanguage.GLSL, look).main);
-      // The look's own shading is in the compiled effect's source before preprocessing, and no other look's is.
-      const holds = (source: string, own: WaterLook) => looks.every((look) => source.includes(main(look)) === (look === own));
+      const main = stripShaderComments(waterShaderSource(ShaderLanguage.GLSL).main);
       const compiled = async (mesh: ReturnType<typeof createWaterMesh>) => {
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
         await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
         return subMesh.effect!;
       };
-      const painted = createWaterMesh(scene, "stylized", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("stylized"));
-      expect(holds((await compiled(painted)).fragmentSourceCodeBeforeMigration, "painted")).toBe(true);
-      const realistic = await compiled(createWaterMesh(scene, "realistic", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic")));
-      expect(holds(realistic.fragmentSourceCodeBeforeMigration, "realistic")).toBe(true);
+      const realistic = await compiled(createWaterMesh(scene, "realistic", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition()));
+      expect(realistic.fragmentSourceCodeBeforeMigration).toContain(main);
       // Everything the plugin and the outline mask inject is free of comments and blank lines.
       const plugin = new WaterMaterialPlugin(new PBRMaterial("probe", scene), createDefaultWaterDefinition(), normalizeWaterBody({}));
       const pieces = [ShaderLanguage.GLSL, ShaderLanguage.WGSL].flatMap((language) => [
@@ -269,8 +259,8 @@ describe("Water material binding", () => {
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
       new PointLight("lamp", new Vector3(0, 3, 0), scene);
       const tier = (level: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
-      const compiled = async (style: "realistic" | "stylized") => {
-        const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(style));
+      const compiled = async () => {
+        const mesh = createWaterMesh(scene, "water", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
         await material.forceCompilationAsync(mesh);
         expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
@@ -281,10 +271,8 @@ describe("Water material binding", () => {
       const levels: QualityLevel[] = ["low", "medium", "high", "ultra"];
       for (const [index, level] of levels.entries()) {
         tier(level);
-        const realistic = await compiled("realistic"), stylized = await compiled("stylized");
+        const realistic = await compiled();
         expect(realistic).toContain(`#define SLATE_WATER_QUALITY ${index}`);
-        // Painted has no Ultra term: Ultra compiles as High, sharing its effect.
-        expect(stylized).toContain(`#define SLATE_WATER_QUALITY ${Math.min(index, 2)}`);
         // Low drops the PBR light loop (its shader lights foam and the sun itself); other tiers keep scene lights.
         if (level === "low") expect(realistic).not.toContain("#define LIGHT0");
         else expect(realistic).toContain("#define LIGHT1");
@@ -303,7 +291,7 @@ describe("Water material binding", () => {
         updateSceneRenderingSettings(scene, { quality: { ...quality, water: { ...quality.water, shadingDetail, preset: "custom" } } });
       };
       detail("medium");
-      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic"));
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
       const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
       const ready = async () => {
         await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
@@ -340,7 +328,7 @@ describe("Water material binding", () => {
         await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
         return subMesh.effect!.defines;
       };
-      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic"));
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
       const ultra = await compiled(lake);
       expect(ultra).toContain("#define SLATE_WATER_PLANAR\n");
       // This pass has no scene copy (captures draw like it): Ultra still compiles no
@@ -359,11 +347,11 @@ describe("Water material binding", () => {
       updateSceneWater(scene);
       expect(await compiled(lake)).not.toContain("SLATE_WATER_PLANAR\n");
       lake.dispose();
-      // Without Object Reflections (the Stylized default) nothing is reflected, whatever the quality.
+      // Without Object Reflections nothing is reflected, whatever the quality.
       level("ultra");
-      const stylized = createWaterMesh(scene, "stylized", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("stylized"));
-      expect(await compiled(stylized)).not.toContain("SLATE_WATER_PLANAR\n");
-      stylized.dispose();
+      const mirrorless = createWaterMesh(scene, "mirrorless", normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(), objectReflections: false });
+      expect(await compiled(mirrorless)).not.toContain("SLATE_WATER_PLANAR\n");
+      mirrorless.dispose();
     } finally { scene.dispose(); engine.dispose(); }
   });
 
@@ -375,9 +363,9 @@ describe("Water material binding", () => {
       new FreeCamera("camera", new Vector3(0, 6, -12), scene).setTarget(Vector3.Zero());
       return { engine, scene };
     };
-    const compiled = async (scene: Scene, level: QualityLevel, style: "realistic" | "stylized" = "realistic") => {
+    const compiled = async (scene: Scene, level: QualityLevel) => {
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
-      const mesh = createWaterMesh(scene, `lake-${level}`, normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(style));
+      const mesh = createWaterMesh(scene, `lake-${level}`, normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
       const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
       await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
       // Draws are what ask for the spectrum (a 256² × 3 spectrum takes dozens of budgeted steps).
@@ -389,8 +377,8 @@ describe("Water material binding", () => {
     };
     const capable = host(), weak = host(false);
     try {
-      for (const [level, style] of [["low", "stylized"], ["medium", "realistic"], ["ultra", "realistic"]] as const) {
-        const { defines, outline } = await compiled(capable.scene, level, style), cascades = RENDER_QUALITY_PROFILES[level].water.fftCascades;
+      for (const level of ["low", "medium", "ultra"] as const) {
+        const { defines, outline } = await compiled(capable.scene, level), cascades = RENDER_QUALITY_PROFILES[level].water.fftCascades;
         expect(defines).toContain(`#define SLATE_WATER_FFT ${cascades}\n`);
         // The outline mask's vertex pass displaces as the material's vertex stage does.
         expect(outline).toContain(`#define SLATE_WATER_FFT ${cascades}`);

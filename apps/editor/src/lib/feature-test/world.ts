@@ -19,7 +19,6 @@ import {
   type SerializedTransform,
   type WaterDefinition,
   type WaterRiverSample,
-  type WaterStyle,
 } from "@haptic/core";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
@@ -65,12 +64,12 @@ export const FEATURE_TEST_WORLD_WATER = {
   sea: "FT_WorldSea",
   /** Ocean: Realistic spectrum, a short seeded wind sea with no swell. */
   ocean: "FT_WorldOcean",
-  /** Lake: Stylized Painted. */
+  /** Lake: the default sea. */
   lake: "FT_WorldLake",
-  /** River: Painted, a short choppy sea, drawn with `FEATURE_TEST_WORLD_RIVER_MATERIAL`. */
+  /** River: a short choppy sea, drawn with `FEATURE_TEST_WORLD_RIVER_MATERIAL`. */
   river: "FT_WorldRiver",
 } as const;
-/** The River's Custom Material: the Painted starter water Material. */
+/** The River's Custom Material: the Realistic starter water Material. */
 export const FEATURE_TEST_WORLD_RIVER_MATERIAL = "FT_WorldRiverMaterial";
 
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
@@ -90,15 +89,12 @@ const LAKE_CAPTURE_SIZE = 256;
 const LAKE_MONITOR_Z = -33;
 const LAKE_MONITOR_SIZE = 7;
 
-const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; patch: Partial<WaterDefinition> }> = {
+const WATER_LOOKS: Record<WaterKey, Partial<WaterDefinition>> = {
   // Ray-marched reflections over the whole horizon are the costliest pixels on software GL; the Ocean keeps them.
-  sea: { style: "realistic", patch: { objectReflections: false } },
-  ocean: {
-    style: "realistic",
-    patch: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0, crestFoam: 0.5 },
-  },
-  lake: { style: "stylized", patch: {} },
-  river: { style: "stylized", patch: { waveLength: 3, waveHeight: 0.08, swellHeight: 0 } },
+  sea: { objectReflections: false },
+  ocean: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0, crestFoam: 0.5 },
+  lake: {},
+  river: { waveLength: 3, waveHeight: 0.08, swellHeight: 0 },
 };
 
 /** Global Water Volume elevation: the island shore and the Ocean surface. */
@@ -174,17 +170,16 @@ const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
 
 /**
- * Water assets: Realistic long and short seas, a Painted lake and a short Painted river with the Painted starter water
- * Material as its Custom Material; and the Lake captures' Render Targets, textures and monitor Materials.
+ * Water assets: long and short seas, a lake and a short river with the Realistic starter water Material as its Custom
+ * Material; and the Lake captures' Render Targets, textures and monitor Materials.
  */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
-  // The River draws with the Painted starter water Material: every water node on a Custom Material.
-  const riverMaterial = await ctx.createAsset("Material", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_RIVER_MATERIAL, { build: { waterMaterial: "painted" } });
+  // The River draws with the Realistic starter water Material: every water node on a Custom Material.
+  const riverMaterial = await ctx.createAsset("Material", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_RIVER_MATERIAL, { build: { waterMaterial: "realistic" } });
   for (const key of Object.keys(FEATURE_TEST_WORLD_WATER) as WaterKey[]) {
-    const { style, patch } = WATER_LOOKS[key];
+    const patch = WATER_LOOKS[key];
     const custom = key === "river" ? riverMaterial.guid : null;
     await ctx.createAsset("Water", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_WATER[key], {
-      build: { waterStyle: style },
       payload: (payload) => ({ ...payload, ...patch, ...(custom ? { materialGuid: custom } : {}) }),
       ...(custom ? { dependencies: [custom] } : {}),
     });

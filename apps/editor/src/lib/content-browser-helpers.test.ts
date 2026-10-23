@@ -2362,17 +2362,17 @@ describe("runWithContentBrowserImportBusy", () => {
 
 
 describe("Water asset authoring", () => {
-  it("persists the chosen preset and its custom material dependency", () => {
-    const result = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "water", parentClass: null, waterStyle: "stylized" });
-    expect(result.payload).toEqual(createDefaultWaterDefinition("stylized"));
+  it("persists the defaults and its custom material dependency", () => {
+    const result = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "water", parentClass: null });
+    expect(result.payload).toEqual(createDefaultWaterDefinition());
     expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
     expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
   });
 
   it("starts a Surface Material as the chosen starter water Material, and other domains as usual", () => {
-    const water = buildNewAssetResult({ type: "Material", name: "Sea", guid: "sea", parentClass: null, waterMaterial: "painted" });
-    expect(water.payload).toEqual(createWaterMaterialDocument("Sea", "painted"));
-    const particle = buildNewAssetResult({ type: "Material", name: "Spark", guid: "spark", parentClass: null, materialDomain: "particle", waterMaterial: "painted" });
+    const water = buildNewAssetResult({ type: "Material", name: "Sea", guid: "sea", parentClass: null, waterMaterial: "basic" });
+    expect(water.payload).toEqual(createWaterMaterialDocument("Sea", "basic"));
+    const particle = buildNewAssetResult({ type: "Material", name: "Spark", guid: "spark", parentClass: null, materialDomain: "particle", waterMaterial: "basic" });
     expect(particle.payload).toEqual(createDefaultMaterialDocument("Spark", "particle"));
   });
 });

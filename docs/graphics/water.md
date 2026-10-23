@@ -4,7 +4,7 @@ Water bodies draw animated water surfaces with waves, foam, reflections and refr
 
 ## Create water
 
-1. In the **Content Browser**, create a [Water](../assets/water.md) asset. Choose a **Water Style** of **Realistic** or **Painted**.
+1. In the **Content Browser**, create a [Water](../assets/water.md) asset.
 2. Open it to tune colours, waves, foam and reflections in **Preview** and the **Inspector**.
 3. Drag the asset from **Place Actors** into a 3D scene to create a lake, or add a water component and pick the asset in its **Water** field.
 
@@ -77,7 +77,12 @@ A Water asset reflects scene objects only when its **Object Reflections** is on.
 
 Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work.
 
-To start from a working water Material, choose **New Asset > Rendering > Material** with a **Starter** of **Realistic Water** or **Painted Water**, or choose **Create New** in the water asset's **Custom Material** picker. The starter is an ordinary Material graph built from the water nodes, so you can change any step.
+To start from a working water Material, choose **New Asset > Rendering > Material** with a **Starter**, or choose **Create New** in the water asset's **Custom Material** picker (a Realistic Water starter). Both starters move with the asset's waves and take its colours, on every kind of water body:
+
+- **Realistic Water**: close to the built-in water, built from every water node: what lies below, reflections and foam. Translucent.
+- **Basic Water**: the least a water Material needs: Water Waves for the motion and normal, and the asset's Deep Color. Opaque. Build a look of your own, such as stylized water, from here.
+
+The starter is an ordinary Material graph, so you can change any step.
 
 | Node | Gives |
 | --- | --- |
