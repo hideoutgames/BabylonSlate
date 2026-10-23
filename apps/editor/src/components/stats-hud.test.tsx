@@ -41,7 +41,7 @@ describe("StatsHud", () => {
       readbackMs: 0.5, autoLod: { meshes: 10, reduced: 3 }, qualityLimits: ["shadows off"],
     };
     const stats = {
-      fps: 60, scriptMs: 5, physicsMs: 4, publishMs: 0.5, memoryBytes: 2048, geometryBytes: 600 * 1024 * 1024,
+      fps: 60, scriptMs: 5, physicsMs: 4, publishMs: 0.5, phaseMs: [0.5, 0.25, 2, 1, 4, 0.75, 0.5], memoryBytes: 2048, geometryBytes: 600 * 1024 * 1024,
       draws: 450, meshCount: 12, textureCount: 4, bridgeMessagesPerSec: 42, liveActors: 300, snapshotCapacity: 512, ticks: 1200,
     };
     const hostMemory = { jsHeapBytes: 3 * 1024 * 1024, appAvailableBytes: 900 * 1024 * 1024 };
@@ -67,5 +67,6 @@ describe("StatsHud", () => {
     ]);
     expect(editorRows).toEqual(playerRows);
     expect(editorRows.threads).toEqual(["Threads", "bridge 42/s", "actors 300/512", "ticks 1200"]);
+    expect(editorRows.unit).toContain("actors 2.00 ms");
   });
 });

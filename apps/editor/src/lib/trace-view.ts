@@ -30,6 +30,7 @@ export function asTracePayload(content: unknown): TracePayload | null {
         Number.isFinite(row.timeDilation) &&
         Number.isFinite(row.scriptMs) &&
         Number.isFinite(row.physicsMs) &&
+        (row.publishMs === undefined || Number.isFinite(row.publishMs)) &&
         Array.isArray(row.logs) &&
         row.logs.every(
           (log: unknown) =>

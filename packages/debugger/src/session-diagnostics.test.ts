@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionDiagnostics, type DiagnosticOperationRequest } from "./session-diagnostics";
-import { summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample, type PerformanceIdentity } from "./performance-recorder";
+import { PERFORMANCE_TICK_COLUMNS, summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample,
+  type PerformanceIdentity, type PerformanceTickSample } from "./performance-recorder";
 
 const identity: PerformanceIdentity = { sessionId: "test", mode: "preview", sourceSha: null, buildId: "pack",
   sceneId: "world", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker", quality: "Low",
   frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "disabled" };
+
+/** One runtime tick row in `PERFORMANCE_TICK_COLUMNS` order; unnamed timings are 0. */
+const tickRow = (tickId: number, elapsedMs: number, timings: Partial<PerformanceTickSample> = {}) =>
+  PERFORMANCE_TICK_COLUMNS.map((column) => column === "tickId" ? tickId : column === "elapsedMs" ? elapsedMs : timings[column] ?? 0);
+const WIDTH = PERFORMANCE_TICK_COLUMNS.length;
 
 describe("SessionDiagnostics", () => {
   afterEach(() => vi.useRealTimers());
@@ -20,7 +26,7 @@ describe("SessionDiagnostics", () => {
       runtimeOperation: async (request) => {
         requests.push(request);
         if (request.action === "stop") session.receiveTicks({ recordingId: request.recordingId, sequence: 0,
-          rows: new Float64Array([600, 9999, 2, 3, 1, 0]) });
+          rows: new Float64Array(tickRow(600, 9999, { scriptMs: 2, physicsMs: 3, publishMs: 1, actorsMs: 1.5, sceneSystemsMs: 0.5 })) });
         return { success: true };
       },
     });
@@ -32,7 +38,10 @@ describe("SessionDiagnostics", () => {
     expect(session.active).toBeNull();
     expect(session.lastProfile?.stopReason).toBe("duration");
     expect(session.lastProfile?.durationMs).toBe(10_000);
-    expect(summarizePerformanceColumn(session.lastProfile!.ticks, "scriptMs").count).toBe(1);
+    const ticks = session.lastProfile!.ticks;
+    expect(summarizePerformanceColumn(ticks, "scriptMs").median).toBe(2);
+    expect(summarizePerformanceColumn(ticks, "actorsMs").median).toBe(1.5);
+    expect(summarizePerformanceColumn(ticks, "sceneSystemsMs").median).toBe(0.5);
     expect(requests.map((request) => request.action)).toEqual(["start", "stop"]);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -64,8 +73,8 @@ describe("SessionDiagnostics", () => {
     expect(session.active).toBeNull();
     deny = false;
     await session.startProfile();
-    expect(session.receiveTicks({ recordingId: "obsolete", sequence: 0, rows: new Float64Array(6) })).toBe(false);
-    expect(session.receiveTicks({ recordingId: requests.at(-1)!.recordingId, sequence: 1, rows: new Float64Array(6) })).toBe(false);
+    expect(session.receiveTicks({ recordingId: "obsolete", sequence: 0, rows: new Float64Array(WIDTH) })).toBe(false);
+    expect(session.receiveTicks({ recordingId: requests.at(-1)!.recordingId, sequence: 1, rows: new Float64Array(WIDTH) })).toBe(false);
     await session.stopProfile();
     expect(session.lastProfile?.stopReason).toBe("error");
   });
@@ -77,8 +86,8 @@ describe("SessionDiagnostics", () => {
       runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
     });
     await session.startProfile({ byteBudget: 4096 });
-    const rows = new Float64Array(256 * 6);
-    for (let row = 0; row < 256; row++) rows.set([row, row, 1, 1, 0, 0], row * 6);
+    const rows = new Float64Array(256 * WIDTH);
+    for (let row = 0; row < 256; row++) rows.set(tickRow(row, row, { scriptMs: 1, physicsMs: 1 }), row * WIDTH);
     expect(session.receiveTicks({ recordingId: requests[0]!.recordingId, sequence: 0, rows })).toBe(true);
     const profile = await session.stopProfile();
     expect(profile?.stopReason).toBe("budget");
@@ -94,7 +103,7 @@ describe("SessionDiagnostics", () => {
     });
     await session.startProfile();
     const recordingId = requests[0]!.recordingId;
-    expect(session.receiveTicks({ recordingId, sequence: 0, rows: new Float64Array([1, 0, 1, 1, 0, 0]), droppedRecords: 1 })).toBe(true);
+    expect(session.receiveTicks({ recordingId, sequence: 0, rows: new Float64Array(tickRow(1, 0, { scriptMs: 1, physicsMs: 1 })), droppedRecords: 1 })).toBe(true);
     session.runtimeStopped({ recordingId, reason: "budget" });
     const profile = await session.stopProfile();
     expect(profile).toMatchObject({ stopReason: "budget", droppedRecords: 1 });

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultScene } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
+import { PERFORMANCE_TICK_COLUMNS, PERFORMANCE_TICK_PHASE_COLUMNS } from "@haptic/debugger";
 import { createInProcessRuntime } from "./driver";
+
+const WIDTH = PERFORMANCE_TICK_COLUMNS.length;
+const at = (column: (typeof PERFORMANCE_TICK_COLUMNS)[number]) => PERFORMANCE_TICK_COLUMNS.indexOf(column);
 
 afterEach(() => vi.useRealTimers());
 function fixture(mode: "play" | "simulate" = "play") {
@@ -27,8 +31,13 @@ describe("runtime explicit diagnostics", () => {
       expect(chunks).toHaveLength(1);
       expect(chunks[0]).toMatchObject({ sequence: 0, droppedRecords: 0, recordingId: "recording" });
       const rows = chunks[0]!.rows;
-      expect(rows.length).toBe(12); expect(rows[0]).toBe(2); expect(rows[6]).toBe(3);
+      expect(rows.length).toBe(2 * WIDTH); expect(rows[0]).toBe(2); expect(rows[WIDTH]).toBe(3);
       expect([...rows].every(value => Number.isFinite(value) && value >= 0)).toBe(true);
+      // Script is every timed phase but physics.
+      for (let row = 0; row < rows.length; row += WIDTH) {
+        const phases = PERFORMANCE_TICK_PHASE_COLUMNS.reduce((sum, column) => sum + rows[row + at(column)]!, 0);
+        expect(rows[row + at("scriptMs")]).toBeCloseTo(phases, 9);
+      }
       runtime.tick(); expect(commands.filter(command => command.type === "performanceTicks")).toHaveLength(1);
     } finally { runtime.stop(); }
   });
@@ -58,10 +67,10 @@ describe("runtime explicit diagnostics", () => {
     } finally { first.runtime.stop(); }
     const next = fixture();
     try {
-      await next.operation("start", "profile", 48); next.runtime.tick(); next.runtime.tick(); await Promise.resolve();
+      await next.operation("start", "profile", WIDTH * 8); next.runtime.tick(); next.runtime.tick(); await Promise.resolve();
       expect(next.commands).toContainEqual(expect.objectContaining({ type: "diagnosticOperationStopped", reason: "budget" }));
       const chunks = next.commands.filter(command => command.type === "performanceTicks");
-      expect(chunks.reduce((bytes, chunk) => bytes + chunk.rows.byteLength, 0)).toBe(48);
+      expect(chunks.reduce((bytes, chunk) => bytes + chunk.rows.byteLength, 0)).toBe(WIDTH * 8);
       expect(chunks[0]!.droppedRecords).toBe(1);
     } finally { next.runtime.stop(); }
   });
