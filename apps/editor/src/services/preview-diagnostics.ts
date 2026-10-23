@@ -1,4 +1,4 @@
-import { createPreviewDiagnosticClient, type PreviewDiagnosticResult } from "@haptic/exporter";
+import { createPreviewDiagnosticClient, PREVIEW_PROFILE_STREAMS, type PreviewDiagnosticResult } from "@haptic/exporter";
 import { parsePerformanceProfile, type PerformanceProfile } from "@haptic/debugger";
 import type { RenderFrameReport } from "@haptic/render";
 
@@ -31,12 +31,9 @@ export function createPreviewDiagnostics(options: {
       source.postMessage(message, options.origin, transfer ?? []);
     } }, {
     onProfile: (transfer) => {
-      const frames = transfer.metadata.frames as Record<string, unknown> | undefined;
-      const ticks = transfer.metadata.ticks as Record<string, unknown> | undefined;
-      const gpu = transfer.metadata.gpu as Record<string, unknown> | undefined;
-      const profile = parsePerformanceProfile({ ...transfer.metadata,
-        frames: { ...frames, chunks: transfer.frames }, ticks: { ...ticks, chunks: transfer.ticks },
-        gpu: { ...gpu, chunks: transfer.gpu } });
+      // Each stream's columns and count arrive in the metadata, its rows as chunks.
+      const profile = parsePerformanceProfile({ ...transfer.metadata, ...Object.fromEntries(PREVIEW_PROFILE_STREAMS.map((stream) =>
+        [stream, { ...(transfer.metadata[stream] as Record<string, unknown> | undefined), chunks: transfer[stream] }])) });
       if (!profile) { failProfile("Preview returned an invalid or incomplete performance profile."); return; }
       retained = profile;
       profileActive = false;

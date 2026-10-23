@@ -99,6 +99,7 @@ import {
   SessionDiagnostics,
   createDiagnosticOperationClient,
   createMessageRateMeter,
+  observeBrowserLongTasks,
   type PerformanceProfile,
   type TracePayload,
 } from "@haptic/debugger";
@@ -1864,6 +1865,8 @@ export function startPlaySession(options: {
     },
     observeFrames: (listener) => handle.observePerformance(listener),
     observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+    sampleMemory: () => ({ textureBytes: handle.resourceCache.accountedBytes(), geometryBytes: handle.accountedGeometryBytes() }),
+    observeLongTasks: observeBrowserLongTasks,
     runtimeOperation: (request) => diagnosticClient.request(request),
     captureFrame: async (signal) => {
       const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");

@@ -60,7 +60,18 @@ export function linkedRow(from: PerformanceStream, to: PerformanceStream, row: n
   return index < 0 ? null : index;
 }
 
-/** Loading screens as spans and scene changes as points, from the frames that showed them. */
+const BYTES_PER_MIB = 1024 * 1024;
+
+/** Each memory sample's accounted texture and geometry, in MiB. */
+export function accountedMemoryMiB(stream: PerformanceStream): Float64Array {
+  const geometry = streamColumn(stream, "geometryBytes");
+  return streamColumn(stream, "textureBytes").map((texture, row) => (texture + geometry[row]!) / BYTES_PER_MIB);
+}
+
+/**
+ * Loading screens as spans and scene changes as points, from the frames that showed them, and
+ * main-thread long tasks as spans, in time order.
+ */
 export function profileMarkers(profile: PerformanceProfile): TimelineMarker[] {
   const completed = streamColumn(profile.frames, "completedAtMs");
   const interval = streamColumn(profile.frames, "intervalMs");
@@ -82,7 +93,13 @@ export function profileMarkers(profile: PerformanceProfile): TimelineMarker[] {
       markers.push({ atMs: at, label: "Scene Changed", color: "--foreground" });
     }
   }
-  return markers;
+  const taskStarts = streamColumn(profile.longTasks, "startedAtMs");
+  const taskDurations = streamColumn(profile.longTasks, "durationMs");
+  for (let row = 0; row < taskStarts.length; row++) {
+    const duration = taskDurations[row]!;
+    markers.push({ atMs: taskStarts[row]!, endMs: taskStarts[row]! + duration, label: `Long Task ${Math.round(duration)} ms`, color: "--warning" });
+  }
+  return markers.sort((a, b) => a.atMs - b.atMs);
 }
 
 /** The rows of `stream` whose time falls in `range`, as a stream of their own. */

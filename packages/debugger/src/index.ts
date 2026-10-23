@@ -72,5 +72,6 @@ export {
   type TraceRecorderOptions,
 } from "./trace-recorder";
 export * from "./performance-recorder";
+export * from "./long-tasks";
 export * from "./session-diagnostics";
 export * from "./diagnostic-operation-client";
