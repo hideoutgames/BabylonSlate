@@ -91,7 +91,8 @@ export function noteRevealFailed(mesh: AbstractMesh): void {
   ready.delete(mesh);
   const members = groups.get(root);
   members?.delete(mesh);
-  if (members) revealIfReady(root);
+  // Inside a round its end reveals the rest.
+  if (members && roundDepth === 0) revealIfReady(root);
 }
 
 /**

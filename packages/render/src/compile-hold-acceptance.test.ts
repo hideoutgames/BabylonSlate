@@ -22,10 +22,11 @@
  * per frame, so graph preparation's polls run deterministically.
  *
  * A change to an existing Material's variant keeps drawing its previous Effect
- * while the new one compiles: no held frame, no hold signal, no pause. Causes
- * that still hold (a new shadow map's casters and graph preparation, a spawned
- * Material, any WebGPU pipeline) assert only that the view recovers; their holds
- * are in the failure message.
+ * while the new one compiles: no held frame, no hold signal, no pause. A new
+ * shadow map draws once its casters are ready, and a spawned mesh with nothing
+ * to draw is hidden until every variant it draws with is ready. What still
+ * holds (a WebGPU pipeline) asserts only that the view recovers; its holds are
+ * in the failure message.
  */
 import {
   ArcRotateCamera,
