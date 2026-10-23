@@ -52,6 +52,11 @@ type Step = {
   glErrors: string[];
   /** Pixels with any channel above 25, in the last frame drawn while the variants were held back. */
   litPixels: number;
+  /**
+   * The largest channel difference between that frame and a reference: a draw of the lights the previous Effect can
+   * still bind, or the first frame the new variants drew where they draw the same lights.
+   */
+  referenceDifference?: number;
 };
 
 /** A world view on a real WebGL2 Engine with the four lit Material kinds: native PBR and Standard, CEL, a graph. */
@@ -143,7 +148,7 @@ async function worldView() {
    * Applies `change` with its variants held back, draws steady frames, then releases them and draws until every
    * Material adopted its new variant.
    */
-  const swap = async (name: string, change: () => void): Promise<Step & { pixels: number[] }> => {
+  const swap = async (name: string, change: () => void): Promise<Step & { pixels: number[]; adoptedPixels: number[] }> => {
     const before = drawnEffects();
     const errorsBefore = glErrorTraceEntries().length;
     holding = true;
@@ -174,10 +179,14 @@ async function worldView() {
       if (adopted.length === materials.length) break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    const adoptedPixels = await read();
     const glErrors = glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`);
     let litPixels = 0;
     for (let index = 0; index < pixels.length; index += 4) if (Math.max(pixels[index]!, pixels[index + 1]!, pixels[index + 2]!) > 25) litPixels++;
-    return { name, drawn, held: heldFrames, previousDrawn: [...previousDrawn], adopted, glErrors: [...new Set([...heldErrors, ...glErrors])], litPixels, pixels };
+    return {
+      name, drawn, held: heldFrames, previousDrawn: [...previousDrawn], adopted,
+      glErrors: [...new Set([...heldErrors, ...glErrors])], litPixels, pixels, adoptedPixels,
+    };
   };
   const dispose = () => {
     coordinator.dispose();
@@ -191,11 +200,47 @@ async function worldView() {
 const authored = (light: Light, color: number[], intensity: number, castShadows = false) =>
   applyAuthoredLightProperties(light, { color, intensity, castShadows, range: 9, outerAngle: 70, innerAngle: 40 });
 
+const difference = (pixels: readonly number[], reference: readonly number[]) =>
+  Math.max(...pixels.map((value, index) => Math.abs(value - reference[index]!)));
+
+/** A step's record without its pixels. */
+const record = (step: Step & { pixels?: number[]; adoptedPixels?: number[] }, referenceDifference?: number): Step => {
+  const kept: Step & { pixels?: number[]; adoptedPixels?: number[] } = { ...step };
+  delete kept.pixels;
+  delete kept.adoptedPixels;
+  return referenceDifference === undefined ? kept : { ...kept, referenceDifference };
+};
+
+/**
+ * A light stops casting shadows while a lamp switches off. The receivers' previous Effect still samples the light's
+ * map, which the light no longer binds, so its sampler takes a placeholder, and the lamp's slot binds an empty light.
+ * The new variant (no lamp, no shadow) is one no Material compiled before, and the first frame it draws is what the
+ * previous Effect must draw meanwhile: a placeholder reads as an empty shadow map, so the light still lights.
+ */
+async function shadowLoss(name: string, caster: (scene: Scene) => { castShadows: (enabled: boolean) => void }): Promise<Step> {
+  const view = await worldView();
+  try {
+    const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), view.scene);
+    authored(sun, [1, 0.95, 0.85], 0.35);
+    const light = caster(view.scene);
+    const lamp = new PointLight("lamp", new Vector3(1.4, 1.2, -1.5), view.scene);
+    authored(lamp, [0.3, 0.4, 1], 0.6);
+    await view.coordinator.prepare();
+    await view.settle();
+    const step = await view.swap(name, () => {
+      light.castShadows(false);
+      setAuthoredLightEnabled(lamp, false);
+    });
+    return record(step, difference(step.pixels, step.adoptedPixels));
+  } finally {
+    view.dispose();
+  }
+}
+
 export async function runVariantSwapProof() {
   const untrace = installGlErrorTrace();
   try {
     const steps: Step[] = [];
-    let referenceDifference = Number.POSITIVE_INFINITY;
     {
       // A light changes kind in a shader slot: the previous Effect's spot block must not receive a point's smaller buffer.
       const view = await worldView();
@@ -220,39 +265,28 @@ export async function runVariantSwapProof() {
           setAuthoredLightEnabled(spot, false, false);
           setAuthoredLightEnabled(point, true);
         });
-        referenceDifference = Math.max(...step.pixels.map((value, index) => Math.abs(value - reference[index]!)));
-        steps.push({ ...step, pixels: undefined } as unknown as Step);
+        steps.push(record(step, difference(step.pixels, reference)));
         // Every Material asks for a variant without the sun, which none compiled before.
-        const removed = await view.swap("the sun is removed", () => sun.dispose());
-        steps.push({ ...removed, pixels: undefined } as unknown as Step);
+        steps.push(record(await view.swap("the sun is removed", () => sun.dispose())));
       } finally {
         view.dispose();
       }
     }
-    {
-      // A spot stops casting: its map is released while receivers still draw the shadowed variant.
-      const view = await worldView();
-      try {
-        const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), view.scene);
-        authored(sun, [1, 0.95, 0.85], 0.5);
-        const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
-        authored(spot, [0.9, 0.85, 0.7], 1.6, true);
-        const lamp = new PointLight("lamp", new Vector3(1.4, 1.2, -1.5), view.scene);
-        authored(lamp, [0.3, 0.4, 1], 0.6);
-        setAuthoredLightEnabled(lamp, false);
-        await view.coordinator.prepare();
-        await view.settle();
-        // The lamp makes every unshadowed variant one no Material compiled before.
-        const step = await view.swap("a spot stops casting shadows", () => {
-          authored(spot, [0.9, 0.85, 0.7], 1.6, false);
-          setAuthoredLightEnabled(lamp, true);
-        });
-        steps.push({ ...step, pixels: undefined } as unknown as Step);
-      } finally {
-        view.dispose();
-      }
-    }
-    return { steps, referenceDifference };
+    // Its map is a 2D depth texture, sampled by comparison (PCF).
+    steps.push(await shadowLoss("a spot stops casting shadows", (scene) => {
+      const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
+      const castShadows = (enabled: boolean) => authored(spot, [0.9, 0.85, 0.7], 1.6, enabled);
+      castShadows(true);
+      return { castShadows };
+    }));
+    // Its map is a cube of distances, sampled with Poisson taps.
+    steps.push(await shadowLoss("a point light stops casting shadows", (scene) => {
+      const point = new PointLight("point", new Vector3(-0.4, 1.8, -0.9), scene);
+      const castShadows = (enabled: boolean) => authored(point, [1, 0.8, 0.5], 1.4, enabled);
+      castShadows(true);
+      return { castShadows };
+    }));
+    return { steps };
   } finally {
     untrace();
   }
