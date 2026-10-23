@@ -97,9 +97,12 @@ export function shadowSamplerPlaceholders(scene: Scene): ShadowSamplerPlaceholde
     plainCascades: plain(1, "plain-array-sampler-placeholder"),
   };
   fill(engine, targets);
+  // A restored WebGL context rebuilds the targets empty (zero) before it notifies.
+  const restored = engine.onContextRestoredObservable.add(() => fill(engine, targets));
   placeholders.set(scene, owned);
   const disposed = owned;
   scene.onDisposeObservable.addOnce(() => {
+    engine.onContextRestoredObservable.remove(restored);
     for (const texture of Object.values(disposed)) texture.dispose();
     for (const target of targets) target.dispose();
     placeholders.delete(scene);
