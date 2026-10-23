@@ -673,9 +673,9 @@ describe("compile holds after the first frame", () => {
 
   /**
    * Each authored light (lit, and whether its shadow map is admitted, with its darkness) and the subject's defines at
-   * the first presented frame and twelve frames later, for a load with or without its rehearsal. The frames run on a
-   * 16 ms clock once loading has started presenting, so a residency the load's own admissions began has not run out by
-   * the first presentation.
+   * the first presented frame and 17 frames later, for a load with or without its rehearsal. The frames run on a 16 ms
+   * clock once loading has drawn six frames, and in both runs afterwards: a residency the load's own admissions began
+   * has not run out by the first presentation, and runs out (250 ms) within the later frames.
    */
   async function presentedAdmission(rehearse: boolean, actors: Actor[], configure?: (world: PlayWorld) => void) {
     // A fresh world per run: the previous one's Engine, clock and render spy go first.
@@ -703,7 +703,8 @@ describe("compile holds after the first frame", () => {
     }
     await presentation;
     const first = state();
-    for (let index = 0; index < 12; index++) await world.frame();
+    frameMs = 16;
+    for (let index = 0; index < 17; index++) await world.frame();
     return { first, later: state(), rehearsal: world.handle.loadRehearsalStats() };
   }
 
