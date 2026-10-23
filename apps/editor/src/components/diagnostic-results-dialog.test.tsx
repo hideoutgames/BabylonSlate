@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PERFORMANCE_TICK_COLUMNS_V1, PerformanceRecorder, type PerformanceProfile } from "@haptic/debugger";
 import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
@@ -33,6 +33,17 @@ it("shows separate completed-frame and tick populations with honest unavailable 
   expect(screen.getByText("Worker Script Phase")).toBeTruthy();
   expect(screen.getByText(/GPU timing: unavailable/)).toBeTruthy();
   expect(screen.getAllByText("20.000").length).toBeGreaterThan(0);
+});
+it("compares two recordings side by side, marking each percentile that got slower", () => {
+  // The baseline's frames are 20 ms apart; this recording has one 40 ms frame, so its median interval is 30 ms.
+  render(<PerformanceSummary profile={recording(3, [1])} baseline={{ label: "Recording 1", profile: recording() }} />);
+  expect(screen.getByText(/compared with Recording 1/)).toBeTruthy();
+  const row = screen.getAllByTestId("profile-compare-row").find((entry) => entry.textContent?.startsWith("Completed Game-Frame Interval"))!;
+  expect(row.textContent).toContain("20.000 → 30.000");
+  const change = within(row).getByText(/^\+10\.000 · \+50\.0%$/);
+  expect(change.className).toContain("text-destructive");
+  // No distribution bars while comparing.
+  expect(screen.queryByRole("columnheader", { name: "Distribution" })).toBeNull();
 });
 /** The same ticks as a version 1 file holds them: script and physics, no phases. */
 function versionOne(profile: PerformanceProfile): PerformanceProfile {

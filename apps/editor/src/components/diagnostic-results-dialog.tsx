@@ -20,6 +20,7 @@ import {
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 import { Separator } from "@haptic/ui/components/separator";
 import { cn } from "@haptic/ui/lib/utils";
 import { CameraIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
@@ -77,11 +78,13 @@ const COLUMN_HELP: Record<string, string> = {
   Distribution: "Bar: median, light bar: p95, whisker: maximum, red line: threshold",
 };
 
-/** Leaf content also fits an ordinary DockView PanelFrame; no document asset or independent log. */
-export function PerformanceSummary({ profile }: { profile: PerformanceProfile }) {
+type SummaryGroup = { title: string; unit: string; rows: SummaryRow[] };
+
+/** The Summary's rows, grouped by where they were measured. */
+function summaryGroups(profile: PerformanceProfile): SummaryGroup[] {
   const budget = frameBudget(profile);
   const gpu = profile.identity.gpuTiming === "unpaired";
-  const groups = useMemo(() => [
+  return [
     { title: "Main Thread", unit: "per completed frame", rows: [
       ["Completed Game-Frame Interval", summarizePerformanceColumn(profile.frames, "intervalMs", budget), budget],
       ["Main Preparation Wall Time", summarizePerformanceColumn(profile.frames, "preparationMs")],
@@ -102,11 +105,41 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     ...(gpu ? [{ title: "GPU", unit: "engine aggregate, not aligned to frames", rows: [
       ["GPU Time (Engine Aggregate)", summarizePerformanceColumn(profile.gpu, "durationMs")],
     ] as SummaryRow[] }] : []),
-  ], [profile, budget, gpu]);
+  ];
+}
+
+type Summary = ReturnType<typeof summarizePerformanceColumn>;
+const COMPARED = ["median", "p95", "p99", "maximum"] as const;
+
+/** A value then and now, and its change; slower is marked, faster is not. */
+function Change({ before, after }: { before: number | null; after: number | null }) {
+  const delta = before != null && after != null ? after - before : null;
+  const relative = delta != null && before ? ` · ${delta >= 0 ? "+" : ""}${(delta / before * 100).toFixed(1)}%` : "";
+  return <>
+    <span className="whitespace-nowrap">{format(before)} → {format(after)}</span>
+    {delta == null ? null : <span className={cn("block text-[10px]", delta > 0 ? "text-destructive" : "text-muted-foreground")}>
+      {delta >= 0 ? "+" : ""}{format(delta)}{relative}
+    </span>}
+  </>;
+}
+
+/** Leaf content also fits an ordinary DockView PanelFrame; no document asset or independent log. */
+export function PerformanceSummary({ profile, baseline }: {
+  profile: PerformanceProfile;
+  /** A recording to compare this one with: each percentile shows its value then and now. */
+  baseline?: { label: string; profile: PerformanceProfile } | null;
+}) {
+  const budget = frameBudget(profile);
+  const gpu = profile.identity.gpuTiming === "unpaired";
+  const groups = useMemo(() => summaryGroups(profile), [profile]);
+  const before = useMemo(() => {
+    if (!baseline) return null;
+    return new Map(summaryGroups(baseline.profile).flatMap((group) => group.rows.map(([label, values]) => [label, values] as const)));
+  }, [baseline]);
   const frame = groups[0]!.rows[0]![1];
   const worker = groups[1]!.rows[0]![1];
   return <div className="flex flex-col">
-    <PropertySectionTitle aside={<span className="font-normal text-muted-foreground"><SelectableText>{profile.frames.count} completed frame samples · {profile.ticks.count} runtime tick samples · {(profile.durationMs / 1000).toFixed(2)} s · stopped: {profile.stopReason}</SelectableText></span>}>
+    <PropertySectionTitle aside={<span className="font-normal text-muted-foreground"><SelectableText>{profile.frames.count} completed frame samples · {profile.ticks.count} runtime tick samples · {(profile.durationMs / 1000).toFixed(2)} s · stopped: {profile.stopReason}{baseline ? ` · compared with ${baseline.label}` : ""}</SelectableText></span>}>
       Result
     </PropertySectionTitle>
     <dl className="grid text-xs">
@@ -132,13 +165,14 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     </dl>
     <div className="overflow-x-auto"><table className={TABLE}>
       <caption className="caption-bottom px-2 py-1.5 text-left text-xs text-muted-foreground">Durations in milliseconds. Frame and tick populations are independent.</caption>
-      <thead><tr>{["Population", "Count", "Median", "p95", "p99", "Maximum", "Over Budget", "Distribution"].map((label, index) => <th key={label} title={COLUMN_HELP[label]} className={cn(TH, index && index < 7 && "text-right", label === "Distribution" && "w-[22%]")}>{label}</th>)}</tr></thead>
+      <thead><tr>{["Population", "Count", "Median", "p95", "p99", "Maximum", "Over Budget", ...(before ? [] : ["Distribution"])].map((label, index) => <th key={label} title={COLUMN_HELP[label]} className={cn(TH, index && index < 7 && "text-right", label === "Distribution" && "w-[22%]")}>{label}</th>)}</tr></thead>
       {groups.map(group => {
         const scale = Math.max(...group.rows.map(([, values, rowBudget]) => Math.max(values.maximum ?? 0, rowBudget ?? 0))) * 1.05 || 1;
         return <tbody key={group.title}>
           <tr className="h-7 border-b bg-panel-header/60"><th colSpan={7} className="px-2 text-left font-medium">{group.title} <span className="font-normal text-muted-foreground">· {group.unit}</span></th>
-            <td className="px-2 text-right font-mono text-[10px] text-muted-foreground">0 – {(scale / 1.05).toFixed(1)} ms</td></tr>
-          {group.rows.map(([label, values, rowBudget], index) => <tr key={label} className={TR}>
+            {before ? null : <td className="px-2 text-right font-mono text-[10px] text-muted-foreground">0 – {(scale / 1.05).toFixed(1)} ms</td>}</tr>
+          {group.rows.map(([label, values, rowBudget], index) => before ? <CompareRow key={label} label={label} nested={index > 0} before={before.get(label) ?? null} after={values} />
+            : <tr key={label} className={TR}>
             <th className={cn("px-2 font-normal whitespace-nowrap", index > 0 && "pl-6 text-muted-foreground")}>{label}</th>
             <td className={cn(TD, "text-muted-foreground")}>{values.count}</td>{[values.median, values.p95, values.p99, values.maximum].map((value, column) => <td key={column} className={cn(TD, rowBudget !== undefined && value != null && value > rowBudget && "text-destructive")}>{format(value)}</td>)}
             <td className={cn(TD, values.overBudgetCount ? "text-destructive" : "text-muted-foreground", values.overBudgetCount == null && "font-sans text-xs")}>{values.overBudgetCount == null ? "No threshold" : <>{values.overBudgetCount}<span className="text-muted-foreground"> · {percent(values.overBudgetCount, values.count)}</span></>}</td>
@@ -154,6 +188,17 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     </div>
     <Facts title="Session" data={profile.identity} columns={3} />
   </div>;
+}
+
+/** One Summary row of two recordings: each column shows the baseline's value, this one's, and the change. */
+function CompareRow({ label, nested, before, after }: { label: string; nested: boolean; before: Summary | null; after: Summary }) {
+  return <tr className="even:bg-list-stripe hover:bg-accent/50" data-testid="profile-compare-row">
+    <th className={cn("px-2 py-0.5 font-normal whitespace-nowrap", nested && "pl-6 text-muted-foreground")}>{label}</th>
+    <td className={cn(TD, "py-0.5 text-muted-foreground")}>{before?.count ?? "–"} → {after.count}</td>
+    {COMPARED.map((key) => <td key={key} className={cn(TD, "py-0.5")}><Change before={before?.[key] ?? null} after={after[key]} /></td>)}
+    <td className={cn(TD, "py-0.5")}>{after.overBudgetCount == null ? <span className="font-sans text-xs text-muted-foreground">No threshold</span>
+      : <span className={cn((after.overBudgetCount ?? 0) > (before?.overBudgetCount ?? 0) && "text-destructive")}>{before?.overBudgetCount ?? "–"} → {after.overBudgetCount}</span>}</td>
+  </tr>;
 }
 
 const STAGE_KIND_CLASS: Record<string, string> = {
@@ -270,6 +315,15 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
   const shown: DiagnosticResult | null = state.view === "frame"
     ? state.frame ? { kind: "frame", report: state.frame } : null
     : state.profile ? { kind: "profile", profile: state.profile } : null;
+  // The history the view shows: recordings for Summary and Timeline, captures for Frame Report.
+  const history = state.view === "frame" ? state.frames : state.profiles;
+  const shownId = history.find((entry) => entry.value === (state.view === "frame" ? state.frame : state.profile))?.id;
+  const baselineEntry = state.profiles.find((entry) => entry.id === state.baselineId && entry.value !== state.profile) ?? null;
+  const baseline = baselineEntry ? { label: baselineEntry.label, profile: baselineEntry.value } : null;
+  // Triggers show the short name; the lists show the full label.
+  const compareItems = [{ value: "none", name: "Compare With Nothing", label: "Compare With Nothing" }, ...state.profiles
+    .filter((entry) => entry.value !== state.profile)
+    .map((entry) => ({ value: String(entry.id), name: `Compare With ${entry.name}`, label: `Compare With ${entry.label}` }))];
   const exported = async (copy: boolean) => {
     if (!shown) return;
     try {
@@ -316,6 +370,21 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
             disabled={!shown} onClick={() => void exported(false)}><DownloadIcon /></Button>
         </div>
       </ToolbarStrip>
+      {/* The history: which kept result shows, and in the Summary which recording it is compared with. */}
+      {history.length > 1 || (state.view === "summary" && compareItems.length > 1) ? <ToolbarStrip className="gap-1 py-0.5">
+        {history.length > 1 ? <Select value={shownId === undefined ? null : String(shownId)}
+          items={history.map((entry) => ({ value: String(entry.id), label: entry.name }))}
+          onValueChange={(value) => { if (value) store.show(Number(value)); }}>
+          <SelectTrigger size="sm" aria-label={state.view === "frame" ? "Frame Capture" : "Recording"} className="w-56"><SelectValue /></SelectTrigger>
+          <SelectContent>{history.map((entry) => <SelectItem key={entry.id} value={String(entry.id)}>{entry.label}</SelectItem>)}</SelectContent>
+        </Select> : null}
+        {state.view === "summary" && compareItems.length > 1 ? <Select value={baseline ? String(state.baselineId) : "none"}
+          items={compareItems.map((item) => ({ value: item.value, label: item.name }))}
+          onValueChange={(value) => store.compareWith(value && value !== "none" ? Number(value) : null)}>
+          <SelectTrigger size="sm" aria-label="Compare With" className="w-72"><SelectValue /></SelectTrigger>
+          <SelectContent>{compareItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+        </Select> : null}
+      </ToolbarStrip> : null}
       <input ref={input} type="file" accept=".json,application/json" className="hidden" aria-label="Open saved result" onChange={event => {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = "";
@@ -324,12 +393,12 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
         void file.text().then(text => {
           const result = parseResult(JSON.parse(text));
           if (!result) throw new Error("This file is not a Performance recording or frame report this version can open.");
-          store.importResult(result);
+          store.importResult(result, file.name);
           setMessage(null);
         }).catch(error => setMessage(error instanceof Error ? error.message : String(error)));
       }} />
       <div className="min-h-0 flex-1"><PanelFrame data-testid="session-diagnostic-results">
-        {shown?.kind === "profile" ? state.view === "summary" ? <PerformanceSummary profile={shown.profile} /> : <PerformanceTimeline profile={shown.profile} />
+        {shown?.kind === "profile" ? state.view === "summary" ? <PerformanceSummary profile={shown.profile} baseline={baseline} /> : <PerformanceTimeline profile={shown.profile} />
           : shown?.kind === "frame" ? <FrameReportView report={shown.report} />
             : <Empty>
               <EmptyHeader>
