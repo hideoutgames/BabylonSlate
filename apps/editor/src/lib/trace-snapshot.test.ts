@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  compareTraceFrames,
   compareTraceSnapshots,
   exactTraceValue,
+  findTraceNode,
   flattenTraceSnapshot,
   parseTraceSnapshot,
   traceSnapshotRoots,
@@ -232,5 +234,59 @@ describe("recorded snapshot values", () => {
     ["a number and an object", 1, { a: 1 }, true],
   ])("compares leaves as their JSON text does: %s", (_name, before, after, changed) => {
     expect(compareTraceSnapshots({ value: before }, { value: after })).toHaveLength(changed ? 1 : 0);
+  });
+
+  describe("the state a frame records beside its snapshot", () => {
+    const world = {
+      actors: [{
+        guid: "door-guid-1234", classId: "Door", variables: { name: "Front Door" },
+        components: [{ guid: "anim-component", classId: "AnimationGraphComponent" }],
+      }],
+    };
+    const recorded: TraceFrame = {
+      ...frame,
+      audio: { voices: [{ voiceId: "script:1", assetGuid: "creak", volume: 1, elapsedSeconds: 0.5, emitterActorGuid: "door-guid-1234" }], nextScriptVoice: 2 },
+      sprites: [{ actorGuid: "door-guid-1234", stateId: "open", assetGuid: "door-sheet", clipName: "Opening", normalisedTime: 0.25 }],
+      animGraphs: [{ componentGuid: "anim-component", graphGuid: "door-graph", state: { stateId: "open" } }],
+    };
+
+    it("lists audio voices, sprite clips and Animation Graphs, named for their actors", () => {
+      const roots = traceSnapshotRoots(recorded, { status: "ready", value: world });
+      const rows = flattenTraceSnapshot(roots, new Set(["/audio", "/audio/voices", "/sprites", "/animGraphs"]), "");
+      const labels = rows.map((row) => row.label);
+      expect(labels).toEqual(expect.arrayContaining(["Audio", "Voices", "Sprite Clips", "Animation Graphs"]));
+      expect(labels).toContain("script:1 · Front Door · Door · door-gui");
+      expect(labels).toContain("Front Door · Door · door-gui · Opening");
+      expect(labels).toContain("Front Door · Door · door-gui · anim-com");
+      // A recording made before they were kept shows none of them.
+      expect(traceSnapshotRoots(frame, { status: "ready", value: world }).map((root) => root.label)).not.toContain("Audio");
+    });
+
+    it("reports their changes by voice, actor and component, beside the world's", () => {
+      const next: TraceFrame = {
+        ...recorded,
+        audio: { voices: [
+          { voiceId: "script:2", assetGuid: "slam", volume: 1, elapsedSeconds: 0 },
+          { ...recorded.audio!.voices[0]!, elapsedSeconds: 0.52 },
+        ], nextScriptVoice: 3 },
+        sprites: [{ ...recorded.sprites![0]!, normalisedTime: 0.5 }],
+      };
+      const changes = compareTraceFrames({ frame: recorded, snapshot: world }, { frame: next, snapshot: world });
+      expect(changes.map(({ path, kind }) => ({ path, kind }))).toEqual([
+        { path: "/audio/voices/voice:script:1/elapsedSeconds", kind: "Changed" },
+        { path: "/audio/voices/voice:script:2", kind: "Added" },
+        { path: "/audio/nextScriptVoice", kind: "Changed" },
+        { path: "/sprites/actor:door-guid-1234/normalisedTime", kind: "Changed" },
+      ]);
+    });
+  });
+
+  it("finds a selected value deep in an actor, including its identity fields", () => {
+    const roots = traceSnapshotRoots(frame, { status: "ready", value: {
+      actors: [{ guid: "a", classId: "Door", variables: { hinge: { angle: 30 } } }, { guid: "b", classId: "Door" }],
+    } });
+    expect(findTraceNode(roots, "/snapshot/actors/guid:a/variables/hinge/angle")?.value).toBe(30);
+    expect(findTraceNode(roots, "/snapshot/actors/guid:b/classId")?.value).toBe("Door");
+    expect(findTraceNode(roots, "/snapshot/actors/guid:c")).toBeUndefined();
   });
 });
