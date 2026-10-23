@@ -4,7 +4,7 @@ import {
   type AbstractMesh, type Camera, type Material, type PickingInfo, type Scene, type SubMesh, type TrianglePickingPredicate,
 } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
+  createDefaultWaterDefinition, createWaterBlendSample, waterUsesSpectrum, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
   normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
   waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
   type Transform, type WaterBlendBody, type WaterBodyProperties, type WaterDefinition,
@@ -493,6 +493,13 @@ function axis(min: number, max: number, spacing: number, camera: number, budget:
  * finite volumes' cells per side, and river rows along and columns across the stream.
  */
 export const WATER_GLOBAL_CELL_BUDGET = 192;
+/**
+ * A spectrum Ocean's cells per side (`oceanBudget`): its FFT waves need dense geometry near the camera, so like Global
+ * Water its grid is graded around the camera (dense middle half, cubic outer cells reaching its fixed edges).
+ */
+export const WATER_OCEAN_CELL_BUDGET = 256;
+/** A spectrum Ocean rebuilds its graded grid when the camera moves this share of the dense region's width. */
+const OCEAN_RECENTRE_SHARE = 0.125;
 export const WATER_FINITE_CELL_BUDGET = 160;
 export const WATER_RIVER_ROW_BUDGET = 512;
 export const WATER_RIVER_COLUMN_BUDGET = 64;
@@ -501,6 +508,12 @@ export const WATER_RIVER_COLUMN_BUDGET = 64;
 function globalBudget(resolution: number): number {
   const cells = Math.round(resolution);
   return Math.min(WATER_GLOBAL_CELL_BUDGET, Math.max(32, cells + cells % 2));
+}
+
+/** Spectrum Ocean cells per side for an effective resolution: twice it, even, between 64 and the Ocean cap. */
+function oceanBudget(resolution: number): number {
+  const cells = Math.round(resolution * 2);
+  return Math.min(WATER_OCEAN_CELL_BUDGET, Math.max(64, cells + cells % 2));
 }
 
 /** Cells along one axis of a finite volume: world-sized and fixed, never camera-dependent. */
@@ -590,11 +603,24 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
   const m = world.m;
   const sx = Math.hypot(m[0]!, m[1]!, m[2]!), sz = Math.hypot(m[8]!, m[9]!, m[10]!);
   // Water Mesh Density scales Surface Resolution; the cell caps bound the result.
-  const resolution = body.resolution * s.density;
-  const step = Math.max(0.025, water.waveLength / 12 * 48 / resolution);
-  const budget = body.kind === "global" ? globalBudget(resolution) : 0;
+  const resolution = body.resolution * s.density, spectrum = waterUsesSpectrum(water);
+  // Spectrum water's vertex stage reads each cascade at the mip its spacing resolves, so its spacing follows the wind
+  // sea's wavelength only loosely (a twentieth of it, within a few centimetres and metres).
+  const step = spectrum
+    ? Math.min(3, Math.max(0.2, water.waveLength / 20)) * 96 / resolution
+    : Math.max(0.025, water.waveLength / 12 * 48 / resolution);
+  const graded = spectrum && body.kind === "ocean";
+  const budget = body.kind === "global" ? globalBudget(resolution) : graded ? oceanBudget(resolution) : 0;
   let cx = 0, cz = 0, extent = 0;
-  if (body.kind === "global") {
+  if (graded) {
+    // The dense cells follow the camera (or an orbit camera's target), snapped to a fraction of their width so moving
+    // within it never rebuilds the grid.
+    const camera = mesh.getScene().activeCamera;
+    const point = camera ? cameraWorld(camera, camera instanceof ArcRotateCamera ? camera.target : camera.position, eye) : eye.setAll(0);
+    const local = Vector3.TransformCoordinatesToRef(point, inverse, eye);
+    const snap = denseCells(budget) * step * OCEAN_RECENTRE_SHARE;
+    cx = Math.round(local.x * sx / snap) * snap / sx; cz = Math.round(local.z * sz / snap) * snap / sz;
+  } else if (body.kind === "global") {
     const camera = mesh.getScene().activeCamera;
     const local = Vector3.TransformCoordinatesToRef(camera ? cameraWorld(camera, camera.position, eye) : eye.setAll(0), inverse, eye);
     // An orbiting camera looks at its target: shift the dense cells toward it (up to most of their half width), so
@@ -636,6 +662,10 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
     const columns = Math.min(WATER_RIVER_COLUMN_BUDGET, Math.max(4, Math.ceil(widest / step / 2) * 2));
     xs = Array.from({ length: columns + 1 }, (_, i) => i / columns * 2 - 1);
     zs = strip.map((_, i) => i);
+  } else if (graded) {
+    // World-sized dense cells around the camera, graded out to the Ocean's fixed edges.
+    xs = axis(-body.width / 2 - ex, body.width / 2 + ex, step / sx, cx, budget);
+    zs = axis(-body.length / 2 - ez, body.length / 2 + ez, step / sz, cz, budget);
   } else {
     xs = uniformAxis(-body.width / 2 - ex, body.width / 2 + ex, (body.width + 2 * ex) * sx, step);
     zs = uniformAxis(-body.length / 2 - ez, body.length / 2 + ez, (body.length + 2 * ez) * sz, step);

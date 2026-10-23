@@ -194,7 +194,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
       refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
+      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 2,
     },
     postprocessing: { resolutionScale: 0.5, ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
@@ -206,7 +206,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
+      planarScale: 0.5, fft: false, fftSize: 128, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 0.75, ambientOcclusion: true, reflections: false, volumetricLighting: false },
   },
@@ -218,7 +218,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
       refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
-      planarScale: 0.5, fft: true, fftSize: 128, fftCascades: 2,
+      planarScale: 0.5, fft: true, fftSize: 256, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },

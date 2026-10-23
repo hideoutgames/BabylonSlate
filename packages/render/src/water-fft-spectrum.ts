@@ -14,7 +14,10 @@
  * (√peakK · Wave Speed). Editing those fields therefore reuses the stored spectrum; only Wave Direction, Wave Spread,
  * Peak Sharpness, Wave Seed and the Water quality's FFT Size / FFT Cascades draw a new one (`spectrumKey`).
  */
-import { createSeededRng, waterOceanSpectrumDensity, type Rng, type WaterWaveSet } from "@haptic/core";
+import {
+  createSeededRng, WATER_SPECTRUM_PERIOD, WATER_SPECTRUM_TURNS, waterOceanSpectrumDensity, WaterSpectrumModes,
+  type Rng, type WaterSpectrum, type WaterWaveSet,
+} from "@haptic/core";
 
 const TAU = 2 * Math.PI;
 const GRAVITY = 9.81;
@@ -52,7 +55,7 @@ export function waterFftCascadeRatio(cascades: number): number {
  * near 90° (a square patch is the same turned by a quarter), so the cascades' periodic patches tile along different
  * axes and never line up into one rectangular repeat across the sea.
  */
-export const WATER_FFT_CASCADE_TURNS = [0, 0.5411, 1.0297] as const;
+export const WATER_FFT_CASCADE_TURNS = WATER_SPECTRUM_TURNS;
 /** Narrowest heading spread (Wave Spread units) of the detail band: short waves are never all parallel. */
 export const WATER_FFT_MIN_SPREAD = 0.3;
 /**
@@ -91,6 +94,10 @@ export interface WaterFftLayout {
   readonly amplitude: number;
   /** Band clock per second of water time: √peakK · Wave Speed (`waterFftCycle`). */
   readonly timeScale: number;
+  /** Band clock units after which the band repeats (`WATER_FFT_PERIOD`, or `WATER_SPECTRUM_PERIOD` for spectrum water). */
+  readonly period: number;
+  /** A spectrum layout (`waterSpectrumLayout`): the whole sea in absolute metres, not a detail band. */
+  readonly spectrum: boolean;
   /** Identity of the stored unit spectrum: size, cascades, sharpness, heading, spread, seed and cutoff. */
   readonly spectrumKey: string;
   /** Identity of the whole simulation: the unit spectrum plus patch scale, amplitude and time scale. */
@@ -128,7 +135,30 @@ export function waterFftLayout(set: WaterWaveSet, size: number, cascades: number
   const spectrumKey = [size, cascades, sharpness, heading, spread, seed, cutoff].join(":");
   return {
     size, cascades, patchSizes, bandEdges, shearScales, heading, spread, sharpness, seed, cutoff, amplitude, timeScale, spectrumKey,
-    key: [spectrumKey, set.cutoffK, amplitude, timeScale].join(":"),
+    key: [spectrumKey, set.cutoffK, amplitude, timeScale].join(":"), period: WATER_FFT_PERIOD, spectrum: false,
+  };
+}
+
+/**
+ * Layout of spectrum water (`waterSpectrum`): the spectrum's own cascades (the first `cascades` of them) on `size`-grids,
+ * in absolute metres (amplitude 1) on the spectrum's clock (`WATER_SPECTRUM_PERIOD`, at Wave Speed). Each cascade's
+ * band is the spectrum's, capped by its grid's Nyquist radius. Allocates; call when the waves or the Water quality change.
+ */
+export function waterSpectrumLayout(spectrum: WaterSpectrum, size: number, cascades: number): WaterFftLayout {
+  if (!Number.isInteger(size) || size < 8 || (size & (size - 1)) !== 0) throw new Error("FFT size must be a power of two of at least 8.");
+  const count = Math.max(1, Math.min(cascades, spectrum.patchSizes.length));
+  const patchSizes = spectrum.patchSizes.slice(0, count), bandEdges: number[] = [];
+  for (let c = 0; c < count; c++) bandEdges.push(spectrum.bandEdges[c]!);
+  bandEdges.push(Math.min(spectrum.bandEdges[count]!, Math.PI * size / patchSizes[count - 1]!));
+  const shearScales = patchSizes.map((patch, c) => {
+    const low = Math.max(bandEdges[c]!, TAU / patch), high = Math.min(bandEdges[c + 1]!, Math.PI * size / patch);
+    return Math.sqrt(low * Math.max(high, low));
+  });
+  const spectrumKey = ["spectrum", size, count, spectrum.key].join(":");
+  return {
+    size, cascades: count, patchSizes, bandEdges, shearScales, heading: 0, spread: 0, sharpness: 0, seed: spectrum.seed, cutoff: 0,
+    amplitude: 1, timeScale: spectrum.waveSpeed, spectrumKey, key: [spectrumKey, spectrum.waveSpeed].join(":"),
+    period: WATER_SPECTRUM_PERIOD, spectrum: true,
   };
 }
 
@@ -272,6 +302,51 @@ class SpectrumBuild implements WaterFftSpectrumBuild {
   }
 }
 
+/** Spectrum water's initial amplitudes drawn in budgeted steps: whole rows of one cascade at a time. */
+class SpectrumModeBuild implements WaterFftSpectrumBuild {
+  readonly key: string;
+  readonly data: Float32Array;
+  done = false;
+  private readonly size: number;
+  private readonly cascades: number;
+  private readonly spectrum: WaterSpectrum;
+  private modes: WaterSpectrumModes | null = null;
+  private readonly texel = new Float64Array(3);
+  private cascade = 0;
+  private row = 0;
+
+  constructor(spectrum: WaterSpectrum, layout: WaterFftLayout) {
+    this.key = layout.spectrumKey; this.size = layout.size; this.cascades = layout.cascades; this.spectrum = spectrum;
+    this.data = new Float32Array(layout.size * layout.cascades * layout.size * 4);
+  }
+
+  step(budget: number): boolean {
+    const { size, data, texel } = this, width = size * this.cascades;
+    let remaining = budget;
+    while (!this.done && remaining > 0) {
+      const modes = this.modes ??= new WaterSpectrumModes(this.spectrum, this.cascade), y = this.row, ny = signedIndex(y, size);
+      for (let x = 0; x < size; x++) {
+        modes.mode(signedIndex(x, size), ny, texel, 0);
+        const o = (y * width + this.cascade * size + x) * 4;
+        data[o] = texel[0]!; data[o + 1] = texel[1]!; data[o + 2] = texel[2]!;
+      }
+      remaining -= size;
+      if (++this.row < size) continue;
+      this.row = 0; this.modes = null;
+      if (++this.cascade === this.cascades) this.done = true;
+    }
+    return this.done;
+  }
+}
+
+/**
+ * Starts drawing spectrum water's initial amplitudes (`WaterSpectrumModes`) for `layout` in budgeted steps: the atlas
+ * `waterFftInitialSpectrum` describes, in absolute metres. Allocates its buffer once.
+ */
+export function waterSpectrumBuild(spectrum: WaterSpectrum, layout: WaterFftLayout): WaterFftSpectrumBuild {
+  return new SpectrumModeBuild(spectrum, layout);
+}
+
 /**
  * Starts drawing the seeded unit spectrum of `layout` in budgeted steps (`WaterFftSpectrumBuild.step`); the result is
  * bit-identical to `waterFftInitialSpectrum` however it is stepped. Allocates its buffers once.
@@ -301,8 +376,8 @@ export function waterFftInitialSpectrum(set: WaterWaveSet, layout: WaterFftLayou
  * Position of water time `time` within the band's repeat period, in [0, 1): the GPU phase of a mode is
  * 2π · fract(m · cycle). Pass the layout's `timeScale` (Wave Length and Wave Speed set how fast the band runs).
  */
-export function waterFftCycle(time: number, timeScale = 1): number {
-  const cycle = (time * timeScale / WATER_FFT_PERIOD) % 1;
+export function waterFftCycle(time: number, timeScale = 1, period = WATER_FFT_PERIOD): number {
+  const cycle = (time * timeScale / period) % 1;
   return cycle < 0 ? cycle + 1 : cycle;
 }
 

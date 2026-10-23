@@ -2,13 +2,17 @@ import type { Transform, Vec3 } from "./math-rng";
 import { createSeededRng, identityTransform } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import { sampleSplinePath, SPLINE_SUBDIVISIONS } from "./spline-component";
+import { evaluateWaterSpectrum, waterSpectrum, waterUsesSpectrum, type WaterSpectrum } from "./water-spectrum";
 
 export type WaterStyle = "realistic" | "stylized";
 /** Stylized water's look: Painted (soft, lit-looking, Sea of Thieves-like) or Toon (flat bands, white line work). */
 export type WaterStylizedLook = "painted" | "toon";
 export type WaterKind = "global" | "ocean" | "lake" | "river" | "puddle";
 export type WaterColor = [number, number, number];
-/** Classic: eight fixed swell components. Ocean: eight seeded components drawn from a JONSWAP spectrum. Both share one warp. */
+/**
+ * Toon and Custom Material water: Classic is eight fixed swell components, Ocean eight seeded components drawn from a
+ * JONSWAP spectrum; both share one warp. Realistic and Painted water always use the FFT spectrum (`waterUsesSpectrum`).
+ */
 export type WaterWaveModel = "classic" | "ocean";
 
 /** Version 1 Water asset. Distances are metres and time is simulation seconds. */
@@ -23,10 +27,18 @@ export interface WaterDefinition {
   roughness: number;
   reflectionStrength: number;
   depthColorDistance: number;
+  /** Wind sea: about the height of a crest above the mean (spectrum significant height 2 × this). */
   waveHeight: number;
+  /** Wind sea: peak wavelength (metres). */
   waveLength: number;
   waveSpeed: number;
   waveDirection: number;
+  /** Spectrum water only: the long swell's crest height (metres; 0 is no swell). */
+  swellHeight: number;
+  /** Spectrum water only: the swell's peak wavelength (metres). */
+  swellLength: number;
+  /** Spectrum water only: the swell's heading (degrees). */
+  swellDirection: number;
   /** 0 is rounded sine swell; 1 is sharp crests with flat troughs. */
   choppiness: number;
   /** Angular spread of the swell components: 0 is one heading, 1 is a confused sea. */
@@ -118,21 +130,23 @@ const tuple = (value: unknown, fallback: WaterColor, min: number, max: number): 
  */
 export function createDefaultWaterDefinition(style: WaterStyle = "realistic", look: WaterStylizedLook = "painted"): WaterDefinition {
   const stylized = style === "stylized", toon = stylized && look === "toon";
+  // Realistic and Painted run the FFT spectrum (`waterUsesSpectrum`): a wind sea with a longer swell across it.
   return {
     style, stylizedLook: look,
-    shallowColor: toon ? [0.2, 0.86, 0.9] : stylized ? [0.1, 0.72, 0.66] : [0.1, 0.68, 0.95],
-    deepColor: toon ? [0.05, 0.27, 0.7] : stylized ? [0.04, 0.21, 0.31] : [0.03, 0.15, 0.3],
-    foamColor: toon ? [1, 1, 1] : stylized ? [0.97, 0.99, 1] : [0.9, 0.93, 0.94],
-    opacity: stylized ? 1 : 0.97, roughness: stylized ? 0.3 : 0.04,
+    shallowColor: toon ? [0.2, 0.86, 0.9] : stylized ? [0.1, 0.72, 0.66] : [0.43, 0.95, 1],
+    deepColor: toon ? [0.05, 0.27, 0.7] : stylized ? [0.04, 0.21, 0.31] : [0.1, 0.26, 0.35],
+    foamColor: toon ? [1, 1, 1] : stylized ? [0.97, 0.99, 1] : [1, 1, 1],
+    opacity: stylized ? 1 : 0.97, roughness: stylized ? 0.3 : 0.08,
     reflectionStrength: toon ? 0.8 : 1, depthColorDistance: toon ? 6 : stylized ? 4 : 6.5,
-    waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
+    waveHeight: toon ? 0.35 : stylized ? 0.4 : 0.45, waveLength: toon ? 12 : stylized ? 22 : 18, waveSpeed: toon ? 1.3 : 1, waveDirection: 25,
+    swellHeight: toon ? 0 : stylized ? 0.3 : 0.35, swellLength: stylized ? 55 : 45, swellDirection: 70,
     choppiness: stylized ? 0.2 : 0.45, waveSpread: 0.5,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
     foamAmount: stylized ? 1 : 0.6, foamWidth: stylized ? 1.2 : 0.8,
-    crestFoam: 0.35, contactFoamWidth: stylized ? 0.6 : 1.2,
+    crestFoam: toon ? 0.35 : 0.2, contactFoamWidth: stylized ? 0.6 : 1.2,
     surfaceFoam: stylized ? 0.4 : 0.15, subsurface: 1,
     colorBands: toon ? 3 : 0, sparkles: toon ? 0.4 : stylized ? 0.5 : 0, density: 1000, materialGuid: null,
-    steepness: stylized ? 0.3 : 0.5, waveModel: "classic", peakSharpness: 3.3, waveSeed: 0,
+    steepness: toon ? 0.3 : 0.5, waveModel: "classic", peakSharpness: 3.3, waveSeed: 0,
     detailWaves: stylized ? 0 : 1, refraction: stylized ? 0.15 : 0.35, objectReflections: !stylized,
     colorVariation: 0.5,
   };
@@ -154,6 +168,9 @@ export function normalizeWaterDefinition(value: unknown): WaterDefinition {
     waveLength: number(v.waveLength, d.waveLength, 0.1, 1000),
     waveSpeed: number(v.waveSpeed, d.waveSpeed, 0, 20),
     waveDirection: number(v.waveDirection, d.waveDirection, -360, 360),
+    swellHeight: number(v.swellHeight, d.swellHeight, 0, 20),
+    swellLength: number(v.swellLength, d.swellLength, 0.5, 2000),
+    swellDirection: number(v.swellDirection, d.swellDirection, -360, 360),
     choppiness: number(v.choppiness, d.choppiness, 0, 1),
     waveSpread: number(v.waveSpread, d.waveSpread, 0, 1),
     rippleStrength: number(v.rippleStrength, d.rippleStrength, 0, 1),
@@ -368,7 +385,10 @@ export const createWaterWaveOutput = (): Float64Array => new Float64Array(WATER_
  * Wave Scale only multiplies amplitudes, so one set serves every body that uses the asset.
  */
 export interface WaterWaveSet {
-  readonly model: WaterWaveModel;
+  /** "spectrum" for Realistic and Painted water (`spectrum` holds its modes); the analytic models otherwise. */
+  readonly model: WaterWaveModel | "spectrum";
+  /** The FFT spectrum of spectrum water (no analytic components then: `count` is 0); null for the analytic models. */
+  readonly spectrum: WaterSpectrum | null;
   readonly count: number;
   /** Wavenumber (rad/m). */
   readonly k: Float64Array;
@@ -504,10 +524,11 @@ function spreadAngle(quantile: number): number {
 type MutableWaveSet = { -readonly [K in keyof WaterWaveSet]: WaterWaveSet[K] };
 
 function buildWaveSet(water: WaterDefinition): WaterWaveSet {
+  if (waterUsesSpectrum(water)) return buildSpectrumWaveSet(water);
   const ocean = water.waveModel === "ocean", count = ocean ? WATER_WAVE_MAX_COMPONENTS : waterWaveComponents.length;
   const angle = water.waveDirection * Math.PI / 180;
   const set: MutableWaveSet = {
-    model: ocean ? "ocean" : "classic", count,
+    model: ocean ? "ocean" : "classic", spectrum: null, count,
     k: new Float64Array(count), omega: new Float64Array(count), dirX: new Float64Array(count), dirZ: new Float64Array(count),
     amplitude: new Float64Array(count), phase: new Float64Array(count), frequency: new Float64Array(count),
     groupX: new Float64Array(count), groupZ: new Float64Array(count), groupOmega: new Float64Array(count),
@@ -602,6 +623,28 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
 }
 
 /**
+ * Spectrum water: no analytic components or warp (every loop over them is empty), and envelope statistics from the
+ * spectrum: the height and horizontal envelopes are 4σ, the Gerstner factor is the spectrum's choppiness λ
+ * (`waterWaveQ`), and there is no mean drift to cancel.
+ */
+function buildSpectrumWaveSet(water: WaterDefinition): WaterWaveSet {
+  const spectrum = waterSpectrum(water), empty = () => new Float64Array(0), terms = () => new Float64Array(WATER_SWELL_WARP_TERMS);
+  const envelope = 4 * spectrum.sigma;
+  return {
+    model: "spectrum", spectrum, count: 0,
+    k: empty(), omega: empty(), dirX: empty(), dirZ: empty(), amplitude: empty(), phase: empty(), frequency: empty(),
+    groupX: empty(), groupZ: empty(), groupOmega: empty(), groupPhase: empty(), groupDepth: empty(),
+    surgeOmega: empty(), surgePhase: empty(),
+    warpDirX: terms(), warpDirZ: terms(), warpK: terms(), warpAmplitude: terms(), warpPhase: terms(), warpOmega: terms(), warpStretch: 1,
+    waveHeight: water.waveHeight, waveLength: water.waveLength, waveSpeed: water.waveSpeed, waveDirection: water.waveDirection,
+    waveSpread: water.waveSpread, choppiness: water.choppiness, steepness: water.steepness, peakSharpness: water.peakSharpness,
+    waveSeed: water.waveSeed, detailWaves: water.detailWaves,
+    slopeSum: 0, jacobianSlope: 0, amplitudeSum: envelope, heightSum: envelope, driftX: 0, driftZ: 0,
+    peakK: TAU / water.waveLength, cutoffK: Infinity, spectrumScale: 0, spectrumSharpness: water.peakSharpness, detailHeight: 0,
+  };
+}
+
+/**
  * The largest eigenvalue ∂W/∂x0 = −Σ A·K·sin(K·x0 + φ)·K̂K̂ᵀ can take: the largest |eigenvalue| of Σ s·A·K·K̂K̂ᵀ over
  * every sign pattern s ∈ {−1, 1} (the norm is convex in s, so a vertex of the cube attains it, and the terms' phases
  * are incommensurate, so the surface approaches every pattern somewhere).
@@ -637,7 +680,9 @@ export function evaluateWaterSwellWarp(set: WaterWaveSet, x0: number, z0: number
 }
 
 const waveSets = new WeakMap<WaterDefinition, WaterWaveSet>();
-const sameWaves = (set: WaterWaveSet, w: WaterDefinition) => set.model === (w.waveModel === "ocean" ? "ocean" : "classic")
+const sameWaves = (set: WaterWaveSet, w: WaterDefinition) => (waterUsesSpectrum(w)
+  ? set.spectrum === waterSpectrum(w)
+  : set.model === (w.waveModel === "ocean" ? "ocean" : "classic"))
   && set.waveHeight === w.waveHeight && set.waveLength === w.waveLength && set.waveSpeed === w.waveSpeed
   && set.waveDirection === w.waveDirection && set.waveSpread === w.waveSpread && set.choppiness === w.choppiness
   && Object.is(set.steepness, w.steepness) && Object.is(set.peakSharpness, w.peakSharpness)
@@ -679,6 +724,7 @@ export function waterWaveSet(water: WaterDefinition): WaterWaveSet {
  */
 export function waterWaveQ(set: WaterWaveSet, scale = 1): number {
   if (!(set.steepness > 0)) return 0;
+  if (set.spectrum) return set.spectrum.choppiness;
   return set.steepness * Math.min(WATER_STEEPNESS_CAP, (1 - WATER_JACOBIAN_FLOOR) / Math.max(set.jacobianSlope * Math.abs(scale), 1e-9));
 }
 
@@ -721,6 +767,7 @@ export function evaluateWaterWaves(
   set: WaterWaveSet, x0: number, z0: number, time: number, spacing: number, out: Float64Array, scale = 1,
   gain = 1, gainX = 0, gainZ = 0,
 ): void {
+  if (set.spectrum) { evaluateWaterSpectrum(set.spectrum, x0, z0, time, out, scale, gain, gainX, gainZ); return; }
   const q = waterWaveQ(set, scale), chop = set.choppiness, waveHeight = set.waveHeight, waveLength = set.waveLength;
   const warp = warpScratch;
   evaluateWaterSwellWarp(set, x0, z0, warp, time);

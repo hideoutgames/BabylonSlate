@@ -57,7 +57,7 @@ import {
   type RenderTargetWrapper,
   type Scene,
 } from "@babylonjs/core";
-import { waterWaveSet, type WaterDefinition, type WaterWaveSet } from "@haptic/core";
+import { waterSpectrum, waterUsesSpectrum, waterWaveSet, type WaterDefinition, type WaterWaveSet } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { createEngineDrawingState, restoreEngineDrawingState, saveEngineDrawingState } from "./engine-drawing-state";
 import {
@@ -69,8 +69,8 @@ import { retireOwnedEffect } from "./owned-effect-retirement";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
 import {
-  WATER_FFT_BUILD_TEXELS, waterFftCycle, waterFftLayout, waterFftSpectrumBuild, waterFftStages, type WaterFftLayout,
-  type WaterFftSpectrumBuild,
+  WATER_FFT_BUILD_TEXELS, waterFftCycle, waterFftLayout, waterFftSpectrumBuild, waterFftStages, waterSpectrumBuild, waterSpectrumLayout,
+  type WaterFftLayout, type WaterFftSpectrumBuild,
 } from "./water-fft-spectrum";
 
 /** One FFT detail band as a water material samples it. Stable per definition and simulation: never rebuilt per frame. */
@@ -84,6 +84,15 @@ export interface WaterFftResult {
   readonly amplitudeGain: number;
   /** False until the first dispatch completed (and again after a context restore or a respectrum); render analytic only. */
   readonly ready: boolean;
+  /** Spectrum water (`waterUsesSpectrum`): the whole sea, mipmapped, with its persistent foam (`foam`). */
+  readonly spectrum: boolean;
+  /** Grid cells per side of every cascade. */
+  readonly size: number;
+  /**
+   * Spectrum water: per cascade one layer (R = FFT-Ocean's turbulence: the surface's Jacobian determinant, which recovers
+   * slowly after a fold, so foam lingers behind breaking crests and fades), mipmapped; null for a detail band.
+   */
+  readonly foam: BaseTexture | null;
 }
 
 /** Observer runs a simulation may go unrequested before its memory is released (about two seconds at 60 fps). */
@@ -108,7 +117,9 @@ const RETRY_RUNS = 120;
 /** Completed unit spectra kept per engine (CPU memory; 3 MiB each at 256²×3, 0.5 MiB at 128²×2). */
 const SPECTRUM_CACHE_BYTES = 12 * 1024 ** 2;
 
-const VERTEX = "slateWaterFft", EVOLVE = "slateWaterFftEvolve", BUTTERFLY = "slateWaterFftButterfly";
+const VERTEX = "slateWaterFft", EVOLVE = "slateWaterFftEvolve", BUTTERFLY = "slateWaterFftButterfly", FOAM = "slateWaterFftFoam";
+/** Grid texels a spectrum-water build step draws (whole rows; each mode evaluates the directional spectrum). */
+const SPECTRUM_BUILD_TEXELS = 4096;
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetShadersStore(wgsl ? 1 : 0);
   store[`${VERTEX}VertexShader`] = wgsl
@@ -251,6 +262,60 @@ let direction = select(1.0, -1.0, pos >= span);
 fragmentOutputs.color = uniforms.fftScale * (a + direction * vec4f(c * b.x - s * b.y, c * b.y + s * b.x, c * b.z - s * b.w, c * b.w + s * b.z));
 }`;
 
+// Persistent foam (FFT-Ocean's turbulence), one cascade layer per draw: the Jacobian determinant J of the displaced
+// surface at λ = foamParams.x, and T = min(J, T_prev + dt·0.5 / max(J, 0.5)): T follows J down instantly where the
+// surface folds and recovers slowly, so foam (low T) lingers and fades. foamParams = (λ, dt, reset, layer).
+ShaderStore.ShadersStore[`${FOAM}PixelShader`] = `precision highp float;
+precision highp int;
+precision highp sampler2DArray;
+uniform sampler2DArray fftOutput;
+uniform sampler2DArray foamPrevious;
+uniform vec4 foamParams;
+void main(void) {
+ivec2 p = ivec2(gl_FragCoord.xy);
+int layer = int(foamParams.w);
+float lambda = foamParams.x;
+vec4 a = texelFetch(fftOutput, ivec3(p, 2 * layer), 0);
+vec4 b = texelFetch(fftOutput, ivec3(p, 2 * layer + 1), 0);
+float jacobian = (1.0 + lambda * b.z) * (1.0 + lambda * b.w) - lambda * lambda * a.w * a.w;
+float previous = texelFetch(foamPrevious, ivec3(p, layer), 0).r;
+float turbulence = foamParams.z > 0.5 ? jacobian : min(jacobian, previous + foamParams.y * 0.5 / max(jacobian, 0.5));
+gl_FragColor = vec4(turbulence, jacobian, 0.0, 1.0);
+}`;
+ShaderStore.ShadersStoreWGSL[`${FOAM}PixelShader`] = `var fftOutput: texture_2d_array<f32>;
+var foamPrevious: texture_2d_array<f32>;
+uniform foamParams: vec4f;
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+let p = vec2i(fragmentInputs.position.xy);
+let layer = i32(uniforms.foamParams.w);
+let lambda = uniforms.foamParams.x;
+let a = textureLoad(fftOutput, p, 2 * layer, 0);
+let b = textureLoad(fftOutput, p, 2 * layer + 1, 0);
+let jacobian = (1.0 + lambda * b.z) * (1.0 + lambda * b.w) - lambda * lambda * a.w * a.w;
+let previous = textureLoad(foamPrevious, p, layer, 0).r;
+let turbulence = select(min(jacobian, previous + uniforms.foamParams.y * 0.5 / max(jacobian, 0.5)), jacobian, uniforms.foamParams.z > 0.5);
+fragmentOutputs.color = vec4f(turbulence, jacobian, 0.0, 1.0);
+}`;
+
+/** Engine internals the per-layer mip generation of a 2D-array target uses on WebGPU (Babylon mips only layer 0). */
+interface WebGpuMipInternals {
+  _endCurrentRenderPass(): void;
+  _renderEncoder: unknown;
+  _textureHelper: { generateMipmaps(texture: unknown, mipLevelCount: number, layer: number, encoder: unknown): void };
+}
+
+/** Builds every mip level of every layer of a 2D-array render target, on either backend. */
+function generateArrayMipmaps(engine: AbstractEngine, texture: InternalTexture, layers: number): void {
+  if (!engine.isWebGPU) { engine.generateMipmaps(texture); return; }
+  const hardware = texture._hardwareTexture as unknown as { underlyingResource?: { mipLevelCount: number } } | null;
+  const levels = hardware?.underlyingResource?.mipLevelCount ?? 1;
+  if (levels <= 1) return;
+  const internals = engine as unknown as WebGpuMipInternals;
+  internals._endCurrentRenderPass();
+  for (let layer = 0; layer < layers; layer++) internals._textureHelper.generateMipmaps(hardware, levels, layer, internals._renderEncoder);
+}
+
 /** Shared, reused save slot: dispatches never nest and run synchronously. */
 const drawingState = createEngineDrawingState();
 
@@ -292,6 +357,12 @@ class WaterFftSimulation {
   private readonly renderer: EffectRenderer;
   private readonly evolve: EffectWrapper;
   private readonly butterfly: EffectWrapper;
+  /** Spectrum water: the foam pass, its two ping-pong targets (cascades layers each) and their textures. */
+  private readonly foamEffect: EffectWrapper | null;
+  private readonly foamTargets: [RenderTargetWrapper, RenderTargetWrapper] | null;
+  private readonly foamTextures: [BaseTexture, BaseTexture] | null;
+  /** The foam target the last dispatch wrote. */
+  private foamCurrent = 0;
   private readonly restored: Observer<AbstractEngine>;
   readonly engine: AbstractEngine;
   layout: WaterFftLayout;
@@ -303,15 +374,21 @@ class WaterFftSimulation {
   private constructor(
     engine: AbstractEngine, layout: WaterFftLayout, h0: InternalTexture,
     work: [RenderTargetWrapper, RenderTargetWrapper], output: RenderTargetWrapper, lease: ManagedRenderLease,
+    foam: [RenderTargetWrapper, RenderTargetWrapper] | null,
   ) {
     this.engine = engine; this.layout = layout; this.h0 = h0;
     this.work = work; this.output = output; this.lease = lease;
-    const outputTexture = output.texture!;
-    // The wrapper holds its own reference, so the material's texture and the render target release independently.
-    outputTexture.incrementReferences();
-    this.texture = new BaseTexture(engine, outputTexture);
-    this.texture.name = "Water FFT Detail";
-    this.texture.wrapU = this.texture.wrapV = Constants.TEXTURE_WRAP_ADDRESSMODE;
+    // The wrappers hold their own references, so the material's textures and the render targets release independently.
+    const wrap = (target: RenderTargetWrapper, name: string) => {
+      target.texture!.incrementReferences();
+      const texture = new BaseTexture(engine, target.texture!);
+      texture.name = name;
+      texture.wrapU = texture.wrapV = Constants.TEXTURE_WRAP_ADDRESSMODE;
+      return texture;
+    };
+    this.texture = wrap(output, layout.spectrum ? "Water FFT Ocean" : "Water FFT Detail");
+    this.foamTargets = foam;
+    this.foamTextures = foam && [wrap(foam[0], "Water FFT Foam A"), wrap(foam[1], "Water FFT Foam B")];
     this.h0Texture = new ThinTexture(h0);
     this.workTextures = [new ThinTexture(work[0].texture), new ThinTexture(work[1].texture)];
     this.renderer = new EffectRenderer(engine);
@@ -324,11 +401,17 @@ class WaterFftSimulation {
       engine, name: BUTTERFLY, vertexShader: VERTEX, fragmentShader: BUTTERFLY, useShaderStore: true, shaderLanguage: language,
       uniformNames: ["fftStage", "fftScale"], samplerNames: ["fftInput"],
     });
+    this.foamEffect = foam && new EffectWrapper({
+      engine, name: FOAM, vertexShader: VERTEX, fragmentShader: FOAM, useShaderStore: true, shaderLanguage: language,
+      uniformNames: ["foamParams"], samplerNames: ["fftOutput", "foamPrevious"],
+    });
     // Restored contexts rebuild every target empty (h0 re-uploads from its retained data): dispatch again first.
     this.restored = engine.onContextRestoredObservable.add(() => { this.ready = false; this.time = Number.NaN; });
   }
 
   get key(): string { return this.layout.key; }
+  /** Spectrum water's foam as of the last dispatch (null for a detail band). */
+  get foam(): BaseTexture | null { return this.foamTextures?.[this.foamCurrent] ?? null; }
   get size(): number { return this.layout.size; }
   get cascades(): number { return this.layout.cascades; }
 
@@ -340,12 +423,18 @@ class WaterFftSimulation {
     const { size, cascades } = layout, caps = engine.getCaps();
     // Half-float output where renderable; float output keeps the band where only float targets render.
     const outputType = caps.textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_FLOAT;
-    const outputSampling = caps.textureHalfFloatRender || caps.textureFloatLinearFiltering
-      ? Constants.TEXTURE_BILINEAR_SAMPLINGMODE : Constants.TEXTURE_NEAREST_SAMPLINGMODE;
+    const filterable = caps.textureHalfFloatRender || caps.textureFloatLinearFiltering;
+    // Spectrum water samples its normals and foam through mips (trilinear), so far water filters instead of aliasing.
+    const mips = layout.spectrum && filterable;
+    const outputSampling = !filterable ? Constants.TEXTURE_NEAREST_SAMPLINGMODE
+      : mips ? Constants.TEXTURE_TRILINEAR_SAMPLINGMODE : Constants.TEXTURE_BILINEAR_SAMPLINGMODE;
+    const mipFactor = mips ? 4 / 3 : 1;
     const h0Bytes = renderTargetAllocationBytes({ width: cascades * size, height: size, format: RGBA, type: Constants.TEXTURETYPE_FLOAT });
     const workBytes = renderTargetAllocationBytes({ width: 2 * cascades * size, height: size, format: RGBA, type: Constants.TEXTURETYPE_FLOAT });
-    const outputBytes = renderTargetAllocationBytes({ width: size, height: size, layers: 2 * cascades, format: RGBA, type: outputType });
-    const lease = beginManagedRenderAllocation(engine, h0Bytes + 2 * workBytes + outputBytes);
+    const outputBytes = Math.ceil(renderTargetAllocationBytes({ width: size, height: size, layers: 2 * cascades, format: RGBA, type: outputType }) * mipFactor);
+    const foamBytes = layout.spectrum
+      ? Math.ceil(renderTargetAllocationBytes({ width: size, height: size, layers: cascades, format: RGBA, type: outputType }) * mipFactor) : 0;
+    const lease = beginManagedRenderAllocation(engine, h0Bytes + 2 * workBytes + outputBytes + 2 * foamBytes);
     if (!lease) return null;
     const owned: { dispose(): void }[] = [];
     try {
@@ -362,16 +451,26 @@ class WaterFftSimulation {
       const targets: [RenderTargetWrapper, RenderTargetWrapper] = [work("Water FFT work A"), work("Water FFT work B")];
       const output = engine.createRenderTargetTexture({ width: size, height: size, layers: 2 * cascades }, {
         type: outputType, format: RGBA, samplingMode: outputSampling,
-        generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, label: "Water FFT detail",
+        generateMipMaps: mips, generateDepthBuffer: false, generateStencilBuffer: false, label: layout.spectrum ? "Water FFT ocean" : "Water FFT detail",
       });
       owned.push(output);
+      const foamTarget = (label: string) => {
+        const target = engine.createRenderTargetTexture({ width: size, height: size, layers: cascades }, {
+          type: outputType, format: RGBA, samplingMode: outputSampling,
+          generateMipMaps: mips, generateDepthBuffer: false, generateStencilBuffer: false, label,
+        });
+        owned.push(target);
+        return target;
+      };
+      const foam: [RenderTargetWrapper, RenderTargetWrapper] | null = layout.spectrum ? [foamTarget("Water FFT foam A"), foamTarget("Water FFT foam B")] : null;
       lease.commit([
         { handle: h0, bytes: h0Bytes, category: "water" },
         { handle: targets[0].texture!, bytes: workBytes, category: "water" },
         { handle: targets[1].texture!, bytes: workBytes, category: "water" },
         { handle: output.texture!, bytes: outputBytes, category: "water" },
+        ...(foam ? foam.map((target) => ({ handle: target.texture!, bytes: foamBytes, category: "water" as const })) : []),
       ]);
-      return new WaterFftSimulation(engine, layout, h0, targets, output, lease);
+      return new WaterFftSimulation(engine, layout, h0, targets, output, lease, foam);
     } catch {
       // A device that cannot allocate keeps analytic-only water, like a ledger refusal.
       for (const resource of owned) resource.dispose();
@@ -394,8 +493,8 @@ class WaterFftSimulation {
 
   /** Runs every pass for `time`; false (and nothing drawn) while either effect still compiles. */
   dispatch(time: number, frame: number): boolean {
-    if (!this.evolve.isReady() || !this.butterfly.isReady()) return false;
-    const engine = this.engine, renderer = this.renderer, { size, cascades, patchSizes, shearScales, amplitude, timeScale } = this.layout;
+    if (!this.evolve.isReady() || !this.butterfly.isReady() || (this.foamEffect && !this.foamEffect.isReady())) return false;
+    const engine = this.engine, renderer = this.renderer, { size, cascades, patchSizes, shearScales, amplitude, timeScale, period } = this.layout;
     const stages = waterFftStages(size);
     saveEngineDrawingState(engine, drawingState);
     try {
@@ -405,7 +504,7 @@ class WaterFftSimulation {
       renderer.applyEffectWrapper(this.evolve);
       const evolve = this.evolve.effect;
       evolve.setTexture("h0Texture", this.h0Texture);
-      evolve.setFloat4("fftParams", size, waterFftCycle(time, timeScale), amplitude, 0);
+      evolve.setFloat4("fftParams", size, waterFftCycle(time, timeScale, period), amplitude, 0);
       evolve.setFloat4("fftPatch", 2 * Math.PI / patchSizes[0]!, 2 * Math.PI / (patchSizes[1] ?? 1), 2 * Math.PI / (patchSizes[2] ?? 1), 0);
       evolve.setFloat4("fftShear", 1 / shearScales[0]!, 1 / (shearScales[1] ?? 1), 1 / (shearScales[2] ?? 1), 0);
       renderer.draw();
@@ -416,12 +515,39 @@ class WaterFftSimulation {
       for (let layer = 0; layer < 2 * cascades; layer++) {
         this.stage(source, this.output, layer, stages - 1, false, layer * size, layer & 1 ? 1 : shearScales[layer >> 1]!);
       }
+      if (this.foamTargets) this.runFoam(time);
     } finally {
       restoreEngineDrawingState(engine, drawingState);
     }
     this.time = time; this.frame = frame; this.ready = true; this.dispatches++;
     return true;
   }
+
+  /**
+   * Spectrum water: the persistent foam of every cascade from this dispatch's output into the other foam target (the
+   * last one read back), then both outputs' mips. The clock step (at most half a second) sets how far foam recovers;
+   * the first dispatch after a (re)start resets it to the surface's own Jacobian.
+   */
+  private runFoam(time: number): void {
+    const engine = this.engine, targets = this.foamTargets!, textures = this.foamTextures!, effect = this.foamEffect!;
+    const step = Number.isFinite(this.time) ? Math.min(Math.max(time - this.time, 0), 0.5) : 0, reset = this.ready ? 0 : 1;
+    const next = this.foamCurrent ^ 1, lambda = this.foamLambda;
+    for (let layer = 0; layer < this.layout.cascades; layer++) {
+      engine.bindFramebuffer(targets[next], 0, undefined, undefined, true, 0, layer);
+      this.renderer.applyEffectWrapper(effect);
+      effect.effect.setTexture("fftOutput", this.texture);
+      effect.effect.setTexture("foamPrevious", textures[this.foamCurrent]!);
+      effect.effect.setFloat4("foamParams", lambda, step, reset, layer);
+      this.renderer.draw();
+      engine.unBindFramebuffer(targets[next], true);
+    }
+    this.foamCurrent = next;
+    generateArrayMipmaps(engine, this.output.texture!, 2 * this.layout.cascades);
+    generateArrayMipmaps(engine, targets[next].texture!, this.layout.cascades);
+  }
+
+  /** Horizontal scale λ the foam's Jacobian is taken at (the asset's choppiness, at Wave Scale 1). */
+  foamLambda = 1;
 
   private stage(
     source: number, target: RenderTargetWrapper, layer: number, stage: number, horizontal: boolean, xOffset: number, shear: number,
@@ -445,6 +571,10 @@ class WaterFftSimulation {
     engine.onContextRestoredObservable.remove(this.restored);
     this.texture.dispose();
     this.output.dispose();
+    this.foamTextures?.forEach((texture) => texture.dispose());
+    this.foamTargets?.forEach((target) => target.dispose());
+    const foamEffect = this.foamEffect;
+    if (foamEffect) retireOwnedEffect(foamEffect.effect, () => foamEffect.dispose());
     this.work[0].dispose(); this.work[1].dispose();
     this.h0.dispose();
     this.renderer.dispose();
@@ -457,6 +587,8 @@ class WaterFftSimulation {
 
 type DefinitionEntry = {
   set: WaterWaveSet | null;
+  /** The definition runs spectrum water (`waterUsesSpectrum`): its whole sea, at every quality. */
+  spectrum: boolean;
   size: number;
   cascades: number;
   /** Layout of `set` at the Water quality's size and cascades; built once per change, never per frame. */
@@ -529,6 +661,8 @@ function bind(entry: DefinitionEntry, sim: WaterFftSimulation | null): void {
   const key = entry.layout?.key;
   entry.view = sim && {
     texture: sim.texture, cascades: sim.cascades, patchSizes: entry.layout!.patchSizes, amplitudeGain: entry.gain,
+    spectrum: sim.layout.spectrum, size: sim.size,
+    get foam() { return sim.foam; },
     get ready() { return sim.ready && !sim.disposed && sim.key === key && entry.layout?.key === key; },
   };
 }
@@ -541,21 +675,26 @@ function bind(entry: DefinitionEntry, sim: WaterFftSimulation | null): void {
  * once the definition and its waves have been seen; never creates GPU resources itself.
  */
 export function requestWaterFft(scene: Scene, mesh: AbstractMesh, definition: WaterDefinition, active?: boolean): void {
-  if (!(definition.detailWaves > 0)) return;
+  const spectrum = waterUsesSpectrum(definition);
+  if (!spectrum && !(definition.detailWaves > 0)) return;
   const state = scenes.get(scene), entry = state?.definitions.get(definition);
   if (!state || !entry || state.run - entry.demandRun > DEMAND_RUNS) return;
   const quality = sceneWaterQualityDeviceClamp(scene).quality;
-  if (!quality.fft) return;
+  if (!spectrum && !quality.fft) return;
   if (!(active ?? (mesh.isVisible && mesh.visibility > 0 && inActiveView(scene, mesh)))) return;
   const set = waterWaveSet(definition);
-  if (entry.set !== set || entry.size !== quality.fftSize || entry.cascades !== quality.fftCascades) {
-    entry.set = set; entry.size = quality.fftSize; entry.cascades = quality.fftCascades; entry.gain = definition.detailWaves;
-    entry.layout = waterFftLayout(set, entry.size, entry.cascades);
+  if (entry.set !== set || entry.spectrum !== spectrum || entry.size !== quality.fftSize || entry.cascades !== quality.fftCascades) {
+    entry.set = set; entry.spectrum = spectrum; entry.size = quality.fftSize; entry.cascades = quality.fftCascades;
+    entry.gain = spectrum ? 1 : definition.detailWaves;
+    entry.layout = spectrum ? waterSpectrumLayout(waterSpectrum(definition), entry.size, entry.cascades) : waterFftLayout(set, entry.size, entry.cascades);
     bind(entry, state.byKey.get(entry.layout.key) ?? null);
   } else if (entry.sim && (entry.sim.disposed || entry.sim.key !== entry.layout!.key)) {
     bind(entry, state.byKey.get(entry.layout!.key) ?? null);
   }
-  if (entry.sim) entry.sim.requestedRun = state.run;
+  if (entry.sim) {
+    entry.sim.requestedRun = state.run;
+    entry.sim.foamLambda = spectrum ? waterSpectrum(definition).choppiness : 1;
+  }
   else if (entry.pendingRun !== state.run) {
     entry.pendingRun = state.run;
     state.pending.push(entry);
@@ -641,7 +780,7 @@ function advanceBuild(scene: Scene, state: SceneFft, run: number): void {
   state.nextBuild = null;
   if (state.buildWanted !== run) {
     if (next) {
-      state.build = waterFftSpectrumBuild(next.set!, next.layout!);
+      state.build = next.layout!.spectrum ? waterSpectrumBuild(next.set!.spectrum!, next.layout!) : waterFftSpectrumBuild(next.set!, next.layout!);
       state.buildWanted = run;
     } else {
       if (state.build && run - state.buildWanted > WATER_FFT_IDLE_RUNS) state.build = null;
@@ -649,7 +788,7 @@ function advanceBuild(scene: Scene, state: SceneFft, run: number): void {
     }
   }
   const build = state.build!;
-  if (!build.step(WATER_FFT_BUILD_TEXELS)) return;
+  if (!build.step(build.key.startsWith("spectrum:") ? SPECTRUM_BUILD_TEXELS : WATER_FFT_BUILD_TEXELS)) return;
   keepSpectrum(scene.getEngine(), build.key, build.data);
   state.build = null;
   state.built++;
@@ -667,16 +806,12 @@ export function updateSceneWaterFft(scene: Scene, time: number): void {
   if (!state) return;
   const run = state.run++;
   const quality = sceneWaterQualityDeviceClamp(scene).quality;
-  if (!quality.fft) {
-    state.pending.length = 0;
-    state.build = null;
-    if (state.sims.length) retireAll(state);
-    return;
-  }
-  // Release first, so a size change never holds both footprints.
+  // Release first, so a size change never holds both footprints. Spectrum water simulates at every quality; a detail
+  // band only while FFT Ocean Detail is on.
   for (let i = state.sims.length - 1; i >= 0; i--) {
     const sim = state.sims[i]!;
-    if (sim.size !== quality.fftSize || sim.cascades !== quality.fftCascades || run - sim.requestedRun > WATER_FFT_IDLE_RUNS) retire(state, i);
+    if ((!quality.fft && !sim.layout.spectrum) || sim.size !== quality.fftSize || sim.cascades !== quality.fftCascades
+      || run - sim.requestedRun > WATER_FFT_IDLE_RUNS) retire(state, i);
   }
   for (let i = 0; i < state.pending.length; i++) resolve(scene, state, state.pending[i]!, run);
   state.pending.length = 0;
@@ -699,20 +834,24 @@ export function updateSceneWaterFft(scene: Scene, time: number): void {
  * Allocation-free once the definition has been seen.
  */
 export function waterFftForSurface(scene: Scene, definition: WaterDefinition): WaterFftResult | null {
-  if (!(definition.detailWaves > 0)) return null;
+  const spectrum = waterUsesSpectrum(definition);
+  if (!spectrum && !(definition.detailWaves > 0)) return null;
   const quality = sceneWaterQualityDeviceClamp(scene).quality;
-  if (!quality.fft) return null;
+  if (!spectrum && !quality.fft) return null;
   const state = sceneFft(scene);
   let entry = state.definitions.get(definition);
   if (!entry) {
-    entry = { set: null, size: 0, cascades: 0, layout: null, sim: null, view: null, pendingRun: -1, demandRun: -1, gain: definition.detailWaves };
+    entry = {
+      set: null, spectrum, size: 0, cascades: 0, layout: null, sim: null, view: null, pendingRun: -1, demandRun: -1,
+      gain: spectrum ? 1 : definition.detailWaves,
+    };
     state.definitions.set(definition, entry);
   }
   entry.demandRun = state.run;
   const sim = entry.sim;
   if (!sim || sim.disposed || sim.key !== entry.layout?.key) return null;
   if (quality.fftSize !== sim.size || quality.fftCascades !== sim.cascades) return null;
-  if (entry.set !== waterWaveSet(definition) || entry.gain !== definition.detailWaves) return null;
+  if (entry.set !== waterWaveSet(definition) || entry.spectrum !== spectrum || entry.gain !== (spectrum ? 1 : definition.detailWaves)) return null;
   return entry.view;
 }
 
