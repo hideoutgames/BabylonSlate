@@ -53,7 +53,7 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
 } from "@haptic/bridge";
-import { areaRectLightBindings, createDefaultScene } from "@haptic/core";
+import { areaRectLightBindings, createDefaultScene, normalizeRenderingQuality } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,13 +63,16 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
 import { compileMaterialPlan } from "./material-compiler";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
+import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
+import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
-import { enableHeadlessCascades } from "./shadow-test-fixtures";
+import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { beginPipelineDeferral, effectDrawn, pipelinesDeferred } from "./webgpu-pipeline-deferral";
@@ -84,6 +87,21 @@ vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
     effectDrawn: vi.fn(actual.effectDrawn),
   };
 });
+// The load's light rehearsal pre-compiles the variants these causes ask for; a case that measures a swap leaves it out
+// (`rehearseLoad`), so its cause compiles mid-game as one the rehearsal does not enumerate would.
+vi.mock("./load-rehearsal", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./load-rehearsal")>();
+  return {
+    ...actual,
+    createLoadRehearsal: vi.fn((...args: Parameters<typeof actual.createLoadRehearsal>) => rehearseLoad
+      ? actual.createLoadRehearsal(...args)
+      : {
+        done: true, frame() {}, check() {}, cancel() {}, release() {},
+        report: () => ({ steps: 0, drawn: 0, omitted: [], timedOut: [], variants: 0, pipelines: 0, ms: 0 }),
+      }),
+  };
+});
+let rehearseLoad = false;
 const { beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn } =
   await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
@@ -117,10 +135,14 @@ afterEach(() => {
   vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
   vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   vi.mocked(effectDrawn).mockImplementation(actualEffectDrawn);
+  rehearseLoad = false;
+  frameMs = FRAME_MS;
 });
 
 /** Each Play frame advances the clock this much, so a run of held frames crosses the pause delay deterministically. */
 const FRAME_MS = 100;
+/** The clock step of the next Play frames (a case with a realistic frame clock sets 16 ms). */
+let frameMs = FRAME_MS;
 /** Frames a pending compile or pipeline stays pending before the driver releases it (600 ms). */
 const PENDING_FRAMES = 6;
 
@@ -138,6 +160,7 @@ function headlessEngine(): NullEngine {
     textureFloatLinearFiltering: true, textureHalfFloatLinearFiltering: true,
   });
   enableHeadlessCascades(engine);
+  enableHeadlessCubeTargets(engine);
   cleanups.push(() => engine.dispose());
   return engine;
 }
@@ -379,10 +402,12 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     if (!engine.getRenderingCanvas())
       vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(new FakeCanvas() as unknown as HTMLCanvasElement);
     engine._renderViews();
+    // Engine.endFrame's count: per-frame budgets key to it.
+    (engine as unknown as { _frameId: number })._frameId += 1;
     engine.onEndFrameObservable.notifyObservers(engine);
     const view = views.at(-1);
     const state = { view, holding: view?.holding ?? false, paused: isSceneGameTimePaused(handle.scene), effect: subjectEffect() };
-    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    await vi.advanceTimersByTimeAsync(frameMs);
     return state;
   };
   /**
@@ -443,7 +468,10 @@ async function withClock<T>(work: Promise<T>): Promise<T> {
 async function settle(world: PlayWorld): Promise<void> {
   await withClock(world.handle.prewarmSceneMaterials());
   const presented = world.handle.presentFirstFrame();
-  for (let index = 0; index < 4; index++) await world.frame();
+  let done = false;
+  void presented.finally(() => { done = true; });
+  // The load rehearses its light changes in the presentation's loading frames (two or more each).
+  for (let index = 0; index < 400 && (index < 4 || !done); index++) await world.frame();
   await presented;
   // A few steady frames: shadow maps render once, lighting settles.
   for (let index = 0; index < 4; index++) await world.frame();
@@ -530,16 +558,21 @@ function expectSwapped(record: CauseRecord, model: Model): void {
   const detail = JSON.stringify(record);
   // The cause really compiled a lit variant, so the states below mean something.
   expect(record.litEffects, detail).toBeGreaterThan(0);
+  // Only a pending compile (or pipeline) leaves a previous Effect drawing; a synchronous link draws the new one at once.
+  // With more new variants than a frame admits (`FIRST_DRAWS_PER_FRAME`), whether the subject's waits depends on its
+  // place in the queue, so that case does not say.
+  const previous = model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME
+    ? {} : { previousEffectDrawn: record.previousEffectDrawn };
   expect({
     heldFrames: record.heldFrames, holdReported: record.holdReported, holdRaised: record.holdRaised,
-    paused: record.pausedFrames > 0, recovered: record.recovered,
-    // Only a pending compile leaves a previous Effect drawing; a synchronous link draws the new one at once.
-    previousEffectDrawn: record.previousEffectDrawn, adopted: record.adopted,
+    paused: record.pausedFrames > 0, recovered: record.recovered, ...previous,
+    adopted: record.adopted,
     // One probe per frame while a swap is pending, not one per readiness question.
     probesAtMostOnePerFrame: record.probesPerFrame <= 1,
   }, detail).toEqual({
     heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
-    previousEffectDrawn: model !== "sync", adopted: true, probesAtMostOnePerFrame: true,
+    ...("previousEffectDrawn" in previous ? { previousEffectDrawn: model !== "sync" } : {}), adopted: true,
+    probesAtMostOnePerFrame: true,
   });
 }
 
@@ -615,6 +648,112 @@ describe("compile holds after the first frame", () => {
       material.freeze();
     });
     expectSwapped(record, model);
+  });
+
+  it.each(MODELS.flatMap((model) => (["a point switches off", "a spot starts casting shadows"] as const).map((cause) => [model, cause] as const)))(
+    "a light change the load rehearsed compiles nothing: %s, %s", async (model, cause) => {
+    // The load rehearses each authored light's changes (on or off, shadows on or off) behind its loading screen, so
+    // the variants they ask for are compiled, and drawn once, before the first presented frame.
+    rehearseLoad = true;
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])], [],
+      cause === "a point switches off" ? "actor-2" : "actor-1");
+    const record = await measure(world, () => cause === "a point switches off"
+      ? world.place(point(11, [1.5, 2.5, -1], { enabled: false }))
+      : world.place(spot(12, [0, 5, 0], { castShadows: true })));
+    const rehearsal = world.handle.loadRehearsalStats();
+    expect({
+      rehearsed: (rehearsal?.steps ?? 0) > 0, compiled: (rehearsal?.variants ?? 0) > 0,
+      effects: record.effects, pipelines: record.pipelines + record.warmPipelines,
+      heldFrames: record.heldFrames, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
+    }, JSON.stringify({ record, rehearsal })).toEqual({
+      rehearsed: true, compiled: true, effects: 0, pipelines: 0, heldFrames: 0, holdRaised: false, paused: false,
+      recovered: true,
+    });
+  });
+
+  /**
+   * Each authored light (lit, and whether its shadow map is admitted, with its darkness) and the subject's defines at
+   * the first presented frame and twelve frames later, for a load with or without its rehearsal. The frames run on a
+   * 16 ms clock once loading has started presenting, so a residency the load's own admissions began has not run out by
+   * the first presentation.
+   */
+  async function presentedAdmission(rehearse: boolean, actors: Actor[], configure?: (world: PlayWorld) => void) {
+    // A fresh world per run: the previous one's Engine, clock and render spy go first.
+    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+    if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
+    rehearseLoad = rehearse;
+    const world = playWorld("sync", actors);
+    configure?.(world);
+    const controller = () => findSceneShadowController(world.handle.scene)!;
+    const state = () => ({
+      lights: world.handle.scene.lights.filter((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX))
+        .map((light) => {
+          const map = controller().generator(light);
+          return `${light.name.slice(AUTHORED_LIGHT_PREFIX.length)}:${light.isEnabled() ? "lit" : "off"}${map ? `+map@${map.getDarkness()}` : ""}`;
+        }).sort(),
+      defines: world.subjectEffect()?.defines ?? null,
+    });
+    await withClock(world.handle.prewarmSceneMaterials());
+    const presentation = world.handle.presentFirstFrame();
+    let presented = false;
+    void presentation.finally(() => { presented = true; });
+    for (let index = 0; index < 400 && (index < 4 || !presented); index++) {
+      frameMs = index < 6 ? FRAME_MS : 16;
+      await world.frame();
+    }
+    await presentation;
+    const first = state();
+    for (let index = 0; index < 12; index++) await world.frame();
+    return { first, later: state(), rehearsal: world.handle.loadRehearsalStats() };
+  }
+
+  it.each([
+    ["shadow maps", [
+      spot(12, [-1, 4, 3], { castShadows: true }), spot(10, [0, 4, 0], { castShadows: true }), spot(11, [1, 4, 0.2], { castShadows: true }),
+    ], undefined],
+    ["the Forward light budget", [point(10, [0, 4, 0]), point(11, [1, 4, 0.2]), spot(12, [-1, 4, 0.6])], (world: PlayWorld) =>
+      updateSceneRenderingSettings(world.handle.scene,
+        { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) })],
+  ] as const)("a load rehearsal leaves %s as a load without it does", async (_, actors, configure) => {
+    // Admission ranks by history: an admitted light keeps its place against a slightly nearer one. Switching a light
+    // off lets a waiting one take its map or slot; reverting that change must not leave the waiting light admitted.
+    const baseline = await presentedAdmission(false, [...actors], configure);
+    const rehearsed = await presentedAdmission(true, [...actors], configure);
+    expect((rehearsed.rehearsal?.steps ?? 0) > 0, JSON.stringify(rehearsed.rehearsal)).toBe(true);
+    expect({ first: rehearsed.first, later: rehearsed.later }).toEqual({ first: baseline.first, later: baseline.later });
+  });
+
+  it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {
+    // Six barrels with Materials of their own under two points: one point switching off asks every Material for a new
+    // variant at once. Their first draws spread over frames, previous Effects drawing meanwhile.
+    const guids = ["surface-a", "surface-b", "surface-c", "surface-d", "surface-e", "surface-f"];
+    const barrels: Actor[] = guids.map((_, index) =>
+      ({ slotId: 20 + index, guid: `barrel-${index}`, position: [-5 + index * 2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } }));
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), ...barrels], guids);
+    guids.forEach((guid, index) => world.handle.applyCommand({ type: "assignMaterial", slotId: 20 + index, materialAssetGuid: guid }));
+    await settle(world);
+    const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+    const effects = () => barrels.map((actor) =>
+      world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
+    const before = effects();
+    world.driver.arm();
+    world.place(point(11, [1.5, 2.5, -1], { enabled: false }));
+    let current = before;
+    const adoptedPerFrame: number[] = [];
+    // Two frames with the links pending (a parallel driver, WebGPU pipelines), then they all finish at once.
+    for (let index = 0; index < 14 && current.some((effect, at) => effect === before[at]); index++) {
+      if (index === 2) world.driver.release();
+      const { view } = await world.frame();
+      expect(view?.rendered).toBe(true);
+      const next = effects();
+      adoptedPerFrame.push(next.filter((effect, at) => effect !== current[at]).length);
+      current = next;
+    }
+    expect({
+      allAdopted: current.every((effect, at) => effect !== before[at] && world.driver.created.includes(effect!)),
+      atMostPerFrame: Math.max(...adoptedPerFrame) <= FIRST_DRAWS_PER_FRAME,
+      spread: adoptedPerFrame.filter((count) => count > 0).length >= Math.ceil(barrels.length / FIRST_DRAWS_PER_FRAME),
+    }, JSON.stringify(adoptedPerFrame)).toEqual({ allAdopted: true, atMostPerFrame: true, spread: true });
   });
 
   it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {

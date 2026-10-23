@@ -6,6 +6,7 @@ import {
   DEFAULT_SCENE_SUN_ACTOR_ID,
   DEFAULT_SCENE_SUN_POSITION,
   lookAtRotation,
+  normalizeCelShadingSettings,
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
   parseAreaRectLightProperties,
@@ -661,6 +662,8 @@ function placeGlobals(ctx: FeatureTestContext, refs: RenderingRefs): void {
     }
     for (const extra of skies.slice(1)) scene.actors.splice(scene.actors.indexOf(extra), 1);
   }
+  // Image-based lighting from that sky.
+  scene.settings.environmentSource = "skybox";
 
   // Directional sun: shadowed, admitted before every local shadow caster.
   let sun = scene.actors.find((entry) => entry.id === DEFAULT_SCENE_SUN_ACTOR_ID);
@@ -986,7 +989,10 @@ async function addClusteredScene(ctx: FeatureTestContext): Promise<void> {
   });
 }
 
-/** Moderate-cost PBR showcase: every effect on at modest resolution scales, FSR below native. */
+/**
+ * Moderate-cost PBR showcase: every effect on at modest resolution scales, FSR below native. CEL (`ft_cel`) opts in
+ * to Real-Time Reflections, so the metal and mirror surfaces keep reflecting there.
+ */
 function applyRenderSettings(settings: ProjectSettings, lut: string | null): ProjectSettings {
   const render = settings.render;
   const effects = normalizeRenderEffectsSettings(render.effects);
@@ -999,6 +1005,7 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
       // Clustered Forward is WebGL2-only.
       gpuBackend: "webgl2",
       mode: "pbr",
+      cel: { ...normalizeCelShadingSettings(render.cel), reflectionsEnabled: true },
       shadows: { ...shadows, enabled: true },
       effects: {
         ...effects,

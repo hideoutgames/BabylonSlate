@@ -558,11 +558,11 @@ describe("SceneDetailsPanel authoring", () => {
     expect(shadows().getAttribute("aria-expanded")).toBe("false");
     expect(cel().getAttribute("aria-expanded")).toBe("false");
     expect(environment().getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
+    expect(screen.queryByTestId("property-scene-environment-source")).toBeNull();
     search("environment rotation");
     expect(environment().getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByLabelText("Environment Rotation")).toBeTruthy();
-    expect(screen.getByTestId("property-scene-environment-texture")).toBeTruthy();
+    expect(screen.getByTestId("property-scene-environment-source")).toBeTruthy();
     search("");
     expect(environment().getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByLabelText("Shadow Distance")).toBeNull();
@@ -812,6 +812,32 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-scene-fog-start")).toBeTruthy();
     expect(screen.getByTestId("property-scene-fog-end")).toBeTruthy();
     expect(screen.queryByTestId("property-scene-fog-density")).toBeNull();
+  });
+
+  it("shows Environment Texture only for the Texture source and keeps the picked cube while lighting from the Skybox", async () => {
+    scene().settings.environmentTextureGuid = "kept-cube";
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const applyChange = () => {
+      harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+      view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    };
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "environment source" } });
+    expect(screen.getByTestId("property-scene-environment-source").textContent).toContain("Skybox");
+    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
+    const choose = async (name: string) => {
+      fireEvent.click(screen.getByTestId("property-scene-environment-source"));
+      const option = await screen.findByRole("option", { name });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+      applyChange();
+    };
+    await choose("Texture");
+    expect(scene().settings.environmentSource).toBe("texture");
+    expect(screen.getByTestId("property-scene-environment-texture")).toBeTruthy();
+    await choose("Skybox");
+    expect(scene().settings.environmentSource).toBe("skybox");
+    expect(scene().settings.environmentTextureGuid).toBe("kept-cube");
+    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
   });
 
   it("switches exponential fog modes and resets individual controls without losing authored values", async () => {
@@ -1169,6 +1195,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(
       screen.queryByTestId("property-scene-environment-texture"),
     ).toBeNull();
+    expect(screen.queryByTestId("property-scene-environment-source")).toBeNull();
     expect(screen.queryByTestId("scene-layers-stack")).toBeNull();
     expect(
       screen.queryByTestId("property-scene-game-instance-class"),

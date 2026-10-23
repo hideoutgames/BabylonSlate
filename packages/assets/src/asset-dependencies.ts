@@ -431,7 +431,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     }
   } else if (assetType === "Scene" || assetType === "SceneLayer") {
     const settings = row(payload.settings);
-    add(settings.environmentTextureGuid);
+    // A Texture kept while the scene lights from its Skybox (or nothing) ships nowhere.
+    add(settings.environmentTextureGuid, settings.environmentSource !== "none" && settings.environmentSource !== "skybox");
     for (const pass of rows(settings.postProcessStack)) { add(pass.materialGuid, pass.enabled !== false); materialParameters(pass.parameters, pass.enabled !== false); }
     for (const layer of rows(settings.sceneLayers)) add(layer.assetGuid, layer.enabled !== false);
     for (const group of rows(settings.foliageGroups)) for (const model of rows(group.models)) { add(model.modelGuid, false); add(model.materialGuid, false); }
