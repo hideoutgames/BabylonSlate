@@ -54,3 +54,60 @@ export function buildFloatDdsCubeFixture(
   }
   return bytes;
 }
+
+/** RGBE bytes of a linear color; exact for values with at most eight significant bits. */
+function rgbe([r, g, b]: readonly [number, number, number]): [number, number, number, number] {
+  const max = Math.max(r, g, b);
+  if (max <= 0) return [0, 0, 0, 0];
+  const exponent = Math.floor(Math.log2(max)) + 1;
+  const scale = 256 / 2 ** exponent;
+  return [Math.floor(r * scale), Math.floor(g * scale), Math.floor(b * scale), exponent + 128];
+}
+
+/** Run-length planes as Radiance writes them: runs of three or more repeat, the rest stay literal. */
+function runLengthPlane(plane: number[]): number[] {
+  const out: number[] = [];
+  let index = 0;
+  while (index < plane.length) {
+    let run = 1;
+    while (index + run < plane.length && run < 127 && plane[index + run] === plane[index]) run++;
+    if (run >= 3) {
+      out.push(128 + run, plane[index]!);
+      index += run;
+      continue;
+    }
+    const start = index;
+    while (index < plane.length && index - start < 128) {
+      if (index + 2 < plane.length && plane[index] === plane[index + 1] && plane[index] === plane[index + 2]) break;
+      index++;
+    }
+    out.push(index - start, ...plane.slice(start, index));
+  }
+  return out;
+}
+
+/** Numeric equirectangular Radiance HDR (`-Y height +X width`); `color` takes the pixel column and row. */
+export function buildRadianceHdrFixture(options: {
+  width: number;
+  height: number;
+  color: (x: number, y: number) => readonly [number, number, number];
+  runLength?: boolean;
+  header?: string;
+}): Uint8Array<ArrayBuffer> {
+  const { width, height } = options;
+  const header = options.header ?? `#?RADIANCE\nFORMAT=32-bit_rle_rgbe\nEXPOSURE=1.0\n\n-Y ${height} +X ${width}\n`;
+  const body: number[] = [];
+  for (let y = 0; y < height; y++) {
+    const pixels = Array.from({ length: width }, (_, x) => rgbe(options.color(x, y)));
+    if (options.runLength) {
+      body.push(2, 2, width >> 8, width & 0xff);
+      for (let channel = 0; channel < 4; channel++)
+        body.push(...runLengthPlane(pixels.map((pixel) => pixel[channel]!)));
+    } else for (const pixel of pixels) body.push(...pixel);
+  }
+  const head = new TextEncoder().encode(header);
+  const bytes = new Uint8Array(head.length + body.length);
+  bytes.set(head);
+  bytes.set(body, head.length);
+  return bytes;
+}
