@@ -68,12 +68,34 @@ export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
 }
 
 const readinessDirtyListeners = new WeakMap<Scene, Set<() => void>>();
+const heldSignals = new WeakMap<Scene, number>();
+
+/**
+ * Runs `change`, which gives back before it returns every change it makes (a variant prediction's what-if admission),
+ * without marking the scene's readiness stale or reporting its receivers changed: no frame draws the state in between.
+ */
+export function withSceneSignalsHeld<T>(scene: Scene, change: () => T): T {
+  heldSignals.set(scene, (heldSignals.get(scene) ?? 0) + 1);
+  try {
+    return change();
+  } finally {
+    const held = heldSignals.get(scene)! - 1;
+    if (held) heldSignals.set(scene, held);
+    else heldSignals.delete(scene);
+  }
+}
+
+/** Whether `withSceneSignalsHeld` is running a change on `scene`. */
+export function sceneSignalsHeld(scene: Scene): boolean {
+  return heldSignals.has(scene);
+}
 
 /**
  * Project-owned rendering-definition changes that Babylon observables do not
  * cover mark the scene's cached strict readiness result stale.
  */
 export function markSceneReadinessDirty(scene: Scene): void {
+  if (heldSignals.has(scene)) return;
   for (const listener of readinessDirtyListeners.get(scene) ?? []) listener();
 }
 
@@ -102,6 +124,7 @@ const receiverChangeListeners = new WeakMap<Scene, Set<() => void>>();
  * Called once per change, never per frame.
  */
 export function notifySceneReceiversChanged(scene: Scene): void {
+  if (heldSignals.has(scene)) return;
   for (const listener of receiverChangeListeners.get(scene) ?? []) listener();
 }
 

@@ -31,6 +31,13 @@ const excluded = new WeakSet<Light>();
 const forwardExcluded = new WeakSet<Light>();
 const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
+/**
+ * Lights a what-if admission ranks this many times nearer than they are (squared distances divide by the square), for
+ * a variant prediction (`withForwardAdmissionPromotion`); empty otherwise.
+ */
+const admissionPromotions = new Map<Light, number>();
+/** An admitted light ranks this much nearer (squared distance divided by it), so a slightly nearer one cannot displace it. */
+const INCUMBENT_DISTANCE_BONUS = 1.15;
 const scratchLightPosition = new Vector3();
 // Per-call scratch, emptied before each call returns so no light stays retained.
 const scratchCandidates: Light[] = [];
@@ -405,7 +412,7 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
     if (!kept) return;
     const camera = scene.activeCamera;
     if (entering && camera) {
-      const distance = (light: Light) => Vector3.DistanceSquared(admissionPosition(light), camera.globalPosition);
+      const distance = (light: Light) => rankingDistanceSquared(light, camera);
       if (distance(kept) > distance(entering) * FORWARD_KIND_CHANGE_DISTANCE_RATIO ** 2) return;
     }
     candidates.length = 0;
@@ -489,6 +496,49 @@ export function isGlobalLight(light: Light): boolean {
   return light instanceof DirectionalLight || light instanceof HemisphericLight;
 }
 
+/** A light's squared distance to the camera as the Forward ranking sees it, a what-if promotion included. */
+function rankingDistanceSquared(light: Light, camera: { globalPosition: Vector3 }): number {
+  const promotion = admissionPromotions.get(light) ?? 1;
+  return Vector3.DistanceSquared(admissionPosition(light), camera.globalPosition) / (promotion * promotion);
+}
+
+/**
+ * Runs `admit` (a lighting sync) with `light` ranked `factor` times nearer than it is, in the Forward ranking and its
+ * kind-change margin: what the budget would admit once the camera brings it that much nearer. Only a variant
+ * prediction does this, on admission it then restores.
+ */
+export function withForwardAdmissionPromotion<T>(light: Light, factor: number, admit: () => T): T {
+  admissionPromotions.set(light, factor);
+  try {
+    return admit();
+  } finally {
+    admissionPromotions.delete(light);
+  }
+}
+
+/**
+ * The authored local lights the Forward budget leaves out that are nearest its cut-off, in rank order: each one
+ * whose distance is within `margin` times that of the farthest admitted local light (with that light's incumbent
+ * bonus), so a camera move of that ratio could admit it. Empty while every candidate fits.
+ */
+export function nearForwardAdmissions(scene: Scene, margin: number): Light[] {
+  const camera = scene.activeCamera;
+  const selected = forwardSelections.get(scene);
+  if (!camera || !selected?.size) return [];
+  let cutoff = 0;
+  const limited: [Light, number][] = [];
+  for (const light of scene.lights) {
+    if (!isForwardEligible(light) || !isAuthoredLocal(scene, light) || !isAuthoredLightEnabled(light)) continue;
+    if (!isClusteredLocalAllowed(scene, light)) continue;
+    const squared = Math.max(1, rankingDistanceSquared(light, camera));
+    if (selected.has(light)) cutoff = Math.max(cutoff, squared / INCUMBENT_DISTANCE_BONUS);
+    else if (forwardExcluded.has(light)) limited.push([light, squared]);
+  }
+  if (!cutoff) return [];
+  return limited.filter(([, squared]) => squared <= cutoff * margin * margin)
+    .sort((a, b) => a[1] - b[1] || a[0].uniqueId - b[0].uniqueId).map(([light]) => light);
+}
+
 /** Area lights inherit Light.getAbsolutePosition(), which is the origin. Rank
  * them where Babylon's shader transfer places them. */
 function admissionPosition(light: Light): Vector3 {
@@ -528,14 +578,11 @@ export function sortLightsByAdmission(
       }
       const squared =
         camera && !isGlobalLight(light)
-          ? Vector3.DistanceSquared(
-              admissionPosition(light),
-              camera.globalPosition,
-            )
+          ? rankingDistanceSquared(light, camera)
           : 0;
       distances.set(
         light,
-        Math.max(1, squared) / (previous.has(light) ? 1.15 : 1),
+        Math.max(1, squared) / (previous.has(light) ? INCUMBENT_DISTANCE_BONUS : 1),
       );
     }
     lights.sort(

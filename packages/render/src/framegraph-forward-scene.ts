@@ -28,6 +28,8 @@ import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
+import { sceneSignalsHeld } from "./scene-readiness-signal";
+import type { PredictionPass } from "./variant-prediction";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
@@ -493,7 +495,22 @@ export class ForwardSceneFrameGraph {
     return false;
   }
 
+  /**
+   * The passes a variant prediction prepares receivers in, once the graph is built (none for an auxiliary view): the
+   * main object pass and its blended depth pre-pass, which bind admitted shadow maps only, and the camera's pass, in
+   * which the strict readiness probe prepares every mesh with the lights' maps as they are.
+   */
+  predictionPasses(): PredictionPass[] {
+    if (this.auxiliary || !this.objects) return [];
+    return [
+      ...this.objects.drawPasses.map((id) => ({ id, admittedMapsOnly: true })),
+      { id: this.objects.camera.renderPassId, admittedMapsOnly: false },
+    ];
+  }
+
   markReadinessDirty(): void {
+    // A variant prediction's what-if admission, given back before any frame draws it.
+    if (sceneSignalsHeld(this.scene)) return;
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
     // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.

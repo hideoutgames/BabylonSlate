@@ -98,6 +98,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     });
   }
 
+  /** This pass's render pass ids (its own and its blended depth pre-pass's), whose variants a prediction compiles. */
+  get drawPasses(): number[] {
+    return [...this._renderer.renderPassIds, this.depthPrePass.renderPassId];
+  }
+
   /** Whether `renderPassId` is this pass's blended depth pre-pass, which draws with it every frame. */
   ownsRenderPass(renderPassId: number): boolean {
     return renderPassId === this.depthPrePass.renderPassId;

@@ -63,6 +63,8 @@ type WarmupState = {
   marking: number;
   /** Inside a warm draw: cold Effects are ready. */
   warming: boolean;
+  /** Inside a variant prediction (`withPredictedEffects`): the Effects it creates are known, never cold. */
+  predicting: boolean;
   /** Meshes the current round's probes asked to warm. */
   requests: Set<AbstractMesh>;
   /** Whether a mesh's last warm draws all found their pipelines. */
@@ -106,7 +108,7 @@ function install(engine: AbstractEngine): WarmupState {
   const compiled = (engine as unknown as { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
   const state: WarmupState = {
     cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false,
-    requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(),
+    requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(), predicting: false,
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
   if (!warmedPasses.has(engine)) warmedPasses.set(engine, new Map());
@@ -114,6 +116,8 @@ function install(engine: AbstractEngine): WarmupState {
     const effect = create.apply(this, args);
     const known = state.known.has(effect);
     state.known.add(effect);
+    // A prediction compiles ahead what an admission will ask for; the admission's own request finds it known.
+    if (state.predicting) return effect;
     if ((state.marking === 0 && !variantSwapsTolerated()) || state.cold.has(effect) || state.settled.has(effect)) return effect;
     // WebGPU: a variant no draw has drawn with has no pipeline yet (a new one, or one only a probe pass compiled).
     // WebGL2: a new variant has not been drawn either.
@@ -317,10 +321,27 @@ function warmDraw(
 }
 
 /**
+ * Runs `predict` (a variant prediction's probes, `variant-prediction.ts`) so the Effects it creates are known to the
+ * first-draw budget rather than cold: on WebGL2 the admission that later asks for one finds it linked and draws it at
+ * once; on WebGPU it still waits for its pipeline, which only a draw creates.
+ */
+export function withPredictedEffects<T>(engine: AbstractEngine, predict: () => T): T {
+  let state = states.get(engine);
+  if (!state) states.set(engine, (state = install(engine)));
+  const previous = state.predicting;
+  state.predicting = true;
+  try {
+    return predict();
+  } finally {
+    state.predicting = previous;
+  }
+}
+
+/**
  * `source` as a separate defines object: the same class, own properties in the same order, the same define list
  * (`_keys`, which only `rebuild` refreshes) and the same text, marked unprocessed so a preparation builds its Effect.
  */
-function copyDefines(source: MaterialDefines): MaterialDefines {
+export function copyDefines(source: MaterialDefines): MaterialDefines {
   const copy = Object.create(Object.getPrototypeOf(source)) as Record<string, unknown>;
   const values = source as unknown as Record<string, unknown>;
   for (const key of Object.keys(source)) {

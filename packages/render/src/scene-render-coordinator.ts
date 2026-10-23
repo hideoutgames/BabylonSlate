@@ -13,6 +13,7 @@ import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { preparePreviousEffectBindings, sceneBindsPreviousEffects } from "./fixed-light-binding";
 import { probeVariantSwaps, variantSwapsTolerated } from "./variant-swaps";
+import { predictLightVariants } from "./variant-prediction";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
 } from "./stall-deadline";
@@ -412,7 +413,10 @@ export class SceneRenderCoordinator {
     // validates a presentation waits for every requested variant.
     const tolerate = !validatePresentation && this.toleratesVariantSwaps();
     if (tolerate) this.graph.recheckVariantSwaps();
-    return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation));
+    const result = probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation));
+    // After a drawn steady frame, outside it: compile ahead what a light about to be admitted asks for.
+    if (tolerate && result.rendered) predictLightVariants(this.scene, this.graph.predictionPasses());
+    return result;
   }
 
   private renderFrame(validatePresentation: boolean): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
