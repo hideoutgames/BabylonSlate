@@ -508,7 +508,7 @@ export function needsOriginRoot(
     actor.components.some(c => isOverlayLayoutClass(c.classId)) ||
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
-    visuals.some((component) => component.classId === "CableComponent") ||
+    visuals.some((component) => component.classId === "CableComponent" || component.classId === MIRROR_CLASS_ID) ||
     visuals.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
     visuals.some((component) => component.classId === "FogVolumeComponent") ||

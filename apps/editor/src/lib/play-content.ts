@@ -262,6 +262,7 @@ export function materialAssetGuidsFromScene(
     ...componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "DynamicRuntimeMeshComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "CableComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "MirrorComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
     ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...UI_CONTROL_2D_CLASS_IDS.flatMap(classId => componentGuidsFromScene(scene, classId, ["backgroundMaterialGuid", "trackMaterialGuid", "fillMaterialGuid", "thumbMaterialGuid", "indicatorMaterialGuid"])),
