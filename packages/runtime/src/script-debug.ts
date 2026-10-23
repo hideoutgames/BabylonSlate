@@ -3,6 +3,7 @@ import type {
   DebugGraphTrace,
   DebugInstance,
   DebugObserveTarget,
+  DebugStep,
 } from "@haptic/bridge";
 import { sameDebugObserveTarget } from "@haptic/bridge";
 import { formatValue } from "@haptic/core";
@@ -107,6 +108,19 @@ type PinSlot = {
   sent: string | undefined;
 };
 
+/** Visits a tick's steps keep for the stepping control; later visits still light the graph and report values. */
+export const DEBUG_STEPS_PER_TICK = 200;
+/** Values one step keeps. */
+const DEBUG_STEP_VALUES = 32;
+
+/** Where a recorder reports each visit, wire and value in run order, for the steps. */
+interface StepLog {
+  readonly closed: boolean;
+  visit(recorder: GraphRecorder, nodeId: string): void;
+  via(recorder: GraphRecorder, edgeId: string): void;
+  value(recorder: GraphRecorder, nodeId: string, pinId: string, direction: "in" | "out", value: unknown): void;
+}
+
 class GraphRecorder implements ScriptGraphRecorder {
   private readonly nodes = new Set<string>();
   private readonly edges = new Set<string>();
@@ -114,22 +128,26 @@ class GraphRecorder implements ScriptGraphRecorder {
   private readonly outputs = new Map<string, Map<string, PinSlot>>();
   private pending: PinSlot[] = [];
 
-  private readonly assetGuid: string;
-  private readonly graphId: string;
-  private readonly sink: { readonly closed: boolean };
+  readonly assetGuid: string;
+  readonly graphId: string;
+  private readonly sink: StepLog;
 
-  constructor(assetGuid: string, graphId: string, sink: { readonly closed: boolean }) {
+  constructor(assetGuid: string, graphId: string, sink: StepLog) {
     this.assetGuid = assetGuid;
     this.graphId = graphId;
     this.sink = sink;
   }
 
   exec(nodeId: string): void {
-    if (!this.sink.closed) this.nodes.add(nodeId);
+    if (this.sink.closed) return;
+    this.nodes.add(nodeId);
+    this.sink.visit(this, nodeId);
   }
 
   edge(edgeId: string): void {
-    if (!this.sink.closed) this.edges.add(edgeId);
+    if (this.sink.closed) return;
+    this.edges.add(edgeId);
+    this.sink.via(this, edgeId);
   }
 
   read<T>(nodeId: string, pinId: string, value: T): T {
@@ -153,6 +171,7 @@ class GraphRecorder implements ScriptGraphRecorder {
     let slot = byPin.get(pinId);
     if (!slot) byPin.set(pinId, slot = { nodeId, pinId, direction, value: undefined, pending: false, sent: undefined });
     slot.value = value === null || typeof value !== "object" ? value : formatDebugValue(value);
+    this.sink.value(this, nodeId, pinId, direction, slot.value);
     if (!slot.pending) {
       slot.pending = true;
       this.pending.push(slot);
@@ -185,10 +204,23 @@ class GraphRecorder implements ScriptGraphRecorder {
   }
 }
 
-/** The recorders of one followed instance. A new follow gets a new sink, so a late run of the old one is ignored. */
-export class ExecutionTraceSink implements ScriptDebugTrace {
+type StepRecord = { recorder: GraphRecorder; nodeId: string; via: string | null; values: DebugGraphTrace["values"] };
+
+/**
+ * The recorders of one followed instance. A new follow gets a new sink, so a late run of the old one is ignored.
+ * Besides each graph's trace, it keeps the tick's visits in run order across graphs (`drainSteps`).
+ */
+export class ExecutionTraceSink implements ScriptDebugTrace, StepLog {
   closed = false;
   private readonly recorders = new Map<string, Map<string, GraphRecorder>>();
+  private steps: StepRecord[] = [];
+  private truncated = false;
+  /** Each graph's latest visit this tick: where that graph's values go. */
+  private readonly latest = new Map<GraphRecorder, StepRecord>();
+  /** A wire taken, for the graph's next visit. */
+  private readonly pendingVia = new Map<GraphRecorder, string>();
+  /** The text each pin last had in this tick's steps, by graph and `direction node pin`. */
+  private readonly stepTexts = new Map<GraphRecorder, Map<string, string>>();
 
   graph(assetGuid: string, graphId: string): ScriptGraphRecorder | null {
     if (this.closed) return null;
@@ -197,6 +229,64 @@ export class ExecutionTraceSink implements ScriptDebugTrace {
     let recorder = byGraph.get(graphId);
     if (!recorder) byGraph.set(graphId, recorder = new GraphRecorder(assetGuid, graphId, this));
     return recorder;
+  }
+
+  /** @internal */
+  visit(recorder: GraphRecorder, nodeId: string): void {
+    const via = this.pendingVia.get(recorder) ?? null;
+    this.pendingVia.delete(recorder);
+    if (this.steps.length >= DEBUG_STEPS_PER_TICK) {
+      this.truncated = true;
+      this.latest.delete(recorder);
+      return;
+    }
+    const step: StepRecord = { recorder, nodeId, via, values: [] };
+    this.steps.push(step);
+    this.latest.set(recorder, step);
+  }
+
+  /** @internal */
+  via(recorder: GraphRecorder, edgeId: string): void {
+    this.pendingVia.set(recorder, edgeId);
+  }
+
+  /** @internal */
+  value(recorder: GraphRecorder, nodeId: string, pinId: string, direction: "in" | "out", value: unknown): void {
+    // A value before the graph's first visit of the tick, or after the tick's limit, has no step to join.
+    const values = this.latest.get(recorder)?.values;
+    if (!values) return;
+    const text = formatDebugValue(value);
+    let texts = this.stepTexts.get(recorder);
+    if (!texts) this.stepTexts.set(recorder, texts = new Map());
+    const key = `${direction}\0${nodeId}\0${pinId}`;
+    if (texts.get(key) === text) return;
+    if (values.length >= DEBUG_STEP_VALUES) {
+      this.truncated = true;
+      return;
+    }
+    texts.set(key, text);
+    values.push([nodeId, pinId, direction, text]);
+  }
+
+  /**
+   * The visits since the last call, in run order, each naming its graph by index into `graphs` (this tick's
+   * `drain`); null when there were none. Starts the next tick's steps afresh.
+   */
+  drainSteps(graphs: readonly DebugGraphTrace[]): { steps: DebugStep[]; truncated: boolean } | null {
+    const records = this.steps;
+    const truncated = this.truncated;
+    this.steps = [];
+    this.truncated = false;
+    this.latest.clear();
+    this.pendingVia.clear();
+    this.stepTexts.clear();
+    const index = new Map(graphs.map((trace, i) => [`${trace.assetGuid}\0${trace.graphId}`, i]));
+    const steps: DebugStep[] = [];
+    for (const { recorder, nodeId, via, values } of records) {
+      const graph = index.get(`${recorder.assetGuid}\0${recorder.graphId}`);
+      if (graph !== undefined) steps.push([graph, nodeId, via, values]);
+    }
+    return steps.length > 0 ? { steps, truncated } : null;
   }
 
   /** What every graph ran since the last drain. */
@@ -369,8 +459,12 @@ export class ScriptDebugObserver {
     const target = this.target;
     if (!target) return;
     const graphs = this.sink?.drain() ?? [];
+    const steps = this.sink?.drainSteps(graphs) ?? null;
     if (this.followed && graphs.length > 0) {
-      this.host.emit({ type: "executionTrace", target, instanceId: this.followed.guid, tickIndex, graphs });
+      this.host.emit({
+        type: "executionTrace", target, instanceId: this.followed.guid, tickIndex, graphs,
+        ...(steps ? { steps: steps.steps, ...(steps.truncated ? { stepsTruncated: true } : {}) } : {}),
+      });
     }
     this.publishVariables(tickIndex);
     // Its On Destroyed run was the last thing worth reporting.

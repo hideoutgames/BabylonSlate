@@ -92,7 +92,7 @@ When Play reaches a breakpoint or an error, the game pauses (its time, physics a
 | **Stopped At** | Names where a breakpoint stopped Play. Choose it to open the node again. |
 | **Stop** | Ends Play. |
 
-The **Debug** menu stays available. Documents are read-only until you choose **Resume** or **Stop**, but you can still add, remove and disable breakpoints. The Scene view does not redraw until Play ends. To walk through a run tick by tick, use a [Simulation](#simulate-controls) instead.
+The **Debug** menu stays available. Documents are read-only until you choose **Resume** or **Stop**, but you can still add, remove and disable breakpoints. The Scene view does not redraw until Play ends. To walk through what the object ran, use the [stepping bar](#step-through-a-run) on its graph.
 
 ## Watch a graph run
 
@@ -141,13 +141,24 @@ The **Watches** window, opened from a Class's **Windows** menu, keeps chosen val
 - To watch a pin, choose **Watch Pin** in a Class graph node's menu, then the pin. It lists the node's outputs and the inputs that have a wire. Choose the pin again to stop watching it.
 - To watch a variable, choose **Add Watch** in the variable's menu in the **Class** panel. Inherited variables work too. A function's local variables and a component's variables can't be watched.
 
-Each row shows the latest value, as text with the same limits as a pin's tip. A variable updates whenever it changes, even when another object's script changes it. While the Simulation is paused, values hold, and a **Step** updates them. Instead of a value, a row shows:
+Each row shows the latest value, as text with the same limits as a pin's tip. A variable updates whenever it changes, even when another object's script changes it. While the Simulation is paused, values hold, and a **Step** updates them. While you [step through a run](#step-through-a-run), pin watches show the value at that step; variables keep their latest value. Instead of a value, a row shows:
 
 - **Not Debugged** when no Simulation, or Play stopped in the editor, is showing that Class. Watches update only for the Class you have open, and running Play updates none until it stops at a breakpoint or an error.
 - **No Object** when **Debug Instance** is **None**.
 - **No Value Yet** before the node has run for the object.
 
 **Remove All** clears the list. Watches are kept with the project on this device, like breakpoints.
+
+### Step through a run
+
+While a Simulation, or Play stopped in the editor, is paused, a Class or Animation Object graph shows a stepping bar at the bottom of the canvas. It walks through the nodes the object you picked ran, one at a time and in order:
+
+- **Step Back** goes to the node that ran before. From the live view it starts at the last node of the latest tick, and it crosses into earlier ticks, as far back as the last 8.
+- **Step Forward** goes to the node that ran next. At the newest one it runs the game for one more tick and stops at that tick's first node.
+
+The bar names the tick and the step, such as **Tick 120 · Step 4 of 17**, and shows **Past** while you look at an earlier step. At each step the graph opens at the node, a function's graph too, and lights the path that tick took up to it. Pin tips and pin watches show the values they had at that step. Stepping back only reviews what was recorded; it never rewinds the game.
+
+A tick keeps its first 200 steps. When it ran more, its last recorded step says **Later Steps Not Recorded**. The bar says **Nothing Recorded Yet** until the object has run a tick while being watched, for example right after a breakpoint stopped on an object Debug Instance was not following. Resuming, or a tick that runs some other way, returns to the live view.
 
 The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Simulation and Play compile Class graphs and Animation Object graphs with these checks; while nothing is watched or set, each costs a quick check per node. Preview Build and exported games do not include them, so they pay nothing for it.
 
