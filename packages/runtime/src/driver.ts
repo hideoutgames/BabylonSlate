@@ -2015,8 +2015,9 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  /** Tick phase 3. */
+  /** Tick phase 3, timed as `sceneSystems` apart from the World's post-physics phase. */
   private tickSceneSystems(simDt: number): void {
+    this.ticks.markPhase("sceneSystems");
     this.tweens.cancelInvalid();
     this.delays.advance(simDt);
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.animGraphs.tick(simDt);

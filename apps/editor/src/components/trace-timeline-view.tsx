@@ -203,6 +203,11 @@ export function TraceTimelineView({
             <span className="rounded-md bg-muted px-2 py-0.5 font-medium tabular-nums">
               <SelectableText>Tick Total {tickMs.toFixed(2)} ms</SelectableText>
             </span>
+            {frame.publishMs !== undefined ? (
+              <span className="rounded-md bg-muted px-2 py-0.5 tabular-nums" data-testid="trace-frame-publish">
+                <SelectableText>Publish {frame.publishMs.toFixed(2)} ms</SelectableText>
+              </span>
+            ) : null}
             <Badge
               variant={overBudget ? "destructive" : "outline"}
               className={cn(!overBudget && "text-(--success)")}

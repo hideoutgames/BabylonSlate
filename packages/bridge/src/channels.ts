@@ -803,6 +803,8 @@ export type CommandMessage =
       tickIndex: number;
       scriptMs: number;
       physicsMs: number;
+      /** The last tick's milliseconds per timed phase, in `TICK_TIMING_PHASES` order (`@haptic/debugger`). */
+      phaseMs?: number[];
       /** Most recent snapshot publish: overlay layout and removal pass, world composition and buffer write. */
       publishMs?: number;
       fps?: number;

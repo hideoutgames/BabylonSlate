@@ -47,6 +47,20 @@ describe("statsHudModel", () => {
     expect(model.frame.map((metric) => metric.text)).toEqual(["— ms", "0.00 ms", "0.00 ms"]);
   });
 
+  it("splits the Unit row into the tick's timed phases when the host reports them", () => {
+    const phaseMs = [0.1, 0.2, 1.5, 0.5, 2, 0.3, 0.4];
+    const row = (input: Parameters<typeof statsHudModel>[0]) =>
+      statsHudModel(input, ["unit"]).rows[0]!.metrics.map(({ label, text }) => `${label} ${text}`);
+    expect(row({ fps: 60, scriptMs: 3, physicsMs: 2, publishMs: 0.5, phaseMs })).toEqual([
+      "tick 5.00 / 8 ms",
+      "game 0.10 ms", "subsystems 0.20 ms", "actors 1.50 ms", "components 0.50 ms",
+      "physics 2.00 ms", "post-physics 0.30 ms", "systems 0.40 ms",
+      "publish 0.50 ms",
+    ]);
+    // A host without the split (or an incomplete one) keeps the total.
+    expect(row({ fps: 60, scriptMs: 3, physicsMs: 2, publishMs: 0.5, phaseMs: [1, 2] })).toEqual(["tick 5.00 / 8 ms", "publish 0.50 ms"]);
+  });
+
   it("marks the tick timings and the Unit row over budget", () => {
     const model = statsHudModel({ fps: 50, scriptMs: 6, physicsMs: 3, publishMs: 0.5 }, ["unit"]);
     expect(model.overBudget).toBe(true);

@@ -979,6 +979,7 @@ function initializePlayer(
           scriptMs: Number(command.scriptMs ?? 0),
           physicsMs: Number(command.physicsMs ?? 0),
           publishMs: Number(command.publishMs ?? 0),
+          ...(Array.isArray(command.phaseMs) ? { phaseMs: command.phaseMs.map(Number) } : {}),
           liveActors: Number(command.liveActors ?? 0),
           snapshotCapacity: Number(command.snapshotCapacity ?? 0),
         }),
