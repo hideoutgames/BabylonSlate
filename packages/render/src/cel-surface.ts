@@ -35,7 +35,10 @@ export function installCelSurface(
 ): void {
   if (plan.shadingModel === "unlit") return;
   const state = sceneRenderingSettings(material.getScene());
-  let cel: NodeMaterialBlock | undefined;
+  // Flat and reflective CEL outputs. Only the reflective one reaches the metallic and roughness inputs, whose
+  // textures would otherwise bind on every CEL draw while no reflection reads them.
+  let flat: NodeMaterialBlock | undefined;
+  let reflective: NodeMaterialBlock | undefined;
   let active = pbr;
   let disposed = false;
   let queued = false;
@@ -55,10 +58,11 @@ export function installCelSurface(
       }
       return;
     }
-    const useCel = state.mode === "cel";
-    if (useCel && !cel)
-      cel = createCelSurface(material.name, created, plumbing, outputPoint);
-    const next = useCel ? cel! : pbr;
+    const next = state.mode !== "cel"
+      ? pbr
+      : state.celReflections
+        ? (reflective ??= createCelSurface(material.name, created, plumbing, outputPoint, true))
+        : (flat ??= createCelSurface(material.name, created, plumbing, outputPoint, false));
     if (active === next) return;
     material.removeOutputNode(active);
     material.addOutputNode(next);
@@ -89,7 +93,9 @@ function createCelSurface(
   created: NodeMaterialBlock[],
   plumbing: MaterialPlumbing,
   outputPoint: OutputPoint,
+  reflective: boolean,
 ): NodeMaterialBlock {
+  if (reflective) name = `${name}_reflective`;
   const lighting = new CelLightBlock(`${name}_cel`);
   const fragment = new GeometrySurfaceOutputBlock(`${name}_celFragment`);
   connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${name}_geometryNormal`, false), created);
@@ -105,7 +111,7 @@ function createCelSurface(
     point.connectTo(conversion.color);
     return conversion.output;
   };
-  const base = outputPoint("baseColor", `${name}_celBase`, true);
+  let base = outputPoint("baseColor", `${name}_celBase`, true);
   if (base) toDisplay(base, "baseDisplay").connectTo(lighting.diffuseColor);
   else {
     const fallback = createConstantBlock(
@@ -115,7 +121,15 @@ function createCelSurface(
       true,
     );
     created.push(fallback);
+    base = fallback.output;
     toDisplay(fallback.output, "fallbackDisplay").connectTo(lighting.diffuseColor);
+  }
+  if (reflective) {
+    // The PBR surface's reflectivity encoding (geometry-surface-output-block.ts), so a CEL surface reflects as the
+    // same Material does in PBR. The linear base color, not the display one CEL lights with.
+    base.connectTo(fragment.geometryBaseColor);
+    outputPoint("metallic", `${name}_celMetallic`, false)?.connectTo(fragment.geometryMetallic);
+    outputPoint("roughness", `${name}_celRoughness`, false)?.connectTo(fragment.geometryRoughness);
   }
   const normal = outputPoint("normal", `${name}_celNormal`, false);
   if (normal) {

@@ -22,8 +22,13 @@ import {
   celEnvironmentAccumulation,
   CEL_UNIFORMS,
 } from "./cel-shader";
+import { reflectivityWrite, STANDARD_REFLECTIVITY_WRITE } from "./standard-reflectivity";
 
-const NATIVE_CEL_UNIFORMS = [...CEL_UNIFORMS, "slateCelTextures"];
+/**
+ * `slateCelTextures`: x, y diffuse and emissive texture linear, z PBR source, w reflection glossiness.
+ * `slateCelReflectivity`: rgb non-metal F0, a metalness; all zero for an unlit source.
+ */
+const NATIVE_CEL_UNIFORMS = [...CEL_UNIFORMS, "slateCelTextures", "slateCelReflectivity"];
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetShadersStore(wgsl ? 1 : 0);
   store.slateCelVertexShader = (
@@ -37,6 +42,8 @@ for (const wgsl of [false, true]) {
     ? "TEXRD(emissiveSampler,emissiveSamplerSampler,fragmentInputs.vEmissiveUV+uvOffset).rgb"
     : "TEXRD(emissiveSampler,vEmissiveUV+uvOffset).rgb";
   const emissiveLevel = wgsl ? "uniforms.vEmissiveInfos.y" : "vEmissiveInfos.y";
+  const reflectivity = wgsl ? "uniforms.slateCelReflectivity" : "slateCelReflectivity";
+  const reflectance = `${wgsl ? "vec4f" : "vec4"}(mix(${reflectivity}.rgb,${wgsl ? "toLinearSpaceVec3" : "toLinearSpace"}(baseColor.rgb*diffuseColor),${reflectivity}.a),${textureFlags}.w)*writeGeometryInfo`;
   store.slateCelPixelShader = checkedShader((
     wgsl ? defaultPixelShaderWGSL : defaultPixelShader
   ).shader, wgsl ? "native WGSL" : "native GLSL")
@@ -61,7 +68,33 @@ for (const wgsl of [false, true]) {
       "#ifdef EMISSIVEASILLUMINATION",
       `${celEnvironmentAccumulation(wgsl)}\ndiffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase);\n#endif\n#ifdef EMISSIVEASILLUMINATION`,
       2,
-    ).value;
+    )
+    // Reflect as the source does in PBR, from its factors: a metal's F0 is its base color, linearized from display.
+    .replace(STANDARD_REFLECTIVITY_WRITE, `#ifdef PREPASS_REFLECTIVITY\n${reflectivityWrite(wgsl, reflectance)}\n`).value;
+}
+
+const linearSpecular = new Color3();
+
+/** Reflectivity uniforms (rgb non-metal F0, metalness, glossiness) for a source as Babylon's PBR draws it. */
+export function celSourceReflectivity(
+  source: PBRMaterial | StandardMaterial,
+  unlit: boolean,
+): [number, number, number, number, number] {
+  if (unlit) return [0, 0, 0, 0, 0];
+  if (source instanceof PBRMaterial) {
+    const clamp = (value: number) => Math.min(1, Math.max(0, value));
+    // Metallic workflow, as Babylon selects it. A metalness texture is not read here, so it reads as non-metal.
+    if (source.metallic !== null || source.roughness !== null)
+      return [0.04, 0.04, 0.04, source.metallicTexture ? 0 : clamp(source.metallic ?? 1), 1 - clamp(source.roughness ?? 1)];
+    // Specular-glossiness workflow: the reflectivity color is F0. A reflectivity texture is not read, so none.
+    if (source.reflectivityTexture) return [0, 0, 0, 0, 0];
+    const color = source.reflectivityColor;
+    return [color.r, color.g, color.b, 0, clamp(source.microSurface)];
+  }
+  // Babylon's Standard encoding: the linear specular color at full gloss. A specular map is not read, so none.
+  if (source.specularTexture) return [0, 0, 0, 0, 0];
+  const color = source.specularColor.toLinearSpaceToRef(linearSpecular);
+  return [color.r, color.g, color.b, 0, 1];
 }
 
 /** Native non-PBR surface adapter for imported and engine fallback materials. */
@@ -69,6 +102,8 @@ export class CelMaterial extends StandardMaterial {
   readonly source: PBRMaterial | StandardMaterial;
   private sourceFillMode = -1;
   private sourceLighting: boolean | undefined;
+  /** Read only by the reflectivity geometry pass (`PREPASS_REFLECTIVITY`), which Real-Time Reflections request. */
+  private reflectivity: readonly number[] = [0, 0, 0, 0, 0];
   private readonly shadowShaderResolver: Material["customShaderNameResolve"];
   private readonly shadowBindObserver: Observer<AbstractMesh>;
   constructor(source: PBRMaterial | StandardMaterial, scene: Scene) {
@@ -98,8 +133,10 @@ export class CelMaterial extends StandardMaterial {
               : 0,
           this.emissiveTexture && !this.emissiveTexture.gammaSpace ? 1 : 0,
           source instanceof PBRMaterial ? 1 : 0,
-          0,
+          this.reflectivity[4]!,
         );
+        const reflectivity = this.reflectivity;
+        effect.setFloat4("slateCelReflectivity", reflectivity[0]!, reflectivity[1]!, reflectivity[2]!, reflectivity[3]!);
       }
     });
     this.syncSource();
@@ -156,6 +193,7 @@ export class CelMaterial extends StandardMaterial {
       this.disableLighting = unlit;
       this.sourceLighting = unlit;
     }
+    this.reflectivity = celSourceReflectivity(source, unlit);
     if (source instanceof PBRMaterial) {
       // glTF color factors are linear; textures retain their authored sRGB pixels.
       source.albedoColor.toGammaSpaceToRef(this.diffuseColor, true);

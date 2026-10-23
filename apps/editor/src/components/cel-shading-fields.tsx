@@ -30,6 +30,10 @@ const lightMixingLabels = {
   blend: "Blend",
 } as const;
 
+type SwitchKey = "outlinesEnabled" | "outlineDistanceFadeEnabled" | "specularEnabled" | "reflectionsEnabled";
+const isSwitch = (key: keyof CelShadingSettings): key is SwitchKey =>
+  key === "outlinesEnabled" || key === "outlineDistanceFadeEnabled" || key === "specularEnabled" || key === "reflectionsEnabled";
+
 const fields: {
   key: keyof CelShadingSettings;
   label: string;
@@ -107,6 +111,12 @@ const fields: {
     description:
       "Colored light tint. Zero uses neutral light with the same intensity.",
   },
+  {
+    key: "reflectionsEnabled",
+    label: "Real-Time Reflections",
+    description:
+      "Lets Real-Time Reflections from Post Processing draw on CEL surfaces. Off keeps CEL flat.",
+  },
 ];
 
 type Props = {
@@ -156,7 +166,7 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
                   </Button>
                 ) : null}
               </div>
-              {key === "specularEnabled" || key === "outlinesEnabled" || key === "outlineDistanceFadeEnabled" ? (
+              {isSwitch(key) ? (
                 <Switch
                   id={id}
                   aria-describedby={`${id}-description`}
@@ -217,7 +227,7 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
               )}
               <FieldDescription id={`${id}-description`}>
                 {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : key === "specularEnabled" || key === "outlinesEnabled" || key === "outlineDistanceFadeEnabled" ? project[key] ? "On" : "Off" : key === "outlineColor" ? colorToHex(project[key]) : project[key]}. `
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : isSwitch(key) ? project[key] ? "On" : "Off" : key === "outlineColor" ? colorToHex(project[key]) : project[key]}. `
                   : ""}
                 {description}
               </FieldDescription>
