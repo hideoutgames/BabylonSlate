@@ -240,6 +240,7 @@ export class PlanarMirrorMath {
     const v = view.m, n0 = plane.nx, n1 = plane.ny, n2 = plane.nz;
     const q = this.rotation, eye = this.eye, values = this.values;
     const distance = n0 * eyePosition.x + n1 * eyePosition.y + n2 * eyePosition.z + plane.d;
+    if (!(distance > 1e-6)) return false;
     // Mirror view = reflect(world) · view · flipX, with reflect = I − 2nnᵀ.
     for (let j = 0; j < 3; j++) {
       const along = n0 * v[j]! + n1 * v[4 + j]! + n2 * v[8 + j]!;

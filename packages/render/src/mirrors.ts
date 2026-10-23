@@ -178,7 +178,8 @@ class SceneMirrors {
     surface.visible = false;
     if (surface.failed || !surface.properties.enabled || mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible ||
       mesh.visibility <= 0 || !(mesh.layerMask & layerMask)) return;
-    const m = mesh.computeWorldMatrix().m;
+    // Forced: a transform written earlier in this render id (a snapshot, an edit) must not read a cached matrix.
+    const m = mesh.computeWorldMatrix(true).m;
     const halfWidth = surface.properties.width / 2, halfHeight = surface.properties.height / 2;
     surface.cx = m[12]!; surface.cy = m[13]!; surface.cz = m[14]!;
     surface.ux = m[0]! * halfWidth; surface.uy = m[1]! * halfWidth; surface.uz = m[2]! * halfWidth;
