@@ -23,6 +23,7 @@ test("exported games carry the notices of their physics and texture runtimes", (
     assert.match(game, new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")} `, "m"), name);
   }
   assert.doesNotMatch(game, /^react /m, "editor-only packages stay out of games");
+  assert.doesNotMatch(game, /^@revenuecat\//m, "packages the player depends on but never bundles stay out of games");
 });
 
 test("the editor list marks what also ships in games", () => {
@@ -31,5 +32,6 @@ test("the editor list marks what also ships in games", () => {
   assert.equal(byName.get("react")?.inGames, false);
   assert.equal(byName.get("@babylonjs/havok")?.inGames, true);
   assert.equal(byName.get("Basis Universal encoder")?.inGames, false);
+  assert.equal(byName.get("@revenuecat/purchases-capacitor")?.inGames, false);
   for (const entry of packages) assert.ok(texts[entry.text]?.length > 0, entry.name);
 });

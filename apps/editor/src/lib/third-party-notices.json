@@ -69,7 +69,7 @@
    "version": "8.1.1",
    "license": "MIT",
    "source": "https://github.com/ionic-team/capacitor-plugins",
-   "inGames": true,
+   "inGames": false,
    "text": 6
   },
   {
@@ -101,7 +101,7 @@
    "version": "8.0.1",
    "license": "MIT",
    "source": "https://github.com/ionic-team/capacitor-plugins",
-   "inGames": true,
+   "inGames": false,
    "text": 6
   },
   {
@@ -109,7 +109,7 @@
    "version": "8.0.3",
    "license": "MIT",
    "source": "https://github.com/ionic-team/capacitor-plugins",
-   "inGames": true,
+   "inGames": false,
    "text": 6
   },
   {
@@ -357,7 +357,7 @@
    "version": "13.7.0",
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-capacitor",
-   "inGames": true,
+   "inGames": false,
    "text": 19
   },
   {
@@ -365,7 +365,7 @@
    "version": "1.67.1",
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-js",
-   "inGames": true,
+   "inGames": false,
    "text": 20
   },
   {
@@ -373,7 +373,7 @@
    "version": "19.5.0",
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-hybrid-common",
-   "inGames": true,
+   "inGames": false,
    "text": 21
   },
   {
@@ -509,7 +509,7 @@
    "version": "3.1.2",
    "license": "ISC",
    "source": "https://github.com/d3/d3-hierarchy",
-   "inGames": true,
+   "inGames": false,
    "text": 34
   },
   {
@@ -605,7 +605,7 @@
    "version": "0.8.3",
    "license": "MIT",
    "source": "https://github.com/101arrowz/fflate",
-   "inGames": true,
+   "inGames": false,
    "text": 40
   },
   {
@@ -717,7 +717,7 @@
    "version": "2.8.1",
    "license": "0BSD",
    "source": "https://github.com/Microsoft/tslib",
-   "inGames": true,
+   "inGames": false,
    "text": 52
   },
   {

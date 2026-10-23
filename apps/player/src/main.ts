@@ -2,7 +2,7 @@ import type { GameManifest } from "@haptic/exporter";
 import {
   getHostMemoryStats,
   type HostMemoryStats,
-} from "@haptic/vfs";
+} from "@haptic/vfs/device-memory";
 import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";

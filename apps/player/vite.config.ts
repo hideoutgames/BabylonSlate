@@ -3,11 +3,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import { copyEngineDefaultSkyboxFaces } from "../editor/vite-engine-skybox";
+import { bundledPackagesReport } from "./vite-bundled-packages";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
 const editorPublic = path.join(repoRoot, "apps/editor/public");
+const bundledPackages = bundledPackagesReport({
+  gamePackagesFile: path.join(repoRoot, "scripts/third-party-notices/game-packages.json"),
+});
 
 /** The player cannot run without these tracked editor assets, so a missing one fails the build. */
 function copyRequired(name: string, dest: string): void {
@@ -44,7 +48,7 @@ function listRelativeFiles(dir: string, prefix = ""): string[] {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       out.push(...listRelativeFiles(path.join(dir, entry.name), rel));
-    } else if (entry.isFile() && entry.name !== "player-files.json") {
+    } else if (entry.isFile() && entry.name !== "player-files.json" && entry.name !== "bundled-packages.json") {
       out.push(rel);
     }
   }
@@ -64,7 +68,7 @@ function writePlayerFileList(): Plugin {
 
 export default defineConfig({
   base: "./",
-  plugins: [copyRuntimePublic(), previewDiagnosticsEntry(rootDir), writePlayerFileList()],
+  plugins: [copyRuntimePublic(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList()],
   build: {
     target: "es2022",
     cssCodeSplit: false,
@@ -80,6 +84,7 @@ export default defineConfig({
   },
   worker: {
     format: "es",
+    plugins: () => [bundledPackages.worker()],
     rolldownOptions: {
       output: {
         entryFileNames: "worker-[name].js",
