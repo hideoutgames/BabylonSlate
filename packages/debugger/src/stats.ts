@@ -1,3 +1,5 @@
+import { TICK_TIMING_PHASES, type TickTimingPhase } from "./performance-recorder";
+
 /** Combined script + physics tick budget from engineplan §1.2 (milliseconds). */
 export const TICK_BUDGET_MS = 8;
 
@@ -67,6 +69,8 @@ export type StatsHudInput = {
   physicsMs: number;
   /** Snapshot publish ms, apart from the script/physics tick budget. */
   publishMs?: number;
+  /** The last tick's ms per timed phase, in `TICK_TIMING_PHASES` order; `stat unit` lists them. */
+  phaseMs?: readonly number[];
   /** Accounted texture bytes in the resource cache. */
   memoryBytes?: number;
   jsHeapBytes?: number;
@@ -120,6 +124,17 @@ export function formatStatBytes(bytes: number): string {
 
 const ms = (value: number) => `${value.toFixed(2)} ms`;
 
+/** `stat unit` labels per timed tick phase. */
+const PHASE_LABELS: Readonly<Record<TickTimingPhase, string>> = {
+  gameInstance: "game",
+  sceneSubsystems: "subsystems",
+  actors: "actors",
+  components: "components",
+  physics: "physics",
+  postPhysics: "post-physics",
+  sceneSystems: "systems",
+};
+
 function present(metrics: readonly (StatsHudMetric | null)[]): StatsHudMetric[] {
   return metrics.filter((metric): metric is StatsHudMetric => metric !== null);
 }
@@ -133,6 +148,12 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
     case "unit":
       return present([
         { id: "tick", label: "tick", text: `${(input.scriptMs + input.physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`, warn: overBudget },
+        ...(input.phaseMs?.length === TICK_TIMING_PHASES.length
+          ? TICK_TIMING_PHASES.map((phase, index) => {
+            const value = input.phaseMs![index]!;
+            return { id: `phase-${phase}`, label: PHASE_LABELS[phase], text: ms(value), raw: value };
+          })
+          : []),
         input.publishMs == null ? null : { id: "publish-ms", label: "publish", text: ms(input.publishMs), raw: input.publishMs },
       ]);
     case "memory":

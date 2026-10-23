@@ -3,12 +3,17 @@ import {
   type InputKey,
   type InputTypeValue,
   type InputValueState,
+  type DeviceMotionState,
   type TouchInput,
   type TouchType,
 } from "@haptic/core";
 import { inputMappingKey } from "./input-assets";
 import type { PointerKind, RawInputEvent } from "./ring-buffer";
 import { GestureRecognizer, TOUCH_PULSE_GESTURES } from "./gestures";
+import { MOTION_CODES, MotionInput } from "./motion";
+
+/** Recognized controls that last one tick. */
+const PULSE_CODES: readonly string[] = [...TOUCH_PULSE_GESTURES, MOTION_CODES.shake];
 import { InputBindingProfile } from "./input-bindings";
 import type {
   ActionBinding,
@@ -49,6 +54,7 @@ export interface ResolvedInputTick {
   touches: TouchInput[];
   /** Began, Moved (one per contact per tick) and Ended or Cancelled records in input order. */
   touchEvents: TouchInput[];
+  deviceMotion: DeviceMotionState;
 }
 
 /** A pointer holding its primary button: a finger, a pen tip or the left mouse button. */
@@ -85,8 +91,8 @@ interface ResolverInternals {
   contacts: Map<number, Contact>;
   /** Contacts lifted this tick; their fingers stay taken until the next tick. */
   liftedContacts: Contact[];
-  /** This tick's gesture values by `touch` binding code. */
-  gestureValues: Map<string, number>;
+  /** This tick's gesture and motion values by `touch` binding code. */
+  recognizedValues: Map<string, number>;
 }
 
 function modifiersMatch(
@@ -176,10 +182,10 @@ function axisBindingValue(
 
 const TOUCH_TYPE: Record<PointerKind, TouchType> = { mouse: "Mouse", touch: "Finger", pen: "Pen" };
 
-/** A `touch` binding code: an on-screen control's axis, or a gesture. */
+/** A `touch` binding code: an on-screen control's axis, a gesture or device motion. */
 function touchControlValue(state: ResolverInternals, code: string): number {
   // A released joystick axis stores 0; it must not hide a gesture with the same code.
-  return (state.touchAxes.get(code) ?? 0) || (state.gestureValues.get(code) ?? 0);
+  return (state.touchAxes.get(code) ?? 0) || (state.recognizedValues.get(code) ?? 0);
 }
 
 function copyTouch(touch: TouchInput): TouchInput {
@@ -233,10 +239,11 @@ export class InputResolver {
     primaryPointerId: null,
     contacts: new Map(),
     liftedContacts: [],
-    gestureValues: new Map(),
+    recognizedValues: new Map(),
   };
 
   private readonly gestures = new GestureRecognizer();
+  private readonly motion = new MotionInput();
   /** The tick being resolved, for touch velocities. */
   private tickSeconds = 0;
   private mappings: InputMappings;
@@ -265,10 +272,16 @@ export class InputResolver {
     this.state.primaryPointerId = null;
     this.state.contacts.clear();
     this.state.liftedContacts.length = 0;
-    this.state.gestureValues.clear();
+    this.state.recognizedValues.clear();
     this.gestures.reset();
+    this.motion.reset();
     this.inputStates = {};
     return this.resolve([]);
+  }
+
+  /** Calibrate Tilt: the device's current pose becomes zero tilt. */
+  calibrateTilt(): void {
+    this.motion.calibrate();
   }
 
   /** The game view's CSS size, which two-finger drags are measured against. */
@@ -375,7 +388,7 @@ export class InputResolver {
 
     // Pulse gestures last one tick. Releasing them before the first sample
     // lets a pulse on the very next tick start the input again.
-    for (const code of TOUCH_PULSE_GESTURES) this.state.gestureValues.delete(code);
+    for (const code of PULSE_CODES) this.state.recognizedValues.delete(code);
     // A mapping change can release an action before the first new event arrives.
     // Observe that boundary so a fresh press of the replacement key keeps its edge.
     sample();
@@ -519,6 +532,10 @@ export class InputResolver {
           this.state.touchAxes.set(event.controlId, event.value);
           break;
         }
+        case "motion":
+          // Tilt and shake reach bindings with the gestures, after the event loop.
+          this.motion.apply(event);
+          break;
         default:
           break;
       }
@@ -532,7 +549,9 @@ export class InputResolver {
     const touches = [...this.state.contacts.values(), ...this.state.liftedContacts]
       .map((contact) => copyTouch(contact.touch))
       .sort((a, b) => a.Finger - b.Finger);
-    this.state.gestureValues = this.gestures.step(touchEvents, touches, inputDt);
+    const recognized = this.gestures.step(touchEvents, touches, inputDt);
+    for (const [code, value] of this.motion.step(inputDt)) recognized.set(code, value);
+    this.state.recognizedValues = recognized;
     sample();
     this.state.previousHeldActions = new Set(
       this.mappings.actions
@@ -576,6 +595,7 @@ export class InputResolver {
       cursor: { ...this.state.cursor },
       touches,
       touchEvents,
+      deviceMotion: this.motion.state(),
     };
   }
 

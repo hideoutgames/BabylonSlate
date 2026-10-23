@@ -1,8 +1,15 @@
 import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@haptic/bridge";
-import { PERFORMANCE_TICK_COLUMNS } from "@haptic/debugger";
+import { PERFORMANCE_TICK_COLUMNS, TICK_TIMING_PHASES } from "@haptic/debugger";
 
 const ROWS = 256;
 const WIDTH = PERFORMANCE_TICK_COLUMNS.length;
+const column = (name: (typeof PERFORMANCE_TICK_COLUMNS)[number]) => PERFORMANCE_TICK_COLUMNS.indexOf(name);
+const SCRIPT = column("scriptMs");
+const PHYSICS = column("physicsMs");
+const PUBLISH = column("publishMs");
+const OTHER = column("otherMs");
+/** Each timed phase's column (physics has its own; the rest are `<phase>Ms`). */
+const PHASE_COLUMNS = TICK_TIMING_PHASES.map((phase) => column(`${phase}Ms` as (typeof PERFORMANCE_TICK_COLUMNS)[number]));
 type Recording = {
   id: string; kind: "profile" | "frame"; started: number; deadline: number;
   budget: number; sentBytes: number; sequence: number; count: number; dropped: number;
@@ -65,7 +72,8 @@ export class RuntimeDiagnosticRecorder {
       resolve(reply());
     }));
   }
-  record(tickId: number, totalMs: number, scriptMs: number, physicsMs: number, publishMs: number): void {
+  /** `phaseMs` per `TICK_TIMING_PHASES` entry; script is every phase but physics. */
+  record(tickId: number, totalMs: number, phaseMs: Readonly<Float64Array>, publishMs: number): void {
     const active = this.active;
     if (!active?.buffer) return;
     if (this.host.now() >= active.deadline) { this.finish("duration"); return; }
@@ -76,15 +84,22 @@ export class RuntimeDiagnosticRecorder {
       queueMicrotask(() => { if (this.active === active) this.finish("budget"); }); return;
     }
     const offset = active.count++ * WIDTH;
-    active.buffer[offset] = tickId; active.buffer[offset + 1] = this.host.now() - active.started;
-    active.buffer[offset + 2] = scriptMs; active.buffer[offset + 3] = physicsMs; active.buffer[offset + 4] = publishMs;
-    active.buffer[offset + 5] = Math.max(0, totalMs - scriptMs - physicsMs - publishMs);
+    const row = active.buffer;
+    row[offset] = tickId; row[offset + 1] = this.host.now() - active.started;
+    let phasesMs = 0;
+    for (let phase = 0; phase < PHASE_COLUMNS.length; phase++) {
+      row[offset + PHASE_COLUMNS[phase]!] = phaseMs[phase]!;
+      phasesMs += phaseMs[phase]!;
+    }
+    row[offset + SCRIPT] = phasesMs - row[offset + PHYSICS]!;
+    row[offset + PUBLISH] = publishMs;
+    row[offset + OTHER] = Math.max(0, totalMs - phasesMs - publishMs);
   }
   addPublishCost(tickId: number, milliseconds: number): void {
     const active = this.active;
     if (!active?.buffer || active.count === 0) return;
     const offset = (active.count - 1) * WIDTH;
-    if (active.buffer[offset] === tickId) active.buffer[offset + 4] = (active.buffer[offset + 4] ?? 0) + milliseconds;
+    if (active.buffer[offset] === tickId) active.buffer[offset + PUBLISH] = (active.buffer[offset + PUBLISH] ?? 0) + milliseconds;
   }
   private flush(): void {
     const active = this.active;

@@ -14,6 +14,7 @@ import {
   type Guid,
   type InputKey,
   type TouchInput,
+  type DeviceMotionState,
   type GuidFactory,
   type Transform,
 } from "@haptic/core";
@@ -35,6 +36,10 @@ export type TickContext = {
   getTouches?: () => readonly TouchInput[];
   /** This tick's Began, Moved, Ended and Cancelled records in input order. */
   getTouchEvents?: () => readonly TouchInput[];
+  /** Tilt, acceleration and rotation rate; reading it starts the device's motion input. */
+  getDeviceMotion?: () => DeviceMotionState;
+  /** The device's current pose becomes zero tilt. */
+  calibrateTilt?: () => void;
   setCursorVisible?: (visible: boolean) => void;
   setGamepadRumble?: (
     gamepadIndex: number,

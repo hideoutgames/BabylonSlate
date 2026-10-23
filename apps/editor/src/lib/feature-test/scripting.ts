@@ -142,6 +142,7 @@ interface ScriptingTypes {
   nudgeAxis: string;
   touchGestureAction: string;
   touchTwistAxis: string;
+  touchTiltAxis: string;
   tags: { scripting: number; perfHeavy: number };
 }
 
@@ -224,6 +225,7 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
           { id: "ft-script-pulse-pad", device: "gamepadButton", code: "0:3" },
           { id: "ft-script-pulse-swipe", device: "touch", code: "swipe-up" },
           { id: "ft-script-pulse-double-tap", device: "touch", code: "double-tap" },
+          { id: "ft-script-pulse-shake", device: "touch", code: "shake" },
         ],
       }),
     });
@@ -260,6 +262,16 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
         ],
       }),
     });
+  const touchTiltAxis = await saveDocumentGuid(ctx, "input-axis", INPUT_FOLDER,
+    newAssetFileName("InputAxis", "FT_ScriptTouchTilt"), {
+      ...normalizeInputAssetPayload("InputAxis", {
+        valueType: "2d",
+        bindings: [
+          { id: "ft-script-touch-tilt-x", device: "touch", code: "tilt-x", component: "x" },
+          { id: "ft-script-touch-tilt-y", device: "touch", code: "tilt-y", component: "y" },
+        ],
+      }),
+    });
 
   typesByContext.set(ctx, {
     speedMode: { guid: speedMode.guid, members },
@@ -271,6 +283,7 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
     nudgeAxis,
     touchGestureAction,
     touchTwistAxis,
+    touchTiltAxis,
     tags: { scripting: tagId(tags, "FeatureTest.Scripting"), perfHeavy: tagId(tags, "FeatureTest.Perf.Heavy") },
   });
 }
@@ -1019,7 +1032,8 @@ async function saveInterfaceProbe(
 /**
  * Every touch node: a new touch casts into the scene and reports the touch list,
  * a moving touch is followed by its finger, and an ending touch says whether it was cancelled.
- * The gesture inputs bind the gestures Pulse and Nudge do not.
+ * The gesture inputs bind the gestures Pulse and Nudge do not; a gesture also
+ * recentres tilt, which the tilt input reports.
  */
 async function saveTouchProbe(ctx: FeatureTestContext, types: ScriptingTypes, font: string, materialGuid: string | null): Promise<PlacedClass> {
   const binding = (name: string, asset: string) => ({ Input: { Name: name, Asset: asset } });
@@ -1047,13 +1061,22 @@ async function saveTouchProbe(ctx: FeatureTestContext, types: ScriptingTypes, fo
         valueType: "button",
         "default:binding": binding("FT_ScriptTouchGesture", types.touchGestureAction),
       }),
-      printText("gesture-print", 260, 1420, "ft-script-touch-gesture", "Tap, Long Press or Swipe"),
+      gNode("calibrate", "input.calibrateTilt", 260, 1420),
+      gNode("device-motion", "input.getDeviceMotion", 260, 1540),
+      format("gesture-text", 520, 1540, "Tap, Long Press or Swipe: tilt recentred (motion available {available})"),
+      printText("gesture-print", 780, 1420, "ft-script-touch-gesture"),
       gNode("twist", "input.axisEvent", 0, 1660, {
         valueType: "1d",
         "default:binding": binding("FT_ScriptTouchTwist", types.touchTwistAxis),
       }),
       format("twist-text", 260, 1780, "Pinch or Rotate {value}"),
       printText("twist-print", 560, 1660, "ft-script-touch-twist", undefined, 1),
+      gNode("tilt", "input.axisEvent", 0, 1900, {
+        valueType: "2d",
+        "default:binding": binding("FT_ScriptTouchTilt", types.touchTiltAxis),
+      }),
+      format("tilt-text", 260, 2020, "Tilt {value}"),
+      printText("tilt-print", 560, 1900, "ft-script-touch-tilt", undefined, 1),
     ],
     edges: [
       ...gChain("began", "project", "began-print"),
@@ -1073,7 +1096,13 @@ async function saveTouchProbe(ctx: FeatureTestContext, types: ScriptingTypes, fo
       gWire("ended", "finger", "ended-text", fmtArg("finger")),
       gWire("ended", "cancelled", "ended-text", fmtArg("cancelled")),
       gWire("ended-text", "out", "ended-print", "inString"),
-      gWire("gesture", "started", "gesture-print", "execIn"),
+      gWire("gesture", "started", "calibrate", "execIn"),
+      gExec("calibrate", "gesture-print"),
+      gWire("device-motion", "available", "gesture-text", fmtArg("available")),
+      gWire("gesture-text", "out", "gesture-print", "inString"),
+      gWire("tilt", "held", "tilt-print", "execIn"),
+      gWire("tilt", "value", "tilt-text", fmtArg("value")),
+      gWire("tilt-text", "out", "tilt-print", "inString"),
       gWire("twist", "held", "twist-print", "execIn"),
       gWire("twist", "value", "twist-text", fmtArg("value")),
       gWire("twist-text", "out", "twist-print", "inString"),

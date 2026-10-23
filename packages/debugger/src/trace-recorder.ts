@@ -85,6 +85,8 @@ export type TraceFrame = {
   timeDilation: number;
   scriptMs: number;
   physicsMs: number;
+  /** The most recent snapshot publish when the tick ended; absent from traces recorded before it was kept. */
+  publishMs?: number;
   logs: TraceLogEvent[];
   prints: TracePrintEvent[];
   snapshotText?: string;

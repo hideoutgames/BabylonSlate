@@ -12,6 +12,7 @@ Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver
 | Player rebinding profile | [`packages/input/src/input-bindings.ts`](../../../packages/input/src/input-bindings.ts) |
 | `InputResolver` | [`packages/input/src/resolver.ts`](../../../packages/input/src/resolver.ts) |
 | `GestureRecognizer`, gesture codes and thresholds | [`packages/input/src/gestures.ts`](../../../packages/input/src/gestures.ts) |
+| `MotionInput`, motion codes, tilt and shake constants | [`packages/input/src/motion.ts`](../../../packages/input/src/motion.ts) |
 | `InputRingBuffer`, wire encoding | [`packages/input/src/ring-buffer.ts`](../../../packages/input/src/ring-buffer.ts) |
 | DOM capture (Play and player) | [`packages/input/src/dom-input-capture.ts`](../../../packages/input/src/dom-input-capture.ts) (`@haptic/input/dom`) |
 | Tick wiring | [`packages/runtime/src/driver.ts`](../../../packages/runtime/src/driver.ts) |
@@ -40,6 +41,7 @@ Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver
 - `normalizeInputMappings()` drops empty codes (so a blank draft is never mouse button 0); a missing list is empty, never replaced by defaults.
 - Gamepad codes stay `padIndex:buttonIndex`; labels are layout-agnostic Standard Gamepad names.
 - Player rebinding export is version 2 `edits` keyed by asset GUID and binding id; import validates the whole profile and rejects other versions. Games own persistence and menu gating; the nodes never write browser storage or suppress gameplay input.
+- `motion` (wire kind 8) is ten float32 fields in `MOTION_FIELDS` order.
 - `encodeInputEvents` stores `pointerId` as signed 32-bit, `button` as signed 8-bit, then the pointer type (0 not given, 1 mouse, 2 touch, 3 pen) and pressure as float32 (NaN not given); decoding leaves absent fields out. The format is transient and shared by host and worker builds. New raw kinds take bytes 8 and up; 3 and 5 stay retired.
 
 ## Resolver semantics
@@ -49,6 +51,9 @@ Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver
 - Axes keep an internal `activeValue` (last nonzero sample in the tick) so SceneLayer focus sees quick taps.
 - Gamepad samples carry the whole pad state (omitted buttons count as released). Hosts push `gamepadDisconnect` when a pad disappears; the resolver reports one `connected: false` and drops its held state.
 - Primary pointer only drives the cursor; chorded mouse buttons are turned into per-button edges by DOM capture, and an `up` for a never-pressed button releases the whole contact.
+- Device motion: `tilt-x`, `tilt-y` (degrees from the calibrated pose over 30, screen-rotated, unclamped until the binding clamps) and `shake` (a pulse after 3 readings of at least 12 m/s² without gravity within 0.5 s, then 0.75 s calm) are `touch` codes in picker group "Motion". Tilt reads `deviceorientation` beta/gamma (the right side down and the top edge away are positive), turned by `screen.orientation.angle`; acceleration and rotation rate come from `devicemotion` and are turned the same way. Calibration survives `reset`; an uncalibrated pose is zero when lying flat.
+- Sensors start only on demand: the driver emits `requestDeviceMotion` once, on its first tick when a binding uses a motion code or when a script calls `getDeviceMotion` / `calibrateTilt`; `create-engine` hands it to the host, which calls the capture's `enableMotion` (remembered if capture is not attached yet). Where `DeviceOrientationEvent.requestPermission` exists (iOS), capture asks during the next pointerdown or key press on the canvas; a refusal is final for the session, a rejection (no gesture) waits for the next one.
+- Capture sends one `motion` sample per `pollGamepads` (the latest pose and the strongest acceleration since the last sample), nothing while suppressed, and a NaN-pose release at `neutralize` so tilt reads zero without input ownership. Motion samples are never releases and a later sample supersedes an earlier one in the ring.
 - Touch `Velocity` is halfway between the last velocity and this tick's movement per second, settled at the lift for an ending contact and after the event loop for live ones; dt 0 keeps it.
 - Touches: a contact begins when its pointer starts holding button 0 and ends when it stops (Ended) or is cancelled (Cancelled, keeping its last position). Finger is the lowest slot not held by a live contact or one lifted this tick; lifted contacts stay in `touches` for that tick and free their slot on the next `resolve`. `Delta` is movement since the tick began (since the press for one that began this tick); `touchEvents` holds Began, at most one Moved per contact per tick (updated in place by later moves) and Ended/Cancelled, in input order. Phase in `touches` is Began over Moved over Stationary; Ended or Cancelled wins. Pressure keeps its last sample at the lift (browsers report 0 then) and is 0.5 when absent.
 - On Any Key Pressed emits each new Key press once in input order; repeats and held samples never retrigger. Gamepad axes trigger when |value| crosses 0.5.

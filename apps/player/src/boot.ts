@@ -1,5 +1,5 @@
 import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
-import { createSaveGameStorage } from "@haptic/vfs";
+import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
@@ -250,6 +250,8 @@ function initializePlayer(
   let runtimeOutput = manifest.render;
   /** Set once the runtime's pause paths exist (below). */
   let pipelineHoldChanged: (held: boolean) => void = () => {};
+  /** The game asked for device motion, perhaps before input capture was attached. */
+  let deviceMotionRequested = false;
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
@@ -372,6 +374,10 @@ function initializePlayer(
         nodeId: diagnostic.nodeId,
       });
       options.onDiagnostic?.(diagnostics);
+    },
+    onDeviceMotionRequest: () => {
+      deviceMotionRequested = true;
+      input?.enableMotion();
     },
     onTouchAxis: (controlId, value) => {
       if (options.previewDiagnostics) input?.setTouchAxis(controlId, value);
@@ -980,6 +986,7 @@ function initializePlayer(
           scriptMs: Number(command.scriptMs ?? 0),
           physicsMs: Number(command.physicsMs ?? 0),
           publishMs: Number(command.publishMs ?? 0),
+          ...(Array.isArray(command.phaseMs) ? { phaseMs: command.phaseMs.map(Number) } : {}),
           liveActors: Number(command.liveActors ?? 0),
           snapshotCapacity: Number(command.snapshotCapacity ?? 0),
         }),
@@ -1111,6 +1118,7 @@ function initializePlayer(
     // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
     ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
+  if (deviceMotionRequested) input.enableMotion();
   if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {

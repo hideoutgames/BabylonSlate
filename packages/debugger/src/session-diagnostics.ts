@@ -1,5 +1,7 @@
-import { DEFAULT_PROFILE_DURATION_MS, PerformanceRecorder, type PerformanceFrameSample, type PerformanceGpuSample,
-  type PerformanceIdentity, type PerformanceProfile, type PerformanceStopReason } from "./performance-recorder";
+import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample, type PerformanceGpuSample,
+  type PerformanceIdentity, type PerformanceProfile, type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
+
+const TICK_ROW_WIDTH = PERFORMANCE_TICK_COLUMNS.length;
 
 export type DiagnosticOperationRequest = {
   kind: "profile" | "frame"; action: "start" | "stop"; recordingId: string;
@@ -97,7 +99,7 @@ export class SessionDiagnostics<FrameReport> {
     if (!state || state.kind !== "profile" || state.id !== message.recordingId || !state.recorder) return false;
     if (!Number.isSafeInteger(message.sequence) || message.sequence !== state.sequence ||
       !(message.rows instanceof Float64Array) || (!message.rows.length && !message.droppedRecords) ||
-      message.rows.length % 6 || message.rows.length > 256 * 6 ||
+      message.rows.length % TICK_ROW_WIDTH || message.rows.length > 256 * TICK_ROW_WIDTH ||
       (message.droppedRecords !== undefined && (!Number.isSafeInteger(message.droppedRecords) || message.droppedRecords < 0))) {
       void this.finish(state, "error");
       return false;
@@ -106,14 +108,12 @@ export class SessionDiagnostics<FrameReport> {
     if (Number.isSafeInteger(message.droppedRecords) && message.droppedRecords! >= 0)
       state.droppedRecords += message.droppedRecords!;
     try {
-      for (let index = 0; index < message.rows.length; index += 6) {
+      for (let index = 0; index < message.rows.length; index += TICK_ROW_WIDTH) {
         // A budget stop counts its rejected row; the rest of the chunk is dropped too.
-        if (!state.recorder.recording) { state.droppedRecords += (message.rows.length - index) / 6; break; }
-        state.recorder.recordTick({
-          tickId: message.rows[index]!, elapsedMs: message.rows[index + 1]!,
-          scriptMs: message.rows[index + 2]!, physicsMs: message.rows[index + 3]!,
-          publishMs: message.rows[index + 4]!, otherMs: message.rows[index + 5]!,
-        }, { drain: true });
+        if (!state.recorder.recording) { state.droppedRecords += (message.rows.length - index) / TICK_ROW_WIDTH; break; }
+        const sample = {} as PerformanceTickSample;
+        PERFORMANCE_TICK_COLUMNS.forEach((column, offset) => { sample[column] = message.rows[index + offset]!; });
+        state.recorder.recordTick(sample, { drain: true });
       }
       return true;
     } catch { void this.finish(state, "error"); return false; }

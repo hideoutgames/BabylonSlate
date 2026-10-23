@@ -272,6 +272,41 @@ export const inputNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "input.getDeviceMotion",
+    title: "Get Device Motion",
+    category: "input",
+    pure: true,
+    pins: () => [
+      pin("available", "Available", "out", BOOL),
+      pin("tilt", "Tilt", "out", VEC2),
+      pin("acceleration", "Acceleration", "out", VEC3),
+      pin("rotationRate", "Rotation Rate", "out", VEC3),
+    ],
+    codegen: (ctx) => {
+      // Every output of one statement reads the same reading.
+      const read = "(ctx.getDeviceMotion?.() ?? { available: false, tilt: { x: 0, y: 0 }, acceleration: { x: 0, y: 0, z: 0 }, rotationRate: { x: 0, y: 0, z: 0 } })";
+      const motion = ctx.shared?.(read) ?? read;
+      return {
+        available: `${motion}.available`,
+        tilt: `${motion}.tilt`,
+        acceleration: `${motion}.acceleration`,
+        rotationRate: `${motion}.rotationRate`,
+      };
+    },
+  },
+  {
+    id: "input.calibrateTilt",
+    title: "Calibrate Tilt",
+    category: "input",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.calibrateTilt?.();`);
+    },
+  },
+  {
     id: "input.projectCursorToScene",
     title: "Project Cursor To Scene",
     category: "input",

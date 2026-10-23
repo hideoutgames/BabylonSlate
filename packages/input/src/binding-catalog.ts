@@ -9,6 +9,7 @@ import {
   INPUT_GAMEPAD_AXIS_NAMES as GAMEPAD_AXIS_NAMES,
 } from "@haptic/core";
 import { TOUCH_GESTURE_CODES as GESTURE } from "./gestures";
+import { MOTION_CODES as MOTION } from "./motion";
 import type { InputDevice } from "./mappings";
 
 export interface BindingCatalogEntry {
@@ -40,6 +41,13 @@ const GESTURE_LABELS: Record<string, string> = {
   [GESTURE.rotate]: "Two-Finger Rotate",
   [GESTURE.dragX]: "Two-Finger Drag X",
   [GESTURE.dragY]: "Two-Finger Drag Y",
+};
+
+/** The device's own movement, listed last. */
+const MOTION_LABELS: Record<string, string> = {
+  [MOTION.tiltX]: "Tilt X",
+  [MOTION.tiltY]: "Tilt Y",
+  [MOTION.shake]: "Shake",
 };
 
 const KEYBOARD_CATALOG: BindingCatalogEntry[] = INPUT_KEYS.filter(
@@ -96,6 +104,7 @@ const CATALOG_BY_DEVICE: Record<InputDevice, BindingCatalogEntry[]> = {
   touch: [
     ...Object.entries(TOUCH_LABELS).map(([code, label]) => ({ code, label, group: "Touch" })),
     ...Object.entries(GESTURE_LABELS).map(([code, label]) => ({ code, label, group: "Gestures" })),
+    ...Object.entries(MOTION_LABELS).map(([code, label]) => ({ code, label, group: "Motion" })),
   ],
 };
 

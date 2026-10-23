@@ -48,6 +48,7 @@ import {
   type DebugInspectSnapshot,
 } from "@haptic/object-model";
 import {
+  idleDeviceMotion,
   type RenderPathStatus,
   type SerializedScene,
   type SerializedSceneLayer,
@@ -58,6 +59,7 @@ import {
   InputResolver,
   createDefaultInputMappings,
   normalizeInputMappings,
+  mappingsUseDeviceMotion,
   decodeInputEvents,
   type InputBindingControls,
   type RawInputEvent,
@@ -241,7 +243,11 @@ class InProcessRuntime implements RuntimeDriver {
     cursor: { x: 0, y: 0, pressed: false },
     touches: [],
     touchEvents: [],
+    deviceMotion: idleDeviceMotion(),
   };
+  /** Bindings read tilt or shake, so the first tick asks the host for motion input. */
+  private readonly bindingsUseDeviceMotion: boolean;
+  private deviceMotionRequested = false;
   /** Mutable box so TickContext can read connections without aliasing `this`. */
   private readonly connectionBox: {
     current: ResolvedInputTick["gamepadConnections"];
@@ -445,9 +451,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
     const registry = createClassRegistry();
-    this.resolver = new InputResolver(normalizeInputMappings(
+    const mappings = normalizeInputMappings(
       options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
-    ));
+    );
+    this.resolver = new InputResolver(mappings);
+    this.bindingsUseDeviceMotion = mappingsUseDeviceMotion(mappings);
     if (options.tilemaps || options.tilesets) this.physics.bindAll();
     if (options.sprites || options.spriteAnimations) {
       this.registerSpriteContent({
@@ -500,6 +508,8 @@ class InProcessRuntime implements RuntimeDriver {
       connections: this.connectionBox,
       frameId: () => this.frameId,
       emit: (command) => this.emit(command),
+      requestDeviceMotion: () => this.requestDeviceMotion(),
+      calibrateTilt: () => this.resolver.calibrateTilt(),
     }));
 
     // 7. Script data and the ScriptHost.
@@ -1996,6 +2006,7 @@ class InProcessRuntime implements RuntimeDriver {
     // (performance.now()/16.67) while World.clock.tickIndex stayed small,
     // and drain() discarded the "future" events instead of deferring them.
     // Replay still works because it feeds one tick of events at a time.
+    if (this.bindingsUseDeviceMotion) this.requestDeviceMotion();
     const pending = this.input.drain();
     // Gestures and touch velocity follow real time: the undilated step.
     this.resolvedInput = this.resolver.resolve(pending, simDt, this.dt);
@@ -2013,6 +2024,13 @@ class InProcessRuntime implements RuntimeDriver {
       });
     }
     return pending;
+  }
+
+  /** Sensors stay off until a game reads them; iOS also asks the player first. */
+  private requestDeviceMotion(): void {
+    if (this.deviceMotionRequested) return;
+    this.deviceMotionRequested = true;
+    this.emit({ type: "requestDeviceMotion", frameId: this.frameId });
   }
 
   /** Tick phase 2. An infinite-loop abort ends the phase early. */
@@ -2033,8 +2051,9 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  /** Tick phase 3. */
+  /** Tick phase 3, timed as `sceneSystems` apart from the World's post-physics phase. */
   private tickSceneSystems(simDt: number): void {
+    this.ticks.markPhase("sceneSystems");
     this.tweens.cancelInvalid();
     this.delays.advance(simDt);
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.animGraphs.tick(simDt);

@@ -3,9 +3,31 @@ export const PERFORMANCE_FRAME_COLUMNS = [
   "frameId", "tickId", "sceneGeneration", "completedAtMs", "intervalMs",
   "preparationMs", "submissionMs", "copyMs", "drawCalls", "width", "height", "resolutionScale", "loading",
 ] as const;
-export const PERFORMANCE_TICK_COLUMNS = [
+/** The runtime tick's timed phases in tick order (`TickPipeline`); each one's column is `<phase>Ms`. */
+export const TICK_TIMING_PHASES = [
+  "gameInstance", "sceneSubsystems", "actors", "components", "physics", "postPhysics", "sceneSystems",
+] as const;
+export type TickTimingPhase = (typeof TICK_TIMING_PHASES)[number];
+/** Display names for the timed tick phases. */
+export const TICK_TIMING_PHASE_LABELS: Readonly<Record<TickTimingPhase, string>> = {
+  gameInstance: "Game Instance",
+  sceneSubsystems: "Scene Subsystems",
+  actors: "Actors",
+  components: "Components",
+  physics: "Physics",
+  postPhysics: "Post-Physics",
+  sceneSystems: "Scene Systems",
+};
+/** Version 1 tick rows: script is every phase but physics. */
+export const PERFORMANCE_TICK_COLUMNS_V1 = [
   "tickId", "elapsedMs", "scriptMs", "physicsMs", "publishMs", "otherMs",
 ] as const;
+/** The phases version 2 adds; physics already has its column. */
+export const PERFORMANCE_TICK_PHASE_COLUMNS = [
+  "gameInstanceMs", "sceneSubsystemsMs", "actorsMs", "componentsMs", "postPhysicsMs", "sceneSystemsMs",
+] as const;
+/** Version 2 keeps version 1's columns first (script still sums every phase but physics). */
+export const PERFORMANCE_TICK_COLUMNS = [...PERFORMANCE_TICK_COLUMNS_V1, ...PERFORMANCE_TICK_PHASE_COLUMNS] as const;
 export const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequence", "coalescedQueries"] as const;
 export const DEFAULT_PROFILE_DURATION_MS = 10_000;
 export const DEFAULT_PROFILE_BYTE_BUDGET = 16 * 1024 * 1024;
@@ -48,7 +70,7 @@ export type PerformanceTickSample = {
   /** Runtime-local recording origin; never subtracted from host completion timestamps. */
   elapsedMs: number;
   scriptMs: number; physicsMs: number; publishMs: number; otherMs: number;
-};
+} & Record<(typeof PERFORMANCE_TICK_PHASE_COLUMNS)[number], number>;
 export type PerformanceStopReason = "requested" | "duration" | "budget" | "session-ended" | "error";
 export type PerformanceStream = {
   columns: readonly string[];
@@ -57,7 +79,8 @@ export type PerformanceStream = {
   chunks: Float64Array[];
 };
 export type PerformanceProfile = {
-  kind: "haptic-performance"; version: 1;
+  /** Version 1 profiles keep their tick rows (`PERFORMANCE_TICK_COLUMNS_V1`); recordings write version 2. */
+  kind: "haptic-performance"; version: 1 | 2;
   identity: PerformanceIdentity;
   requestedDurationMs: number; durationMs: number;
   byteBudget: number;
@@ -133,7 +156,7 @@ export class PerformanceRecorder {
    * flushing. The session owner must stop new frames and enforce its deadline. */
   recordTick(sample: PerformanceTickSample, options: { drain?: boolean } = {}): boolean {
     if (!(options.drain ? this.recording : this.advance())) return false;
-    if (!safeId(sample.tickId) || ![sample.elapsedMs, sample.scriptMs, sample.physicsMs, sample.publishMs, sample.otherMs].every(finite))
+    if (!safeId(sample.tickId) || !PERFORMANCE_TICK_COLUMNS.every((column) => column === "tickId" || finite(sample[column])))
       throw new Error("Tick samples require finite non-negative timings and a valid tick identity.");
     // A tick stamped past the window is outside the profile, so it counts as dropped.
     if (sample.elapsedMs > this.active!.durationMs) { this.active!.droppedRecords++; return false; }
@@ -160,7 +183,7 @@ export class PerformanceRecorder {
     this.active = undefined;
     const finish = (stream: BufferStream): PerformanceStream => ({ columns: stream.columns, count: stream.count,
       chunks: stream.chunks.map((chunk, index) => index === stream.chunks.length - 1 ? chunk.subarray(0, stream.tailUsed) : chunk) });
-    this.result = { kind: "haptic-performance", version: 1, identity: state.identity,
+    this.result = { kind: "haptic-performance", version: 2, identity: state.identity,
       requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
       byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: state.droppedRecords,
       stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu) };
@@ -218,7 +241,7 @@ export function serializePerformanceProfile(profile: PerformanceProfile): string
 export function parsePerformanceProfile(value: unknown): PerformanceProfile | null {
   if (!value || typeof value !== "object") return null;
   const data = value as PerformanceProfile;
-  if (data.kind !== "haptic-performance" || data.version !== 1 || !validIdentity(data.identity) ||
+  if (data.kind !== "haptic-performance" || (data.version !== 1 && data.version !== 2) || !validIdentity(data.identity) ||
     data.identity.mode === "simulate" || !finite(data.durationMs) || !finite(data.requestedDurationMs) ||
     data.requestedDurationMs < 1000 || data.requestedDurationMs > 60_000 ||
     !safeId(data.byteBudget) || data.byteBudget > MAX_PROFILE_BYTE_BUDGET || !safeId(data.retainedBytes) ||
@@ -242,10 +265,10 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
       ? chunk : Float64Array.from(chunk, (number) => number === null ? NaN : Number(number))) };
   };
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
-  const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);
+  const ticks = frames && parseStream(data.ticks, data.version === 1 ? PERFORMANCE_TICK_COLUMNS_V1 : PERFORMANCE_TICK_COLUMNS);
   const gpu = ticks && parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS);
   if (!frames || !ticks || !gpu || bytes > data.retainedBytes || (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
-  return { kind: "haptic-performance", version: 1, identity: copyIdentity(data.identity),
+  return { kind: "haptic-performance", version: data.version, identity: copyIdentity(data.identity),
     requestedDurationMs: data.requestedDurationMs, durationMs: data.durationMs,
     byteBudget: data.byteBudget, retainedBytes: data.retainedBytes,
     droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu };

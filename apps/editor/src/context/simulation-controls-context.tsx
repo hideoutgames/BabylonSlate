@@ -8,8 +8,12 @@ import {
 } from "react";
 import type { SessionPauseCause } from "@haptic/bridge";
 
-/** What the global toolbar shows and drives for the running Simulation. */
+/**
+ * What the global toolbar shows and drives for the running Simulation, or for editor Play while it
+ * is stopped at a breakpoint or an error with its view hidden (`mode: "play"`: Resume and Stop only).
+ */
 export interface SimulationControls {
+  mode: "simulate" | "play";
   paused: boolean;
   pausePending: boolean;
   /** A Step is running its tick; the next waits for it. */
@@ -17,7 +21,7 @@ export interface SimulationControls {
   inputMode: "game" | "edit";
   inputPending: boolean;
   keepChanges: boolean;
-  /** The breakpoint the Simulation stopped at, until it resumes. */
+  /** The breakpoint the session stopped at, until it resumes. */
   stoppedAt: SessionPauseCause | null;
   togglePause: () => void;
   /** While paused: run one tick and stay paused. */

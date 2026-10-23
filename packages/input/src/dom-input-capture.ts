@@ -17,8 +17,9 @@ export interface InputCaptureHandle {
   /** Current simulation tick used to stamp events. */
   setTick: (tick: number) => void;
   /**
-   * Poll gamepads once per frame (axes have no events). A pad sampled on the
-   * previous poll but missing now is reported as `gamepadDisconnect`.
+   * Poll gamepads once per frame (axes have no events), and sample device
+   * motion when it is on. A pad sampled on the previous poll but missing now
+   * is reported as `gamepadDisconnect`.
    */
   pollGamepads: () => void;
   /** Opt into exclusive routing; suppressed input needs a fresh physical transition on return. */
@@ -27,7 +28,31 @@ export interface InputCaptureHandle {
   neutralize: () => void;
   /** SceneLayer sticks/buttons must use this route when exclusive input is enabled. */
   setTouchAxis: (controlId: string, value: number) => void;
+  /**
+   * The game reads tilt or motion: start the device's motion sensors. Where
+   * the browser asks permission (iOS), the next tap or key press asks.
+   */
+  enableMotion: () => void;
   dispose: () => void;
+}
+
+/** iOS gates motion sensors behind a permission request made during a user gesture. */
+type MotionPermissionEvent = { requestPermission?: () => Promise<"granted" | "denied" | "default"> };
+
+function motionPermissionRequests(): Array<() => Promise<string>> | null {
+  const orientation = (globalThis as { DeviceOrientationEvent?: MotionPermissionEvent }).DeviceOrientationEvent;
+  const motion = (globalThis as { DeviceMotionEvent?: MotionPermissionEvent }).DeviceMotionEvent;
+  const requests = [orientation, motion].flatMap((type) => {
+    const request = type?.requestPermission;
+    return typeof request === "function" ? [() => request.call(type)] : [];
+  });
+  return requests.length > 0 ? requests : null;
+}
+
+/** `screen.orientation.angle`, or the older `window.orientation` that iOS Safari had alone. */
+function screenAngle(view: Window | null): number {
+  const angle = view?.screen?.orientation?.angle ?? (view as { orientation?: unknown } | null)?.orientation;
+  return typeof angle === "number" && Number.isFinite(angle) ? angle : 0;
 }
 
 /**
@@ -72,6 +97,11 @@ export function attachInputCapture(
   const uiPointers = new Set<number>();
   const touchAxes = new Map<string, number>();
   const blockedTouchAxes = new Set<string>();
+  /** Off until the game reads motion; waiting for a gesture where permission is asked. */
+  let motionState: "off" | "awaitingGesture" | "requesting" | "on" | "denied" = "off";
+  const orientation = { beta: Number.NaN, gamma: Number.NaN };
+  const motionSample = { accelerationX: 0, accelerationY: 0, accelerationZ: 0, peakAcceleration: 0, rotationX: 0, rotationY: 0, rotationZ: 0 };
+  let motionReported = false;
   const pads = new Map<number, { axes: number[]; buttons: number[] }>();
   const blockedPadAxes = new Map<number, Set<number>>();
   const blockedPadButtons = new Map<number, Set<number>>();
@@ -109,12 +139,71 @@ export function attachInputCapture(
       if (value !== 0) blockedTouchAxes.add(controlId);
       push({ kind: "touchAxis", tick, controlId, value: 0 });
     }
+    releaseMotion();
     for (const [index, pad] of pads) {
       blockedPadAxes.set(index, new Set(pad.axes.flatMap((value, id) => Math.abs(value) > 0.01 ? [id] : [])));
       blockedPadButtons.set(index, new Set(pad.buttons.flatMap((value, id) => Math.abs(value) > 0.01 ? [id] : [])));
       push({ kind: "gamepad", tick, gamepadIndex: index, axes: pad.axes.map(() => 0), buttons: pad.buttons.map(() => 0) });
     }
     if (canvas.ownerDocument.pointerLockElement === canvas) canvas.ownerDocument.exitPointerLock?.();
+  };
+
+  const onDeviceOrientation = (event: DeviceOrientationEvent) => {
+    if (typeof event.beta === "number" && typeof event.gamma === "number") {
+      orientation.beta = event.beta;
+      orientation.gamma = event.gamma;
+    }
+  };
+  const onDeviceMotion = (event: DeviceMotionEvent) => {
+    const acceleration = event.acceleration;
+    if (acceleration) {
+      motionSample.accelerationX = acceleration.x ?? 0;
+      motionSample.accelerationY = acceleration.y ?? 0;
+      motionSample.accelerationZ = acceleration.z ?? 0;
+      motionSample.peakAcceleration = Math.max(motionSample.peakAcceleration,
+        Math.hypot(motionSample.accelerationX, motionSample.accelerationY, motionSample.accelerationZ));
+    }
+    const rotation = event.rotationRate;
+    if (rotation) {
+      motionSample.rotationX = rotation.beta ?? 0;
+      motionSample.rotationY = rotation.gamma ?? 0;
+      motionSample.rotationZ = rotation.alpha ?? 0;
+    }
+  };
+  const view = canvas.ownerDocument.defaultView;
+  const startMotion = () => {
+    motionState = "on";
+    view?.addEventListener("deviceorientation", onDeviceOrientation);
+    view?.addEventListener("devicemotion", onDeviceMotion);
+  };
+  /** Runs inside a pointer or key handler: iOS accepts the request only during a gesture. */
+  const requestMotionOnGesture = () => {
+    if (motionState !== "awaitingGesture") return;
+    const requests = motionPermissionRequests();
+    if (!requests) { startMotion(); return; }
+    motionState = "requesting";
+    Promise.all(requests.map((request) => request())).then((answers) => {
+      if (disposed) return;
+      if (answers.every((answer) => answer === "granted")) startMotion();
+      else motionState = "denied";
+    }, () => {
+      // Refused without an answer (no gesture, an embedded frame): the next gesture asks again.
+      if (!disposed && motionState === "requesting") motionState = "awaitingGesture";
+    });
+  };
+  /** One sample per frame: the latest pose and the strongest acceleration since the last one. */
+  const pollMotion = () => {
+    if (motionState !== "on" || !Number.isFinite(orientation.beta) || isSuppressed()) return;
+    push({ kind: "motion", tick, beta: orientation.beta, gamma: orientation.gamma, screenAngle: screenAngle(view), ...motionSample });
+    motionSample.peakAcceleration = 0;
+    motionReported = true;
+  };
+  /** Tilt must not keep steering a game that lost input ownership. */
+  const releaseMotion = () => {
+    if (!motionReported) return;
+    motionReported = false;
+    push({ kind: "motion", tick, beta: Number.NaN, gamma: Number.NaN, screenAngle: 0, accelerationX: 0, accelerationY: 0,
+      accelerationZ: 0, peakAcceleration: 0, rotationX: 0, rotationY: 0, rotationZ: 0 });
   };
 
   const onPointer = (phase: "down" | "move" | "up" | "cancel") =>
@@ -126,6 +215,7 @@ export function attachInputCapture(
       }
       const handled = event.defaultPrevented;
       event.preventDefault();
+      if (phase === "down") requestMotionOnGesture();
       if (phase === "down") {
         // SceneLayer text controls focus their native editor during pointerdown.
         if (!handled) {
@@ -208,6 +298,7 @@ export function attachInputCapture(
       return;
     }
     if (canvas.ownerDocument.activeElement !== canvas) return;
+    requestMotionOnGesture();
     if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code) && !event.ctrlKey && !event.altKey && !event.metaKey) event.preventDefault();
     if (heldKeys.has(event.code)) return;
     heldKeys.add(event.code);
@@ -306,6 +397,7 @@ export function attachInputCapture(
     pollGamepads: () => {
       if (disposed) return;
       if (options.skipPointerAndKeyboard?.()) releaseKeys();
+      pollMotion();
       if (typeof navigator === "undefined" || !navigator.getGamepads) return;
       const gamepads = navigator.getGamepads();
       const present = new Set<number>();
@@ -360,10 +452,17 @@ export function attachInputCapture(
       suppressed = previous;
     },
     setTouchAxis,
+    enableMotion: () => {
+      if (disposed || motionState !== "off") return;
+      if (motionPermissionRequests()) motionState = "awaitingGesture";
+      else startMotion();
+    },
     dispose: () => {
       if (disposed) return;
       if (exclusive) neutralize(); else releaseKeys();
       disposed = true;
+      view?.removeEventListener("deviceorientation", onDeviceOrientation);
+      view?.removeEventListener("devicemotion", onDeviceMotion);
       canvas.removeEventListener("blur", onBlur);
       window.removeEventListener("blur", onBlur);
       canvas.removeEventListener("focus", onFocus);

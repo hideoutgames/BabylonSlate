@@ -4,10 +4,10 @@ import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import type { ScriptDebugTrace } from "./script-debug";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
-import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@haptic/core";
+import { emptyWaterSample, idleDeviceMotion, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@haptic/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@haptic/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
-import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState, TouchInput } from "@haptic/core";
+import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState, TouchInput, DeviceMotionState } from "@haptic/core";
 import {
   combineRotators,
   createSeededRng,
@@ -623,6 +623,9 @@ export interface ScriptContext {
   getTouches?(): readonly TouchInput[];
   /** This tick's Began, Moved, Ended and Cancelled records in input order. */
   getTouchEvents?(): readonly TouchInput[];
+  /** Reading it starts the device's motion input (once per session). */
+  getDeviceMotion?(): DeviceMotionState;
+  calibrateTilt?(): void;
   setCursorVisible(visible: boolean): void;
   setGamepadRumble?(
     gamepadIndex: number,
@@ -2320,6 +2323,8 @@ export class ScriptHost {
         tick?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false };
       context.getTouches = () => tick?.getTouches?.() ?? [];
       context.getTouchEvents = () => tick?.getTouchEvents?.() ?? [];
+      context.getDeviceMotion = () => tick?.getDeviceMotion?.() ?? idleDeviceMotion();
+      context.calibrateTilt = () => tick?.calibrateTilt?.();
       context.setCursorVisible = (visible) => {
         if (services.setCursorVisible) {
           services.setCursorVisible(visible === true);

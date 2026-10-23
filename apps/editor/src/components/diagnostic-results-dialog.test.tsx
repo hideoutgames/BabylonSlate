@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { PerformanceRecorder } from "@haptic/debugger";
+import { PERFORMANCE_TICK_COLUMNS_V1, PerformanceRecorder, type PerformanceProfile } from "@haptic/debugger";
 import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
 import DiagnosticResultsDialog, { PerformanceSummary, PerformanceTimeline } from "./diagnostic-results-dialog";
@@ -18,7 +18,8 @@ function recording(frames = 3, slow: readonly number[] = []) {
     now += slow.includes(index) ? 40 : frames === 3 ? 20 : 10;
     recorder.recordFrame({ frameId: index, tickId: index, sceneGeneration: 1, completedAtMs: now, preparationMs: 1, submissionMs: 2, copyMs: 0.5,
       drawCalls: 8, width: 640, height: 360, resolutionScale: 0.5 });
-    recorder.recordTick({ tickId: index, elapsedMs: now, scriptMs: 1, physicsMs: 2, publishMs: 0.25, otherMs: 0 });
+    recorder.recordTick({ tickId: index, elapsedMs: now, scriptMs: 1, physicsMs: 2, publishMs: 0.25, otherMs: 0,
+      gameInstanceMs: 0.1, sceneSubsystemsMs: 0, actorsMs: 0.5, componentsMs: 0.2, postPhysicsMs: 0.05, sceneSystemsMs: 0.15 });
   }
   return recorder.stop()!;
 }
@@ -29,6 +30,30 @@ it("shows separate completed-frame and tick populations with honest unavailable 
   expect(screen.getByText("Worker Script Phase")).toBeTruthy();
   expect(screen.getByText(/GPU timing: unavailable/)).toBeTruthy();
   expect(screen.getAllByText("20.000").length).toBeGreaterThan(0);
+});
+/** The same ticks as a version 1 file holds them: script and physics, no phases. */
+function versionOne(profile: PerformanceProfile): PerformanceProfile {
+  return { ...profile, version: 1, ticks: { columns: PERFORMANCE_TICK_COLUMNS_V1, count: 1, chunks: [Float64Array.of(0, 0, 1, 2, 0.25, 0)] } };
+}
+it("lists the script phases of a version 2 recording, and none for a version 1 file", () => {
+  const { unmount } = render(<PerformanceSummary profile={recording()} />);
+  expect(screen.getByText("Actors Phase")).toBeTruthy();
+  expect(screen.getByText("Scene Systems Phase")).toBeTruthy();
+  expect(screen.getByText("Worker Physics Phase")).toBeTruthy();
+  unmount();
+  render(<PerformanceSummary profile={versionOne(recording())} />);
+  expect(screen.queryByText("Actors Phase")).toBeNull();
+  expect(screen.getByText("Worker Script Phase")).toBeTruthy();
+});
+it("stacks runtime ticks by phase, or by script and physics for a version 1 file", () => {
+  const { unmount } = render(<PerformanceTimeline profile={recording()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
+  expect(screen.getByText("Tick Phases")).toBeTruthy();
+  expect(screen.getAllByLabelText(/Actors 0\.500 ms · .*Scene Systems 0\.150 ms/)).toHaveLength(3);
+  unmount();
+  render(<PerformanceTimeline profile={versionOne(recording())} />);
+  fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
+  expect(screen.getByText("Script + Physics")).toBeTruthy();
 });
 it("switches timeline populations without conflating frame and runtime clocks", () => {
   render(<PerformanceTimeline profile={recording()} />);

@@ -10,6 +10,107 @@ import {
 
 const controlProps = { [SIMULATION_CONTROL_ATTRIBUTE]: "" };
 
+/** "Stopped At …": where a breakpoint stopped the session; choosing it opens the node again. */
+function BreakpointStopItem({ stoppedAt, onOpenStop }: { stoppedAt: string; onOpenStop?: () => void }) {
+  return (
+    <ToolbarOverflowItem
+      id="breakpoint-stop"
+      priority={TOOLBAR_OVERFLOW_PRIORITY.breakpointStop}
+      items={[{
+        id: "breakpoint-stop",
+        label: `Stopped At ${stoppedAt}`,
+        icon: <CircleDotIcon />,
+        onSelect: () => onOpenStop?.(),
+      }]}
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="chrome-action-button min-w-0 max-w-72"
+              aria-label={`Stopped At ${stoppedAt}`}
+              onClick={() => onOpenStop?.()}
+              data-testid="simulation-breakpoint-stop"
+              {...controlProps}
+            />
+          }
+        >
+          <CircleDotIcon data-icon="inline-start" className="text-destructive" />
+          <span className="truncate">{stoppedAt}</span>
+        </TooltipTrigger>
+        <TooltipContent>Stopped At {stoppedAt}</TooltipContent>
+      </Tooltip>
+    </ToolbarOverflowItem>
+  );
+}
+
+/**
+ * Editor Play stopped at a breakpoint or an error, its view hidden behind the editor: Resume returns
+ * to the game and carries on, Stop ends Play. The Debug menu stays beside them.
+ */
+export function PlayBreakToolbarControls({
+  controls,
+  stopping,
+  onStop,
+  stoppedAt,
+  onOpenStop,
+}: {
+  controls: SimulationControls;
+  /** Where a breakpoint stopped Play, named; absent for an error. */
+  stoppedAt?: string | null;
+  onOpenStop?: () => void;
+  stopping: boolean;
+  onStop: () => void;
+}) {
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="chrome-action-button chrome-play-button"
+              aria-label="Resume"
+              disabled={controls.pausePending || stopping}
+              onClick={() => controls.togglePause()}
+              data-testid="play-break-resume"
+              {...controlProps}
+            />
+          }
+        >
+          <PlayIcon data-icon="inline-start" fill="currentColor" />
+          Resume
+        </TooltipTrigger>
+        <TooltipContent>Return To The Game</TooltipContent>
+      </Tooltip>
+      {stoppedAt ? <BreakpointStopItem stoppedAt={stoppedAt} onOpenStop={onOpenStop} /> : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="chrome-action-button chrome-stop-button"
+              aria-label={stopping ? "Stopping Play" : "Stop Play"}
+              disabled={stopping}
+              onClick={onStop}
+              data-testid="play-break-stop"
+              {...controlProps}
+            />
+          }
+        >
+          <SquareIcon data-icon="inline-start" fill="currentColor" />
+          {stopping ? "Stopping…" : "Stop"}
+        </TooltipTrigger>
+        <TooltipContent>Stop Play</TooltipContent>
+      </Tooltip>
+    </>
+  );
+}
+
 /**
  * The running Simulation in the global toolbar's Play island: Pause, Step while
  * paused, a red Stop in place of Simulate, a Game / Edit input toggle and, away
@@ -96,38 +197,7 @@ export function SimulationToolbarControls({
         </Tooltip>
         </ToolbarOverflowItem>
       ) : null}
-      {paused && stoppedAt ? (
-        <ToolbarOverflowItem
-          id="breakpoint-stop"
-          priority={TOOLBAR_OVERFLOW_PRIORITY.breakpointStop}
-          items={[{
-            id: "breakpoint-stop",
-            label: `Stopped At ${stoppedAt}`,
-            icon: <CircleDotIcon />,
-            onSelect: () => onOpenStop?.(),
-          }]}
-        >
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="chrome-action-button min-w-0 max-w-72"
-                  aria-label={`Stopped At ${stoppedAt}`}
-                  onClick={() => onOpenStop?.()}
-                  data-testid="simulation-breakpoint-stop"
-                  {...controlProps}
-                />
-              }
-            >
-              <CircleDotIcon data-icon="inline-start" className="text-destructive" />
-              <span className="truncate">{stoppedAt}</span>
-            </TooltipTrigger>
-            <TooltipContent>Stopped At {stoppedAt}</TooltipContent>
-          </Tooltip>
-        </ToolbarOverflowItem>
-      ) : null}
+      {paused && stoppedAt ? <BreakpointStopItem stoppedAt={stoppedAt} onOpenStop={onOpenStop} /> : null}
       <Tooltip>
         <TooltipTrigger
           render={

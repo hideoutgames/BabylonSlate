@@ -5,8 +5,11 @@ import {
   summarizePerformanceColumn,
   summarizePerformanceColumns,
   TICK_BUDGET_MS,
+  TICK_TIMING_PHASE_LABELS,
+  TICK_TIMING_PHASES,
   type PerformanceProfile,
   type PerformanceStream,
+  type TickTimingPhase,
 } from "@haptic/debugger";
 import { parseRenderFrameReport, serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import {
@@ -81,6 +84,23 @@ const STREAM_METRIC: Record<"frames" | "ticks" | "gpu", { label: string; segment
   ] },
   gpu: { label: "GPU Duration", segments: [{ label: "GPU", column: "durationMs", className: "bg-trace-script" }] },
 };
+/** Tick phase colours (`--tick-*` tokens), in tick order. */
+const TICK_PHASE_CLASS: Readonly<Record<TickTimingPhase, string>> = {
+  gameInstance: "bg-tick-game-instance",
+  sceneSubsystems: "bg-tick-scene-subsystems",
+  actors: "bg-tick-actors",
+  components: "bg-tick-components",
+  physics: "bg-tick-physics",
+  postPhysics: "bg-tick-post-physics",
+  sceneSystems: "bg-tick-scene-systems",
+};
+const TICK_PHASE_METRIC = { label: "Tick Phases", segments: TICK_TIMING_PHASES.map((phase): Segment => ({
+  label: TICK_TIMING_PHASE_LABELS[phase], column: `${phase}Ms`, className: TICK_PHASE_CLASS[phase],
+})) };
+/** Version 2 ticks stack every timed phase; version 1 ticks only split script and physics. */
+function streamMetric(population: keyof typeof STREAM_METRIC, stream: PerformanceStream) {
+  return population === "ticks" && stream.columns.includes("actorsMs") ? TICK_PHASE_METRIC : STREAM_METRIC[population];
+}
 const TABLE = "w-full border-collapse text-left text-xs";
 const TH = "sticky top-0 z-10 h-7 border-b bg-panel-header px-2 font-medium whitespace-nowrap text-muted-foreground";
 const TR = "h-7 even:bg-list-stripe hover:bg-accent/50";
@@ -188,6 +208,10 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     { title: "Worker", unit: "per runtime tick", rows: [
       ["Worker Script and Physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], TICK_BUDGET_MS), TICK_BUDGET_MS],
       ["Worker Script Phase", summarizePerformanceColumn(profile.ticks, "scriptMs")],
+      // Version 2 profiles split script into the tick's phases; a version 1 profile has none to show.
+      ...TICK_TIMING_PHASES.filter((phase) => phase !== "physics")
+        .map((phase): SummaryRow => [`${TICK_TIMING_PHASE_LABELS[phase]} Phase`, summarizePerformanceColumn(profile.ticks, `${phase}Ms`)])
+        .filter(([, values]) => values.count > 0),
       ["Worker Physics Phase", summarizePerformanceColumn(profile.ticks, "physicsMs")],
       ["Worker Snapshot Publish", summarizePerformanceColumn(profile.ticks, "publishMs")],
       ["Other Measured Runtime Phase", summarizePerformanceColumn(profile.ticks, "otherMs")],
@@ -260,7 +284,7 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   const [population, setPopulation] = useState<keyof typeof STREAM_METRIC>("frames");
   const [selected, setSelected] = useState(0);
   const stream = profile[population];
-  const metric = STREAM_METRIC[population];
+  const metric = streamMetric(population, stream);
   const index = Math.max(0, Math.min(Number.isFinite(selected) ? Math.floor(selected) : 0, Math.max(0, stream.count - 1)));
   const values = rowAt(stream, index);
   const series = useMemo(() => metric.segments.map(segment => columnSeries(stream, [segment.column])), [stream, metric]);

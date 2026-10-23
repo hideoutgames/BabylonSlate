@@ -529,6 +529,8 @@ export interface PlayHudStats {
   physicsMs: number;
   /** Snapshot publish time, reported apart from the tick's script/physics budget. */
   publishMs: number;
+  /** The last tick's milliseconds per timed phase (`TICK_TIMING_PHASES`), when the worker reports them. */
+  phaseMs?: readonly number[];
   frameId: number;
   /** The worker's tick index, from its latest `stats` command. */
   ticks?: number;
@@ -544,6 +546,7 @@ export function applyWorkerPlayStats(
     scriptMs: number;
     physicsMs: number;
     publishMs?: number;
+    phaseMs?: readonly number[];
     frameId: number;
     ticks?: number;
     liveActors?: number;
@@ -555,6 +558,7 @@ export function applyWorkerPlayStats(
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
     publishMs: command.publishMs ?? 0,
+    ...(command.phaseMs ? { phaseMs: command.phaseMs } : {}),
     frameId: command.frameId,
     ticks: command.ticks ?? previous?.ticks ?? 0,
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
@@ -573,6 +577,7 @@ export function applyPlayFpsSample(
     scriptMs: previous?.scriptMs ?? 0,
     physicsMs: previous?.physicsMs ?? 0,
     publishMs: previous?.publishMs ?? 0,
+    ...(previous?.phaseMs ? { phaseMs: previous.phaseMs } : {}),
     frameId: previous?.frameId ?? 0,
     ticks: previous?.ticks ?? 0,
     liveActors: previous?.liveActors ?? 0,
@@ -864,6 +869,8 @@ export function startPlaySession(options: {
     else runtime?.applyRenderPathStatus(control);
   };
 
+  /** The game asked for device motion, perhaps before input capture was attached. */
+  let deviceMotionRequested = false;
   const handle = createEngine(canvas, {
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
@@ -945,6 +952,10 @@ export function startPlaySession(options: {
     },
     // Virtual sticks share the capture's suppression and fresh-transition admission.
     onTouchAxis: (controlId, value) => input?.setTouchAxis(controlId, value),
+    onDeviceMotionRequest: () => {
+      deviceMotionRequested = true;
+      input?.enableMotion();
+    },
     onSceneLayerScroll: (event) => {
       if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -1528,6 +1539,7 @@ export function startPlaySession(options: {
           scriptMs: command.scriptMs ?? 0,
           physicsMs: command.physicsMs ?? 0,
           publishMs: command.publishMs,
+          phaseMs: command.phaseMs,
           frameId: command.frameId ?? 0,
           // A dropped snapshot must not leave the count behind the simulation.
           ticks: command.tickIndex ?? lastWorkerTickIndex,
@@ -1750,6 +1762,7 @@ export function startPlaySession(options: {
     // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
     ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
+  if (deviceMotionRequested) input.enableMotion();
   if (options.mode === "simulate") input.setSuppressed(false);
 
   const unlock = () => {
