@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,6 +15,7 @@ import {
   TraceSnapshotPanel,
   TraceTimelinePanel,
 } from "./trace-editor";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 
 const traceDocument = vi.hoisted(() => ({
   id: "trace:traces/session.htrace",
@@ -165,11 +167,6 @@ describe("Trace document panels", () => {
     expect(screen.getByTestId("trace-frame-summary").textContent).toContain(
       "14.00 ms",
     );
-    expect(
-      screen
-        .getByTestId("trace-playback-graph-bar-1")
-        .getAttribute("aria-current"),
-    ).toBe("true");
     fireEvent.change(screen.getByTestId("trace-playback-frame"), {
       target: { value: "0.5" },
     });
@@ -183,11 +180,6 @@ describe("Trace document panels", () => {
     expect(screen.getByTestId("trace-frame-summary").textContent).toContain(
       "Tick 501",
     );
-    expect(
-      screen
-        .getByTestId("trace-playback-graph-bar-0")
-        .getAttribute("aria-current"),
-    ).toBe("true");
   });
 
   it("searches nested values and preserves selection across reordered actors", () => {
@@ -210,7 +202,7 @@ describe("Trace document panels", () => {
     expect(screen.getByTestId("trace-value-detail").textContent).toContain(
       "75",
     );
-    fireEvent.click(screen.getByTestId("trace-playback-graph-bar-0"));
+    fireEvent.click(screen.getByRole("button", { name: "Previous Frame" }));
     expect(screen.getByTestId("trace-value-detail").textContent).toContain(
       "100",
     );
@@ -232,7 +224,7 @@ describe("Trace document panels", () => {
     expect(changes.textContent).toContain("Health");
     expect(changes.textContent).toContain("100");
     expect(changes.textContent).toContain("75");
-    fireEvent.click(screen.getByTestId("trace-playback-graph-bar-0"));
+    fireEvent.click(screen.getByRole("button", { name: "Previous Frame" }));
     expect(screen.getByText("No Previous Recorded Frame")).toBeTruthy();
   });
 
@@ -313,7 +305,7 @@ describe("Trace document panels", () => {
     );
   });
 
-  it("bounds graph bars for long recordings and zooms to exact frames without clipping spikes", () => {
+  it("jumps between over-budget ticks and zooms around the selected frame", () => {
     const frames = Array.from({ length: 500 }, (_, i) => ({
       ...payload.frames[0]!,
       tickIndex: 1000 + i,
@@ -322,11 +314,6 @@ describe("Trace document panels", () => {
       prints: [],
     }));
     renderTrace({ ...payload, frames });
-    const graph = screen.getByTestId("trace-playback-graph");
-    expect(within(graph).getAllByRole("button").length).toBeLessThanOrEqual(
-      200,
-    );
-    expect(screen.getByTestId("trace-budget-line")).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", { name: "Previous Over Budget" }),
     );
@@ -344,5 +331,36 @@ describe("Trace document panels", () => {
     expect(screen.getByTestId("trace-visible-range").textContent).toContain(
       "0–499",
     );
+  });
+});
+
+describe("Trace timeline chart", () => {
+  // 300 px over frames 0 and 1 (the axis runs from -0.5 to 1.5): frame 0 sits at x = 75, frame 1 at x = 225.
+  // The Ticks track is the top 112 px; the markers row lies below it.
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 300, 130));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("selects a tapped tick, names a hovered one and the events a frame recorded", () => {
+    renderTrace(payload);
+    const chart = screen.getByRole("group", { name: "Script And Physics Tick Times" });
+    act(() => {
+      dispatchPointerEvent(chart, "pointerdown", { clientX: 75, clientY: 20 });
+      dispatchPointerEvent(chart, "pointerup", { clientX: 75, clientY: 20 });
+    });
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 501");
+    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 502");
+    act(() => dispatchPointerEvent(chart, "pointermove", { pointerType: "mouse", clientX: 225, clientY: 20 }));
+    expect(screen.getByRole("tooltip").textContent).toBe(
+      "Ticks · Frame 1 · Tick 502Script 12 msPhysics 2 msTotal 14 msOver Budget",
+    );
+    act(() => dispatchPointerEvent(chart, "pointermove", { pointerType: "mouse", clientX: 225, clientY: 120 }));
+    expect(screen.getByRole("tooltip").textContent).toBe("1 Log · 1 InputFrame 1 · Tick 502");
   });
 });

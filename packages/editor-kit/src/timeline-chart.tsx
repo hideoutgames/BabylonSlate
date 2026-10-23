@@ -27,6 +27,8 @@ export type TimelineChartProps = {
   /** A drag across the chart selects a time range; Escape, or null, clears it. */
   onRangeChange?: (range: TimelineDomain | null) => void;
   formatTime?: (ms: number) => string;
+  /** Height of each track in CSS pixels; 56 by default. */
+  trackHeight?: number;
   "aria-label": string;
   className?: string;
 };
@@ -60,6 +62,7 @@ export function TimelineChart({
   onSelect,
   onRangeChange,
   formatTime = defaultTime,
+  trackHeight = TRACK_PX,
   "aria-label": ariaLabel,
   className,
 }: TimelineChartProps) {
@@ -70,7 +73,7 @@ export function TimelineChart({
   const [hover, setHover] = useState<Hover | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
   const press = useRef<{ pointerId: number; x: number; time: number; dragging: boolean } | null>(null);
-  const height = tracks.length * TRACK_PX + (markers ? MARKER_PX : 0);
+  const height = tracks.length * trackHeight + (markers ? MARKER_PX : 0);
   const buckets = Math.max(1, Math.floor(width / TIMELINE_BUCKET_PX));
   const span = domain[1] - domain[0];
 
@@ -127,12 +130,12 @@ export function TimelineChart({
     if (shown) shade(x(shown[0]), x(shown[1]), 0.15);
 
     layout.forEach(({ track, totals, peaks, scale }, row) => {
-      const top = row * TRACK_PX;
-      const base = top + TRACK_PX - 2;
-      const plotHeight = TRACK_PX - 8;
+      const top = row * trackHeight;
+      const base = top + trackHeight - 2;
+      const plotHeight = trackHeight - 8;
       const y = (value: number) => base - value / scale * plotHeight;
       context.fillStyle = color("--border");
-      context.fillRect(0, px(top + TRACK_PX - 1), canvas.width, px(1));
+      context.fillRect(0, px(top + trackHeight - 1), canvas.width, px(1));
       const stack = (index: number, left: number, override?: string) => {
         let bottom = base;
         for (const segment of track.segments) {
@@ -160,7 +163,7 @@ export function TimelineChart({
         if (bucket >= 0) {
           context.fillStyle = color("--trace-selected");
           context.globalAlpha = 0.25;
-          context.fillRect(px(bucket * TIMELINE_BUCKET_PX - 1), px(top), px(TIMELINE_BUCKET_PX + 1), px(TRACK_PX - 1));
+          context.fillRect(px(bucket * TIMELINE_BUCKET_PX - 1), px(top), px(TIMELINE_BUCKET_PX + 1), px(trackHeight - 1));
           context.globalAlpha = 1;
           stack(selected.index, bucket * TIMELINE_BUCKET_PX, color("--trace-selected"));
         }
@@ -173,7 +176,7 @@ export function TimelineChart({
     });
 
     if (markers) {
-      const top = tracks.length * TRACK_PX;
+      const top = tracks.length * trackHeight;
       for (const marker of markers) {
         const left = x(marker.atMs);
         const right = x(marker.endMs ?? marker.atMs);
@@ -182,7 +185,7 @@ export function TimelineChart({
       }
     }
     // themeRevision: the colours were read again for the new theme.
-  }, [layout, markers, domain, buckets, width, height, span, selected, range, drag, tracks.length, themeRevision]);
+  }, [layout, markers, domain, buckets, width, height, span, selected, range, drag, tracks.length, trackHeight, themeRevision]);
 
   const locate = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -194,7 +197,7 @@ export function TimelineChart({
       offsetY,
       time: domain[0] + offsetX / plotWidth * span,
       bucket: Math.min(buckets - 1, Math.floor(offsetX / plotWidth * buckets)),
-      row: Math.floor(offsetY / TRACK_PX),
+      row: Math.floor(offsetY / trackHeight),
     };
   };
   const sampleAt = (point: ReturnType<typeof locate>, reach?: number) => {
@@ -265,7 +268,7 @@ export function TimelineChart({
       <div className="flex">
         <div className="w-24 shrink-0 border-r" aria-hidden="true">
           {layout.map(({ track, scale }) => (
-            <div key={track.id} className="relative flex flex-col justify-between border-b px-1.5 py-1" style={{ height: TRACK_PX }}>
+            <div key={track.id} className="relative flex flex-col justify-between border-b px-1.5 py-1" style={{ height: trackHeight }}>
               <span className="truncate text-[11px] font-medium text-foreground">{track.label}</span>
               <span className="font-mono tabular-nums">{withUnit(Number((scale / 1.1).toFixed(1)), track.unit)}</span>
             </div>

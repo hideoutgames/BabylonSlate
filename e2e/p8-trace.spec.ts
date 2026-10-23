@@ -81,11 +81,10 @@ test.describe("P8 Trace document tab", () => {
     await expect(page.getByTestId("trace-timeline-panel")).toBeVisible();
     await expect(page.getByTestId("trace-snapshot-panel")).toBeVisible();
     await expect(page.getByTestId("trace-log-panel")).toBeVisible();
-    const timingBars = page
+    const timingChart = page
       .getByTestId("trace-playback-graph")
-      .getByRole("button");
-    await expect(timingBars.nth(0)).toBeVisible();
-    await expect(timingBars.nth(1)).toBeVisible();
+      .getByRole("group", { name: "Script And Physics Tick Times" });
+    await expect(timingChart).toBeVisible();
     await expect(page.getByTestId("trace-playback-scrubber")).toBeVisible();
 
     const tree = page.getByRole("tree", { name: "Snapshot", exact: true });
@@ -130,18 +129,22 @@ test.describe("P8 Trace document tab", () => {
         (enabled) => document.documentElement.classList.toggle("dark", enabled),
         dark,
       );
-      const color = await page
-        .getByTestId("trace-selection-indicator")
-        .evaluate((element) => {
-          const canvas = document.createElement("canvas");
-          canvas.width = canvas.height = 1;
-          const context = canvas.getContext("2d")!;
-          context.fillStyle = getComputedStyle(element).backgroundColor;
-          context.fillRect(0, 0, 1, 1);
-          return Array.from(context.getImageData(0, 0, 1, 1).data);
-        });
-      expect(color[0]!).toBeGreaterThan(color[1]! + 30);
-      expect(color[1]!).toBeGreaterThan(color[2]! + 30);
+      // The selected tick's column is shaded in the orange selection colour in either theme, even at 0 ms.
+      await expect
+        .poll(() =>
+          timingChart.locator("canvas").evaluate((element) => {
+            const canvas = element as HTMLCanvasElement;
+            const { data } = canvas
+              .getContext("2d")!
+              .getImageData(0, 0, canvas.width, canvas.height);
+            for (let offset = 0; offset < data.length; offset += 4) {
+              const [red, green, blue, alpha] = data.subarray(offset, offset + 4);
+              if (alpha! > 0 && red! > green! + 30 && green! > blue! + 30) return true;
+            }
+            return false;
+          }),
+        )
+        .toBe(true);
       await page.screenshot({
         path: testInfo.outputPath(dark ? "trace-dark.png" : "trace-light.png"),
       });

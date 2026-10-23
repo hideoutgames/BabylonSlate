@@ -1,5 +1,4 @@
 import type { TracePayload } from "@haptic/debugger";
-import { TICK_BUDGET_MS } from "@haptic/debugger";
 
 export const TRACE_LOG_WINDOW_FRAMES = 30;
 
@@ -145,52 +144,6 @@ export function filterTraceLogs(
         .toLowerCase()
         .includes(q),
   );
-}
-
-export type TraceGraphBucket = {
-  start: number;
-  end: number;
-  peak: number;
-  scriptMs: number;
-  physicsMs: number;
-  overBudget: boolean;
-  hasEvents: boolean;
-};
-
-export function traceGraphBuckets(
-  payload: TracePayload,
-  start: number,
-  end: number,
-  limit: number,
-): TraceGraphBucket[] {
-  const count = end - start + 1;
-  if (count <= 0 || payload.frames.length === 0) return [];
-  const size = Math.max(1, Math.ceil(count / Math.max(1, limit)));
-  const buckets: TraceGraphBucket[] = [];
-  for (let first = start; first <= end; first += size) {
-    const last = Math.min(end, first + size - 1);
-    let peak = first,
-      hasEvents = false;
-    for (let i = first; i <= last; i++) {
-      const frame = payload.frames[i]!;
-      if (frameTickMs(frame) > frameTickMs(payload.frames[peak]!)) peak = i;
-      hasEvents ||=
-        frame.logs.length > 0 ||
-        frame.prints.length > 0 ||
-        !!frame.inputEvents?.length;
-    }
-    const frame = payload.frames[peak]!;
-    buckets.push({
-      start: first,
-      end: last,
-      peak,
-      scriptMs: Math.max(0, frame.scriptMs),
-      physicsMs: Math.max(0, frame.physicsMs),
-      overBudget: frameTickMs(frame) > TICK_BUDGET_MS,
-      hasEvents,
-    });
-  }
-  return buckets;
 }
 
 export function frameTickMs(frame: {
