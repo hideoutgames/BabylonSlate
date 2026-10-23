@@ -25,6 +25,10 @@ import {
   ClassPicker,
   ColorPicker,
   CurveField,
+  TimelineChart,
+  type TimelineDomain,
+  type TimelineSelection,
+  type TimelineTrack,
   GradientField,
   ModuleCard,
   ModuleStack,
@@ -403,6 +407,43 @@ function GalleryParticleFields() {
         />
       </div>
     </div>
+  );
+}
+
+/** Deterministic samples: a 60 fps frame stream with a hitch, and ticks split into two parts. */
+const GALLERY_TIMELINE_TIMES = Array.from({ length: 180 }, (_, index) => index * 16.7);
+const GALLERY_TIMELINE_TRACKS: readonly TimelineTrack[] = [
+  {
+    id: "frames", label: "Frames", unit: "ms", times: GALLERY_TIMELINE_TIMES, threshold: 16.7,
+    segments: [{ label: "Frame Time", color: "--trace-script",
+      values: GALLERY_TIMELINE_TIMES.map((_, index) => index === 90 ? 42 : 15 + 2 * Math.sin(index / 7)) }],
+  },
+  {
+    id: "ticks", label: "Ticks", unit: "ms", times: GALLERY_TIMELINE_TIMES, threshold: 8,
+    segments: [
+      { label: "Script", color: "--trace-script", values: GALLERY_TIMELINE_TIMES.map((_, index) => 3 + 1.5 * Math.sin(index / 9)) },
+      { label: "Physics", color: "--trace-physics", values: GALLERY_TIMELINE_TIMES.map((_, index) => index === 90 ? 9 : 2 + Math.cos(index / 5)) },
+    ],
+  },
+];
+
+function GalleryTimelineChart() {
+  const [selected, setSelected] = useState<TimelineSelection | null>({ track: "frames", index: 90 });
+  const [range, setRange] = useState<TimelineDomain | null>(null);
+  return (
+    <section className="rounded-lg border border-border" data-testid="gallery-timeline-chart">
+      <div className="px-3 pt-2 text-sm font-medium">Timeline Chart</div>
+      <TimelineChart
+        tracks={GALLERY_TIMELINE_TRACKS}
+        markers={[{ atMs: 1000, endMs: 1300, label: "Loading", color: "--muted-foreground" }, { atMs: 2200, label: "Scene Changed", color: "--foreground" }]}
+        domain={[0, 3000]}
+        selected={selected}
+        range={range}
+        onSelect={setSelected}
+        onRangeChange={setRange}
+        aria-label="Example Timeline"
+      />
+    </section>
   );
 }
 
@@ -1692,6 +1733,7 @@ export function ComponentGallery() {
           <GalleryForms />
 
           <GalleryColorPickers />
+          <GalleryTimelineChart />
 
           <TagGallery />
 
