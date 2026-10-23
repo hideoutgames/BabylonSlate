@@ -164,6 +164,10 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
     const shadowLoss = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== shadowed[index]),
       () => { if (boxes.every((floor, index) => drawnEffect(floor) === shadowed[index])) shadowedFrames++; });
 
+    // The sun back on (a variant the floors drew after the first swap) for the spawns.
+    const sunless = boxes.map(drawnEffect);
+    setAuthoredLightEnabled(sun, true);
+    await step(() => boxes.every((floor, index) => drawnEffect(floor) !== sunless[index]));
     // A spawn with a variant nothing compiled (a Material of its own): hidden until its pipelines exist.
     const missedMaterial = new StandardMaterial("spawned", scene);
     // Unlit: a variant (and pipeline) no other mesh draws with.

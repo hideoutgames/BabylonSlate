@@ -20,7 +20,7 @@ export const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
  * Where pipelines are deferred (WebGPU) a variant also needs its render pipeline for the pass it draws in, which only
  * a draw in that pass creates. The staged meshes then stay, hidden from every pass (`hideForPipelineWarmup`), until
  * the world view's warm draws have created their pipelines (`variant-pipeline-warmup.ts`), and go afterwards, or after
- * `SPAWNABLE_PIPELINE_WARM_MS`.
+ * `SPAWNABLE_PIPELINE_WARM_MS` (a scene no world view probes keeps them that long).
  */
 export async function warmSpawnables(
   scene: Scene,

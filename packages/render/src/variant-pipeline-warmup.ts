@@ -122,6 +122,7 @@ function makeCold(state: WarmupState, effect: Effect): void {
   effect.isReady = () => base() && (state.warming || !state.cold.has(effect) || !passes.has(engine.currentRenderPassId));
 }
 
+/** An Effect that warms keeps its original readiness as its own `isReady` (a bound copy), deliberately: one closure. */
 function warmUp(state: WarmupState, effect: Effect): void {
   const entry = state.cold.get(effect);
   if (!entry) return;
