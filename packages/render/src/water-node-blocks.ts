@@ -10,8 +10,8 @@ import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
 import {
-  contactRange, marchSource, meshVertexWaves, placeholderField, sceneWaterNodeLighting, stripShaderComments, toWgsl, WATER_CLOCK_UNIFORM,
-  WATER_GPU_WAVES_DEFINE,
+  contactRange, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, sceneWaterNodeLighting, stripShaderComments, toWgsl,
+  WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
 } from "./water-material";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
@@ -548,11 +548,13 @@ float swnSceneZ = mix(swnZ1, swnZ0, swnLeak);
 RegisterClass("BABYLON.WaterSceneColorBlock", WaterSceneColorBlock);
 
 /**
- * Water Reflection: what the water mirrors along the reflected view ray (linear colour times Reflection Strength) and
- * the Fresnel weight of that reflection (Schlick, water's 2% at normal incidence). The sky is the scene's environment or
- * skybox cube, blurred by Roughness (Roughness where connected, else the asset's), else the analytic sky built-in water
- * reflects; scene objects replace it where the asset's Object Reflections is on and the pass marches the scene copy
- * (Screen Space reflections; Planar quality marches too). Normal defaults to the Water Waves block's.
+ * Water Reflection: what the water mirrors along the reflected view ray (linear colour times Reflection Strength; the sky
+ * dimmed where the ray leaves below the horizon, as built-in water dims it) and the Fresnel weight of that reflection (built-in
+ * water's environment BRDF: water's 2% at normal incidence, less at grazing angles the rougher the water). The sky is the
+ * scene's environment or skybox cube, else the analytic sky built-in water reflects, blurred by Roughness (Roughness
+ * where connected, else the asset's), which rises with distance as built-in water's does; scene objects replace it where
+ * the asset's Object Reflections is on and the pass marches the scene copy (Screen Space reflections; Planar quality
+ * marches too). Normal defaults to the Water Waves block's.
  */
 export class WaterReflectionBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -609,11 +611,13 @@ export class WaterReflectionBlock extends WaterNodeBlock {
     state.compilationString += "{\n" + bind(`
 vec3 swnV = normalize(${eye} - ${position}.xyz);
 vec3 swnN = normalize(${normal});
-float swnFx = 1.0 - clamp(dot(swnN, swnV), 0.0, 1.0);
-float swnFres = 0.02 + 0.98 * swnFx * swnFx * swnFx * swnFx * swnFx;
+float swnNdotV = clamp(dot(swnN, swnV), 0.0, 1.0);
+float swnRoughNear = clamp(${roughness}, 0.0, 1.0);
+float swnRough = mix(max(swnRoughNear, ${f(WATER_FAR_ROUGHNESS)}), swnRoughNear, 1.0 / (1.0 + length(${eye} - ${position}.xyz) * ${f(WATER_GLOSS_FALLOFF)}));
+${fresnelSource("swnRough", "swnNdotV", "swnFres")}
 vec3 swnR = reflect(-swnV, swnN);
+${reflectionKeepSource("swnR.y", "swnV.y", "swnKeep")}
 swnR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));
-float swnRough = clamp(${roughness}, 0.0, 1.0);
 float swnSkyH = 1.0 - clamp(swnR.y, 0.0, 1.0);
 swnSkyH = swnSkyH * swnSkyH * swnSkyH;
 vec3 swnSky = mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, swnSkyH);
@@ -631,9 +635,9 @@ vec4 swnEnv = swnEnvTap(swnDir, swnRough * U.slateWaterNodeEnv.x + U.slateWaterN
 vec3 swnGamma = pow(max(swnEnv.rgb, vec3(0.0)), vec3(2.2));
 vec3 swnLinear = mix(swnEnv.rgb, swnGamma, U.slateWaterNodeEnv.z);
 swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y) * U.slateWaterNodeEnv.w;
-`, wgsl) + `#endif\n#if defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0\n`
+`, wgsl) + `#endif\n${bind("swnSky = swnSky * swnKeep;", wgsl)}#if defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0\n`
       + bind(`vec4 swnHit = swMarch(${position}.xyz, swnR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
-swnSky = mix(swnSky, swnHit.rgb, swnHit.a * (1.0 - smoothstep(0.2, 0.45, swnRough)));
+swnSky = mix(swnSky, swnHit.rgb, swnHit.a * (1.0 - smoothstep(0.2, 0.45, swnRoughNear)));
 `, wgsl) + "#endif\n"
       + (this.color.hasEndpoints ? `${color} = swnSky * ${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.z;\n` : "")
       + (this.fresnel.hasEndpoints ? `${fresnel} = swnFres;\n` : "")

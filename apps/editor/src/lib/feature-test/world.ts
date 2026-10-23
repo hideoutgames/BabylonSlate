@@ -175,7 +175,7 @@ const STRESS_FOLIAGE_SPACING = 0.42;
  */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
   // The River draws with the Realistic starter water Material: every water node on a Custom Material.
-  const riverMaterial = await ctx.createAsset("Material", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_RIVER_MATERIAL, { build: { waterMaterial: "realistic" } });
+  const riverMaterial = await ctx.createAsset("Material", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_RIVER_MATERIAL, { build: { waterMaterial: true } });
   for (const key of Object.keys(FEATURE_TEST_WORLD_WATER) as WaterKey[]) {
     const patch = WATER_LOOKS[key];
     const custom = key === "river" ? riverMaterial.guid : null;

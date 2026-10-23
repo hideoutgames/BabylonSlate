@@ -2369,10 +2369,10 @@ describe("Water asset authoring", () => {
     expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
   });
 
-  it("starts a Surface Material as the chosen starter water Material, and other domains as usual", () => {
-    const water = buildNewAssetResult({ type: "Material", name: "Sea", guid: "sea", parentClass: null, waterMaterial: "basic" });
-    expect(water.payload).toEqual(createWaterMaterialDocument("Sea", "basic"));
-    const particle = buildNewAssetResult({ type: "Material", name: "Spark", guid: "spark", parentClass: null, materialDomain: "particle", waterMaterial: "basic" });
+  it("starts a Surface Material as the starter water Material, and other domains as usual", () => {
+    const water = buildNewAssetResult({ type: "Material", name: "Sea", guid: "sea", parentClass: null, waterMaterial: true });
+    expect(water.payload).toEqual(createWaterMaterialDocument("Sea"));
+    const particle = buildNewAssetResult({ type: "Material", name: "Spark", guid: "spark", parentClass: null, materialDomain: "particle", waterMaterial: true });
     expect(particle.payload).toEqual(createDefaultMaterialDocument("Spark", "particle"));
   });
 });

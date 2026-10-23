@@ -736,7 +736,7 @@ describe("Water rendering", () => {
         return { lake: cells(lake), sea: cells(sea), global: cells(global), spectrumSea: cells(spectrumSea) };
       });
       // Surface Resolution × density on the 60 m lake: whole cells of the default Wave Length's size, an even count.
-      expect(sizes.map((size) => size.lake)).toEqual(levels.map((level) => Math.ceil(60 / cellOf(18, 64, RENDER_QUALITY_PROFILES[level].water.meshDensity) / 2) * 2));
+      expect(sizes.map((size) => size.lake)).toEqual(levels.map((level) => Math.ceil(60 / cellOf(createDefaultWaterDefinition().waveLength, 64, RENDER_QUALITY_PROFILES[level].water.meshDensity) / 2) * 2));
       expect(sizes.map((size) => size.global)).toEqual(levels.map((level) => 128 * RENDER_QUALITY_PROFILES[level].water.meshDensity));
       // The caps hold at the densest tier: Global Water and large finite volumes stop growing there.
       expect(sizes[3]!.global).toBe(WATER_GLOBAL_CELL_BUDGET);

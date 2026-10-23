@@ -77,16 +77,20 @@ A Water asset reflects scene objects only when its **Object Reflections** is on.
 
 Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work.
 
-To start from a working water Material, choose **New Asset > Rendering > Material** with a **Starter**, or choose **Create New** in the water asset's **Custom Material** picker (a Realistic Water starter). Both starters move with the asset's waves and take its colours, on every kind of water body:
+To edit the built-in look, choose **Edit As Material** in the Water asset's Inspector. It creates a Material that closely matches the built-in water, built from the water nodes, sets it as the **Custom Material** and opens it. You can also start one with **New Asset > Rendering > Material** and the **Water** starter, or **Create New** in the **Custom Material** picker.
 
-- **Realistic Water**: close to the built-in water, built from every water node: what lies below, reflections and foam. Translucent.
-- **Basic Water**: the least a water Material needs: Water Waves for the motion and normal, and the asset's Deep Color. Opaque. Build a look of your own, such as stylized water, from here.
+The water Material moves with the asset's waves and takes its colours on every kind of water body, so the Water asset's settings still apply. It is Translucent and built from every water node:
 
-The starter is an ordinary Material graph, so you can change any step.
+- Deep Color, with the sunlight through the crests (Water Waves **Subsurface**) in Shallow Color.
+- In shallow water, what lies below through Shallow Color, fading to the deep water's colour with depth.
+- Reflections, mixed in by their Fresnel.
+- Foam in Foam Color, lit by the scene.
+
+It is an ordinary Material graph, so you can change any step, for example for stylized water.
 
 | Node | Gives |
 | --- | --- |
-| [Water Waves](../scripting/material/water-waves.md) | The simulated ocean: the wave offset for World Position Offset, the normal, height and crest foam. |
+| [Water Waves](../scripting/material/water-waves.md) | The simulated ocean: the wave offset for World Position Offset, the normal, height, crest foam and subsurface light. |
 | [Water Colors](../scripting/material/water-colors.md) | The asset's Shallow, Deep and Foam Color and Opacity. |
 | [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, and a fade from the waterline into deep water. |
 | [Water Scene Color](../scripting/material/water-scene-color.md) | The scene behind the water, bent by the waves. |

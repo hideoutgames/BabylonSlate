@@ -270,11 +270,12 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
   },
   {
     // The FFT ocean for Custom Material water: the water mesh keeps a static rest grid and the graph applies the waves
-    // (Offset into World Position Offset); Normal, Wave Height and Crest Foam are per pixel where the fragment reads them.
+    // (Offset into World Position Offset); Normal, Wave Height, Crest Foam and Subsurface are per pixel where the fragment
+    // reads them.
     type: "input.waterWaves",
     title: "Water Waves",
     category: "Input",
-    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "fft", "whitecap", "foam", "normal"],
+    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "fft", "whitecap", "foam", "normal", "subsurface", "scattering"],
     domains: ["surface"],
     inputs: [],
     outputs: [
@@ -282,6 +283,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
       { id: "height", name: "Wave Height", type: FLOAT },
       { id: "normal", name: "Normal", type: VEC3 },
       { id: "crestFoam", name: "Crest Foam", type: FLOAT },
+      { id: "subsurface", name: "Subsurface", type: FLOAT },
       { id: "time", name: "Simulation Time", type: FLOAT },
     ],
     cost: 8,

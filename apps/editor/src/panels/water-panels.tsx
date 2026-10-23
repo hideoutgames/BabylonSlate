@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DirectionalLight, Vector3, type AbstractEngine, type Mesh, type Scene } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
+import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, useAssetCreate, useAssetOpen, type PropertyRow } from "@haptic/editor-kit";
 import {
   createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition,
 } from "@haptic/core";
@@ -11,6 +11,7 @@ import {
   MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine, type RenderShadingSettings,
 } from "@haptic/render";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
+import { Button } from "@haptic/ui/components/button";
 import {
   useDocumentActions,
   useProjectState,
@@ -77,8 +78,12 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   const { applyAssetDocumentChange } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const [picking, setPicking] = useState(false);
+  const [deriving, setDeriving] = useState<"busy" | string | null>(null);
+  const createAsset = useAssetCreate(), openAsset = useAssetOpen();
   const doc = useOpenDocument(documentId);
   const water = normalizeWaterDefinition(doc?.content);
+  const latestWater = useRef(water);
+  latestWater.current = water;
   const defaults = createDefaultWaterDefinition();
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
   const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
@@ -103,10 +108,24 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     { id: "water-objectReflections", kind: "boolean", label: "Object Reflections", value: water.objectReflections, defaultValue: defaults.objectReflections, description: "Render only: also reflect scene objects (screen-space or planar, per the Water Reflections quality setting). Off reflects only the sky. Visible in scene viewports and Play, not in this preview.", onChange: (objectReflections) => commit({ ...water, objectReflections }) },
     ...waveControls.map(numberRow),
     ...surfaceControls.map(numberRow),
-    { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material that replaces the built-in shading. Buoyancy keeps working; add a Water Waves node to displace the surface with the full waves.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
+    { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material that replaces the built-in shading. Buoyancy keeps working; add a Water Waves node to displace the surface with the full waves. Edit As Material starts one from the built-in look.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
-  return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>
-    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} createTypes={["Material"]} createOptions={{ waterMaterial: "realistic" }} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
+  // Built-in water's look as an editable Material, made the Custom Material and opened for editing.
+  const editAsMaterial = () => {
+    if (!createAsset) return;
+    setDeriving("busy");
+    void createAsset.createAsset({ type: "Material", name: `${doc?.ref.label ?? "Water"} Material`, waterMaterial: true }).then((materialGuid) => {
+      setDeriving(null);
+      commit({ ...latestWater.current, materialGuid });
+      if (openAsset?.canOpen(materialGuid)) openAsset.openAsset(materialGuid);
+    }, (failure: unknown) => setDeriving(failure instanceof Error ? failure.message : String(failure)));
+  };
+  return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} />
+    {!water.materialGuid && createAsset?.canCreate("Material") ? <div className="flex flex-col gap-2 pt-2">
+      <div><Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={deriving === "busy"} onClick={editAsMaterial} data-testid="water-edit-as-material">Edit As Material</Button></div>
+      {deriving && deriving !== "busy" ? <Alert variant="destructive"><AlertTitle>Could Not Create Material</AlertTitle><AlertDescription>{deriving}</AlertDescription></Alert> : null}
+    </div> : null}</div>
+    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} createTypes={["Material"]} createOptions={{ waterMaterial: true }} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
   </PanelFrame>;
 }
 

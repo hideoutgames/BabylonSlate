@@ -59,15 +59,15 @@ describe("ContentBrowserNewAssetDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
-  it("lets a Material start as a Realistic or Basic water Material", () => {
-    const onMaterialStarterChange = vi.fn();
-    renderDialog({ type: "Material", name: "Sea", materialStarter: null, onMaterialStarterChange });
-    fireEvent.click(screen.getByRole("button", { name: "Basic Water" }));
-    expect(onMaterialStarterChange).toHaveBeenLastCalledWith("basic");
+  it("lets a Material start as the water Material", () => {
+    const onWaterStarterChange = vi.fn();
+    renderDialog({ type: "Material", name: "Sea", waterStarter: false, onWaterStarterChange });
+    fireEvent.click(screen.getByRole("button", { name: "Water" }));
+    expect(onWaterStarterChange).toHaveBeenLastCalledWith(true);
     cleanup();
-    renderDialog({ type: "Material", name: "Sea", materialStarter: "basic", onMaterialStarterChange });
+    renderDialog({ type: "Material", name: "Sea", waterStarter: true, onWaterStarterChange });
     fireEvent.click(screen.getByRole("button", { name: "Empty" }));
-    expect(onMaterialStarterChange).toHaveBeenLastCalledWith(null);
+    expect(onWaterStarterChange).toHaveBeenLastCalledWith(false);
   });
   afterEach(() => {
     cleanup();

@@ -3,7 +3,7 @@ import {
   AssetCreateProvider,
   type AssetCreateApi,
 } from "@haptic/editor-kit";
-import type { MaterialDomain, WaterMaterialLook } from "@haptic/shader-graph";
+import type { MaterialDomain } from "@haptic/shader-graph";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -45,7 +45,7 @@ export function AssetCreateDocumentsProvider({
       name?: string;
       parentClass?: string;
       materialDomain?: MaterialDomain;
-      waterMaterial?: WaterMaterialLook;
+      waterMaterial?: boolean;
       defaultDefinitionGuid?: string | null;
       ownerPath?: string | null;
     }) => {

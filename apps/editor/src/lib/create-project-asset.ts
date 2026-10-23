@@ -11,7 +11,7 @@ import {
   isLockedEngineClassId,
   MAX_CLASS_INHERITANCE_DEPTH,
 } from "@haptic/object-model";
-import type { MaterialDomain, WaterMaterialLook } from "@haptic/shader-graph";
+import type { MaterialDomain } from "@haptic/shader-graph";
 import {
   ASSETS_ROOT,
   assetHeaderDependencyMetadata,
@@ -40,8 +40,8 @@ export async function createProjectAsset(options: {
   name: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
-  /** A new Surface Material starts as the starter Water Material of this look. */
-  waterMaterial?: WaterMaterialLook;
+  /** A new Surface Material starts as the starter Water Material (built-in water's look, wired from the water nodes). */
+  waterMaterial?: boolean;
   /** Use the live Definition catalog so unsaved field edits supply defaults. */
   defaultDefinitionGuid?: string | null;
   typeSchemas?: TypeSchemas;
@@ -262,7 +262,7 @@ export async function createPickerAsset(options: {
   name?: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
-  waterMaterial?: WaterMaterialLook;
+  waterMaterial?: boolean;
   defaultDefinitionGuid?: string | null;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;

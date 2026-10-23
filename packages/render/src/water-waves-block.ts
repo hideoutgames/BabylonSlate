@@ -6,7 +6,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import {
   meshVertexWaves, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE,
-  WATER_NODE_FOAM_UNIFORM, WATER_NODE_VARYING, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource, waterWaveNodeSources,
+  WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_NODE_VARYING, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource, waterWaveNodeSources,
 } from "./water-material";
 import { declareWaterAttributes, isWaterSurfaceMesh, WATER_SURFACE_DEFINE } from "./water-surface-block";
 
@@ -30,10 +30,10 @@ function declareArraySampler(state: NodeMaterialBuildState, name: string): void 
  * (`WaterVertexWaves.bind`): Offset feeds World Position Offset, so every pass that compiles the graph (depth pre-pass,
  * shadows, outlines, captures) displaces identically. Its fragment stage samples every cascade per pixel as built-in
  * water does (`waterWaveNodeSources`): Normal (the displaced surface's, from the spectrum's slopes over the mesh's base
- * normal), Wave Height and Crest Foam (FFT-Ocean's whitecaps from the persistent turbulence, with the asset's Crest
- * Foam and Foam Amount). A vertex consumer of Normal or Wave Height reads the vertex's values instead. Meshes that are
- * not such a water surface (a material preview, a mesh without the water vertex data) get no displacement, Height,
- * Crest Foam and Simulation Time 0, and the world normal they came with.
+ * normal), Wave Height, Crest Foam (FFT-Ocean's whitecaps from the persistent turbulence, with the asset's Crest
+ * Foam and Foam Amount) and Subsurface (FFT-Ocean's light through the crests, with the asset's Subsurface). A vertex
+ * consumer of Normal or Wave Height reads the vertex's values instead. Meshes that are not such a water surface (a material preview, a mesh without the water vertex data) get no displacement, Height,
+ * Crest Foam, Subsurface and Simulation Time 0, and the world normal they came with.
  */
 export class WaterWavesBlock extends NodeMaterialBlock {
   constructor(name: string) {
@@ -46,6 +46,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     this.registerOutput("normal", Types.Vector3);
     this.registerOutput("time", Types.Float);
     this.registerOutput("crestFoam", Types.Float, NodeMaterialBlockTargets.Fragment);
+    this.registerOutput("subsurface", Types.Float, NodeMaterialBlockTargets.Fragment);
   }
   /** The undisplaced world position of the vertex (the rest point), Vector 4. */
   get worldPosition() { return this._inputs[0]!; }
@@ -63,6 +64,8 @@ export class WaterWavesBlock extends NodeMaterialBlock {
   get time() { return this._outputs[4]!; }
   /** Whitecap coverage (0-1). */
   get crestFoam() { return this._outputs[5]!; }
+  /** Light scattered through the crests toward a viewer facing the sun, times the asset's Subsurface (built-in water adds Shallow Color times it). */
+  get subsurface() { return this._outputs[6]!; }
   override getClassName(): string { return "WaterWavesBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
     // The water mesh uploads its base normals with the data and flow it is recognised by, and only it registers waves.
@@ -120,7 +123,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     state._emitFunction("swFftTapLod", waterWaveNodeSources(state.shaderLanguage).vertexHelpers, "");
   }
   /**
-   * The fragment's per-pixel normal, height and crest foam. The vertex stage hands over the bank and blend shares through
+   * The fragment's per-pixel normal, height, crest foam and subsurface light. The vertex stage hands over the bank and blend shares through
    * `WATER_NODE_VARYING` (written into the vertex program from here, so a graph that reads only fragment outputs still
    * gets it); the rest point and the base normal arrive as the inputs' own varyings.
    */
@@ -132,7 +135,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
       vertex.compilationString += `${sources.varying(`${wgsl ? "vertexOutputs." : ""}${WATER_NODE_VARYING}`)}\n`;
     }
     state._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector4, WATER_GPU_WAVES_DEFINE);
-    for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
+    for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     declareArraySampler(state, WATER_FFT_SAMPLER);
     declareArraySampler(state, WATER_FOAM_SAMPLER);
     state._emitFunction("swSpecTap", sources.fragmentHelpers, "");
@@ -156,9 +159,9 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     const declare = (output: (typeof this._outputs)[number], value: string) => output.hasEndpoints ? `${state._declareOutput(output)} = ${value};\n` : "";
     const local = (name: string, type: string, value: string) => wgsl ? `var ${name}: ${type} = ${value};\n` : `${type} ${name} = ${value};\n`;
     state.compilationString += local("swnNormal", v3, worldNormal)
-      + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0")
+      + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0") + local("swnSubsurface", wgsl ? "f32" : "float", "0.0")
       + `${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n`
-      + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam")
+      + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam") + declare(this.subsurface, "swnSubsurface")
       + declare(this.time, `${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x`);
   }
 }

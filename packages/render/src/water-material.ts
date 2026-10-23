@@ -546,6 +546,47 @@ vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec
 `;
 }
 
+/** FFT-Ocean's far roughness: normal detail its mips average away. */
+export const WATER_FAR_ROUGHNESS = 0.31;
+/** FFT-Ocean's distance gloss: roughness reaches halfway to `WATER_FAR_ROUGHNESS` at 1 / this many metres. */
+export const WATER_GLOSS_FALLOFF = 0.0044;
+
+/**
+ * FFT-Ocean's reflectance, declared as `out`: the environment BRDF of a facet at `roughness` seen at `nDotV` (Karis's fit
+ * of the split-sum table, F0 = 0.02), so rough far water at grazing angles reflects less than a mirror would.
+ */
+export function fresnelSource(roughness: string, nDotV: string, out: string): string {
+  return `
+vec4 ${out}R = ${roughness} * vec4(-1.0, -0.0275, -0.572, 0.022) + vec4(1.0, 0.0425, 1.04, -0.04);
+float ${out}A = min(${out}R.x * ${out}R.x, exp2(-9.28 * ${nDotV})) * ${out}R.x + ${out}R.y;
+vec2 ${out}Ab = vec2(-1.04, 1.04) * ${out}A + ${out}R.zw;
+float ${out} = clamp(0.02 * ${out}Ab.x + ${out}Ab.y, 0.0, 1.0);`;
+}
+
+/**
+ * How much of the sky a reflected ray keeps, declared as `out`: a ray leaving below the horizon (`rayY`, its unlifted
+ * height) would meet other water, which reflects less than the sky above it. Seen from below (`viewY` < 0) it keeps all.
+ */
+export function reflectionKeepSource(rayY: string, viewY: string, out: string): string {
+  return `
+float ${out} = mix(1.0, 0.55, smoothstep(0.0, -0.2, ${rayY}) * step(0.0, ${viewY}));`;
+}
+
+/**
+ * FFT-Ocean's subsurface light, declared as `out` (a float): light scattered through the crests of the small waves
+ * (`crest`, their height in metres over the swell) toward a viewer (`view`, toward the eye) facing the sun (`sun`, toward
+ * it) across the wave (`normal`), times Subsurface (`strength`) and the spectrum's readiness (`ready`). Only crests lit
+ * from behind glow: looking down or away from the sun, the light leaves the water toward the sun instead.
+ */
+function subsurfaceSource(sun: string, view: string, normal: string, crest: string, strength: string, ready: string, out: string): string {
+  return `
+vec3 ${out}V = ${view};
+float ${out}H = clamp(dot(${out}V, normalize(${normal} + ${sun})), 0.0, 1.0);
+float ${out}Back = clamp(0.5 - 0.5 * dot(${out}V, ${sun}), 0.0, 1.0);
+float ${out} = ${out}H * ${out}H * ${out}H * ${out}H * ${out}H * 4.5 * ${out}Back * ${out}Back * ${strength}
+  * max(${crest} + 0.261, 0.0) / 4.7 * clamp(${ready}, 0.0, 1.0);`;
+}
+
 /** FFT-Ocean's distance LOD: cascade c > 0 fades by `SPECTRUM_LOD_SCALE` · its patch over the eye distance. */
 const SPECTRUM_LOD_SCALE = 7.13;
 /** FFT-Ocean's foam: coverage per unit of turbulence below the bias. */
@@ -752,8 +793,9 @@ float swFoam = clamp(max(max(swCrestFoam, swResidue), max(swCollar, swShoreFoam)
 /**
  * Realistic spectrum water, after FFT-Ocean's material: lit PBR (unlit at Low) whose body is Deep Color emitted through
  * (1 − Fresnel) with FFT-Ocean's subsurface light (Shallow Color, Subsurface) on the crests of the small waves seen toward
- * the sun, Schlick reflection of the environment (or the analytic scene sky) at the facet's own Fresnel, glossy close by
- * and rougher with distance (FFT-Ocean's distance gloss, from Roughness), and white foam lit as rough albedo. Shallow
+ * the sun from behind, reflection of the environment (or the analytic scene sky) at the facet's own environment BRDF
+ * (`fresnelSource`), less where a ray leaves below the horizon, glossy close by and rougher with distance (FFT-Ocean's
+ * distance gloss, from Roughness), and white foam lit as rough albedo. Shallow
  * water transmits what lies below through per-channel absorption (Shallow Color, Depth Color Distance), refracted with
  * the scene copy. Everything is premultiplied by coverage (see CUSTOM_FRAGMENT_BEFORE_FOG).
  */
@@ -772,16 +814,14 @@ swSharp = 1.0;
 vec3 swHorC = vec3(0.0);
 float swHorW = 0.0;
 #endif
-// FFT-Ocean's Fresnel on the facet normal.
-vec3 swFresN = normalW;
-float swNdotV = clamp(dot(swFresN, swV), 0.0, 1.0);
-float swFx = 1.0 - swNdotV;
-float swFres = mix(0.02 + 0.98 * swFx * swFx * swFx * swFx * swFx, 1.0, swHaze);
 // Distance gloss: near water is as smooth as Roughness, far water as rough as FFT-Ocean's 0.31 (normal detail its mips
 // average away), plus the shading normal's own variation across the pixel (specular antialiasing).
 float swRoughNear = U.slateWaterOrigin.w;
-float swRoughFar = max(swRoughNear, 0.31);
-float swRoughD = mix(swRoughFar, swRoughNear, 1.0 / (1.0 + swEyeDist * 0.0044));
+float swRoughFar = max(swRoughNear, ${f(WATER_FAR_ROUGHNESS)});
+float swRoughD = mix(swRoughFar, swRoughNear, 1.0 / (1.0 + swEyeDist * ${f(WATER_GLOSS_FALLOFF)}));
+vec3 swFresN = normalW;
+float swNdotV = clamp(dot(swFresN, swV), 0.0, 1.0);${fresnelSource("swRoughD", "swNdotV", "swFresBrdf")}
+float swFres = mix(swFresBrdf, 1.0, swHaze);
 vec2 swShadeSlope = normalW.xz / max(normalW.y, 0.1);
 vec2 swShadeDx = dFdx(swShadeSlope);
 vec2 swShadeDy = dFdy(swShadeSlope);
@@ -790,20 +830,15 @@ swSlopeVariance = (max(swRoughD * swRoughD * swRoughD * swRoughD - swRoughNear *
 // Reflected rays stay above the horizon (a smooth floor), so the water never mirrors more water; the shading normal
 // becomes the half vector toward that ray, so the environment lookup follows it, while the Fresnel stays the facet's.
 vec3 swRefl = reflect(-swV, normalW);
-float swReflRawY = swRefl.y;
+float swReflRawY = swRefl.y;${reflectionKeepSource("swReflRawY", "swV.y", "swReflKeepLocal")}
+swReflKeep = swReflKeepLocal;
 float swLiftA = 60.0 * (0.03 - swRefl.y);
 swRefl.y = mix(swRefl.y, swRefl.y + (max(swLiftA, 0.0) + log(1.0 + exp(-abs(swLiftA)))) / 60.0, step(0.0, swV.y));
 normalW = normalize(swV + normalize(swRefl));
-// Body: Deep Color, lit by the scene (a dim scene keeps a dim sea), with FFT-Ocean's subsurface light on the crests of
-// the small waves (their height over the swell) seen toward the sun.
+// Body: Deep Color, lit by the scene (a dim scene keeps a dim sea), with FFT-Ocean's subsurface light (Shallow Color).
 vec3 swLumW = vec3(0.3, 0.59, 0.11);
-float swBodyLight = clamp(dot(swAmb, swLumW) * 1.4 + dot(swSun, swLumW) * max(swL.y, 0.0) * 0.35, 0.05, 1.6);
-vec3 swSssH = normalize(swWaveN + swL);
-float swSssV = clamp(dot(swV, swSssH), 0.0, 1.0);
-float swSssBack = clamp(dot(-swV, normalize(swL + swWaveN * 0.4)), 0.0, 1.0);
-float swSss = (swSssV * swSssV * swSssV * swSssV * swSssV * 30.0 + swSssBack * swSssBack * swSssBack * 6.0) * 0.15 * U.slateWaterLook.w;
-float swCrestLift = max(swSpCrest / max(U.slateWaterWaves.x * 0.5, 0.05) + 0.26, 0.0) / 4.7;
-vec3 swBody = mix(U.slateWaterDeep.rgb, clamp(U.slateWaterDeep.rgb + U.slateWaterShallow.rgb * (swSss * swCrestLift), vec3(0.0), vec3(1.0)), clamp(swSp.x, 0.0, 1.0)) * swBodyLight;
+float swBodyLight = clamp(dot(swAmb, swLumW) * 1.4 + dot(swSun, swLumW) * max(swL.y, 0.0) * 0.35, 0.05, 1.6);${subsurfaceSource("swL", "swV", "swWaveN", "swSpCrest", "U.slateWaterLook.w", "swSp.x", "swSss")}
+vec3 swBody = clamp(U.slateWaterDeep.rgb + U.slateWaterShallow.rgb * swSss, vec3(0.0), vec3(1.0)) * swBodyLight;
 // Shallow water: what lies below shows through per-channel absorption (Depth Color Distance; red goes first).
 float swCosT = sqrt(1.0 - (1.0 - swNdotV * swNdotV) * 0.5625);
 float swPath = swDepth * (1.0 + 1.0 / swCosT) / (swAbsorb * 5.0);
@@ -829,15 +864,15 @@ swSkyRefl += swSun * (U.slateWaterSunColor.rgb * (swSkyH * U.slateWaterSunShape.
 swSkyRefl = mix(swSkyRefl, mix(U.slateWaterSky.rgb, U.slateWaterHorizon.rgb, 0.55), smoothstep(0.05, 0.35, sqrt(swSlopeVariance)) * 0.5);
 swSkyRefl *= U.slateWaterDeep.w;
 #endif
-// Foam is a rough white scatterer that hides the mirror: a little albedo for the scene's lights, and most of its light
-// from the sky and sun here, so it is never darker than the horizon it stands against (a weak sun left it grey-brown).
+// Foam is a rough white scatterer that hides the mirror, lit by the scene as FFT-Ocean's foam albedo is, with a little
+// of the ambient light of its own so it stays light in shade.
 float swFoamEdge = smoothstep(0.0, 0.2, swBank + 0.02);
 float swGloss = (1.0 - swFoam) * swEdgeFade;
 swMatte = swFoam;
 float swFoamCover = swFoam * swFoamEdge;
-surfaceAlbedo = U.slateWaterFoam.rgb * (swFoamCover * 0.35);
+surfaceAlbedo = U.slateWaterFoam.rgb * (swFoamCover * 0.8);
 normalW = normalize(mix(normalW, swFresN, swFoam));
-vec3 swFoamLight = max(swAmb * 0.9 + swSun * (0.25 + 0.4 * max(dot(swWaveN, swL), 0.0)), U.slateWaterHorizon.rgb * 1.05);
+vec3 swFoamLight = swAmb * 0.25;
 vec3 swEmissive = swBody * (vec3(1.0) - swTransmitRgb) * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade)
   + U.slateWaterFoam.rgb * swFoamLight * swFoamCover;${fromTier(1, "", `
 // Low draws unlit: the sun's highlight and the foam's light come from here.
@@ -1230,7 +1265,7 @@ export class WaterVertexWaves {
   }
   /**
    * Sets the vertex uniforms, the spectrum and its foam, the clock, the eye (the active camera relative to the rest
-   * positions) and the foam terms for a draw of `mesh`. Allocation-free.
+   * positions), the foam terms and the sun for a draw of `mesh`. Allocation-free.
    */
   bind(sink: WaterUniformSink, scene: Scene, mesh: AbstractMesh): void {
     const scale = this.body.waveScale;
@@ -1242,6 +1277,8 @@ export class WaterVertexWaves {
     const eye = camera?.globalPosition ?? Vector3.ZeroReadOnly;
     sink.setFloat4(WATER_EYE_UNIFORM, eye.x - origin.x, eye.y - origin.y, eye.z - origin.z, 0);
     sink.setFloat4(WATER_NODE_FOAM_UNIFORM, this.water.crestFoam, this.water.foamAmount, 0, 0);
+    const sun = sceneWaterNodeLighting(scene).sun;
+    sink.setFloat4(WATER_NODE_SUN_UNIFORM, sun[0]!, sun[1]!, sun[2]!, this.water.subsurface);
   }
 }
 
@@ -1277,6 +1314,8 @@ export function waterWaveBlockSource(language: ShaderLanguage): string {
 export const WATER_EYE_UNIFORM = "slateWaterEye";
 /** The Water Waves node's foam terms: (Crest Foam, Foam Amount, 0, 0). */
 export const WATER_NODE_FOAM_UNIFORM = "slateWaterNodeFoam";
+/** The Water Waves node's light: (direction toward the sun, Subsurface). */
+export const WATER_NODE_SUN_UNIFORM = "slateWaterNodeWaveSun";
 /** Varying the Water Waves node's vertex stage hands its fragment stage: (bank gain × offset share, height share, 0, 0). */
 export const WATER_NODE_VARYING = "vSlateWaterWaves";
 
@@ -1308,8 +1347,9 @@ ${out} = vec4(swvGain * swvDs, swvHs, 0.0, 0.0);
  * The Water Waves node's fragment code: the spectrum at this pixel's rest point (`rest`, the interpolated undisplaced
  * world position plus the grid offset), every cascade through its mips as built-in water samples it
  * (`spectrumSurfaceSource`): the displaced surface's normal over the mesh's base normal (`base`), the height, and
- * FFT-Ocean's crest foam from the persistent turbulence with the asset's Crest Foam and Foam Amount. Writes `swnNormal`,
- * `swnHeight` and `swnFoam`. GLSL-shaped with `U.`; `varying` is the bound `WATER_NODE_VARYING`.
+ * FFT-Ocean's crest foam from the persistent turbulence with the asset's Crest Foam and Foam Amount, and the subsurface
+ * light built-in water draws (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam` and `swnSubsurface`.
+ * GLSL-shaped with `U.`; `varying` is the bound `WATER_NODE_VARYING`.
  */
 function nodeFragmentSource(rest: string, base: string, varying: string): string {
   const cascades = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => {
@@ -1322,7 +1362,9 @@ float swnSt${c} = swFoamTap(swnSu${c}, ${f(c)}).r;
 float swnSw${c} = ${c === 0 ? "1.0" : `clamp(swnSp.w / max(swnSc${c}.x * swnDist, 0.000001), 0.0, 1.0)`};
 swnGrad += ${fftTurnOut(c, `swnSb${c}.xy`)} * swnSw${c};
 swnJ += ${fftTurnTensor(c, `vec3(swnSb${c}.z, swnSa${c}.w, swnSb${c}.w)`)} * swnSw${c};
-swnH += swnSa${c}.y * swnSw${c};
+swnH += swnSa${c}.y * swnSw${c};${c === 0 ? `
+swnLarge = swnSa0.y;` : `
+swnSmall += swnSa${c}.y * swnSw${c};`}
 swnTurb += 1.0 + (swnSt${c} - 1.0) * swnSw${c} * swnTurbScale;
 swnCascades += 1.0;`;
     return c === 0 ? code : ifFft(code, c + 1);
@@ -1339,6 +1381,8 @@ float swnTurbScale = swnSp.x * swnShares.x;
 vec2 swnGrad = vec2(0.0);
 vec3 swnJ = vec3(0.0);
 float swnH = 0.0;
+float swnLarge = 0.0;
+float swnSmall = 0.0;
 float swnTurb = 0.0;
 float swnCascades = 0.0;${cascades}
 swnGrad = swnGrad * (swnSp.x * swnShares.y);
@@ -1355,6 +1399,9 @@ vec4 swnTerms = U.${WATER_NODE_FOAM_UNIFORM};
 float swnBias = swnCascades - 1.0 + mix(0.55, 1.0, swnTerms.x);
 float swnPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swnDist * swnSc0.x);
 swnFoam = clamp((swnBias - swnTurb) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * clamp(swnTerms.y * 1.6, 0.0, 1.0) * step(0.000001, swnTerms.x) * swnPatchFar;
+${subsurfaceSource(`U.${WATER_NODE_SUN_UNIFORM}.xyz`, `normalize(U.${WATER_EYE_UNIFORM}.xyz - swnRestW - vec3(0.0, swnHeight, 0.0))`, "swnNormal",
+    "(0.2 * swnLarge + swnSmall) * swnSp.x * swnShares.y", `U.${WATER_NODE_SUN_UNIFORM}.w`, "swnSp.x", "swnSss")}
+swnSubsurface = swnSss;
 }
 #endif
 `;
@@ -1491,8 +1538,8 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
     : "uniform sampler2D slateWaterFieldSampler;\nuniform sampler2D slateWaterContactSampler;\n";
   // Written by the realistic main code and read inside Babylon's reflectivity block (a separate function).
   const roughnessGlobals = wgsl
-    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\nvar<private> swSharp: f32 = 1.0;\n"
-    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\nfloat swSharp = 1.0;\n";
+    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\nvar<private> swSharp: f32 = 1.0;\nvar<private> swReflKeep: f32 = 1.0;\n"
+    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\nfloat swSharp = 1.0;\nfloat swReflKeep = 1.0;\n";
   return wgsl
     ? {
       helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + CONTACT_TAP_WGSL + objectHelpers(true) + fftHelpers(true) + spectrumHelpers(true),
@@ -1840,18 +1887,18 @@ function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage):
     CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: [
       "finalEmissive += swEmissive;",
       "#ifdef REFLECTION",
-      // The facet's own Fresnel (`swFres`) replaces the environment BRDF's, which the lifted shading normal and the
-      // filtered roughness would dim toward the horizon.
-      `finalRadianceScaled = reflectionOut.environmentRadiance.rgb * (${wgsl ? "uniforms." : ""}vLightingIntensity.z * swFres);`,
+      // The facet's own reflectance (`swFres`, the environment BRDF of the facet normal) replaces Babylon's, which the
+      // lifted shading normal would dim toward the horizon; rays leaving below the horizon keep less (`swReflKeep`).
+      `finalRadianceScaled = reflectionOut.environmentRadiance.rgb * (${wgsl ? "uniforms." : ""}vLightingIntensity.z * swFres * swReflKeep);`,
       `#if ${REFLECTS_OBJECTS}`,
       `finalRadianceScaled = mix(finalRadianceScaled, swObjRefl.rgb * (swFres * ${wgsl ? "uniforms." : ""}slateWaterDeep.w), swObjRefl.a);`,
       "#endif",
       "finalRadianceScaled *= swGloss;",
       "#else",
       `#if ${REFLECTS_OBJECTS}`,
-      `finalEmissive += mix(swSkyRefl, swObjRefl.rgb * ${wgsl ? "uniforms." : ""}slateWaterDeep.w, swObjRefl.a) * (swFres * swGloss);`,
+      `finalEmissive += mix(swSkyRefl * swReflKeep, swObjRefl.rgb * ${wgsl ? "uniforms." : ""}slateWaterDeep.w, swObjRefl.a) * (swFres * swGloss);`,
       "#else",
-      "finalEmissive += swSkyRefl * (swFres * swGloss);",
+      "finalEmissive += swSkyRefl * (swFres * swGloss * swReflKeep);",
       "#endif",
       "#endif",
       "#ifdef SPECULARTERM",

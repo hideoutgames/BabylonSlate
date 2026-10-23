@@ -84,9 +84,9 @@ describe("Water material nodes", () => {
     }
   });
 
-  it.each([["realistic", ShaderLanguage.GLSL], ["realistic", ShaderLanguage.WGSL], ["basic", ShaderLanguage.GLSL], ["basic", ShaderLanguage.WGSL]] as const)(
-    "build the %s starter Material in language %s, displacing and shading every kind of water body", async (look, language) => {
-      const scene = host(language === ShaderLanguage.WGSL), doc = createWaterMaterialDocument("Sea", look);
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])(
+    "build the starter water Material in language %s, displacing and shading every kind of water body", async (language) => {
+      const scene = host(language === ShaderLanguage.WGSL), doc = createWaterMaterialDocument("Sea");
       const plan = lowerMaterialDocument(doc);
       expect(plan.ok && plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
       const result = compile(scene, doc);
@@ -96,10 +96,10 @@ describe("Water material nodes", () => {
       for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
         const body = createWaterMesh(scene, kind, normalizeWaterBody({ resolution: 8 }, kind), createDefaultWaterDefinition(), result.material);
         expect(await definesFor(result.material, body), kind).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
-        // Realistic shows what lies below through the scene copy, which only a translucent Material can read.
-        expect(result.material.needAlphaBlendingForMesh(body), kind).toBe(look === "realistic");
-        // Only a graph that reads terrain and contacts (Realistic's foam and depth) has the water mesh build them.
-        expect(meshWaterNodeSurface(body)?.contacts != null, kind).toBe(look === "realistic");
+        // It shows what lies below through the scene copy, which only a translucent Material can read.
+        expect(result.material.needAlphaBlendingForMesh(body), kind).toBe(true);
+        // A graph that reads terrain and contacts (its foam and depth) has the water mesh build them.
+        expect(meshWaterNodeSurface(body)?.contacts ?? null, kind).not.toBeNull();
         body.dispose();
       }
     });

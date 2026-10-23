@@ -10,8 +10,8 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import {
-  WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, WaterMaterialPlugin,
-  WaterVertexWaves, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
+  WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS,
+  WaterMaterialPlugin, WaterVertexWaves, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
 } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -493,7 +493,7 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
-  it("binds a surface without a plugin the same displacement the plugin binds to another pass, plus its clock, eye and foam", () => {
+  it("binds a surface without a plugin the same displacement the plugin binds to another pass, plus its clock, eye, foam and sun", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
       new FreeCamera("camera", new Vector3(3, 4, -5), scene).computeWorldMatrix();
@@ -508,13 +508,14 @@ describe("Water material binding", () => {
       plugin.bindVertexWaves(pass.sink as unknown as Parameters<WaterMaterialPlugin["bindVertexWaves"]>[0], scene, mesh);
       waves.bind(own.sink, scene, mesh);
       // Every vertex uniform the node's shader reads is bound, and bound to what the plugin binds, with the same texture.
-      expect([...own.vectors.keys()].sort()).toEqual([...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM].sort());
+      expect([...own.vectors.keys()].sort()).toEqual([...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM].sort());
       for (const name of WATER_VERTEX_WAVE_UNIFORMS) expect(own.vectors.get(name), name).toEqual(pass.vectors.get(name));
       expect(own.textures.get(WATER_FFT_SAMPLER)).toBe(pass.textures.get(WATER_FFT_SAMPLER));
       expect(own.textures.has(WATER_FOAM_SAMPLER)).toBe(true);
       expect(own.vectors.get(WATER_CLOCK_UNIFORM)).toEqual([7.25, 0, 0, 0]);
       expect(own.vectors.get(WATER_EYE_UNIFORM)).toEqual([3, 4, -5, 0]);
       expect(own.vectors.get(WATER_NODE_FOAM_UNIFORM)).toEqual([plugin.water.crestFoam, plugin.water.foamAmount, 0, 0]);
+      expect(own.vectors.get(WATER_NODE_SUN_UNIFORM)![3]).toBe(plugin.water.subsurface);
     } finally { scene.dispose(); engine.dispose(); }
   });
 

@@ -114,8 +114,8 @@ export function createDefaultWaterDefinition(): WaterDefinition {
   return {
     shallowColor: [0.43, 0.95, 1], deepColor: [0.1, 0.26, 0.35], foamColor: [1, 1, 1],
     opacity: 0.97, roughness: 0.08, reflectionStrength: 1, depthColorDistance: 6.5,
-    waveHeight: 0.45, waveLength: 18, waveSpeed: 1, waveDirection: 25,
-    swellHeight: 0.35, swellLength: 45, swellDirection: 70, waveSpread: 0.5,
+    waveHeight: 0.35, waveLength: 12, waveSpeed: 1, waveDirection: 25,
+    swellHeight: 0.1, swellLength: 35, swellDirection: 70, waveSpread: 0.5,
     foamAmount: 0.6, foamWidth: 0.8, crestFoam: 0.2, contactFoamWidth: 1.2, surfaceFoam: 0.15, subsurface: 1,
     density: 1000, materialGuid: null, steepness: 0.5, peakSharpness: 3.3, waveSeed: 0,
     detailWaves: 1, refraction: 0.35, objectReflections: true, colorVariation: 0.5,

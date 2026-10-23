@@ -11,14 +11,14 @@ Returns what the water mirrors at this point, and how strongly it reflects.
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Normal | Vector 3 |  | The surface normal to reflect around. The [**Water Waves**](water-waves.md) Normal when unconnected, else straight up. |
-| Roughness | Float |  | Blurs the reflected sky. The asset's **Roughness** when unconnected. |
+| Roughness | Float |  | Blurs the reflected sky. The asset's **Roughness** when unconnected. Like built-in water, the water gets rougher with distance. |
 
 ## Outputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Color | Vector 3 | Linear colour of the reflection, times the asset's **Reflection Strength**. |
-| Fresnel | Float | How much the water reflects: about 0.02 looking straight down, rising to 1 at grazing angles. |
+| Color | Vector 3 | Linear colour of the reflection, times the asset's **Reflection Strength**. Dimmer where a wave would reflect a ray below the horizon, toward other water. |
+| Fresnel | Float | How much the water reflects: about 0.02 looking straight down, rising toward grazing angles, less the rougher the water. The same amount built-in water uses. |
 
 ## Notes
 

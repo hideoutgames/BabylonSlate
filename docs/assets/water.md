@@ -29,11 +29,11 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 | Foam Amount, Foam Width, Crest Foam, Surface Foam, Contact Foam Width | Shoreline, whitecap, open-water and contact foam. |
 | Subsurface | Sunlight glowing through the crests of the waves. |
 | Density | Kilograms per cubic metre, about 1000 for fresh water. Sets how much a floating object can carry. |
-| Custom Material | An optional Surface Material that replaces the built-in shading. Waves and buoyancy still work; see [Custom water Materials](../graphics/water.md#custom-water-materials). |
+| Custom Material | An optional Surface Material that replaces the built-in shading. Waves and buoyancy still work. **Edit As Material** creates one from the built-in look and opens it; see [Custom water Materials](../graphics/water.md#custom-water-materials). |
 
 ## Use it
 
-Place the asset from **Place Actors** to create a lake that uses it, or set **Water** on a water component such as [Water Ocean](../components/water-ocean.md). Water components with no asset use the Realistic defaults.
+Place the asset from **Place Actors** to create a lake that uses it, or set **Water** on a water component such as [Water Ocean](../components/water-ocean.md). Water components with no asset use the default water.
 
 ## Related
 
