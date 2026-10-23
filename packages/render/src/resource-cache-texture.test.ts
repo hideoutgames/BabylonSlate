@@ -668,7 +668,7 @@ describe("explicit tap picking", () => {
 
     const hit = pickAtCanvas(scene, 12, 34);
     expect(hit).toMatchObject({ meshName: "actor-7", slotId: 7 });
-    expect(scene.pick).toHaveBeenCalledWith(12, 34, undefined, false);
+    expect(scene.pick).toHaveBeenCalledWith(12, 34, expect.any(Function), false);
 
     scene.dispose();
     engine.dispose();

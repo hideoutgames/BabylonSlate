@@ -50,6 +50,10 @@ import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
 import { ProjectService } from "./project-service";
 import { SourceControlService } from "./source-control-service";
+import { runProjectScene } from "../testing/run-project-scene";
+
+/** Three seconds of Play: past every probe's Delay, the Game Instance's spawn and console command, and the streamed room. */
+const PLAY_TICKS = 180;
 
 /** Source types FeatureTest imports from repository content. */
 const IMPORTED_ASSET_TYPES = ["Texture", "Model", "Skeleton", "Animation", "Material", "Font"] as const;
@@ -299,4 +303,13 @@ describe("FeatureTest starter", () => {
       expect(physicsActorsDiagnostics(actors, { modelSimpleColliderCount }), asset.path).toEqual([]);
     }
   });
+
+  // Each scene plays headlessly as in editor Play: its probes assert what they check, so a broken feature fails here.
+  for (const scene of FEATURE_TEST_CHECK_SCENES) {
+    it(`plays ${scene.name} without session errors or failed asserts`, async () => {
+      const run = await runProjectScene({ project: reopened, document, scenePath: scene.path, ticks: PLAY_TICKS });
+      expect(run.problems).toEqual([]);
+      expect(run.tickIndex).toBe(PLAY_TICKS);
+    }, 120_000);
+  }
 });

@@ -255,7 +255,7 @@ async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
   return loadModelContainer(scene, bytes, name);
 }
 
-function packedSlimProof(
+export function packedSlimProof(
   binding: Pick<
     ModelAnimLoadBinding,
     "textureBytes" | "materialTextureGuids" | "compiledMaterialGuids"

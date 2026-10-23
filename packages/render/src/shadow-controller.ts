@@ -63,6 +63,7 @@ import { beginShadowAllocationValidation } from "./shadow-allocation-validation"
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
+import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -405,8 +406,20 @@ export class SceneShadowController {
       this.cameraPass = false;
       this.refreshShadowMaps();
     });
+    // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
+    // with it: a local light's only when the mesh is within its range, a sun's always.
+    const unwatchReveals = onMeshRevealed(scene, (mesh) => {
+      if (!this.meshes.has(mesh)) return;
+      this.forEachGenerator((generator) => {
+        const light = generator.getLight();
+        if (!(light instanceof DirectionalLight) && "range" in light && Number.isFinite(light.range) &&
+          !casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number)) return;
+        generator.getShadowMap()?.resetRefreshCounter();
+      });
+    });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
+      unwatchReveals();
       // Their owners still await the ledger releases through their own claims.
       for (const view of [...this.views.values()]) void this.releaseView(view).catch(() => {});
       for (const entry of this.entries.values()) entry.generator?.dispose();
@@ -1364,14 +1377,14 @@ export class SceneShadowController {
         this.spatial.queryPlanes(activePlanes, casters);
         // The index never plane-culls deforming casters. A local map ends
         // at its light's range, so anything that cannot reach it draws nothing.
+        // A mesh a world view does not draw yet casts nothing either.
         const light = generator.getLight();
-        if (!directionalLight && "range" in light && Number.isFinite(light.range)) {
-          const position = (light as LocalShadowLight).getAbsolutePosition();
-          let kept = 0;
-          for (const mesh of casters)
-            if (casterWithinShadowRange(mesh, position, light.range)) casters[kept++] = mesh;
-          casters.length = kept;
-        }
+        const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
+        const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
+        let kept = 0;
+        for (const mesh of casters)
+          if (!isRevealPending(mesh) && (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
+        casters.length = kept;
         return casters;
       };
     generator.customAllowRendering = (part) => {

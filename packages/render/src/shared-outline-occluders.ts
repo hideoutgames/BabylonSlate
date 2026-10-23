@@ -1,4 +1,5 @@
 import type { AbstractMesh, Camera } from "@babylonjs/core";
+import { isRevealPending } from "./reveal-pending";
 
 /** Screen rectangle (NDC) and view-depth span of one mesh's world bounds. */
 type ScreenBounds = { minX: number; maxX: number; minY: number; maxY: number; near: number; far: number; front: number; behind: number };
@@ -72,7 +73,8 @@ export function cullStrictOccluders(
   const handedness = camera.getScene().useRightHandedSystem ? -1 : 1;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, far = -Infinity;
   for (const mesh of candidates) {
-    if (!isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible) continue;
+    // A mesh a world view does not draw yet (`isRevealPending`) neither outlines nor occludes.
+    if (!isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
     fresh.push(mesh);
     measure(mesh, viewProjection, view, handedness, bounds);
     if (!bounds.front) continue;
@@ -87,7 +89,7 @@ export function cullStrictOccluders(
   minY = Math.max(-1, minY - padY); maxY = Math.min(1, maxY + padY);
   if (minX > maxX || minY > maxY) return commit(fresh, out);
   for (const mesh of candidates) {
-    if (isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible) continue;
+    if (isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
     measure(mesh, viewProjection, view, handedness, bounds);
     if (!bounds.front || bounds.near >= far) continue;
     if (!bounds.behind && (bounds.maxX < minX || bounds.minX > maxX || bounds.maxY < minY || bounds.minY > maxY)) continue;
