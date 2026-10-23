@@ -405,7 +405,7 @@ vec4 swnTerms = U.${FOAM_UNIFORM};
 vec2 swnFlowed = swnPos.xz - swnFlow.xz * swnTime;
 float swnFoot = length(fwidth(swnPos.xz));
 float swnShoreAmount = swnField.w * swnShoreFoamAmount(swnFlowed, swnTime, swnDepth, swnTerms.x * 0.35 + 0.08) * swnTerms.z;
-float swnContactAmount = swnContactFoamAmount(abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
+float swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
 `, wgsl)
       + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeLace(swnFlowed, swnTime, max(swnShoreAmount, swnContactAmount), swnFoot)), 0.0, 1.0)`)
       + assign(this.shore, shore, "swnEdgeLace(swnFlowed, swnTime, swnShoreAmount, swnFoot)")
