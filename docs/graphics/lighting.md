@@ -71,7 +71,7 @@ Image-based lighting lights and reflects surfaces with the colours around them. 
 
 With **Skybox**, lighting follows the sky as you change its faces or rotate its actor, and nothing needs importing. Keep one visible Skybox per scene: when several are visible, only one of them lights it, and a scene with no visible Skybox has no image-based lighting. Sky images have a limited brightness range, so the sun in them lights surfaces only softly; keep a **Directional Light** for sunlight and shadows.
 
-For **Texture**, import a prefiltered environment cube as a `.env` or `.dds` file first. See [Importing](../editor/importing.md). It usually gives sharper, brighter reflections than a Skybox.
+For **Texture**, import a prefiltered environment cube as a `.env` or `.dds` file, or an equirectangular `.hdr` panorama, which Haptic prefilters on import. See [Importing](../editor/importing.md#environment-cubes). It usually gives sharper, brighter reflections than a Skybox.
 
 | Setting | Description |
 | --- | --- |
