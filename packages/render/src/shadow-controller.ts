@@ -762,6 +762,10 @@ export class SceneShadowController {
     this.restoring = null;
     const cameraChanged = camera !== (restoring ? restoring.camera : this.selectionCamera);
     this.selectionCamera = camera;
+    // A restore ranks as of its snapshot, not now: a residency that ran out since moves the map once more at the
+    // next sync, from the snapshot's arrangement, so the light order (receivers' slots) comes out as a load that never
+    // tried the step has it. Ranked now, the map moves straight from the step's arrangement and its exchange leaves
+    // the lights in other slots.
     const selectionTime = restoring ? restoring.at : performance.now();
     const allocationRequestKey = (entry: Entry) =>
       JSON.stringify([
