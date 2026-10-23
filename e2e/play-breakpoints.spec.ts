@@ -67,7 +67,8 @@ test("a breakpoint stops editor Play behind the editor at the node, and Resume r
   await expect(page.getByTestId("graph-debug-instance-select")).toContainText("Hero");
   // The editor is back and read-only while Play is stopped.
   expect(await editorQuiet(page)).toBe(false);
-  await expect(page.getByTestId("document-authoring-lock-banner").first()).toBeVisible();
+  await expect(page.locator('[data-testid="document-authoring-lock-banner"]:visible').first())
+    .toHaveAttribute("title", "Read-only while Play is stopped");
   const stoppedAt = await tickIndex(page);
   await page.waitForTimeout(300);
   expect(await tickIndex(page)).toBe(stoppedAt);
