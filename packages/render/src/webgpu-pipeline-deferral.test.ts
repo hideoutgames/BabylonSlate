@@ -177,6 +177,54 @@ describe("beginPipelineDeferral", () => {
     expect(device.createRenderPipeline).toHaveBeenCalledTimes(2);
   });
 
+  it("warms a pipeline without drawing: a miss starts it asynchronously past the hold cap, a hit is skipped too, and the view counts neither", async () => {
+    const { engine, device, drawn, draw, resolve } = webGpuEngine();
+    const warmPass = (pass: number) => pass === 9;
+    // The view's hold cap is over: its own misses would compile synchronously.
+    const view = beginPipelineDeferral(engine, objectPass, { startsDeferrals: false })!;
+    const warm = beginPipelineDeferral(engine, warmPass, { warm: true })!;
+    draw(7, 9);
+    draw(7, 9);
+    expect(warm.close()).toBe(2);
+    expect(warm.warmed()).toBe(false);
+    expect(warm.waiting()).toBe(true);
+    expect(view.close()).toBe(0);
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(1);
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    resolve({ label: "async" });
+    await settle();
+    const again = beginPipelineDeferral(engine, warmPass, { warm: true })!;
+    draw(7, 9);
+    expect(again.close()).toBe(1);
+    expect(again.warmed()).toBe(true);
+    // Never drawn, though the pipeline exists; a real draw of the same state finds it.
+    expect(drawn).toEqual([]);
+    const next = beginPipelineDeferral(engine, (pass) => pass === 9)!;
+    draw(7, 9);
+    expect(next.close()).toBe(0);
+    expect(drawn).toEqual([{ label: "async" }]);
+    // A scope that saw no draw warmed nothing.
+    expect(beginPipelineDeferral(engine, warmPass, { warm: true })!.warmed()).toBe(false);
+  });
+
+  it("never compiles a warm draw's pipeline synchronously, even when its creation stalls", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine, device, draw } = webGpuEngine();
+    const warmPass = (pass: number) => pass === 9;
+    const first = beginPipelineDeferral(engine, warmPass, { warm: true })!;
+    draw(3, 9);
+    first.close();
+    now += PIPELINE_DEFERRAL_STALL_MS;
+    const later = beginPipelineDeferral(engine, warmPass, { warm: true })!;
+    draw(3, 9);
+    later.close();
+    expect(later.waiting()).toBe(true);
+    expect(later.warmed()).toBe(false);
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing on WebGL", () => {
     const engine = { isWebGPU: false } as never;
     expect(beginPipelineDeferral(engine, objectPass)).toBeUndefined();

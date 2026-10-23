@@ -58,7 +58,7 @@ function host(deferPipelines = false) {
 describe("deferred WebGPU pipelines", () => {
   /** Every scope the view opens from now on skips `skipped` draws and waits while `waiting` says so. */
   const scopes = (skipped: () => number, waiting: () => boolean) =>
-    vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: skipped, waiting }));
+    vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: skipped, waiting, warmed: () => false }));
 
   it("holds the last image, drawing nothing more, until the pipelines a frame skipped exist", async () => {
     const { scene, renderer } = host(true);

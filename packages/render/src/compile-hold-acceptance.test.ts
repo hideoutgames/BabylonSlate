@@ -70,14 +70,14 @@ import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
-import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
+import { beginPipelineDeferral, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 
 // NullEngine is not WebGPU, so the real deferral never engages; the `webgpu` model replaces it.
 vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
-  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral) };
+  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral), pipelinesDeferred: vi.fn(actual.pipelinesDeferred) };
 });
-const { beginPipelineDeferral: actualBeginPipelineDeferral } =
+const { beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred } =
   await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 type Model = "sync" | "parallel" | "webgpu";
@@ -108,6 +108,7 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
   vi.restoreAllMocks();
   vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
+  vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
 });
 
 /** Each Play frame advances the clock this much, so a run of held frames crosses the pause delay deterministically. */
@@ -166,14 +167,18 @@ function driverModel(engine: NullEngine, model: Model) {
     return effect;
   }) as unknown as typeof engine.createEffect);
 
-  // The WebGPU model: a view's scope skips each draw whose Effect's pipeline is still pending, as the real deferral does.
+  // The WebGPU model: a view's scope skips each draw whose Effect's pipeline is still pending, as the real deferral does;
+  // a warm scope skips every draw and reports whether each found its pipeline.
   const pipelines = new Set<Effect>();
-  type Scope = { allows: (pass: number) => boolean; skipped: number; effects: Set<Effect> };
+  const warmPipelines = new Set<Effect>();
+  type Scope = { allows: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number; effects: Set<Effect> };
   const scopes: Scope[] = [];
   if (model === "webgpu") {
+    vi.mocked(pipelinesDeferred).mockReturnValue(true);
     vi.mocked(beginPipelineDeferral).mockImplementation((_engine, allows, options = {}) => {
       if (options.nested && !scopes.length) return undefined;
-      const scope: Scope = { allows, skipped: 0, effects: new Set() };
+      const warm = options.warm === true;
+      const scope: Scope = { allows, warm, skipped: 0, lookups: 0, hits: 0, effects: new Set() };
       scopes.push(scope);
       let closed = false;
       return {
@@ -183,7 +188,7 @@ function driverModel(engine: NullEngine, model: Model) {
             const index = scopes.lastIndexOf(scope);
             if (index >= 0) scopes.splice(index, 1);
             const parent = scopes[index - 1];
-            if (parent) {
+            if (parent && !warm) {
               parent.skipped += scope.skipped;
               for (const effect of scope.effects) parent.effects.add(effect);
             }
@@ -191,6 +196,7 @@ function driverModel(engine: NullEngine, model: Model) {
           return scope.skipped;
         },
         waiting: () => [...scope.effects].some((effect) => pending.has(effect)),
+        warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
       };
     });
     const internals = engine as unknown as { _currentEffect: Effect | null; currentRenderPassId: number };
@@ -201,6 +207,15 @@ function driverModel(engine: NullEngine, model: Model) {
         let scope: Scope | undefined;
         for (let index = scopes.length - 1; index >= 0 && !scope; index--)
           if (scopes[index]!.allows(internals.currentRenderPassId)) scope = scopes[index];
+        if (scope?.warm) {
+          scope.lookups += 1;
+          scope.skipped += 1;
+          if (effect && pending.has(effect)) {
+            warmPipelines.add(effect);
+            scope.effects.add(effect);
+          } else scope.hits += 1;
+          return;
+        }
         if (scope && effect && pending.has(effect)) {
           pipelines.add(effect);
           scope.skipped += 1;
@@ -233,7 +248,10 @@ function driverModel(engine: NullEngine, model: Model) {
       for (const effect of pending) Object.assign(effect, { _compilationError: "ERROR: 0:1: injected link failure", _allFallbacksProcessed: true });
     },
     created,
+    /** WebGPU model: Effects whose pipeline a view's skipped draw waited for. */
     pipelines,
+    /** WebGPU model: Effects whose pipeline a warm draw started before any real draw needed it. */
+    warmPipelines,
   };
 }
 
