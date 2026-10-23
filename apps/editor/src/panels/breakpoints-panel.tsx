@@ -93,7 +93,7 @@ export function BreakpointsPanel() {
                     })}
                   >
                     <span className="truncate">{nodeTitle}</span>
-                    {settings ? <span className="shrink-0 text-xs" data-testid="breakpoint-row-settings">{settings}</span> : null}
+                    {settings ? <span className="max-w-48 shrink-0 truncate text-xs" data-testid="breakpoint-row-settings">{settings}</span> : null}
                     <span className="truncate text-xs text-muted-foreground">{className} › {graphName}</span>
                   </Button>
                   <IconActionButton
