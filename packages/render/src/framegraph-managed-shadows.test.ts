@@ -359,10 +359,9 @@ it("rechecks admission after scene callbacks so revoked maps are never rendered 
   expect(controller.generator(light)).toBeNull();
   expect(light.getShadowGenerator()).not.toBe(generator);
   expect(scene.textures).not.toContain(map);
-  expect(graph.render(camera)).toMatchObject({
-    rendered: false,
-    reason: expect.stringContaining("preparation"),
-  });
+  // A changed shadow set needs no preparation: the next frame binds the maps as they are now, without the revoked one.
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(faces()).toBe(0);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(render()).toBe(0);
   expect(

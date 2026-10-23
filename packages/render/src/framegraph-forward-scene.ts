@@ -661,6 +661,7 @@ export class ForwardSceneFrameGraph {
     if (unavailable) return { path: "frameGraph", reason: unavailable, ready: false };
     this.syncMembership();
     this.syncShadowAdmission(camera);
+    this.restaleChangedShadows();
     this.admittedCamera = camera;
     this.admittedRevision = this.readinessRevision;
     this.admittedChecks = this.strictChecks;
@@ -673,7 +674,6 @@ export class ForwardSceneFrameGraph {
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      this.shadows?.needsPreparation() ||
       this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
@@ -702,8 +702,7 @@ export class ForwardSceneFrameGraph {
     const reason =
       this.unsupported(camera) ??
       this.failure ??
-      (this.shadows?.needsPreparation() ||
-      this.clustered?.needsPreparation(camera)
+      (this.clustered?.needsPreparation(camera)
         ? "Lighting allocation changes require FrameGraph preparation."
         : undefined) ??
       (this.pending ||
@@ -718,6 +717,7 @@ export class ForwardSceneFrameGraph {
     if (reason) return { path: "frameGraph", reason, rendered: false };
 
     const graph = this.graph!;
+    this.restaleChangedShadows();
     this.assignCamera(camera);
     this.syncSceneInputs();
     if (!this.probeDirty()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
@@ -1374,6 +1374,14 @@ export class ForwardSceneFrameGraph {
       else break;
     }
     return ready;
+  }
+
+  /**
+   * A changed shadow set (a map allocated, released or moved, or changed during the last frame) needs no new tasks:
+   * the next probe binds it to the receivers, and a steady frame keeps drawing while a new map's casters compile.
+   */
+  private restaleChangedShadows(): void {
+    if (this.shadows?.needsPreparation()) this.markReadinessDirty();
   }
 
   /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */
