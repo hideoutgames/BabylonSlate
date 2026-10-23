@@ -9,7 +9,7 @@ Lights, environment lighting and the light budget decide how lit surfaces look i
 
 You can also select an actor and use **Add Component > Rendering** to add **Light**, **Rectangular Area Light** or **Hemispheric Fill Light**.
 
-New 3D scenes already contain a warm **Directional Light** with **Cast Shadows** on, a Skybox and a Camera. The light starts about 45° above the horizon and to the left of the camera, so surfaces facing the camera are well lit and their shadows stay crisp. A PBR scene with no lights and no environment lighting renders dark, including meshes with no Material, which draw a [grey checker](models.md#materials) only while a light reaches them. A **Blank** project's first scene is empty, so add a light before you place meshes.
+New 3D scenes already contain a warm **Directional Light** with **Cast Shadows** on, a Skybox that also provides [environment lighting](#environment-lighting), and a Camera. The light starts about 45° above the horizon and to the left of the camera, so surfaces facing the camera are well lit and their shadows stay crisp. A PBR scene with no lights and no environment lighting renders dark, including meshes with no Material, which draw a [grey checker](models.md#materials) only while a light reaches them. A **Blank** project's first scene is empty, so add a light before you place meshes.
 
 ## Light types
 
@@ -61,17 +61,21 @@ A different mix of light kinds needs new shaders the first time. On WebGL2 the o
 
 ## Environment lighting
 
-Image-based lighting lights surfaces from a prefiltered environment texture.
+Image-based lighting lights and reflects surfaces with the colours around them. Open the scene and clear the selection so the **Inspector** shows the scene's settings, then choose an **Environment Source**:
 
-1. Import a prefiltered environment cube as a `.env` or `.dds` file. See [Importing](../editor/importing.md).
-2. Open the scene and clear the selection so the **Inspector** shows the scene's settings.
-3. Under **Environment Lighting**, pick the texture in **Environment Texture**.
+| Environment Source | Lights the scene from |
+| --- | --- |
+| **None** | Nothing. Only lights reach surfaces. |
+| **Skybox** | The scene's Skybox. New 3D scenes start here. |
+| **Texture** | A prefiltered environment cube you pick in **Environment Texture**. |
 
-Environment lighting is separate from the Skybox, which is only a backdrop. Without an Environment Texture, the scene has no image-based lighting.
+With **Skybox**, lighting follows the sky as you change its faces or rotate its actor, and nothing needs importing. Keep one visible Skybox per scene: when several are visible, only one of them lights it, and a scene with no visible Skybox has no image-based lighting. Sky images have a limited brightness range, so the sun in them lights surfaces only softly; keep a **Directional Light** for sunlight and shadows.
+
+For **Texture**, import a prefiltered environment cube as a `.env` or `.dds` file first. See [Importing](../editor/importing.md). It usually gives sharper, brighter reflections than a Skybox.
 
 | Setting | Description |
 | --- | --- |
-| **Image-Based Lighting** | Uses the scene's Environment Texture. On by default. |
+| **Image-Based Lighting** | Uses the scene's Environment Source. On by default. |
 | **Environment Intensity** | Scales environment lighting. Default 1. |
 | **Environment Rotation** | Rotation around world Y, in degrees. |
 | **CEL Environment Strength** | CEL only. Adds diffuse environment light to the bands. Default 0. |

@@ -363,10 +363,15 @@ describe("scene-referenced Play content", () => {
   });
   it("collects distinct environment cubes from the active and destination scene library", () => {
     const active = createDefaultScene();
+    active.settings.environmentSource = "texture";
     active.settings.environmentTextureGuid = "active-cube";
     const destination = createDefaultScene();
+    destination.settings.environmentSource = "texture";
     destination.settings.environmentTextureGuid = "destination-cube";
-    expect(environmentTextureGuidsFromScenes([active, null, destination, active, createDefaultScene()])).toEqual(["active-cube", "destination-cube"]);
+    // A cube kept while the scene lights from its Skybox is not loaded.
+    const skyLit = createDefaultScene();
+    skyLit.settings.environmentTextureGuid = "kept-cube";
+    expect(environmentTextureGuidsFromScenes([active, null, destination, active, skyLit])).toEqual(["active-cube", "destination-cube"]);
   });
 
   it("collects Mesh and Dynamic Runtime Mesh materialGuid values as surface materials", () => {

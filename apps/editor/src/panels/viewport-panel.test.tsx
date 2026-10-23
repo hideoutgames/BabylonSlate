@@ -1292,6 +1292,7 @@ describe("ViewportPanel engine", () => {
     }
     expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledTimes(collections);
     const next = structuredClone(doc.content);
+    next.settings.environmentSource = "texture";
     next.settings.environmentTextureGuid = "new-environment";
     documents.openDocuments = [{ ...doc, content: next }];
     refresh();

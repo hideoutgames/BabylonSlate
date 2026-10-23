@@ -27,6 +27,7 @@ import {
   identitySerializedTransform,
   areaRectLightBindings,
   normalizeSceneFogSettings,
+  sceneEnvironmentTextureGuid,
 } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
@@ -544,7 +545,9 @@ export function applySceneEnvironment(
     scene.fogEnabled = false;
   }
   updateSceneRenderingSettings(scene, undefined, undefined, undefined, settings.environmentLighting ?? {});
-  applyEnvironmentLighting(scene, settings.environmentTextureGuid, options.assets);
+  applyEnvironmentLighting(scene, sceneEnvironmentTextureGuid(settings), options.assets, {
+    skybox: settings.environmentSource === "skybox",
+  });
   setSceneEffectsAssets(scene, options.assets);
 }
 

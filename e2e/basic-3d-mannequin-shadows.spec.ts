@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { normalizeRenderingQuality } from "../packages/core/src/index";
+import { normalizeEnvironmentLightingSettings, normalizeRenderingQuality } from "../packages/core/src/index";
 import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
@@ -46,6 +46,9 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
     gpuBackend: variant.backend,
     mode: variant.mode, shadows: initial.requestedShadows,
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
+    // The edge metric reads a shadowed pixel's remaining light as error; the template's Skybox lighting
+    // fills shadows, so measure the sun's shadow geometry alone.
+    environmentLighting: normalizeEnvironmentLightingSettings({ enabled: false }),
   };
   // The template Mannequin faces the default camera (-Z); frame its front, which the sun lights at a wide angle.
   await page.evaluate(() => window.__hapticViewportTest.setShadowCaptureView([0, 1.9, -5.5], [0, 1.35, 0], 0.7));

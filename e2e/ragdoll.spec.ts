@@ -75,6 +75,8 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   camera.transform.position = [6, 5, 9];
   camera.transform.rotation = lookAtRotation([6, 5, 9], [0, 2, 0]);
   camera.components.find(component => component.classId === "CameraComponent")!.properties.fieldOfView = 50;
+  // Ragdoll physics needs no image-based lighting; on software GL its shading competes with the editor for the CPU.
+  scene.settings.environmentSource = "none";
   await setPreviewScene(page, scene);
 
   await page.getByTestId("tree-row-actor:actor-1").click();
