@@ -5,7 +5,7 @@ import { FLOAT, compileGraph, type GraphNode, type LogicGraph } from "@haptic/sc
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { BObject } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
-import { DEBUG_ROSTER_LIMIT, ExecutionTraceSink, formatDebugValue } from "./script-debug";
+import { DEBUG_ROSTER_LIMIT, DEBUG_STEPS_PER_TICK, ExecutionTraceSink, formatDebugValue } from "./script-debug";
 import type { CompiledScript } from "./script-host";
 
 const registry = createDefaultNodeRegistry();
@@ -111,6 +111,71 @@ describe("ExecutionTraceSink", () => {
   });
 });
 
+describe("ExecutionTraceSink steps", () => {
+  it("keeps every visit in run order across graphs, with the wire taken into it and the values it read and produced", () => {
+    const sink = new ExecutionTraceSink();
+    const event = sink.graph("Door.class", "event-graph")!;
+    const open = sink.graph("Door.class", "Open")!;
+    event.exec("tick");
+    event.write("tick", "dt", 0.5);
+    event.edge("e1");
+    event.exec("call");
+    open.exec("entry");
+    open.read("entry", "speed", 2);
+    event.write("call", "result", 4);
+    event.edge("e2");
+    event.exec("print");
+    event.read("print", "value", 4);
+    const graphs = sink.drain();
+    expect(graphs.map((trace) => trace.graphId)).toEqual(["event-graph", "Open"]);
+    expect(sink.drainSteps(graphs)).toEqual({
+      steps: [
+        [0, "tick", null, [["tick", "dt", "out", "0.5"]]],
+        // A value belongs to its own graph's latest visit: the call's result, produced after the function ran.
+        [0, "call", "e1", [["call", "result", "out", "4"]]],
+        [1, "entry", null, [["entry", "speed", "in", "2"]]],
+        [0, "print", "e2", [["print", "value", "in", "4"]]],
+      ],
+      truncated: false,
+    });
+  });
+
+  it("records a value once per tick until its text changes, and again in the next tick", () => {
+    const sink = new ExecutionTraceSink();
+    const graph = sink.graph("Door.class", "event-graph")!;
+    for (let pass = 0; pass < 2; pass++) {
+      graph.exec("loop");
+      graph.read("loop", "last", 3);
+    }
+    graph.exec("loop");
+    graph.read("loop", "last", 4);
+    expect(sink.drainSteps(sink.drain())!.steps.map(([, , , values]) => values)).toEqual([
+      [["loop", "last", "in", "3"]], [], [["loop", "last", "in", "4"]],
+    ]);
+    graph.exec("loop");
+    graph.read("loop", "last", 4);
+    expect(sink.drainSteps(sink.drain())!.steps).toEqual([[0, "loop", null, [["loop", "last", "in", "4"]]]]);
+    expect(sink.drainSteps(sink.drain())).toBeNull();
+  });
+
+  it("stops keeping steps past the tick's limit and says so, while the rest of the trace stays whole", () => {
+    const sink = new ExecutionTraceSink();
+    const graph = sink.graph("Door.class", "event-graph")!;
+    for (let visit = 0; visit <= DEBUG_STEPS_PER_TICK; visit++) {
+      graph.exec(`n${visit}`);
+      graph.write(`n${visit}`, "out", visit);
+    }
+    const graphs = sink.drain();
+    const { steps, truncated } = sink.drainSteps(graphs)!;
+    expect(steps).toHaveLength(DEBUG_STEPS_PER_TICK);
+    expect(truncated).toBe(true);
+    expect(graphs[0]!.nodes).toHaveLength(DEBUG_STEPS_PER_TICK + 1);
+    expect(graphs[0]!.values).toHaveLength(DEBUG_STEPS_PER_TICK + 1);
+    graph.exec("next");
+    expect(sink.drainSteps(sink.drain())).toEqual({ steps: [[0, "next", null, []]], truncated: false });
+  });
+});
+
 describe("formatDebugValue", () => {
   it.each([
     [3, "3"],
@@ -183,6 +248,24 @@ describe("runtime graph debugging", () => {
         ["js", "out_doubled", "out", "0.0333"],
       ],
     }]);
+  });
+
+  it("sends the followed instance's visits in run order with the values each visit had", async () => {
+    const { runtime, commands, traces } = await startSimulation(doors, scripts());
+    runtime.applyDebugObserve(DOOR, "d1");
+    const mark = commands.length;
+    runtime.tick();
+    runtime.tick();
+    const [first, second] = traces(mark);
+    // The event's Delta Seconds is reported when Execute JavaScript reads it, so it belongs to that visit.
+    const visits = [
+      [0, "tick", null, []],
+      [0, "js", "exec", [["tick", "deltaSeconds", "out", "0.0167"], ["js", "in_dt", "in", "0.0167"], ["js", "out_doubled", "out", "0.0333"]]],
+    ];
+    expect(first!.steps).toEqual(visits);
+    // Unlike `values`, a tick's steps stand alone: unchanged values are sent again.
+    expect(second!.steps).toEqual(visits);
+    expect(second!.stepsTruncated).toBeUndefined();
   });
 
   it("repeats a visit every tick but sends an unchanged value once", async () => {

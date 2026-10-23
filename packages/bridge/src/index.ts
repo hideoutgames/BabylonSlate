@@ -50,6 +50,7 @@ export {
   type DebugNavAgent,
   type DebugBehaviourTree,
   type DebugGraphTrace,
+  type DebugStep,
   type DebugInstance,
   type DebugObserveTarget,
   type DebugDrawCommand,

@@ -541,6 +541,14 @@ export type DebugGraphTrace = {
   values: Array<[nodeId: string, pinId: string, direction: "in" | "out", text: string]>;
 };
 
+/**
+ * One visit of an exec node by the followed instance, in run order: its graph (an index into the
+ * `executionTrace`'s `graphs`), the node, the exec wire taken into it, and the values of that graph's
+ * nodes read and produced from this visit until the graph's next one. A value is listed the first time
+ * in a tick its text is seen, so a tick's steps replay on their own.
+ */
+export type DebugStep = [graph: number, nodeId: string, via: string | null, values: DebugGraphTrace["values"]];
+
 export type CommandMessage =
   | { type: "simulationRetentionUnavailable"; sessionGeneration: number; reason: string }
   | ({ type: "simulationQuiesced" } & SessionBoundaryResult)
@@ -975,8 +983,19 @@ export type CommandMessage =
    * `added` entry replaces any entry with its id. The list is capped; later instances join as earlier ones go.
    */
   | { type: "debugRoster"; target: DebugObserveTarget; reset: boolean; added: DebugInstance[]; removed: string[] }
-  /** What the followed instance ran during one tick; sent only when something ran. */
-  | { type: "executionTrace"; target: DebugObserveTarget; instanceId: string; tickIndex: number; graphs: DebugGraphTrace[] }
+  /**
+   * What the followed instance ran during one tick; sent only when something ran. `steps` lists its visits
+   * in order, up to a limit per tick (`stepsTruncated` when visits past it were left out).
+   */
+  | {
+      type: "executionTrace";
+      target: DebugObserveTarget;
+      instanceId: string;
+      tickIndex: number;
+      graphs: DebugGraphTrace[];
+      steps?: DebugStep[];
+      stepsTruncated?: boolean;
+    }
   /**
    * The followed instance's declared variables (its Class's and inherited), as display text: all of them
    * when the follow starts, then those whose text changed, at the end of a tick in which any changed. A
