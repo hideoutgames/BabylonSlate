@@ -6,6 +6,7 @@ import {
   canvasNodeTitle,
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
+  hasSerializedPins,
   type GraphCanvasDropApi,
   type GraphPasteElements,
   type PaletteNode,
@@ -29,6 +30,10 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { watchablePins, watchPinMenuItems } from "../lib/watch-menu";
+import { useWatchStore } from "../context/watch-store-context";
+import { conditionPins } from "../lib/breakpoint-settings";
+import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { useKeybindChord } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -50,7 +55,10 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
-import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
+import { useSimulationControls } from "../context/simulation-controls-context";
+import { GraphSteppingBar } from "../components/graph-stepping-bar";
+import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -92,7 +100,7 @@ export function GraphPanel(
   const { applyGraphChange, applyAssetDocumentChange } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const { activeDocumentId, animEditorMode } = useActiveDocumentState();
-  const { focusedNodeId } = usePlay();
+  const { focusedNodeId, openSessionSource } = usePlay();
   const {
     setSelectedNodeIds,
     activeFunctionId: focusedFunctionId,
@@ -161,6 +169,18 @@ export function GraphPanel(
     indexed?.header.guid,
   );
   const runTrace = classRunTrace ?? animObjectRunTrace;
+  // While a debugged graph is paused, its canvas carries the stepping control.
+  const graphDebug = useGraphDebugStore();
+  const simulationControls = useSimulationControls();
+  const focusStep = useCallback((position: GraphDebugStepPosition) => {
+    void openSessionSource({
+      severity: "info", code: "editor.step", message: "Step",
+      assetGuid: position.assetGuid, graphId: position.graphId, nodeId: position.nodeId,
+    });
+  }, [openSessionSource]);
+  const steppingBar = runTrace && graphDebug && simulationControls?.paused
+    ? <GraphSteppingBar store={graphDebug} controls={simulationControls} onFocus={focusStep} />
+    : undefined;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
@@ -242,6 +262,9 @@ export function GraphPanel(
   // Breakpoints use the compiler's terms: the Class path and the graph's run id.
   const breakpointStore = useBreakpointStore();
   const breakpointAsset = breakpointStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
+  // Pin watches use the same terms.
+  const watchStore = useWatchStore();
+  const watchAsset = watchStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
   const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
   const graphName = activeFunctionId
     ? graphContent?.members?.find((member) => member.id === activeFunctionId)?.name ?? activeFunctionId
@@ -260,7 +283,8 @@ export function GraphPanel(
     () => breakpointStore && breakpointAsset ? breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel) : undefined,
     [breakpointAsset, breakpointLabel, breakpointStore, runGraphId],
   );
-  // A function graph runs under its name, so renaming a function moves its breakpoints with it.
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+  // A function graph runs under its name, so renaming a function moves its breakpoints and watches with it.
   const functionRunIds = useMemo(() => new Map(
     Object.keys(graphContent?.functionGraphs ?? {}).map((id) => [id, functionGraphExportName({
       id,
@@ -271,14 +295,15 @@ export function GraphPanel(
   useEffect(() => {
     const before = previousFunctionRunIds.current;
     previousFunctionRunIds.current = functionRunIds;
-    if (!breakpointStore || !breakpointAsset || before === functionRunIds) return;
+    if (before === functionRunIds) return;
     for (const [id, runId] of functionRunIds) {
       const previous = before.get(id);
       if (previous === undefined || previous === runId) continue;
-      breakpointStore.renameGraph(breakpointAsset, previous, runId,
-        graphContent?.members?.find((member) => member.id === id)?.name ?? id);
+      const name = graphContent?.members?.find((member) => member.id === id)?.name ?? id;
+      if (breakpointStore && breakpointAsset) breakpointStore.renameGraph(breakpointAsset, previous, runId, name);
+      if (watchStore && watchAsset) watchStore.renameGraph(watchAsset, previous, runId, name);
     }
-  }, [breakpointAsset, breakpointStore, functionRunIds, graphContent?.members]);
+  }, [breakpointAsset, breakpointStore, functionRunIds, graphContent?.members, watchAsset, watchStore]);
 
   useEffect(() => {
     if (!panelApi) return;
@@ -520,15 +545,33 @@ export function GraphPanel(
       const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
         ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
         : [];
-      const node = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
+      const { nodes, edges } = latestGraph.current;
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      if (watchStore && watchAsset) {
+        const pins = watchablePins(node?.data, (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId));
+        items.push(...watchPinMenuItems(watchStore, pins, (pin) => ({
+          kind: "pin", assetGuid: watchAsset, graphId: runGraphId, nodeId, pinId: pin.id, direction: pin.direction,
+          label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
+        })));
+      }
       if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return items;
       const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
+      const edit = () => {
+        const { nodes, edges } = latestGraph.current;
+        const data = nodes.find((candidate) => candidate.id === nodeId)?.data;
+        editBreakpoint({
+          location,
+          nodeTitle: breakpointLabel(nodeId).nodeTitle,
+          pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
+            (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
+        });
+      };
       return [
         ...items,
-        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord),
+        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord, edit),
       ];
     },
-    [breakpointAsset, breakpointLabel, breakpointStore, graphContent, runGraphId, toggleBreakpointChord],
+    [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
   );
 
   const preparePaste = useCallback(
@@ -562,6 +605,7 @@ export function GraphPanel(
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
             runTrace={runTrace}
+            overlay={steppingBar}
             breakpoints={breakpoints}
             commitPositionsOnDragEnd
             singleExecOutputOnConnect
@@ -630,6 +674,7 @@ export function GraphPanel(
           else void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
         }}
       />
+      {breakpointSettingsDialog}
     </PanelFrame>
   );
 }

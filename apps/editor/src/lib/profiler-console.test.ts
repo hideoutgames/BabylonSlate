@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore, type DiagnosticSessionPorts } from "../services/diagnostic-results-store";
 import { runProfilerConsoleCommand, withProfilerHelp } from "./profiler-console";
 
@@ -10,7 +11,7 @@ function session(mode: DiagnosticSessionPorts["mode"] = "play") {
     mode,
     startProfile: vi.fn(async () => {}),
     stopProfile: vi.fn(async () => null),
-    captureFrame: vi.fn(async () => ({}) as never),
+    captureFrame: vi.fn(async () => ({ version: 1, frame: { renderFrameId: 1 } }) as unknown as RenderFrameReport),
   };
   store.bindSession(ports);
   return { store, ports, run: (line: string) => runProfilerConsoleCommand(line, store, () => options) };

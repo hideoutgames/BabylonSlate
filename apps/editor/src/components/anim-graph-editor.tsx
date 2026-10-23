@@ -81,6 +81,7 @@ import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { useKeybindChord } from "../context/keybind-context";
 import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { stateMachineBreakpointView } from "../lib/state-machine-breakpoints";
 import type { BreakpointEntry, BreakpointStore } from "../services/breakpoint-store";
 import { IconActionButton } from "./icon-action-button";
@@ -301,7 +302,10 @@ function stateMachineBreakpointLabel(
   };
 }
 
-/** Adds or removes the breakpoint of one direction of a transition; the Breakpoints window disables it. */
+/**
+ * Adds or removes the breakpoint of one direction of a transition, and edits its hit count once set; the
+ * Breakpoints window disables it.
+ */
 function TransitionBreakpointButton({
   store,
   location,
@@ -314,18 +318,33 @@ function TransitionBreakpointButton({
   reverse: boolean;
 }) {
   const set = useSyncExternalStore(store.subscribe, () => store.get(location) !== undefined);
-  const name = `${set ? "Remove" : "Add"}${reverse ? " Reverse" : ""} Breakpoint`;
+  const { edit, dialog } = useBreakpointSettingsEditor(store);
+  const which = reverse ? " Reverse" : "";
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      data-testid={`anim-graph-breakpoint-${location.nodeId}`}
-      aria-pressed={set}
-      onClick={() => (set ? store.remove(location) : store.toggle(location, label()))}
-    >
-      {name}
-    </Button>
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid={`anim-graph-breakpoint-${location.nodeId}`}
+        aria-pressed={set}
+        onClick={() => (set ? store.remove(location) : store.toggle(location, label()))}
+      >
+        {`${set ? "Remove" : "Add"}${which} Breakpoint`}
+      </Button>
+      {set ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid={`anim-graph-edit-breakpoint-${location.nodeId}`}
+          onClick={() => edit({ location, nodeTitle: label().nodeTitle, pins: null })}
+        >
+          {`Edit${which} Breakpoint…`}
+        </Button>
+      ) : null}
+      {dialog}
+    </>
   );
 }
 
@@ -537,16 +556,15 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       : undefined,
     [breakpointLabel, breakpointStore, graphGuid],
   );
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
   const stateMenu = useCallback(
-    (nodeId: string) => breakpointStore && graphGuid
-      ? breakpointMenuItems(
-          breakpointStore,
-          { assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId },
-          () => breakpointLabel(nodeId),
-          toggleBreakpointChord,
-        )
-      : [],
-    [breakpointLabel, breakpointStore, graphGuid, toggleBreakpointChord],
+    (nodeId: string) => {
+      if (!breakpointStore || !graphGuid) return [];
+      const location = { assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId };
+      return breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord,
+        () => editBreakpoint({ location, nodeTitle: breakpointLabel(nodeId).nodeTitle, pins: null }));
+    },
+    [breakpointLabel, breakpointStore, editBreakpoint, graphGuid, toggleBreakpointChord],
   );
   // A stop at a transition (from a breakpoint or the Breakpoints window) selects it, so Details show it.
   const focusTransition =
@@ -782,6 +800,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           }}
         />
       </div>
+      {breakpointSettingsDialog}
     </PanelFrame>
   );
 }

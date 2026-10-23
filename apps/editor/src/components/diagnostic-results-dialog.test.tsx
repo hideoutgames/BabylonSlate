@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PERFORMANCE_TICK_COLUMNS_V1, PerformanceRecorder, type PerformanceProfile } from "@haptic/debugger";
 import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
@@ -33,6 +33,17 @@ it("shows separate completed-frame and tick populations with honest unavailable 
   expect(screen.getByText("Worker Script Phase")).toBeTruthy();
   expect(screen.getByText(/GPU timing: unavailable/)).toBeTruthy();
   expect(screen.getAllByText("20.000").length).toBeGreaterThan(0);
+});
+it("compares two recordings side by side, marking each percentile that got slower", () => {
+  // The baseline's frames are 20 ms apart; this recording has one 40 ms frame, so its median interval is 30 ms.
+  render(<PerformanceSummary profile={recording(3, [1])} baseline={{ label: "Recording 1", profile: recording() }} />);
+  expect(screen.getByText(/compared with Recording 1/)).toBeTruthy();
+  const row = screen.getAllByTestId("profile-compare-row").find((entry) => entry.textContent?.startsWith("Completed Game-Frame Interval"))!;
+  expect(row.textContent).toContain("20.000 → 30.000");
+  const change = within(row).getByText(/^\+10\.000 · \+50\.0%$/);
+  expect(change.className).toContain("text-destructive");
+  // No distribution bars while comparing.
+  expect(screen.queryByRole("columnheader", { name: "Distribution" })).toBeNull();
 });
 /** The same ticks as a version 1 file holds them: script and physics, no phases. */
 function versionOne(profile: PerformanceProfile): PerformanceProfile {
@@ -134,6 +145,35 @@ it("selects the next over-budget sample in the table and its details", () => {
   const row = screen.getByText("120", { selector: "button" }).closest('[role="row"]');
   expect(row?.getAttribute("aria-selected")).toBe("true");
   expect(screen.getByLabelText("Sample 120")).toBeTruthy();
+});
+it("lists script costs by Class and opens an entry's graph at its entry node", async () => {
+  const entries = [
+    { assetGuid: "Door.class", classId: "Door", className: "Door", exportName: "onTick", event: "onTick", title: "Event Tick", graphId: "event-graph", nodeId: "tick" },
+    { assetGuid: "Door.class", classId: "Door", className: "Door", exportName: "evaluate", title: "Transition Rule" },
+  ];
+  const profile: PerformanceProfile = { ...recording(), scriptEntries: entries,
+    scripts: { columns: ["tickId", "entry", "calls", "totalMs"], count: 2, chunks: [Float64Array.of(0, 0, 2, 1.5, 0, 1, 1, 0.5)] } };
+  const store = new DiagnosticResultsStore();
+  const opened: unknown[] = [];
+  store.setSourceOpener(async (location) => { opened.push(location); return "The asset is no longer in the project."; });
+  store.importResult({ kind: "profile", profile });
+  act(() => store.open());
+  render(<DiagnosticResultsDialog store={store} />);
+  fireEvent.click(screen.getByRole("button", { name: "Scripts" }));
+  expect(screen.getAllByTestId("profile-script-class").map((row) => row.querySelector("th")?.textContent)).toEqual(["Door"]);
+  expect(screen.getAllByTestId("profile-script-entry").map((row) => row.querySelector("th")?.textContent)).toEqual(["Event Tick", "Transition Rule"]);
+  // An entry recorded without its node has nothing to open.
+  expect(screen.queryByRole("button", { name: "Transition Rule" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Event Tick" }));
+  expect(opened).toEqual([expect.objectContaining({ assetGuid: "Door.class", graphId: "event-graph", nodeId: "tick" })]);
+  await waitFor(() => expect(screen.getByText("The asset is no longer in the project.")).toBeTruthy());
+});
+it("says a recording made before script costs has none", () => {
+  const store = new DiagnosticResultsStore();
+  store.importResult({ kind: "profile", profile: { ...recording(), version: 3 } });
+  act(() => { store.open(); store.selectView("scripts"); });
+  render(<DiagnosticResultsDialog store={store} />);
+  expect(screen.getByText("No Script Costs")).toBeTruthy();
 });
 it("opens an exported frame report again without replacing the recording", async () => {
   const report: RenderFrameReport = {

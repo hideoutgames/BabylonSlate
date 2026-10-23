@@ -244,6 +244,18 @@ const BREAKPOINTS_WINDOW: DockWindowDefinition = {
   },
 };
 
+/** Lists the project's pin and variable watches with the followed object's values; Class documents only. */
+const WATCHES_WINDOW: DockWindowDefinition = {
+  id: "watches",
+  component: "watches",
+  title: "Watches",
+  openByDefault: false,
+  defaultPosition: {
+    referencePanelId: "compiler-results",
+    direction: "within",
+  },
+};
+
 const LANDSCAPE_WINDOWS: DockWindowDefinition[] = [
   { id: "viewport", component: "viewport", title: "Viewport" },
   { id: "landscape-outliner", component: "landscape-outliner", title: "Landscape Outliner",
@@ -358,6 +370,7 @@ const GRAPH_WINDOWS: DockWindowDefinition[] = [
     },
   },
   BREAKPOINTS_WINDOW,
+  WATCHES_WINDOW,
 ];
 
 /** Logic-free Prefab documents: no Graph, Class members or Compiler Results. */
@@ -418,6 +431,7 @@ const OBJECT_GRAPH_WINDOWS: DockWindowDefinition[] = [
     },
   },
   BREAKPOINTS_WINDOW,
+  WATCHES_WINDOW,
 ];
 
 const ENUM_WINDOWS: DockWindowDefinition[] = [

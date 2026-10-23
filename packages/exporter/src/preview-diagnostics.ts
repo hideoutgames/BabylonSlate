@@ -5,7 +5,7 @@ export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "fra
 export type PreviewDiagnosticSettings = { durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean };
 export type PreviewDiagnosticResult = { success: boolean; reason?: string; result?: unknown };
 /** A performance profile's numeric streams, sent in this order. */
-export const PREVIEW_PROFILE_STREAMS = ["frames", "ticks", "gpu", "memory", "longTasks"] as const;
+export const PREVIEW_PROFILE_STREAMS = ["frames", "ticks", "gpu", "memory", "longTasks", "scripts"] as const;
 type PreviewProfileStream = (typeof PREVIEW_PROFILE_STREAMS)[number];
 export type PreviewProfileTransfer = { metadata: Record<string, unknown> } & Record<PreviewProfileStream, Float64Array[]>;
 type Incoming = { source: unknown; origin: string; data: unknown };
@@ -102,7 +102,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
         const metadata = message.metadata;
         const limit = metadata?.byteBudget;
         if (!metadata || !validSequence(limit) || limit < 1024 || limit > MAX_TRANSFER_BYTES) { options.onError?.("Invalid Preview profile budget."); return; }
-        capture = { id: message.profileId, metadata, frames: [], ticks: [], gpu: [], memory: [], longTasks: [], bytes: 0, limit, sequence: 0, timer: idleTimer() };
+        capture = { id: message.profileId, metadata, frames: [], ticks: [], gpu: [], memory: [], longTasks: [], scripts: [], bytes: 0, limit, sequence: 0, timer: idleTimer() };
       } else if (message.action === "profile-chunk" && capture && message.profileId === capture.id) {
         if (message.sequence !== capture.sequence || !PREVIEW_PROFILE_STREAMS.includes(message.stream as PreviewProfileStream) ||
           !(message.rows instanceof Float64Array) || !message.rows.byteLength || message.rows.byteLength > MAX_CHUNK_BYTES ||

@@ -88,6 +88,7 @@ import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { useKeybindChord } from "../context/keybind-context";
 import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { sessionReportNodeTitle } from "../lib/session-report-locations";
 import { useBehaviourTreeRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
@@ -427,6 +428,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     [breakpointLabel, breakpointStore, treeGuid],
   );
 
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+
   const nodeMenu = useCallback(
     (nodeId: string): NestedMenuItem[] => [
       {
@@ -479,12 +482,17 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
               { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
               () => breakpointLabel(nodeId),
               toggleBreakpointChord,
+              () => editBreakpoint({
+                location: { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
+                nodeTitle: breakpointLabel(nodeId).nodeTitle,
+                pins: null,
+              }),
             ),
           ]
         : []),
     ],
     // The root is the only document fact baked into the items; the tree node menu builds them when it opens.
-    [breakpointLabel, breakpointStore, rootId, setAttachmentCatalog, setSelectedId, toggleBreakpointChord, treeGuid],
+    [breakpointLabel, breakpointStore, editBreakpoint, rootId, setAttachmentCatalog, setSelectedId, toggleBreakpointChord, treeGuid],
   );
 
   const attachmentMenu = useCallback(
@@ -667,6 +675,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           onChange={onChange}
         />
       </div>
+      {breakpointSettingsDialog}
     </PanelFrame>
   );
 }

@@ -99,4 +99,19 @@ describe("createDefaultLayoutForKind", () => {
       expect(listDockWindows(kind).some((entry) => entry.id === "breakpoints")).toBe(true);
     }
   });
+
+  it("offers Watches in a Class's Windows menu only, closed in a new layout", () => {
+    expect(listDockWindows("graph").some((entry) => entry.id === "watches")).toBe(true);
+    expect(listDockWindows("scene").some((entry) => entry.id === "watches")).toBe(false);
+    const panels = new Set<string>();
+    const api = {
+      getPanel: () => undefined,
+      addPanel: (options: { id: string }) => {
+        panels.add(options.id);
+        return { id: options.id, api: { setActive: vi.fn() } };
+      },
+    };
+    createDefaultLayoutForKind(api as never, "graph");
+    expect(panels.has("watches")).toBe(false);
+  });
 });

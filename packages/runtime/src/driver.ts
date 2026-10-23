@@ -32,7 +32,7 @@ import {
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
   type DebugObserveTarget,
-  type BreakpointLocation,
+  type Breakpoint,
   BREAKPOINT_PAUSE_CODE,
 } from "@haptic/bridge";
 import { debugInstanceLabel, ScriptDebugObserver } from "./script-debug";
@@ -158,7 +158,7 @@ function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tileset
 }
 
 /** The graph debugger's views: editor-bound, not scene state, so they stay out of the command revision a final capture compares. */
-const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "btState"]);
+const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "debugVariables", "btState"]);
 
 /** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
 function createClassRegistry(): ClassRegistry {
@@ -1026,6 +1026,7 @@ class InProcessRuntime implements RuntimeDriver {
       }),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
       emit: (command) => this.emit(command),
+      meterScripts: (meter) => this.scriptHost.setCostMeter(meter),
     }, {
       dt: this.dt,
       seed: this.seed,
@@ -1435,7 +1436,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptDebug.observe(target, instanceId);
   }
 
-  applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void {
+  applyBreakpoints(breakpoints: readonly Breakpoint[]): void {
     if (this.stopped) return;
     this.breakpoints.set(breakpoints);
   }

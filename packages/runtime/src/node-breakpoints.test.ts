@@ -114,6 +114,156 @@ describe("node breakpoints", () => {
   });
 });
 
+/**
+ * A Class whose Tick runs Do N (a count of earlier runs on its Counter output), logs that count, and
+ * runs a For Loop from 0 to it that reads Last Index once per pass.
+ */
+function counterScript() {
+  return compileClassScript({
+    registry,
+    classId: "Hero",
+    compile: { instrumentBreakpoints: true },
+    graph: {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        graphNode(registry, "tick", "flow.event.tick"),
+        graphNode(registry, "count", "flow.doN", { "default:n": 100 }),
+        log("logCount", ""),
+        graphNode(registry, "loop", "flow.forLoop", { "default:firstIndex": 0 }),
+      ],
+      edges: [
+        wire("tick", "execOut", "count", "execIn"),
+        wire("count", "then", "logCount", "execIn"),
+        wire("count", "counter", "logCount", "message"),
+        wire("logCount", "execOut", "loop", "execIn"),
+        wire("count", "counter", "loop", "lastIndex"),
+      ],
+    },
+  });
+}
+
+describe("breakpoint conditions and hit counts", () => {
+  it("stop when a value a node reads meets the condition", async () => {
+    const scenario = await startGraphScenario({
+      scripts: [counterScript()],
+      actors: heroes,
+      runtime: { breakpoints: [{ ...at("loop"), condition: { pinId: "lastIndex", direction: "in", op: ">=", value: 2 } }] },
+    });
+    try {
+      await scenario.tick(2);
+      expect(pauses(scenario.commands)).toEqual([]);
+      await scenario.tick();
+      expect(scenario.logs("Scenario")).toEqual(["0", "0", "1", "1", "2", "2"]);
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "loop", entryNodeId: "tick", instanceId: "hero-1" })]);
+    } finally { scenario.stop(); }
+  });
+
+  it("compare a number a text input reads with its text", async () => {
+    const scenario = await startGraphScenario({
+      scripts: [counterScript()],
+      actors: heroes.slice(0, 1),
+      runtime: { breakpoints: [{ ...at("logCount"), condition: { pinId: "message", direction: "in", op: "==", value: "1" } }] },
+    });
+    try {
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "logCount" })]);
+    } finally { scenario.stop(); }
+  });
+
+  it("stop when a value a node produces meets the condition", async () => {
+    const scenario = await startGraphScenario({
+      scripts: [counterScript()],
+      actors: heroes.slice(0, 1),
+      runtime: { breakpoints: [{ ...at("count"), condition: { pinId: "counter", direction: "out", op: "==", value: 1 } }] },
+    });
+    try {
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "count" })]);
+    } finally { scenario.stop(); }
+  });
+
+  it("stop only on the Nth time the node runs, counting every object", async () => {
+    const scenario = await startGraphScenario({
+      scripts: [heroScript()],
+      actors: heroes,
+      runtime: { breakpoints: [{ ...at("logA"), hitCount: 3 }] },
+    });
+    try {
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "logA", instanceId: "hero-1" })]);
+      scenario.runtime.resume();
+      await scenario.tick(3);
+      expect(pauses(scenario.commands)).toHaveLength(1);
+    } finally { scenario.stop(); }
+  });
+
+  it("count a run once however often the node reads the value", async () => {
+    // The For Loop reads Last Index on every pass: two passes on the second tick are one hit.
+    const scenario = await startGraphScenario({
+      scripts: [counterScript()],
+      actors: heroes.slice(0, 1),
+      runtime: { breakpoints: [{ ...at("loop"), condition: { pinId: "lastIndex", direction: "in", op: ">=", value: 1 }, hitCount: 2 }] },
+    });
+    try {
+      await scenario.tick(2);
+      expect(pauses(scenario.commands)).toEqual([]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "loop" })]);
+    } finally { scenario.stop(); }
+  });
+
+  it("keep counting when the breakpoints are sent again, and start over when one changes", async () => {
+    const third = { ...at("logA"), hitCount: 3 };
+    const scenario = await startGraphScenario({ scripts: [heroScript()], actors: heroes, runtime: { breakpoints: [third] } });
+    try {
+      await scenario.tick();
+      scenario.runtime.applyBreakpoints([third]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toHaveLength(1);
+
+      scenario.runtime.resume();
+      scenario.runtime.applyBreakpoints([{ ...third, hitCount: 4 }]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toHaveLength(1);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toHaveLength(2);
+    } finally { scenario.stop(); }
+  });
+
+  it("count a Behaviour Tree node's hits", async () => {
+    type BtNode = BehaviourTreeDocument["nodes"][number];
+    const btNode = (id: string, kind: BtNode["kind"], classId: string, children: string[] = []): BtNode =>
+      ({ id, kind, classId, children, decorators: [], services: [], properties: {} });
+    const guard = createActor("guard", "Guard", {
+      components: [{ id: "bt-1", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
+    });
+    const scenario = await startGraphScenario({
+      scripts: [],
+      actors: [guard],
+      runtime: {
+        behaviourTrees: { "tree-1": {
+          name: "Patrol", rootId: "root", blackboardGuid: null,
+          nodes: [btNode("root", "sequence", "bt.composite.sequence", ["done"]), btNode("done", "task", "bt.task.succeed")],
+        } },
+        breakpoints: [{ assetGuid: "tree-1", graphId: BT_DEBUG_GRAPH_ID, nodeId: "done", hitCount: 2 }],
+      },
+    });
+    try {
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([]);
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "done", breakpointEvent: "started" })]);
+    } finally { scenario.stop(); }
+  });
+});
+
 describe("Behaviour Tree breakpoints", () => {
   type BtNode = BehaviourTreeDocument["nodes"][number];
   const btNode = (id: string, kind: BtNode["kind"], classId: string, children: string[] = []): BtNode =>
