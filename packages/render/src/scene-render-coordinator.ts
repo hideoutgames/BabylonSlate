@@ -337,6 +337,11 @@ export class SceneRenderCoordinator {
     return promise;
   }
 
+  /** A preparation is running (a latched failure is not one: it retries only when the view draws again). */
+  get preparing(): boolean {
+    return this.pending !== undefined;
+  }
+
   /** No preparation is running and none has failed. Only then can an edit that
    * leaves every readiness input alone skip `invalidate()`: nothing is waiting
    * for a restart, and no latched failure needs the retry an invalidation grants. */

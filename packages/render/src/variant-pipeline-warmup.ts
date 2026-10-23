@@ -54,8 +54,9 @@ type WarmupState = {
   cold: Map<Effect, ColdEntry>;
   /** WebGL2: every Effect the Engine held at installation or returned since (a new one is cold). */
   known: WeakSet<Effect>;
-  /** Admissions left in the current steady frame (its tolerant round). */
+  /** Admissions left in the Engine frame `budgetFrame` (`engine.frameId`), shared by its rounds and views. */
   budget: number;
+  budgetFrame: number;
   /** Effects that were cold and are not any more (warmed, or turned ready unused): never cold again. */
   settled: WeakSet<Effect>;
   /** Open readiness rounds of a view that has drawn steady frames: new Effects are cold there too. */
@@ -104,7 +105,7 @@ function install(engine: AbstractEngine): WarmupState {
   if (typeof create !== "function") throw new Error("Unsupported Babylon engine layout: createEffect is missing.");
   const compiled = (engine as unknown as { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
   const state: WarmupState = {
-    cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, settled: new WeakSet(), marking: 0, warming: false,
+    cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false,
     requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(),
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
@@ -171,8 +172,19 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
   if (tolerated) {
     const deferred = pipelinesDeferred(engine);
     const now = performance.now();
-    let budget = FIRST_DRAWS_PER_FRAME;
+    // Per Engine frame: a tolerant preparation and a second view's rounds in the same frame share its admissions.
+    if (state.budgetFrame !== engine.frameId) {
+      state.budgetFrame = engine.frameId;
+      state.budget = FIRST_DRAWS_PER_FRAME;
+    }
+    let budget = state.budget;
     for (const [effect, entry] of state.cold) {
+      // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous Effect
+      // for good): it leaves the queue without a first draw to spread.
+      if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+        warmUp(state, effect);
+        continue;
+      }
       if (budget === 0) break;
       const unused = now - entry.usedAt >= UNUSED_WARM_MS;
       if (!(deferred ? entry.warmed || unused : entry.base())) continue;

@@ -53,7 +53,7 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
 } from "@haptic/bridge";
-import { areaRectLightBindings, createDefaultScene } from "@haptic/core";
+import { areaRectLightBindings, createDefaultScene, normalizeRenderingQuality } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,8 +61,9 @@ import { createEngine } from "./create-engine";
 import { effectLightSeats } from "./fixed-light-binding";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
-import { isAuthoredLightEnabled, isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
+import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
 import { compileMaterialPlan } from "./material-compiler";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
@@ -92,10 +93,12 @@ vi.mock("./load-rehearsal", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./load-rehearsal")>();
   return {
     ...actual,
-    createLoadRehearsal: vi.fn((scene: Scene) => rehearseLoad ? actual.createLoadRehearsal(scene) : {
-      done: true, frame() {}, check() {}, cancel() {},
-      report: () => ({ steps: 0, omitted: [], timedOut: [], variants: 0, pipelines: 0, ms: 0 }),
-    }),
+    createLoadRehearsal: vi.fn((...args: Parameters<typeof actual.createLoadRehearsal>) => rehearseLoad
+      ? actual.createLoadRehearsal(...args)
+      : {
+        done: true, frame() {}, check() {}, cancel() {}, release() {},
+        report: () => ({ steps: 0, drawn: 0, omitted: [], timedOut: [], variants: 0, pipelines: 0, ms: 0 }),
+      }),
   };
 });
 let rehearseLoad = false;
@@ -133,10 +136,13 @@ afterEach(() => {
   vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   vi.mocked(effectDrawn).mockImplementation(actualEffectDrawn);
   rehearseLoad = false;
+  frameMs = FRAME_MS;
 });
 
 /** Each Play frame advances the clock this much, so a run of held frames crosses the pause delay deterministically. */
 const FRAME_MS = 100;
+/** The clock step of the next Play frames (a case with a realistic frame clock sets 16 ms). */
+let frameMs = FRAME_MS;
 /** Frames a pending compile or pipeline stays pending before the driver releases it (600 ms). */
 const PENDING_FRAMES = 6;
 
@@ -396,10 +402,12 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     if (!engine.getRenderingCanvas())
       vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(new FakeCanvas() as unknown as HTMLCanvasElement);
     engine._renderViews();
+    // Engine.endFrame's count: per-frame budgets key to it.
+    (engine as unknown as { _frameId: number })._frameId += 1;
     engine.onEndFrameObservable.notifyObservers(engine);
     const view = views.at(-1);
     const state = { view, holding: view?.holding ?? false, paused: isSceneGameTimePaused(handle.scene), effect: subjectEffect() };
-    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    await vi.advanceTimersByTimeAsync(frameMs);
     return state;
   };
   /**
@@ -550,18 +558,21 @@ function expectSwapped(record: CauseRecord, model: Model): void {
   const detail = JSON.stringify(record);
   // The cause really compiled a lit variant, so the states below mean something.
   expect(record.litEffects, detail).toBeGreaterThan(0);
+  // Only a pending compile (or pipeline) leaves a previous Effect drawing; a synchronous link draws the new one at once.
+  // With more new variants than a frame admits (`FIRST_DRAWS_PER_FRAME`), whether the subject's waits depends on its
+  // place in the queue, so that case does not say.
+  const previous = model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME
+    ? {} : { previousEffectDrawn: record.previousEffectDrawn };
   expect({
     heldFrames: record.heldFrames, holdReported: record.holdReported, holdRaised: record.holdRaised,
-    paused: record.pausedFrames > 0, recovered: record.recovered,
-    // Only a pending compile (or pipeline) leaves a previous Effect drawing; a synchronous link draws the new one at
-    // once, unless more new variants arrive together than a frame admits (`FIRST_DRAWS_PER_FRAME`).
-    previousEffectDrawn: model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME ? true : record.previousEffectDrawn,
+    paused: record.pausedFrames > 0, recovered: record.recovered, ...previous,
     adopted: record.adopted,
     // One probe per frame while a swap is pending, not one per readiness question.
     probesAtMostOnePerFrame: record.probesPerFrame <= 1,
   }, detail).toEqual({
     heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
-    previousEffectDrawn: model !== "sync" || record.effects > FIRST_DRAWS_PER_FRAME, adopted: true, probesAtMostOnePerFrame: true,
+    ...("previousEffectDrawn" in previous ? { previousEffectDrawn: model !== "sync" } : {}), adopted: true,
+    probesAtMostOnePerFrame: true,
   });
 }
 
@@ -646,25 +657,70 @@ describe("compile holds after the first frame", () => {
     rehearseLoad = true;
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])], [],
       cause === "a point switches off" ? "actor-2" : "actor-1");
-    const lights = () => world.handle.scene.lights.filter((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX));
-    const shadows = () => findSceneShadowController(world.handle.scene)!;
-    let restored: unknown;
     const record = await measure(world, () => cause === "a point switches off"
       ? world.place(point(11, [1.5, 2.5, -1], { enabled: false }))
-      : world.place(spot(12, [0, 5, 0], { castShadows: true })), () => {
-      // The rehearsal left every light as authored.
-      restored = lights().map((light) => [light.name, isAuthoredLightEnabled(light), shadows().requestsShadow(light)]);
-    });
+      : world.place(spot(12, [0, 5, 0], { castShadows: true })));
     const rehearsal = world.handle.loadRehearsalStats();
     expect({
       rehearsed: (rehearsal?.steps ?? 0) > 0, compiled: (rehearsal?.variants ?? 0) > 0,
-      restored: (restored as [string, boolean, boolean][]).every(([, enabled, shadowed]) => enabled && !shadowed),
       effects: record.effects, pipelines: record.pipelines + record.warmPipelines,
       heldFrames: record.heldFrames, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
     }, JSON.stringify({ record, rehearsal })).toEqual({
-      rehearsed: true, compiled: true, restored: true, effects: 0, pipelines: 0, heldFrames: 0, holdRaised: false, paused: false,
+      rehearsed: true, compiled: true, effects: 0, pipelines: 0, heldFrames: 0, holdRaised: false, paused: false,
       recovered: true,
     });
+  });
+
+  /**
+   * Each authored light (lit, and whether its shadow map is admitted, with its darkness) and the subject's defines at
+   * the first presented frame and twelve frames later, for a load with or without its rehearsal. The frames run on a
+   * 16 ms clock once loading has started presenting, so a residency the load's own admissions began has not run out by
+   * the first presentation.
+   */
+  async function presentedAdmission(rehearse: boolean, actors: Actor[], configure?: (world: PlayWorld) => void) {
+    // A fresh world per run: the previous one's Engine, clock and render spy go first.
+    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+    if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
+    rehearseLoad = rehearse;
+    const world = playWorld("sync", actors);
+    configure?.(world);
+    const controller = () => findSceneShadowController(world.handle.scene)!;
+    const state = () => ({
+      lights: world.handle.scene.lights.filter((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX))
+        .map((light) => {
+          const map = controller().generator(light);
+          return `${light.name.slice(AUTHORED_LIGHT_PREFIX.length)}:${light.isEnabled() ? "lit" : "off"}${map ? `+map@${map.getDarkness()}` : ""}`;
+        }).sort(),
+      defines: world.subjectEffect()?.defines ?? null,
+    });
+    await withClock(world.handle.prewarmSceneMaterials());
+    const presentation = world.handle.presentFirstFrame();
+    let presented = false;
+    void presentation.finally(() => { presented = true; });
+    for (let index = 0; index < 400 && (index < 4 || !presented); index++) {
+      frameMs = index < 6 ? FRAME_MS : 16;
+      await world.frame();
+    }
+    await presentation;
+    const first = state();
+    for (let index = 0; index < 12; index++) await world.frame();
+    return { first, later: state(), rehearsal: world.handle.loadRehearsalStats() };
+  }
+
+  it.each([
+    ["shadow maps", [
+      spot(12, [-1, 4, 3], { castShadows: true }), spot(10, [0, 4, 0], { castShadows: true }), spot(11, [1, 4, 0.2], { castShadows: true }),
+    ], undefined],
+    ["the Forward light budget", [point(10, [0, 4, 0]), point(11, [1, 4, 0.2]), spot(12, [-1, 4, 0.6])], (world: PlayWorld) =>
+      updateSceneRenderingSettings(world.handle.scene,
+        { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) })],
+  ] as const)("a load rehearsal leaves %s as a load without it does", async (_, actors, configure) => {
+    // Admission ranks by history: an admitted light keeps its place against a slightly nearer one. Switching a light
+    // off lets a waiting one take its map or slot; reverting that change must not leave the waiting light admitted.
+    const baseline = await presentedAdmission(false, [...actors], configure);
+    const rehearsed = await presentedAdmission(true, [...actors], configure);
+    expect((rehearsed.rehearsal?.steps ?? 0) > 0, JSON.stringify(rehearsed.rehearsal)).toBe(true);
+    expect({ first: rehearsed.first, later: rehearsed.later }).toEqual({ first: baseline.first, later: baseline.later });
   });
 
   it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {

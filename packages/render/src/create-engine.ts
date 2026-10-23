@@ -1059,6 +1059,8 @@ function initializeEngine(
   const endLoadRehearsal = () => {
     if (!loadRehearsal) return;
     loadRehearsal.cancel();
+    // Its Effects go with its load: Play keeps one Scene across loads, which would otherwise keep every level's.
+    loadRehearsal.release();
     loadRehearsalReport = loadRehearsal.report();
     loadRehearsal = null;
   };
@@ -3789,6 +3791,8 @@ function initializeEngine(
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
         worldRenderer.invalidate();
+        // A presented load's rehearsal ends here: the next level keeps none of its Effects.
+        endLoadRehearsal();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
       // A failed load never reaches the warm-up that ends its hold.
