@@ -84,6 +84,8 @@ type PredictedAdmission = {
   /** Steady frames after that change in which some floor still drew its previous variant. */
   lateFrames: number;
   held: number;
+  /** Why the frames not drawn after that change were not. */
+  heldBecause: string[];
   done: boolean;
 };
 
@@ -94,6 +96,7 @@ type PredictedAdmission = {
  * Effects were compiled ahead; its render pipelines are still created at the admission, while previous variants draw.
  */
 export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
+  let variant = 0;
   const run = async (admission: "forward" | "shadow", approach: boolean): Promise<PredictedAdmission> => {
     const shadows = admission === "shadow";
     const scene = new Scene(engine);
@@ -101,17 +104,23 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     const camera = new FreeCamera("camera", new Vector3(0, 4.5, -7.5), scene);
     camera.setTarget(new Vector3(0, 0.4, 0));
     scene.activeCamera = camera;
+    // A world Scene: its views bind previous Effects by their own light layout while new variants get ready.
+    setFixedShapeLightingWorldScene(scene);
     setSceneRenderSettings(scene, {
       mode: "pbr",
       quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: shadows ? 16 : 2 } }),
       shadows: normalizeShadowSettings({ cascades: 1, localLightMode: "manual", maxLocalLights: 2 }),
     });
+    // One Engine serves every run and the proofs before them, and its Effect cache outlives their Scenes: each run
+    // draws its own variants, which nothing compiled before.
+    variant++;
     const pbr = new PBRMaterial("native pbr", scene);
     pbr.albedoColor = new Color3(0.8, 0.8, 0.8);
     pbr.metallic = 0;
-    const standard = new StandardMaterial("native standard", scene);
-    standard.diffuseColor = new Color3(0.8, 0.8, 0.8);
-    const floors = [pbr, standard].map((material, index) => {
+    pbr.enableSpecularAntiAliasing = (variant & 1) !== 0;
+    pbr.forceNormalForward = (variant & 2) !== 0;
+    pbr.useSpecularOverAlpha = (variant & 4) === 0;
+    const floors = [pbr, pbr].map((material, index) => {
       const floor = MeshBuilder.CreateGround(`floor-${index}`, { width: 1.9, height: 6 }, scene);
       floor.position.x = -1 + index * 2;
       floor.material = material;
@@ -145,7 +154,9 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       counts.asynchronous++;
       return createRenderPipelineAsync.call(this, descriptor);
     };
-    const effects = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).length;
+    // Effects compiled since `known` was taken (new Engine cache entries; a released map's entries leave meanwhile).
+    const cache = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects);
+    const compiledSince = (known: ReadonlySet<string>) => cache().filter((key) => !known.has(key)).length;
     const drawn = () => {
       const pass = engine.getRenderPassNames().lastIndexOf("Forward objects#0");
       return floors.map((floor) => pass < 0 ? null : floor.subMeshes[0]!._getDrawWrapper(pass)?.effect ?? null);
@@ -153,11 +164,14 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     const admitted = () => shadows
       ? findSceneShadowController(scene)?.generator(spot) != null && findSceneShadowController(scene)?.generator(far) == null
       : !isForwardLightExcluded(spot);
+    const reasons = new Set<string>();
     const frame = async (strict = false) => {
       engine.beginFrame();
       let rendered: boolean;
       try {
-        rendered = coordinator.render(strict).rendered;
+        const result = coordinator.render(strict);
+        rendered = result.rendered;
+        if (!rendered) reasons.add(result.reason ?? "");
       } finally {
         engine.endFrame();
       }
@@ -171,13 +185,14 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       let effectsAhead = 0;
       if (approach) {
         // Within the prediction margin of the cut-off (the farther local light's ranking distance), still left out.
-        const start = effects();
+        const known = new Set(cache());
         spot.position.set(0, 3.2, shadows ? 6 : 1);
         for (let index = 0; index < 12; index++) await frame();
-        effectsAhead = effects() - start;
+        effectsAhead = compiledSince(known);
       }
       if (admitted()) throw new Error(`The ${admission} admission came before the change.`);
-      const start = effects();
+      reasons.clear();
+      const known = new Set(cache());
       counts.synchronous = counts.asynchronous = 0;
       const before = drawn();
       spot.position.set(0, 3.2, shadows ? 0 : -4.5);
@@ -189,7 +204,10 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         else if (drawn().some((effect, slot) => effect === before[slot])) lateFrames++;
         else done = true;
       }
-      return { admitted: admitted(), effectsAhead, effectsAtAdmission: effects() - start, pipelines: { ...counts }, lateFrames, held, done };
+      return {
+        admitted: admitted(), effectsAhead, effectsAtAdmission: compiledSince(known), pipelines: { ...counts }, lateFrames, held,
+        heldBecause: [...reasons], done,
+      };
     } finally {
       device.createRenderPipeline = createRenderPipeline;
       device.createRenderPipelineAsync = createRenderPipelineAsync;
