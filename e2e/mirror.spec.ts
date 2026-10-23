@@ -59,7 +59,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type()) &&
-      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection/i.test(message.text())) errors.push(message.text());
+      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived/i.test(message.text())) errors.push(message.text());
   });
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
