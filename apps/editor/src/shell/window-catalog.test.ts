@@ -56,6 +56,7 @@ describe("listDockWindows", () => {
       "inspector",
       "compiler-results",
       "breakpoints",
+      "watches",
     ]);
     const classPanel = windows.find((entry) => entry.id === "my-class");
     expect(classPanel?.defaultPosition).toEqual({

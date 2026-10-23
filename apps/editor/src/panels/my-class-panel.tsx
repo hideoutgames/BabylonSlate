@@ -73,6 +73,7 @@ import { useEditorSessionState } from "../context/editor-session-state-context";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
+import { useWatchStore } from "../context/watch-store-context";
 import { defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
@@ -487,6 +488,7 @@ export function ClassMembersView({
   membersOptions,
   activeFunctionId,
   classId,
+  classPath,
   canvasDropApi,
   onOpenInherited,
 }: {
@@ -500,9 +502,12 @@ export function ClassMembersView({
   membersOptions?: MembersForGraphOptions;
   activeFunctionId?: string | null;
   classId?: string;
+  /** The Class asset path: with it, a variable's menu adds or removes a watch. */
+  classPath?: string;
   canvasDropApi?: GraphDropPoint | null;
   onOpenInherited?: (member: MyClassMember) => void;
 }) {
+  const watchStore = useWatchStore();
   const touchSizing = usePhoneTouchSizing();
   const keybinds = useKeybindings();
   const sessionState = useEditorSessionState();
@@ -1027,6 +1032,14 @@ export function ClassMembersView({
     testId: "class-menu-paste",
     onSelect: pasteMembers,
   });
+  /** **Add Watch** / **Remove Watch** for a variable of the Class's objects (not a function's local or a component's). */
+  const watchItem = (member: MyClassMember | undefined): ContextMenuItem[] => {
+    if (!watchStore || !classPath || member?.kind !== "variable" || member.functionId || member.componentId) return [];
+    const entry = { kind: "variable" as const, assetGuid: classPath, name: member.name, label: { className: classId ?? classPath } };
+    return watchStore.has(entry)
+      ? [{ id: "remove-watch", label: "Remove Watch", onSelect: () => watchStore.remove(entry) }]
+      : [{ id: "add-watch", label: "Add Watch", onSelect: () => watchStore.add(entry) }];
+  };
   /**
    * The menu of an entry acts on the group when the entry is part of one, on
    * the entry alone otherwise. `previous` is the selection a long-press or
@@ -1073,6 +1086,7 @@ export function ClassMembersView({
       ...(single && renamableIds.has(id)
         ? [{ id: "rename", label: "Rename", onSelect: () => startRename(id) }]
         : []),
+      ...(single ? watchItem(member) : []),
       ...(canCopy(targets)
         ? [
             {
@@ -1423,6 +1437,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
         selectedId={selectedId}
         activeFunctionId={activeFunctionId}
         classId={className ?? undefined}
+        classPath={docPath}
         canvasDropApi={canvasDropApi}
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}

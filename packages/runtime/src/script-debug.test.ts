@@ -283,6 +283,40 @@ describe("runtime graph debugging", () => {
     expect(roster!.added[0]!.id).toBe("d0");
   });
 
+  it("reports the followed object's declared variables when it is followed and whenever one changes", async () => {
+    const vault: CompiledScript = {
+      ...emptyScript("Vault", "Actor"),
+      variables: [
+        { name: "gold", type: "int", defaultValue: 3 },
+        { name: "owner", type: "string", defaultValue: "Mira" },
+      ],
+    };
+    const { runtime, commands } = await startSimulation(
+      [createActor("v1", "Vault", { classId: "Vault" }), createActor("v2", "Spare", { classId: "Vault" })], [vault]);
+    const reports = (from: number) => commands.slice(from).flatMap((command) => command.type === "debugVariables" ? [command] : []);
+    runtime.tick();
+    let mark = commands.length;
+    runtime.applyDebugObserve({ kind: "class", classId: "Vault" }, "v1");
+    expect(reports(mark)).toEqual([{
+      type: "debugVariables", target: { kind: "class", classId: "Vault" }, instanceId: "v1", tickIndex: 1,
+      values: [["gold", "3"], ["owner", "Mira"]],
+    }]);
+
+    // Nothing runs on the vault: a change made elsewhere is reported on the next tick, unchanged ones are not.
+    mark = commands.length;
+    runtime.tick();
+    const vault1 = runtime.getWorld().getActors().find((actor) => actor.guid === "v1")!;
+    vault1.setVariable("gold", 7);
+    runtime.tick();
+    runtime.tick();
+    expect(reports(mark)).toEqual([expect.objectContaining({ instanceId: "v1", tickIndex: 3, values: [["gold", "7"]] })]);
+
+    // Following another object reports all of its variables again.
+    mark = commands.length;
+    runtime.applyDebugObserve({ kind: "class", classId: "Vault" }, "v2");
+    expect(reports(mark)).toEqual([expect.objectContaining({ instanceId: "v2", values: [["gold", "3"], ["owner", "Mira"]] })]);
+  });
+
   it("does not advance the command revision, which a final capture compares across a fence", async () => {
     const revisionAfterTicks = async (observe: boolean) => {
       const { runtime } = await startSimulation(doors, scripts());

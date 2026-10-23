@@ -957,6 +957,12 @@ export type CommandMessage =
   | { type: "debugRoster"; target: DebugObserveTarget; reset: boolean; added: DebugInstance[]; removed: string[] }
   /** What the followed instance ran during one tick; sent only when something ran. */
   | { type: "executionTrace"; target: DebugObserveTarget; instanceId: string; tickIndex: number; graphs: DebugGraphTrace[] }
+  /**
+   * The followed instance's declared variables (its Class's and inherited), as display text: all of them
+   * when the follow starts, then those whose text changed, at the end of a tick in which any changed. A
+   * Class target only. A debug view like `executionTrace`.
+   */
+  | { type: "debugVariables"; target: DebugObserveTarget; instanceId: string; tickIndex: number; values: Array<[name: string, text: string]> }
   | {
       type: "playSound";
       assetGuid: string;

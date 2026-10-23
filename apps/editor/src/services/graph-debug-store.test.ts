@@ -185,6 +185,28 @@ describe("GraphDebugStore traces", () => {
   });
 });
 
+describe("GraphDebugStore variables", () => {
+  it("keeps the followed instance's variable texts and tells value listeners about them and traces", () => {
+    const { store } = observed();
+    store.receiveRoster(roster([actor("a"), actor("b")], [], true));
+    const changed = vi.fn();
+    store.subscribeValues(changed);
+    store.receiveVariables({ target: DOOR, instanceId: "a", tickIndex: 1, values: [["gold", "3"], ["owner", "Mira"]] });
+    store.receiveVariables({ target: DOOR, instanceId: "a", tickIndex: 2, values: [["gold", "7"]] });
+    expect(store.variable("gold")).toBe("7");
+    expect(store.variable("owner")).toBe("Mira");
+    store.receiveTrace({ target: DOOR, instanceId: "a", tickIndex: 3, graphs: [graphTrace([["n", "p", "in", "1"]])] });
+    expect(changed).toHaveBeenCalledTimes(3);
+
+    // Another instance's report is dropped, and following it forgets the old texts.
+    store.receiveVariables({ target: DOOR, instanceId: "b", tickIndex: 3, values: [["gold", "0"]] });
+    expect(store.variable("gold")).toBe("7");
+    store.select("b");
+    expect(store.variable("gold")).toBeUndefined();
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe("GraphDebugStore Behaviour Tree state", () => {
   const GUARD: DebugObserveTarget = { kind: "behaviourTree", assetGuid: "guard-tree" };
   const component = (id: string): DebugInstance => ({ id, kind: "component", label: id });
