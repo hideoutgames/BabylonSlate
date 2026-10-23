@@ -267,14 +267,22 @@ function warmDraw(
   return warmed;
 }
 
-/** A defines object of `source`'s class holding its values, its keys in its order. */
+/**
+ * `source` as a separate defines object: the same class, own properties in the same order, the same define list
+ * (`_keys`, which only `rebuild` refreshes) and the same text, marked unprocessed so a preparation builds its Effect.
+ */
 function copyDefines(source: MaterialDefines): MaterialDefines {
-  const external = (source as unknown as { _externalProperties?: unknown })._externalProperties;
-  const Defines = source.constructor as new (externalProperties?: unknown) => MaterialDefines;
-  const copy = new Defines(external) as unknown as Record<string, unknown>;
+  const copy = Object.create(Object.getPrototypeOf(source)) as Record<string, unknown>;
   const values = source as unknown as Record<string, unknown>;
-  for (const key of Object.keys(source)) if (key[0] !== "_") copy[key] = values[key];
-  const defines = copy as unknown as MaterialDefines;
-  defines.rebuild();
+  for (const key of Object.keys(source)) {
+    const value = values[key];
+    copy[key] = Array.isArray(value) ? value.slice() : value;
+  }
+  // A defines text a hook gave its own builder (`trackShadowSlotDefines`) builds it the same way.
+  const text = Object.getOwnPropertyDescriptor(source, "toString");
+  if (text) Object.defineProperty(copy, "toString", text);
+  const defines = copy as unknown as MaterialDefines & { _renderId: number };
+  defines._renderId = -1;
+  defines.markAsUnprocessed();
   return defines;
 }
