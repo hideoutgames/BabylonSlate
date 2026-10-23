@@ -64,7 +64,7 @@ describe("component script API", () => {
   it.each(["WaterLakeComponent", "WaterOceanComponent"])("updates %s dimensions through normal component variables and queries the changed footprint", async (classId) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
       playScene: sceneOf([createActor("lake", "Lake", { classId: "Hero", components: [
         { id: "surface", classId, properties: { assetGuid: "water", width: 20 } },
       ] })]), onCommand: (command) => commands.push(command),
@@ -85,7 +85,7 @@ describe("component script API", () => {
   it("realizes Global Water Volume in Play and queries distant water through the script API", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
       playScene: sceneOf([createActor("global", "Global Water", { classId: "Hero", components: [
         { id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water", depth: 42 } },
       ] })]), onCommand: (command) => commands.push(command),
@@ -105,7 +105,7 @@ describe("component script API", () => {
   it("sends Water Removal Volumes to Play rendering and removes their water from queries", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
       playScene: sceneOf([
         createActor("global", "Global Water", { classId: "Hero", components: [{ id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water" } }] }),
         createActor("hull", "Hull", { classId: "Hero", transform: { position: [20, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [

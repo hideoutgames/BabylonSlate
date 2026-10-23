@@ -266,6 +266,28 @@ describe("Water surfaces", () => {
 });
 
 describe("Spectrum water", () => {
+  it("keeps an impossibly steep sea's height but stops it folding into solid foam, leaving ordinary seas as they were", () => {
+    const folded = (spectrum: ReturnType<typeof waterSpectrum>, length: number) => {
+      const out = new Float64Array(14);
+      let folds = 0, n = 0;
+      for (let i = 0; i < 24; i++) for (let j = 0; j < 24; j++, n++) {
+        evaluateWaterSpectrum(spectrum, i * length * 0.37, j * length * 0.41, 3.3, out, 1, 1, 0, 0);
+        if (out[5]! * out[7]! - out[6]! * out[13]! < 0.35) folds++;
+      }
+      return folds / n;
+    };
+    const base = createDefaultWaterDefinition();
+    expect(waterSpectrum(base).choppiness).toBe(2 * base.steepness);
+    expect(waterSpectrum({ ...base, waveLength: 8, waveHeight: 0.35, swellHeight: 0 }).choppiness).toBe(2 * base.steepness);
+    for (const [waveLength, waveHeight] of [[3, 5], [0.1, 2], [18, 10]] as const) {
+      const steep = { ...base, waveLength, waveHeight, swellHeight: 0, steepness: 1 };
+      const spectrum = waterSpectrum(steep);
+      expect(spectrum.choppiness, `${waveHeight} m on ${waveLength} m`).toBeLessThan(2);
+      expect(spectrum.sigma).toBe(waterSpectrum({ ...steep, steepness: 0 }).sigma);
+      expect(folded(spectrum, waveLength), `${waveHeight} m on ${waveLength} m`).toBeLessThan(0.3);
+    }
+  });
+
   const body = normalizeWaterBody({ width: 4000, length: 4000 }, "ocean");
 
   it("answers a query from its position and time alone, whatever was asked before", () => {

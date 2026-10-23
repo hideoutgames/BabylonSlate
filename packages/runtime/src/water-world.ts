@@ -1,7 +1,8 @@
 import {
   createDefaultWaterDefinition, DEFAULT_WATER_BLEND_DISTANCE, emptyWaterSample, normalizeWaterBlendDistance, normalizeWaterBody,
   normalizeWaterBuoyancy, normalizeWaterDefinition, normalizeWaterRemoval, parseLandscapeProperties, quatRotateVector,
-  sampleWaterBlend, sampleWaterSurface, WaterBlendIndex, waterCutAt, waterKindForClass,
+  sampleWaterBlend, sampleWaterSurface, WaterBlendIndex, waterBankFadeLength, waterBankGain, waterCutAt, waterKindForClass, waterSpectrum,
+  waterSpectrumDrift,
   waterSurfaceFrame,
   type LandscapeProperties, type Transform, type Vec3, type WaterBodyProperties, type WaterCutters,
   type WaterDefinition, type WaterSample, type WaterSurfaceFrame,
@@ -215,6 +216,8 @@ export class WaterWorld {
   private scannedReactive = true;
   /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
   private readonly wetness = new WeakMap<ActorComponent, Float64Array>();
+  private readonly drift = { x: 0, z: 0 };
+  private readonly bankGain = new Float64Array(2);
   /** Water Blend Distance (project setting): bodies this close blend, for the step and script queries alike. */
   private blendDistance = DEFAULT_WATER_BLEND_DISTANCE;
   get hasBodies(): boolean { return this.stepState.bodies.length > 0; }
@@ -434,7 +437,7 @@ export class WaterWorld {
       point: Vec3; r: Vec3; sample: WaterWorldSample; drag: number; stiffness: number; maximumLift: number;
       response: { linear: Vec3; angular: Vec3 };
     }> = [];
-    const wetted: Array<{ point: Vec3; sample: WaterWorldSample; submerged: number; index: number }> = [];
+    const wetted: Array<{ point: Vec3; sample: WaterWorldSample; water: WaterBody; submerged: number; index: number }> = [];
     let wetness = this.wetness.get(component);
     const fresh = !wetness;
     wetness ??= new Float64Array(4);
@@ -455,9 +458,21 @@ export class WaterWorld {
       // wave periods: the instantaneous value would correlate with the orbital velocity and push hulls along the waves.
       const previous = wetness[index]!;
       wetness[index] = fresh ? submerged : Math.max(submerged, previous + (submerged - previous) * Math.min(1, dt / WATER_DRAG_WETNESS_SECONDS));
-      if (submerged > 0) wetted.push({ point, sample, submerged, index });
+      if (submerged > 0) wetted.push({ point, sample, water: this.stepState.sampled!, submerged, index });
     }
-    for (const { point, sample, submerged, index } of wetted) {
+    // The hull relaxes toward the water's horizontal velocity at this rate (1/s): each wetted support pulls with
+    // min(1, drag·dt)·wetness / 4 of the body's momentum per step. The waves' mean drift at that coupling
+    // (`waterSpectrumDrift`) is added back, so hulls with any drag rock in place and only the current carries them; it
+    // fades with the horizontal offset toward a finite body's banks.
+    const coupling = wetted.reduce((sum, entry) => sum + wetness[entry.index]!, 0) * Math.min(1, props.drag * dt) / (4 * dt);
+    for (const { point, sample, water, submerged, index } of wetted) {
+      const drift = waterSpectrumDrift(waterSpectrum(water.definition), water.body.waveScale, coupling, this.drift);
+      let fade = 1;
+      if (water.body.kind !== "global") {
+        waterBankGain(sample.edgeDistance, waterBankFadeLength(water.definition, water.body.waveScale), this.bankGain);
+        fade = this.bankGain[0]! * this.bankGain[0]!;
+      }
+      sample.velocity.x += drift.x * fade; sample.velocity.z += drift.z * fade;
       const volume = props.volume > 0 ? props.volume * Math.abs(transform.scale.x * transform.scale.y * transform.scale.z) : 2 * mass / sample.density;
       const response = backend.getBodyImpulseResponse?.(bodyId, { x: 0, y: 1, z: 0 }, point);
       const center = response?.centerOfMass ?? pose.position;

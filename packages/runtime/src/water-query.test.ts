@@ -13,7 +13,7 @@ describe("Water graph queries", () => {
     lake.transform.position.y = 4;
     lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 10, length: 10 } }));
     const water = new WaterWorld();
-    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     water.update([lake], 0);
     const logs: string[] = [];
     const ctx = new ScriptHost({
@@ -90,7 +90,7 @@ describe("Water graph queries", () => {
     const hull = new ActorComponent({ classId: "WaterRemovalVolumeComponent", variables: { shape: "box", width: 2, height: 2, length: 6 } });
     boat.attachComponent(hull);
     const water = new WaterWorld();
-    water.setContent({ calm: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.setContent({ calm: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     ocean.components[0]!.setVariable("assetGuid", "calm");
     water.update([ocean, island, boat], 0);
     expect(water.sample({ x: 0, y: -1, z: 0 }).found).toBe(true);
@@ -122,7 +122,7 @@ describe("Project Water Blend Distance in Play", () => {
       const runtime = createInProcessRuntime({
         seed: 1, dt: 1 / 60, seedDemoActors: false, physicsWorld: "3d",
         renderSettings: blendDistance === undefined ? {} : { water: { blendDistance } },
-        waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+        waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
         playScene: { name: "Water", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: actors() },
       });
       // A metre past the river's rounded end (its half width beyond the last point), inside the lake: the blended surface

@@ -24,7 +24,7 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 | Object Reflections | Also reflects scene objects, following the project's Water Reflections quality. Off reflects only the sky. |
 | Wave Height, Wave Length, Wave Speed, Wave Direction, Wave Spread | Size, spacing, speed and heading of the local wind sea. Wave Length is the metres between its biggest crests, from 0.1 m for a pond to 2000 m for open ocean, and is independent of Wave Height: a short length gives a choppy sea and a long one rolling waves. |
 | Swell Height, Swell Length, Swell Direction | Long waves from a distant storm, rolling under the wind sea. Set Swell Height to 0 for none. |
-| Choppiness | Sharper crests, and waves that also move the water sideways. 0 moves water only up and down. |
+| Choppiness | Sharper crests, and waves that also move the water sideways. 0 moves water only up and down. Very steep seas, tall waves on a short Wave Length, move sideways less so they do not fold into solid foam; their height is kept. |
 | Peak Sharpness, Wave Seed | Shape and arrangement of the sea. Peak Sharpness gathers the waves around Wave Length. |
 | Detail Waves | The share of short waves on top of the sea. |
 | Foam Amount, Foam Width, Crest Foam, Surface Foam, Contact Foam Width | Shoreline, whitecap, open-water and contact foam. |

@@ -105,7 +105,7 @@ describe("physics tick composition work", () => {
     const sync = new PhysicsWorldSync(
       createSoftwarePhysicsBackend("3d", { x: 0, y: -9.81, z: 0 }),
     );
-    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     let tick = 0;
     const step = (count: number) => {
       for (let i = 0; i < count; i++) sync.step(1 / 60, world, tick++ / 60, 9.81);
@@ -306,7 +306,7 @@ describe("physics tick composition work", () => {
         "ctx.setActorLocation(ctx.self, { x: 0, y: 3, z: 0 });",
         "ctx.setVariable('raisedDepth', ctx.sampleWater({ x: 0, y: 1, z: 0 }, open.actor).depth);",
       ].join(" "),
-    }, { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    }, { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     try {
       const world = runtime.getWorld();
       const meshes = world.getActors().filter((actor) => actor.guid.startsWith("mesh-"));

@@ -37,6 +37,12 @@ export const WATER_SPECTRUM_TURNS = [0, 0.5411, 1.0297] as const;
 export const WATER_SPECTRUM_PHYSICS_SIZE = 64;
 /** Horizontal displacement (choppiness λ) per unit of Steepness. */
 export const WATER_SPECTRUM_CHOP = 2;
+/**
+ * Largest λ times the sea's RMS slope (`waterSpectrumSlope`). The offset's divergence has the slope's variance, so the
+ * share of the surface that folds into foam is about Φ(−bias / (λ·slope)): at this limit at most about a quarter, however
+ * tall Wave Height is for its Wave Length. Every preset sea lies below it, so only impossibly steep seas are limited.
+ */
+export const WATER_SPECTRUM_FOLD_LIMIT = 0.5;
 
 interface SpectrumComponent {
   /** Variance (m²) the component integrates to, before the detail gain. */
@@ -58,7 +64,10 @@ export interface WaterSpectrum {
   /** Peak wavenumber of the wind sea (rad/m): the detail gain fades the tail above a few times it. */
   readonly windPeakK: number;
   readonly detail: number;
-  /** Horizontal displacement scale λ (`WATER_SPECTRUM_CHOP` · Steepness). */
+  /**
+   * Horizontal displacement scale λ: `WATER_SPECTRUM_CHOP` · Steepness, limited to `WATER_SPECTRUM_FOLD_LIMIT` over the
+   * RMS slope, so a sea too steep for its Wave Length keeps its height but stops folding into solid foam.
+   */
   readonly choppiness: number;
   readonly seed: number;
   readonly waveSpeed: number;
@@ -145,17 +154,40 @@ function buildSpectrum(w: WaterDefinition): WaterSpectrum {
   const components = [component(w.waveHeight, w.waveLength, gamma, w.waveDirection * rad, windSpread, 0.2)];
   if (w.swellHeight > 0) components.push(component(w.swellHeight, w.swellLength, gamma, w.swellDirection * rad, 1, 1));
   const dominant = Math.max(w.waveLength, w.swellHeight > 0 ? w.swellLength : 0);
-  const first = clamp(dominant * WATER_SPECTRUM_PATCH, 2, 20000);
+  const first = clamp(dominant * WATER_SPECTRUM_PATCH, 0.5, 20000);
   const patchSizes = Array.from({ length: WATER_SPECTRUM_CASCADES }, (_, c) => first / WATER_SPECTRUM_RATIO ** c);
   const bandEdges = [0];
   for (let c = 1; c < WATER_SPECTRUM_CASCADES; c++) bandEdges.push(TAU * WATER_SPECTRUM_LOW_BIN / patchSizes[c]!);
   bandEdges.push(Infinity);
   const sigma = Math.sqrt(components.reduce((sum, c) => sum + c.variance, 0));
-  return {
-    components, windPeakK: TAU / w.waveLength, detail: clamp(w.detailWaves, 0, 1), choppiness: WATER_SPECTRUM_CHOP * w.steepness,
+  const spectrum = {
+    components, windPeakK: TAU / w.waveLength, detail: clamp(w.detailWaves, 0, 1), choppiness: 0,
     seed: w.waveSeed, waveSpeed: w.waveSpeed, patchSizes, bandEdges, sigma,
     key: fieldsOf({ ...w, steepness: 0, waveSpeed: 0 }),
   };
+  const slope = waterSpectrumSlope(spectrum);
+  spectrum.choppiness = Math.min(WATER_SPECTRUM_CHOP * w.steepness, slope > 0 ? WATER_SPECTRUM_FOLD_LIMIT / slope : Infinity);
+  return spectrum;
+}
+
+/** Radial and angular steps of `waterSpectrumSlope`'s quadrature. */
+const SLOPE_RINGS = 160, SLOPE_ANGLES = 32;
+/**
+ * RMS slope of the sea at Wave Scale 1, √∫∫ k²·Ψ dkx dkz, over the band a 256-texel FFT draws: from the first cascade's
+ * lowest mode to the last cascade's Nyquist radius. Log-spaced rings, each spectrum ring evaluated once.
+ */
+export function waterSpectrumSlope(spectrum: WaterSpectrum): number {
+  const kMin = TAU / spectrum.patchSizes[0]!, kMax = Math.PI * 256 / spectrum.patchSizes[spectrum.patchSizes.length - 1]!;
+  const ring = new Float64Array(spectrum.components.length * 2);
+  let variance = 0;
+  for (let i = 0; i < SLOPE_RINGS; i++) {
+    const k0 = kMin * (kMax / kMin) ** (i / SLOPE_RINGS), k1 = kMin * (kMax / kMin) ** ((i + 1) / SLOPE_RINGS), k = Math.sqrt(k0 * k1);
+    spectrumRing(spectrum, k, ring);
+    let around = 0;
+    for (let j = 0; j < SLOPE_ANGLES; j++) around += ringDensity(spectrum, ring, (j + 0.5) / SLOPE_ANGLES * TAU);
+    variance += k * k * (around * TAU / SLOPE_ANGLES) * k * (k1 - k0);
+  }
+  return Math.sqrt(variance);
 }
 
 /** Deep-water angular frequency (rad/s at Wave Speed 1) of wavenumber k. */
@@ -325,6 +357,23 @@ class PhysicsGrid {
     this.row = new Float64Array(size * 2); this.h = new Float64Array(n * 4);
   }
 
+  /**
+   * The mean-drift weights of this cascade's waves (`waterSpectrumDrift`): per frequency multiple m in band, Σ k·a²/2·k̂
+   * in world axes over the bins travelling at it, where bin k is a wave along k̂ of amplitude a = 2|h0(k)| (its
+   * conjugate partner sits at −k).
+   */
+  driftTerms(patch: number, into: Map<number, [number, number]>): void {
+    const size = this.size, turn = WATER_SPECTRUM_TURNS[this.cascade]!, cos = Math.cos(turn), sin = Math.sin(turn);
+    for (const i of this.active) {
+      const x = i % size, y = (i - x) / size, nx = x < size / 2 ? x : x - size, ny = y < size / 2 ? y : y - size;
+      const k = TAU / patch * Math.hypot(nx, ny), re = this.modes[i * 3]!, im = this.modes[i * 3 + 1]!, m = this.modes[i * 3 + 2]!;
+      const weight = k * 2 * (re * re + im * im), ux = this.units[i * 2]!, uz = this.units[i * 2 + 1]!;
+      const entry = into.get(m) ?? [0, 0];
+      entry[0] += weight * (cos * ux - sin * uz); entry[1] += weight * (sin * ux + cos * uz);
+      into.set(m, entry);
+    }
+  }
+
   /** Unnormalized inverse DFT (e^{+i…}) of every row of `d` (interleaved complex, `size` × `size`), in place. */
   private rows(d: Float64Array): void {
     const size = this.size, tmp = this.row, reversed = this.reversed, twiddles = this.twiddles;
@@ -414,6 +463,32 @@ export class WaterSpectrumField {
     this.grids = PHYSICS_SIZES.map((size, c) => new PhysicsGrid(spectrum, c, size));
     this.frames = this.grids.map((grid) => [0, 1].map(() => ({ index: Number.NaN, fields: new Float64Array(grid.size * grid.size * FIELDS) })));
     this.blended = this.grids.map((grid) => new Float64Array(grid.size * grid.size * FIELDS));
+  }
+
+  private driftTable: { omega: Float64Array; x: Float64Array; z: Float64Array } | null = null;
+  /**
+   * Mean horizontal velocity (m/s, world X/Z) the waves of this field leave a point that relaxes toward the water's
+   * velocity at `couplingRate` (1/s), with the sign that cancels it. A wave of horizontal amplitude A seen at a fixed
+   * point averages to −k·A²·ω/2 along its heading (upwind), while a point carried along its orbit sees none; a coupled
+   * point still sees the share ω²/(ω² + rate²). Sums the physics modes (`driftTerms`) at Wave Scale `scale`.
+   */
+  drift(scale: number, couplingRate: number, out: { x: number; z: number }): { x: number; z: number } {
+    if (!this.driftTable) {
+      const terms = new Map<number, [number, number]>();
+      this.grids.forEach((grid, c) => grid.driftTerms(this.spectrum.patchSizes[c]!, terms));
+      const entries = [...terms].sort((a, b) => a[0] - b[0]), base = TAU / WATER_SPECTRUM_PERIOD * this.spectrum.waveSpeed;
+      this.driftTable = {
+        omega: Float64Array.from(entries, ([m]) => m * base), x: Float64Array.from(entries, ([, w]) => w[0]), z: Float64Array.from(entries, ([, w]) => w[1]),
+      };
+    }
+    const { omega, x, z } = this.driftTable, chop = this.spectrum.choppiness * scale, rate = couplingRate * couplingRate;
+    let sumX = 0, sumZ = 0;
+    for (let i = 0; i < omega.length; i++) {
+      const w = omega[i]!, share = w * w / (w * w + rate);
+      sumX += x[i]! * w * share; sumZ += z[i]! * w * share;
+    }
+    out.x = chop * chop * sumX / 2; out.z = chop * chop * sumZ / 2;
+    return out;
   }
 
   /** Brings the blended fields to `time` (simulation seconds). */
@@ -515,6 +590,11 @@ export function waterSpectrumField(spectrum: WaterSpectrum): WaterSpectrumField 
 }
 
 const fieldSample = new Float64Array(WATER_SPECTRUM_SAMPLE_SIZE);
+
+/** `WaterSpectrumField.drift` of the spectrum's physics field. */
+export function waterSpectrumDrift(spectrum: WaterSpectrum, scale: number, couplingRate: number, out: { x: number; z: number }): { x: number; z: number } {
+  return waterSpectrumField(spectrum).drift(scale, couplingRate, out);
+}
 
 /**
  * The waves at rest point (x0, z0) and `time` (the large-wave field physics, queries and CPU-displaced meshes read), in

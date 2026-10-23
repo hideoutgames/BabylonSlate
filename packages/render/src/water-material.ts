@@ -552,6 +552,13 @@ vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec
 const SPECTRUM_LOD_SCALE = 7.13;
 /** FFT-Ocean's foam: coverage per unit of turbulence below the bias. */
 const SPECTRUM_FOAM_SCALE = 2.4;
+/**
+ * Steepest shading slope (about 56°): a sea far too tall for its Wave Length would otherwise turn every normal toward
+ * the horizon and mirror only the sky. Real seas stay well below it (an RMS slope near 0.25).
+ */
+const SHADING_SLOPE_CAP = 1.5;
+/** Eye distances, in first-cascade patches, over which whitecaps fade out before their repeat would show. */
+const FOAM_FAR_PATCHES = [6, 16] as const;
 
 /**
  * The spectrum's displacement in the vertex stage: every cascade's (Dx, H, Dz) at this vertex's rest point, turned back
@@ -607,6 +614,7 @@ float swvJxx = 1.0 + swvJ.x;
 float swvJxz = swvJ.y;
 float swvJzz = 1.0 + swvJ.z;
 vec2 swvSlope = vec2(swvJzz * swvG.x - swvJxz * swvG.y, swvJxx * swvG.y - swvJxz * swvG.x) / max(swvJxx * swvJzz - swvJxz * swvJxz, 0.35);
+swvSlope = swvSlope / max(1.0, length(swvSlope) / ${f(SHADING_SLOPE_CAP)});
 vec3 swvBase = A.slateWaterBaseNormal;
 vec3 swvNormal = normalize(vec3(swvBase.x / max(swvBase.y, 0.001) - swvSlope.x, 1.0, swvBase.z / max(swvBase.y, 0.001) - swvSlope.y));`;
 }
@@ -692,6 +700,7 @@ float swJzz = 1.0 + swSpJ.z;
 float swDetJ = swJxx * swJzz - swJxz * swJxz;
 // Where the surface folds the determinant nears zero; a floor keeps those crests' normals from spiking into sparks.
 vec2 swSlope = vec2(swJzz * swSpGrad.x - swJxz * swSpGrad.y, swJxx * swSpGrad.y - swJxz * swSpGrad.x) / max(swDetJ, 0.35);
+swSlope = swSlope / max(1.0, length(swSlope) / ${f(SHADING_SLOPE_CAP)});
 normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
 vec3 swWaveN = normalW;
 // Height of the small cascades over the large one (metres): FFT-Ocean lights the crests of the small waves riding the swell.
@@ -726,9 +735,12 @@ float swCrestBias = swCascades - 1.0 + mix(0.55, 1.0, U.slateWaterShape.z);
 float swCrestRaw = (swCrestBias - swTurb) * ${f(SPECTRUM_FOAM_SCALE)};
 // Fine bubbly breakup drifting with the water, faded before it would alias.
 float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9 + vec2(swTime * 0.05, 0.0)) * 0.65 + swNoise(swFlowed * 3.1 - vec2(0.0, swTime * 0.08)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swFoot));
-float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0);
+// Many patches away the foam's repeat would show as a grid of the same caps: it fades out there (beyond a kilometre or
+// two for a sea of 20 m waves, a few metres for ripples).
+float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swEyeDist * swSc0.x);
+float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0) * swPatchFar;
 // Surface Foam: thin lingering residue where turbulence is still recovering behind the caps.
-float swResidue = clamp((swCrestBias + 0.35 - swTurb) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6;
+float swResidue = clamp((swCrestBias + 0.35 - swTurb) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
 // Contacts: a collar at every object's waterline that frays outward, and shallow shores churn white.
 float swContactStrength = U.slateWaterTerms.x;
 float swContactW = max(0.05, U.slateWaterShape.w);
@@ -878,25 +890,32 @@ float swSceneK = clamp(dot(swAmb, swLumW) * 1.1 + dot(swSunC, swLumW) * max(swL.
 // The key light is flattened toward the horizon for the banding, so gentle slopes under a high sun still read as faces.
 vec3 swKeyL = normalize(vec3(swL.x, max(swL.y, 0.0) * 0.3 + 0.05, swL.z));
 float swWrap = dot(swN, swKeyL) * 0.5 + 0.5;
-float swWrapAA = fwidth(swWrap) * 0.75 + 0.012;
-float swBand = smoothstep(0.5 - swWrapAA, 0.5 + swWrapAA, swWrap) * 0.5 + smoothstep(0.7 - swWrapAA, 0.7 + swWrapAA, swWrap) * 0.5;
-vec3 swLight = mix(vec3(1.0), U.slateWaterSunColor.rgb, 0.35) * (swSceneK * mix(0.58, 1.15, swBand));
+// Color Bands posterizes the light into that many flat steps (0 or 1 shades smoothly); each edge is antialiased.
+float swBandsN = max(U.slateWaterLook.x, 1.0);
+float swWrapN = swWrap * swBandsN;
+float swWrapW = min(fwidth(swWrapN) * 1.5 + 0.03, 1.0);
+float swStepped = (floor(swWrapN) + smoothstep(1.0 - swWrapW, 1.0, fract(swWrapN))) / swBandsN;
+float swBand = clamp(mix(swWrap, swStepped, step(1.5, swBandsN)), 0.0, 1.0);
+vec3 swLight = mix(vec3(1.0), U.slateWaterSunColor.rgb, 0.3) * (swSceneK * mix(0.62, 1.22, swBand));
 // Troughs to crests: Deep Color in the troughs rising toward Shallow Color on the tops of the waves.
 float swHeightT = clamp(0.5 + (swSpLarge + swSpSmall) * swSp.x * swBlendH / max(U.slateWaterWaves.x * 2.0, 0.05), 0.0, 1.0);
 vec3 swDeepC = U.slateWaterDeep.rgb;
 vec3 swShallowC = U.slateWaterShallow.rgb;
 // The small waves' crests (their height over the swell) light up as well as the swell's tops, so every wave shape reads.
 float swSmallT = clamp(swSpCrest / max(U.slateWaterWaves.x * 0.6, 0.05), 0.0, 1.0);
-vec3 swBodyC = mix(swDeepC, mix(swDeepC, swShallowC, 0.6), clamp(smoothstep(0.35, 0.95, swHeightT) * 0.6 + smoothstep(0.05, 0.7, swSmallT) * 0.55, 0.0, 1.0));
-vec3 swLit = swBodyC * swLight * 1.7;
+vec3 swBodyC = mix(swDeepC, mix(swDeepC, swShallowC, 0.75), clamp(smoothstep(0.45, 0.95, swHeightT) * 0.7 + smoothstep(0.25, 0.8, swSmallT) * 0.5, 0.0, 1.0));
+vec3 swLit = swBodyC * swLight * 1.6;
 // Subsurface glow through crests toward the sun (FFT-Ocean's term and a backlit one), on the small waves' crests:
 // Painted's signature luminous teal.
 vec3 swSssH = normalize(swWaveN + swL);
 float swSssV = clamp(dot(swV, swSssH), 0.0, 1.0);
 float swSssBack = clamp(dot(-swV, normalize(swL + swWaveN * 0.6)), 0.0, 1.0);
 float swCrestLift = clamp(0.3 + swSpCrest / max(U.slateWaterWaves.x * 0.5, 0.05), 0.0, 1.6);
-float swGlowAmt = (swSssV * swSssV * swSssV * 1.6 + swSssBack * swSssBack * 1.4) * swCrestLift * U.slateWaterLook.w * clamp(swSp.x, 0.0, 1.0);
-swLit += swShallowC * (swSceneK * swGlowAmt * 0.55 * (1.0 - swPaintFar));
+// Only the tops of the waves glow, so the light reads on the crests rather than as broad patches.
+float swGlowAmt = (swSssV * swSssV * swSssV * 1.6 + swSssBack * swSssBack * 1.4) * swCrestLift * U.slateWaterLook.w * clamp(swSp.x, 0.0, 1.0) * smoothstep(0.4, 0.85, swHeightT + swSmallT * 0.4);
+swLit += swShallowC * (swSceneK * swGlowAmt * 0.8 * (1.0 - swPaintFar));
+// Painted colour stays rich: a little more saturation than the lighting leaves it.
+swLit = max(mix(vec3(dot(swLit, swLumW)), swLit, 1.2), vec3(0.0));
 // Shallows: what lies below shows through, tinted toward Shallow Color; deep water keeps its painted body.
 float swNdotV = clamp(dot(swN, swV), 0.0, 1.0);
 float swPath = swDepth * 2.0 / swAbsorb;
@@ -915,12 +934,24 @@ float swFx = 1.0 - swNdotV;
 float swReflRaw = 0.03 + 0.6 * swFx * swFx * swFx;
 float swReflAA = fwidth(swReflRaw) * 0.75 + 0.005;
 float swReflStep = 0.04 + 0.16 * smoothstep(0.1 - swReflAA, 0.1 + swReflAA, swReflRaw) + 0.25 * smoothstep(0.3 - swReflAA, 0.3 + swReflAA, swReflRaw);
-float swReflAmt = clamp(mix(swReflRaw, swReflStep, 0.65) * U.slateWaterDeep.w, 0.0, 1.0);
+// Capped so the sky never washes the painted colour out toward the horizon.
+float swReflAmt = clamp(mix(swReflRaw, swReflStep, 0.7) * U.slateWaterDeep.w, 0.0, 0.6);
 // The sun: a crisp glint, and a soft sheen around it.
 float swRL = max(dot(swRefl, swL), 0.0);
 float swGlint = smoothstep(0.9975, 0.9992, swRL) * (1.0 - swPaintFar * 0.6);
 float swSheen = pow(swRL, 90.0) * 0.35 + pow(swRL, 12.0) * 0.12;
-vec3 swSpec = swSunC * ((swGlint * 2.2 + swSheen) * step(0.0, swL.y));
+// Sparkles: round glints that twinkle on the faces turned toward the sun, one chance per cell of the flowing surface;
+// they fade before a cell shrinks to a pixel.
+vec2 swSparkP = swFlowed * 2.2;
+vec2 swSparkCell = floor(swSparkP);
+float swSparkSeed = swHash(swSparkCell + vec2(floor(swTime * 2.5 + swHash(swSparkCell + vec2(17.0, 3.0)) * 9.0), 7.0));
+vec2 swSparkAt = vec2(swHash(swSparkCell + vec2(5.0, 11.0)), swHash(swSparkCell + vec2(13.0, 2.0))) * 0.6 + vec2(0.2);
+float swSparkD = length(fract(swSparkP) - swSparkAt);
+float swSparkAA = length(fwidth(swSparkP)) * 0.7;
+float swSparkDot = 1.0 - smoothstep(0.07 - swSparkAA, 0.07 + swSparkAA, swSparkD);
+float swSparkFace = pow(swRL, 12.0);
+float swSpark = swSparkDot * step(0.9, swSparkSeed) * swSparkFace * U.slateWaterLook.z * (1.0 - smoothstep(0.08, 0.3, swSparkAA));
+vec3 swSpec = swSunC * ((swGlint * 2.2 + swSheen + swSpark * 2.5) * step(0.0, swL.y));
 vec3 swPremul = swLit * ((1.0 - swReflAmt) * (1.0 - swTrans)) + swSky * swReflAmt + swSpec * (1.0 - swFoam);
 float swCover = 1.0 - (1.0 - swReflAmt) * swTrans;
 alpha = clamp(max(swCover, min(dot(swSpec, swLumW) * (1.0 - swFoam), 1.0)), 0.001, 1.0);
@@ -933,12 +964,13 @@ alpha = mix(alpha, 1.0, swPaintHaze);
 // crests where the turbulence starts to dip (Crest Foam), which draw the wave shapes as Painted's line work.
 float swCrestSignal = ((swCrestBias + 0.28 - swTurb) * 2.5 + (swFoamNoise - 0.5) * 0.5) * smoothstep(0.5, 0.8, swHeightT + swSmallT * 0.3);
 float swCrestAA = fwidth(swCrestSignal) * 0.75 + 0.02;
-float swFoamGate = clamp(swFoamAmount * 1.6, 0.0, 1.0) * (1.0 - swPaintFar);
+float swFoamGate = clamp(swFoamAmount * 1.6, 0.0, 1.0) * (1.0 - swPaintFar) * swPatchFar;
 // A solid cap, and a thin ring of lace a little way outside it.
 float swCrestLine = smoothstep(0.55 - swCrestAA, 0.55 + swCrestAA, swCrestSignal);
 float swCrestLace = (smoothstep(0.22 - swCrestAA, 0.22 + swCrestAA, swCrestSignal) - smoothstep(0.32 - swCrestAA, 0.32 + swCrestAA, swCrestSignal)) * smoothstep(0.35, 0.6, swFoamNoise);
-float swFoamPaint = max(smoothstep(0.55, 0.8, swFoam + (swFoamNoise - 0.5) * 0.3), max(swCrestLine * 0.9, swCrestLace * 0.6) * swFoamGate) * (1.0 - 0.7 * swPaintHaze);
-vec3 swFoamC = U.slateWaterFoam.rgb * max(swSceneK * 1.25, dot(U.slateWaterHorizon.rgb, swLumW) * 1.2) * mix(0.82, 1.08, swBand) * mix(vec3(1.0), U.slateWaterSunColor.rgb, 0.25);
+float swFoamPaint = max(smoothstep(0.55, 0.75, swFoam + (swFoamNoise - 0.5) * 0.3), max(swCrestLine, swCrestLace * 0.85) * swFoamGate) * (1.0 - 0.7 * swPaintHaze);
+// Foam is bright paint: white in the light, a cool tint on the shaded faces, never greyed by a dim band.
+vec3 swFoamC = U.slateWaterFoam.rgb * max(swSceneK * 1.35, max(dot(U.slateWaterHorizon.rgb, swLumW) * 1.2, 0.9)) * mix(0.9, 1.06, swBand) * mix(vec3(1.0), U.slateWaterSunColor.rgb, 0.2);
 swFoamC = mix(swFoamC * vec3(0.84, 0.92, 1.0), swFoamC, 0.4 + 0.6 * swBand);
 swEmissive = mix(swEmissive, swFoamC, swFoamPaint);
 alpha = max(alpha, swFoamPaint) * swEdgeFade;
@@ -1444,12 +1476,14 @@ float swnJxx = 1.0 + swnJ.x;
 float swnJxz = swnJ.y;
 float swnJzz = 1.0 + swnJ.z;
 vec2 swnSlope = vec2(swnJzz * swnGrad.x - swnJxz * swnGrad.y, swnJxx * swnGrad.y - swnJxz * swnGrad.x) / max(swnJxx * swnJzz - swnJxz * swnJxz, 0.35);
+swnSlope = swnSlope / max(1.0, length(swnSlope) / ${f(SHADING_SLOPE_CAP)});
 vec3 swnBase = ${base};
 swnNormal = normalize(vec3(swnBase.x / max(swnBase.y, 0.001) - swnSlope.x, 1.0, swnBase.z / max(swnBase.y, 0.001) - swnSlope.y));
 swnHeight = swnH * swnSp.x * swnShares.y;
 vec4 swnTerms = U.${WATER_NODE_FOAM_UNIFORM};
 float swnBias = swnCascades - 1.0 + mix(0.55, 1.0, swnTerms.x);
-swnFoam = clamp((swnBias - swnTurb) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * clamp(swnTerms.y * 1.6, 0.0, 1.0) * step(0.000001, swnTerms.x);
+float swnPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swnDist * swnSc0.x);
+swnFoam = clamp((swnBias - swnTurb) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * clamp(swnTerms.y * 1.6, 0.0, 1.0) * step(0.000001, swnTerms.x) * swnPatchFar;
 }
 #endif
 `;
