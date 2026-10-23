@@ -34,6 +34,8 @@ export {
   type GameSessionMode,
   type SessionPauseReason,
   type SessionPauseCause,
+  type BreakpointLocation,
+  BREAKPOINT_PAUSE_CODE,
   type SessionBoundaryRequest,
   type SessionBoundaryResult,
   type MaterialParameterValue,

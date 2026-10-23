@@ -5,7 +5,7 @@ import {
   type KeyChord,
 } from "@haptic/editor-kit";
 
-export type GraphCommand = "copy" | "paste" | "duplicate" | "delete";
+export type GraphCommand = "copy" | "paste" | "duplicate" | "delete" | "toggleBreakpoint";
 
 /** Chords per graph command, in the canonical form `chordFromEvent` produces. */
 export type GraphKeybinds = Readonly<Record<GraphCommand, readonly KeyChord[]>>;
@@ -15,15 +15,17 @@ export const DEFAULT_GRAPH_KEYBINDS: GraphKeybinds = {
   paste: ["Mod+V"],
   duplicate: ["Mod+D"],
   delete: ["Delete", "Backspace"],
+  toggleBreakpoint: ["F9"],
 };
 
 /**
- * The editor supplies the user's Copy, Paste, Duplicate and Delete chords from
- * its keybind settings. A graph outside the editor keeps the defaults.
+ * The editor supplies the user's Copy, Paste, Duplicate, Delete and Toggle
+ * Breakpoint chords from its keybind settings. A graph outside the editor keeps
+ * the defaults.
  */
 export const GraphKeybindsContext = createContext<GraphKeybinds>(DEFAULT_GRAPH_KEYBINDS);
 
-const GRAPH_COMMANDS: readonly GraphCommand[] = ["copy", "paste", "duplicate", "delete"];
+const GRAPH_COMMANDS: readonly GraphCommand[] = ["copy", "paste", "duplicate", "delete", "toggleBreakpoint"];
 
 /** The graph command bound to a key press, or null. */
 export function graphCommandForEvent(

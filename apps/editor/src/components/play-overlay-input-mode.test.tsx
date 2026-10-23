@@ -4,6 +4,8 @@ import type { Engine } from "@babylonjs/core";
 import { GameSessionOwner } from "../services/game-session-owner";
 import { startPlaySession, type PlaySession, type PlaySessionResult } from "../services/play-session";
 import { PlayOverlay } from "./play-overlay";
+import { BreakpointStoreProvider } from "../context/breakpoints-context";
+import { BreakpointStore } from "../services/breakpoint-store";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 vi.mock("../context/play-context", () => ({
@@ -77,9 +79,9 @@ it("takes a Simulation's pause on an error as the user's pause and opens the err
   } as unknown as PlaySession);
   const owner = new GameSessionOwner<PlaySessionResult>();
   const ticket = owner.begin("simulate")!;
-  const onPausedOnError = vi.fn();
+  const onPausedAt = vi.fn();
   render(<PlayOverlay sharedEngine={{} as Engine} sessionOwner={owner} sessionTicket={ticket}
-    pauseOnErrors onPausedOnError={onPausedOnError} onClose={() => {}} />);
+    pauseOnErrors onPausedAt={onPausedAt} onClose={() => {}} />);
   await act(async () => {});
   const options = vi.mocked(startPlaySession).mock.lastCall![0];
   expect(options.pauseOnErrors).toBe(true);
@@ -87,5 +89,40 @@ it("takes a Simulation's pause on an error as the user's pause and opens the err
   const cause = { code: "runtime.assert", message: "Assertion failed", assetGuid: "Hero.class", graphId: "event-graph", nodeId: "check" };
   await act(async () => { options.onSessionPaused?.(true, cause); });
   expect(setPauseReason).toHaveBeenCalledWith("user", true);
-  expect(onPausedOnError).toHaveBeenCalledWith(cause);
+  expect(onPausedAt).toHaveBeenCalledWith(cause);
+});
+
+it("starts a Simulation with the enabled breakpoints and sends it each change", async () => {
+  const result: PlaySessionResult = {
+    diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
+    released: Promise.resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false }),
+    runtimeMode: "worker", lastTrace: null,
+  };
+  const setBreakpoints = vi.fn<PlaySession["setBreakpoints"]>();
+  vi.mocked(startPlaySession).mockReturnValue({
+    handle: { resize() {}, setSize() {}, scheduler: { setResizing() {} } },
+    executeConsoleCommand: () => Promise.resolve({ success: true, output: "" }),
+    setBreakpoints,
+    requestPausedRedraw() {},
+    stop: () => result,
+  } as unknown as PlaySession);
+  const label = { className: "Hero", graphName: "Event Graph", nodeTitle: "Print String" };
+  const at = (nodeId: string) => ({ assetGuid: "Content/Hero.class", graphId: "event-graph", nodeId });
+  const store = new BreakpointStore();
+  store.toggle(at("on"), label);
+  store.toggle(at("off"), label);
+  store.setEnabled(at("off"), false);
+  const owner = new GameSessionOwner<PlaySessionResult>();
+  const ticket = owner.begin("simulate")!;
+  render(
+    <BreakpointStoreProvider store={store}>
+      <PlayOverlay sharedEngine={{} as Engine} sessionOwner={owner} sessionTicket={ticket} onClose={() => {}} />
+    </BreakpointStoreProvider>,
+  );
+  await act(async () => {});
+  expect(vi.mocked(startPlaySession).mock.lastCall![0].breakpoints).toEqual([at("on")]);
+
+  act(() => store.setEnabled(at("off"), true));
+  act(() => store.remove(at("on")));
+  expect(setBreakpoints.mock.calls).toEqual([[[at("on"), at("off")]], [[at("off")]]]);
 });

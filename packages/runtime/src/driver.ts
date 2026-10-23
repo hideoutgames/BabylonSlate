@@ -32,8 +32,11 @@ import {
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
   type DebugObserveTarget,
+  type BreakpointLocation,
+  BREAKPOINT_PAUSE_CODE,
 } from "@haptic/bridge";
-import { ScriptDebugObserver } from "./script-debug";
+import { debugInstanceLabel, ScriptDebugObserver } from "./script-debug";
+import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
 import {
   ClassRegistry,
   World,
@@ -250,6 +253,9 @@ class InProcessRuntime implements RuntimeDriver {
   /** Simulation's Pause On Errors, and the error sources (as the session report groups them) that already paused it. */
   private readonly pauseOnErrors: boolean;
   private readonly pausedErrorSources = new Set<string>();
+  /** Node breakpoints (Simulation), and whether one already stopped this tick: the first hit is the one shown. */
+  private readonly breakpoints = new ScriptBreakpoints((hit) => this.breakpointHit(hit));
+  private breakpointReported = false;
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
   private readonly loopGuard: InfiniteLoopGuard;
 
@@ -501,6 +507,8 @@ class InProcessRuntime implements RuntimeDriver {
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = this.createScriptHost(options, registry);
+    this.breakpoints.set(options.breakpoints ?? []);
+    this.scriptHost.setBreakpoints(this.breakpoints);
     this.scriptDebug = new ScriptDebugObserver({
       world: () => this.world,
       emit: (command) => this.emit(command),
@@ -1399,6 +1407,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptDebug.observe(target, instanceId);
   }
 
+  applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void {
+    if (this.stopped) return;
+    this.breakpoints.set(breakpoints);
+  }
+
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void {
     this.overlay.control(message);
   }
@@ -1768,6 +1781,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped) return;
     this.realizeDemoActors();
     this.running = true;
+    this.breakpointReported = false;
     try {
       this.world.start();
     } catch (error) {
@@ -1951,6 +1965,7 @@ class InProcessRuntime implements RuntimeDriver {
    *    `TickPipeline` records stats and the trace frame last.
    */
   private runTick(): void {
+    this.breakpointReported = false;
     const timeDilation = this.timeDilation;
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
@@ -2157,6 +2172,25 @@ class InProcessRuntime implements RuntimeDriver {
     this.pause();
     const { code, message, assetGuid, graphId, nodeId, btNodeId, bodyLine } = diagnostic;
     this.emit({ type: "sessionPaused", paused: true, cause: { code, message, assetGuid, graphId, nodeId, btNodeId, bodyLine } });
+  }
+
+  /**
+   * A node with a breakpoint ran: the session pauses (at the end of the tick when one is running) and
+   * tells the editor where and on which object. Later hits in the same tick are not reported.
+   */
+  private breakpointHit({ assetGuid, graphId, nodeId, entryNodeId, instance }: BreakpointHit): void {
+    if (this.stopped || this.breakpointReported) return;
+    this.breakpointReported = true;
+    this.pause();
+    this.emit({ type: "sessionPaused", paused: true, cause: {
+      code: BREAKPOINT_PAUSE_CODE,
+      message: "Breakpoint",
+      assetGuid,
+      graphId,
+      nodeId,
+      ...(entryNodeId ? { entryNodeId } : {}),
+      ...(instance ? { instanceId: instance.guid, instanceLabel: debugInstanceLabel(instance) } : {}),
+    } });
   }
 
   private emit(command: CommandMessage): void {

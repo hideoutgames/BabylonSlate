@@ -183,6 +183,13 @@ export type CompileOptions = {
    * exports never carry it.
    */
   instrumentExecutionTrace?: boolean;
+  /**
+   * Editor Simulation compiles check each exec node against the session's
+   * breakpoints (`ctx.breakpoints`), for every instance. With no breakpoint in
+   * the graph a check is one null check. Ignored when `stripDevelopmentOnly`
+   * is set, so release exports never carry it.
+   */
+  instrumentBreakpoints?: boolean;
   /** Function-local `let` lines inserted at the start of each export. */
   localPreamble?: string[];
   /**
@@ -529,6 +536,18 @@ export function compileGraph(
    * null check. Probe text never allocates and never changes evaluation order.
    */
   const traceProbe = (call: string) => `  if (__dbg !== null) ${call};`;
+  const checkBreakpoints =
+    options.instrumentBreakpoints === true && options.stripDevelopmentOnly !== true;
+  /** The event or function entry the exec chain being emitted starts from, for breakpoint hits. */
+  let entryNodeId = "";
+  /** An exec node runs: the followed instance records it, and a breakpoint on it stops the session. */
+  const emitExecProbes = (nodeId: string) => {
+    const id = JSON.stringify(nodeId);
+    if (traceExecution) emitBody(traceProbe(`__dbg.exec(${id})`));
+    if (checkBreakpoints) {
+      emitBody(`  if (__bp !== null && __bp.has(${id})) __bp.hit(${id}, ${JSON.stringify(entryNodeId)}, ctx.self);`);
+    }
+  };
   const loopCheck = (nodeId: string) => `ctx.checkInfiniteLoop(${JSON.stringify({
     assetGuid: options.assetGuid, graphId: graph.id, nodeId,
   })});`;
@@ -1246,9 +1265,7 @@ export function compileGraph(
         break;
       }
       // Event entries that gate their chain on live input report inside the gate.
-      if (traceExecution && !GATED_EVENT_TYPE_IDS.has(node.typeId)) {
-        emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
-      }
+      if (!GATED_EVENT_TYPE_IDS.has(node.typeId)) emitExecProbes(node.id);
       if (useEpoch) emitBody("  __stmt++;");
 
       if (node.typeId === "flow.branch") {
@@ -1411,10 +1428,8 @@ export function compileGraph(
             `    if (__phase === "${phase}" && ${snapshot}?.${phase}) {`,
             anchor,
           );
-          if (traceExecution) {
-            emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
-            emitOutputProbe(node, ctx);
-          }
+          emitExecProbes(node.id);
+          if (traceExecution) emitOutputProbe(node, ctx);
           emitAlong(execSuccessorEdges(index, node.id, phase), new Map(visited));
           emitBody("    }", anchor);
         }
@@ -1438,10 +1453,8 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
-        if (traceExecution) {
-          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
-          emitOutputProbe(node, ctx);
-        }
+        emitExecProbes(node.id);
+        if (traceExecution) emitOutputProbe(node, ctx);
         emitAlong(execSuccessorEdges(index, node.id, "Then"), visited);
         emitBody("  }", anchor);
         break;
@@ -1476,10 +1489,8 @@ export function compileGraph(
           const value = pin.kind === "data" && pin.direction === "out" ? outputs[pin.id] : undefined;
           if (value) emitBody(`    ${ctx.output(pin.id)} = ${value};`, anchor);
         }
-        if (traceExecution) {
-          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
-          emitOutputProbe(node, ctx);
-        }
+        emitExecProbes(node.id);
+        if (traceExecution) emitOutputProbe(node, ctx);
         emitAlong(execSuccessorEdges(index, node.id, "execOut"), visited);
         emitBody("  }", anchor);
         break;
@@ -1506,10 +1517,8 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${padIndexSlot} = __pad.gamepadIndex;`, anchor);
-        if (traceExecution) {
-          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
-          emitOutputProbe(node, ctx);
-        }
+        emitExecProbes(node.id);
+        if (traceExecution) emitOutputProbe(node, ctx);
         emitAlong(execSuccessorEdges(index, node.id, "then"), visited);
         emitBody(`  }`, anchor);
         break;
@@ -1604,6 +1613,7 @@ export function compileGraph(
     }
     useEpoch = memoDecls.length > 0;
 
+    entryNodeId = entry?.id ?? "";
     if (entry) emitExecChain(entry.id);
     else emitBody(`  // empty graph`);
 
@@ -1622,6 +1632,9 @@ export function compileGraph(
       declLines: [
         ...(traceExecution
           ? [`  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph(${JSON.stringify(options.assetGuid)}, ${JSON.stringify(graph.id)});`]
+          : []),
+        ...(checkBreakpoints
+          ? [`  const __bp = ctx.breakpoints === null ? null : ctx.breakpoints.graph(${JSON.stringify(options.assetGuid)}, ${JSON.stringify(graph.id)});`]
           : []),
         ...outputDecls.values(),
         ...pureExpressions.declarations,

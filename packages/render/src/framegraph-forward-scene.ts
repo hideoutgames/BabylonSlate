@@ -33,6 +33,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
+import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -189,6 +190,15 @@ export class ForwardSceneFrameGraph {
   /** An auxiliary view's own scene targets, charged to the shared ledger. */
   private ownScene: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean } | undefined;
   private readinessDirtyFlag = true;
+  /**
+   * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
+   * probe again each frame until every swap is drawn (`recheckVariantSwaps`); a probe that tolerates none re-probes.
+   */
+  private variantSwaps = false;
+  /** Whether the latest scene or graph probe found a swap. */
+  private probeSwapped = false;
+  /** The readiness revision and Engine frame of the last passing probe that tolerated a swap. */
+  private swapProbe: { revision: number; frame: number } | undefined;
   /** Only outline membership or style changed; the prepared graph's other tasks stay admitted. */
   private outlineDirtyFlag = false;
   /** The view's instance-source revision as of the last full graph probe. */
@@ -426,6 +436,32 @@ export class ForwardSceneFrameGraph {
     return this.readinessDirtyFlag || this.outlineDirtyFlag;
   }
 
+  /** A mesh is still drawing a previous Effect while its requested variant compiles. */
+  get variantSwapsPending(): boolean {
+    return this.variantSwaps;
+  }
+
+  /**
+   * A steady frame re-probes while swaps are pending, so each Material draws its new variant on the first frame it is
+   * ready (a frozen one would keep its previous Effect). Inputs did not change, so admission stays.
+   */
+  recheckVariantSwaps(): void {
+    if (this.variantSwaps) this.readinessDirtyFlag = true;
+  }
+
+  /**
+   * A probe that tolerates no swap cannot trust a pass that tolerated one. When a steady frame's probe found a swap
+   * pending this frame or the last, with no input changed since, the answer is "not ready" without walking every
+   * mesh again (Play asks once more at each frame's end); otherwise it probes again.
+   */
+  private swapsStillPending(): boolean {
+    if (!this.variantSwaps || variantSwapsTolerated()) return false;
+    const probe = this.swapProbe;
+    if (probe && probe.revision === this.readinessRevision && this.scene.getEngine().frameId - probe.frame <= 1) return true;
+    this.readinessDirtyFlag = true;
+    return false;
+  }
+
   markReadinessDirty(): void {
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
@@ -443,6 +479,10 @@ export class ForwardSceneFrameGraph {
   /** A graph-level probe passed: it covers the outline task along with every other task. */
   private markGraphProbed(): void {
     this.readinessDirtyFlag = false;
+    this.variantSwaps = this.probeSwapped;
+    this.swapProbe = this.probeSwapped && variantSwapsTolerated()
+      ? { revision: this.readinessRevision, frame: this.scene.getEngine().frameId }
+      : undefined;
     this.outlineDirtyFlag = false;
     this.probedOutlineSources = this.outlineView?.sourceRevision ?? 0;
   }
@@ -512,6 +552,7 @@ export class ForwardSceneFrameGraph {
   sceneStrictlyReady(camera: Camera): boolean {
     if (this.unavailable(camera)) return false;
     this.syncMembership();
+    if (this.swapsStillPending()) return false;
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
@@ -586,7 +627,8 @@ export class ForwardSceneFrameGraph {
   }
 
   /** Build or resize the persistent tasks and await actual object/effect readiness. */
-  prepare(camera: Camera, assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
+  /** `tolerateVariantSwaps`: probe as a steady frame does (a preparation a steady frame requested). */
+  prepare(camera: Camera, assertCurrent: () => void = () => {}, tolerateVariantSwaps = false): Promise<ForwardSceneGraphResult> {
     assertCurrent();
     this.markReadinessDirty();
     if (this.pending) return this.pending.then((result) => { assertCurrent(); return result; });
@@ -597,7 +639,7 @@ export class ForwardSceneFrameGraph {
       this.releaseGraph();
       return Promise.reject(new Error(`Scene cannot render: ${reason}`));
     }
-    const work = this.prepareGraph(camera, assertCurrent);
+    const work = this.prepareGraph(camera, assertCurrent, tolerateVariantSwaps);
     this.pending = work;
     const settled = () => {
       this.pending = undefined;
@@ -840,7 +882,7 @@ export class ForwardSceneFrameGraph {
     if (this.measureWork) this.work.shadowAdmissionMs += performance.now() - started;
   }
 
-  private async prepareGraph(camera: Camera, assertCurrent: () => void): Promise<ForwardSceneGraphResult> {
+  private async prepareGraph(camera: Camera, assertCurrent: () => void, tolerateVariantSwaps: boolean): Promise<ForwardSceneGraphResult> {
     const scene = this.scene;
     try {
       assertCurrent();
@@ -1102,7 +1144,7 @@ export class ForwardSceneFrameGraph {
         deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
         compiles ??= new DriverCompileWatch(scene.getEngine(), started);
         const probeStart = performance.now();
-        const ready = this.disposed || this.isReady();
+        const ready = this.disposed || probeVariantSwaps(tolerateVariantSwaps, () => this.isReady());
         // Where links are synchronous (SwiftShader) the probe links
         // every effect before it returns: the time inside it is compiling, not
         // waiting. It extends the bound up to a budget, so a scene that never
@@ -1242,9 +1284,11 @@ export class ForwardSceneFrameGraph {
    * own compiles from those of previews and thumbnails on the shared Engine. Ready ones leave the set.
    */
   private collectingEffects<T>(probe: () => T): T {
+    const swaps = variantSwapCount();
     try {
       return collectEffectRequests(this.scene.getEngine(), this.requestedEffects, probe);
     } finally {
+      this.probeSwapped = variantSwapCount() !== swaps;
       for (const effect of this.requestedEffects) if (effect.isReady()) this.requestedEffects.delete(effect);
     }
   }
@@ -1331,6 +1375,7 @@ export class ForwardSceneFrameGraph {
 
   /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */
   private probeDirty(): boolean {
+    if (this.swapsStillPending()) return false;
     if (!this.readinessDirty) return true;
     if (this.readinessDirtyFlag) {
       if (!this.isReady()) return false;

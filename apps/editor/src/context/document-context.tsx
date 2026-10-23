@@ -196,6 +196,7 @@ import { ProjectSaveState } from "../lib/project-save-state";
 import {
   AssetFormatVersionError,
   applyOwnAssetWrite,
+  derivedDataRoot,
   classifyExternalChanges,
   snapshotIndexedMtimes,
   type ExternalChangeClassification,
@@ -318,6 +319,13 @@ interface DocumentContextValue {
   renameAsset: ProjectService["renameAsset"];
   /** Document opens and renames, for session state keyed by document id. */
   subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
+  /**
+   * A file of a project's editor state in app-private derived storage (outside the project folder,
+   * never exported), or null when there is none.
+   */
+  readProjectDerivedText: (projectGuid: string, name: string) => Promise<string | null>;
+  /** Writes a file of a project's editor state in derived storage. */
+  writeProjectDerivedText: (projectGuid: string, name: string, text: string) => Promise<void>;
   retryFailedTextureEncoding: () => Promise<number>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@haptic/assets").AreaEmissionPixels>>;
@@ -1608,6 +1616,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService.onIdentityChange(listener),
     [documentService],
   );
+
+  const readProjectDerivedText = useCallback(async (projectGuid: string, name: string) => {
+    const storage = await ensureDerived();
+    const path = `${derivedDataRoot(projectGuid)}/${name}`;
+    return await storage.exists(path) ? storage.readText(path) : null;
+  }, [ensureDerived]);
+
+  const writeProjectDerivedText = useCallback(async (projectGuid: string, name: string, text: string) => {
+    await (await ensureDerived()).writeText(`${derivedDataRoot(projectGuid)}/${name}`, text);
+  }, [ensureDerived]);
 
   const getOpenDocuments = useCallback(
     () => documentService.getOpenDocumentsOrdered(),
@@ -3861,6 +3879,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       repathProjectFolder,
       renameAsset,
       subscribeDocumentIdentity,
+      readProjectDerivedText,
+      writeProjectDerivedText,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,
@@ -3973,6 +3993,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       repathProjectFolder,
       renameAsset,
       subscribeDocumentIdentity,
+      readProjectDerivedText,
+      writeProjectDerivedText,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,

@@ -31,7 +31,7 @@ import {
   type CollisionTriangleMesh,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
-import type { ScriptBundleEntry } from "@haptic/bridge";
+import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
@@ -103,7 +103,12 @@ import {
   resolvePreviewStartupGuid,
   type PlaySceneLoad,
 } from "../services/play-physics";
-import { documentIdToRevealForDiagnostic, navigateToSessionReportEntry, type SessionReportNavigationHost } from "../services/diagnostic-navigation";
+import {
+  documentIdToRevealForDiagnostic,
+  navigateToSessionReportEntry,
+  type SessionReportNavigationHost,
+  type SessionReportNavigationResult,
+} from "../services/diagnostic-navigation";
 import { requestDocumentFocus } from "../lib/document-focus-request";
 import type {
   PlayAnimGraphEntry,
@@ -192,6 +197,10 @@ interface PlayContextValue {
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
+  /** Open the graph that owns a node and focus it, as a session report row or a Simulation stop does. */
+  openSessionSource: (
+    entry: Parameters<typeof navigateToSessionReportEntry>[0],
+  ) => Promise<SessionReportNavigationResult>;
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
@@ -1616,6 +1625,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     [appendLog, openRecordedTrace, sessionOwner],
   );
 
+  // Built after the value below; read when a source is opened, so it is always the latest.
+  const sourceNavigationRef = useRef<SessionReportNavigationHost | null>(null);
+  const openSessionSource = useCallback(
+    (entry: Parameters<typeof navigateToSessionReportEntry>[0]): Promise<SessionReportNavigationResult> => {
+      const host = sourceNavigationRef.current;
+      return host
+        ? navigateToSessionReportEntry(entry, host)
+        : Promise.resolve({ opened: false, message: "The editor is not ready to open it yet." });
+    },
+    [],
+  );
   const value = useMemo<PlayContextValue>(
     () => ({
       sessionState,
@@ -1656,6 +1676,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
+      openSessionSource,
     }),
     [
       sessionState,
@@ -1695,6 +1716,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       reportSceneViewportLoading,
       focusedNodeId,
       appendLog,
+      openSessionSource,
     ],
   );
 
@@ -1744,6 +1766,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     requestDocumentFocus,
     log: appendLog,
   };
+  sourceNavigationRef.current = sessionReportNavigationHost;
 
   const gamePresentation = playOpen && !previewOpen && engineRef.current && sessionTicketRef.current && sessionTicketRef.current.mode !== "preview" ? (
           <PlayOverlay
@@ -1809,7 +1832,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}
             pauseOnErrors={simulationDefaultsFromSettings(appSettings.debuggerDefaults).pauseOnErrors}
-            onPausedOnError={(cause) => void navigateToSessionReportEntry({ severity: "error", ...cause }, sessionReportNavigationHost)}
+            // A breakpoint stop opens its node like an error does, but is not an error.
+            onPausedAt={(cause) => void navigateToSessionReportEntry(
+              { severity: cause.code === BREAKPOINT_PAUSE_CODE ? "info" : "error", ...cause },
+              sessionReportNavigationHost,
+            )}
             navmeshBytes={playNavmeshBytes}
             sceneNavmeshBytes={playSceneNavmeshBytes}
             audioReverbByScene={playAudioReverbByScene}

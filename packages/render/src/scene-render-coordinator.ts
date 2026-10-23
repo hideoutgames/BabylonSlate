@@ -11,6 +11,8 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
+import { preparePreviousEffectBindings, sceneBindsPreviousEffects } from "./fixed-light-binding";
+import { probeVariantSwaps, variantSwapsTolerated } from "./variant-swaps";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
 } from "./stall-deadline";
@@ -204,8 +206,12 @@ export class SceneRenderCoordinator {
    * load (for example an Area Light's emission texture) invalidates the graph;
    * only the owner's own cancellation or disposal ends the preparation.
    */
-  prepare(assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
+  prepare(
+    assertCurrent: () => void = () => {},
+    options: { tolerateVariantSwaps?: boolean } = {},
+  ): Promise<ForwardSceneGraphResult> {
     assertCurrent();
+    const tolerate = options.tolerateVariantSwaps === true;
     this.refreshOutline();
     if (this.pending?.generation === this.generation)
       return this.pending.promise.then((result) => { assertCurrent(); return result; });
@@ -304,9 +310,9 @@ export class SceneRenderCoordinator {
             throw new PreparationChanged("Scene camera or output changed during rendering preparation.");
         };
         try {
-          await this.graph.prepare(camera, checkOutput);
+          await this.graph.prepare(camera, checkOutput, tolerate);
           checkOutput();
-          const status = this.graph.readiness(camera);
+          const status = probeVariantSwaps(tolerate, () => this.graph.readiness(camera));
           if (status.ready) {
             this.failure = undefined;
             return { path: "frameGraph" as const };
@@ -359,8 +365,15 @@ export class SceneRenderCoordinator {
 
   diagnostics() { return this.graph.diagnostics(); }
 
-  /** Loading owners require the prepared selected path, including after resize. */
+  /**
+   * Loading owners require the prepared selected path, including after resize, drawing every requested variant: a
+   * Material still drawing its previous Effect while a changed variant compiles is not ready here.
+   */
   isReady(): boolean {
+    return probeVariantSwaps(false, () => this.probeReady());
+  }
+
+  private probeReady(): boolean {
     this.refreshOutline();
     if (this.failure) throw this.failure;
     if (this.pending) return false;
@@ -383,6 +396,15 @@ export class SceneRenderCoordinator {
    * Without presentation validation a drawn frame skips the post-draw probe and
    * is never readyForPresentation; the next frame's readiness admits again. */
   render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
+    // Steady frames of a world view keep drawing a Material's previous Effect while its changed variant compiles
+    // (a light switched off, a shadow lost, a grown light capacity) instead of holding the image; a frame that
+    // validates a presentation waits for every requested variant.
+    const tolerate = !validatePresentation && this.deferPipelines && !this.auxiliaryCamera && sceneBindsPreviousEffects(this.scene);
+    if (tolerate) this.graph.recheckVariantSwaps();
+    return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation));
+  }
+
+  private renderFrame(validatePresentation: boolean): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
     this.refreshOutline();
     // Re-derived every frame: a frame that draws, throws, or cannot draw for any
     // other reason (no camera, a failure, a paused redraw) ends the compile hold.
@@ -400,6 +422,8 @@ export class SceneRenderCoordinator {
     // decision. The scene observer covers direct/native Scene.render callers.
     flushSceneCables(this.scene);
     flushDynamicRuntimeMeshes(this.scene);
+    // A swapping Material may bind placeholders for maps its previous Effect samples; allocate them before the passes.
+    if (this.graph.variantSwapsPending && variantSwapsTolerated()) preparePreviousEffectBindings(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
     // Like a scene that is not ready yet, a frame that skipped draws for
@@ -469,7 +493,8 @@ export class SceneRenderCoordinator {
       this.graph.clearFailure();
     }
     const generation = this.generation;
-    void this.prepare().catch((error: unknown) => {
+    // A steady frame's preparation probes as that frame does.
+    void this.prepare(undefined, { tolerateVariantSwaps: variantSwapsTolerated() }).catch((error: unknown) => {
       if (this.disposed || generation !== this.generation) return;
       this.failure = error;
       this.failedAt = performance.now();
