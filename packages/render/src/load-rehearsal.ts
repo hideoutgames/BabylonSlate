@@ -7,8 +7,8 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { findSceneShadowController } from "./shadow-controller";
 
 /**
- * Light changes a load rehearses at most. A scene with more authored lights rehearses the first ones (scene order) and
- * reports the rest as left out.
+ * Light changes a load rehearses at most. The first change of each kind (light class and change) comes first, then the
+ * rest in scene order; a scene with more changes reports the rest, repeats of kinds already rehearsed, as left out.
  */
 export const LOAD_REHEARSAL_STEP_BUDGET = 48;
 /**
@@ -18,7 +18,7 @@ export const LOAD_REHEARSAL_STEP_BUDGET = 48;
  */
 export const LOAD_REHEARSAL_STEP_MS = 10_000;
 
-type RehearsalStep = { label: string; apply(): void; revert(): void };
+type RehearsalStep = { label: string; kind: string; apply(): void; revert(): void };
 
 export interface LoadRehearsalReport {
   /** Light changes rehearsed. */
@@ -55,9 +55,10 @@ export interface LoadRehearsal {
 }
 
 /**
- * The light changes gameplay can make, one at a time, for every authored light of `scene` in scene order: switching
- * it off (or on), and for a lit shadow-capable light, starting (or stopping) its shadows. Combinations are left out:
- * their count grows exponentially.
+ * The light changes gameplay can make, one at a time, for every authored light of `scene`: switching it off (or on),
+ * and for a lit shadow-capable light, starting (or stopping) its shadows. Combinations are left out: their count grows
+ * exponentially. The first change of each kind leads, so the step budget leaves out repeats (many identical lights,
+ * whose changes usually ask for variants an earlier one compiled) rather than a later light of another class.
  */
 function rehearsalSteps(scene: Scene): RehearsalStep[] {
   const shadows = findSceneShadowController(scene);
@@ -65,8 +66,10 @@ function rehearsalSteps(scene: Scene): RehearsalStep[] {
   for (const light of scene.lights) {
     if (!light.name.startsWith(AUTHORED_LIGHT_PREFIX)) continue;
     const enabled = isAuthoredLightEnabled(light);
+    const kind = light.getClassName();
     steps.push({
       label: `${light.name} ${enabled ? "off" : "on"}`,
+      kind: `${kind} ${enabled ? "off" : "on"}`,
       apply: () => setAuthoredLightEnabled(light, !enabled),
       revert: () => setAuthoredLightEnabled(light, enabled),
     });
@@ -75,11 +78,19 @@ function rehearsalSteps(scene: Scene): RehearsalStep[] {
     const priority = shadows.shadowPriority(light);
     steps.push({
       label: `${light.name} shadows ${requested ? "off" : "on"}`,
+      kind: `${kind} shadows ${requested ? "off" : "on"}`,
       apply: () => shadows.register(light, !requested, priority),
       revert: () => shadows.register(light, requested, priority),
     });
   }
-  return steps;
+  const kinds = new Set<string>();
+  const leading: RehearsalStep[] = [];
+  const repeats: RehearsalStep[] = [];
+  for (const step of steps) {
+    (kinds.has(step.kind) ? repeats : leading).push(step);
+    kinds.add(step.kind);
+  }
+  return [...leading, ...repeats];
 }
 
 function castsShadows(light: Light): boolean {
