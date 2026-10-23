@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RUN_FLASH_MS, createRunFlasher } from "./run-flash";
 import type { RunGraph } from "./run-trace";
 
-type FakeAnimation = { cancel: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn> };
+type FakeAnimation = {
+  cancel: ReturnType<typeof vi.fn>;
+  play: ReturnType<typeof vi.fn>;
+  pause: ReturnType<typeof vi.fn>;
+  currentTime: number | null;
+};
 type AnimateCall = { element: Element; keyframes: Keyframe[]; options: KeyframeAnimationOptions; animation: FakeAnimation };
 
 let calls: AnimateCall[] = [];
@@ -14,7 +19,7 @@ beforeEach(() => {
   frames = [];
   reducedMotion = false;
   Element.prototype.animate = function (this: Element, keyframes, options) {
-    const animation = { cancel: vi.fn(), play: vi.fn() };
+    const animation = { cancel: vi.fn(), play: vi.fn(), pause: vi.fn(), currentTime: null };
     calls.push({ element: this, keyframes: keyframes as Keyframe[], options: options as KeyframeAnimationOptions, animation });
     return animation as unknown as Animation;
   };
@@ -117,6 +122,29 @@ describe("createRunFlasher", () => {
     expect(animated(root, '[data-id="log"] [data-node-role]')).toHaveLength(1);
     expect(first!.animation.cancel).toHaveBeenCalledTimes(1);
     expect(first!.animation.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps what ran last lit while held, then fades it and lets it go", () => {
+    const { root, flasher } = canvas();
+    flasher.flash({ nodes: ["make"], edges: [] });
+    runFrame();
+    const [make] = animated(root, '[data-id="make"] [data-node-role]');
+    flasher.hold(true);
+    expect(make!.animation.pause).toHaveBeenCalledTimes(1);
+    expect(make!.animation.currentTime).toBe(0);
+
+    // A Step's run while held stays lit; what the run before lit and this one did not fades.
+    flasher.flash({ nodes: ["log"], edges: [] });
+    runFrame();
+    const [log] = animated(root, '[data-id="log"] [data-node-role]');
+    expect(log!.animation.pause).toHaveBeenCalledTimes(1);
+    expect(make!.animation.play).toHaveBeenCalledTimes(1);
+
+    flasher.hold(false);
+    expect(log!.animation.play).toHaveBeenCalledTimes(1);
+    // Nothing ran since the release, so a new hold lights nothing again.
+    flasher.hold(true);
+    expect(log!.animation.pause).toHaveBeenCalledTimes(1);
   });
 
   it("coalesces the runs of one frame into one animation per element", () => {

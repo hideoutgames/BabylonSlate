@@ -20,6 +20,7 @@ import { useOptionalPlay } from "../context/play-context";
 import { isMaterialAssetType } from "../lib/content-browser-helpers";
 import { materialClosureRevision } from "../lib/material-closure-revision";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 
 /** Open tabs whose unsaved content a Custom Material's library load reads. */
 const MATERIAL_CLOSURE_KINDS = ["material", "material-instance", "material-function"] as const;
@@ -187,8 +188,10 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     let animating = false;
     const start = performance.now();
     setError(null);
-    const shown = () => document.visibilityState !== "hidden" && canvas.clientWidth > 0 && canvas.clientHeight > 0;
-    // A hidden page or zero-size canvas ends the loop; a resize or visibility change starts it again.
+    const shown = () =>
+      document.visibilityState !== "hidden" && !editorQuiet() && canvas.clientWidth > 0 && canvas.clientHeight > 0;
+    // A hidden page, a game covering the editor or a zero-size canvas ends the loop; a resize,
+    // visibility change or the editor coming back starts it again.
     const tick = (now: number) => {
       frame = 0;
       if (!shown()) return;
@@ -204,6 +207,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resume);
     resizeObserver?.observe(canvas);
     document.addEventListener("visibilitychange", resume);
+    const stopQuietWatch = subscribeEditorQuiet(resume);
     void (async () => {
       let customMaterial = null;
       if (materialGuid) {
@@ -236,7 +240,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     })().catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Water preview could not load."); });
     return () => {
       cancelled = true; sceneRef.current = null; meshRef.current = null;
-      resizeObserver?.disconnect(); document.removeEventListener("visibilitychange", resume);
+      resizeObserver?.disconnect(); document.removeEventListener("visibilitychange", resume); stopQuietWatch();
       cancelAnimationFrame(frame); gestures.dispose(); presenter.dispose(); host.dispose(); materials?.dispose();
     };
   }, [engine, style, materialGuid, closureKey]);

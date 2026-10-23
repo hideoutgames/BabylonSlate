@@ -85,12 +85,33 @@ Each node also returns the whole touch as a **Touch** structure:
 | Finger | The touch's finger number. |
 | Position | Where the touch is, in pixels from the top-left corner of the game view. |
 | Delta | How far it moved this tick, in pixels. |
+| Velocity | How fast it moves, in pixels per second, smoothed over the last few ticks. On **On Touch Ended** it is the speed of a flick. |
 | Start Position | Where it began. |
 | Pressure | From 0 to 1. A pen reports how hard it presses; fingers and mice without pressure report 0.5. |
 | Phase | **Began**, **Moved**, **Stationary**, **Ended** or **Cancelled** this tick. |
 | Type | **Finger**, **Pen** or **Mouse**. |
 
 A touch that ends is still listed for that one tick, with its **Phase** set to **Ended**, or **Cancelled** when the device or a 2D Scroll Box took it over. Touches on a 2D Joystick or a Scene Layer control such as a 2D Slider are left to that control and never appear in the touch nodes.
+
+### Gestures
+
+Haptic recognizes common gestures from the touches. Bind them like any other control: in an Input Action or Input Axis, choose **Add Control > Touch** and pick one from the **Gestures** group. One input can take a gesture and a key together, such as **Swipe Up** and <kbd>Space</kbd> on a Jump action.
+
+| Control | Active | Value |
+| --- | --- | --- |
+| Tap | For one tick, when a finger lifts within half a second without moving more than 8 pixels. | 1 |
+| Double Tap | For one tick, on a second tap within 0.3 seconds and 32 pixels of the first. The second tap is also a **Tap**. | 1 |
+| Long Press | From when a finger has stayed down half a second without moving more than 8 pixels, until it lifts or another finger touches the screen. | 1 |
+| Swipe Up, Swipe Down, Swipe Left, Swipe Right | For one tick, when a finger lifts at least 48 pixels from where it began, within half a second. The direction is the one it moved most in. | 1 |
+| Pinch | While two fingers spread apart or close in. | How much farther apart they are than last tick: 0.1 means 10% farther, and closing in is negative. |
+| Two-Finger Rotate | While two fingers turn around each other. | The turn this tick in radians; clockwise is positive. |
+| Two-Finger Drag X, Two-Finger Drag Y | While two fingers move together. | The movement this tick, as a fraction of the shorter side of the game view. Right and up are positive. |
+
+- Tap, Double Tap, Long Press and the swipes count only for a finger that was alone on the screen, so two fingers never tap or swipe.
+- Gestures are timed in real time, so they behave the same while the game slows down or pauses time with time dilation.
+- Pinch, Two-Finger Rotate and Two-Finger Drag follow the two lowest-numbered fingers, from the tick both are down.
+- Values per tick are small. Use the control's **Scale** or **Sensitivity** to turn them into the speed your game needs.
+- For the speed of a swipe, read **Velocity** from [On Touch Ended](../scripting/class/on-touch-ended.md).
 
 ## In this section
 

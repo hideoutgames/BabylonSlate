@@ -8,6 +8,7 @@ import {
   INPUT_GAMEPAD_BUTTON_NAMES as GAMEPAD_BUTTON_NAMES,
   INPUT_GAMEPAD_AXIS_NAMES as GAMEPAD_AXIS_NAMES,
 } from "@haptic/core";
+import { TOUCH_GESTURE_CODES as GESTURE } from "./gestures";
 import type { InputDevice } from "./mappings";
 
 export interface BindingCatalogEntry {
@@ -24,6 +25,21 @@ const TOUCH_LABELS: Record<string, string> = {
   "dpad-x": "D-Pad X",
   "dpad-y": "D-Pad Y",
   Jump: "Jump",
+};
+
+/** Recognized from the touches themselves, listed after the on-screen controls. */
+const GESTURE_LABELS: Record<string, string> = {
+  [GESTURE.tap]: "Tap",
+  [GESTURE.doubleTap]: "Double Tap",
+  [GESTURE.longPress]: "Long Press",
+  [GESTURE.swipeUp]: "Swipe Up",
+  [GESTURE.swipeDown]: "Swipe Down",
+  [GESTURE.swipeLeft]: "Swipe Left",
+  [GESTURE.swipeRight]: "Swipe Right",
+  [GESTURE.pinch]: "Pinch",
+  [GESTURE.rotate]: "Two-Finger Rotate",
+  [GESTURE.dragX]: "Two-Finger Drag X",
+  [GESTURE.dragY]: "Two-Finger Drag Y",
 };
 
 const KEYBOARD_CATALOG: BindingCatalogEntry[] = INPUT_KEYS.filter(
@@ -77,11 +93,10 @@ const CATALOG_BY_DEVICE: Record<InputDevice, BindingCatalogEntry[]> = {
   mouseButton: MOUSE_CATALOG,
   gamepadButton: GAMEPAD_BUTTON_CATALOG,
   gamepadAxis: GAMEPAD_AXIS_CATALOG,
-  touch: Object.entries(TOUCH_LABELS).map(([code, label]) => ({
-    code,
-    label,
-    group: "Touch",
-  })),
+  touch: [
+    ...Object.entries(TOUCH_LABELS).map(([code, label]) => ({ code, label, group: "Touch" })),
+    ...Object.entries(GESTURE_LABELS).map(([code, label]) => ({ code, label, group: "Gestures" })),
+  ],
 };
 
 function catalogLookup(): Map<string, BindingCatalogEntry> {

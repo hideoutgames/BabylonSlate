@@ -38,9 +38,11 @@ export function nextPlayInspectorOpen(
 /** Snapshot these local preferences when preparing a session; no active state is saved. */
 export function simulationDefaultsFromSettings(defaults?: {
   keepSimulationChanges?: boolean;
+  pauseSimulationOnErrors?: boolean;
 } | null) {
   return Object.freeze({
     keepChanges: defaults?.keepSimulationChanges === true,
+    pauseOnErrors: defaults?.pauseSimulationOnErrors !== false,
   });
 }
 

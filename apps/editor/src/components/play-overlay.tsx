@@ -42,6 +42,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 import { createAppSettingsStore } from "@haptic/vfs";
 import {
   startPlaySession,
+  type PlayHudStats,
   type PlaySession,
   type PlaySessionResult,
   type PlaySceneSourceLoader,
@@ -66,9 +67,10 @@ import { ConnectedDebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
+import { useBreakpointStore } from "../context/breakpoints-context";
 import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
-import type { ScriptBundleEntry } from "@haptic/bridge";
+import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
 import {
   applyPlayPreviewCanvasLayout,
   clampRenderResolution,
@@ -205,6 +207,10 @@ export interface PlayOverlayProps {
     >
   >;
   pauseOnPlay?: boolean;
+  /** Simulation: pause the first time each node reports an error. */
+  pauseOnErrors?: boolean;
+  /** A Simulation paused itself, on an error or at a breakpoint: show where. */
+  onPausedAt?: (cause: SessionPauseCause) => void;
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
@@ -311,6 +317,8 @@ function PlayOverlayView({
   audioReverbBytes,
   audioProjectSettings,
   pauseOnPlay = false,
+  pauseOnErrors = false,
+  onPausedAt,
   onClose,
 }: PlayOverlayProps) {
   const { appendLog, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
@@ -318,6 +326,7 @@ function PlayOverlayView({
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
   const graphDebug = useGraphDebugStore();
+  const breakpointStore = useBreakpointStore();
   const diagnosticStore = useDiagnosticResultsStore();
   const diagnosticDetachRef = useRef<(() => void) | null>(null);
   const inspectionDetachRef = useRef<(() => void) | null>(null);
@@ -344,6 +353,7 @@ function PlayOverlayView({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
+  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity">>({});
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -359,6 +369,8 @@ function PlayOverlayView({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
+  /** The breakpoint the Simulation stopped at, until it resumes. */
+  const [stoppedAt, setStoppedAt] = useState<SessionPauseCause | null>(null);
   const [pausePending, setPausePending] = useState(false);
   const [inputMode, setInputMode] = useState<"game" | "edit">("game");
   const [inputPending, setInputPending] = useState(false);
@@ -458,6 +470,7 @@ function PlayOverlayView({
       if (!result.success) { setControlError(result.reason ?? "Pause could not reach a completed runtime boundary."); return; }
       userPausedRef.current = result.pauseReasons.includes("user");
       setPaused(result.paused);
+      if (!result.paused) setStoppedAt(null);
       if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
       if (result.paused) session.requestPausedRedraw();
       // Pause keeps Simulation's input mode; resumed game input returns to the canvas.
@@ -474,6 +487,8 @@ function PlayOverlayView({
     if (!session || closedRef.current || !userPausedRef.current) return;
     setStepPending(true);
     setControlError(null);
+    // The tick runs past the stop; a breakpoint it hits stops it again.
+    setStoppedAt(null);
     void session.stepPaused().then((result) => {
       if (sessionRef.current !== session) return;
       if (!result.success) { setControlError(result.reason ?? "Step could not reach a completed runtime boundary."); return; }
@@ -495,13 +510,18 @@ function PlayOverlayView({
           inputMode,
           inputPending,
           keepChanges: simulationKeepChanges,
+          stoppedAt,
           togglePause: () => pauseRef.current("user", !userPausedRef.current),
           step: () => stepRef.current(),
           setInputMode: (mode: "game" | "edit") => changeInputModeRef.current(mode),
         }
       : null,
-    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges],
+    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges, stoppedAt],
   );
+  // While a Simulation is paused, its graphs keep what ran last lit.
+  useEffect(() => {
+    if (simulating) graphDebug?.setHeld(paused);
+  }, [graphDebug, paused, simulating]);
   usePublishSimulationControls(simulationControls);
 
   useEffect(() => {
@@ -658,6 +678,9 @@ function PlayOverlayView({
   };
   const initialFrameCapRef = useRef(frameCap);
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
+  const initialPauseOnErrorsRef = useRef(pauseOnErrors);
+  const onPausedAtRef = useRef(onPausedAt);
+  onPausedAtRef.current = onPausedAt;
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
@@ -832,11 +855,24 @@ function PlayOverlayView({
           audioReverbBytes: audioReverbBytesRef.current,
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
+          pauseOnErrors: simulating && initialPauseOnErrorsRef.current,
+          breakpoints: simulating ? breakpointStore?.enabledLocations() : undefined,
           onSceneLoading: setSceneLoading,
           onSceneLoadFailed: () => setSceneLoadFailed(true),
-          onSessionPaused: (next) => {
+          onSessionPaused: (next, cause) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
+            if (!next) setStoppedAt(null);
+            if (!simulating || !cause) return;
+            if (cause.code === BREAKPOINT_PAUSE_CODE) {
+              setStoppedAt(cause);
+              // The graph shows the object that stopped: its path and values from its next tick on.
+              if (cause.instanceId) graphDebug?.follow(cause.instanceId);
+            }
+            // The runtime paused itself on an error or at a breakpoint: take the user pause through
+            // the session boundary so Resume and Step treat it like Pause, then show where it stopped.
+            pauseRef.current("user", true);
+            onPausedAtRef.current?.(cause);
           },
           onShowFps: (enabled) => {
             setStatsOpen(enabled);
@@ -856,6 +892,7 @@ function PlayOverlayView({
               setScriptMs(stats.scriptMs);
               setPhysicsMs(stats.physicsMs);
               setPublishMs(stats.publishMs);
+              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity });
             }
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },
@@ -903,6 +940,10 @@ function PlayOverlayView({
       // The graph debugger asks the runtime to watch the focused graph's instances.
       const unsubscribeGraphDebug = simulating
         ? graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId))
+        : undefined;
+      // Breakpoints set, removed or switched off while the Simulation runs apply from its next run of the node.
+      const unsubscribeBreakpoints = simulating
+        ? breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()))
         : undefined;
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
@@ -1054,12 +1095,16 @@ function PlayOverlayView({
         window.clearInterval(movePoll);
         detachLifecycle();
         unsubscribeGraphDebug?.();
-        if (simulating) graphDebug?.setTarget(null);
+        unsubscribeBreakpoints?.();
+        if (simulating) {
+          graphDebug?.setHeld(false);
+          graphDebug?.setTarget(null);
+        }
         finishSessionRef.current();
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, breakpointStore, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -1072,6 +1117,7 @@ function PlayOverlayView({
           z: number;
         }[];
         visuals: () => ReturnType<PlaySession["handle"]["playVisualStates"]>;
+        text2dLayouts: () => ReturnType<PlaySession["handle"]["playText2DLayouts"]>;
         liveObjectCounts: () => { meshes: number; textures: number } | null;
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
@@ -1102,6 +1148,7 @@ function PlayOverlayView({
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
+      text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
       whenModelsReady: () =>
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
@@ -1228,6 +1275,7 @@ function PlayOverlayView({
             draws={draws}
             rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
+            {...threadStats}
             groups={statGroups}
             visible={statsVisible}
           />

@@ -6,6 +6,9 @@ import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
 import { expect, test } from "./profile-context";
 import { unsavedPlayDialog } from "./unsaved-play";
 
+const editorQuiet = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => (globalThis as { __hapticTest?: { editorQuiet(): boolean } }).__hapticTest?.editorQuiet() ?? null);
+
 test.describe("P4 Play overlay and session report", () => {
 
   test("Play rolls all eight legacy duplicated spheres down an angled cube", async ({ page }) => {
@@ -27,6 +30,8 @@ test.describe("P4 Play overlay and session report", () => {
 
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    // The game covers the editor, which stays loaded but quiet until Play stops.
+    expect(await editorQuiet(page)).toBe(true);
     await expect(page.getByTestId("play-frame-cap")).toHaveCount(0);
     // Play tools are icon buttons named by their aria-label.
     await expect(page.getByTestId("play-overlay-pause")).toHaveAttribute("aria-label", "Pause");
@@ -40,6 +45,7 @@ test.describe("P4 Play overlay and session report", () => {
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("preview-session-report")).toBeVisible();
+    expect(await editorQuiet(page)).toBe(false);
     await expect(page.getByTestId("play-last-runtime")).toHaveAttribute(
       "data-mode",
       /^(worker|in-process)$/,

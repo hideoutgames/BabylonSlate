@@ -74,7 +74,11 @@ describe("bindingCodesForDevice", () => {
   });
 
   it("offers built-in touch controls to typed input pickers", () => {
-    expect(bindingCodesForDevice("touch").map((entry) => entry.code)).toEqual(["joystick-x", "joystick-y", "dpad-x", "dpad-y", "Jump"]);
+    expect(bindingCodesForDevice("touch").map((entry) => entry.code)).toEqual([
+      "joystick-x", "joystick-y", "dpad-x", "dpad-y", "Jump",
+      "tap", "double-tap", "long-press", "swipe-up", "swipe-down", "swipe-left", "swipe-right",
+      "pinch", "two-finger-rotate", "two-finger-drag-x", "two-finger-drag-y",
+    ]);
   });
 });
 

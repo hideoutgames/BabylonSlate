@@ -91,7 +91,10 @@ const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
  * way: the caller shows `message` when the entry cannot be opened.
  */
 export async function navigateToSessionReportEntry(
-  entry: SessionReportEntry,
+  // A Simulation stopped at a breakpoint opens its node the same way, as `info`.
+  entry: Pick<SessionReportEntry, "code" | "message" | "assetGuid" | "graphId" | "nodeId" | "btNodeId" | "bodyLine"> & {
+    severity: Diagnostic["severity"];
+  },
   host: SessionReportNavigationHost,
 ): Promise<SessionReportNavigationResult> {
   const nav = sessionReportNavigation(entry, (ref) => host.findAsset(ref));

@@ -4,6 +4,7 @@ import {
   receiveActiveAppSettingsUpdate,
   subscribeAppSettings,
 } from "../context/app-settings-context";
+import { editorQuiet } from "./editor-quiet";
 
 export { ENGINE_SETTINGS_CHANGED_EVENT };
 
@@ -173,7 +174,7 @@ let overlayOpen = false;
  * A cached `isBlockingEditorOverlayOpen` for per-frame consumers such as the
  * preview loops. One shared observer re-queries the document only when a
  * mutation can open or close an overlay; `dispose` releases the observer with
- * its last watcher.
+ * its last watcher. A game covering the editor (`editorQuiet`) counts as open.
  */
 export function watchBlockingEditorOverlay(): { isOpen: () => boolean; dispose: () => void } {
   if (overlayWatchers++ === 0) {
@@ -185,7 +186,7 @@ export function watchBlockingEditorOverlay(): { isOpen: () => boolean; dispose: 
   }
   let released = false;
   return {
-    isOpen: () => overlayOpen,
+    isOpen: () => overlayOpen || editorQuiet(),
     dispose: () => {
       if (released) return;
       released = true;

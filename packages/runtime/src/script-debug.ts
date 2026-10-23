@@ -217,7 +217,8 @@ export class ExecutionTraceSink implements ScriptDebugTrace {
   }
 }
 
-function instanceLabel(object: BObject): string {
+/** An object's name as the Debug Instance list shows it: its `name` variable, else its class. */
+export function debugInstanceLabel(object: BObject): string {
   const name = object.variables.get("name");
   return typeof name === "string" && name.length > 0 ? name : object.classId;
 }
@@ -274,8 +275,8 @@ export function debugInstancesOf(world: World, target: DebugObserveTarget, limit
     instances.push({
       id: object.guid,
       kind,
-      label: instanceLabel(byClass || !owner ? object : owner),
-      ...(byClass && owner ? { ownerLabel: instanceLabel(owner) } : {}),
+      label: debugInstanceLabel(byClass || !owner ? object : owner),
+      ...(byClass && owner ? { ownerLabel: debugInstanceLabel(owner) } : {}),
     });
   });
   return instances;
@@ -298,7 +299,7 @@ function sameComponentRoster(world: World, target: DebugObserveTarget, sent: Rea
   let count = 0;
   collectInstances(world, target, DEBUG_ROSTER_LIMIT, (object, _kind, owner) => {
     const before = expected.next();
-    if (before.done || before.value.id !== object.guid || before.value.label !== instanceLabel(owner ?? object)) {
+    if (before.done || before.value.id !== object.guid || before.value.label !== debugInstanceLabel(owner ?? object)) {
       same = false;
       return true;
     }

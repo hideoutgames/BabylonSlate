@@ -2,6 +2,7 @@ import type {
   CommandMessage,
   ControlMessage,
   DebugObserveTarget,
+  BreakpointLocation,
   DiagnosticOperationRequest,
   DiagnosticOperationResult,
   GameSessionMode,
@@ -122,6 +123,16 @@ export interface RuntimeDriverOptions {
   infiniteLoopDetection?: boolean;
   /** Iterations in one tick that count as infinite when detection is on. */
   loopCount?: number;
+  /**
+   * Simulation: the first error from each node (by code, asset and node, as the session report
+   * groups them) pauses the session at the end of the tick and sends `sessionPaused` with its cause.
+   */
+  pauseOnErrors?: boolean;
+  /**
+   * Node breakpoints from the first run on (scripts compiled with `instrumentBreakpoints`). A hit pauses
+   * the session at the end of the tick and sends `sessionPaused` with its location and object.
+   */
+  breakpoints?: readonly BreakpointLocation[];
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
   audioAssetGuids?: readonly string[];
   materialParameterCatalog?: MaterialParameterCatalog;
@@ -265,6 +276,8 @@ export interface RuntimeDriver {
    * `btState`, starting with its current state). Null `target` stops.
    */
   applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void;
+  /** Replaces the node breakpoints. */
+  applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void;
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,

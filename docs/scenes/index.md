@@ -34,7 +34,11 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
 | **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
 
-**Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap** and **Scale Snap**. From **Viewport Settings** it opens beside the menu; from **Snap Grid** it opens as a small popup under the button. Changes apply when you press Enter or close it by tapping outside. New scenes use 1, 1, 15 and 0.25. **Camera Speed** (default 8 units per second) and **Drop Distance** (default 10,000 units) are in **Engine Settings > Viewport**.
+**Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap** and **Scale Snap**. From **Viewport Settings** it opens beside the menu; from **Snap Grid** it opens as a small popup under the button. Changes apply when you press Enter or close it by tapping outside. New scenes use 1, 1, 15 and 0.25.
+
+As you zoom out, the grid fades its finest lines and adds coarser ones every 10, 100 and 1,000 cells, so it stays readable from up close to far above the scene. The red line is the X axis and the blue line the Z axis (green Y in 2D).
+
+**Camera Speed** (default 8 units per second) and **Drop Distance** (default 10,000 units) are in **Engine Settings > Viewport**.
 
 ## Scene Settings
 

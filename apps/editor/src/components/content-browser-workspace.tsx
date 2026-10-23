@@ -186,6 +186,7 @@ import {
   flattenContentBrowserForest,
   flattenFolderForest,
   guidsOutsideSelectedFolders,
+  isCrossRootMove,
   isFolderNameTaken,
   isFolderTreeRoot,
   isContentBrowserEmptyGridDoubleClickTarget,
@@ -215,6 +216,7 @@ import {
   canMutateContentBrowserRoot,
   contentBrowserFolderOps,
   contentBrowserRoots,
+  contentRootMoveWarnings,
   filterHpluginFiles,
   isPluginContentFolderPath,
   PROJECT_CONTENT_ROOT_ID,
@@ -504,6 +506,10 @@ function ContentBrowserWorkspaceBody({
   );
   const rootPrefixes = useMemo(
     () => browserRoots.map((root) => root.pathPrefix),
+    [browserRoots],
+  );
+  const readOnlyRootPrefixes = useMemo(
+    () => browserRoots.filter((root) => root.readOnly).map((root) => root.pathPrefix),
     [browserRoots],
   );
   const pluginContentPrefixes = useMemo(
@@ -1166,20 +1172,10 @@ function ContentBrowserWorkspaceBody({
     assetRegistry?.list().filter((asset) => asset.path.startsWith(`${path}/`)).length ?? 0,
   [assetRegistry]);
 
-  const openMoveForSnapshot = useCallback(
-    (operation: "move" | "copy") => {
-      if (!assetRegistry) return;
-      const folders = rootSelectedFolderPaths(
-        menuTargetFoldersRef.current.filter(
-          (path) => !isFolderTreeRoot(path, rootPrefixes),
-        ),
-      );
-      const guids = guidsOutsideSelectedFolders(
-        menuTargetGuidsRef.current,
-        folders,
-        (guid) => assetRegistry.getByGuid(guid)?.path,
-      );
-      if (folders.length + guids.length === 0) return;
+  /** Open Move… / Copy to Folder… for outermost folders and the assets outside them. */
+  const openMoveDialog = useCallback(
+    (operation: "move" | "copy", folders: string[], guids: string[], destinationPath?: string) => {
+      if (!assetRegistry || folders.length + guids.length === 0) return;
       const names: string[] = [];
       const assetPaths: string[] = [];
       for (const path of folders) {
@@ -1204,13 +1200,62 @@ function ContentBrowserWorkspaceBody({
         folderPaths: folders,
         name: contentBrowserMovePreviewName(names),
         sourcePath,
-        folderPath: sourcePath,
+        folderPath: destinationPath ?? sourcePath,
         assetPaths,
         itemCount: folders.length + guids.length,
         typeVisual,
       });
     },
-    [assetRegistry, classParentOf, rootPrefixes, selectedFolderPath],
+    [assetRegistry, classParentOf, selectedFolderPath],
+  );
+
+  const openMoveForSnapshot = useCallback(
+    (operation: "move" | "copy") => {
+      if (!assetRegistry) return;
+      const folders = rootSelectedFolderPaths(
+        menuTargetFoldersRef.current.filter(
+          (path) => !isFolderTreeRoot(path, rootPrefixes),
+        ),
+      );
+      const guids = guidsOutsideSelectedFolders(
+        menuTargetGuidsRef.current,
+        folders,
+        (guid) => assetRegistry.getByGuid(guid)?.path,
+      );
+      openMoveDialog(operation, folders, guids);
+    },
+    [assetRegistry, openMoveDialog, rootPrefixes],
+  );
+
+  /**
+   * How `moves` into `destinationPath` change plugin behaviour (see
+   * `contentRootMoveWarnings`); empty when every item stays in its root.
+   */
+  const crossRootMoveWarnings = useCallback(
+    (moves: readonly ContentBrowserDropMove[], destinationPath: string): string[] => {
+      if (!assetRegistry) return [];
+      const crossing = moves.filter((move) => isCrossRootMove(move.id, destinationPath, rootPrefixes));
+      if (crossing.length === 0) return [];
+      const assets = assetRegistry.list();
+      const movedGuids = crossing.flatMap((move) => move.kind === "folder"
+        ? assets.filter((asset) => asset.path.startsWith(`${move.sourcePath}/`)).map((asset) => asset.header.guid)
+        : move.guid ? [move.guid] : []);
+      return contentRootMoveWarnings({
+        movedGuids,
+        targetRootId: contentBrowserFolderOps(destinationPath, browserRoots).rootId,
+        assets,
+        showReferences: (guid) => assetRegistry.showReferences(guid),
+        plugins: pluginDescriptors.map((plugin) => ({
+          pluginGuid: plugin.pluginGuid,
+          displayName: plugin.settings.displayName,
+          enabledByDefault: plugin.settings.enabledByDefault,
+          dependencyGuids: plugin.settings.pluginDependencies.map((dependency) => dependency.guid),
+        })),
+        projectPluginOverrides: projectDocument?.settings.pluginOverrides,
+        exportPresets: projectDocument?.settings.exportPresets,
+      });
+    },
+    [assetRegistry, browserRoots, pluginDescriptors, projectDocument, rootPrefixes],
   );
 
   const keybinds = useKeybindings();
@@ -1986,7 +2031,7 @@ function ContentBrowserWorkspaceBody({
         if (move.kind === "folder") {
           const fromPath = move.sourcePath;
           const from = contentBrowserFolderOps(fromPath, browserRoots);
-          if (from.readOnly || from.rootId !== dest.rootId) continue;
+          if (from.readOnly) continue;
           const folderName = fromPath.slice(fromPath.lastIndexOf("/") + 1);
           const nextFolder = `${destPath}/${folderName}`;
           const contained = allAssets.filter(
@@ -1994,11 +2039,11 @@ function ContentBrowserWorkspaceBody({
               asset.path === fromPath ||
               asset.path.startsWith(`${fromPath}/`),
           );
-          await assetRegistry.moveFolder(
-            from.rootId,
-            from.relative,
-            destRelative,
-          );
+          if (from.rootId === dest.rootId) {
+            await assetRegistry.moveFolder(from.rootId, from.relative, destRelative);
+          } else {
+            await assetRegistry.moveFolder(from.rootId, from.relative, destRelative, undefined, dest.rootId);
+          }
           repathProjectFolder(fromPath, nextFolder);
           onMoved?.(move);
           setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
@@ -2046,6 +2091,48 @@ function ContentBrowserWorkspaceBody({
     ],
   );
 
+  /**
+   * The moves of a Move… / Copy to Folder… at its chosen destination, under
+   * the tree drop's rules: items that cannot change root (read-only content,
+   * or any other root for a Copy) and, for Move, items already in the
+   * destination stay where they are.
+   */
+  const planMoveTarget = useCallback((target: MoveTarget) => {
+    const guidByPath = new Map(target.guids.flatMap((guid) => {
+      const path = assetRegistry?.getByGuid(guid)?.path;
+      return path ? [[path, guid] as const] : [];
+    }));
+    const plan = contentBrowserSelectionMoves({
+      destinationPath: target.folderPath,
+      operation: target.operation,
+      assetPaths: [...guidByPath.keys()],
+      folderPaths: target.folderPaths,
+      rootPaths: rootPrefixes,
+      readOnlyRootPaths: readOnlyRootPrefixes,
+      existingPaths: existingContentPaths,
+    });
+    return {
+      error: plan.error,
+      moves: plan.moves.map((move) =>
+        move.kind === "asset" ? { ...move, guid: guidByPath.get(move.id) } : move),
+    };
+  }, [assetRegistry, existingContentPaths, readOnlyRootPrefixes, rootPrefixes]);
+
+  /** The source's root, plus for a Move every writable root it may go to. */
+  const moveFolderTrees = useMemo(() => {
+    const sourcePrefix = contentBrowserFolderOps(moveTarget?.sourcePath ?? ASSETS_ROOT, browserRoots).pathPrefix;
+    const crossRoot = moveTarget?.operation === "move";
+    const trees = folderTrees.filter((tree) => tree.path === sourcePrefix ||
+      (crossRoot && !readOnlyRootPrefixes.includes(tree.path)));
+    return trees.length > 0 ? trees : folderTrees.slice(0, 1);
+  }, [browserRoots, folderTrees, moveTarget?.operation, moveTarget?.sourcePath, readOnlyRootPrefixes]);
+
+  const moveWarnings = useMemo(() => {
+    if (!moveTarget || moveTarget.operation !== "move") return [];
+    const plan = planMoveTarget(moveTarget);
+    return plan.error ? [] : crossRootMoveWarnings(plan.moves, moveTarget.folderPath);
+  }, [crossRootMoveWarnings, moveTarget, planMoveTarget]);
+
   const confirmMove = useCallback(async () => {
     if (!assetRegistry || !moveTarget) return;
     const destPath = moveTarget.folderPath;
@@ -2054,26 +2141,12 @@ function ContentBrowserWorkspaceBody({
       setOperationError(`${destPath} is read-only. Choose a folder in project content.`);
       return;
     }
-    const guidByPath = new Map(moveTarget.guids.flatMap((guid) => {
-      const path = assetRegistry.getByGuid(guid)?.path;
-      return path ? [[path, guid] as const] : [];
-    }));
-    // The tree drop's rules: items in another content root, and for Move
-    // items already in the destination, stay where they are.
-    const plan = contentBrowserSelectionMoves({
-      destinationPath: destPath,
-      operation: moveTarget.operation,
-      assetPaths: [...guidByPath.keys()],
-      folderPaths: moveTarget.folderPaths,
-      rootPaths: rootPrefixes,
-      existingPaths: existingContentPaths,
-    });
+    const plan = planMoveTarget(moveTarget);
     if (plan.error) {
       setOperationError(plan.error);
       return;
     }
-    const moves = plan.moves.map((move) =>
-      move.kind === "asset" ? { ...move, guid: guidByPath.get(move.id) } : move);
+    const { moves } = plan;
     setBusy(true);
     setOperationError(null);
     const remainingGuids = new Set(moves.flatMap((move) => move.guid ? [move.guid] : []));
@@ -2153,10 +2226,9 @@ function ContentBrowserWorkspaceBody({
   }, [
     applyRegistryMoves,
     assetRegistry,
-    existingContentPaths,
     moveTarget,
+    planMoveTarget,
     refreshAssetRegistry,
-    rootPrefixes,
     browserRoots,
     folderAssetCount,
     runCopySteps,
@@ -2453,6 +2525,7 @@ function ContentBrowserWorkspaceBody({
         selectedGuids,
         selectedFolderPaths,
         rootPaths: rootPrefixes,
+        readOnlyRootPaths: readOnlyRootPrefixes,
         resolvePath: (guid) => assetRegistry.getByGuid(guid)?.path,
         placement,
       });
@@ -2461,6 +2534,17 @@ function ContentBrowserWorkspaceBody({
       const collision = moveNameCollision(moves, existingContentPaths);
       if (collision) {
         setOperationError(collision);
+        return;
+      }
+      // A drop that changes plugin behaviour asks first: file moves cannot be undone.
+      const destinationPath = moves[0]!.destinationPath;
+      if (crossRootMoveWarnings(moves, destinationPath).length > 0) {
+        openMoveDialog(
+          "move",
+          moves.flatMap((move) => move.kind === "folder" ? [move.sourcePath] : []),
+          moves.flatMap((move) => move.guid ? [move.guid] : []),
+          destinationPath,
+        );
         return;
       }
       void (async () => {
@@ -2484,7 +2568,10 @@ function ContentBrowserWorkspaceBody({
       assetRegistry,
       browserRows,
       busy,
+      crossRootMoveWarnings,
       existingContentPaths,
+      openMoveDialog,
+      readOnlyRootPrefixes,
       refreshAssetRegistry,
       rootPrefixes,
       selectedFolderPaths,
@@ -3422,14 +3509,7 @@ function ContentBrowserWorkspaceBody({
                 : moveTarget.sourcePath
             : ASSETS_ROOT
         }
-        folderTree={
-          folderTrees.find((tree) => {
-            const source = moveTarget?.sourcePath ?? ASSETS_ROOT;
-            const prefix = contentBrowserFolderOps(source, browserRoots)
-              .pathPrefix;
-            return tree.path === prefix;
-          }) ?? folderTrees[0]!
-        }
+        folderTrees={moveFolderTrees}
         destinationPath={moveTarget?.folderPath ?? ASSETS_ROOT}
         onDestinationChange={(path) =>
           setMoveTarget((current) =>
@@ -3444,7 +3524,9 @@ function ContentBrowserWorkspaceBody({
         assetPaths={moveTarget?.assetPaths ?? NO_PATHS}
         folderPaths={moveTarget?.folderPaths ?? NO_PATHS}
         rootPaths={rootPrefixes}
+        readOnlyRootPaths={readOnlyRootPrefixes}
         existingPaths={existingContentPaths}
+        warnings={moveWarnings}
       />
 
       {referenceGuid ? (

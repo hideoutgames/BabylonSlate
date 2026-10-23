@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import { FolderIcon } from "lucide-react";
+import { useCallback, useRef } from "react";
+import { FolderIcon, TriangleAlertIcon } from "lucide-react";
 import type { FolderNode } from "@haptic/assets";
 import { TypeVisualIcon, type TypeVisual } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
@@ -25,7 +25,8 @@ export interface ContentBrowserMoveDialogProps {
   operation?: "move" | "copy";
   name: string;
   currentFolderPath: string;
-  folderTree: FolderNode | null;
+  /** One tree per content root offered as a destination. */
+  folderTrees: readonly FolderNode[];
   destinationPath: string;
   onDestinationChange: (path: string) => void;
   onConfirm: () => void;
@@ -36,10 +37,14 @@ export interface ContentBrowserMoveDialogProps {
   /** Selected asset files and (outermost) folders. */
   assetPaths: readonly string[];
   folderPaths: readonly string[];
-  /** Content root prefixes; items outside the destination's root stay put. */
+  /** Content root prefixes; a Copy leaves items outside the destination's root where they are. */
   rootPaths?: readonly string[];
+  /** Root prefixes of read-only content, which nothing moves into or out of. */
+  readOnlyRootPaths?: readonly string[];
   /** Existing asset and folder paths, so a Move never lands on a taken name. */
   existingPaths?: ReadonlySet<string>;
+  /** How moving to the chosen destination changes plugin behaviour; shown, never blocking. */
+  warnings?: readonly string[];
 }
 
 export function ContentBrowserMoveDialog({
@@ -49,7 +54,7 @@ export function ContentBrowserMoveDialog({
   operation = "move",
   name,
   currentFolderPath,
-  folderTree,
+  folderTrees,
   destinationPath,
   onDestinationChange,
   onConfirm,
@@ -60,7 +65,9 @@ export function ContentBrowserMoveDialog({
   assetPaths,
   folderPaths,
   rootPaths,
+  readOnlyRootPaths,
   existingPaths,
+  warnings = [],
 }: ContentBrowserMoveDialogProps) {
   const resolvedItemCount = itemCount ?? folderPaths.length + assetPaths.length;
   const destinationError = useCallback(
@@ -71,9 +78,10 @@ export function ContentBrowserMoveDialog({
         assetPaths,
         folderPaths,
         rootPaths,
+        readOnlyRootPaths,
         existingPaths,
       }).error,
-    [assetPaths, existingPaths, folderPaths, operation, rootPaths],
+    [assetPaths, existingPaths, folderPaths, operation, readOnlyRootPaths, rootPaths],
   );
   const destinationProblem = destinationError(destinationPath);
   const title = contentBrowserMoveDialogTitle({
@@ -83,17 +91,20 @@ export function ContentBrowserMoveDialog({
     assetCount: assetPaths.length,
   });
 
-  const folderTrees = useMemo(() => (folderTree ? [folderTree] : []), [folderTree]);
   const isIllegalDestination = useCallback(
     (path: string) => destinationError(path) !== null,
     [destinationError],
   );
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-md"
         data-testid="content-browser-move-dialog"
+        // Touch opens keyboard-free so the folder tree pans at once (FolderPickerDialog).
+        initialFocus={(interaction) => (interaction === "keyboard" ? searchRef.current : bodyRef.current)}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -123,6 +134,8 @@ export function ContentBrowserMoveDialog({
           isDisabled={isIllegalDestination}
           searchTestId="content-browser-move-search"
           treeTestId="content-browser-move-tree"
+          searchRef={searchRef}
+          bodyRef={bodyRef}
         />
         <p className="text-sm text-muted-foreground" data-testid="content-browser-move-destination">
           Destination: <span className="text-foreground">{destinationPath}</span>
@@ -131,6 +144,16 @@ export function ContentBrowserMoveDialog({
           <p className="text-xs text-muted-foreground" data-testid="content-browser-move-problem">
             Choose a different folder. {destinationProblem}
           </p>
+        ) : warnings.length > 0 ? (
+          <Alert data-testid="content-browser-move-warnings">
+            <TriangleAlertIcon className="text-(--warning)" />
+            <AlertTitle>Plugin Content Changes</AlertTitle>
+            <AlertDescription>
+              <ul className="flex flex-col gap-1">
+                {warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            </AlertDescription>
+          </Alert>
         ) : null}
         {error ? <Alert variant="destructive"><AlertTitle>Could Not {operation === "copy" ? "Copy" : "Move"} Items</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
         <DialogFooter>

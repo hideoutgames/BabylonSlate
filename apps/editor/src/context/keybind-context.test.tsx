@@ -267,7 +267,7 @@ describe("KeybindProvider", () => {
     expect(remove).toHaveBeenCalledTimes(1);
   });
 
-  it("hands graph canvases the Copy, Paste, Duplicate and Delete chords, customized or not", async () => {
+  it("hands graph canvases the Copy, Paste, Duplicate, Delete and Toggle Breakpoint chords, customized or not", async () => {
     function Chords() {
       return <span data-testid="chords">{JSON.stringify(useContext(GraphKeybindsContext))}</span>;
     }
@@ -277,6 +277,7 @@ describe("KeybindProvider", () => {
       paste: ["Mod+V"],
       duplicate: ["Mod+D"],
       delete: ["Delete", "Backspace"],
+      toggleBreakpoint: ["F9"],
     });
     defaults.unmount();
 
@@ -288,6 +289,7 @@ describe("KeybindProvider", () => {
       paste: ["Mod+V"],
       duplicate: ["Alt+Shift+D"],
       delete: ["Delete", "Backspace"],
+      toggleBreakpoint: ["F9"],
     });
   });
 });

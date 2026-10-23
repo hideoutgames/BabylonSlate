@@ -228,7 +228,21 @@ export interface DockWindowDefinition {
   component: string;
   title: string;
   defaultPosition?: DockWindowDefaultPosition;
+  /** False leaves the window out of a new document's layout; the Windows menu still opens it. */
+  openByDefault?: boolean;
 }
+
+/** Lists every node breakpoint of the project; opened from the Windows menu. */
+const BREAKPOINTS_WINDOW: DockWindowDefinition = {
+  id: "breakpoints",
+  component: "breakpoints",
+  title: "Breakpoints",
+  openByDefault: false,
+  defaultPosition: {
+    referencePanelId: "compiler-results",
+    direction: "within",
+  },
+};
 
 const LANDSCAPE_WINDOWS: DockWindowDefinition[] = [
   { id: "viewport", component: "viewport", title: "Viewport" },
@@ -289,6 +303,7 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
       direction: "within",
     },
   },
+  BREAKPOINTS_WINDOW,
 ];
 
 const GRAPH_WINDOWS: DockWindowDefinition[] = [
@@ -342,6 +357,7 @@ const GRAPH_WINDOWS: DockWindowDefinition[] = [
       initialHeight: 160,
     },
   },
+  BREAKPOINTS_WINDOW,
 ];
 
 /** Logic-free Prefab documents: no Graph, Class members or Compiler Results. */
@@ -401,6 +417,7 @@ const OBJECT_GRAPH_WINDOWS: DockWindowDefinition[] = [
       initialHeight: 160,
     },
   },
+  BREAKPOINTS_WINDOW,
 ];
 
 const ENUM_WINDOWS: DockWindowDefinition[] = [

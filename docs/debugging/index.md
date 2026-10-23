@@ -45,6 +45,28 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 
 The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
 
+### Pause on errors
+
+When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time.
+
+Each node pauses the Simulation only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
+
+### Breakpoints
+
+A breakpoint stops a Simulation when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions. Set one in any of these ways:
+
+- Choose **Add Breakpoint** from the node's menu (right-click, or press and hold on touch).
+- Select the node and press <kbd>F9</kbd>.
+- With a mouse, click the faint dot at the start of the node's title bar.
+
+A red dot then marks the node. A hollow dot means the breakpoint is disabled: it is kept but does not stop. The node's menu has **Remove Breakpoint** and **Disable Breakpoint** / **Enable Breakpoint**.
+
+When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. The toolbar names where it stopped: the Class, the event or function, the node and the object. Choose that name to open the node again. **Debug Instance** switches to that object, and its path and pin values show from its next tick on, for example after a **Step**. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
+
+The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in Classes you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
+
+Breakpoints are kept with the project on this device, not in its assets. Setting one never changes a document. Play, Preview Build and exported games never stop at them.
+
 ## Watch a graph run
 
 While a Simulation runs, open a Class, a Behaviour Tree or an Animation Graph to see it run for one object, the way a debugger would.
@@ -63,7 +85,7 @@ Objects with the same name show the start of their id after the name, and a Clas
 - Pick another object at any time. The graphs show only the object you picked.
 - Changing the open document, or opening a Class that has no objects (a function library, for example), changes or removes the list.
 
-When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The wires and pins involved light up with it. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
+When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The wires and pins involved light up with it. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears. While the Simulation is paused, what ran last stays lit until you resume.
 
 ### Classes and Animation Object graphs
 
@@ -89,7 +111,7 @@ The graphs stay read-only: watching never changes your assets or the running gam
 
 ## Stats
 
-Stats shows **fps**, the frame time, and the **script** and **physics** time of the last tick. When script and physics together take more than 8 ms, Stats shows **over 8 ms budget**. Add more rows with the `stat unit`, `stat memory`, `stat draws` and `stat threads` [console commands](console.md).
+Stats shows **fps**, the frame time, and the **script** and **physics** time of the last tick. When script and physics together take more than 8 ms, Stats shows **over 8 ms budget**. Add more rows with the `stat unit`, `stat memory`, `stat draws` and `stat threads` [console commands](console.md). Play, Simulation, Preview Build and exported games that include the debugger show the same rows.
 
 ## Inspector
 

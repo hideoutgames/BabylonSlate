@@ -24,10 +24,16 @@ export {
   type RunGraph,
 } from "./run-trace";
 export { RUN_FLASH_MS } from "./run-flash";
+export {
+  canBreakOnNode,
+  type GraphBreakpoints,
+  type GraphBreakpointState,
+} from "./graph-breakpoints";
 export * from "./node-theme";
 export { displayPinTypesForGraph, type PinDisplayLookup } from "./wildcard-display";
 export {
   BlueprintNodeShell,
+  canvasNodeTitle,
   graphNodeTypes,
   resolveNodeType,
   VariableGetNode,

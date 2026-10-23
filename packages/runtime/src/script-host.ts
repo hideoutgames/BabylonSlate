@@ -2,6 +2,7 @@ import { createUnavailableEditorDataApi, type EditorDataApi } from "@haptic/scri
 import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName, type RuntimeAssetLoadState, type RuntimeAssetPreloadOptions, type RuntimeAssetPreloadResult } from "@haptic/core";
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import type { ScriptDebugTrace } from "./script-debug";
+import type { ScriptBreakpoints } from "./script-breakpoints";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@haptic/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@haptic/core";
@@ -375,6 +376,8 @@ export interface ScriptContext {
    * instance and outside the editor. Only debug-instrumented scripts read it.
    */
   debugTrace: ScriptDebugTrace | null;
+  /** The session's node breakpoints; null when none are set. Only breakpoint-instrumented scripts read it. */
+  breakpoints: ScriptBreakpoints | null;
   formatValue(value: unknown): string;
   checkInfiniteLoop(location?: ScriptLoopLocation): void;
   log(severity: LogSeverity, category: string, message: string): void;
@@ -824,7 +827,7 @@ type LoadedScript = {
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "assertFailed" | "assertEqual" | "print"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "assertFailed" | "assertEqual" | "print"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
   | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
@@ -889,6 +892,7 @@ export class ScriptHost {
   /** The instance the editor's graph debugger follows, and where its scripts report. */
   private debugObject: BObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
+  private breakpoints: ScriptBreakpoints | null = null;
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
@@ -907,6 +911,11 @@ export class ScriptHost {
   setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
     this.debugObject = object;
     this.debugSink = sink;
+  }
+
+  /** The breakpoints every run checks; null, or an empty set, checks none. */
+  setBreakpoints(breakpoints: ScriptBreakpoints | null): void {
+    this.breakpoints = breakpoints;
   }
 
   /** The driver installs persistence before authored Init/Begin Play hooks run. */
@@ -1488,6 +1497,7 @@ export class ScriptHost {
       if (guid) services.setSceneLayerCamera?.(guid, changes);
     };
     const vector2 = (value: unknown) => value as { x?: unknown; y?: unknown } | null | undefined;
+    const breakpoints = () => this.breakpoints === null || this.breakpoints.empty ? null : this.breakpoints;
     const reportAssertion = (message: unknown, detail?: string) => {
       const summary = typeof message === "string" ? message.trim() : "";
       const text = `Assertion failed${summary ? `: ${summary}` : ""}${detail ? ` (${detail})` : ""}`;
@@ -1510,6 +1520,8 @@ export class ScriptHost {
       },
       // Read on use: an editor host may rebuild its catalog after a registry change.
       get assetRegistry() { return services.getAssetCatalog?.() ?? EMPTY_ASSET_CATALOG; },
+      // Read once per run by instrumented scripts; breakpoints change between runs.
+      get breakpoints() { return breakpoints(); },
       formatValue: (value) => formatValue(value),
       checkInfiniteLoop: (location) => {
         try {

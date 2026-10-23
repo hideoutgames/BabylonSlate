@@ -30,6 +30,7 @@ const COMMAND_LIST = [
   { id: "document.previous", label: "Previous Document", category: "Documents", defaultChords: ["Alt+PageUp"] },
   { id: "play.start", label: "Play", category: "Play", defaultChords: ["Alt+P"] },
   { id: "graph.compile", label: "Compile", category: "Play", defaultChords: ["F7"] },
+  { id: "graph.toggleBreakpoint", label: "Toggle Breakpoint", category: "Play", defaultChords: ["F9"] },
   { id: "viewport.translate", label: "Move Tool", category: "Viewport", defaultChords: ["1"] },
   { id: "viewport.rotate", label: "Rotate Tool", category: "Viewport", defaultChords: ["2"] },
   { id: "viewport.scale", label: "Scale Tool", category: "Viewport", defaultChords: ["3"] },

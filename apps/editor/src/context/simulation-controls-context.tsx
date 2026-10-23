@@ -6,6 +6,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import type { SessionPauseCause } from "@haptic/bridge";
 
 /** What the global toolbar shows and drives for the running Simulation. */
 export interface SimulationControls {
@@ -16,6 +17,8 @@ export interface SimulationControls {
   inputMode: "game" | "edit";
   inputPending: boolean;
   keepChanges: boolean;
+  /** The breakpoint the Simulation stopped at, until it resumes. */
+  stoppedAt: SessionPauseCause | null;
   togglePause: () => void;
   /** While paused: run one tick and stay paused. */
   step: () => void;

@@ -22,6 +22,7 @@ import {
 } from "../lib/model-thumbnail-queue";
 import { prepareAssetThumbnailInput } from "../lib/asset-thumbnail-input";
 import { blockingSceneLoadOpen, subscribeBlockingSceneLoads, whenNoBlockingSceneLoad } from "../lib/blocking-scene-loads";
+import { whenEditorAwake } from "../lib/editor-quiet";
 import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
 
 /**
@@ -120,6 +121,8 @@ export function ModelThumbnailCaptureHost() {
       tail.current = tail.current.then(async () => {
         try {
           while (!cancelled && (pending.size > 0 || retryLater.size > 0)) {
+            // Captures share the Engine: none while a game covers the editor or a scene load blocks it.
+            await whenEditorAwake(lifetime.signal);
             await whenNoBlockingSceneLoad(lifetime.signal);
             // Retries wait until nothing else is queued.
             const queue = pending.size > 0 ? pending : retryLater;

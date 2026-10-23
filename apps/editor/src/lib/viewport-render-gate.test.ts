@@ -11,6 +11,7 @@ import {
   isBlockingEditorOverlayOpen,
   watchBlockingEditorOverlay,
 } from "./viewport-render-gate";
+import { setEditorQuiet } from "./editor-quiet";
 
 describe("watchBlockingEditorOverlay", () => {
   afterEach(() => {
@@ -35,6 +36,19 @@ describe("watchBlockingEditorOverlay", () => {
       overlay.setAttribute("data-closed", "");
       await waitFor(() => expect(watcher.isOpen()).toBe(false));
     } finally {
+      watcher.dispose();
+    }
+  });
+
+  it("counts a game covering the editor as open, so the asset previews stop drawing", () => {
+    const watcher = watchBlockingEditorOverlay();
+    try {
+      setEditorQuiet(true);
+      expect(watcher.isOpen()).toBe(true);
+      setEditorQuiet(false);
+      expect(watcher.isOpen()).toBe(false);
+    } finally {
+      setEditorQuiet(false);
       watcher.dispose();
     }
   });

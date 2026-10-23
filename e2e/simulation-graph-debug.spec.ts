@@ -118,8 +118,14 @@ async function flashedDuring(page: Page, ms: number): Promise<Flashed> {
   }, ms);
 }
 
-const liveFlashes = (page: Page) =>
-  page.evaluate(() => document.getAnimations().filter((a) => (a.effect as KeyframeEffect | null)?.target?.closest?.(".react-flow")).length);
+/** Canvas nodes whose run highlight is held (a paused Web Animation on the node shell). */
+const heldNodes = (page: Page) => page.evaluate(() => document.getAnimations()
+  .filter((animation) => animation.playState === "paused")
+  .map((animation) => (animation.effect as KeyframeEffect | null)?.target)
+  .filter((target): target is Element => target instanceof Element && target.matches("[data-node-role]"))
+  .map((target) => target.closest(".react-flow__node")?.getAttribute("data-id"))
+  .filter((id): id is string => !!id)
+  .sort());
 
 async function pickInstance(page: Page, name: string) {
   await select(page).click();
@@ -227,10 +233,10 @@ test("a Simulation lights up what a Class graph runs for the chosen instance and
     .toBe(true);
   await page.emulateMedia({ reducedMotion: "no-preference" });
 
-  // Nothing runs while paused, so every highlight clears.
+  // While paused, what Beta ran last stays lit instead of fading.
   await page.getByTestId("simulation-pause").click();
   await expect(page.getByTestId("simulation-pause")).toHaveAccessibleName("Resume");
-  await expect.poll(() => liveFlashes(page), { timeout: 10_000 }).toBe(0);
+  await expect.poll(() => heldNodes(page), { timeout: 10_000 }).toEqual(["branch", "printA", "tick"]);
 
   // Stopping removes the select and the tips.
   await page.getByTestId("simulation-session-stop").click();
