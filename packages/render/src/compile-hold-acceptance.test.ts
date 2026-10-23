@@ -97,7 +97,7 @@ vi.mock("./load-rehearsal", async (importOriginal) => {
       ? actual.createLoadRehearsal(...args)
       : {
         done: true, frame() {}, check() {}, cancel() {}, release() {},
-        report: () => ({ steps: 0, drawn: 0, omitted: [], timedOut: [], variants: 0, pipelines: 0, ms: 0 }),
+        report: () => ({ steps: 0, drawn: 0, omitted: [], timedOut: [], unrestored: [], variants: 0, pipelines: 0, ms: 0 }),
       }),
   };
 });
@@ -722,6 +722,26 @@ describe("compile holds after the first frame", () => {
     const rehearsed = await presentedAdmission(true, [...actors], configure);
     expect((rehearsed.rehearsal?.steps ?? 0) > 0, JSON.stringify(rehearsed.rehearsal)).toBe(true);
     expect({ first: rehearsed.first, later: rehearsed.later }).toEqual({ first: baseline.first, later: baseline.later });
+  });
+
+  it("a load rehearsal reports a change whose revert could not give back a standby shadow map", async () => {
+    // One Forward local slot: the nearer spot takes it from the spot realized first, whose map stays on standby from the
+    // first presentation frame. Its own switch-off releases that map, and nothing rebuilds a standby map, so the
+    // rehearsal says so.
+    rehearseLoad = true;
+    const world = playWorld("sync", [spot(12, [-1, 4, 6], { castShadows: true }), spot(10, [0, 4, 0], { castShadows: true })]);
+    updateSceneRenderingSettings(world.handle.scene,
+      { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 1 } }) });
+    const controller = findSceneShadowController(world.handle.scene)!;
+    const far = world.handle.scene.lights.find((light) => light.name === `${AUTHORED_LIGHT_PREFIX}12`)!;
+    await withClock(world.handle.prewarmSceneMaterials());
+    const presentation = world.handle.presentFirstFrame();
+    let presented = false;
+    void presentation.finally(() => { presented = true; });
+    for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
+    await presentation;
+    expect({ map: controller.boundGenerator(far) !== null, unrestored: world.handle.loadRehearsalStats()?.unrestored })
+      .toEqual({ map: false, unrestored: [`${AUTHORED_LIGHT_PREFIX}12 off`] });
   });
 
   it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {

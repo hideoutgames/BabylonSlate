@@ -50,7 +50,7 @@ type PlayHost = {
     rendering: () => Record<string, unknown>;
     liveObjectCounts: () => Record<string, number>;
     spawnableWarm: () => { materials: number; models: number; ms: number } | null;
-    loadRehearsal: () => { steps: number; drawn: number; omitted: string[]; timedOut: string[]; variants: number; pipelines: number; ms: number } | null;
+    loadRehearsal: () => { steps: number; drawn: number; omitted: string[]; timedOut: string[]; unrestored: string[]; variants: number; pipelines: number; ms: number } | null;
   };
 };
 

@@ -43,6 +43,12 @@ export interface LoadRehearsalReport {
   /** Changes whose variants were not ready to draw within `LOAD_REHEARSAL_STEP_MS` (or when the ceiling came), and
    * "starting state" when the starting state never settled. */
   timedOut: string[];
+  /**
+   * Changes whose revert could not give a light back the shadow map it held: a standby map the change released (a
+   * standby map comes only from a map that lost its admission, so nothing rebuilds it). The scene then presents without
+   * it, until that light is admitted again.
+   */
+  unrestored: string[];
   /** Effects the rehearsal compiled (new entries in the Engine's cache). */
   variants: number;
   /** WebGPU render pipelines it created (Babylon's pipeline-cache misses). */
@@ -138,13 +144,17 @@ function snapshotAdmission(scene: Scene): AdmissionSnapshot {
  * of the snapshot's time), which moves the slots and maps back, and the light order its exchanges did not restore
  * goes back too. Later admissions carry on from there as a load that never tried the change would.
  */
-function restoreAdmission(scene: Scene, snapshot: AdmissionSnapshot): void {
-  if (scene.isDisposed) return;
+function restoreAdmission(scene: Scene, snapshot: AdmissionSnapshot): boolean {
+  if (scene.isDisposed) return true;
   restoreForwardLightSelection(scene, snapshot.forward);
   syncSceneLighting(scene);
-  if (snapshot.shadows) findSceneShadowController(scene)?.restoreAdmission(snapshot.shadows);
+  const shadows = findSceneShadowController(scene);
+  if (snapshot.shadows) shadows?.restoreAdmission(snapshot.shadows);
   syncSceneLighting(scene);
   restoreSceneLightOrder(scene, snapshot.lights);
+  // Every light that held a map holds one again, unless the step released a standby map.
+  for (const light of snapshot.shadows?.maps.keys() ?? []) if (!shadows?.boundGenerator(light)) return false;
+  return true;
 }
 
 /**
@@ -210,6 +220,7 @@ export function createLoadRehearsal(scene: Scene, settled: () => boolean = () =>
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
   const omitted = all.slice(LOAD_REHEARSAL_STEP_BUDGET).map((step) => step.label);
   const timedOut: string[] = [];
+  const unrestored: string[] = [];
   const engine = scene.getEngine();
   const compiled = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).length;
   const effectsBefore = compiled();
@@ -242,8 +253,9 @@ export function createLoadRehearsal(scene: Scene, settled: () => boolean = () =>
     pipelines = WebGPUCacheRenderPipeline.NumCacheMiss - pipelinesBefore;
   };
   const revert = () => {
-    steps[index]!.revert();
-    if (admission) restoreAdmission(scene, admission);
+    const step = steps[index]!;
+    step.revert();
+    if (admission && !restoreAdmission(scene, admission)) unrestored.push(step.label);
     admission = undefined;
     markSceneReadinessDirty(scene);
     applied = false;
@@ -352,7 +364,7 @@ export function createLoadRehearsal(scene: Scene, settled: () => boolean = () =>
     },
     release: effects.release,
     report: () => ({
-      steps: rehearsed, drawn, omitted, timedOut, variants, pipelines,
+      steps: rehearsed, drawn, omitted, timedOut, unrestored, variants, pipelines,
       ms: (endedAt ?? performance.now()) - (startedAt ?? performance.now()),
     }),
   };
