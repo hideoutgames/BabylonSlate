@@ -131,6 +131,8 @@ export type ScriptBundleEntry = {
   /** Owning catalog asset identity, independent of the source's authoring path. */
   assetGuid: string;
   classId: string;
+  /** The Class's display name, for diagnostics such as the Profiler's Scripts view. */
+  className?: string;
   source: string;
   anchors: ScriptAnchorPayload[];
   entryPoints: Array<{
@@ -138,6 +140,11 @@ export type ScriptBundleEntry = {
     event?: string;
     isAsync: boolean;
     componentId?: string;
+    /** The entry node and its graph, so a diagnostic can open it. */
+    nodeId?: string;
+    graphId?: string;
+    /** The entry node's canvas title (`Event Tick`), or the function's name. */
+    title?: string;
   }>;
   /** Present when the graph is a BDebugCommand OnCommandRun handler. */
   command?: ScriptConsoleCommand;

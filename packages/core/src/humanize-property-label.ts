@@ -83,3 +83,26 @@ export function formatEventTitle(raw: string, qualifier?: string): string {
   }
   return body ? `Event ${body}` : "Event";
 }
+
+/** A graph node's canvas title from its type and stored title: `Event Tick`, `Call Custom Event`. */
+export function displayNodeTitle(
+  nodeType: string,
+  title?: string,
+  qualifier?: string,
+): string {
+  // Call Custom Event / Call Parent must stay "Call …", not "Event Call …".
+  if (nodeType === "flow.event.call" || nodeType === "flow.event.callParent") {
+    if (title && title.trim().length > 0) return title.trim();
+    return nodeType === "flow.event.callParent"
+      ? "Call Parent Event"
+      : "Call Custom Event";
+  }
+  if (nodeType.startsWith("flow.event.")) {
+    return formatEventTitle(
+      title?.trim() || nodeType.slice("flow.event.".length),
+      qualifier,
+    );
+  }
+  if (title && title.trim().length > 0) return title;
+  return humanizePropertyLabel(nodeType.replace(/\./g, " "));
+}

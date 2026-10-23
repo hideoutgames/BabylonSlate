@@ -17,11 +17,12 @@ export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, e
     sampleMemory: ports.sampleMemory, observeLongTasks: observeBrowserLongTasks,
     runtimeOperation: (request) => client.request(request),
     onProfile: (profile) => {
-      const { frames, ticks, gpu, memory, longTasks, ...metadata } = profile;
-      const streams = { frames, ticks, gpu, memory, longTasks };
+      const { frames, ticks, gpu, memory, longTasks, scripts, ...metadata } = profile;
+      const streams = { frames, ticks, gpu, memory, longTasks, scripts };
       transfer = server.publishProfile({
         metadata: { ...metadata, ...Object.fromEntries(Object.entries(streams).map(([name, stream]) => [name, { columns: stream.columns, count: stream.count }])) },
         frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks, memory: memory.chunks, longTasks: longTasks.chunks,
+        scripts: scripts.chunks,
       }).finally(() => session.forgetProfile(profile));
     },
   });

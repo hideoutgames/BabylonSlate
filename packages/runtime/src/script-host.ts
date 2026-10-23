@@ -3,6 +3,7 @@ import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName,
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import type { ScriptDebugTrace } from "./script-debug";
 import type { ScriptBreakpoints } from "./script-breakpoints";
+import type { ScriptCostMeter } from "./script-cost-meter";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
 import { emptyWaterSample, idleDeviceMotion, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@haptic/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@haptic/core";
@@ -901,6 +902,7 @@ export class ScriptHost {
   private debugObject: BObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
   private breakpoints: ScriptBreakpoints | null = null;
+  private costMeter: ScriptCostMeter | null = null;
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
@@ -924,6 +926,11 @@ export class ScriptHost {
   /** The breakpoints every run checks; null, or an empty set, checks none. */
   setBreakpoints(breakpoints: ScriptBreakpoints | null): void {
     this.breakpoints = breakpoints;
+  }
+
+  /** Times every entry point call while a profile records; null times none. */
+  setCostMeter(meter: ScriptCostMeter | null): void {
+    this.costMeter = meter;
   }
 
   /** The driver installs persistence before authored Init/Begin Play hooks run. */
@@ -1197,6 +1204,18 @@ export class ScriptHost {
     }
   }
 
+  /** `invokeOwned` for a compiled entry point, which the cost meter times while a profile records. */
+  private invokeEntry<T>(owner: BObject | null, script: CompiledScript, exportName: string, invoke: () => T): T {
+    const meter = this.costMeter;
+    if (meter === null) return this.invokeOwned(owner, invoke);
+    meter.enter(script, exportName);
+    try {
+      return this.invokeOwned(owner, invoke);
+    } finally {
+      meter.exit();
+    }
+  }
+
   /** Fire a compiled entry point (Begin Play, Tick, or a custom event name). */
   invokeEvent(
     classId: string,
@@ -1266,7 +1285,7 @@ export class ScriptHost {
       loaded[0]!.script.assetGuid,
     );
     try {
-      const result = this.invokeOwned(self, () => (evaluate as (context: ScriptContext) => unknown)(ctx));
+      const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", () => (evaluate as (context: ScriptContext) => unknown)(ctx));
       if (!result || typeof result !== "object") return undefined;
       const row = result as { enter?: unknown; exit?: unknown };
       return {
@@ -1356,7 +1375,7 @@ export class ScriptHost {
       entry.script.assetGuid,
     );
     try {
-      const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+      const result = this.invokeEntry(object, entry.script, exportName, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
       if (result instanceof Promise) {
         // Call Interface is not latent: a latent implementation's outputs are the pin defaults.
         void result.catch((error) => this.reportLatentError(error, object));
@@ -1413,7 +1432,7 @@ export class ScriptHost {
           entry.script.assetGuid,
         );
         try {
-          const result = this.invokeOwned(self, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+          const result = this.invokeEntry(self, entry.script, point.name, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
           if (result instanceof Promise) {
             const key = latentKey ?? `${entry.script.assetGuid}:${point.name}`;
             if (self) this.markPending(self, key);
@@ -2305,7 +2324,7 @@ export class ScriptHost {
               entry.script.assetGuid,
             );
             try {
-              const value = this.invokeOwned(receiver, () => (fn as (ctx: ScriptContext) => unknown)(nested));
+              const value = this.invokeEntry(receiver, entry.script, functionName, () => (fn as (ctx: ScriptContext) => unknown)(nested));
               if (value instanceof Promise) {
                 const previous = result;
                 return value.then(

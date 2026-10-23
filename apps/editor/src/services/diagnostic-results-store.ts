@@ -2,7 +2,9 @@ import type { PerformanceProfile } from "@haptic/debugger";
 import type { RenderFrameReport } from "@haptic/render";
 
 export type DiagnosticResult = { kind: "profile"; profile: PerformanceProfile } | { kind: "frame"; report: RenderFrameReport };
-export type DiagnosticView = "summary" | "timeline" | "frame";
+export type DiagnosticView = "summary" | "timeline" | "scripts" | "frame";
+/** Opens a graph at a node; a message says why it could not. */
+export type DiagnosticSourceOpener = (location: { assetGuid: string; graphId: string; nodeId: string }) => Promise<string | null>;
 export type DiagnosticProfileOptions = { durationMs: number; byteBudget: number; gpuTiming?: boolean };
 export type DiagnosticSessionPorts = {
   mode: "play" | "simulate" | "preview";
@@ -53,6 +55,7 @@ export class DiagnosticResultsStore {
   }
   private readonly listeners = new Set<() => void>();
   private session: { ports: DiagnosticSessionPorts; token: object } | null = null;
+  private sourceOpener: DiagnosticSourceOpener | null = null;
   readonly getSnapshot = () => this.state;
   readonly subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   open(view: DiagnosticView = "summary"): void {
@@ -78,6 +81,12 @@ export class DiagnosticResultsStore {
   /** Compare the shown recording with a kept one in the Summary, or stop comparing with null. */
   compareWith(id: number | null): void {
     this.update({ baselineId: id !== null && this.state.profiles.some((entry) => entry.id === id) ? id : null });
+  }
+  /** The editor sets how a result opens its sources; it outlives sessions, so any kept recording's rows open. */
+  setSourceOpener(opener: DiagnosticSourceOpener | null): void { this.sourceOpener = opener; }
+  /** Opens a graph at a node, as the Scripts view does for an entry; resolves with why it could not, or null. */
+  openSource(location: { assetGuid: string; graphId: string; nodeId: string }): Promise<string | null> {
+    return this.sourceOpener ? this.sourceOpener(location) : Promise.resolve("The editor cannot open graphs right now.");
   }
   bindSession(ports: DiagnosticSessionPorts) {
     const session = { ports, token: {} };
