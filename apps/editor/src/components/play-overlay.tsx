@@ -1168,6 +1168,8 @@ function PlayOverlayView({
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
+        /** Play's load-time warm-up of what it may spawn. */
+        spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1185,6 +1187,7 @@ function PlayOverlayView({
       },
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
+      spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

@@ -99,7 +99,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 | --- | --- |
 | `ft_cel` / `ft_pbr` | Switch the shading mode |
 | `ft_cluster` / `ft_forward` | Switch the render path |
-| `ft_spawn [count]` | Spawn `FT_ScriptSpawned` actors (default 10) |
+| `ft_spawn [count]` | Spawn `FT_ScriptSpawned` actors (default 10); exercises Play's load-time warm-up of spawnables and the per-mesh hide of a missed one |
 | `ft_stream` | Toggle loading `FT_StreamedRoom` |
 | `ft_stats` | Print score, spinner and spawn counts |
 
