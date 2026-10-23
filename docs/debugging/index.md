@@ -53,17 +53,19 @@ Each node pauses the game only the first time: later errors from the same node a
 
 ### Breakpoints
 
-A breakpoint stops a Simulation or Play when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions. Set one in any of these ways:
+A breakpoint stops a Simulation or Play when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions, and on any node of a [Behaviour Tree](../assets/behaviour-tree.md). Set one in any of these ways:
 
 - Choose **Add Breakpoint** from the node's menu (right-click, or press and hold on touch).
 - Select the node and press <kbd>F9</kbd>.
-- With a mouse, click the faint dot at the start of the node's title bar.
+- With a mouse, click the faint dot at the start of the node's title bar, or at the left edge of a Behaviour Tree node.
 
 A red dot then marks the node. A hollow dot means the breakpoint is disabled: it is kept but does not stop. The node's menu has **Remove Breakpoint** and **Disable Breakpoint** / **Enable Breakpoint**.
 
 When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. The toolbar names where it stopped: the Class, the event or function, the node and the object. Choose that name to open the node again. **Debug Instance** switches to that object, and its path and pin values show from its next tick on, for example after a **Step**. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
 
-The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in Classes you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
+In a Behaviour Tree, a breakpoint stops when its node starts running and when it fails, whether by its own result, a decorator, a Time Limit or an abort. A node that keeps running into the next tick does not start again; a breakpoint on the root stops at the start of every pass through the tree. The toolbar names the tree, the node, **Started** or **Failed**, and the actor, and **Debug Instance** switches to that actor.
+
+The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in assets you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
 
 Breakpoints are kept with the project on this device, not in its assets. Setting one never changes a document. Preview Build and exported games never stop at them.
 

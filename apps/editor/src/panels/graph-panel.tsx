@@ -28,6 +28,7 @@ import { GraphPinDefaultHostContext } from "../context/graph-pin-defaults-provid
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
+import { breakpointMenuItems } from "../lib/breakpoint-menu";
 import { useKeybindChord } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -522,23 +523,9 @@ export function GraphPanel(
       const node = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
       if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return items;
       const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
-      const entry = breakpointStore.get(location);
-      if (!entry) {
-        return [...items, {
-          id: "add-breakpoint",
-          label: "Add Breakpoint",
-          shortcut: toggleBreakpointChord,
-          onSelect: () => breakpointStore.toggle(location, breakpointLabel(nodeId)),
-        }];
-      }
       return [
         ...items,
-        { id: "remove-breakpoint", label: "Remove Breakpoint", shortcut: toggleBreakpointChord, onSelect: () => breakpointStore.remove(location) },
-        {
-          id: "toggle-breakpoint-enabled",
-          label: entry.enabled ? "Disable Breakpoint" : "Enable Breakpoint",
-          onSelect: () => breakpointStore.setEnabled(location, !entry.enabled),
-        },
+        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord),
       ];
     },
     [breakpointAsset, breakpointLabel, breakpointStore, graphContent, runGraphId, toggleBreakpointChord],

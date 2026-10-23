@@ -8,9 +8,12 @@ import {
   validateBehaviourTree,
   type BehaviourTreeDocument,
 } from "@haptic/behaviour-tree";
+import { BT_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
+import { BreakpointStoreProvider } from "../context/breakpoints-context";
+import { BreakpointStore } from "../services/breakpoint-store";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import {
   BehaviourTreeBlackboardPanel,
@@ -704,6 +707,33 @@ describe("BehaviourTreeEditor", () => {
     renderTree();
     fireEvent.click(screen.getByTestId("bt-add-decorator"));
     expect(screen.getByTestId("bt-attachment-item-BTDecorator_Alert")).toBeTruthy();
+  });
+
+  it("sets a breakpoint on any tree node, the root included, from its menu and marks the node", () => {
+    const breakpoints = new BreakpointStore();
+    store.reset(createDefaultBehaviourTree() as unknown as Record<string, unknown>);
+    const { container } = render(
+      <BreakpointStoreProvider store={breakpoints}>
+        <TreePanels />
+      </BreakpointStoreProvider>,
+    );
+    fireEvent.contextMenu(screen.getByTestId("bt-node-root"));
+    fireEvent.click(screen.getByText("Add Breakpoint"));
+    expect(breakpoints.list()).toEqual([{
+      assetGuid: "tree-1",
+      graphId: BT_DEBUG_GRAPH_ID,
+      nodeId: "root",
+      enabled: true,
+      label: { className: "Patrol", graphName: "Behaviour Tree", nodeTitle: "Selector" },
+    }]);
+    const root = container.querySelector('.react-flow__node[data-id="root"]')!;
+    expect(root.querySelector("[data-breakpoint]")?.getAttribute("data-breakpoint")).toBe("enabled");
+
+    // The menu reads the breakpoint when it opens.
+    fireEvent.contextMenu(screen.getByTestId("bt-node-root"));
+    fireEvent.click(screen.getByText("Disable Breakpoint"));
+    expect(breakpoints.list()[0]?.enabled).toBe(false);
+    expect(root.querySelector("[data-breakpoint]")?.getAttribute("data-breakpoint")).toBe("disabled");
   });
 
   it("wraps the selected node from the long-press menu", () => {

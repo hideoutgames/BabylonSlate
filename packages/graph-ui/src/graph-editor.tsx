@@ -155,7 +155,7 @@ import {
   type GraphCommand,
   type GraphKeybinds,
 } from "./graph-keybinds";
-import { canBreakOnNode, type GraphBreakpoints } from "./graph-breakpoints";
+import { nodeCanBreak, type GraphBreakpoints } from "./graph-breakpoints";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -2218,7 +2218,8 @@ function GraphEditorCanvas({
         }
         case "toggleBreakpoint": {
           if (!breakpoints) return false;
-          const targets = graphStateRef.current.nodes.filter((node) => node.selected && canBreakOnNode(node.data));
+          const targets = graphStateRef.current.nodes.filter((node) =>
+            node.selected && nodeCanBreak(breakpoints, node.id, node.data));
           for (const node of targets) breakpoints.toggle(node.id);
           return targets.length > 0;
         }
