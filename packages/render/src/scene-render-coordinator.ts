@@ -509,8 +509,10 @@ export class SceneRenderCoordinator {
     const generation = this.generation;
     // Nothing awaits this preparation; the view's steady frames draw once it is done. It probes as they do, whoever
     // asked (Play's end-of-frame readiness question is strict): a strict one would hold them until every swapped
-    // variant compiled. A strict question asks again once it is done.
-    void this.prepare(undefined, { tolerateVariantSwaps: this.toleratesVariantSwaps() }).catch((error: unknown) => {
+    // variant compiled. A strict question asks again once it is done. Until the view draws steady frames (loading,
+    // its load rehearsal and first presentation), what draws next is a strict frame, so it probes strictly.
+    const tolerate = this.toleratesVariantSwaps() && this.graph.warmsVariants;
+    void this.prepare(undefined, { tolerateVariantSwaps: tolerate }).catch((error: unknown) => {
       if (this.disposed || generation !== this.generation) return;
       this.failure = error;
       this.failedAt = performance.now();

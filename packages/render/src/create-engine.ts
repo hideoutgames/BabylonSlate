@@ -58,6 +58,7 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
+import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineView, Material } from "@babylonjs/core";
@@ -417,6 +418,8 @@ export interface EngineHandle {
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
   /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
   spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
+  /** Play's last load rehearsal of its light changes (`createLoadRehearsal`), once it has ended. */
+  loadRehearsalStats: () => LoadRehearsalReport | null;
   /** Release startup source ownership after its actors have retired. */
   releaseInitialSources: () => void;
   /** Refresh owned library unions without resetting live mixer session settings. */
@@ -1043,13 +1046,28 @@ function initializeEngine(
     errorsCleared: boolean;
     /** WebGPU render pipelines the latest submitted draw created; they build inside its GPU completion. */
     pipelines: number;
+    /** Restarts the loading deadline (progress that is not a compile: a rehearsal step). */
+    restart?: () => void;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
+  /**
+   * Play's load rehearsal of its light changes (`load-rehearsal.ts`), run in the world presentation's loading frames
+   * before its first presented frame; its report once it ends.
+   */
+  let loadRehearsal: LoadRehearsal | null = null;
+  let loadRehearsalReport: LoadRehearsalReport | null = null;
+  const endLoadRehearsal = () => {
+    if (!loadRehearsal) return;
+    loadRehearsal.cancel();
+    loadRehearsalReport = loadRehearsal.report();
+    loadRehearsal = null;
+  };
   const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
   const cancelPresentation = (error: Error, key?: string) => {
     for (const [id, pending] of pendingPresentations) {
       if (key !== undefined && id !== key) continue;
+      if (id === "world") endLoadRehearsal();
       pendingPresentations.delete(id);
       clearTimeout(pending.timer);
       pending.submission?.cancel();
@@ -2731,6 +2749,7 @@ function initializeEngine(
   };
   const presentationReady = (pending: PendingPresentation) => {
     try {
+      if (!pending.owner && loadRehearsal && !loadRehearsal.done) loadRehearsal.check();
       pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;
     } catch (error) {
@@ -2959,6 +2978,14 @@ function initializeEngine(
         }
         if (pending.rendered || pending.submission) {
           if (draw() && pending.rendered) frameOwners.set(key, pending);
+          return;
+        }
+        if (key === "world" && loadRehearsal && !loadRehearsal.done) {
+          loadRehearsal.frame(() => worldRenderer.render(true).readyForPresentation);
+          // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
+          engine.clear(scene.clearColor, true, true, true);
+          pending.restart?.();
+          if (loadRehearsal.done) loadRehearsalReport = loadRehearsal.report();
           return;
         }
         pending.copied = false;
@@ -4383,6 +4410,7 @@ function initializeEngine(
     },
     nativePreparationStats: () => nativePreparation.snapshot(),
     spawnableWarmStats: () => spawnableWarm,
+    loadRehearsalStats: () => loadRehearsalReport ?? (loadRehearsal?.done ? loadRehearsal.report() : null),
     releaseInitialSources,
     setSourceLibraries: (libraries) => {
       if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
@@ -4478,6 +4506,12 @@ function initializeEngine(
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
       else await worldRenderer.prepare(scope.assert);
       scope.assert();
+      // Play rehearses its light changes in the world presentation's loading frames, before the first presented one.
+      if (!owner && options.playMode) {
+        endLoadRehearsal();
+        loadRehearsalReport = null;
+        loadRehearsal = createLoadRehearsal(scene);
+      }
     },
     whenMaterialTexturesReady: async (owner) => {
       const scope = loadingScope(owner);
@@ -4530,7 +4564,13 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 });
+      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
+      pending.restart = () => {
+        if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
+        clearTimeout(pending.timer);
+        pending.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+      };
+      pendingPresentations.set(key, pending);
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),

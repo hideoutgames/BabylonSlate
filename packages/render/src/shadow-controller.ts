@@ -582,6 +582,10 @@ export class SceneShadowController {
   requestsShadow(light: Light): boolean {
     return this.entries.get(light)?.requested ?? false;
   }
+  /** Authored shadow priority (`register`'s). */
+  shadowPriority(light: Light): number {
+    return this.entries.get(light)?.priority ?? 0;
+  }
   limits(): string[] {
     const limits = new Set<string>();
     for (const entry of this.entries.values()) {
