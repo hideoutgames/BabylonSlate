@@ -10,6 +10,7 @@ import {
   type Material,
   type RenderTargetTexture,
   type Scene,
+  type ShadowGenerator,
   type SceneOptions,
 } from "@babylonjs/core";
 import { prewarmMaterial } from "./material-compiler";
@@ -24,6 +25,7 @@ import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } fr
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -173,6 +175,42 @@ const meshRequests = new Set<Effect>();
 let probedMesh: AbstractMesh | undefined;
 const probeMesh = () => probedMesh!.isReady(true);
 const reportedFailures = new WeakSet<Effect>();
+/** The scene probe's maps awaiting their first draw (reused). */
+const firstDrawMaps = new Set<RenderTargetTexture>();
+/** Generators whose caster check a tolerant probe answers while it asks one mesh, with what to restore. */
+const deferredCasters: { generator: ShadowGenerator; own: boolean; isReady: ShadowGenerator["isReady"] }[] = [];
+
+/**
+ * Babylon's `Mesh.isReady` asks every map of the mesh's lights for the mesh's caster depth variant. A map that has
+ * not drawn yet samples neutrally and draws once its casters are ready (`ManagedShadowsTask`), so a tolerant probe
+ * still requests those variants but does not let them hold the mesh: its colour variant and every drawn map's
+ * casters decide.
+ */
+function deferFirstDrawCasters(mesh: AbstractMesh): void {
+  for (const light of mesh.lightSources) {
+    const generators = light.getShadowGenerators();
+    if (!generators) continue;
+    for (const generator of generators.values()) {
+      const shadows = generator as ShadowGenerator;
+      if (!awaitsFirstDraw(shadows) || deferredCasters.some((entry) => entry.generator === shadows)) continue;
+      const own = Object.prototype.hasOwnProperty.call(shadows, "isReady");
+      const isReady = shadows.isReady;
+      deferredCasters.push({ generator: shadows, own, isReady });
+      shadows.isReady = function (this: ShadowGenerator, ...args: Parameters<ShadowGenerator["isReady"]>) {
+        isReady.apply(this, args);
+        return true;
+      };
+    }
+  }
+}
+
+function restoreFirstDrawCasters(): void {
+  for (const { generator, own, isReady } of deferredCasters) {
+    if (own) generator.isReady = isReady;
+    else delete (generator as Partial<ShadowGenerator>).isReady;
+  }
+  deferredCasters.length = 0;
+}
 
 /**
  * A swapping mesh's new variant failed to compile, every fallback included: none of the Effects it requested is still
@@ -245,6 +283,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
         material._getDrawWrapper()._wasPreviouslyReady = false;
     }
     probedMesh = mesh;
+    if (variantSwapsTolerated()) deferFirstDrawCasters(mesh);
     if (!collectEffectRequests(scene.getEngine(), meshRequests, probeMesh)) return false;
     // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
     for (const part of mesh.subMeshes ?? []) {
@@ -258,6 +297,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     }
     return true;
   } finally {
+    restoreFirstDrawCasters();
     probedMesh = undefined;
     meshRequests.clear();
     for (const [material, [everyCall, onlyOnce]] of states) {
@@ -373,17 +413,25 @@ export function isSceneFrameReady(
     for (const check of (scene as unknown as SceneReadinessInternals)._isReadyChecks) {
       if (!check.isReady()) ready = false;
     }
+    // A map that has not drawn yet waits for its casters without holding a tolerant probe (`deferFirstDrawCasters`).
+    const firstDraws = firstDrawMaps;
+    firstDraws.clear();
     for (const light of scene.lights) {
       if (admitted && !light.isEnabled()) continue;
       for (const generator of light.getShadowGenerators()?.values() ?? []) {
         const map = generator.getShadowMap();
-        if (map) renderTargets.add(map);
+        if (!map) continue;
+        renderTargets.add(map);
+        if (awaitsFirstDraw(generator as ShadowGenerator)) firstDraws.add(map);
       }
     }
     for (const target of renderTargets) {
       const owner = target.getScene() ?? scene;
-      if (!withSceneReadinessState(owner, () => target.isReadyForRendering())) ready = false;
+      if (withSceneReadinessState(owner, () => target.isReadyForRendering())) continue;
+      if (variantSwapsTolerated() && firstDraws.has(target)) noteVariantSwap();
+      else ready = false;
     }
+    firstDraws.clear();
     return ready;
   });
 }

@@ -40,6 +40,7 @@ import {
   Vector3,
   type AbstractEngine,
   type Effect,
+  type ShadowGenerator,
 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_VISIBLE,
@@ -60,6 +61,7 @@ import { compileMaterialPlan } from "./material-compiler";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -391,7 +393,9 @@ async function settle(world: PlayWorld): Promise<void> {
  * Applies `cause` to a settled view, keeps the new compiles or pipelines pending for `PENDING_FRAMES` frames,
  * releases them and lets the view recover (up to 30 frames). `settled` runs once the view has settled.
  */
-async function measure(world: PlayWorld, cause: () => unknown, settled?: () => void): Promise<CauseRecord> {
+async function measure(
+  world: PlayWorld, cause: () => unknown, settled?: () => void, pending?: () => void,
+): Promise<CauseRecord> {
   await settle(world);
   settled?.();
   const before = world.subjectEffect();
@@ -418,6 +422,7 @@ async function measure(world: PlayWorld, cause: () => unknown, settled?: () => v
     holdReported ||= holding;
     // The cause's own invalidation is probed in its first frame; count what the pending swap costs after it.
     if (index === 0) checksBefore = world.views.at(-1)?.checks ?? 0;
+    pending?.();
   }
   const probesPerFrame = ((world.views.at(-1)?.checks ?? 0) - checksBefore) / (PENDING_FRAMES - 1);
   world.driver.release();
@@ -544,9 +549,32 @@ describe("compile holds after the first frame", () => {
   });
 
   it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
-    // Receivers swap, but the new map's casters compile their depth variants first and the graph prepares the map.
-    const world = playWorld(model, [spot(10, [0, 5, 0])]);
-    expectRecovers(await measure(world, () => world.place(spot(10, [0, 5, 0], { castShadows: true }))));
+    // The floor receives the crate's shadow. The view keeps drawing while the receivers' shadowed variants and the
+    // casters' depth variants for the new map compile: the map samples neutrally (lit) until it first draws, which it
+    // does once every caster is ready.
+    const world = playWorld(model, [spot(10, [0, 5, 0])], [], "actor-1");
+    const spotLight = () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!;
+    const map = () => spotLight().getShadowGenerator() as ShadowGenerator | null;
+    let neutralWhilePending = true;
+    const record = await measure(world, () => world.place(spot(10, [0, 5, 0], { castShadows: true })), undefined, () => {
+      const generator = map();
+      // Only a pending compile keeps the map from drawing; a synchronous link draws it in the change's frame.
+      if (model === "parallel") neutralWhilePending &&= !!generator && awaitsFirstDraw(generator) && generator.getDarkness() === 1;
+    });
+    const generator = map();
+    const shadow = {
+      neutralWhilePending,
+      drawn: !!generator && !awaitsFirstDraw(generator) && generator.getDarkness() === 0,
+      received: /#define SHADOW\d/.test(world.subjectEffect()?.defines ?? ""),
+    };
+    expect(shadow, JSON.stringify(record)).toEqual({ neutralWhilePending: true, drawn: true, received: true });
+    if (model !== "webgpu") expectSwapped(record, model);
+    else {
+      // WebGPU's Effects are ready once created: the receivers' new variants still wait for their render pipelines
+      // (pipeline swaps are separate work), but no frame waits for the shadow map.
+      expect(record.reasons.every((reason) => reason.endsWith("Render pipelines are compiling.")), JSON.stringify(record)).toBe(true);
+      expectRecovers(record);
+    }
   });
 
   it.each(MODELS)("a spawned actor uses a Material no mesh drew before: %s", async (model) => {

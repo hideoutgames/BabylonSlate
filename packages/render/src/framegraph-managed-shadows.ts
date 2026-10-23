@@ -16,6 +16,8 @@ import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
 import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
 
@@ -294,8 +296,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
   }
 
   /**
-   * Changed allocations require readiness, not new graph tasks or render-pass
-   * IDs. Scene light order is irrelevant: a moved map keeps its allocation.
+   * The shadow set changed since the last bind: a new probe binds it. Changed allocations need readiness, not new graph
+   * tasks or render-pass IDs. Scene light order is irrelevant: a moved map keeps its allocation.
    */
   needsPreparation(current = this.generators()): boolean {
     if (this.changedDuringFrame) return true;
@@ -384,8 +386,12 @@ export class ManagedShadowsTask extends FrameGraphTask {
         }
         const { generator, map } = entry;
         const light = generator.getLight();
-        if (!light.isEnabled() || !light.shadowEnabled || !map._shouldRender())
+        if (!light.isEnabled() || !light.shadowEnabled) continue;
+        // A map that has not drawn yet first draws with every caster's depth variant ready, before its refresh is
+        // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
+        if (awaitsFirstDraw(generator) && !withSceneReadinessState(this.scene, () => map.isReadyForRendering()))
           continue;
+        if (!map._shouldRender()) continue;
         drawBorrowedTarget(
           this.scene,
           map,
@@ -445,8 +451,15 @@ export class ManagedShadowsTask extends FrameGraphTask {
         if (!map.getInternalTexture()) return false;
         continue;
       }
-      if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering()))
-        return false;
+      if (withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
+      // A map that has not drawn yet samples neutrally (lit): a steady frame draws without it while its casters' depth
+      // variants compile, and it draws on the first frame they are ready, as a swapping Material adopts its new
+      // variant. Every other probe waits for it.
+      if (variantSwapsTolerated() && awaitsFirstDraw(generator)) {
+        noteVariantSwap();
+        continue;
+      }
+      return false;
     }
     this.changedDuringFrame = false;
     return true;

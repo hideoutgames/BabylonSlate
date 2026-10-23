@@ -62,6 +62,7 @@ import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -324,7 +325,7 @@ export class SceneShadowController {
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
-  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; guard: boolean; view: boolean }>();
+  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; view: boolean }>();
   /** Views with their own sun maps, by camera. */
   private readonly views = new Map<Camera, View>();
   /** Effective settings of the last sync, which views mirror. */
@@ -487,6 +488,7 @@ export class SceneShadowController {
   boundGenerator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
+
   /**
    * Gives `camera` (a Full Quality capture's) its own sun maps: each admitted
    * sun map is mirrored with the same kind, size, cascades and settings, keyed
@@ -1030,7 +1032,7 @@ export class SceneShadowController {
       entry.standby = true;
       entry.effectiveBias.length = 0;
       generator.setDarkness(NEUTRAL_DARKNESS);
-      this.slots.get(generator)!.guard = false;
+      setAwaitingFirstDraw(generator, false);
       // A continuous caster would otherwise keep redrawing the neutral map.
       const map = generator.getShadowMap();
       if (map && map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE)
@@ -1089,6 +1091,8 @@ export class SceneShadowController {
         try {
           const generator = this.createGenerator(entry, mapSize, settings, null, casterBounds);
           entry.generator = generator;
+          // Receivers may bind the new map before its first draw (a view keeps drawing while its casters compile).
+          this.neutralUntilRendered(generator);
           markSceneReadinessDirty(scene);
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
@@ -1202,7 +1206,7 @@ export class SceneShadowController {
         : directionalLight
           ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
           : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
-    const slot = { entry, guard: false, view: view !== null };
+    const slot = { entry, view: view !== null };
     this.slots.set(generator, slot);
     if (generator instanceof CascadedShadowGenerator) {
       generator.numCascades = settings.cascades;
@@ -1327,9 +1331,9 @@ export class SceneShadowController {
     map?.onAfterRenderObservable.add((face) => {
       if (!clearedForDraw) return;
       clearedForDraw = false;
-      // A moved or resumed map samples neutrally until its last face is redrawn.
-      if (slot.guard && face === (map.isCube ? 5 : 0)) {
-        slot.guard = false;
+      // A new, moved or resumed map samples neutrally until its last face is drawn.
+      if (awaitsFirstDraw(generator) && face === (map.isCube ? 5 : 0)) {
+        setAwaitingFirstDraw(generator, false);
         if (!slot.entry.standby) generator.setDarkness(0);
       }
       // Effective bias reports the scene view's maps.
@@ -1617,10 +1621,10 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) if (entry.generator) return true;
     return false;
   }
-  /** Keep a moved or resumed map from sampling stale depth before it redraws. */
+  /** Keep a new, moved or resumed map from sampling empty or stale depth before it draws. */
   private neutralUntilRendered(generator: ShadowGenerator): void {
     generator.setDarkness(NEUTRAL_DARKNESS);
-    this.slots.get(generator)!.guard = true;
+    setAwaitingFirstDraw(generator, true);
     generator.getShadowMap()?.resetRefreshCounter();
   }
   private applySettings(
