@@ -77,7 +77,7 @@ import {
   type DebugObserveTarget,
   type ScriptBundleEntry,
   type SessionPauseCause,
-  type BreakpointLocation,
+  type Breakpoint,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
@@ -273,9 +273,9 @@ export function applyPlayGraphDebugObserve(
 export function applyPlayBreakpoints(
   target: {
     worker?: { postControl: (message: ControlMessage) => void } | null;
-    runtime?: { applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void } | null;
+    runtime?: { applyBreakpoints(breakpoints: readonly Breakpoint[]): void } | null;
   },
-  breakpoints: BreakpointLocation[],
+  breakpoints: Breakpoint[],
 ): void {
   if (target.worker) target.worker.postControl({ type: "setBreakpoints", breakpoints });
   else target.runtime?.applyBreakpoints(breakpoints);
@@ -424,7 +424,7 @@ export interface PlaySession {
    */
   observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
   /** Replace the node breakpoints a Simulation stops at (its scripts check them). */
-  setBreakpoints: (breakpoints: BreakpointLocation[]) => void;
+  setBreakpoints: (breakpoints: Breakpoint[]) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -723,7 +723,7 @@ export function startPlaySession(options: {
   /** Simulation: pause the first time each node reports an error (Engine Settings, Pause On Errors). */
   pauseOnErrors?: boolean;
   /** Simulation: the enabled node breakpoints when it starts; `setBreakpoints` changes them. */
-  breakpoints?: BreakpointLocation[];
+  breakpoints?: Breakpoint[];
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];

@@ -6,6 +6,7 @@ import {
   canvasNodeTitle,
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
+  hasSerializedPins,
   type GraphCanvasDropApi,
   type GraphPasteElements,
   type PaletteNode,
@@ -29,6 +30,8 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { conditionPins } from "../lib/breakpoint-settings";
+import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { useKeybindChord } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -260,6 +263,7 @@ export function GraphPanel(
     () => breakpointStore && breakpointAsset ? breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel) : undefined,
     [breakpointAsset, breakpointLabel, breakpointStore, runGraphId],
   );
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
   // A function graph runs under its name, so renaming a function moves its breakpoints with it.
   const functionRunIds = useMemo(() => new Map(
     Object.keys(graphContent?.functionGraphs ?? {}).map((id) => [id, functionGraphExportName({
@@ -523,12 +527,22 @@ export function GraphPanel(
       const node = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
       if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return items;
       const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
+      const edit = () => {
+        const { nodes, edges } = latestGraph.current;
+        const data = nodes.find((candidate) => candidate.id === nodeId)?.data;
+        editBreakpoint({
+          location,
+          nodeTitle: breakpointLabel(nodeId).nodeTitle,
+          pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
+            (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
+        });
+      };
       return [
         ...items,
-        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord),
+        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord, edit),
       ];
     },
-    [breakpointAsset, breakpointLabel, breakpointStore, graphContent, runGraphId, toggleBreakpointChord],
+    [breakpointAsset, breakpointLabel, breakpointStore, editBreakpoint, graphContent, runGraphId, toggleBreakpointChord],
   );
 
   const preparePaste = useCallback(
@@ -630,6 +644,7 @@ export function GraphPanel(
           else void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
         }}
       />
+      {breakpointSettingsDialog}
     </PanelFrame>
   );
 }

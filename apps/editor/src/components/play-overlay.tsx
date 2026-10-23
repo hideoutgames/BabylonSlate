@@ -897,7 +897,7 @@ function PlayOverlayView({
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
           pauseOnErrors: initialPauseOnErrorsRef.current,
-          breakpoints: breakpointStore?.enabledLocations(),
+          breakpoints: breakpointStore?.enabledBreakpoints(),
           onSceneLoading: setSceneLoading,
           onSceneLoadFailed: () => setSceneLoadFailed(true),
           onSessionPaused: (next, cause) => {
@@ -985,7 +985,7 @@ function PlayOverlayView({
       sessionRef.current = session;
       setGraphDebugSession(session);
       // Breakpoints set, removed or switched off while the session runs apply from its next run of the node.
-      const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()));
+      const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledBreakpoints()));
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }

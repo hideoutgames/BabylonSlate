@@ -10,11 +10,11 @@ describe("BreakpointStore", () => {
     store.toggle(at("a"), label);
     store.toggle(at("b"), label);
     store.setEnabled(at("b"), false);
-    expect(store.enabledLocations()).toEqual([at("a")]);
+    expect(store.enabledBreakpoints()).toEqual([at("a")]);
     store.setAllEnabled(true);
-    expect(store.enabledLocations()).toEqual([at("a"), at("b")]);
+    expect(store.enabledBreakpoints()).toEqual([at("a"), at("b")]);
     store.toggle(at("a"), label);
-    expect(store.enabledLocations()).toEqual([at("b")]);
+    expect(store.enabledBreakpoints()).toEqual([at("b")]);
   });
 
   it("saves after each change made in the editor, never after loading", () => {
@@ -38,13 +38,39 @@ describe("BreakpointStore", () => {
     expect(parseBreakpointFile(JSON.stringify({ version: 1, breakpoints: [{ nodeId: "a" }, entries[0]] }))).toEqual([entries[0]]);
   });
 
+  it("sends a session each breakpoint's condition and hit count, and saves them", () => {
+    const store = new BreakpointStore();
+    const save = vi.fn();
+    store.onChange(save);
+    store.toggle(at("a"), label);
+    const condition = { pinId: "lastIndex", direction: "in" as const, op: ">=" as const, value: 2 };
+    store.setSettings(at("a"), { condition, hitCount: 3 }, "Last Index");
+    expect(store.enabledBreakpoints()).toEqual([{ ...at("a"), condition, hitCount: 3 }]);
+    expect(store.get(at("a"))?.label.pinName).toBe("Last Index");
+    expect(parseBreakpointFile(serializeBreakpointFile(save.mock.lastCall![0]))).toEqual(store.list());
+
+    store.setSettings(at("a"), {});
+    expect(store.enabledBreakpoints()).toEqual([at("a")]);
+    expect(store.get(at("a"))?.label.pinName).toBeUndefined();
+  });
+
+  it("drops a saved breakpoint whose settings it cannot read", () => {
+    const entry = { ...at("a"), enabled: true, label };
+    const read = (extra: object) => parseBreakpointFile(JSON.stringify({ version: 1, breakpoints: [{ ...entry, ...extra }] }));
+    expect(read({ hitCount: 2, condition: { pinId: "p", direction: "out", op: "isValid" } })).toHaveLength(1);
+    expect(read({ hitCount: 0 })).toEqual([]);
+    expect(read({ hitCount: 1.5 })).toEqual([]);
+    expect(read({ condition: { pinId: "p", direction: "in", op: "~=", value: 1 } })).toEqual([]);
+    expect(read({ condition: { pinId: "p", direction: "in", op: "==", value: {} } })).toEqual([]);
+  });
+
   it("follows a renamed Class and a renamed function", () => {
     const store = new BreakpointStore();
     store.toggle(at("a"), label);
     store.toggle(at("b", "Shoot"), { ...label, graphName: "Shoot" });
     store.renameAsset("Content/Hero.class", "Content/Player.class");
     store.renameGraph("Content/Player.class", "Shoot", "Fire", "Fire");
-    expect(store.enabledLocations()).toEqual([at("a", "event-graph", "Content/Player.class"), at("b", "Fire", "Content/Player.class")]);
+    expect(store.enabledBreakpoints()).toEqual([at("a", "event-graph", "Content/Player.class"), at("b", "Fire", "Content/Player.class")]);
     expect(store.get(at("b", "Fire", "Content/Player.class"))?.label.graphName).toBe("Fire");
   });
 
