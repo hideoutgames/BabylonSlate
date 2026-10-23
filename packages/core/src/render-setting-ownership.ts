@@ -91,6 +91,7 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   fogDensity: "independent",
   fogStart: "independent",
   fogEnd: "independent",
+  environmentSource: "independent",
   environmentTextureGuid: "independent",
   environmentLighting: "independent",
   mainCameraActorId: "independent",

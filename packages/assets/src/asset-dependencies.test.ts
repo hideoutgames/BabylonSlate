@@ -21,6 +21,15 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
   });
 
+  it("keeps an environment cube unused by a Skybox-lit scene reachable without requiring it", () => {
+    const metadata = collectAssetDependencyMetadata("Scene", {
+      settings: { environmentSource: "skybox", environmentTextureGuid: "environment" },
+      actors: [],
+    });
+    expect(metadata.dependencies).toEqual(["environment"]);
+    expect(metadata.requiredDependencies).toEqual([]);
+  });
+
   it("keeps saved scene-owned material textures in the required source closure without loading stale overrides", async () => {
     const bytes = await encodeAssetDocument({ type: "Scene", guid: "scene", name: "Scene", version: 1, payload: {
       actors: [{ classId: "engine:Actor", suppressedComponentSourceIds: ["removed-component"], components: [

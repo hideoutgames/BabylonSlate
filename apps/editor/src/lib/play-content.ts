@@ -20,6 +20,7 @@ import {
   UI_CONTROL_2D_CLASS_IDS,
   isEditorOnlyAsset,
   parseSkyboxFaces,
+  sceneEnvironmentTextureGuid,
   skyboxFaceGuids,
   text2dFontGuidsFromScene,
   text2dImageGuidsFromScene,
@@ -458,7 +459,7 @@ export function modelSlotMaterialGuidsFromPayloads(
 export function environmentTextureGuidsFromScenes(scenes: readonly (SerializedScene | null | undefined)[]): string[] {
   const guids = new Set<string>();
   for (const scene of scenes) {
-    const guid = scene?.settings.environmentTextureGuid;
+    const guid = scene ? sceneEnvironmentTextureGuid(scene.settings) : null;
     if (guid) guids.add(guid);
   }
   return [...guids];

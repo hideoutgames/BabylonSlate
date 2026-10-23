@@ -56,6 +56,9 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   camera.transform.position = [0, 1.9, -5.5];
   camera.transform.rotation = lookAtRotation([0, 1.9, -5.5], [0, 1.35, 0]);
   Object.assign(camera.components.find(component => component.classId === "CameraComponent")!.properties, { fieldOfView: 0.7 * 180 / Math.PI });
+  // Contact coverage reads a shadowed pixel's remaining light as missing shadow; the template's Skybox
+  // lighting fills shadows, so measure the sun's shadows alone.
+  scene.settings.environmentSource = "none";
   // Preserve the real template's model, animation, light and clipping settings.
   await setPreviewScene(page, scene);
   await expect.poll(() => page.evaluate(() => (window as unknown as { __hapticViewportTest: Api }).__hapticViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);

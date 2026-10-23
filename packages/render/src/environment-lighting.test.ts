@@ -8,6 +8,9 @@ import {
   Vector3,
   Matrix,
   MeshBuilder,
+  PBRMaterial,
+  Quaternion,
+  Texture,
 } from "@babylonjs/core";
 import { normalizeEnvironmentLightingSettings } from "@haptic/core";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
@@ -15,6 +18,8 @@ import { ResourceCache } from "./resource-cache";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createDefaultScene } from "@haptic/core";
 import { applySceneEnvironment } from "./scene-illumination";
+import { createSkyboxMesh } from "./skybox";
+import type { ResourceLease } from "./resource-cache";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { isSceneFrameReady } from "./scene-perf";
 import { compileMaterialPlan } from "./material-compiler";
@@ -285,6 +290,7 @@ it("blocks pending uploads and exposes the current source failure without lettin
 it("applies serialized Scene overrides and live project updates through the existing renderer entry points", () => {
   const { a, assets } = fixture();
   const document = createDefaultScene();
+  document.settings.environmentSource = "texture";
   document.settings.environmentTextureGuid = "environment";
   document.settings.environmentLighting = {
     intensity: 2,
@@ -305,6 +311,44 @@ it("applies serialized Scene overrides and live project updates through the exis
   });
   expect(a.iblIntensity).toBe(4);
   expect(a.environmentTexture).toBe(view);
+});
+
+it("lights a Skybox-sourced scene from the visible sky's own cube where the sky draws it, and releases it with the sky", () => {
+  const { engine, cache, upload, a, bytes, assets } = fixture();
+  const sky = createSkyboxMesh(a, "Sky", cache.acquireTexture("sky", engine, bytes, { isCube: true }) as ResourceLease<CubeTexture>);
+  const skyCube = (sky.material as PBRMaterial).reflectionTexture as CubeTexture;
+  const document = createDefaultScene();
+  applySceneEnvironment(a, document, { assets });
+  const view = a.environmentTexture as CubeTexture;
+  expect(view).not.toBe(skyCube);
+  expect(view.getInternalTexture()).toBe(skyCube.getInternalTexture());
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(view.coordinatesMode).toBe(Texture.CUBIC_MODE);
+  expect(skyCube.coordinatesMode).toBe(Texture.SKYBOX_MODE);
+
+  // Turning the sky turns its lighting: the world direction showing the sky's
+  // local +Z face samples the cube's +Z face.
+  sky.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.PI / 2);
+  sky.computeWorldMatrix(true);
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  const shown = Vector3.TransformNormal(Vector3.Forward(), sky.getWorldMatrix()).normalize();
+  const sampled = Vector3.TransformNormal(shown, view.getReflectionTextureMatrix());
+  expect(sampled.x).toBeCloseTo(0);
+  expect(sampled.z).toBeCloseTo(1);
+
+  document.settings.environmentSource = "none";
+  applySceneEnvironment(a, document, { assets });
+  expect(a.environmentTexture).toBeNull();
+  document.settings.environmentSource = "skybox";
+  applySceneEnvironment(a, document, { assets });
+  expect(a.environmentTexture?.getInternalTexture()).toBe(skyCube.getInternalTexture());
+
+  sky.dispose();
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  expect(a.environmentTexture).toBeNull();
+  cache.flushUnreferenced();
+  expect(skyCube.getInternalTexture()).toBeNull();
+  expect(cache.resourceStats()).toMatchObject({ leases: 0 });
 });
 
 it("binds, removes and swaps a late Scene environment on a frozen PBR graph without rebuilding or allocating placeholder cubes", async () => {

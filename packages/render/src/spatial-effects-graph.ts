@@ -4,6 +4,8 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
+// Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
+import "./standard-reflectivity";
 import {
   createSpatialStages,
   spatialEffectsUnsupported,

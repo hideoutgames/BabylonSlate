@@ -105,7 +105,7 @@ async function setupCelColorFixture(page: Page, saveTimeout?: number) {
   mesh.properties.materialGuid = materialGuid;
   const scene = createDefaultScene();
   scene.settings.environmentColor = [0, 0, 0];
-  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentSource = "none";
   scene.settings.grid.showGrid = false;
   const subjects = [
     createActor("cel-actor", "Authored Color", {

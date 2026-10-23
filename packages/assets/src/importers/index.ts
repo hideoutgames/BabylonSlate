@@ -2,7 +2,7 @@ import { importAudio } from "./audio";
 import { importHasset } from "./hasset";
 import { importFont, isMsdfAtlasPng } from "./font";
 import { importImage } from "./image";
-import { importEnvironmentTexture } from "./environment";
+import { importEnvironmentTexture, importRadianceEnvironmentTexture } from "./environment";
 import { importModel } from "./model";
 import type { ImportOptions, ImportResult, Importer } from "./types";
 import { extensionOf } from "./util";
@@ -15,6 +15,7 @@ const IMPORTERS_BY_EXTENSION: Record<string, Importer> = {
   gif: importImage,
   env: importEnvironmentTexture,
   dds: importEnvironmentTexture,
+  hdr: importRadianceEnvironmentTexture,
   glb: importModel,
   gltf: importModel,
   mp3: importAudio,

@@ -85,7 +85,7 @@ test("Scene fog changes authored PBR surface pixels in the editor and Play", asy
   mesh.properties.materialGuid = await guidForPath(page, materialPath);
   const scene = createDefaultScene();
   scene.settings.environmentColor = [0, 0, 0];
-  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentSource = "none";
   scene.settings.grid.showGrid = false;
   scene.settings.mainCameraActorId = null;
   scene.settings.mainCameraComponentId = null;
@@ -210,7 +210,7 @@ test("Unlit preserves model color and skybox state in Scene, Prefab, and Model P
   mesh.properties.assetGuid = modelGuid;
   const scene = createDefaultScene();
   scene.settings.environmentColor = [0, 0, 0];
-  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentSource = "none";
   scene.settings.grid.showGrid = false;
   scene.actors = [
     createActor("unlit-model", "Unlit Model", { components: [mesh] }),

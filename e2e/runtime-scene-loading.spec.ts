@@ -66,7 +66,7 @@ for (const mode of ["Play"] as const) {
     page.on("console", (message) => { if (message.type() === "error" && /Scene loading failed|Unable to compile|CONTEXT_LOST/i.test(message.text())) errors.push(message.text()); });
     const files = await minimalProjectFiles();
     const scene = createDefaultScene();
-    scene.settings.environmentTextureGuid = null;
+    scene.settings.environmentSource = "none";
     scene.settings.environmentColor = [0, 0, 0];
     scene.settings.grid.showGrid = false;
     scene.settings.shadowOverrides = { enabled: false };
