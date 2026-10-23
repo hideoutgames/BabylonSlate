@@ -26,6 +26,9 @@ const polls: Array<() => void> = [];
 beforeEach(() => {
   polls.length = 0;
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  // A real animation frame between steps could re-render the overlay on a slow runner.
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  vi.stubGlobal("cancelAnimationFrame", () => {});
   // The 200 ms HUD poll runs only when the test steps it.
   const setInterval = window.setInterval.bind(window);
   vi.spyOn(window, "setInterval").mockImplementation((handler, delay, ...args) => {
