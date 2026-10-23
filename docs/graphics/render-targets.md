@@ -2,6 +2,8 @@
 
 Render targets capture the scene from a second viewpoint into a texture, for security monitors, mirrors, minimaps and depth or normal effects.
 
+For a flat mirror that reflects from the player's own view, use the [Mirror](../components/mirror.md) component instead: it needs no Render Target, follows the current camera every frame, and its Material can distort the reflection with a [Mirror Reflection](../scripting/material/mirror-reflection.md) node. A Render Target Capture shows a fixed lens, which suits monitors and minimaps.
+
 ## How the pieces fit
 
 | Piece | Role |

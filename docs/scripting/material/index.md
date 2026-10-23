@@ -17,6 +17,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | --- | --- |
 | [Camera Position](camera-position.md) | Returns the position of the camera in world space. |
 | [Environment Sample](environment-sample.md) | Returns the colour of the scene's environment lighting in a direction, blurred by roughness. |
+| [Mirror Reflection](mirror-reflection.md) | Returns the reflection a Mirror component shows at the current point of its surface. |
 | [Particle Color](particle-color.md) | Returns the colour and alpha the emitter gives to the particle being drawn. |
 | [Scene Color](scene-color.md) | Returns the colour of the rendered scene at a position on the screen. |
 | [Scene Depth](scene-depth.md) | Returns the linear depth of the rendered scene at a position on the screen. |
