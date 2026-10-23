@@ -1,4 +1,4 @@
-import { DiagnosticResultsProvider } from "./diagnostic-results-context";
+import { DiagnosticResultsProvider, useDiagnosticResultsStore } from "./diagnostic-results-context";
 import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { playAssetCatalog } from "../services/asset-catalog";
@@ -1644,6 +1644,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+  // The Profiler's Scripts view opens an entry's graph the same way.
+  const diagnosticResults = useDiagnosticResultsStore();
+  useEffect(() => {
+    if (!diagnosticResults) return;
+    diagnosticResults.setSourceOpener(async (location) => {
+      const result = await openSessionSource({ severity: "info", code: "editor.profilerScript", message: "Profiled Script", ...location });
+      return result.opened ? null : result.message;
+    });
+    return () => diagnosticResults.setSourceOpener(null);
+  }, [diagnosticResults, openSessionSource]);
   const value = useMemo<PlayContextValue>(
     () => ({
       sessionState,

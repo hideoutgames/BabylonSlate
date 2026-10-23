@@ -31,8 +31,10 @@ describe("Preview diagnostics lifecycle", () => {
       gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 2, componentsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0 });
     recorder.recordMemory({ sampledAtMs: 0, textureBytes: 4096, geometryBytes: 1024 });
     recorder.recordLongTask({ startedAtMs: 0, durationMs: 75 });
+    recorder.recordScriptEntries([{ assetGuid: "Hero.class", classId: "Hero", className: "Hero", exportName: "onTick", event: "onTick", title: "Event Tick" }]);
+    recorder.recordScript({ tickId: 14, entry: 0, calls: 1, totalMs: 1.5 });
     const result = recorder.stop()!;
-    const { frames, ticks, gpu, memory, longTasks, ...header } = result;
+    const { frames, ticks, gpu, memory, longTasks, scripts, ...header } = result;
     const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
       send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
       async execute(operation) {
@@ -41,8 +43,8 @@ describe("Preview diagnostics lifecycle", () => {
         if (operation === "profile-stop") await server.publishProfile({
           metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
             gpu: { columns: gpu.columns, count: gpu.count }, memory: { columns: memory.columns, count: memory.count },
-            longTasks: { columns: longTasks.columns, count: longTasks.count } },
-          frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks, memory: memory.chunks, longTasks: longTasks.chunks,
+            longTasks: { columns: longTasks.columns, count: longTasks.count }, scripts: { columns: scripts.columns, count: scripts.count } },
+          frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks, memory: memory.chunks, longTasks: longTasks.chunks, scripts: scripts.chunks,
         });
         return { success: true };
       },
@@ -63,6 +65,8 @@ describe("Preview diagnostics lifecycle", () => {
     expect(adapter.lastProfile?.ticks.chunks[0]?.[0]).toBe(14);
     expect(adapter.lastProfile?.memory.chunks[0]?.[1]).toBe(4096);
     expect(adapter.lastProfile?.longTasks.chunks[0]?.[1]).toBe(75);
+    expect(adapter.lastProfile?.scriptEntries).toEqual([expect.objectContaining({ classId: "Hero", title: "Event Tick" })]);
+    expect(Array.from(adapter.lastProfile?.scripts.chunks[0] ?? [])).toEqual([14, 0, 1, 1.5]);
     expect(onProfile).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
     adapter.dispose();
@@ -77,7 +81,7 @@ describe("Preview diagnostics lifecycle", () => {
     recorder.start({ sessionId: "packaged-player", mode: "preview", sourceSha: null, buildId: null,
       sceneId: "scene", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker",
       quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
-    const { frames, ticks, gpu, memory, longTasks, ...header } = recorder.stop()!;
+    const { frames, ticks, gpu, memory, longTasks, scripts, ...header } = recorder.stop()!;
     const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
       send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
       async execute(operation) {
@@ -86,8 +90,8 @@ describe("Preview diagnostics lifecycle", () => {
         if (operation === "profile-stop") return server.publishProfile({
           metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
             gpu: { columns: gpu.columns, count: gpu.count }, memory: { columns: memory.columns, count: memory.count },
-            longTasks: { columns: longTasks.columns, count: longTasks.count } },
-          frames: [new Float64Array(8192)], ticks: ticks.chunks, gpu: gpu.chunks, memory: memory.chunks, longTasks: longTasks.chunks,
+            longTasks: { columns: longTasks.columns, count: longTasks.count }, scripts: { columns: scripts.columns, count: scripts.count } },
+          frames: [new Float64Array(8192)], ticks: ticks.chunks, gpu: gpu.chunks, memory: memory.chunks, longTasks: longTasks.chunks, scripts: scripts.chunks,
         });
         return { success: true };
       },

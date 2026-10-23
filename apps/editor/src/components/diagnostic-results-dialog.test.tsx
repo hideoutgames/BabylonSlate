@@ -146,6 +146,35 @@ it("selects the next over-budget sample in the table and its details", () => {
   expect(row?.getAttribute("aria-selected")).toBe("true");
   expect(screen.getByLabelText("Sample 120")).toBeTruthy();
 });
+it("lists script costs by Class and opens an entry's graph at its entry node", async () => {
+  const entries = [
+    { assetGuid: "Door.class", classId: "Door", className: "Door", exportName: "onTick", event: "onTick", title: "Event Tick", graphId: "event-graph", nodeId: "tick" },
+    { assetGuid: "Door.class", classId: "Door", className: "Door", exportName: "evaluate", title: "Transition Rule" },
+  ];
+  const profile: PerformanceProfile = { ...recording(), scriptEntries: entries,
+    scripts: { columns: ["tickId", "entry", "calls", "totalMs"], count: 2, chunks: [Float64Array.of(0, 0, 2, 1.5, 0, 1, 1, 0.5)] } };
+  const store = new DiagnosticResultsStore();
+  const opened: unknown[] = [];
+  store.setSourceOpener(async (location) => { opened.push(location); return "The asset is no longer in the project."; });
+  store.importResult({ kind: "profile", profile });
+  act(() => store.open());
+  render(<DiagnosticResultsDialog store={store} />);
+  fireEvent.click(screen.getByRole("button", { name: "Scripts" }));
+  expect(screen.getAllByTestId("profile-script-class").map((row) => row.querySelector("th")?.textContent)).toEqual(["Door"]);
+  expect(screen.getAllByTestId("profile-script-entry").map((row) => row.querySelector("th")?.textContent)).toEqual(["Event Tick", "Transition Rule"]);
+  // An entry recorded without its node has nothing to open.
+  expect(screen.queryByRole("button", { name: "Transition Rule" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Event Tick" }));
+  expect(opened).toEqual([expect.objectContaining({ assetGuid: "Door.class", graphId: "event-graph", nodeId: "tick" })]);
+  await waitFor(() => expect(screen.getByText("The asset is no longer in the project.")).toBeTruthy());
+});
+it("says a recording made before script costs has none", () => {
+  const store = new DiagnosticResultsStore();
+  store.importResult({ kind: "profile", profile: { ...recording(), version: 3 } });
+  act(() => { store.open(); store.selectView("scripts"); });
+  render(<DiagnosticResultsDialog store={store} />);
+  expect(screen.getByText("No Script Costs")).toBeTruthy();
+});
 it("opens an exported frame report again without replacing the recording", async () => {
   const report: RenderFrameReport = {
     version: 1, frame: { renderFrameId: 12, snapshotFrameId: 11, tickId: 40, sceneGeneration: 2, viewId: 1, width: 640, height: 360, backend: "webgl2" },

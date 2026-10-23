@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionDiagnostics, type DiagnosticOperationRequest } from "./session-diagnostics";
 import { STATS_COMMAND_INTERVAL_MS } from "./stats";
-import { PERFORMANCE_TICK_COLUMNS, summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample,
+import { PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample,
   type PerformanceIdentity, type PerformanceTickSample } from "./performance-recorder";
 
 const identity: PerformanceIdentity = { sessionId: "test", mode: "preview", sourceSha: null, buildId: "pack",
@@ -129,6 +129,25 @@ describe("SessionDiagnostics", () => {
     expect(profile?.stopReason).toBe("budget");
     expect(profile!.ticks.count).toBeGreaterThan(0);
     expect(profile!.ticks.count + profile!.droppedRecords).toBe(256);
+  });
+
+  it("keeps a chunk's script rows with the ticks it keeps", async () => {
+    const requests: DiagnosticOperationRequest[] = [];
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
+      observeFrames: () => () => {}, captureFrame: async () => "frame",
+      runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
+    });
+    await session.startProfile({ durationMs: 1000 });
+    // Tick 2 is stamped past the recording window, so it and its script row are left out.
+    expect(session.receiveTicks({ recordingId: requests[0]!.recordingId, sequence: 0,
+      rows: new Float64Array([...tickRow(1, 0, { scriptMs: 1 }), ...tickRow(2, 5000, { scriptMs: 1 })]),
+      scripts: new Float64Array([1, 0, 3, 0.5, 2, 0, 3, 0.5]),
+      scriptEntries: [{ assetGuid: "Door.class", classId: "Door", exportName: "onTick" }] })).toBe(true);
+    const profile = await session.stopProfile();
+    expect(profile!.scriptEntries).toEqual([{ assetGuid: "Door.class", classId: "Door", exportName: "onTick" }]);
+    expect(profile!.scripts.count).toBe(1);
+    expect(Array.from(profile!.scripts.chunks[0]!)).toEqual([1, 0, 3, 0.5]);
+    expect(profile!.scripts.columns).toEqual(PERFORMANCE_SCRIPT_COLUMNS);
   });
 
   it("adds only the runtime's own count when the runtime stops on its budget", async () => {

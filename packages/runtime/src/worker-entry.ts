@@ -122,7 +122,8 @@ function post(message: BridgeWorkerMessage, transfer?: Transferable[]): void {
 
 function onCommand(command: CommandMessage): void {
   if (command.type === "performanceTicks") {
-    post({ channel: "command", payload: command }, [command.rows.buffer as ArrayBuffer]);
+    post({ channel: "command", payload: command },
+      [command.rows.buffer as ArrayBuffer, ...(command.scripts ? [command.scripts.buffer as ArrayBuffer] : [])]);
     return;
   }
   if (sceneSnapshots.receive(command)) return;

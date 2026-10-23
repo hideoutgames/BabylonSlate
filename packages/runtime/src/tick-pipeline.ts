@@ -13,6 +13,7 @@ import type { RawInputEvent } from "@haptic/input";
 import { createWorldSnapshot, stringifyWorldSnapshot, type World } from "@haptic/object-model";
 import type { LogRingBuffer, LogSeverity } from "./log-ring";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
+import type { ScriptCostMeter } from "./script-cost-meter";
 import type { SnapshotPublisher } from "./snapshot-publisher";
 
 /** Catch-up cap for one `advance()`: more ticks than this drop the rest of the elapsed time. */
@@ -37,6 +38,8 @@ interface TickPipelineHost {
   traceState(): Required<Pick<TraceFrame, "bt" | "audio" | "sprites" | "animGraphs">>;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
+  /** Times the scripts' entry points with `meter` while a profile records; null stops. */
+  meterScripts(meter: ScriptCostMeter | null): void;
 }
 
 interface TickPipelineOptions {
@@ -277,7 +280,7 @@ export class TickPipeline {
   requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
     this.diagnosticRecorder ??= new RuntimeDiagnosticRecorder({ generation: this.options.generation, mode: this.options.mode,
       enabled: this.options.diagnosticsEnabled, traceActive: () => this.trace.isRecording, now: this.now,
-      emit: command => this.host.emit(command) });
+      emit: command => this.host.emit(command), meterScripts: meter => this.host.meterScripts(meter) });
     if (this.host.stopped()) this.diagnosticRecorder.stop();
     return this.diagnosticRecorder.request(request);
   }

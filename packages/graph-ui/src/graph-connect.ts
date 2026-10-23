@@ -1,7 +1,4 @@
-import {
-  formatEventTitle,
-  humanizePropertyLabel,
-} from "@haptic/editor-kit";
+import { humanizePropertyLabel } from "@haptic/editor-kit";
 import { pinTypeEquals, type PinType } from "@haptic/scripting";
 import {
   hasSerializedPins,
@@ -260,27 +257,8 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
   return [...kept, { ...candidate, id }];
 }
 
-export function displayNodeTitle(
-  nodeType: string,
-  title?: string,
-  qualifier?: string,
-): string {
-  // Call Custom Event / Call Parent must stay "Call …", not "Event Call …".
-  if (nodeType === "flow.event.call" || nodeType === "flow.event.callParent") {
-    if (title && title.trim().length > 0) return title.trim();
-    return nodeType === "flow.event.callParent"
-      ? "Call Parent Event"
-      : "Call Custom Event";
-  }
-  if (nodeType.startsWith("flow.event.")) {
-    return formatEventTitle(
-      title?.trim() || nodeType.slice("flow.event.".length),
-      qualifier,
-    );
-  }
-  if (title && title.trim().length > 0) return title;
-  return humanizePropertyLabel(nodeType.replace(/\./g, " "));
-}
+/** Moved to core so the compiler can name entry points; the canvas keeps importing it here. */
+export { displayNodeTitle } from "@haptic/core";
 
 /**
  * Overlay a resolved display type onto a declared pin for connect / Add Node.

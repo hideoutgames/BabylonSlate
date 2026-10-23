@@ -460,9 +460,22 @@ describe("script compiler service", () => {
     expect(script!.source).toContain("export function onTick(ctx)");
     expect(script!.source).toContain("ctx.log");
     expect(script!.entryPoints).toEqual([
-      { name: "onTick", event: "onTick", nodeId: "tick", isAsync: false },
+      { name: "onTick", event: "onTick", nodeId: "tick", graphId: "event-graph", title: "Event Tick", isAsync: false },
     ]);
     expect(script!.anchors.some((a) => a.nodeId === "log")).toBe(true);
+  });
+
+  it("names the Class and each entry point as the graph shows them, for the Profiler's Scripts view", () => {
+    const script = compileGraphDocument({
+      ...tickToLog,
+      members: [{ id: "fn-open", kind: "function", name: "Open Door", pins: [] }],
+      functionGraphs: { "fn-open": { nodes: [{ id: "in", type: "flow.function.input", position: { x: 0, y: 0 }, data: {} }], edges: [] } },
+    } as SerializedGraph, { path: "assets/Front Door.class.hasset" });
+    expect(script?.className).toBe(classDisplayNameForGraphPath("assets/Front Door.class.hasset"));
+    expect(script?.entryPoints.map(({ name, graphId, nodeId, title }) => ({ name, graphId, nodeId, title }))).toEqual([
+      { name: "onTick", graphId: "event-graph", nodeId: "tick", title: "Event Tick" },
+      { name: "Open_Door", graphId: "Open_Door", nodeId: "in", title: "Open Door" },
+    ]);
   });
 
   it("copies Class member interfaces, variables, and parentClass onto the bundle", () => {

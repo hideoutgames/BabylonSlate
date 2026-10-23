@@ -1026,6 +1026,7 @@ class InProcessRuntime implements RuntimeDriver {
       }),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
       emit: (command) => this.emit(command),
+      meterScripts: (meter) => this.scriptHost.setCostMeter(meter),
     }, {
       dt: this.dt,
       seed: this.seed,
