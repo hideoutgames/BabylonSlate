@@ -63,6 +63,7 @@ Input events work in the event graphs of classes that tick, such as Actors. They
 | [Project Cursor To Scene](../scripting/class/project-cursor-to-scene.md) | What is under the pointer in the world. |
 | [Show Cursor](../scripting/class/show-cursor.md), [Hide Cursor](../scripting/class/hide-cursor.md) | Show or hide the pointer over the game view. |
 | [Set Gamepad Rumble](../scripting/class/set-gamepad-rumble.md) | Vibrates a gamepad. |
+| [Vibrate Device](../scripting/class/vibrate-device.md) | Vibrates an Android phone or tablet. iPhone and iPad browsers cannot vibrate. |
 | [On Gamepad Connected](../scripting/class/on-gamepad-connected.md), [On Gamepad Disconnected](../scripting/class/on-gamepad-disconnected.md) | Run when a pad appears or goes away. |
 
 Menus in Scene Layers can also be driven by your inputs: **Project Settings > Focus Navigation** picks the Input assets that move focus between buttons.

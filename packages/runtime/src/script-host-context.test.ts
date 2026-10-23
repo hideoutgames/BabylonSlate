@@ -118,7 +118,7 @@ describe("ScriptContext shape", () => {
     "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "invokeEvent",
     "invokeFunction", "isActionHeld", "inputBindings", "getInputState", "wasActionPressed", "wasActionReleased",
     "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "getTouches", "getTouchEvents", "getDeviceMotion", "calibrateTilt", "setCursorVisible",
-    "setGamepadRumble", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",
+    "setGamepadRumble", "vibrateDevice", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",
     "sphereOverlap", "shapeSweep",
     "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "createSceneLayerAsync",
     "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",

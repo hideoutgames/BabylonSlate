@@ -860,6 +860,8 @@ export type CommandMessage =
    * starts motion input, asking permission on the next tap where required.
    */
   | { type: "requestDeviceMotion"; frameId: number }
+  /** Vibrate the phone or tablet for `durationMs` (0 stops it); ignored where the browser cannot. */
+  | { type: "vibrateDevice"; durationMs: number; frameId: number }
   /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
   | {
       type: "setGamepadRumble";

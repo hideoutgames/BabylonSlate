@@ -46,6 +46,8 @@ export type TickContext = {
     intensity: number,
     durationMs: number,
   ) => void;
+  /** Vibrate the phone or tablet; 0 stops it. */
+  vibrateDevice?: (durationMs: number) => void;
   /** Connection transitions observed while resolving this tick. */
   gamepadConnections?: ReadonlyArray<{
     gamepadIndex: number;

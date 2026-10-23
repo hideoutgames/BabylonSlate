@@ -29,6 +29,15 @@ describe("createWorldInputProvider", () => {
     ]);
   });
 
+  it("sends device vibration to the host with a duration from 0 to 10 seconds", () => {
+    const { input, commands } = provider();
+    input.vibrateDevice?.(80);
+    input.vibrateDevice?.(60_000);
+    input.vibrateDevice?.(-5);
+    input.vibrateDevice?.(Number.NaN);
+    expect(commands.map((command) => command.type === "vibrateDevice" && command.durationMs)).toEqual([80, 10_000, 0, 0]);
+  });
+
   it("sends no rumble for an index no pad can have", () => {
     const { input, commands } = provider();
     input.setGamepadRumble?.(-1, 1, 100);
