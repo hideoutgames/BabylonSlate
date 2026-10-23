@@ -21,12 +21,18 @@ Choose a view:
 | View | Shows |
 | --- | --- |
 | Summary | **Frame Pacing**: median frame time, FPS and how many frames were slow. **Worker Tick**: median script and physics time, and how many ticks went over 8 ms. The table also lists each phase of the tick: **Game Instance**, **Scene Subsystems**, **Actors**, **Components**, **Physics**, **Post-Physics** and **Scene Systems** (Delays, Behaviour Trees, Animation Graphs and crowds). |
-| Timeline | Every sample as a table. Switch between **Completed Frames**, **Runtime Ticks** and, when available, **GPU Queries**. **Runtime Ticks** stacks each tick's phases in the chart. **Previous Over Budget** and **Next Over Budget** jump between slow samples. |
+| Timeline | A chart of every frame, tick and GPU query on one time axis, with a **Markers** row for loading screens and scene changes, then the samples as a table. |
 | Frame Report | The result of **Capture Frame**. |
 
 Only one recording or frame capture runs at a time. The window keeps the latest recording and the latest frame capture, so capturing a frame does not replace a recording. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report. A recording saved before tick phases were recorded opens with script and physics only.
 
-In **Timeline**, select any sample in the chart, the table or the **Sample** field; the table scrolls to it. On a narrow screen the sample's details sit under the table.
+In **Timeline**:
+
+- The chart has a row for **Frames**, one for **Ticks** and, when GPU timing was on, one for **GPU**, each with its own scale. Each tick sits under the frame that showed it. **Ticks** stack each tick's phases. A dashed line marks the budget: one frame at your frame cap, or 8 ms per tick.
+- **Metric** picks what **Frames** shows: **Frame Time**, **Preparation**, **Submission** or **Draw Calls**. **Script** or **Physics** shows that part of each tick instead of its phases.
+- Hover a bar to read its sample. Tap or click it to select it: the table switches to its frames or ticks, and the details show the sample with the tick its frame presents, or the first frame that presented the tick. The arrow keys move to the previous or next sample.
+- Drag across the chart to select a time range. A summary then shows each row's count, median, p95 and maximum in that range, and how many samples went over budget. **Clear Range** or <kbd>Esc</kbd> removes it.
+- **Completed Frames**, **Runtime Ticks** and **GPU Queries** choose the table. **Previous Over Budget** and **Next Over Budget** jump between slow samples, and the **Sample** field selects one by number. On a narrow screen the sample's details sit under the table.
 
 ## Capture a frame
 
