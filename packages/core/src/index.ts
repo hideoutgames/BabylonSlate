@@ -74,6 +74,7 @@ export * from "./render-effects";
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
 export * from "./area-rect-light";
 export * from "./fog-volume";
+export * from "./mirror";
 export * from "./outline-component";
 export * from "./deformer-component";
 export * from "./ragdoll";
