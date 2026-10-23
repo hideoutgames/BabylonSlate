@@ -36,7 +36,8 @@ const MARKER_PX = 18;
 /** Pixels a press must move before it selects a range instead of a sample. */
 const DRAG_PX = 4;
 const defaultTime = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
-const formatValue = (value: number, unit: string) => `${Number.isInteger(value) ? value : value.toFixed(3)}${unit ? ` ${unit}` : ""}`;
+const withUnit = (text: string | number, unit: string) => `${text}${unit ? ` ${unit}` : ""}`;
+const formatValue = (value: number, unit: string) => withUnit(Number.isInteger(value) ? value : value.toFixed(3), unit);
 
 type Hover = { left: number; top: number; lines: string[] };
 
@@ -264,7 +265,7 @@ export function TimelineChart({
           {layout.map(({ track, scale }) => (
             <div key={track.id} className="relative flex flex-col justify-between border-b px-1.5 py-1" style={{ height: TRACK_PX }}>
               <span className="truncate text-[11px] font-medium text-foreground">{track.label}</span>
-              <span className="font-mono tabular-nums">{formatValue(Number((scale / 1.1).toFixed(1)), track.unit)}</span>
+              <span className="font-mono tabular-nums">{withUnit(Number((scale / 1.1).toFixed(1)), track.unit)}</span>
             </div>
           ))}
           {markers ? <div className="flex items-center px-1.5 text-[11px] font-medium text-foreground" style={{ height: MARKER_PX }}>Markers</div> : null}
