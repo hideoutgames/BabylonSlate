@@ -27,6 +27,7 @@ import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
 import { hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe } from "./reveal-pending";
 import { awaitsFirstDraw } from "./shadow-first-draw";
+import { pipelinesWarm, requestPipelineWarm } from "./variant-pipeline-warmup";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -321,7 +322,9 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     const meshReady = collectEffectRequests(scene.getEngine(), meshRequests, probeMesh);
     if (hideable) {
       hideUntilReady(mesh);
-      noteRevealProbe(mesh, meshReady);
+      // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`).
+      requestPipelineWarm(mesh);
+      noteRevealProbe(mesh, meshReady && pipelinesWarm(mesh));
       const failed = meshReady ? undefined : failedRequest();
       if (failed) {
         reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
@@ -338,6 +341,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       if (part.materialDefines?.isDirty && part.effect?.isReady()) {
         if (swapFailed(material)) continue;
         noteVariantSwap();
+        requestPipelineWarm(mesh);
         return variantSwapsTolerated() && bindsAsPreviousEffect(part.effect);
       }
     }

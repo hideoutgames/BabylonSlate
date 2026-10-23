@@ -17,6 +17,7 @@ import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRevealPending } from "./reveal-pending";
+import { registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
@@ -53,6 +54,27 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   /** Transparent depth pre-passes draw under their own render pass id (see TransparentDepthPrePass). */
   private readonly depthPrePass: TransparentDepthPrePass;
 
+  /**
+   * A world view's main pass: after its real draws it draws the meshes its round asked to warm, so their next
+   * variants' pipelines exist before a real draw needs them (`warmRequestedPipelines`).
+   */
+  get warmsPipelines(): boolean {
+    return this.releaseWarmPasses !== undefined;
+  }
+
+  set warmsPipelines(value: boolean) {
+    if (value === this.warmsPipelines) return;
+    if (!value) {
+      this.releaseWarmPasses?.();
+      this.releaseWarmPasses = undefined;
+      return;
+    }
+    this.releaseWarmPasses = registerPipelineWarmPasses(this._frameGraph.engine,
+      [...this._renderer.renderPassIds, this.depthPrePass.renderPassId]);
+  }
+
+  private releaseWarmPasses: (() => void) | undefined;
+
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
     super(...args);
     configureCutoutSorting(this._renderer);
@@ -69,6 +91,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       try { return render.apply(renderer, renderArgs); }
       finally { scene._intermediateRendering = intermediate; }
     };
+    // After the real draws and before the task restores its lights' shadow flags, so warm draws compile the variants
+    // the real ones draw with.
+    renderer.onAfterRenderingManagerRenderObservable.add(() => {
+      if (this.warmsPipelines) warmRequestedPipelines(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId);
+    });
   }
 
   /** Whether `renderPassId` is this pass's blended depth pre-pass, which draws with it every frame. */
@@ -151,6 +178,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   }
 
   override dispose(): void {
+    this.warmsPipelines = false;
     this.requestedAhead.clear();
     this.depthPrePass.dispose();
     super.dispose();
