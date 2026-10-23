@@ -220,7 +220,7 @@ function warmDraw(
   engine.setColorWrite(colour);
   engine.setAlphaMode(Constants.ALPHA_DISABLE);
   state.warming = true;
-  let drawn = 0;
+  let drawn: number;
   try {
     subMesh.render(blended);
   } finally {

@@ -12,21 +12,23 @@
  * - `parallel`: a parallel-compile driver (D3D11 through ANGLE, iPad WebKit
  *   WebGL2). Every Effect created after arming stays pending until `release`.
  * - `webgpu`: Effects are ready once created and each new one needs a render
- *   pipeline, which stays pending until `release` (`beginPipelineDeferral` is
- *   replaced by a model: NullEngine is not WebGPU).
+ *   pipeline, which stays pending until `release` (`beginPipelineDeferral` and
+ *   `pipelinesDeferred` are replaced by a model: NullEngine is not WebGPU). A
+ *   warm scope's draws are always skipped and report whether their pipeline
+ *   exists.
  *
  * It records counts and states only, never timings: Effects compiled, frames
  * the world view held its image, whether the hold signal and the game-time
- * pause were raised, which Effect the changed mesh drew, and pipelines the
- * WebGPU model waited for. Time is Vitest's fake clock, advanced a fixed step
+ * pause were raised, which Effect the changed mesh drew, and in the WebGPU model
+ * the pipelines the view's draws waited for and those warm draws started first.
+ * Time is Vitest's fake clock, advanced a fixed step
  * per frame, so graph preparation's polls run deterministically.
  *
  * A change to an existing Material's variant keeps drawing its previous Effect
- * while the new one compiles: no held frame, no hold signal, no pause. A new
- * shadow map draws once its casters are ready, and a spawned mesh with nothing
- * to draw is hidden until every variant it draws with is ready. What still
- * holds (a WebGPU pipeline) asserts only that the view recovers; its holds are
- * in the failure message.
+ * while the new one compiles (on WebGPU, until its pipeline exists): no held
+ * frame, no hold signal, no pause. A new shadow map draws once its casters are
+ * ready, and a spawned mesh with nothing to draw is hidden until every variant
+ * it draws with is ready, its pipelines included.
  */
 import {
   ArcRotateCamera,
@@ -515,13 +517,6 @@ function expectSwapped(record: CauseRecord, model: Model): void {
   });
 }
 
-/** A cause this harness does not yet require to swap: it compiled, and the view recovers once its work is done. */
-function expectRecovers(record: CauseRecord): void {
-  const detail = JSON.stringify(record);
-  expect(record.litEffects, detail).toBeGreaterThan(0);
-  expect(record.recovered, detail).toBe(true);
-}
-
 /**
  * The names of the meshes drawn (`Mesh.render`) since the set was last cleared, leaving out warm draws (WebGPU: draws
  * under a warm pass only create pipelines and are always skipped).
@@ -537,34 +532,31 @@ function spawnDraws(): Set<string> {
   return drawn;
 }
 
-/** WebGPU's Effects are ready once created, so a new pipeline still holds the view (pipeline swaps are separate work). */
-const SWAP_MODELS: readonly Model[] = MODELS;
-
 describe("compile holds after the first frame", () => {
-  it.each(SWAP_MODELS)("a point light switches off: %s", async (model) => {
+  it.each(MODELS)("a point light switches off: %s", async (model) => {
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
     expectSwapped(await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))), model);
   });
 
-  it.each(SWAP_MODELS)("a point light is removed: %s", async (model) => {
+  it.each(MODELS)("a point light is removed: %s", async (model) => {
     // Babylon will not draw a previous Effect after one of its lights was disposed; the view binds it without that light.
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
     expectSwapped(await measure(world, () => world.remove(11)), model);
   });
 
-  it.each(SWAP_MODELS)("a spot light stops casting shadows: %s", async (model) => {
+  it.each(MODELS)("a spot light stops casting shadows: %s", async (model) => {
     // The floor receives the crate's shadow; its unshadowed variant is new.
     const world = playWorld(model, [spot(10, [0, 5, 0], { castShadows: true })], [], "actor-1");
     expectSwapped(await measure(world, () => world.place(spot(10, [0, 5, 0]))), model);
   });
 
-  it.each(SWAP_MODELS)("the light inventory grows past its high-water mark: %s", async (model) => {
+  it.each(MODELS)("the light inventory grows past its high-water mark: %s", async (model) => {
     // The sun and three points: four lights. A fifth, switched off, still raises every lit Material's light capacity.
     const world = playWorld(model, [point(10, [-2, 2.5, -1]), point(11, [2, 2.5, -1]), point(12, [0, 2.5, 2])]);
     expectSwapped(await measure(world, () => world.place(point(13, [0, 2.5, -3], { enabled: false }))), model);
   });
 
-  it.each(SWAP_MODELS)("the Forward budget swaps a point light for a spot light: %s", async (model) => {
+  it.each(MODELS)("the Forward budget swaps a point light for a spot light: %s", async (model) => {
     // The sun and eight points fill the nine shader slots; the spot, far away, is limited until it moves near the camera.
     const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
     const world = playWorld(model, [...points, spot(30, [0, 5, 40])]);
@@ -579,14 +571,14 @@ describe("compile holds after the first frame", () => {
     expectSwapped(record, model);
   });
 
-  it.each(SWAP_MODELS)("an area light's emission texture arrives: %s", async (model) => {
+  it.each(MODELS)("an area light's emission texture arrives: %s", async (model) => {
     const pixels = await areaEmissionPixels();
     const world = playWorld(model, []);
     world.handle.applyCommand({ type: "setAreaLights", slotId: 2, lights: areaRectLightBindings([{ id: "panel", classId: "AreaRectLightComponent", properties: { textureGuid: "panel-texture" } }]) });
     expectSwapped(await measure(world, () => world.handle.setMeshAssets({ areaEmissions: new Map([["panel-texture", pixels]]) })), model);
   });
 
-  it.each(SWAP_MODELS)("a frozen graph Material adopts its new variant: %s", async (model) => {
+  it.each(MODELS)("a frozen graph Material adopts its new variant: %s", async (model) => {
     // The editor freezes library Materials; a frozen NodeMaterial adopts a ready variant only when probed.
     const barrel: Actor = { slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } };
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), barrel], ["surface-a"], "actor-20");
