@@ -18,7 +18,7 @@ The **Profiler and Frame Debugger** window opens over the game. Opening it does 
 
 A recording keeps running when you close the window. While it runs, the toolbar over the game shows **Recording**; its **Stop Recording** button stops it and opens the window at its **Summary**.
 
-You can also record from the [console](console.md): `profile start` and `profile stop`. `capture frame` captures a frame.
+You can also record by typing `profile start` and `profile stop` in the [console](console.md) window; `capture frame` captures a frame. **Execute Console Command** cannot run these.
 
 Choose a view:
 
