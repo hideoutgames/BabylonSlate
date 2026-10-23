@@ -6,6 +6,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { resourceCacheForEngine, type TextureResources, type ResourceLease } from "./resource-cache";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 import { isSkyboxMesh } from "./skybox";
+import { retainFilteredEnvironment, type FilteredEnvironment } from "./environment-prefilter";
 
 const controllers = new WeakMap<Scene, EnvironmentLighting>();
 
@@ -93,6 +94,10 @@ class EnvironmentLighting {
   private skybox = false;
   /** A visible Skybox whose cube is still uploading holds readiness. */
   private skyPending = false;
+  /** The Skybox cube the published view lights from (filtered or not). */
+  private skySource: CubeTexture | null = null;
+  /** GGX filtering of the current sky; while pending it holds readiness and keeps the previous view. */
+  private skyFilter: { sky: CubeTexture; filtered: FilteredEnvironment | null; state: "pending" | "ready" | "failed" } | null = null;
   private skyboxes: AbstractMesh[] = [];
   private skyboxesStale = true;
   private scannedMeshes = 0;
@@ -114,6 +119,7 @@ class EnvironmentLighting {
     scene.onDisposeObservable.addOnce(() => {
       this.disposed = true;
       this.clear();
+      this.releaseSkyFilter();
       this.samples.clear();
       controllers.delete(scene);
     });
@@ -146,9 +152,16 @@ class EnvironmentLighting {
     this.scene.iblIntensity = settings.enabled ? settings.intensity : 0;
     const wanted = settings.enabled || this.samples.size > 0;
     const sky = this.skybox && wanted ? this.skyCube() : null;
-    if (!this.skybox || !wanted) this.skyPending = false;
-    if (this.skybox && !sky && this.skyPending && this.view) {
-      // A replaced Skybox keeps lighting with the previous cube until its own uploads.
+    if (!this.skybox || !wanted) {
+      this.skyPending = false;
+      // A published view keeps its own handle on a filtered sky.
+      this.releaseSkyFilter();
+    }
+    const filter = sky ? this.filterSky(sky) : null;
+    if (this.skybox && ((!sky && this.skyPending) || filter?.state === "pending") && this.view) {
+      // A replaced Skybox keeps lighting with the previous cube until its own uploads and filters.
+    } else if (filter?.state === "pending") {
+      // Nothing lit yet: readiness waits for the first filtered sky.
     } else if (
       !wanted ||
       (this.skybox
@@ -157,18 +170,24 @@ class EnvironmentLighting {
     ) {
       changed = !!this.view || changed;
       this.clear();
+      this.releaseSkyFilter();
       this.preparationError = null;
     } else if (sky) {
       if (
         this.requestChanged ||
-        sky !== this.source ||
+        sky !== this.skySource ||
         !this.view ||
         isDisposedGpuTexture(this.view)
       ) {
-        // The Skybox's own lease keeps its cube; this one keeps it through the view.
         const cache = this.cache ?? resourceCacheForEngine(this.scene.getEngine());
         try {
-          this.publish(cache.acquireExisting(sky), cache);
+          const filtered = filter?.state === "ready" ? retainFilteredEnvironment(this.scene.getEngine(), sky) : null;
+          // The filtered cube is held through its own handle; an unfiltered sky
+          // through a cache lease beside the Skybox's own.
+          this.publish(filtered
+            ? { resource: filtered.cube, key: "", ready: undefined, release: () => filtered.release() }
+            : cache.acquireExisting(sky), cache);
+          this.skySource = sky;
           changed = true;
         } catch (error) {
           changed = !!this.view || changed;
@@ -234,7 +253,7 @@ class EnvironmentLighting {
     if (this.skybox) this.followSky();
     this.refresh();
     if (this.preparationError) throw this.preparationError;
-    if (this.pendingLease || this.skyPending) return false;
+    if (this.pendingLease || this.skyPending || this.skyFilter?.state === "pending") return false;
     return (
       !this.view ||
       (this.view.isReady() &&
@@ -264,8 +283,43 @@ class EnvironmentLighting {
     const settings = sceneRenderingSettings(this.scene).environmentLighting;
     if (!settings.enabled && !this.samples.size) return;
     const sky = this.skyCube();
-    if (sky !== this.source) this.sync();
+    if (sky !== this.skySource) this.sync();
     else if (this.view && this.applySkyRotation(settings.rotationYDegrees)) this.invalidateMaterials();
+  }
+
+  /** Start, or return, the GGX filtering of `sky`; a device or budget that cannot filter reads as failed. */
+  private filterSky(sky: CubeTexture): NonNullable<EnvironmentLighting["skyFilter"]> {
+    if (this.skyFilter?.sky === sky) return this.skyFilter;
+    this.releaseSkyFilter();
+    let filtered: FilteredEnvironment | null = null;
+    try {
+      filtered = retainFilteredEnvironment(this.scene.getEngine(), sky);
+    } catch (error) {
+      console.error("Skybox environment filtering failed", error);
+    }
+    const request: NonNullable<EnvironmentLighting["skyFilter"]> = { sky, filtered, state: filtered ? "pending" : "failed" };
+    this.skyFilter = request;
+    void filtered?.ready.then(() => {
+      if (this.skyFilter !== request) return;
+      request.state = "ready";
+      markSceneReadinessDirty(this.scene);
+      this.sync();
+    }, (error) => {
+      if (this.skyFilter !== request) return;
+      request.state = "failed";
+      // A failed filter keeps nothing reserved; this sky stays unfiltered.
+      request.filtered?.release();
+      request.filtered = null;
+      console.error("Skybox environment filtering failed; lighting from the unfiltered sky", error);
+      markSceneReadinessDirty(this.scene);
+      this.sync();
+    });
+    return request;
+  }
+
+  private releaseSkyFilter(): void {
+    this.skyFilter?.filtered?.release();
+    this.skyFilter = null;
   }
 
   /** The ready cube of the first enabled, visible Skybox, or null. */
@@ -308,6 +362,16 @@ class EnvironmentLighting {
     let view: CubeTexture;
     try {
       view = source.clone();
+      // A generated cube has no URL for its clone to reload: share its texture.
+      const shared = source.getInternalTexture();
+      if (!view.getInternalTexture() && shared) {
+        shared.incrementReferences();
+        view._texture = shared;
+        view.gammaSpace = source.gammaSpace;
+        view.lodGenerationScale = source.lodGenerationScale;
+        view.lodGenerationOffset = source.lodGenerationOffset;
+        view._prefiltered = source._prefiltered;
+      }
       if (view.getInternalTexture() !== source.getInternalTexture()) {
         view.dispose();
         throw new Error("Environment view did not share its uploaded cube.");
@@ -342,6 +406,7 @@ class EnvironmentLighting {
     this.pendingLease = undefined;
     this.irradiance?.dispose();
     this.irradiance = null;
+    this.skySource = null;
     this.irradianceChanged = false;
     if (this.scene.environmentTexture === this.view)
       this.scene.environmentTexture = null;

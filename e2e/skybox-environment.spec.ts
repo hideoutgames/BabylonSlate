@@ -49,6 +49,11 @@ function skyLitScene(environmentSource: EnvironmentSource) {
 
 test("a Skybox environment source lights surfaces from the sky in the editor and Play", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
+  // The sky is GGX-filtered on the GPU; a failure would silently fall back to the raw sky.
+  const filterErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /environment (filtering|lighting) failed/i.test(message.text())) filterErrors.push(message.text());
+  });
   await openTestProject(page);
   await openMainScene(page);
   const viewport = page.getByTestId("viewport-canvas");
@@ -69,4 +74,5 @@ test("a Skybox environment source lights surfaces from the sky in the editor and
   const play = page.getByTestId("play-canvas");
   await expect.poll(() => centreBrightness(play), { timeout: 30_000 }).toBeGreaterThan(dark + 25);
   await play.screenshot({ path: testInfo.outputPath("play-skybox.png") });
+  expect(filterErrors).toEqual([]);
 });
