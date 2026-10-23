@@ -406,6 +406,11 @@ export class RenderTargetCaptures {
       this.published(capture, target);
     }
   }
+  /** Whether a Full Quality capture's own view is still preparing its graph and variants (or failed to). */
+  preparing(): boolean {
+    for (const target of this.targets.values()) if (target.fullQuality && !target.fullQuality.renderer.settled) return true;
+    return false;
+  }
   /** Rendering state of every capture output, in insertion order. */
   diagnostics(): RenderTargetCaptureDiagnostics[] {
     return [...this.targets].map(([renderTargetGuid, target]) => ({

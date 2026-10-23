@@ -125,10 +125,10 @@ function effectRetainer(scene: Scene): () => boolean {
  * only Effects an earlier rehearsal frame drew is not drawn. The Effects of the starting state and of each step stay
  * compiled while the scene lives. The caller draws only on frames the view is ready for, and hides what they draw.
  *
- * The starting state draws first, until it holds nothing undrawn and `settled` (the views a load draws for the first
- * time, such as render-target captures, have drawn): a view first prepared during a step would build its draw
- * wrappers' defines in that step's order, and Babylon keys Effects by the defines text, so the starting state would
- * compile again for it once the step is reverted.
+ * The starting state draws first, then waits for `settled` (the views its first draw created, such as a Full Quality
+ * capture's, have prepared) and draws again while it holds anything undrawn: a view first prepared during a step
+ * would build its draw wrappers' defines in that step's order, and Babylon keys Effects by the defines text, so the
+ * starting state would compile again for it once the step is reverted.
  */
 export function createLoadRehearsal(scene: Scene, settled: () => boolean = () => true): LoadRehearsal {
   const all = rehearsalSteps(scene);
@@ -195,7 +195,9 @@ export function createLoadRehearsal(scene: Scene, settled: () => boolean = () =>
       if (starting) {
         // Its Effects are retained too: a step that stops a map must not release its casters' depth Effects.
         undrawn = retain() || undrawn || !startDrew;
-        if (undrawn || !settled()) {
+        // Views the first draw created prepare on their own; wait for them without drawing.
+        if (startDrew && !settled()) return;
+        if (undrawn) {
           if (!draw()) return;
           retain();
           undrawn = false;
