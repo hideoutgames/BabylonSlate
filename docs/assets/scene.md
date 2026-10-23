@@ -43,7 +43,7 @@ Below the settings are collapsible sections:
 | Section | Description |
 | --- | --- |
 | Post Processing | Ordered full-screen passes. **Add Pass** picks a post-process Material; each pass has **Enabled** and **Scalable** switches. |
-| Environment Lighting | Image-based lighting for this Scene, including **Environment Texture**. |
+| Environment Lighting | Image-based lighting for this Scene, including **Environment Source** and **Environment Texture**. |
 | Shadows | Shadow overrides for this Scene. |
 | CEL Shading | Overrides for this Scene. Shown only when the project uses the CEL render mode. |
 | Scene Layers | **Add Layer** picks a [Scene Layer](scene-layer.md) to show with this Scene. Each entry has an enable switch and a **Z-Order**; higher values draw on top. |

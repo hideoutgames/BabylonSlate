@@ -110,6 +110,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     const decoded = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
     const scene = decoded.payload;
     const settings = scene.settings as Record<string, unknown>;
+    settings.environmentSource = "texture";
     settings.environmentTextureGuid = imported!.guid;
     settings.environmentColor = [0, 0, 0];
     files.set(

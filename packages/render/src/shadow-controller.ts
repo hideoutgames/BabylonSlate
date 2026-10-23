@@ -149,6 +149,16 @@ type View = {
 };
 /** How long a view waits before asking the ledger again for a mirror it refused. */
 const VIEW_REFUSAL_RETRY_MS = 1_000;
+/**
+ * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
+ * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
+ * reverted (`restoreAdmission`).
+ */
+export type ShadowAdmissionSnapshot = {
+  readonly at: number;
+  readonly camera: Camera | null;
+  readonly maps: ReadonlyMap<Light, { readonly standby: boolean; readonly admittedAt: number }>;
+};
 /** A view's claim on its own sun maps. */
 export type ViewShadows = {
   /** Disposes the view's maps; settles once their ledger charge is released. Idempotent. */
@@ -325,6 +335,8 @@ export class SceneShadowController {
   private removedSinceScan = 0;
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
+  /** History the sync `restoreAdmission` runs ranks by, instead of its own. */
+  private restoring: ShadowAdmissionSnapshot | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; view: boolean }>();
   /** Views with their own sun maps, by camera. */
@@ -492,6 +504,28 @@ export class SceneShadowController {
     this.pending.add(mesh);
     for (const child of mesh.getChildMeshes()) this.pending.add(child);
   }
+  /** The history the next sync ranks by: its camera, and each light holding a map (admitted or standby) and since when. */
+  snapshotAdmission(): ShadowAdmissionSnapshot {
+    const maps = new Map<Light, { standby: boolean; admittedAt: number }>();
+    for (const entry of this.entries.values())
+      if (entry.generator) maps.set(entry.light, { standby: entry.standby, admittedAt: entry.admittedAt });
+    return { at: performance.now(), camera: this.selectionCamera, maps };
+  }
+  /**
+   * Admits now as a sync at `snapshot.at` would have, by its history rather than by the maps changes since moved: its
+   * camera, its holders as the incumbents (each admitted map's distance bonus, and residency as of then), standby maps
+   * kept only for lights that held one then, and the holders' admission times given back. Applied to the inputs
+   * `snapshot` was taken with, the maps go back to the lights that held them, so a change tried and reverted leaves
+   * admission as it found it, and later syncs carry on from there.
+   */
+  restoreAdmission(snapshot: ShadowAdmissionSnapshot): void {
+    this.restoring = snapshot;
+    try {
+      this.sync("admission");
+    } finally {
+      this.restoring = null;
+    }
+  }
   /** The admitted map; standby maps are neither rendered nor admitted. */
   generator(light: Light): ShadowGenerator | null {
     const entry = this.entries.get(light);
@@ -581,6 +615,10 @@ export class SceneShadowController {
   /** Authored request, independent of admission, visibility and global shadow enablement. */
   requestsShadow(light: Light): boolean {
     return this.entries.get(light)?.requested ?? false;
+  }
+  /** Authored shadow priority (`register`'s). */
+  shadowPriority(light: Light): number {
+    return this.entries.get(light)?.priority ?? 0;
   }
   limits(): string[] {
     const limits = new Set<string>();
@@ -720,9 +758,11 @@ export class SceneShadowController {
     );
     const camera = scene.activeCamera;
     camera?.getViewMatrix();
-    const cameraChanged = camera !== this.selectionCamera;
+    const restoring = this.restoring;
+    this.restoring = null;
+    const cameraChanged = camera !== (restoring ? restoring.camera : this.selectionCamera);
     this.selectionCamera = camera;
-    const selectionTime = performance.now();
+    const selectionTime = restoring ? restoring.at : performance.now();
     const allocationRequestKey = (entry: Entry) =>
       JSON.stringify([
         entry.light instanceof DirectionalLight
@@ -786,9 +826,16 @@ export class SceneShadowController {
     // Nearest relevant lights win independently of brightness. A short minimum
     // residency and squared-distance bonus stabilize camera boundaries without
     // preventing an authored-priority change or a newly possessed camera.
-    const incumbent = (entry: Entry) => Boolean(entry.generator && !entry.standby && !cameraChanged);
+    // A restored history ranks by the maps its snapshot held, not the ones a reverted change moved.
+    const held = (entry: Entry) => restoring
+      ? restoring.maps.get(entry.light)
+      : entry.generator ? entry : undefined;
+    const incumbent = (entry: Entry) => {
+      const map = held(entry);
+      return Boolean(map && !map.standby && !cameraChanged);
+    };
     const resident = (entry: Entry) => incumbent(entry) &&
-      selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS;
+      selectionTime - held(entry)!.admittedAt < SHADOW_MIN_RESIDENCY_MS;
     const distance = (entry: Entry) =>
       entry.distanceSquared / (incumbent(entry) ? 1.15 : 1);
     candidates.sort(
@@ -1027,6 +1074,8 @@ export class SceneShadowController {
         isForwardLightExcluded(entry.light);
       if (
         clustered ||
+        // A map a reverted change created or moved keeps no standby the restored history did not have.
+        (restoring && !restoring.maps.has(entry.light)) ||
         (entry.status !== "outside-relevant-area" &&
           entry.status !== "budget-limited" &&
           !forwardLimited) ||
@@ -1172,6 +1221,12 @@ export class SceneShadowController {
       if (!entry.standby) live.passes += passes;
     }
     reserveSceneShadows(scene, live);
+    // The restored holders' residency runs from their own admission, not from a move back.
+    if (restoring)
+      for (const entry of this.entries.values()) {
+        const map = entry.generator && restoring.maps.get(entry.light);
+        if (map) entry.admittedAt = map.admittedAt;
+      }
     for (const entry of this.entries.values())
       if (entry.generator && !entry.standby) {
         fitLocalShadowDepth(entry.generator.getLight(), scene.activeCamera);

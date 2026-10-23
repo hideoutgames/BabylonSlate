@@ -114,6 +114,7 @@ describe("loadExportDocuments", () => {
     expect(loaded.bytesByGuid(imported!.guid)).toEqual(source);
     expect(loaded.payloadByGuid(imported!.guid)).toMatchObject({ dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, mipLevels: 2 });
     const scene = createDefaultScene();
+    scene.settings.environmentSource = "texture";
     scene.settings.environmentTextureGuid = imported!.guid;
     const payload = scene as unknown as Record<string, unknown>;
     const dependencies = assetHeaderDependencies("Scene", payload);
