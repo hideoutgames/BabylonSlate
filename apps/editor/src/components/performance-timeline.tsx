@@ -78,7 +78,7 @@ const COLOR_CLASS: Readonly<Record<string, string>> = {
   "--tick-scene-systems": "bg-tick-scene-systems",
 };
 const POPULATION_LABEL: Readonly<Record<Population, string>> = { frames: "Frames", ticks: "Ticks", gpu: "GPU", memory: "Memory" };
-const isPopulation = (value: unknown): value is Population => typeof value === "string" && value in POPULATION_LABEL;
+const isPopulation = (value: unknown): value is Population => typeof value === "string" && Object.hasOwn(POPULATION_LABEL, value);
 
 const formatTime = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
 /** Sample number column, then one column per recorded value. */
