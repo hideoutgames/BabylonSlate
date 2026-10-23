@@ -1,5 +1,7 @@
 import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample, type PerformanceGpuSample,
-  type PerformanceIdentity, type PerformanceProfile, type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
+  type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile, type PerformanceStopReason,
+  type PerformanceTickSample } from "./performance-recorder";
+import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 
 const TICK_ROW_WIDTH = PERFORMANCE_TICK_COLUMNS.length;
 
@@ -15,6 +17,10 @@ export type SessionDiagnosticPorts<FrameReport> = {
   observeGpuTiming?: (consume: (sample: PerformanceGpuSample) => void, onError: (error: unknown) => void) => {
     status: "unpaired" | "unavailable"; reason?: string; release(): void;
   };
+  /** The host's accounted texture and geometry bytes, sampled at the stats rate while recording. */
+  sampleMemory?: () => { textureBytes: number; geometryBytes: number };
+  /** Main-thread long tasks as the browser reports them; null where it does not (Safari). */
+  observeLongTasks?: (consume: (task: PerformanceLongTaskSample) => void) => (() => void) | null;
   /** Correlated runtime admission. Stop flushes accepted ticks before resolving. */
   runtimeOperation: (request: DiagnosticOperationRequest) => Promise<DiagnosticOperationResult>;
   captureFrame: (signal: AbortSignal) => Promise<FrameReport>;
@@ -25,6 +31,7 @@ type Operation = {
   kind: "profile" | "frame"; id: string; abort: AbortController;
   admission: Promise<DiagnosticOperationResult>; stopping?: Promise<PerformanceProfile | null>;
   recorder?: PerformanceRecorder; releaseFrames?: () => void; releaseGpu?: () => void;
+  releaseLongTasks?: () => void; memoryTimer?: ReturnType<typeof setInterval>;
   timer?: ReturnType<typeof setTimeout>; deadline?: number; sequence: number;
   droppedRecords: number;
 };
@@ -70,8 +77,23 @@ export class SessionDiagnostics<FrameReport> {
           enabledDiagnostics: gpu?.status === "unpaired" ? [...identity.enabledDiagnostics, "gpu-timing"] : identity.enabledDiagnostics };
       }
       if (state.stopping) throw new Error("GPU timing could not start.");
+      // A sample that throws is invalid and ends the recording, as a frame's does.
+      const admit = (record: () => void) => {
+        if (state.stopping || this.operation !== state || !state.recorder) return;
+        try { record(); } catch { void this.finish(state, "error"); }
+      };
+      state.releaseLongTasks = this.ports.observeLongTasks?.((task) => admit(() => recorder.recordLongTask(task))) ?? undefined;
+      const sampleMemory = this.ports.sampleMemory;
+      // The profile names what this host could record, so the Profiler can say what is missing.
+      identity = { ...identity, enabledDiagnostics: [...identity.enabledDiagnostics,
+        ...(sampleMemory ? ["memory"] : []), ...(state.releaseLongTasks ? ["long-tasks"] : [])] };
       recorder.start(identity, options);
       state.recorder = recorder;
+      if (sampleMemory) {
+        const sample = () => admit(() => recorder.recordMemory({ sampledAtMs: this.now(), ...sampleMemory() }));
+        sample();
+        state.memoryTimer = setInterval(sample, STATS_COMMAND_INTERVAL_MS);
+      }
       state.deadline = this.now() + (options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
       state.releaseFrames = this.ports.observeFrames((sample) => {
         if (state.stopping || this.operation !== state) return;
@@ -165,6 +187,9 @@ export class SessionDiagnostics<FrameReport> {
     state.releaseFrames = undefined;
     state.releaseGpu?.();
     state.releaseGpu = undefined;
+    state.releaseLongTasks?.();
+    state.releaseLongTasks = undefined;
+    if (state.memoryTimer !== undefined) clearInterval(state.memoryTimer);
     state.stopping = (async () => {
       await state.admission;
       const released = await this.request({ kind: state.kind, action: "stop", recordingId: state.id });

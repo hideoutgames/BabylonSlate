@@ -11,7 +11,7 @@ vi.mock("../context/app-settings-context", () => ({ useAppSettings: () => ({ set
 
 afterEach(cleanup);
 /** `frames` samples 10 ms apart, except the ones listed in `slow`, which take 40 ms. */
-function recording(frames = 3, slow: readonly number[] = []) {
+function recording(frames = 3, slow: readonly number[] = [], memory = false) {
   let now = 0;
   const recorder = new PerformanceRecorder({ now: () => now });
   recorder.start({ sessionId: "session", mode: "play", sourceSha: "source", buildId: null, sceneId: "scene", backend: "webgl2",
@@ -22,6 +22,7 @@ function recording(frames = 3, slow: readonly number[] = []) {
       drawCalls: 8, width: 640, height: 360, resolutionScale: 0.5 });
     recorder.recordTick({ tickId: index, elapsedMs: now, scriptMs: 1, physicsMs: 2, publishMs: 0.25, otherMs: 0,
       gameInstanceMs: 0.1, sceneSubsystemsMs: 0, actorsMs: 0.5, componentsMs: 0.2, postPhysicsMs: 0.05, sceneSystemsMs: 0.15 });
+    if (memory) recorder.recordMemory({ sampledAtMs: now, textureBytes: (index + 1) * 1024 * 1024, geometryBytes: 1024 * 1024 });
   }
   return recorder.stop()!;
 }
@@ -65,6 +66,15 @@ it("shows a frame with the tick it presents, and a tick with the first frame pre
   fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
   expect(screen.getByRole("columnheader", { name: "Elapsed MS" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "Frame 0" })).toBeTruthy();
+});
+it("plots accounted memory, lists its samples, and says when the browser reported no long tasks", () => {
+  render(<PerformanceTimeline profile={recording(3, [], true)} />);
+  expect(screen.getByRole("group", { name: /3 memory samples/ })).toBeTruthy();
+  expect(screen.getByText(/This browser does not report long tasks/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Memory Samples" }));
+  expect(screen.getByRole("columnheader", { name: "Texture Bytes" })).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: "Geometry Bytes" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Sample 0" }).textContent).toContain("1048576");
 });
 describe("on the chart", () => {
   // 300 px over the 60 ms recording: a sample at t ms sits at x = 5t; the Frames track is the top 56 px.

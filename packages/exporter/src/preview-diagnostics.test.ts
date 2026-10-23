@@ -23,9 +23,14 @@ describe("Preview diagnostics transport", () => {
     const pair = linked();
     expect(await pair.client.request("frame")).toEqual({ success: true, result: "packaged frame", reason: undefined });
     const frames = new Float64Array([1, 2, 3]);
-    expect(await pair.server.publishProfile({ metadata: { byteBudget: 4096 }, frames: [frames], ticks: [], gpu: [] })).toEqual({ success: true });
+    const memory = new Float64Array([0, 1024, 2048]);
+    const longTasks = new Float64Array([5, 60]);
+    expect(await pair.server.publishProfile({ metadata: { byteBudget: 4096 }, frames: [frames], ticks: [], gpu: [], memory: [memory], longTasks: [longTasks] }))
+      .toEqual({ success: true });
     expect(frames.byteLength).toBe(24);
     expect(pair.profiles[0]?.frames[0]).toEqual(frames);
+    expect(pair.profiles[0]?.memory[0]).toEqual(memory);
+    expect(pair.profiles[0]?.longTasks[0]).toEqual(longTasks);
     expect(pair.profiles[0]?.frames[0]?.buffer).not.toBe(frames.buffer);
     pair.client.dispose(); pair.server.dispose();
   });
@@ -33,7 +38,7 @@ describe("Preview diagnostics transport", () => {
   it("reports a failed profile transfer to the publisher as well as the editor", async () => {
     const pair = linked();
     await pair.client.connect();
-    const published = await pair.server.publishProfile({ metadata: { byteBudget: 1 << 20 }, frames: [new Float64Array(8192)], ticks: [], gpu: [] });
+    const published = await pair.server.publishProfile({ metadata: { byteBudget: 1 << 20 }, frames: [new Float64Array(8192)], ticks: [], gpu: [], memory: [], longTasks: [] });
     expect(published).toMatchObject({ success: false, reason: expect.stringContaining("transport budget") });
     expect(pair.errors).toEqual([published.reason]);
     expect(pair.profiles).toEqual([]);
