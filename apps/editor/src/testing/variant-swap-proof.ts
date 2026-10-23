@@ -323,6 +323,69 @@ async function shadowGain(name: string, caster: (scene: Scene) => { light: Light
   }
 }
 
+/** Pixels whose summed channels differ from the reference by more than 30. */
+const changed = (pixels: readonly number[], reference: readonly number[]) => {
+  let count = 0;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const delta = Math.abs(pixels[index]! - reference[index]!) + Math.abs(pixels[index + 1]! - reference[index + 1]!) +
+      Math.abs(pixels[index + 2]! - reference[index + 2]!);
+    if (delta > 30) count++;
+  }
+  return count;
+};
+
+/**
+ * An actor spawns mid-session with a Material variant nothing compiled: a box with a two-sided red Material, on a
+ * floor under a shadowed spot. While its variant compiles the view keeps drawing and the box is left out of every
+ * pass: the frame is the frame before the spawn, so no depth, shadow or colour of it shows (its shadow-map depth
+ * variant is one the other boxes already use, so a caster list that kept it would draw its shadow at once). Once its
+ * variant links, the box appears.
+ */
+async function spawnReveal() {
+  const view = await worldView();
+  try {
+    const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), view.scene);
+    authored(sun, [1, 0.95, 0.85], 0.4);
+    const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
+    authored(spot, [0.9, 0.85, 0.7], 1.6, true);
+    await view.coordinator.prepare();
+    await view.settle();
+    const before = await view.read();
+    const errorsBefore = glErrorTraceEntries().length;
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+    view.driver.hold();
+    const material = new StandardMaterial("spawned", view.scene);
+    material.diffuseColor = new Color3(0.9, 0.1, 0.1);
+    material.backFaceCulling = false;
+    material.twoSidedLighting = true;
+    const box = MeshBuilder.CreateBox("spawned", { size: 0.6 }, view.scene);
+    box.position.set(1, 0.3, -1.2);
+    box.material = material;
+    box.receiveShadows = true;
+    const frames = { drawn: 0, held: 0 };
+    let hiddenDifference = 0;
+    for (let index = 0; index < 3; index++) {
+      if (view.frame(true)) frames.drawn++;
+      else frames.held++;
+      hiddenDifference = Math.max(hiddenDifference, difference(await view.read(), before));
+    }
+    const effect = () => box.subMeshes[0]!._getDrawWrapper(view.scene.activeCamera!.renderPassId)?.effect ?? null;
+    const compiling = !!effect() && view.driver.created.has(effect()!) && !effect()!.isReady();
+    view.driver.stop();
+    let appeared = 0;
+    for (let attempt = 0; attempt < 100 && !(appeared = changed(await view.read(), before)); attempt++) {
+      view.frame(true);
+      await pause();
+    }
+    return {
+      frames, compiling, hiddenDifference, appeared,
+      glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
+    };
+  } finally {
+    view.dispose();
+  }
+}
+
 export async function runVariantSwapProof() {
   const untrace = installGlErrorTrace();
   try {
@@ -384,7 +447,7 @@ export async function runVariantSwapProof() {
         return { light: point, castShadows: (enabled) => authored(point, [1, 0.8, 0.5], 1.4, enabled) };
       }),
     ];
-    return { steps, shadowGains };
+    return { steps, shadowGains, spawn: await spawnReveal() };
   } finally {
     untrace();
   }

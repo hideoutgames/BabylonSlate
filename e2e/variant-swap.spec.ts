@@ -50,4 +50,11 @@ test("a world view draws each Material's previous Effect with the changed lights
       mapDrawn: true, unchangedWhileHeld: true, litBeforeFirstDraw: true, shadowed: true, glErrors: [],
     });
   }
+  // An actor spawns with a variant nothing compiled: every frame draws, the box shows nowhere while its variant
+  // compiles (the frame is the one before the spawn: no colour, depth or shadow of it), then it appears.
+  const spawn = result.spawn;
+  expect({
+    drawn: spawn.frames.drawn, compiling: spawn.compiling, unchangedWhileHidden: spawn.hiddenDifference <= 2,
+    appeared: spawn.appeared > 20, glErrors: spawn.glErrors,
+  }, JSON.stringify(spawn)).toEqual({ drawn: 3, compiling: true, unchangedWhileHidden: true, appeared: true, glErrors: [] });
 });
