@@ -10,6 +10,9 @@ import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { TagProvider } from "@haptic/editor-kit";
 import { ValidationProvider } from "../context/validation-context";
+import { BreakpointStoreProvider } from "../context/breakpoints-context";
+import { BreakpointStore } from "../services/breakpoint-store";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
@@ -477,6 +480,44 @@ describe("AnimGraphEditor", () => {
       false,
     );
     expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
+  });
+
+  it("sets breakpoints on a state from its menu and on each direction of a Both Ways transition in Details", () => {
+    const breakpoints = new BreakpointStore();
+    const both = setTransitionBidirectional(locoGraph(), "idle-to-run", true);
+    const reverseId = both.transitions.find((row) => row.fromStateId === "run")!.id;
+    store.reset(both as unknown as Record<string, unknown>);
+    render(
+      <BreakpointStoreProvider store={breakpoints}>
+        <ValidationProvider>
+          <DocumentWorkspaceProvider documentId={DOC_ID}>
+            <AnimGraphEditingProvider>
+              <PrefabEditingProvider>
+                <GraphEditingProvider>
+                  <AnimGraphVariablesPanel {...panelProps} />
+                  <AnimGraphGraphPanel {...panelProps} />
+                  <AnimGraphDetailsPanel {...panelProps} />
+                </GraphEditingProvider>
+              </PrefabEditingProvider>
+            </AnimGraphEditingProvider>
+          </DocumentWorkspaceProvider>
+        </ValidationProvider>
+      </BreakpointStoreProvider>,
+    );
+    const at = (nodeId: string) => ({ assetGuid: "loco-graph", graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId });
+    const run = screen.getByTestId("anim-state-node-run");
+    fireEvent.contextMenu(run);
+    fireEvent.click(screen.getByText("Add Breakpoint"));
+    expect(breakpoints.get(at("run"))?.label).toEqual({ className: "Loco", graphName: "State Machine", nodeTitle: "Run" });
+    expect(run.querySelector("[data-breakpoint]")?.getAttribute("data-breakpoint")).toBe("enabled");
+
+    // The selected state's transition shows a button for each direction.
+    fireEvent.click(screen.getByTestId("anim-graph-state-run"));
+    fireEvent.click(screen.getByText("Add Breakpoint"));
+    expect(breakpoints.get(at(reverseId))?.label.nodeTitle).toBe("Run To Idle");
+    expect(screen.getByTestId(`anim-graph-breakpoint-${reverseId}`).textContent).toBe("Remove Breakpoint");
+    fireEvent.click(screen.getByText("Add Reverse Breakpoint"));
+    expect(breakpoints.get(at("idle-to-run"))?.label.nodeTitle).toBe("Idle To Run");
   });
 
   it("disables Flip Direction when the transition is Both Ways", () => {

@@ -25,7 +25,7 @@ import { DebugConsole } from "./debug-console";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import { Separator } from "@haptic/ui/components/separator";
-import { PlayChromeTool } from "./play-overlay-chrome";
+import { PlayChromeTool, ProfilerRecordingChip } from "./play-overlay-chrome";
 import {
   Alert,
   AlertDescription,
@@ -33,6 +33,9 @@ import {
 } from "@haptic/ui/components/alert";
 import { SelectableText } from "@haptic/editor-kit";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
+import { useAppSettings } from "../context/app-settings-context";
+import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
+import { PROFILER_CONSOLE_COMMANDS, runProfilerConsoleCommand, withProfilerHelp } from "../lib/profiler-console";
 import { createPreviewDiagnostics } from "../services/preview-diagnostics";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
 
@@ -112,6 +115,7 @@ export function PreviewBuildOverlay({
   const origin = previewTargetFromSrc(src, window.location.href).origin;
   const commands = useMemo(() => {
     const registry = createCommandRegistry({ includeDebug: true });
+    for (const command of PROFILER_CONSOLE_COMMANDS) registry.register(command);
     for (const entry of userCommands)
       registry.register(
         createUserCommand({
@@ -149,6 +153,11 @@ export function PreviewBuildOverlay({
         origin,
       );
     });
+  // Profiler commands run here, where the Profiler records; every other line goes to the player.
+  const { settings: appSettings } = useAppSettings();
+  const runConsoleLine = async (line: string) =>
+    await runProfilerConsoleCommand(line, diagnosticResults, () => profileDefaultsFromSettings(appSettings.debuggerDefaults))
+      ?? withProfilerHelp(line, await execute(line));
   const finalize = (): Promise<void> => {
     if (finalization.current) return finalization.current;
     stoppingRef.current = true;
@@ -212,22 +221,15 @@ export function PreviewBuildOverlay({
       lease.release();
     };
   }, [diagnosticResults, iframeRef, origin, src, pushLog]);
+  // The console and the tree debugger take the player's input; the Profiler floats over the game and leaves it.
   useEffect(() => {
-    let lastSuppressed: boolean | undefined;
-    const sync = () => {
-      if (stoppingRef.current) return;
-      const owner = diagnosticOwner.current;
-      if (!owner) return;
-      const suppressed = consoleOpen || treeOpen || diagnosticResults?.getSnapshot().open === true;
-      if (lastSuppressed === suppressed) return;
-      lastSuppressed = suppressed;
-      void owner.adapter.setInputSuppressed(suppressed).then(result => {
-        if (!result.success && !stoppingRef.current) owner.reportError(result.reason ?? "Preview input ownership failed.");
-      });
-    };
-    sync();
-    return diagnosticResults?.subscribe(sync);
-  }, [diagnosticResults, consoleOpen, treeOpen, src]);
+    if (stoppingRef.current) return;
+    const owner = diagnosticOwner.current;
+    if (!owner) return;
+    void owner.adapter.setInputSuppressed(consoleOpen || treeOpen).then(result => {
+      if (!result.success && !stoppingRef.current) owner.reportError(result.reason ?? "Preview input ownership failed.");
+    });
+  }, [consoleOpen, treeOpen, src]);
   useEffect(() => {
     const requests = pending.current;
     const receive = (event: MessageEvent) => {
@@ -341,6 +343,7 @@ export function PreviewBuildOverlay({
         </div>
       ) : null}
       <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-end gap-2">
+        <div className="pointer-events-auto empty:hidden"><ProfilerRecordingChip testId="preview-build-profiler-recording" /></div>
         <div className="toolbar-island toolbar-island-touch pointer-events-auto" role="toolbar" aria-label="Preview Build Controls">
           {showStats ? (
             <PlayChromeTool
@@ -383,7 +386,7 @@ export function PreviewBuildOverlay({
         commands={commands}
         completionContext={completionContext}
         logs={logs}
-        onExecute={execute}
+        onExecute={runConsoleLine}
       />
       <DebugBehaviourTreeDialog
         open={treeOpen}

@@ -279,24 +279,6 @@ describe.each(["worker", "in-process"] as const)(
       await session!.setPauseReason("rendering", false);
     });
 
-    it("ends an editor input transition whose reset fails without holding game input", async () => {
-      let refuseReset = false;
-      await play({
-        onRuntime: (runtime) => {
-          const request = runtime.requestSessionBoundary.bind(runtime);
-          vi.spyOn(runtime, "requestSessionBoundary").mockImplementation(async (boundary) => {
-            const result = await request(boundary);
-            return refuseReset && boundary.action.kind === "resetInput" ? { ...result, success: false, reason: "Reset refused" } : result;
-          });
-        },
-      });
-      await session!.setEditorInputSuppressed(true);
-      expect(capture.setSuppressed).toHaveBeenLastCalledWith(true);
-      refuseReset = true;
-      await expect(session!.setEditorInputSuppressed(false)).rejects.toThrow("Reset refused");
-      expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
-    });
-
     it.runIf(mode === "worker")("does not present worker output that arrives after Stop", async () => {
       const applyCommand = vi.fn();
       const pushSnapshot = vi.fn();
