@@ -47,6 +47,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     this.registerOutput("time", Types.Float);
     this.registerOutput("crestFoam", Types.Float, NodeMaterialBlockTargets.Fragment);
     this.registerOutput("subsurface", Types.Float, NodeMaterialBlockTargets.Fragment);
+    this.registerOutput("edgeTurbulence", Types.Float, NodeMaterialBlockTargets.Fragment);
   }
   /** The undisplaced world position of the vertex (the rest point), Vector 4. */
   get worldPosition() { return this._inputs[0]!; }
@@ -66,6 +67,11 @@ export class WaterWavesBlock extends NodeMaterialBlock {
   get crestFoam() { return this._outputs[5]!; }
   /** Light scattered through the crests toward a viewer facing the sun, times the asset's Subsurface (built-in water adds Shallow Color times it). */
   get subsurface() { return this._outputs[6]!; }
+  /**
+   * How far the turbulence lies past the Crest Foam threshold (positive on whitecaps), which the Water Foam node's shore
+   * and contact foam grow from (`edgeFoamHelpers`); the compiler connects it, it is no graph pin.
+   */
+  get edgeTurbulence() { return this._outputs[7]!; }
   override getClassName(): string { return "WaterWavesBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
     // The water mesh uploads its base normals with the data and flow it is recognised by, and only it registers waves.
@@ -160,8 +166,9 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     const local = (name: string, type: string, value: string) => wgsl ? `var ${name}: ${type} = ${value};\n` : `${type} ${name} = ${value};\n`;
     state.compilationString += local("swnNormal", v3, worldNormal)
       + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0") + local("swnSubsurface", wgsl ? "f32" : "float", "0.0")
+      + local("swnEdgeTurbulence", wgsl ? "f32" : "float", "0.0")
       + `${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n`
-      + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam") + declare(this.subsurface, "swnSubsurface")
+      + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam") + declare(this.subsurface, "swnSubsurface") + declare(this.edgeTurbulence, "swnEdgeTurbulence")
       + declare(this.time, `${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x`);
   }
 }

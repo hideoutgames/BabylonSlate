@@ -344,8 +344,8 @@ abstract class WaterNodeBlock extends NodeMaterialBlock {
 /**
  * Water Foam: the foam built-in water draws, as masks. Crest Foam is the Water Waves block's whitecaps (0 without a
  * Water Waves node); Shore Foam is where the water over known terrain is shallow (Foam Width); Contact Foam is the
- * band around objects crossing the surface (Contact Foam Width), both broken into churning lace as built-in water draws
- * them (`edgeFoamHelpers`). Foam is all of them, as built-in water combines them. Foam Amount scales every mask.
+ * band around objects crossing the surface (Contact Foam Width), both shaped by the Water Waves block's turbulence as
+ * built-in water draws them (`edgeFoamHelpers`). Foam is all of them, as built-in water combines them. Foam Amount scales every mask.
  */
 export class WaterFoamBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -353,6 +353,7 @@ export class WaterFoamBlock extends WaterNodeBlock {
     this.registerInput("worldPosition", Types.Vector4);
     this.registerInput("waveHeight", Types.Float, true);
     this.registerInput("crestFoam", Types.Float, true);
+    this.registerInput("edgeTurbulence", Types.Float, true);
     for (const output of ["foam", "crest", "shore", "contact"]) this.registerOutput(output, Types.Float);
   }
   get worldPosition() { return this._inputs[0]!; }
@@ -360,6 +361,8 @@ export class WaterFoamBlock extends WaterNodeBlock {
   get waveHeight() { return this._inputs[1]!; }
   /** The Water Waves block's Crest Foam (the compiler connects it). */
   get crestFoam() { return this._inputs[2]!; }
+  /** The Water Waves block's turbulence for shore and contact foam (the compiler connects it; calm without one). */
+  get edgeTurbulence() { return this._inputs[3]!; }
   get foam() { return this._outputs[0]!; }
   get crest() { return this._outputs[1]!; }
   get shore() { return this._outputs[2]!; }
@@ -392,6 +395,8 @@ float swnNoise(vec2 p) {
 ${edgeFoamHelpers("swn")}`, wgsl), "");
     const [foam, , shore, contact] = this._outputs.map((output) => output.associatedVariableName);
     const crestValue = this.value(this.crestFoam, "0.0");
+    // Without Water Waves the water counts as calm: as far below the crest threshold as still water with default Crest Foam.
+    const turbulence = this.value(this.edgeTurbulence, "-0.35");
     state.compilationString += this.declare(state, this.foam, "0.0") + this.declare(state, this.crest, crestValue)
       + this.declare(state, this.shore, "0.0") + this.declare(state, this.contact, "0.0");
     if (!this.foam.hasEndpoints && !this.shore.hasEndpoints && !this.contact.hasEndpoints) return this;
@@ -407,9 +412,9 @@ float swnFoot = length(fwidth(swnPos.xz));
 float swnShoreAmount = swnField.w * swnShoreFoamAmount(swnFlowed, swnTime, swnDepth, swnTerms.x * 0.35 + 0.08) * swnTerms.z;
 float swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
 `, wgsl)
-      + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeLace(swnFlowed, swnTime, max(swnShoreAmount, swnContactAmount), swnFoot)), 0.0, 1.0)`)
-      + assign(this.shore, shore, "swnEdgeLace(swnFlowed, swnTime, swnShoreAmount, swnFoot)")
-      + assign(this.contact, contact, "swnEdgeLace(swnFlowed, swnTime, swnContactAmount, swnFoot)")
+      + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeFoamCover(swnFlowed, max(swnShoreAmount, swnContactAmount), ${turbulence}, swnFoot)), 0.0, 1.0)`)
+      + assign(this.shore, shore, `swnEdgeFoamCover(swnFlowed, swnShoreAmount, ${turbulence}, swnFoot)`)
+      + assign(this.contact, contact, `swnEdgeFoamCover(swnFlowed, swnContactAmount, ${turbulence}, swnFoot)`)
       + "#endif\n}\n";
     return this;
   }

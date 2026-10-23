@@ -641,6 +641,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     plumbing.worldPosition?.connectTo(block.worldPosition);
     plumbing.waterWaves?.height.connectTo(block.waveHeight);
     plumbing.waterWaves?.crestFoam.connectTo(block.crestFoam);
+    plumbing.waterWaves?.edgeTurbulence.connectTo(block.edgeTurbulence);
     return { blocks: [block], inputs: {}, outputs: { foam: block.foam, crestFoam: block.crest, shoreFoam: block.shore, contactFoam: block.contact } };
   },
   "input.waterDepthFade": ({ name, plumbing }) => {

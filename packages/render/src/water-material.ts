@@ -177,6 +177,8 @@ const PIXEL_SLOPE_CAP = 0.012;
 
 const f = (n: number) => n.toFixed(6);
 
+/** FFT-Ocean's foam: coverage per unit of turbulence below the bias. */
+const SPECTRUM_FOAM_SCALE = 2.4;
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
 const HELPERS = `
 float swHash(vec2 p) {
@@ -196,15 +198,12 @@ float swNoise(vec2 p) {
  * Shore and contact foam, shared by built-in water and the Water Foam node (`prefix` names the functions and the
  * caller's `<prefix>Hash` and `<prefix>Noise`), GLSL-shaped for `toWgsl`.
  *
- * `<prefix>EdgeLace(p, t, amount, foot)` draws foam as it breaks up on real water: a network of foam along the edges
- * between cells of uneven size (the gap between the nearest and second-nearest of a point placed anywhere in each
- * cell), at two scales, that thickens into a sheet with shrinking holes (`amount` 0 leaves none, 1 covers all). A broad
- * noise warps it and thickens it in patches, so no grid or even band shows along a long edge. The points circle slowly, so it churns in place and travels only with the current (`p`, flowed world metres;
- * `t`, seconds). `foot`
- * (metres per pixel) softens its edges by a pixel and, once its cells near a few pixels, hands over to the sheet's
- * mean coverage, so distant foam never shimmers. Thin foam breaks into separate scraps and is partly clear, as the
- * ocean's whitecaps fade at their edges.
- * It skips its taps where there is no foam.
+ * `<prefix>EdgeFoamCover(p, amount, crest, foot)` is foam as the open sea draws it, only denser: `crest` is how far the
+ * body's turbulence lies past its Crest Foam threshold (the whitecaps are where it is positive), and `amount` (0 none,
+ * 1 all) lowers that threshold, most only at the waterline, so edge foam grows out of the whitecaps' soft streaky
+ * shapes and follows the waves. Smooth noise at three scales in flowed world metres (`p`) breaks it into wisps where the
+ * waves are calm, each faded where `foot` (metres per pixel) would alias it, and thin foam is partly clear. No cells,
+ * so no holes or rows.
  *
  * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
  * water is about 1.6 `width` deep (between 1 and 2.4 along the shore), with bands that wash in toward the shore, out of
@@ -212,35 +211,16 @@ float swNoise(vec2 p) {
  * out within 0.35 to 1.9 `width`, varying along the object and slowly over time, so no even ring surrounds it.
  */
 export function edgeFoamHelpers(prefix: string): string {
-  const taps = [-1, 0, 1].flatMap((y) => [-1, 0, 1].map((x) => `vec2(${x}.0, ${y}.0)`));
   return `
-float ${prefix}LaceTap(vec2 i, vec2 f, vec2 c, float t) {
-  vec2 h = vec2(${prefix}Hash(i + c), ${prefix}Hash(i + c + vec2(17.13, 41.71)));
-  vec2 o = c + vec2(0.1) + h * 0.8 + sin(h.yx * 6.2831 + t * (h + vec2(0.5))) * 0.12 - f;
-  return dot(o, o);
-}
-float ${prefix}LaceCells(vec2 p, float t) {
-  vec2 i = floor(p);
-  vec2 f = p - i;
-  float d1 = 8.0;
-  float d2 = 8.0;
-  float e = 8.0;
-${taps.map((tap) => `  e = ${prefix}LaceTap(i, f, ${tap}, t);\n  d2 = min(d2, max(d1, e));\n  d1 = min(d1, e);`).join("\n")}
-  return sqrt(d2) - sqrt(d1);
-}
-float ${prefix}EdgeLace(vec2 p, float t, float amount, float foot) {
+float ${prefix}EdgeFoamCover(vec2 p, float amount, float crest, float foot) {
   if (amount <= 0.0) { return 0.0; }
-  float clump = ${prefix}Noise(p * 0.3 + vec2(3.1, 7.7));
-  float a = clamp(amount * (0.45 + 1.1 * clump), 0.0, 1.0);
-  vec2 w = p + (vec2(${prefix}Noise(p * 0.45), ${prefix}Noise(p * 0.45 + vec2(5.2, 1.3))) - vec2(0.5)) * 1.6;
-  float fine = 1.0 - smoothstep(0.2, 0.6, foot * 7.0);
-  float d = ${prefix}LaceCells(w * 2.5, t * 0.6) + (${prefix}LaceCells(w * 7.0 + vec2(7.3, 1.9), t) - 0.3) * 0.35 * fine;
-  float reach = 0.9 * a * sqrt(a);
-  float edge = 0.03 + 0.08 * (1.0 - a) + foot * 5.0;
-  float scraps = mix(smoothstep(0.35, 0.65, ${prefix}Noise(w * 1.3 + vec2(t * 0.04, 0.0))), 1.0, a * a);
-  float lace = (1.0 - smoothstep(reach - edge, reach + edge, d)) * scraps;
-  float mean = smoothstep(0.0, 0.65, reach) * mix(0.5, 1.0, a * a);
-  return mix(lace, mean, smoothstep(0.25, 0.7, foot * 2.5)) * (0.45 + 0.55 * a) * smoothstep(0.0, 0.05, a);
+  float a = clamp(amount, 0.0, 1.0);
+  float detail = 1.0 - smoothstep(0.15, 0.6, foot * 3.0);
+  float wisp = 1.0 - smoothstep(0.15, 0.6, foot * 8.0);
+  float soft = ((${prefix}Noise(p * 0.7) - 0.5) * 0.8 + (${prefix}Noise(p * 2.3 + vec2(3.7, 8.1)) - 0.5) * 0.45) * detail
+    + (${prefix}Noise(p * 6.1 + vec2(9.4, 2.6)) - 0.5) * 0.3 * wisp;
+  float cover = clamp((crest + soft + mix(-0.35, 0.85, a * sqrt(a))) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0);
+  return cover * (0.55 + 0.45 * a) * smoothstep(0.0, 0.08, a);
 }
 float ${prefix}ShoreFoamAmount(vec2 p, float t, float depth, float width) {
   float s = max(depth, 0.0) / max(width * mix(0.6, 1.5, ${prefix}Noise(p * 0.2 + vec2(1.7, 9.2))), 0.001);
@@ -697,8 +677,6 @@ float ${out} = ${out}H * ${out}H * ${out}H * ${out}H * ${out}H * 4.5 * ${out}Bac
 
 /** FFT-Ocean's distance LOD: cascade c > 0 fades by `SPECTRUM_LOD_SCALE` · its patch over the eye distance. */
 const SPECTRUM_LOD_SCALE = 7.13;
-/** FFT-Ocean's foam: coverage per unit of turbulence below the bias. */
-const SPECTRUM_FOAM_SCALE = 2.4;
 /**
  * Steepest shading slope (about 56°): a sea far too tall for its Wave Length would otherwise turn every normal toward
  * the horizon and mirror only the sky. Real seas stay well below it (an RMS slope near 0.25).
@@ -888,12 +866,12 @@ float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATC
 float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0) * swPatchFar;
 // Surface Foam: thin lingering residue where turbulence is still recovering behind the caps.
 float swResidue = clamp((swCrestBias + 0.35 - swTurb) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
-// Edges: lacy foam thick at every object's waterline and along shallow shores, thinning outward (\`edgeFoamHelpers\`).
+// Edges: foam thick at every object's waterline and along shallow shores, thinning outward (\`edgeFoamHelpers\`).
 float swContactStrength = U.slateWaterTerms.x;
 float swContactW = max(0.05, U.slateWaterShape.w);
 float swCollar = swContactFoamAmount(swFlowed, swTime, swObject, swContactW);
 float swShoreFoam = swKnown * (1.0 - swOpenAny) * swShoreFoamAmount(swFlowed, swTime, swTerrainDepth, U.slateWaterMotion.w * 0.35 + 0.08);
-float swEdgeFoam = swEdgeLace(swFlowed, swTime, max(swCollar, swShoreFoam) * swContactStrength, swFoot);
+float swEdgeFoam = swEdgeFoamCover(swFlowed, max(swCollar, swShoreFoam) * swContactStrength, swCrestBias - swTurb, swFoot);
 float swFoam = clamp(max(max(swCrestFoam, swResidue), swEdgeFoam), 0.0, 1.0);
 `;
 }
@@ -1465,7 +1443,8 @@ ${out} = vec4(swvGain * swvDs, swvHs, swvKeepBank, swvKeepMargin);
  * (`spectrumSurfaceSource`): it discards what a blending surface does not own, then gives the displaced surface's
  * normal over the mesh's base normal (`base`), the height, and
  * FFT-Ocean's crest foam from the persistent turbulence with the asset's Crest Foam and Foam Amount, and the subsurface
- * light built-in water draws (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam` and `swnSubsurface`.
+ * light built-in water draws (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam`, `swnSubsurface` and
+ * `swnEdgeTurbulence` (the turbulence past the crest threshold, which edge foam reads: `edgeFoamHelpers`).
  * GLSL-shaped with `U.`; `varying` is the bound `WATER_NODE_VARYING`.
  */
 function nodeFragmentSource(rest: string, base: string, varying: string): string {
@@ -1521,6 +1500,7 @@ swnFoam = clamp((swnBias - swnTurb) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * cla
 ${subsurfaceSource(`U.${WATER_NODE_SUN_UNIFORM}.xyz`, `normalize(U.${WATER_EYE_UNIFORM}.xyz - swnRestW - vec3(0.0, swnHeight, 0.0))`, "swnNormal",
     "(0.2 * swnLarge + swnSmall) * swnSp.x * swnShares.y", `U.${WATER_NODE_SUN_UNIFORM}.w`, "swnSp.x", "swnSss")}
 swnSubsurface = swnSss;
+swnEdgeTurbulence = swnBias - swnTurb;
 }
 #endif
 `;
