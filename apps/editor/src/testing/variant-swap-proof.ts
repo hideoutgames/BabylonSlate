@@ -27,6 +27,7 @@ import {
   type Light,
   type Material,
   type Mesh,
+  type ShadowGenerator,
 } from "@babylonjs/core";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -194,7 +195,16 @@ async function worldView() {
     engine.dispose();
     canvas.remove();
   };
-  return { engine, scene, coordinator, frame, settle, read, swap, dispose };
+  /** The driver, step by step: hold every new Effect, then release those `filter` picks (all by default). */
+  const driver = {
+    hold: () => { holding = true; created.clear(); },
+    release: (filter: (effect: Effect) => boolean = () => true) => {
+      for (const effect of held) if (filter(effect)) held.delete(effect);
+    },
+    stop: () => { holding = false; held.clear(); },
+    created,
+  };
+  return { engine, scene, coordinator, materials, frame, settle, read, swap, drawnEffects, driver, dispose };
 }
 
 const authored = (light: Light, color: number[], intensity: number, castShadows = false) =>
@@ -232,6 +242,82 @@ async function shadowLoss(name: string, caster: (scene: Scene) => { castShadows:
       setAuthoredLightEnabled(lamp, false);
     });
     return record(step, difference(step.pixels, step.adoptedPixels));
+  } finally {
+    view.dispose();
+  }
+}
+
+/** A shadow map's caster depth variant (Babylon's shadow defines), as opposed to a receiver's colour variant. */
+const isDepthEffect = (effect: Effect) => effect.defines.includes("#define SM_FLOAT");
+
+/** Pixels darker than the reference by more than 30 (summed channels). */
+const darkened = (pixels: readonly number[], reference: readonly number[]) => {
+  let count = 0;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const drop = (reference[index]! + reference[index + 1]! + reference[index + 2]!) - (pixels[index]! + pixels[index + 1]! + pixels[index + 2]!);
+    if (drop > 30) count++;
+  }
+  return count;
+};
+
+/**
+ * A light starts casting shadows mid-session. The view keeps drawing: each receiver draws its previous Effect, and the
+ * new map waits for its casters' depth variants. The receivers' shadowed variants link first and sample the map
+ * before it ever drew, so it must read as lit (a cube of distances reads zero, an occluder at the light, unless its
+ * darkness is neutral); once the casters link, the map draws and the boxes' shadows appear on the floors.
+ */
+async function shadowGain(name: string, caster: (scene: Scene) => { light: Light; castShadows: (enabled: boolean) => void }) {
+  const view = await worldView();
+  try {
+    const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), view.scene);
+    authored(sun, [1, 0.95, 0.85], 0.3);
+    const { light, castShadows } = caster(view.scene);
+    castShadows(false);
+    await view.coordinator.prepare();
+    await view.settle();
+    const unshadowed = await view.read();
+    const before = view.drawnEffects();
+    const errorsBefore = glErrorTraceEntries().length;
+    const names = view.materials.map((material) => material.name);
+    const drawn = { held: 0, previous: 0, neutral: 0 };
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+    view.driver.hold();
+    castShadows(true);
+    let heldPixels: number[] = [];
+    for (let index = 0; index < 3; index++) {
+      if (!view.frame(true)) drawn.held++;
+      else if (view.drawnEffects().every((effect, at) => effect === before[at])) drawn.previous++;
+      heldPixels = await view.read();
+    }
+    // The receivers' variants link; the casters' do not yet. Wait until the casters have asked for theirs (the
+    // generator loads its shaders first), so the map is known to be waiting for them.
+    view.driver.release((effect) => !isDepthEffect(effect));
+    const casters = () => [...view.driver.created].filter(isDepthEffect).length;
+    let adopted: string[] = [];
+    let neutralPixels: number[] = [];
+    for (let attempt = 0; attempt < 150 && (adopted.length < names.length || !casters()); attempt++) {
+      view.driver.release((effect) => !isDepthEffect(effect));
+      if (view.frame(true)) drawn.neutral++;
+      adopted = names.filter((_, at) => view.driver.created.has(view.drawnEffects()[at]!));
+      neutralPixels = await view.read();
+      await pause();
+    }
+    const requested = casters();
+    // The casters link: the map draws on the first frame they are all ready.
+    view.driver.stop();
+    const map = light.getShadowGenerator() as ShadowGenerator | null;
+    let shadowPixels = 0;
+    for (let attempt = 0; attempt < 150 && !(shadowPixels = darkened(await view.read(), unshadowed)); attempt++) {
+      view.frame(true);
+      await pause();
+    }
+    return {
+      name, drawn, adopted, casters: requested, mapDrawn: map?.getDarkness() === 0,
+      heldDifference: difference(heldPixels, unshadowed),
+      neutralDifference: difference(neutralPixels, unshadowed),
+      shadowPixels,
+      glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
+    };
   } finally {
     view.dispose();
   }
@@ -286,7 +372,19 @@ export async function runVariantSwapProof() {
       castShadows(true);
       return { castShadows };
     }));
-    return { steps };
+    const shadowGains = [
+      // Its map is a 2D depth texture, sampled by comparison (PCF).
+      await shadowGain("a spot starts casting shadows", (scene) => {
+        const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
+        return { light: spot, castShadows: (enabled) => authored(spot, [0.9, 0.85, 0.7], 1.6, enabled) };
+      }),
+      // Its map is a cube of distances, sampled with Poisson taps.
+      await shadowGain("a point light starts casting shadows", (scene) => {
+        const point = new PointLight("point", new Vector3(-0.4, 1.8, -0.9), scene);
+        return { light: point, castShadows: (enabled) => authored(point, [1, 0.8, 0.5], 1.4, enabled) };
+      }),
+    ];
+    return { steps, shadowGains };
   } finally {
     untrace();
   }

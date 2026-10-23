@@ -36,4 +36,18 @@ test("a world view draws each Material's previous Effect with the changed lights
     step.referenceDifference === undefined ? [] : [[step.name, step.referenceDifference <= 2]]))).toEqual({
     "a spot gives way to a point": true, "a spot stops casting shadows": true, "a point light stops casting shadows": true,
   });
+  // A light starts casting shadows: no frame held, each Material drew its previous Effect, then its shadowed variant
+  // sampled the new map before the map ever drew and read it as lit (the frame unchanged), and once the casters linked
+  // the map drew and the boxes' shadows darkened the floors (sharp shadows: a few pixels at this size).
+  expect(result.shadowGains.map((gain) => gain.name)).toEqual(["a spot starts casting shadows", "a point light starts casting shadows"]);
+  for (const gain of result.shadowGains) {
+    expect({
+      held: gain.drawn.held, previous: gain.drawn.previous, adopted: [...gain.adopted].sort(), casters: gain.casters > 0,
+      mapDrawn: gain.mapDrawn, unchangedWhileHeld: gain.heldDifference <= 2, litBeforeFirstDraw: gain.neutralDifference <= 2,
+      shadowed: gain.shadowPixels > 8, glErrors: gain.glErrors,
+    }, JSON.stringify(gain)).toEqual({
+      held: 0, previous: 3, adopted: [...materials].sort(), casters: true,
+      mapDrawn: true, unchangedWhileHeld: true, litBeforeFirstDraw: true, shadowed: true, glErrors: [],
+    });
+  }
 });
