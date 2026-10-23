@@ -379,6 +379,8 @@ function PlayOverlayView({
   const [stoppedAt, setStoppedAt] = useState<SessionPauseCause | null>(null);
   /** Editor Play stopped at a breakpoint or an error: its view hides until Resume. */
   const [playBreak, setPlayBreak] = useState<SessionPauseCause | null>(null);
+  /** The running session, for the graph debugger's requests. */
+  const [graphDebugSession, setGraphDebugSession] = useState<PlaySession | null>(null);
   const [pausePending, setPausePending] = useState(false);
   const [inputMode, setInputMode] = useState<"game" | "edit">("game");
   const [inputPending, setInputPending] = useState(false);
@@ -549,6 +551,18 @@ function PlayOverlayView({
     canvasRef.current?.focus({ preventScroll: true });
   }, [playBreak]);
   useEffect(() => () => onPlayBreakRef.current?.(null), []);
+  // A Simulation, and Play while it is stopped, ask the runtime to watch the focused graph's instances.
+  // Play that runs behind its view watches nothing.
+  const graphDebugging = simulating || playBreak !== null;
+  useEffect(() => {
+    if (!graphDebug || !graphDebugSession || !graphDebugging) return;
+    const unsubscribe = graphDebug.subscribeRequest((request) => graphDebugSession.observeGraphDebug(request.target, request.instanceId));
+    return () => {
+      unsubscribe();
+      // Back in the game: stop watching.
+      if (!simulating) graphDebugSession.observeGraphDebug(null, null);
+    };
+  }, [graphDebug, graphDebugSession, graphDebugging, simulating]);
 
   useEffect(() => {
     if (!simulating) return;
@@ -968,8 +982,7 @@ function PlayOverlayView({
         return;
       }
       sessionRef.current = session;
-      // The graph debugger asks the runtime to watch the focused graph's instances.
-      const unsubscribeGraphDebug = graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId));
+      setGraphDebugSession(session);
       // Breakpoints set, removed or switched off while the session runs apply from its next run of the node.
       const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()));
       if (simulationSession && sessionOwner && sessionTicket) {
@@ -1121,7 +1134,7 @@ function PlayOverlayView({
         resizeObserver.disconnect();
         window.clearInterval(movePoll);
         detachLifecycle();
-        unsubscribeGraphDebug?.();
+        setGraphDebugSession(null);
         unsubscribeBreakpoints?.();
         graphDebug?.setHeld(false);
         graphDebug?.setTarget(null);
