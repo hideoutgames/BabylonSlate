@@ -29,12 +29,13 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/sh
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
-import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
+import { isForwardLightExcluded, setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
+import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 
 /** Pipelines the device created while a step ran. */
 type PipelineCounts = { synchronous: number; asynchronous: number };
@@ -69,6 +70,137 @@ export async function proveWebGpuRehearsedChanges(engine: AbstractEngine) {
   const result = await webGpuWorld(engine, true);
   if (!("report" in result)) throw new Error("The rehearsal proof did not rehearse.");
   return result;
+}
+
+/** An admission a light's approach brings on WebGPU: what it compiled and created, and how long previous variants drew. */
+type PredictedAdmission = {
+  admitted: boolean;
+  /** Effects compiled while the light waited within reach of the admission, before it. */
+  effectsAhead: number;
+  /** Effects compiled from the change that admits it until every floor drew its new variant. */
+  effectsAtAdmission: number;
+  /** Render pipelines the device created meanwhile. */
+  pipelines: PipelineCounts;
+  /** Steady frames after that change in which some floor still drew its previous variant. */
+  lateFrames: number;
+  held: number;
+  done: boolean;
+};
+
+/**
+ * A light comes within reach of an admission and then into it, approaching (it waits within the prediction margin
+ * first) or jumping straight in: a spot the Forward budget (two local lights) leaves out takes a point's place, and a
+ * shadowed spot takes a farther point's shadow map (two local maps, the other a spot's). Approached, the admission's
+ * Effects were compiled ahead; its render pipelines are still created at the admission, while previous variants draw.
+ */
+export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
+  const run = async (admission: "forward" | "shadow", approach: boolean): Promise<PredictedAdmission> => {
+    const shadows = admission === "shadow";
+    const scene = new Scene(engine);
+    scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
+    const camera = new FreeCamera("camera", new Vector3(0, 4.5, -7.5), scene);
+    camera.setTarget(new Vector3(0, 0.4, 0));
+    scene.activeCamera = camera;
+    setSceneRenderSettings(scene, {
+      mode: "pbr",
+      quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: shadows ? 16 : 2 } }),
+      shadows: normalizeShadowSettings({ cascades: 1, localLightMode: "manual", maxLocalLights: 2 }),
+    });
+    const pbr = new PBRMaterial("native pbr", scene);
+    pbr.albedoColor = new Color3(0.8, 0.8, 0.8);
+    pbr.metallic = 0;
+    const standard = new StandardMaterial("native standard", scene);
+    standard.diffuseColor = new Color3(0.8, 0.8, 0.8);
+    const floors = [pbr, standard].map((material, index) => {
+      const floor = MeshBuilder.CreateGround(`floor-${index}`, { width: 1.9, height: 6 }, scene);
+      floor.position.x = -1 + index * 2;
+      floor.material = material;
+      floor.receiveShadows = true;
+      const box = MeshBuilder.CreateBox(`box-${index}`, { size: 0.8 }, scene);
+      box.position.set(-1 + index * 2, 0.4, 0);
+      box.material = material;
+      box.receiveShadows = true;
+      return floor;
+    });
+    const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), scene);
+    authored(sun, [1, 0.95, 0.85], 0.4);
+    const near = shadows
+      ? new SpotLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene)
+      : new PointLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(-0.6, 1.6, -1.2), scene);
+    authored(near, [0.3, 0.4, 1], 0.9, shadows);
+    const far = new PointLight(`${AUTHORED_LIGHT_PREFIX}far`, shadows ? new Vector3(1.5, 1.8, 3) : new Vector3(1.4, 1.2, -1.5), scene);
+    authored(far, [1, 0.8, 0.2], 0.9, shadows);
+    const spot = new SpotLight(`${AUTHORED_LIGHT_PREFIX}spot`, new Vector3(0, 3.2, 24), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
+    authored(spot, [0.9, 0.85, 0.7], 1.4, shadows);
+    const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
+    const device = (engine as DeviceEngine)._device;
+    const createRenderPipeline = device.createRenderPipeline;
+    const createRenderPipelineAsync = device.createRenderPipelineAsync;
+    const counts: PipelineCounts = { synchronous: 0, asynchronous: 0 };
+    device.createRenderPipeline = function (descriptor) {
+      counts.synchronous++;
+      return createRenderPipeline.call(this, descriptor);
+    };
+    device.createRenderPipelineAsync = function (descriptor) {
+      counts.asynchronous++;
+      return createRenderPipelineAsync.call(this, descriptor);
+    };
+    const effects = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).length;
+    const drawn = () => {
+      const pass = engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+      return floors.map((floor) => pass < 0 ? null : floor.subMeshes[0]!._getDrawWrapper(pass)?.effect ?? null);
+    };
+    const admitted = () => shadows
+      ? findSceneShadowController(scene)?.generator(spot) != null && findSceneShadowController(scene)?.generator(far) == null
+      : !isForwardLightExcluded(spot);
+    const frame = async (strict = false) => {
+      engine.beginFrame();
+      let rendered: boolean;
+      try {
+        rendered = coordinator.render(strict).rendered;
+      } finally {
+        engine.endFrame();
+      }
+      await tick();
+      return rendered;
+    };
+    try {
+      await coordinator.prepare();
+      for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
+      for (let index = 0; index < 4; index++) await frame();
+      let effectsAhead = 0;
+      if (approach) {
+        // Within the prediction margin of the cut-off (the farther local light's ranking distance), still left out.
+        const start = effects();
+        spot.position.set(0, 3.2, shadows ? 6 : 1);
+        for (let index = 0; index < 12; index++) await frame();
+        effectsAhead = effects() - start;
+      }
+      if (admitted()) throw new Error(`The ${admission} admission came before the change.`);
+      const start = effects();
+      counts.synchronous = counts.asynchronous = 0;
+      const before = drawn();
+      spot.position.set(0, 3.2, shadows ? 0 : -4.5);
+      let lateFrames = 0;
+      let held = 0;
+      let done = false;
+      for (let index = 0; index < 300 && !done; index++) {
+        if (!(await frame())) held++;
+        else if (drawn().some((effect, slot) => effect === before[slot])) lateFrames++;
+        else done = true;
+      }
+      return { admitted: admitted(), effectsAhead, effectsAtAdmission: effects() - start, pipelines: { ...counts }, lateFrames, held, done };
+    } finally {
+      device.createRenderPipeline = createRenderPipeline;
+      device.createRenderPipelineAsync = createRenderPipelineAsync;
+      coordinator.dispose();
+      scene.dispose();
+    }
+  };
+  return {
+    forward: { approached: await run("forward", true), jumped: await run("forward", false) },
+    shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
+  };
 }
 
 async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
