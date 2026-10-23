@@ -183,21 +183,24 @@ export function canonicalizeForwardLightSlots(
 }
 
 /**
- * Puts `scene.lights` back in `order` (the same lights, as a load rehearsal recorded them before a light change it
- * tried) and re-sorts the receivers to it. Admission exchanges a light it drops with the one it admits in that order,
+ * Puts the lights `order` lists (as a load rehearsal recorded `scene.lights` before a light change it tried) back in
+ * that relative order, within the positions they hold now, and re-sorts the receivers to it. A light added since keeps
+ * its place and a removed one is left out. Admission exchanges a light it drops with the one it admits in that order,
  * so receivers keep their defines; the exchanges a change made and its revert did not undo would leave the same
  * lights in other slots, and receivers asking for variants a load without the change never compiles. Returns whether
  * any light moved.
  */
 export function restoreSceneLightOrder(scene: Scene, order: readonly Light[]): boolean {
   const lights = scene.lights;
-  if (lights.length !== order.length) return false;
-  const members = new Set(lights);
-  if (!order.every((light) => members.has(light))) return false;
+  const recorded = new Set(order);
+  const present = new Set(lights);
+  const positions: number[] = [];
+  for (let index = 0; index < lights.length; index++) if (recorded.has(lights[index]!)) positions.push(index);
+  const ordered = order.filter((light) => present.has(light));
   let moved = false;
-  for (let index = 0; index < order.length; index++) {
-    if (lights[index] === order[index]) continue;
-    lights[index] = order[index]!;
+  for (let index = 0; index < positions.length; index++) {
+    if (lights[positions[index]!] === ordered[index]) continue;
+    lights[positions[index]!] = ordered[index]!;
     moved = true;
   }
   if (moved) sortReceiverLightSources(scene);
