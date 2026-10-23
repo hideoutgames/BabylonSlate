@@ -47,13 +47,13 @@ The editor camera you move in **Edit** does not change the game camera. Authored
 
 ### Pause on errors
 
-When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time.
+When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time. Play stops the same way and shows the editor ([Stop in Play](#stop-in-play)).
 
-Each node pauses the Simulation only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
+Each node pauses the game only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
 
 ### Breakpoints
 
-A breakpoint stops a Simulation when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions. Set one in any of these ways:
+A breakpoint stops a Simulation or Play when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions. Set one in any of these ways:
 
 - Choose **Add Breakpoint** from the node's menu (right-click, or press and hold on touch).
 - Select the node and press <kbd>F9</kbd>.
@@ -65,7 +65,19 @@ When any object runs a node that has a breakpoint, the Simulation finishes that 
 
 The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in Classes you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
 
-Breakpoints are kept with the project on this device, not in its assets. Setting one never changes a document. Play, Preview Build and exported games never stop at them.
+Breakpoints are kept with the project on this device, not in its assets. Setting one never changes a document. Preview Build and exported games never stop at them.
+
+### Stop in Play
+
+When Play reaches a breakpoint or an error, the game pauses (its time, physics and sound) and hides behind the editor, which opens the graph at the node. **Debug Instance** shows the object that stopped. The toolbar shows:
+
+| Control | What it does |
+| --- | --- |
+| **Resume** | Returns to the game and carries on. |
+| **Stopped At** | Names where a breakpoint stopped Play. Choose it to open the node again. |
+| **Stop** | Ends Play. |
+
+The **Debug** menu stays available. Documents are read-only until you choose **Resume** or **Stop**, but you can still add, remove and disable breakpoints. The Scene view does not redraw until Play ends. To walk through a run tick by tick, use a [Simulation](#simulate-controls) instead.
 
 ## Watch a graph run
 
@@ -107,7 +119,7 @@ The **Blackboard** window lists the current values of the object's Blackboard.
 
 The **State Machine** lights each state the graph plays in a tick: the active state, and the state a blend is leaving. A transition's wire lights up when the transition is taken. A Both Ways pair is one wire, so it lights for either direction. [Jump To State](../scripting/class/jump-to-state.md) changes the active state without a transition. Transition rule graphs do not show a run.
 
-The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Only a Simulation compiles Class graphs and Animation Object graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
+The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Simulation and Play compile Class graphs and Animation Object graphs with these checks; while nothing is watched or set, each costs a quick check per node. Preview Build and exported games do not include them, so they pay nothing for it.
 
 ## Stats
 
