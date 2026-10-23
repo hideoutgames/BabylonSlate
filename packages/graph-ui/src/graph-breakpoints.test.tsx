@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { GraphEditor } from "./graph-editor";
+import { treeNodeTypes } from "./tree-node";
 import type { GraphBreakpoints } from "./graph-breakpoints";
 import type { GraphDocument, SerializedPin } from "./graph-types";
 
@@ -64,6 +65,22 @@ describe("graph breakpoints", () => {
     act(pressF9);
     expect(set.size).toBe(0);
     expect(dot(container, "print")?.dataset.breakpoint).toBeUndefined();
+  });
+
+  it("toggle on card nodes when the host lets every node have one", () => {
+    const { view, set } = hostBreakpoints();
+    const tree: GraphDocument = {
+      nodes: [{ id: "wait", type: "bt.node", position: { x: 0, y: 0 }, data: { title: "Wait", kind: "task" } }],
+      edges: [],
+    };
+    const { container } = render(
+      <GraphEditor initialGraph={tree} nodeTypes={treeNodeTypes} breakpoints={{ ...view, canBreak: () => true }} />,
+    );
+    fireEvent.pointerDown(screen.getByTestId("graph-editor"));
+    fireEvent.click(nodeEl(container, "wait"));
+    act(pressF9);
+    expect([...set]).toEqual(["wait"]);
+    expect(dot(container, "wait")?.dataset.breakpoint).toBe("enabled");
   });
 
   it("toggle from the node's title-bar dot", () => {

@@ -750,12 +750,13 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
         "default:binding": binding("FT_ScriptPulse", types.pulseAction),
       }),
       callEvent("input-pulse", 260, 1300, pulse, { "default:Strength": 1 }),
-      // Every Pulse press, from P, pad button 3 or a touch gesture, rumbles pad 0 briefly.
+      // Every Pulse press, from P, pad button 3 or a touch gesture, rumbles pad 0 and the device briefly.
       gNode("pulse-rumble", "input.setGamepadRumble", 520, 1300, {
         "default:index": 0,
         "default:intensity": 0.6,
         "default:durationMs": 150,
       }),
+      gNode("pulse-vibrate", "input.vibrateDevice", 780, 1300, { "default:durationMs": 60 }),
       gNode("on-nudge", "input.axisEvent", 0, 1500, {
         valueType: "2d",
         "default:binding": binding("FT_ScriptNudge", types.nudgeAxis),
@@ -809,6 +810,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
 
       gWire("on-pulse", "started", "input-pulse", "execIn"),
       gExec("input-pulse", "pulse-rumble"),
+      gExec("pulse-rumble", "pulse-vibrate"),
       gWire("on-nudge", "held", "nudge", "execIn"),
       gWire("on-nudge", "value", "nudge-axes", "in"),
       gWire("nudge-axes", "x", "nudge-vector", "x"),

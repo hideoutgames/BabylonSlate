@@ -526,6 +526,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Input Action Binding](set-input-action-binding.md) | Changes the key of an existing Input Action binding. |
 | [Set Input Axis Binding](set-input-axis-binding.md) | Changes the key of an existing Input Axis binding. |
 | [Show Cursor](show-cursor.md) | Shows the mouse pointer over the game view. |
+| [Vibrate Device](vibrate-device.md) | Vibrates the phone or tablet for a set time. |
 
 ## Audio
 

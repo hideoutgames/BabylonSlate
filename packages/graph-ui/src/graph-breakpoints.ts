@@ -15,6 +15,11 @@ export type GraphBreakpoints = {
   subscribe(listener: () => void): () => void;
   /** Adds a breakpoint on the node, or removes the one it has. */
   toggle(nodeId: string): void;
+  /**
+   * Which nodes can have one. Without it, a node with an exec pin (`canBreakOnNode`); a canvas whose
+   * nodes all run, such as a Behaviour Tree's, accepts every node.
+   */
+  canBreak?(nodeId: string, data: Record<string, unknown> | undefined): boolean;
 };
 
 /**
@@ -23,6 +28,15 @@ export type GraphBreakpoints = {
  */
 export function canBreakOnNode(data: Record<string, unknown> | undefined): boolean {
   return hasSerializedPins(data) && data.__pins.some((pin) => pin.kind === "exec");
+}
+
+/** Whether `breakpoints` let the node have one. */
+export function nodeCanBreak(
+  breakpoints: GraphBreakpoints,
+  nodeId: string,
+  data: Record<string, unknown> | undefined,
+): boolean {
+  return breakpoints.canBreak ? breakpoints.canBreak(nodeId, data) : canBreakOnNode(data);
 }
 
 const noBreakpoint = () => null;

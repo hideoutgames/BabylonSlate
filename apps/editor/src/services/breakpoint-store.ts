@@ -3,14 +3,18 @@ import type { GraphBreakpoints, GraphBreakpointState } from "@haptic/graph-ui";
 
 /**
  * Node breakpoints: editor state per project, never stored in an asset, so setting one never makes a
- * document dirty and nothing reaches an export. A location is the compiler's: the Class asset path,
- * the graph a script reports under (`event-graph`, or a function's export name) and the node id, so
- * the session and a stop speak the same terms. Each entry keeps the names it was set with, for the
- * Breakpoints window to list Classes that are not open.
+ * document dirty and nothing reaches an export. A location is the session's: for a Class, the compiler's
+ * Class asset path, the graph a script reports under (`event-graph`, or a function's export name) and
+ * the node id; for a Behaviour Tree, the tree's guid, `behaviour-tree` and the tree node id. The session
+ * and a stop speak the same terms. Each entry keeps the names it was set with, for the Breakpoints
+ * window to list assets that are not open.
  */
 export type BreakpointEntry = BreakpointLocation & {
   enabled: boolean;
-  /** The Class, graph and node names when the breakpoint was set or last seen. */
+  /**
+   * The asset (`className` names a Class, Behaviour Tree or Animation Graph; the saved field keeps
+   * its first name), graph and node names when the breakpoint was set or last seen.
+   */
   label: { className: string; graphName: string; nodeTitle: string };
 };
 
@@ -133,8 +137,10 @@ export class BreakpointStore {
     assetGuid: string,
     graphId: string,
     labelFor: (nodeId: string) => BreakpointEntry["label"],
+    canBreak?: GraphBreakpoints["canBreak"],
   ): GraphBreakpoints {
     return {
+      ...(canBreak ? { canBreak } : {}),
       state: (nodeId): GraphBreakpointState | null => {
         const entry = this.entries.get(keyOf({ assetGuid, graphId, nodeId }));
         return entry ? (entry.enabled ? "enabled" : "disabled") : null;
