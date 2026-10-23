@@ -147,7 +147,7 @@ async function captureReflections(
         return await draw();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${material.name}, ${mode}${celReflections ? " with CEL reflections" : ""}, reflections ${enabled ? "on" : "off"}: ${message}`);
+        throw new Error(`${material.name}, ${mode}${celReflections ? " with CEL reflections" : ""}, reflections ${enabled ? "on" : "off"}: ${message}`, { cause: error });
       }
     };
     const off = await capture(false);
