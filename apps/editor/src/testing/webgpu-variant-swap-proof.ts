@@ -14,6 +14,7 @@ import {
   PBRMaterial,
   PointLight,
   Scene,
+  SpotLight,
   StandardMaterial,
   Vector3,
   type AbstractEngine,
@@ -21,6 +22,7 @@ import {
   type Light,
   type Material,
   type Mesh,
+  type ShadowGenerator,
 } from "@babylonjs/core";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -42,12 +44,15 @@ type DeviceEngine = AbstractEngine & {
   };
 };
 
-const authored = (light: Light, color: number[], intensity: number) =>
-  applyAuthoredLightProperties(light, { color, intensity, castShadows: false, range: 9, outerAngle: 70, innerAngle: 40 });
+const authored = (light: Light, color: number[], intensity: number, castShadows = false) =>
+  applyAuthoredLightProperties(light, { color, intensity, castShadows, range: 9, outerAngle: 70, innerAngle: 40 });
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 16));
 
-/** A world view on `engine` (WebGPU), its three lit Material kinds on boxes, a sun and a point light. */
+/**
+ * A world view on `engine` (WebGPU): its three lit Material kinds on floors with a box each, a sun, a point light and
+ * a spot light that can cast shadows.
+ */
 export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -71,15 +76,22 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
   if (!compiled.ok) throw new Error("The default Material did not compile.");
   const materials: Material[] = [pbr, standard, compiled.material];
   const boxes: Mesh[] = materials.map((material, index) => {
+    const floor = MeshBuilder.CreateGround(`floor-${index}`, { width: 1.9, height: 6 }, scene);
+    floor.position.x = -2 + index * 2;
+    floor.material = material;
+    floor.receiveShadows = true;
     const box = MeshBuilder.CreateBox(`box-${index}`, { size: 0.8 }, scene);
     box.position.set(-2 + index * 2, 0.4, 0);
     box.material = material;
-    return box;
+    box.receiveShadows = true;
+    return floor;
   });
   const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
   authored(sun, [1, 0.95, 0.85], 0.7);
   const point = new PointLight("point", new Vector3(0, 1.6, -1.2), scene);
   authored(point, [1, 0.8, 0.4], 1.2);
+  const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
+  authored(spot, [0.9, 0.85, 0.7], 1.4);
   const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
   const device = (engine as DeviceEngine)._device;
   const createRenderPipeline = device.createRenderPipeline;
@@ -137,6 +149,21 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
       () => { if (boxes.every((box, index) => drawnEffect(box) === before[index])) previousFrames++; },
     );
 
+    // The spot starts casting shadows, then stops: the floors swap to their shadowed variants and on. The new map's
+    // casters draw in a shadow pass, outside the view's deferral, so their depth pipelines are created synchronously.
+    const unshadowed = boxes.map(drawnEffect);
+    authored(spot, [0.9, 0.85, 0.7], 1.4, true);
+    const shadowGain = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== unshadowed[index]) &&
+      (spot.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() === 0);
+    // With the sun switched off too, the floors' next variant is one nothing drew: their shadowed Effect draws until it
+    // has a pipeline, its lost map's sampler bound to a placeholder of the declared type.
+    const shadowed = boxes.map(drawnEffect);
+    let shadowedFrames = 0;
+    authored(spot, [0.9, 0.85, 0.7], 1.4, false);
+    setAuthoredLightEnabled(sun, false);
+    const shadowLoss = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== shadowed[index]),
+      () => { if (boxes.every((floor, index) => drawnEffect(floor) === shadowed[index])) shadowedFrames++; });
+
     // A spawn with a variant nothing compiled (a Material of its own): hidden until its pipelines exist.
     const missedMaterial = new StandardMaterial("spawned", scene);
     // Unlit: a variant (and pipeline) no other mesh draws with.
@@ -163,6 +190,8 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
     const warmSpawn = await step(() => !isRevealPending(warmed) && drawnEffect(warmed) !== null);
     return {
       swap: { ...swap, previousFrames },
+      shadowGain,
+      shadowLoss: { ...shadowLoss, previousFrames: shadowedFrames },
       spawn: { ...spawn, hiddenFrames },
       staged,
       warmSpawn,
