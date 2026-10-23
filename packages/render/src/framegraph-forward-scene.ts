@@ -34,7 +34,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { isRevealPending } from "./reveal-pending";
+import { isRevealPending, revealRound } from "./reveal-pending";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -1325,8 +1325,9 @@ export class ForwardSceneFrameGraph {
     }
   }
 
+  /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    return this.collectingEffects(() => this.probeReady());
+    return revealRound(() => this.collectingEffects(() => this.probeReady()));
   }
 
   private probeReady(): boolean {

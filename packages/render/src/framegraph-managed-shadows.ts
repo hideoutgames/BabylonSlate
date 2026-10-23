@@ -128,9 +128,13 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       this._renderer.customIsReadyFunction = (mesh, rate, preWarm) => {
         if (previous && !previous(mesh, rate, preWarm)) return false;
         if (this.neverDraws?.(mesh) === true) return true;
-        // A hidden mesh draws nothing, its depth pre-pass included; it is revealed once that is ready too.
-        const colour = isMeshFrameReady(mesh, depthReady);
-        if (colour && isRevealPending(mesh)) return true;
+        const colour = isMeshFrameReady(mesh);
+        // A hidden mesh draws nothing yet, its depth pre-pass included; that probe notes whether its variant is ready
+        // for the reveal.
+        if (colour && isRevealPending(mesh)) {
+          depthReady(mesh);
+          return true;
+        }
         if (colour && depthReady(mesh)) return true;
         // The scan stops here. A parallel-compile driver links this mesh's depth pre-pass, which an unready colour
         // variant holds back, and the next meshes' variants meanwhile.

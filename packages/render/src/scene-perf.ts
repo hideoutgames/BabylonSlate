@@ -25,9 +25,8 @@ import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } fr
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
-import { hideUntilReady, isRevealPending, markRevealReady } from "./reveal-pending";
+import { hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe } from "./reveal-pending";
 import { awaitsFirstDraw } from "./shadow-first-draw";
-import { drawsDepthPrePass } from "./depth-pre-pass-draws";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -243,7 +242,7 @@ function swapFailed(material: Material): boolean {
 }
 
 /** Whether every submesh of `mesh` has a ready Effect in the current pass: something it can draw while it swaps. */
-export function drawsSomething(mesh: AbstractMesh): boolean {
+function drawsSomething(mesh: AbstractMesh): boolean {
   if (!mesh.subMeshes?.length) return true;
   for (const part of mesh.subMeshes) {
     const material = part.getMaterial();
@@ -261,13 +260,14 @@ export function drawsSomething(mesh: AbstractMesh): boolean {
  * light layout (`bindsAsPreviousEffect`); everywhere else it waits for its new variant. A swap whose new variant
  * failed to compile is over: the mesh is ready, drawing its previous Effect.
  *
- * A mesh with nothing to draw meanwhile (a spawn, a changed Material) is hidden instead inside such a probe
- * (`hideUntilReady`), and the probe passes. It is revealed (`markRevealReady`, with the rest of its actor) once a
- * probe finds every variant it draws with ready: colour, its caster depth variant for every shadow map that has drawn,
- * and `alsoReady` (an object pass's transparent depth pre-pass; a probe without one leaves a mesh that draws a depth
- * pre-pass to the object pass). A hidden mesh whose variant failed to compile stays hidden, reported once.
+ * A mesh that has never drawn with its Material (a spawn, a changed Material) and has nothing to draw meanwhile is
+ * hidden instead inside such a probe (`hideUntilReady`), and every pass's probe of it passes, noting whether its own
+ * variant is ready (`noteRevealProbe`; the colour probe also needs its caster depth variant for every shadow map that
+ * has drawn). The world view's readiness round reveals it, with the rest of its actor, once no pass found one unready.
+ * A mesh that has drawn is never hidden: one pass's new variant (a geometry pass added, a depth pre-pass newly
+ * blended) waits as before. A hidden mesh whose variant failed to compile stays hidden, reported once.
  */
-export function isMeshFrameReady(mesh: AbstractMesh, alsoReady?: (mesh: AbstractMesh) => boolean): boolean {
+export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   const scene = mesh.getScene();
   // Native influence edits become attribute-dirty only when the manager resolves
   // its active targets. Resolve before native readiness can accept old defines.
@@ -313,7 +313,7 @@ export function isMeshFrameReady(mesh: AbstractMesh, alsoReady?: (mesh: Abstract
     }
     const tolerated = variantSwapsTolerated();
     // Before the probe: a spawn's first request sets its still-compiling Effect on the submesh.
-    const hideable = tolerated && (isRevealPending(mesh) || !drawsSomething(mesh));
+    const hideable = tolerated && (isRevealPending(mesh) || (!hasDrawn(mesh) && !drawsSomething(mesh)));
     probedMesh = mesh;
     // A mesh to reveal also needs its caster depth variant for every map that has drawn (a map awaiting its first
     // draw waits for its casters itself); a drawn mesh lets the maps wait for theirs.
@@ -321,20 +321,16 @@ export function isMeshFrameReady(mesh: AbstractMesh, alsoReady?: (mesh: Abstract
     const meshReady = collectEffectRequests(scene.getEngine(), meshRequests, probeMesh);
     if (hideable) {
       hideUntilReady(mesh);
-      if (!meshReady) {
-        markRevealReady(mesh, false);
-        const failed = failedRequest();
-        if (failed) reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
-        else noteVariantSwap();
-        return true;
-      }
-      if (alsoReady) markRevealReady(mesh, alsoReady(mesh));
-      else if (!drawsDepthPrePass(mesh)) markRevealReady(mesh, true);
-      // Still hidden: waiting for the rest of its variants or of its actor.
-      if (isRevealPending(mesh)) noteVariantSwap();
+      noteRevealProbe(mesh, meshReady);
+      const failed = meshReady ? undefined : failedRequest();
+      if (failed) {
+        reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
+        noteRevealFailed(mesh);
+      } else if (isRevealPending(mesh)) noteVariantSwap();
       return true;
     }
     if (!meshReady) return false;
+    noteDrawn(mesh);
     // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
     for (const part of mesh.subMeshes ?? []) {
       const material = part.getMaterial();
