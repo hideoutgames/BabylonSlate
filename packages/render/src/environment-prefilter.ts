@@ -16,8 +16,11 @@ import {
 
 /** Face size of a filtered environment: rough lighting needs no more, and it bounds the filter's GPU work. */
 export const FILTERED_ENVIRONMENT_SIZE = 256;
-/** Importance samples per texel; each reads the source mip matching its lobe, so few are needed. */
-const FILTER_SAMPLES = 256;
+/**
+ * Importance samples per texel; each reads the source mip matching its lobe, so
+ * few are needed. Babylon's real-time filtering calls 64 high quality.
+ */
+const FILTER_SAMPLES = 64;
 // Babylon's PBR maps roughness to a mip through these; the filter writes the matching lobe per mip.
 const LOD_GENERATION_SCALE = 0.8;
 const LOD_GENERATION_OFFSET = 0;
