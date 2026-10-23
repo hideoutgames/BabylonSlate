@@ -80,5 +80,12 @@ test("Profiler records a session and captures a frame without losing the recordi
   await page.getByTestId("debug-console-submit").click();
   await expect(page.getByTestId("play-profiler-recording")).toHaveCount(0);
   await expect(results).toContainText(/\d+ completed frame samples/);
+
+  // Both recordings stay, and the Summary compares the new one with the first.
+  await expect(dialog.getByRole("combobox", { name: "Recording" })).toContainText(/^Recording 2 /);
+  await dialog.getByRole("combobox", { name: "Compare With" }).click();
+  await page.getByRole("option", { name: /^Compare With Recording 1 / }).click();
+  await expect(results).toContainText(/compared with Recording 1 /);
+  await expect(results.getByTestId("profile-compare-row").first()).toContainText("→");
   await page.getByTestId("play-overlay-close").click();
 });
