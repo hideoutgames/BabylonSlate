@@ -1,6 +1,7 @@
 import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@haptic/core";
 import { stripAssetFileSuffix } from "@haptic/assets";
 import {
+  displayNodeTitle,
   type GraphClassMember,
   type SerializedGraph,
   type TagRegistry,
@@ -25,6 +26,7 @@ import {
   isLatentFunctionKey,
   isLogicGraphPayload,
   latentSourcesFromSerializedGraph,
+  type CompiledEntryPoint,
   type LatentFunctionSource,
   type LogicGraph,
 } from "@haptic/scripting";
@@ -273,16 +275,40 @@ export function compileGraphDocument(
     entryPoints.push(...extra.entryPoints);
   }
   const metadata = classMetadataFromGraph(content, options.parentClassId);
+  const titled = bound ?? serialized;
   return {
     assetGuid: options.path,
     classId,
+    className,
     source,
     anchors,
-    entryPoints,
+    entryPoints: titled ? entryPoints.map((point) => withEntryTitle(point, graphId, titled)) : entryPoints,
     command: consoleCommandFromGraph(logic, classId),
     ...metadata,
     ...(components ? { components } : {}),
   };
+}
+
+/**
+ * Names an entry point as the graph does: its entry node's canvas title (`Event Tick`), or a function's
+ * name. The Profiler's Scripts view lists entries by it.
+ */
+function withEntryTitle(
+  point: CompiledEntryPoint,
+  eventGraphId: string,
+  graph: SerializedGraph,
+): CompiledEntryPoint & { title?: string } {
+  if (point.graphId === eventGraphId) {
+    const node = graph.nodes.find((candidate) => candidate.id === point.nodeId);
+    if (!node) return point;
+    const text = (key: string) => typeof node.data[key] === "string" ? node.data[key] : undefined;
+    return { ...point, title: displayNodeTitle(text("__nodeType") ?? node.type, text("title"), text("eventQualifier")) };
+  }
+  // A function graph runs under its export name.
+  const memberId = Object.keys(graph.functionGraphs ?? {}).find((id) =>
+    functionGraphExportName({ id, name: graph.members?.find((member) => member.id === id)?.name }) === point.graphId);
+  if (memberId === undefined) return point;
+  return { ...point, title: graph.members?.find((member) => member.id === memberId)?.name ?? memberId };
 }
 
 function classMetadataFromGraph(
@@ -877,10 +903,12 @@ function compileAnimGraphDocument(
       classId: animRuleScriptClassId(entry.guid, transition.id),
       source: compiled.source,
       anchors: compiled.anchors,
+      className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
       entryPoints: compiled.entryPoints.map((point) => ({
         name: point.name,
         isAsync: point.isAsync,
         ...(point.event ? { event: point.event } : {}),
+        title: "Transition Rule",
       })),
       parentClassId: "BObject",
     });

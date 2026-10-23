@@ -1,13 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultScene } from "@haptic/core";
+import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
-import { PERFORMANCE_TICK_COLUMNS, PERFORMANCE_TICK_PHASE_COLUMNS } from "@haptic/debugger";
+import { PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, PERFORMANCE_TICK_PHASE_COLUMNS } from "@haptic/debugger";
+import { compileGraph, type GraphNode } from "@haptic/scripting";
+import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
+import type { CompiledScript } from "./script-host";
 
 const WIDTH = PERFORMANCE_TICK_COLUMNS.length;
 const at = (column: (typeof PERFORMANCE_TICK_COLUMNS)[number]) => PERFORMANCE_TICK_COLUMNS.indexOf(column);
 
 afterEach(() => vi.useRealTimers());
+
+const registry = createDefaultNodeRegistry();
+const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
+  ({ id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties });
+/** A Door Class whose Event Tick runs a line of JavaScript, compiled without any debugging probes. */
+function doorScript(): CompiledScript {
+  const compiled = compileGraph({ id: "event-graph", kind: "event", nodes: [
+    node("tick", "flow.event.tick"),
+    node("js", "debug.executeJavaScript", { inputs: [], outputs: [], body: "let total = 0; for (let i = 0; i < 10; i++) total += i;" }),
+  ], edges: [{ id: "exec", sourceNodeId: "tick", sourcePinId: "execOut", targetNodeId: "js", targetPinId: "execIn" }] },
+  { assetGuid: "Door.class", registry });
+  return { assetGuid: "Door.class", classId: "Door", className: "Door", source: compiled.source, anchors: compiled.anchors,
+    entryPoints: compiled.entryPoints.map((point) => ({ ...point, title: "Event Tick" })) };
+}
 function fixture(mode: "play" | "simulate" = "play") {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
@@ -39,6 +56,36 @@ describe("runtime explicit diagnostics", () => {
         expect(rows[row + at("scriptMs")]).toBeCloseTo(phases, 9);
       }
       runtime.tick(); expect(commands.filter(command => command.type === "performanceTicks")).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
+  it("times each script entry point per tick while a profile records, naming each entry once", async () => {
+    const commands: CommandMessage[] = [];
+    const scene = createDefaultScene();
+    scene.actors = ["front", "back"].map((id) => createActor(id, id, { classId: "Door", transform: identitySerializedTransform() }));
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      sessionGeneration: 3, sessionMode: "play", playScene: scene, onCommand: command => commands.push(command) });
+    await runtime.loadScripts([doorScript()]);
+    runtime.realizePlayWorld(); runtime.start();
+    try {
+      let requestId = 0;
+      const operation = (action: "start" | "stop") => runtime.requestDiagnosticOperation({
+        sessionGeneration: 3, requestId: ++requestId, operation: { kind: "profile", action, recordingId: "recording", durationMs: 1000 } });
+      runtime.tick();
+      expect((await operation("start")).success).toBe(true);
+      runtime.tick(); runtime.tick();
+      expect((await operation("stop")).success).toBe(true);
+      runtime.tick();
+      const chunks = commands.flatMap(command => command.type === "performanceTicks" ? [command] : []);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]!.scriptEntries).toEqual([{ assetGuid: "Door.class", classId: "Door", className: "Door",
+        exportName: "onTick", event: "onTick", title: "Event Tick", graphId: "event-graph", nodeId: "tick" }]);
+      const width = PERFORMANCE_SCRIPT_COLUMNS.length;
+      const rows = chunks[0]!.scripts!;
+      // One row per recorded tick, after its tick row: both Doors ran Event Tick once.
+      expect(rows.length).toBe(2 * width);
+      expect([rows[0], rows[1], rows[2], rows[width], rows[width + 1], rows[width + 2]]).toEqual([2, 0, 2, 3, 0, 2]);
+      expect([chunks[0]!.rows[0], chunks[0]!.rows[PERFORMANCE_TICK_COLUMNS.length]]).toEqual([2, 3]);
+      expect(rows[3]).toBeGreaterThanOrEqual(0);
     } finally { runtime.stop(); }
   });
   it("composes exclusive trace/frame/profile ownership and refuses Simulation dispatch", async () => {

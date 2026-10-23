@@ -33,6 +33,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "
 import { TraceEmptyState } from "./trace-inspection-controls";
 import { Facts } from "./diagnostic-facts";
 import { PerformanceTimeline } from "./performance-timeline";
+import { PerformanceScripts } from "./performance-scripts";
 import { formatRecorded as format, frameBudget } from "../lib/performance-timeline-model";
 
 const TABLE = "w-full border-collapse text-left text-xs";
@@ -311,11 +312,11 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
   const input = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string | null>(null);
   const canRecord = state.mode !== null && state.mode !== "simulate" && !state.active && !state.busy;
-  // Summary and Timeline show the recording; Frame Report shows the capture. Copy and Export follow the view.
+  // Summary, Timeline and Scripts show the recording; Frame Report shows the capture. Copy and Export follow the view.
   const shown: DiagnosticResult | null = state.view === "frame"
     ? state.frame ? { kind: "frame", report: state.frame } : null
     : state.profile ? { kind: "profile", profile: state.profile } : null;
-  // The history the view shows: recordings for Summary and Timeline, captures for Frame Report.
+  // The history the view shows: recordings for Summary, Timeline and Scripts, captures for Frame Report.
   const history = state.view === "frame" ? state.frames : state.profiles;
   const shownId = history.find((entry) => entry.value === (state.view === "frame" ? state.frame : state.profile))?.id;
   const baselineEntry = state.profiles.find((entry) => entry.id === state.baselineId && entry.value !== state.profile) ?? null;
@@ -358,8 +359,9 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
         <Button size="sm" variant="outline" disabled={!canRecord} onClick={() => void store.captureFrame()}><CameraIcon data-icon="inline-start" />Capture Frame</Button>
         {state.mode ? <Button size="sm" variant="outline" onClick={() => void store.stopSession()}>Stop Session</Button> : null}
         <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-        <ToggleGroup value={[state.view]} onValueChange={value => { if (value[0] === "summary" || value[0] === "timeline" || value[0] === "frame") store.selectView(value[0]); }} variant="outline" size="sm">
-          <ToggleGroupItem value="summary">Summary</ToggleGroupItem><ToggleGroupItem value="timeline">Timeline</ToggleGroupItem><ToggleGroupItem value="frame">Frame Report</ToggleGroupItem>
+        <ToggleGroup value={[state.view]} onValueChange={value => { if (value[0] === "summary" || value[0] === "timeline" || value[0] === "scripts" || value[0] === "frame") store.selectView(value[0]); }} variant="outline" size="sm">
+          <ToggleGroupItem value="summary">Summary</ToggleGroupItem><ToggleGroupItem value="timeline">Timeline</ToggleGroupItem>
+          <ToggleGroupItem value="scripts">Scripts</ToggleGroupItem><ToggleGroupItem value="frame">Frame Report</ToggleGroupItem>
         </ToggleGroup>
         <div className="ml-auto flex items-center">
           <Button size="icon-sm" variant="ghost" aria-label="Open Saved Result" title="Open Saved Result" className="pointer-coarse:size-11"
@@ -398,7 +400,9 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
         }).catch(error => setMessage(error instanceof Error ? error.message : String(error)));
       }} />
       <div className="min-h-0 flex-1"><PanelFrame data-testid="session-diagnostic-results">
-        {shown?.kind === "profile" ? state.view === "summary" ? <PerformanceSummary profile={shown.profile} baseline={baseline} /> : <PerformanceTimeline profile={shown.profile} />
+        {shown?.kind === "profile" ? state.view === "summary" ? <PerformanceSummary profile={shown.profile} baseline={baseline} />
+          : state.view === "scripts" ? <PerformanceScripts profile={shown.profile} onOpen={(entry) => void store.openSource(entry).then(setMessage)} />
+            : <PerformanceTimeline profile={shown.profile} />
           : shown?.kind === "frame" ? <FrameReportView report={shown.report} />
             : <Empty>
               <EmptyHeader>

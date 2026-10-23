@@ -138,6 +138,8 @@ export type CompiledEntryPoint = {
   event?: ScriptEventName;
   /** Entry node id, for diagnostics. */
   nodeId?: string;
+  /** The graph the entry node is in, for diagnostics that open it. */
+  graphId?: string;
   /** True when the entry point awaits a latent node and must be awaited. */
   isAsync: boolean;
   /** Prefab component id when this entry is bound to an attached component. */
@@ -1637,6 +1639,7 @@ export function compileGraph(
         name,
         event: entry ? eventNameForEntry(entry) : undefined,
         nodeId: entry?.id,
+        ...(entry ? { graphId: graph.id } : {}),
         isAsync,
         ...(entry ? entryComponentId(entry) : {}),
       },
