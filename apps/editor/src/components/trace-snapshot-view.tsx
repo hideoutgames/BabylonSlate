@@ -20,11 +20,11 @@ import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import {
-  compareTraceSnapshots,
+  compareTraceFrames,
   exactTraceValue,
   findTraceNode,
   flattenTraceSnapshot,
-  parseTraceSnapshot,
+  parseTraceFrame,
   traceSnapshotRoots,
   traceValuePreview,
 } from "../lib/trace-snapshot";
@@ -54,14 +54,11 @@ export function TraceSnapshotView({
   onStateChange: (state: TraceSnapshotState) => void;
 }) {
   const frame = payload.frames[index];
-  const previousText = payload.frames[index - 1]?.snapshotText;
-  const parsed = useMemo(
-    () => parseTraceSnapshot(frame?.snapshotText),
-    [frame?.snapshotText],
-  );
+  const previousFrame = payload.frames[index - 1];
+  const parsed = useMemo(() => parseTraceFrame(payload, frame), [payload, frame]);
   const previous = useMemo(
-    () => (state.mode === "changes" ? parseTraceSnapshot(previousText) : null),
-    [previousText, state.mode],
+    () => (state.mode === "changes" ? parseTraceFrame(payload, previousFrame) : null),
+    [payload, previousFrame, state.mode],
   );
   const roots = useMemo(
     () => (frame ? traceSnapshotRoots(frame, parsed) : []),
@@ -77,10 +74,13 @@ export function TraceSnapshotView({
   );
   const changes = useMemo(
     () =>
-      previous?.status === "ready" && parsed.status === "ready"
-        ? compareTraceSnapshots(previous.value, parsed.value)
+      frame && previousFrame && previous?.status === "ready" && parsed.status === "ready"
+        ? compareTraceFrames(
+            { frame: previousFrame, snapshot: previous.value },
+            { frame, snapshot: parsed.value },
+          )
         : [],
-    [previous, parsed],
+    [frame, previousFrame, previous, parsed],
   );
   // The text a query matches is built once per comparison, not per keystroke.
   const searchableChanges = useMemo(
@@ -196,7 +196,7 @@ export function TraceSnapshotView({
               title={
                 changes.length
                   ? "No Matching Changes"
-                  : "No World State Changes"
+                  : "No State Changes"
               }
             />
           ) : (
