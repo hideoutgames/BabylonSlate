@@ -148,7 +148,7 @@ HAPTIC_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts
   --config playwright.perf.config.ts --project perf-software
 ```
 
-It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen. A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
+It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen; each scene's Play entry also carries the load's spawnable warm-up and light-change rehearsal reports (`spawnableWarm`, `loadRehearsal`). A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
 
 | Env | Default | Effect |
 | --- | --- | --- |

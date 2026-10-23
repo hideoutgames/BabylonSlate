@@ -62,4 +62,16 @@ test("a world view draws each Material's previous Effect with the changed lights
   const warm = result.warmSpawn;
   expect({ staged: warm.staged, links: warm.links, drawn: warm.drawn, appeared: warm.appeared > 20, glErrors: warm.glErrors },
     JSON.stringify(warm)).toEqual({ staged: 0, links: 0, drawn: true, appeared: true, glErrors: [] });
+  // A load that rehearsed its lights' changes (each drawn once behind the loading screen) links no program when a point
+  // switches off or a spot starts casting shadows, and never holds.
+  const rehearsed = result.rehearsed;
+  expect({
+    rehearsed: rehearsed.report.steps > 0 && rehearsed.report.timedOut.length === 0, compiled: rehearsed.report.variants > 0,
+    pointOff: { links: rehearsed.pointOff.links, held: rehearsed.pointOff.held, changed: rehearsed.pointOff.changed },
+    spotShadows: { links: rehearsed.spotShadows.links, held: rehearsed.spotShadows.held, changed: rehearsed.spotShadows.changed },
+    glErrors: rehearsed.glErrors,
+  }, JSON.stringify(rehearsed)).toEqual({
+    rehearsed: true, compiled: true,
+    pointOff: { links: 0, held: 0, changed: true }, spotShadows: { links: 0, held: 0, changed: true }, glErrors: [],
+  });
 });

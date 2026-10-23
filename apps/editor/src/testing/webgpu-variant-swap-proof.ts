@@ -33,6 +33,8 @@ import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-p
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
+import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
+import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 
 /** Pipelines the device created while a step ran. */
 type PipelineCounts = { synchronous: number; asynchronous: number };
@@ -54,6 +56,22 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 16));
  * a spot light that can cast shadows.
  */
 export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
+  const result = await webGpuWorld(engine, false);
+  if (!("swap" in result)) throw new Error("The swap proof did not run its swaps.");
+  return result;
+}
+
+/**
+ * The same world after a load rehearsal of its lights' changes (`createLoadRehearsal`, each drawn once by a strict
+ * frame): a point switching off and a spot starting to cast shadows then create no pipeline, synchronously or not.
+ */
+export async function proveWebGpuRehearsedChanges(engine: AbstractEngine) {
+  const result = await webGpuWorld(engine, true);
+  if (!("report" in result)) throw new Error("The rehearsal proof did not rehearse.");
+  return result;
+}
+
+async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
   const camera = new FreeCamera("camera", new Vector3(0, 4, -7), scene);
@@ -86,11 +104,13 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
     box.receiveShadows = true;
     return floor;
   });
-  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
+  // The rehearsal enumerates authored lights (Play's names).
+  const name = (light: string) => rehearse ? `${AUTHORED_LIGHT_PREFIX}${light}` : light;
+  const sun = new DirectionalLight(name("sun"), new Vector3(0.3, -1, 0.4), scene);
   authored(sun, [1, 0.95, 0.85], 0.7);
-  const point = new PointLight("point", new Vector3(0, 1.6, -1.2), scene);
+  const point = new PointLight(name("point"), new Vector3(0, 1.6, -1.2), scene);
   authored(point, [1, 0.8, 0.4], 1.2);
-  const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
+  const spot = new SpotLight(name("spot"), new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
   authored(spot, [0.9, 0.85, 0.7], 1.4);
   const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
   const device = (engine as DeviceEngine)._device;
@@ -137,6 +157,27 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
   try {
     await coordinator.prepare();
     for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
+    if (rehearse) {
+      const rehearsal = createLoadRehearsal(scene);
+      for (let attempt = 0; attempt < 600 && !rehearsal.done; attempt++) {
+        rehearsal.check();
+        if (coordinator.isReady()) rehearsal.frame(() => { engine.beginFrame(); try { return coordinator.render(true).rendered; } finally { engine.endFrame(); } });
+        await tick();
+      }
+      const report = rehearsal.report();
+      for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true)) break;
+      for (let index = 0; index < 4; index++) await frame();
+      const unchanged = boxes.map(drawnEffect);
+      setAuthoredLightEnabled(point, false);
+      const pointOff = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== unchanged[index]));
+      // One change at a time, as rehearsed: the point back on first (the variants the load drew).
+      setAuthoredLightEnabled(point, true);
+      await step(() => boxes.every((floor, index) => drawnEffect(floor) === unchanged[index]));
+      authored(spot, [0.9, 0.85, 0.7], 1.4, true);
+      const spotShadows = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== unchanged[index]) &&
+        (spot.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() === 0);
+      return { report, pointOff, spotShadows };
+    }
     // Steady frames: the view now tolerates swaps and warms new variants' pipelines.
     for (let index = 0; index < 4; index++) await frame();
 
