@@ -78,11 +78,39 @@ function castsShadows(light: Light): boolean {
 }
 
 /**
+ * Keeps every Effect the meshes of `scene` draw with, in any pass, compiled for the scene's lifetime (one reference
+ * each, released when it is disposed). Babylon releases an Effect, its program and its WebGPU pipelines, once the last
+ * draw wrapper using it is disposed: a shadow map that stops disposes its casters' depth wrappers, so starting it again
+ * would compile them anew mid-game.
+ */
+function effectRetainer(scene: Scene): () => void {
+  const retained = new Set<Effect>();
+  scene.onDisposeObservable.addOnce(() => {
+    for (const effect of retained) effect.dispose();
+    retained.clear();
+  });
+  return () => {
+    if (scene.isDisposed) return;
+    for (const mesh of scene.meshes) {
+      for (const subMesh of mesh.subMeshes ?? []) {
+        for (const wrapper of subMesh._drawWrappers) {
+          const effect = wrapper?.effect;
+          if (!effect || effect.isDisposed || retained.has(effect)) continue;
+          effect._refCount += 1;
+          retained.add(effect);
+        }
+      }
+    }
+  };
+}
+
+/**
  * Rehearses a loaded Play scene's enumerable light changes behind its loading screen, so their variants are compiled
  * and drawn once before the first presented frame: each change is applied, the view's strict readiness requests its
  * variants on the meshes' own draw wrappers (the variants a real change asks for, defines order included), one frame
- * draws them (a program's first use, a WebGPU pipeline), and the change is reverted. The caller draws only on frames
- * the view is ready for, and hides what they draw.
+ * draws them (a program's first use, a WebGPU pipeline), and the change is reverted. The Effects drawn in the starting
+ * state and in each step stay compiled while the scene lives. The caller draws only on frames the view is ready for,
+ * and hides what they draw.
  */
 export function createLoadRehearsal(scene: Scene): LoadRehearsal {
   const all = rehearsalSteps(scene);
@@ -93,6 +121,7 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
   const compiled = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).length;
   const effectsBefore = compiled();
   const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
+  const retain = effectRetainer(scene);
   let index = 0;
   let applied = false;
   let appliedAt = 0;
@@ -124,7 +153,11 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
     },
     frame(draw) {
       if (index >= steps.length) return;
-      startedAt ??= performance.now();
+      if (startedAt === undefined) {
+        startedAt = performance.now();
+        // The starting state's Effects: a step that stops a map must not release its casters' depth Effects.
+        retain();
+      }
       if (!applied) {
         steps[index]!.apply();
         markSceneReadinessDirty(scene);
@@ -132,7 +165,9 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
         appliedAt = performance.now();
         return;
       }
-      if (draw()) advance(false);
+      if (!draw()) return;
+      retain();
+      advance(false);
     },
     check() {
       if (applied && performance.now() - appliedAt >= LOAD_REHEARSAL_STEP_MS) advance(true);
