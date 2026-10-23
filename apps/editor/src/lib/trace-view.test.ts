@@ -5,7 +5,6 @@ import {
   collectTraceLogWindow,
   frameTickMs,
   filterTraceLogs,
-  traceGraphBuckets,
 } from "./trace-view";
 
 const payload: TracePayload = {
@@ -91,38 +90,6 @@ describe("trace view helpers", () => {
     expect(
       filterTraceLogs(lines, "a", "print").map((line) => line.key),
     ).toEqual(["a"]);
-  });
-
-  it("keeps each timing bucket's true spike and recorded-event marker", () => {
-    const frames = [1, 50, 2, 4, 3].map((scriptMs, tickIndex) => ({
-      tickIndex,
-      timeDilation: 1,
-      scriptMs,
-      physicsMs: 1,
-      logs: [],
-      prints: tickIndex === 0 ? [{ key: "a", message: "event" }] : [],
-    }));
-    const buckets = traceGraphBuckets({ ...payload, frames }, 0, 4, 2);
-    expect(buckets).toEqual([
-      {
-        start: 0,
-        end: 2,
-        peak: 1,
-        scriptMs: 50,
-        physicsMs: 1,
-        overBudget: true,
-        hasEvents: true,
-      },
-      {
-        start: 3,
-        end: 4,
-        peak: 3,
-        scriptMs: 4,
-        physicsMs: 1,
-        overBudget: false,
-        hasEvents: false,
-      },
-    ]);
   });
 
   it("rejects malformed frame content instead of crashing a dock", () => {

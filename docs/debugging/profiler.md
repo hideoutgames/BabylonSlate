@@ -62,7 +62,7 @@ A trace records the whole game state on every tick, with its logs, prints and in
 
 When Play ends, the trace opens as a read-only document with three windows:
 
-- **Timeline** graphs script and physics time per tick and shows the selected frame's publish time. Scrub or step to any frame, or jump between frames that went over budget.
+- **Timeline** charts script and physics time per tick against the 8 ms tick budget, on the same chart as the Profiler's [Timeline](#record-performance). Each bar is the slowest tick of the frames it covers; hover one to read it, and tap it to select its frame. The **Markers** row shows the frames that recorded logs, prints or input. The selected frame's summary adds its publish time. Scrub or step to any frame, zoom in around it, or jump between ticks that went over budget.
 - **Snapshot** shows the game instance, subsystems, actors, components and their variables at the selected frame. **Changes** lists what was added, removed or changed since the previous frame.
 - **Log** shows the logs and prints of the selected frame and up to 29 frames before it.
 
