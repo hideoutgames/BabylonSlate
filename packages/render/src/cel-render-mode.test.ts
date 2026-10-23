@@ -19,7 +19,12 @@ import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
-import { normalizeCelShadingSettings, normalizeEnvironmentLightingSettings } from "@haptic/core";
+import {
+  DEFAULT_RENDER_EFFECTS,
+  normalizeCelShadingSettings,
+  normalizeEnvironmentLightingSettings,
+  normalizeRenderingQuality,
+} from "@haptic/core";
 import { CelMaterial, celSourceReflectivity } from "./cel-material";
 import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
@@ -365,6 +370,37 @@ describe("native CEL render mode", () => {
     expect(tint.value.asArray()).toEqual([0.8, 0.2, 0.1, 1]);
     compiled.dispose();
     expect(sceneRenderingSettings(scene).listeners.size).toBe(0);
+  });
+
+  it("connects a CEL graph's reflectivity only while reflections run", async () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    Object.assign(doc.nodes.find((node) => node.id === "output")!.properties, { "default:metallic": [1], "default:roughness": [0.25] });
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error("Invalid fixture");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "metal" });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(await compiled.ready).toEqual([]);
+    const material = compiled.material;
+    const errors: string[] = [];
+    material.onBuildErrorObservable.add((error) => errors.push(error));
+    MeshBuilder.CreateBox("actor", {}, scene).material = material;
+    const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
+    const quality = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } });
+    const render = (reflectionsEnabled: boolean) =>
+      setSceneRenderSettings(scene, { mode: "cel", effects, quality, cel: normalizeCelShadingSettings({ reflectionsEnabled }) });
+    // The F0 mix of the geometry reflectivity write, present only with base color connected.
+    const reflective = "mix(vec3(0.04)";
+    render(false);
+    await vi.waitFor(() => expect(material.compiledShaders).toContain("slateCelSurfaceLight"));
+    expect(material.compiledShaders).not.toContain(reflective);
+    render(true);
+    await vi.waitFor(() => expect(material.compiledShaders).toContain(reflective));
+    expect(material.compiledShaders).toContain("slateCelSurfaceLight");
+    render(false);
+    await vi.waitFor(() => expect(material.compiledShaders).not.toContain(reflective));
+    expect(errors).toEqual([]);
+    compiled.dispose();
   });
 
   it("resolves scene overrides without leaking them between scenes or into PBR", () => {
