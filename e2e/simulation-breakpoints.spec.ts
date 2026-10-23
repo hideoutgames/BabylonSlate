@@ -31,8 +31,16 @@ const CLASS_GRAPH = {
 const graphPanel = (page: Page) => page.getByTestId("graph-panel");
 const printNode = (page: Page) => graphPanel(page).locator('.react-flow__node[data-id="print"]');
 const tickIndex = (page: Page) => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex());
+/** Canvas nodes whose run highlight is held (a paused Web Animation on the node shell). */
+const heldNodes = (page: Page) => page.evaluate(() => document.getAnimations()
+  .filter((animation) => animation.playState === "paused")
+  .map((animation) => (animation.effect as KeyframeEffect | null)?.target)
+  .filter((target): target is Element => target instanceof Element && target.matches("[data-node-role]"))
+  .map((target) => target.closest(".react-flow__node")?.getAttribute("data-id"))
+  .filter((id): id is string => !!id)
+  .sort());
 
-test("a breakpoint set from a node's menu stops a Simulation and opens the node", async ({ page }) => {
+test("a breakpoint set from a node's menu stops a Simulation, opens the node and names the stop", async ({ page }) => {
   test.setTimeout(240_000);
   await openMinimalTestProject(page);
   await openMainScene(page);
@@ -63,6 +71,13 @@ test("a breakpoint set from a node's menu stops a Simulation and opens the node"
   const stoppedAt = await tickIndex(page);
   await page.waitForTimeout(300);
   expect(await tickIndex(page)).toBe(stoppedAt);
+  // The toolbar names the stop as the canvas titles its node, and Debug Instance follows the object that reached it.
+  await expect(printNode(page)).toContainText("Print");
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Print on Hero");
+  await expect(page.getByTestId("graph-debug-instance-select")).toContainText("Hero");
+  // The object's path shows from its next tick on (a Step stops at the node again) and stays lit while paused.
+  await page.getByTestId("simulation-step").click();
+  await expect.poll(() => heldNodes(page), { timeout: 15_000 }).toEqual(["print", "tick"]);
 
   // Switched off while the Simulation runs, it no longer stops it.
   await printNode(page).locator("[data-node-role]").click({ button: "right" });
@@ -71,4 +86,5 @@ test("a breakpoint set from a node's menu stops a Simulation and opens the node"
   await page.getByTestId("simulation-pause").click();
   await expect.poll(() => tickIndex(page), { timeout: 30_000 }).toBeGreaterThan(stoppedAt + 2);
   await expect(page.getByTestId("simulation-step")).toHaveCount(0);
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveCount(0);
 });

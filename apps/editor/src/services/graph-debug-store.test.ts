@@ -113,6 +113,42 @@ describe("GraphDebugStore selection", () => {
   });
 });
 
+describe("GraphDebugStore at a breakpoint", () => {
+  it("follows the object that stopped, now when it is listed or once a roster lists it", () => {
+    const { store, requests } = observed();
+    store.receiveRoster(roster([actor("a"), actor("b")], [], true));
+    store.follow("b");
+    expect(requests.at(-1)).toEqual({ target: DOOR, instanceId: "b" });
+
+    // The stop opened another Class: its roster arrives after the follow, and the object is in it.
+    store.follow("w2");
+    store.setTarget(WINDOW);
+    store.receiveRoster(roster([actor("w1"), actor("w2")], [], true, WINDOW));
+    expect(store.getSnapshot().selectedId).toBe("w2");
+  });
+
+  it("drops a follow the user overrides, and never follows an object no roster lists", () => {
+    const { store } = observed();
+    store.receiveRoster(roster([actor("a"), actor("b")], [], true));
+    store.follow("subclass-instance");
+    expect(store.getSnapshot().selectedId).toBe("a");
+    store.select("b");
+    store.receiveRoster(roster([actor("subclass-instance")]));
+    expect(store.getSnapshot().selectedId).toBe("b");
+  });
+
+  it("holds the canvases while paused, and lets the old path go when another object is followed", () => {
+    const { store } = observed();
+    store.receiveRoster(roster([actor("a"), actor("b")], [], true));
+    const held: boolean[] = [];
+    store.subscribeHold((value) => held.push(value));
+    store.setHeld(true);
+    store.select("b");
+    store.setHeld(false);
+    expect(held).toEqual([false, true, false, true, false]);
+  });
+});
+
 describe("GraphDebugStore traces", () => {
   it("hands the followed instance's trace to listeners and keeps each pin's latest value", () => {
     const { store } = observed();

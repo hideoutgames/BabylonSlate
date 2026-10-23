@@ -61,7 +61,7 @@ A breakpoint stops a Simulation when a node runs. You can set one on any node th
 
 A red dot then marks the node. A hollow dot means the breakpoint is disabled: it is kept but does not stop. The node's menu has **Remove Breakpoint** and **Disable Breakpoint** / **Enable Breakpoint**.
 
-When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
+When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. The toolbar names where it stopped: the Class, the event or function, the node and the object. Choose that name to open the node again. **Debug Instance** switches to that object, and its path and pin values show from its next tick on, for example after a **Step**. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
 
 The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in Classes you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
 
@@ -85,7 +85,7 @@ Objects with the same name show the start of their id after the name, and a Clas
 - Pick another object at any time. The graphs show only the object you picked.
 - Changing the open document, or opening a Class that has no objects (a function library, for example), changes or removes the list.
 
-When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The wires and pins involved light up with it. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
+When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The wires and pins involved light up with it. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears. While the Simulation is paused, what ran last stays lit until you resume.
 
 ### Classes and Animation Object graphs
 

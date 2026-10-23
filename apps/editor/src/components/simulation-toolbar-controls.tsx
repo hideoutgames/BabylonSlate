@@ -1,7 +1,7 @@
 import { ToolbarOverflowItem } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
-import { GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SkipForwardIcon, SquareIcon } from "lucide-react";
+import { CircleDotIcon, GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SkipForwardIcon, SquareIcon } from "lucide-react";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import {
   SIMULATION_CONTROL_ATTRIBUTE,
@@ -21,9 +21,15 @@ export function SimulationToolbarControls({
   phone,
   onStop,
   onReturnToScene,
+  stoppedAt,
+  onOpenStop,
 }: {
   /** Null until the Simulation's overlay is ready. */
   controls: SimulationControls | null;
+  /** Where a breakpoint stopped the Simulation, named, while it stays there. */
+  stoppedAt?: string | null;
+  /** Opens the node the Simulation stopped at again. */
+  onOpenStop?: () => void;
   stopping: boolean;
   phone: boolean;
   onStop: () => void;
@@ -88,6 +94,38 @@ export function SimulationToolbarControls({
           </TooltipTrigger>
           <TooltipContent>Step One Tick</TooltipContent>
         </Tooltip>
+        </ToolbarOverflowItem>
+      ) : null}
+      {paused && stoppedAt ? (
+        <ToolbarOverflowItem
+          id="breakpoint-stop"
+          priority={TOOLBAR_OVERFLOW_PRIORITY.breakpointStop}
+          items={[{
+            id: "breakpoint-stop",
+            label: `Stopped At ${stoppedAt}`,
+            icon: <CircleDotIcon />,
+            onSelect: () => onOpenStop?.(),
+          }]}
+        >
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="chrome-action-button min-w-0 max-w-72"
+                  aria-label={`Stopped At ${stoppedAt}`}
+                  onClick={() => onOpenStop?.()}
+                  data-testid="simulation-breakpoint-stop"
+                  {...controlProps}
+                />
+              }
+            >
+              <CircleDotIcon data-icon="inline-start" className="text-destructive" />
+              <span className="truncate">{stoppedAt}</span>
+            </TooltipTrigger>
+            <TooltipContent>Stopped At {stoppedAt}</TooltipContent>
+          </Tooltip>
         </ToolbarOverflowItem>
       ) : null}
       <Tooltip>

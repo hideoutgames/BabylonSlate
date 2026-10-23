@@ -16,6 +16,7 @@ function controls(overrides: Partial<SimulationControls> = {}): SimulationContro
     inputMode: "game",
     inputPending: false,
     keepChanges: false,
+    stoppedAt: null,
     togglePause: vi.fn(),
     step: vi.fn(),
     setInputMode: vi.fn(),
@@ -54,6 +55,18 @@ describe("SimulationToolbarControls", () => {
     cleanup();
     renderControls({ controls: controls({ paused: true, stepPending: true }) });
     expect((screen.getByTestId("simulation-step") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("names where a breakpoint stopped while paused there, and opens the node again", () => {
+    const onOpenStop = vi.fn();
+    renderControls({ controls: controls({ paused: true }), stoppedAt: "Hero › Event Tick › Print String on First", onOpenStop });
+    const stop = screen.getByTestId("simulation-breakpoint-stop");
+    expect(stop.getAttribute("aria-label")).toBe("Stopped At Hero › Event Tick › Print String on First");
+    fireEvent.click(stop);
+    expect(onOpenStop).toHaveBeenCalledOnce();
+    cleanup();
+    renderControls({ controls: controls({ paused: false }), stoppedAt: "Hero › Event Tick › Print String on First" });
+    expect(screen.queryByTestId("simulation-breakpoint-stop")).toBeNull();
   });
 
   it("names what Stop does with Simulation changes", () => {

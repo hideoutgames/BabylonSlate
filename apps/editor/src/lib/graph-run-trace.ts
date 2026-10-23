@@ -17,6 +17,7 @@ export function createGraphRunTrace(store: GraphDebugStore, assetGuid: string, g
       }
     }),
     value: (nodeId, pinId, direction) => store.value(assetGuid, graphId, nodeId, pinId, direction),
+    subscribeHold: (listener) => store.subscribeHold(listener),
   };
 }
 

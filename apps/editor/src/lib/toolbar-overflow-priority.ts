@@ -17,6 +17,7 @@ export const TOOLBAR_OVERFLOW_PRIORITY = {
   returnToScene: 60,
   sceneMode: 70,
   debugInstance: 72,
+  breakpointStop: 73,
   simulationStep: 74,
   compilationError: 75,
   documentAction: 80,

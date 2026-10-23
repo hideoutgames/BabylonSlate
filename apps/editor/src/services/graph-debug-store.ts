@@ -71,6 +71,11 @@ export class GraphDebugStore {
   private readonly listeners = new Set<() => void>();
   private readonly traceListeners = new Set<(trace: GraphDebugTrace) => void>();
   private readonly requestListeners = new Set<(request: GraphDebugRequest) => void>();
+  /** The Simulation is paused: canvases keep what ran last lit. */
+  private held = false;
+  private readonly holdListeners = new Set<(held: boolean) => void>();
+  /** An object to follow as soon as a roster lists it (the one a breakpoint stopped on). */
+  private pendingFollow: string | null = null;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -136,8 +141,33 @@ export class GraphDebugStore {
     this.changed(true);
   }
 
+  /** Whether the Simulation is paused. Called at once with the current state, then on each change. */
+  subscribeHold(listener: (held: boolean) => void): () => void {
+    this.holdListeners.add(listener);
+    listener(this.held);
+    return () => { this.holdListeners.delete(listener); };
+  }
+
+  /** The Simulation paused or resumed; while paused, canvases keep what ran last lit. */
+  setHeld(held: boolean): void {
+    if (held === this.held) return;
+    this.held = held;
+    for (const listener of [...this.holdListeners]) listener(held);
+  }
+
+  /**
+   * Follow `instanceId` now if the current target lists it, else as soon as a roster does (the
+   * graph a breakpoint opened may not be in focus yet). An object a roster never lists, such as an
+   * instance of a subclass hitting its parent's graph, is never followed.
+   */
+  follow(instanceId: string): void {
+    this.pendingFollow = instanceId;
+    if (this.roster.has(instanceId)) this.select(instanceId);
+  }
+
   /** The user picks an instance, or null for None. */
   select(instanceId: string | null): void {
+    this.pendingFollow = null;
     const { target, instances, selectedId } = this.snapshot;
     if (!target || instances === null) return;
     if (instanceId !== null && !this.roster.has(instanceId)) return;
@@ -157,8 +187,12 @@ export class GraphDebugStore {
     for (const instance of message.added) this.roster.set(instance.id, instance);
     const instances = [...this.roster.values()];
     let next = selectedId;
+    if (this.pendingFollow !== null && this.roster.has(this.pendingFollow)) {
+      next = this.pendingFollow;
+      this.pendingFollow = null;
+      this.chosenNone = false;
     // A despawned instance falls back to the first remaining one, whatever the user had picked.
-    if (next !== null && !this.roster.has(next)) next = instances[0]?.id ?? null;
+    } else if (next !== null && !this.roster.has(next)) next = instances[0]?.id ?? null;
     else if (next === null && !this.chosenNone) next = instances[0]?.id ?? null;
     const moved = next !== selectedId;
     if (moved) this.clearLive();
@@ -193,8 +227,12 @@ export class GraphDebugStore {
     for (const listener of [...this.blackboardListeners]) listener();
   }
 
-  /** What the followed instance ran and held is forgotten: another instance, or another target, is followed. */
+  /**
+   * What the followed instance ran and held is forgotten: another instance, or another target, is
+   * followed. Its path no longer stays lit: while paused, the hold is released and taken again.
+   */
   private clearLive(): void {
+    if (this.held) for (const listener of [...this.holdListeners]) { listener(false); listener(true); }
     const had = [...this.statuses.keys()];
     const hadBlackboard = this.blackboardValues !== null;
     this.values = new Map();
