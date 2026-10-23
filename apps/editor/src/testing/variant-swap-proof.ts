@@ -38,6 +38,7 @@ import { CelMaterial } from "../../../../packages/render/src/cel-material";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
+import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Step = {
@@ -386,6 +387,55 @@ async function spawnReveal() {
   }
 }
 
+/**
+ * An actor spawns with a Material Play's load warmed (`warmSpawnables`, on a staged box it then disposed): no program
+ * links, on the real context, and the box draws in its first frame. Babylon 9.29's `forceCompilation` compiles on a
+ * temporary submesh it never disposes, whose reference keeps the Effect in the Engine's cache after the staged mesh
+ * is gone.
+ */
+async function warmSpawn() {
+  const view = await worldView();
+  try {
+    const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), view.scene);
+    authored(sun, [1, 0.95, 0.85], 0.4);
+    const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
+    authored(spot, [0.9, 0.85, 0.7], 1.6, true);
+    await view.coordinator.prepare();
+    await view.settle();
+    const material = new StandardMaterial("warmed", view.scene);
+    material.diffuseColor = new Color3(0.1, 0.9, 0.2);
+    await warmSpawnables(view.scene, { materials: [material], containers: [] });
+    const staged = view.scene.meshes.filter((mesh) => mesh.name.startsWith("spawnable-warm:")).length;
+    await view.settle();
+    const before = await view.read();
+    const errorsBefore = glErrorTraceEntries().length;
+    const gl = (view.engine as unknown as { _gl: WebGL2RenderingContext })._gl;
+    const linkProgram = gl.linkProgram;
+    let links = 0;
+    gl.linkProgram = function countedLinkProgram(this: WebGL2RenderingContext, program: WebGLProgram) {
+      links++;
+      return linkProgram.call(this, program);
+    };
+    try {
+      const box = MeshBuilder.CreateBox("warmed", { size: 0.6 }, view.scene);
+      box.position.set(1, 0.3, -1.2);
+      box.material = material;
+      box.receiveShadows = true;
+      const drawn = view.frame(true);
+      const appeared = changed(await view.read(), before);
+      for (let index = 0; index < 2; index++) view.frame(true);
+      return {
+        staged, links, drawn, appeared,
+        glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
+      };
+    } finally {
+      gl.linkProgram = linkProgram;
+    }
+  } finally {
+    view.dispose();
+  }
+}
+
 export async function runVariantSwapProof() {
   const untrace = installGlErrorTrace();
   try {
@@ -447,7 +497,7 @@ export async function runVariantSwapProof() {
         return { light: point, castShadows: (enabled) => authored(point, [1, 0.8, 0.5], 1.4, enabled) };
       }),
     ];
-    return { steps, shadowGains, spawn: await spawnReveal() };
+    return { steps, shadowGains, spawn: await spawnReveal(), warmSpawn: await warmSpawn() };
   } finally {
     untrace();
   }
