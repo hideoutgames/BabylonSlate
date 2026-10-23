@@ -44,3 +44,4 @@ export function collectEffectRequests<T>(engine: AbstractEngine, into: Set<Effec
     open.splice(open.lastIndexOf(into), 1);
   }
 }
+

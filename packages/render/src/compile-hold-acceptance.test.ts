@@ -22,20 +22,23 @@
  * per frame, so graph preparation's polls run deterministically.
  *
  * A change to an existing Material's variant keeps drawing its previous Effect
- * while the new one compiles: no held frame, no hold signal, no pause. Causes
- * that still hold (a new shadow map's casters and graph preparation, a spawned
- * Material, any WebGPU pipeline) assert only that the view recovers; their holds
- * are in the failure message.
+ * while the new one compiles: no held frame, no hold signal, no pause. A new
+ * shadow map draws once its casters are ready, and a spawned mesh with nothing
+ * to draw is hidden until every variant it draws with is ready. What still
+ * holds (a WebGPU pipeline) asserts only that the view recovers; its holds are
+ * in the failure message.
  */
 import {
   ArcRotateCamera,
   DirectionalLight,
+  Mesh,
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
   PBRMaterial,
   PointLight,
   Scene,
+  StandardMaterial,
   UniversalCamera,
   Vector3,
   type AbstractEngine,
@@ -62,6 +65,7 @@ import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { awaitsFirstDraw } from "./shadow-first-draw";
+import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -143,6 +147,8 @@ function driverModel(engine: NullEngine, model: Model) {
   const pending = new Set<Effect>();
   let armed = false;
   let holding = false;
+  /** Set by `lagOnly`: the only new Effects the driver still keeps pending. */
+  let lags: ((effect: Effect) => boolean) | undefined;
   if (model === "parallel") engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
   const create = engine.createEffect.bind(engine) as (...args: unknown[]) => Effect;
   vi.spyOn(engine, "createEffect").mockImplementation(((...args: unknown[]) => {
@@ -150,7 +156,7 @@ function driverModel(engine: NullEngine, model: Model) {
     if (!armed || known.has(effect)) return effect;
     known.add(effect);
     created.push(effect);
-    if (model === "sync" || !holding) return effect;
+    if (model === "sync" || !holding || (lags && !lags(effect))) return effect;
     pending.add(effect);
     if (model === "parallel") {
       // A link the driver has not finished: Babylon and the app's waits read it through isReady().
@@ -214,7 +220,14 @@ function driverModel(engine: NullEngine, model: Model) {
     release: () => {
       pending.clear();
       holding = false;
+      lags = undefined;
     },
+    /** From now on the driver finishes every link but those `lagging` picks, which stay pending until `release`. */
+    lagOnly: (lagging: (effect: Effect) => boolean) => {
+      lags = lagging;
+      for (const effect of [...pending]) if (!lagging(effect)) pending.delete(effect);
+    },
+    isPending: (effect: Effect) => pending.has(effect),
     /** Every pending link fails, with no fallback left: those Effects never become ready. */
     fail: () => {
       for (const effect of pending) Object.assign(effect, { _compilationError: "ERROR: 0:1: injected link failure", _allFallbacksProcessed: true });
@@ -394,10 +407,10 @@ async function settle(world: PlayWorld): Promise<void> {
  * releases them and lets the view recover (up to 30 frames). `settled` runs once the view has settled.
  */
 async function measure(
-  world: PlayWorld, cause: () => unknown, settled?: () => void, pending?: () => void,
+  world: PlayWorld, cause: () => unknown, settled?: () => void | Promise<void>, pending?: () => void,
 ): Promise<CauseRecord> {
   await settle(world);
-  settled?.();
+  await settled?.();
   const before = world.subjectEffect();
   let checksBefore = 0;
   world.driver.arm();
@@ -484,6 +497,17 @@ function expectRecovers(record: CauseRecord): void {
   const detail = JSON.stringify(record);
   expect(record.litEffects, detail).toBeGreaterThan(0);
   expect(record.recovered, detail).toBe(true);
+}
+
+/** The names of the meshes drawn (`Mesh.render`) since the set was last cleared. */
+function spawnDraws(): Set<string> {
+  const drawn = new Set<string>();
+  const render = Mesh.prototype.render;
+  vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
+    drawn.add(this.name);
+    return render.apply(this, args);
+  });
+  return drawn;
 }
 
 /** WebGPU's Effects are ready once created, so a new pipeline still holds the view (pipeline swaps are separate work). */
@@ -577,13 +601,132 @@ describe("compile holds after the first frame", () => {
     }
   });
 
-  it.each(MODELS)("a spawned actor uses a Material no mesh drew before: %s", async (model) => {
-    // A mesh with no previous Effect has nothing to draw meanwhile.
+  it.each(MODELS)("a spawned actor's Material the load warmed compiles nothing when it spawns: %s", async (model) => {
+    // Play's load compiles what it may spawn (`warmSpawnables`): a box with this Material is drawn in its first frame.
     const world = playWorld(model, [], ["surface-a"]);
-    expectRecovers(await measure(world, () => {
+    const drawn = spawnDraws();
+    const record = await measure(world, () => {
       world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
-    }));
+      drawn.clear();
+    });
+    expect({
+      effects: record.effects, heldFrames: record.heldFrames, paused: record.pausedFrames > 0, shown: drawn.has("actor-20"),
+      warmed: world.handle.spawnableWarmStats()?.materials ?? 0,
+    }, JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true, warmed: 1 });
+  });
+
+  it.each(MODELS)("a Spawn Actor preparation compiles the actor's Material before it spawns: %s", async (model) => {
+    // Spawn Actor (and a Class load) prepares the actor's sources first: that preparation also compiles them against
+    // the current lighting, so the actor draws in its first frame.
+    const world = playWorld(model, [], ["surface-a"]);
+    const drawn = spawnDraws();
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-c" });
+      drawn.clear();
+    }, async () => {
+      const documents = new Map([["surface-c", createDefaultMaterialDocument("surface-c")]]);
+      cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true, warm: true })));
+      for (let index = 0; index < 6; index++) await world.frame();
+    });
+    expect({ effects: record.effects, heldFrames: record.heldFrames, paused: record.pausedFrames > 0, shown: drawn.has("actor-20") },
+      JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true });
+  });
+
+  it.each(MODELS)("a spawned actor whose Material arrived after the load is hidden until its variant is ready: %s", async (model) => {
+    // Nothing warmed this Material: only the new mesh is left out while its variant compiles, and the view keeps drawing.
+    const world = playWorld(model, [], ["surface-a"]);
+    const drawn = spawnDraws();
+    const barrel = () => world.handle.scene.getMeshByName("actor-20");
+    let hiddenWhilePending = true;
+    let pendingFrames = 0;
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
+      drawn.clear();
+    }, async () => {
+      // A changed Material library prepares the view again; let it settle before the spawn.
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      for (let index = 0; index < 6; index++) await world.frame();
+    }, () => {
+      // Only a pending compile leaves the mesh without a variant; a synchronous link draws it in its first frame.
+      const mesh = barrel();
+      if (model === "parallel") {
+        pendingFrames++;
+        hiddenWhilePending &&= !!mesh && isRevealPending(mesh) && !drawn.has(mesh.name);
+      }
+      drawn.clear();
+    });
+    for (let index = 0; index < 2; index++) await world.frame();
+    const mesh = barrel();
+    const spawned = {
+      hiddenWhilePending: hiddenWhilePending && (model !== "parallel" || pendingFrames > 0),
+      shown: !!mesh && !isRevealPending(mesh) && drawn.has(mesh.name),
+      material: mesh?.material?.getClassName(),
+    };
+    expect(spawned, JSON.stringify(record)).toEqual({ hiddenWhilePending: true, shown: true, material: "NodeMaterial" });
+    if (model === "webgpu") {
+      // WebGPU's Effects are ready once created: the new mesh's draw still waits for its render pipeline (pipeline
+      // swaps are separate work).
+      expect(record.reasons.every((reason) => reason.endsWith("Render pipelines are compiling.")), JSON.stringify(record)).toBe(true);
+      expectRecovers(record);
+    } else {
+      expect({
+        compiled: record.litEffects > 0, heldFrames: record.heldFrames, holdReported: record.holdReported,
+        holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
+      }, JSON.stringify(record)).toEqual({
+        compiled: true, heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
+      });
+    }
+  });
+
+  it.each(MODELS)("a spawned actor's meshes appear together, on the frame the last of them is ready: %s", async (model) => {
+    // The body's Material was warmed at load, the lid's arrived after it: the body waits, hidden, for the lid.
+    const world = playWorld(model, [], ["surface-a"]);
+    const drawn = spawnDraws();
+    const names = ["actor-20|body", "actor-20|lid"];
+    const part20 = (name: string) => world.handle.scene.getMeshByName(name);
+    /** Each reveal: the part, and the world view frame it happened in. */
+    const revealed: Array<[string, number]> = [];
+    let hiddenWhilePending = true;
+    let pendingFrames = 0;
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "chest", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: null, parts: [
+        part("body", "box"), part("lid", "box", { position: [0, 1, 0] }),
+      ] } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, componentId: "body", materialAssetGuid: "surface-a" });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, componentId: "lid", materialAssetGuid: "surface-b" });
+      drawn.clear();
+    }, async () => {
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      for (let index = 0; index < 6; index++) await world.frame();
+      cleanups.push(onMeshRevealed(world.handle.scene, (mesh) => {
+        if (names.includes(mesh.name)) revealed.push([mesh.name, world.views.length]);
+      }));
+    }, () => {
+      // Only a pending compile keeps the lid from its first frame; a synchronous link reveals both at once.
+      if (model === "parallel") {
+        pendingFrames++;
+        hiddenWhilePending &&= names.every((name) => {
+          const mesh = part20(name);
+          return !!mesh && isRevealPending(mesh) && !drawn.has(name);
+        });
+      }
+      drawn.clear();
+    });
+    for (let index = 0; index < 2; index++) await world.frame();
+    expect({
+      hiddenWhilePending: hiddenWhilePending && (model !== "parallel" || pendingFrames > 0),
+      // Each part is revealed once, both in one frame.
+      revealed: revealed.map(([name]) => name).sort(),
+      together: new Set(revealed.map(([, frame]) => frame)).size === 1,
+      shown: names.map((name) => !!part20(name) && !isRevealPending(part20(name)!) && drawn.has(name)),
+      materials: names.map((name) => part20(name)?.material?.name),
+    }, JSON.stringify({ record, revealed })).toEqual({
+      hiddenWhilePending: true, revealed: names, together: true, shown: [true, true],
+      materials: [expect.stringContaining("surface-a"), expect.stringContaining("surface-b")],
+    });
   });
 
   it("a variant change on WebGPU recovers once its pipeline exists", async () => {
@@ -736,6 +879,87 @@ describe("the editor world view", () => {
     const checks = view.strictReadinessChecks;
     expect(view.isReady()).toBe(false);
     expect(view.strictReadinessChecks).toBe(checks);
+  });
+
+  it("reveals a transparent mesh whose depth pre-pass links after its colour variant once, with both, then hot-swaps it", async () => {
+    // A blended StandardMaterial with a depth pre-pass draws two variants (DEPTHPREPASS is a define of its own). The new
+    // mesh stays hidden while either links, appears once, and a later light change keeps it drawn.
+    const { driver, scene, far, frame } = await editorView();
+    const drawn = spawnDraws();
+    const depthPrePass = (effect: Effect) => /#define DEPTHPREPASS\b/.test(effect.defines);
+    const reveals: number[] = [];
+    let frames = 0;
+    cleanups.push(onMeshRevealed(scene, (mesh) => { if (mesh.name === "glass") reveals.push(frames); }));
+    driver.arm();
+    const glass = MeshBuilder.CreateBox("glass", {}, scene);
+    glass.position.set(1.5, 0.5, 0);
+    const material = new StandardMaterial("glass", scene);
+    material.alpha = 0.5;
+    material.needDepthPrePass = true;
+    glass.material = material;
+    /** Each frame: drew, `glass` hidden, `glass` drawn, only its depth pre-pass still linking. */
+    const states: Array<[boolean, boolean, boolean, boolean]> = [];
+    const step = async () => {
+      frames++;
+      drawn.clear();
+      const viewDrew = await frame();
+      const linking = driver.created.filter((effect) => driver.isPending(effect));
+      states.push([viewDrew, isRevealPending(glass), drawn.has("glass"), linking.length > 0 && linking.every(depthPrePass)]);
+    };
+    for (let index = 0; index < 2; index++) await step();
+    // Every link but the depth pre-pass's finishes.
+    driver.lagOnly(depthPrePass);
+    for (let index = 0; index < 4; index++) await step();
+    driver.release();
+    for (let index = 0; index < 2; index++) await step();
+    expect(states).toEqual([
+      [true, true, false, false], [true, true, false, false],
+      [true, true, false, true], [true, true, false, true], [true, true, false, true], [true, true, false, true],
+      [true, false, true, false], [true, false, true, false],
+    ]);
+    expect(reveals).toEqual([7]);
+    // A light switching off: both variants swap, and the mesh keeps drawing its previous ones meanwhile.
+    driver.arm();
+    setAuthoredLightEnabled(far, false);
+    states.length = 0;
+    for (let index = 0; index < 3; index++) await step();
+    expect(driver.created.filter((effect) => driver.isPending(effect)).some(depthPrePass)).toBe(true);
+    expect(states.map(([viewDrew, hidden, shown]) => [viewDrew, hidden, shown])).toEqual([[true, false, true], [true, false, true], [true, false, true]]);
+    expect(reveals).toEqual([7]);
+  });
+
+  it("never hides a drawn mesh whose new blend needs a depth pre-pass it has not drawn yet", async () => {
+    // Only a mesh that has never drawn with its Material is hidden; one that has keeps its place in every pass while a
+    // pass's new variant links (here its first depth pre-pass, once it blends).
+    const { driver, scene, far, frame } = await editorView();
+    const drawn = spawnDraws();
+    const pane = MeshBuilder.CreateBox("pane", {}, scene);
+    pane.position.set(1.5, 0.5, 0);
+    const material = new StandardMaterial("pane", scene);
+    pane.material = material;
+    for (let index = 0; index < 3; index++) await frame();
+    expect(drawn.has("pane")).toBe(true);
+    const reveals: string[] = [];
+    cleanups.push(onMeshRevealed(scene, (mesh) => reveals.push(mesh.name)));
+    driver.arm();
+    material.alpha = 0.5;
+    material.needDepthPrePass = true;
+    // A light switching off too: the view probes again, and the pane's colour variant swaps.
+    setAuthoredLightEnabled(far, false);
+    const hidden: boolean[] = [];
+    for (let index = 0; index < 3; index++) {
+      await frame();
+      hidden.push(isRevealPending(pane));
+    }
+    // Its depth pre-pass variant really was linking.
+    expect(driver.created.filter((effect) => driver.isPending(effect)).some((effect) => /#define DEPTHPREPASS\b/.test(effect.defines))).toBe(true);
+    driver.release();
+    drawn.clear();
+    for (let index = 0; index < 2; index++) {
+      await frame();
+      hidden.push(isRevealPending(pane));
+    }
+    expect({ hidden, reveals, drawn: drawn.has("pane") }).toEqual({ hidden: [false, false, false, false, false], reveals: [], drawn: true });
   });
 
   it("ends a swap whose new variant failed to link: the previous Effect stays, probing stops and strict readiness passes", async () => {
