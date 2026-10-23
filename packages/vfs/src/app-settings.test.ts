@@ -46,6 +46,14 @@ describe("app settings", () => {
     expect(settings.debuggerDefaults.overlayConsole).toBe(false);
   });
 
+  it("keeps ten traces by default and between one and fifty", () => {
+    expect(engineSettingsSchema.parse({}).tracesKept).toBe(10);
+    expect(engineSettingsSchema.parse({ tracesKept: 0 }).tracesKept).toBe(1);
+    expect(engineSettingsSchema.parse({ tracesKept: 500 }).tracesKept).toBe(50);
+    expect(engineSettingsSchema.parse({ tracesKept: 3.6 }).tracesKept).toBe(4);
+    expect(engineSettingsSchema.safeParse({ tracesKept: "10" }).success).toBe(false);
+  });
+
   it("bounds trace memory and rejects non-finite or non-numeric budgets", () => {
     expect(engineSettingsSchema.parse({ traceByteBudget: 0 }).traceByteBudget).toBe(1_048_576);
     expect(engineSettingsSchema.parse({ traceByteBudget: 2_147_483_648 }).traceByteBudget).toBe(268_435_456);

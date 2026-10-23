@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DisclosureSection, NumberField } from "@haptic/editor-kit";
 import type { EngineSettings } from "@haptic/vfs";
+import { MAX_TRACES_KEPT } from "@haptic/core";
 import { Switch } from "@haptic/ui/components/switch";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 
@@ -98,6 +99,14 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
           value={Math.round(settings.traceByteBudget / (1024 * 1024))}
           onChange={(mebibytes) => void onChange({ traceByteBudget: Math.round(mebibytes) * 1024 * 1024 })} />
         <FieldDescription>Applies to the next Play or Preview Build session. Bounds serialized trace data, not browser memory. Oldest complete frames are discarded when full; a single oversized frame stops recording and preserves earlier complete frames.</FieldDescription>
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="setting-traces-kept">Traces Kept</FieldLabel>
+        <NumberField id="setting-traces-kept" min={1} max={MAX_TRACES_KEPT} step={1}
+          className="min-h-[var(--chrome-row,28px)]" data-testid="setting-traces-kept"
+          value={settings.tracesKept}
+          onChange={(tracesKept) => void onChange({ tracesKept: Math.round(tracesKept) })} />
+        <FieldDescription>Recorded traces kept for each project on this device; Debug &gt; Recent Traces lists them. Recording another deletes the oldest beyond this number, except traces open in a tab.</FieldDescription>
       </Field>
     </FieldSet>
   </>;

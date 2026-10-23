@@ -28,7 +28,7 @@ The **Debug** menu next to **Play** decides which controls appear. Set it before
 | **Start Paused** | Off. Starts the game paused, ready for **Step**. |
 | **Overlays** > **Stats** | On |
 | **Overlays** > **Console**, **Inspector**, **Profiler** | Off |
-| **Recent Traces** | Opens one of the project's ten newest [traces](profiler.md#trace-recording) again. |
+| **Recent Traces** | Opens one of the project's kept [traces](profiler.md#trace-recording) again. |
 
 **Simulate** needs an open world scene. Whether its changes are kept when you stop is set by **Keep Simulation Changes** in **Engine Settings > Debugger**.
 

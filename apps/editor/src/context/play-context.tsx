@@ -1627,10 +1627,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
       });
       if (result.lastTrace) {
-        void openRecordedTrace(result.lastTrace);
+        void openRecordedTrace(result.lastTrace, { keep: appSettings.tracesKept });
       }
     },
-    [appendLog, openRecordedTrace, sessionOwner],
+    [appSettings.tracesKept, appendLog, openRecordedTrace, sessionOwner],
   );
 
   // Built after the value below; read when a source is opened, so it is always the latest.
@@ -2002,7 +2002,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             registerBeforeStop={registerPreviewBeforeStop}
-            onTrace={(trace) => void openRecordedTrace(trace)}
+            onTrace={(trace) => void openRecordedTrace(trace, { keep: appSettings.tracesKept })}
             onOutputLog={appendLog}
             showStats={overlayStats}
             showConsole={overlayConsole}

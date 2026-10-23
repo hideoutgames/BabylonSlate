@@ -98,6 +98,29 @@ export async function listTraceDocuments(
     .sort((a, b) => (b.recordedAt ?? -Infinity) - (a.recordedAt ?? -Infinity) || b.fileName.localeCompare(a.fileName));
 }
 
+/**
+ * Deletes the project's oldest traces beyond `keep`, except the paths in `inUse` (open in a tab), and
+ * returns the deleted paths. A trace that cannot be deleted is left for the next pass.
+ */
+export async function pruneTraceDocuments(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+  keep: number,
+  inUse: ReadonlySet<string> = new Set(),
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const entry of (await listTraceDocuments(derivedStorage, projectGuid)).slice(Math.max(0, keep))) {
+    if (inUse.has(entry.path)) continue;
+    try {
+      await derivedStorage.remove(entry.path);
+      removed.push(entry.path);
+    } catch {
+      // Removed meanwhile, or locked: the next recording tries again.
+    }
+  }
+  return removed;
+}
+
 export async function readTraceDocument(
   derivedStorage: ProjectStorage,
   path: string,
