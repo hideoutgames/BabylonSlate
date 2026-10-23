@@ -506,6 +506,7 @@ export function EditorChromeBar({
           setFeatureTestCheckOpen(true);
         } : undefined}
         listRecentTraces={listRecentTraces}
+        recentTraceLimit={appSettings.tracesKept}
         onOpenTrace={(path) => {
           setToolsOpen(false);
           void openTraceDocument(path);

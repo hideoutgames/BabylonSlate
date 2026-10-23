@@ -69,6 +69,7 @@ import {
   newAssetGuid,
   listTraceDocuments,
   playerFilesHaveKtx2Transcoder,
+  pruneTraceDocuments,
   type TraceDocumentEntry,
 } from "@haptic/assets";
 import {
@@ -442,8 +443,11 @@ interface DocumentContextValue {
   openDocument: (ref: DocumentRef) => Promise<void>;
   /** Loads a canonical working document without creating or activating a tab. */
   ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
-  /** Spill a finished Play recorder payload and open the read-only Trace tab. */
-  openRecordedTrace: (payload: TracePayload) => Promise<void>;
+  /**
+   * Spill a finished Play recorder payload and open the read-only Trace tab. With `keep`, older traces
+   * beyond that many are then deleted, except ones open in a tab.
+   */
+  openRecordedTrace: (payload: TracePayload, options?: { keep?: number }) => Promise<void>;
   /** The project's recorded traces, newest first. */
   listRecentTraces: () => Promise<TraceDocumentEntry[]>;
   /** Open a recorded trace again in a read-only Trace tab. */
@@ -2821,7 +2825,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const openRecordedTrace = useCallback(
-    async (payload: TracePayload) => {
+    async (payload: TracePayload, options: { keep?: number } = {}) => {
       const guid = projectService.guid;
       if (!guid) return;
       const derived = await ensureDerived();
@@ -2835,8 +2839,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentGuid: newAssetGuid(),
       });
       await finishOpenDocument(spilled.ref);
+      if (options.keep === undefined) return;
+      const open = new Set(
+        [...documentService.getState().openDocuments.values()]
+          .flatMap((document) => (document.ref.kind === "trace" ? [document.ref.path] : [])),
+      );
+      open.add(spilled.path);
+      await pruneTraceDocuments(derived, guid, options.keep, open);
     },
-    [ensureDerived, finishOpenDocument, projectService],
+    [documentService, ensureDerived, finishOpenDocument, projectService],
   );
 
   const listRecentTraces = useCallback(async () => {

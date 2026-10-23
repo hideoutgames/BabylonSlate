@@ -196,6 +196,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["interface", "Compact Mode", "setting-compact-mode"],
   ["undo", "Undo History Length", "setting-undo-length"],
   ["debugger", "Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
+  ["debugger", "Traces Kept", "setting-traces-kept"],
   ["debugger", "Keep Simulation Changes", "setting-keep-simulation-changes"],
   ["debugger", "Pause On Errors", "setting-pause-simulation-on-errors"],
   ["debugger", "Pause On Play", "setting-pause-on-play"],
