@@ -2981,7 +2981,8 @@ function initializeEngine(
           return;
         }
         if (key === "world" && loadRehearsal && !loadRehearsal.done) {
-          loadRehearsal.frame(() => worldRenderer.render(true).readyForPresentation);
+          // Drawn is enough: variants its post-draw probe requests draw in a later rehearsal frame.
+          loadRehearsal.frame(() => worldRenderer.render(true).rendered);
           // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
           engine.clear(scene.clearColor, true, true, true);
           pending.restart?.();

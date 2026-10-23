@@ -41,8 +41,8 @@ export interface LoadRehearsal {
   /** Every step has been rehearsed (or skipped). */
   readonly done: boolean;
   /**
-   * A loading frame in which the view is ready to draw: applies the next step, or draws the applied one with `draw`
-   * (true once its strict frame drew) and reverts it.
+   * A loading frame in which the view is ready to draw: applies the next step, draws the applied one with `draw` (true
+   * once it drew) while its meshes hold an Effect no rehearsal frame drew, or reverts it.
    */
   frame(draw: () => boolean): void;
   /** Reverts and skips a step that has waited `LOAD_REHEARSAL_STEP_MS`; call while the view is not ready. */
@@ -140,6 +140,8 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
   let renew: ((now: number) => boolean) | undefined;
   /** The applied step's meshes hold an Effect no rehearsal frame drew yet. */
   let undrawn = false;
+  /** The applied step has drawn at least once. */
+  let stepDrew = false;
   let drawn = 0;
   let startedAt: number | undefined;
   let endedAt: number | undefined;
@@ -158,6 +160,7 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
     if (timed) timedOut.push(step.label);
     applied = false;
     undrawn = false;
+    stepDrew = false;
     renew = undefined;
     index += 1;
     if (index >= steps.length) finish();
@@ -184,12 +187,17 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
         renew = renewOnCompileProgress(engine);
         return;
       }
+      // A draw can make the view request more variants (its post-draw probe): the next ready frame finds them in the
+      // meshes' wrappers and draws again; one that finds none reverts the step.
       undrawn = retain() || undrawn;
       if (undrawn) {
         if (!draw()) return;
         // The draw's own Effects (a shadow map's casters drawn for the first time).
         retain();
-        drawn += 1;
+        undrawn = false;
+        if (!stepDrew) drawn += 1;
+        stepDrew = true;
+        return;
       }
       advance(false);
     },
