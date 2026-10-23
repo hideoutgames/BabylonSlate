@@ -34,6 +34,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
+import { isRevealPending } from "./reveal-pending";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -114,9 +115,16 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
 
 /** Native camera frustum calculation reads the currently bound target's aspect. */
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
+  /** The output list without hidden meshes when culling is off (its output is then the input list itself). */
+  private readonly shown: AbstractMesh[] = [];
+
   override _execute(): void {
     const target = this.camera.outputRenderTarget?.renderTarget;
-    if (!target) return super._execute();
+    if (!target) {
+      super._execute();
+      this.leaveOutHidden();
+      return;
+    }
     const engine = this.camera.getEngine();
     // Every preceding graph render pass restores the backbuffer. Bind only for
     // the official cull task, without clearing or invoking RTT render observers.
@@ -128,6 +136,27 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     } finally {
       engine.restoreDefaultFramebuffer();
     }
+    this.leaveOutHidden();
+  }
+
+  /**
+   * A mesh whose first variant is still compiling (`isRevealPending`) is not drawn in any pass this list feeds (the
+   * object passes and their depth pre-passes, geometry and spatial effects, the water split). The probes walk the
+   * input list, so they still find it and reveal it on its first ready frame.
+   */
+  private leaveOutHidden(): void {
+    const output = this.outputObjectList.meshes;
+    if (!output?.some(isRevealPending)) return;
+    if (output === this.objectList.meshes) {
+      const shown = this.shown;
+      shown.length = 0;
+      for (const mesh of output) if (!isRevealPending(mesh)) shown.push(mesh);
+      this.outputObjectList.meshes = shown;
+      return;
+    }
+    let kept = 0;
+    for (const mesh of output) if (!isRevealPending(mesh)) output[kept++] = mesh;
+    output.length = kept;
   }
 }
 

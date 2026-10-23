@@ -25,7 +25,7 @@ import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } fr
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
-import { awaitsFirstDraw } from "./shadow-first-draw";
+import { hideUntilReady, isRevealPending, revealMesh } from "./reveal-pending";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -175,24 +175,25 @@ const meshRequests = new Set<Effect>();
 let probedMesh: AbstractMesh | undefined;
 const probeMesh = () => probedMesh!.isReady(true);
 const reportedFailures = new WeakSet<Effect>();
-/** The scene probe's maps awaiting their first draw (reused). */
-const firstDrawMaps = new Set<RenderTargetTexture>();
+/** The scene probe's shadow maps (reused). */
+const probedShadowMaps = new Set<RenderTargetTexture>();
 /** Generators whose caster check a tolerant probe answers while it asks one mesh, with what to restore. */
 const deferredCasters: { generator: ShadowGenerator; own: boolean; isReady: ShadowGenerator["isReady"] }[] = [];
 
 /**
- * Babylon's `Mesh.isReady` asks every map of the mesh's lights for the mesh's caster depth variant. A map that has
- * not drawn yet samples neutrally and draws once its casters are ready (`ManagedShadowsTask`), so a tolerant probe
- * still requests those variants but does not let them hold the mesh: its colour variant and every drawn map's
- * casters decide.
+ * Babylon's `Mesh.isReady` asks every map of the mesh's lights for the mesh's caster depth variant. In a tolerant
+ * probe a shadow map never holds the frame (`ManagedShadowsTask`): one that has not drawn yet samples neutrally and
+ * draws once its casters are ready, and a drawn one keeps drawing without a caster still compiling (Babylon skips it
+ * and redraws the map until it is ready). So such a probe still requests those variants but does not let them hold
+ * the mesh: its colour variant decides.
  */
-function deferFirstDrawCasters(mesh: AbstractMesh): void {
+function deferCasterChecks(mesh: AbstractMesh): void {
   for (const light of mesh.lightSources) {
     const generators = light.getShadowGenerators();
     if (!generators) continue;
     for (const generator of generators.values()) {
       const shadows = generator as ShadowGenerator;
-      if (!awaitsFirstDraw(shadows) || deferredCasters.some((entry) => entry.generator === shadows)) continue;
+      if (deferredCasters.some((entry) => entry.generator === shadows)) continue;
       const own = Object.prototype.hasOwnProperty.call(shadows, "isReady");
       const isReady = shadows.isReady;
       deferredCasters.push({ generator: shadows, own, isReady });
@@ -204,7 +205,7 @@ function deferFirstDrawCasters(mesh: AbstractMesh): void {
   }
 }
 
-function restoreFirstDrawCasters(): void {
+function restoreCasterChecks(): void {
   for (const { generator, own, isReady } of deferredCasters) {
     if (own) generator.isReady = isReady;
     else delete (generator as Partial<ShadowGenerator>).isReady;
@@ -212,21 +213,41 @@ function restoreFirstDrawCasters(): void {
   deferredCasters.length = 0;
 }
 
-/**
- * A swapping mesh's new variant failed to compile, every fallback included: none of the Effects it requested is still
- * compiling and one failed. Babylon then draws the previous Effect for good, so the swap is over; it is reported once.
- */
-function swapFailed(material: Material): boolean {
+/** None of the Effects the probed mesh requested is still compiling and one failed with every fallback: that one. */
+function failedRequest(): Effect | undefined {
   let failed: Effect | undefined;
   for (const effect of meshRequests) {
     if (effect.isReady()) continue;
-    if (!effect.getCompilationError() || !effect.allFallbacksProcessed()) return false;
+    if (!effect.getCompilationError() || !effect.allFallbacksProcessed()) return undefined;
     failed = effect;
   }
-  if (!failed) return false;
-  if (!reportedFailures.has(failed)) {
-    reportedFailures.add(failed);
-    console.error(`[render] Material "${material.name}" keeps drawing its previous shader variant: its new variant failed to compile. ${failed.getCompilationError()}`);
+  return failed;
+}
+
+function reportFailure(effect: Effect, message: string): void {
+  if (reportedFailures.has(effect)) return;
+  reportedFailures.add(effect);
+  console.error(`[render] ${message} ${effect.getCompilationError()}`);
+}
+
+/**
+ * A swapping mesh's new variant failed to compile, every fallback included. Babylon then draws the previous Effect
+ * for good, so the swap is over; it is reported once.
+ */
+function swapFailed(material: Material): boolean {
+  const failed = failedRequest();
+  if (failed) reportFailure(failed, `Material "${material.name}" keeps drawing its previous shader variant: its new variant failed to compile.`);
+  return failed !== undefined;
+}
+
+/** Whether every submesh of `mesh` has a ready Effect in the current pass: something it can draw while it swaps. */
+export function drawsSomething(mesh: AbstractMesh): boolean {
+  if (!mesh.subMeshes?.length) return true;
+  for (const part of mesh.subMeshes) {
+    const material = part.getMaterial();
+    if (!material) continue;
+    const wrapper = material._storeEffectOnSubMeshes ? part._drawWrapperOverride ?? part._getDrawWrapper() : material._getDrawWrapper();
+    if (!wrapper?.effect?.isReady()) return false;
   }
   return true;
 }
@@ -237,6 +258,10 @@ function swapFailed(material: Material): boolean {
  * `probeVariantSwaps(true, …)` (a world view's steady frames), and only where its previous Effect binds by its own
  * light layout (`bindsAsPreviousEffect`); everywhere else it waits for its new variant. A swap whose new variant
  * failed to compile is over: the mesh is ready, drawing its previous Effect.
+ *
+ * A mesh with nothing to draw meanwhile (a spawn, a changed Material) is hidden instead inside such a probe
+ * (`hideUntilReady`): no pass draws it until a probe finds it ready, which reveals it, and the probe passes. A hidden
+ * mesh whose variant failed to compile stays hidden, reported once.
  */
 export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   const scene = mesh.getScene();
@@ -282,9 +307,20 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       if (!material._storeEffectOnSubMeshes)
         material._getDrawWrapper()._wasPreviouslyReady = false;
     }
+    const tolerated = variantSwapsTolerated();
+    // Before the probe: a spawn's first request sets its still-compiling Effect on the submesh.
+    const hideable = tolerated && (isRevealPending(mesh) || !drawsSomething(mesh));
     probedMesh = mesh;
-    if (variantSwapsTolerated()) deferFirstDrawCasters(mesh);
-    if (!collectEffectRequests(scene.getEngine(), meshRequests, probeMesh)) return false;
+    if (tolerated) deferCasterChecks(mesh);
+    if (!collectEffectRequests(scene.getEngine(), meshRequests, probeMesh)) {
+      if (!hideable) return false;
+      hideUntilReady(mesh);
+      const failed = failedRequest();
+      if (failed) reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
+      else noteVariantSwap();
+      return true;
+    }
+    revealMesh(mesh);
     // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
     for (const part of mesh.subMeshes ?? []) {
       const material = part.getMaterial();
@@ -297,7 +333,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     }
     return true;
   } finally {
-    restoreFirstDrawCasters();
+    restoreCasterChecks();
     probedMesh = undefined;
     meshRequests.clear();
     for (const [material, [everyCall, onlyOnce]] of states) {
@@ -413,25 +449,25 @@ export function isSceneFrameReady(
     for (const check of (scene as unknown as SceneReadinessInternals)._isReadyChecks) {
       if (!check.isReady()) ready = false;
     }
-    // A map that has not drawn yet waits for its casters without holding a tolerant probe (`deferFirstDrawCasters`).
-    const firstDraws = firstDrawMaps;
-    firstDraws.clear();
+    // A shadow map waits for its casters without holding a tolerant probe (`deferCasterChecks`).
+    const shadowMaps = probedShadowMaps;
+    shadowMaps.clear();
     for (const light of scene.lights) {
       if (admitted && !light.isEnabled()) continue;
       for (const generator of light.getShadowGenerators()?.values() ?? []) {
         const map = generator.getShadowMap();
         if (!map) continue;
         renderTargets.add(map);
-        if (awaitsFirstDraw(generator as ShadowGenerator)) firstDraws.add(map);
+        shadowMaps.add(map);
       }
     }
     for (const target of renderTargets) {
       const owner = target.getScene() ?? scene;
       if (withSceneReadinessState(owner, () => target.isReadyForRendering())) continue;
-      if (variantSwapsTolerated() && firstDraws.has(target)) noteVariantSwap();
+      if (variantSwapsTolerated() && shadowMaps.has(target)) noteVariantSwap();
       else ready = false;
     }
-    firstDraws.clear();
+    shadowMaps.clear();
     return ready;
   });
 }

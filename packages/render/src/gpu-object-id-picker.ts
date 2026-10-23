@@ -4,6 +4,7 @@ import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { pickCandidates } from "./gpu-pick-candidates";
+import { isRevealPending } from "./reveal-pending";
 import { onSceneReadinessDirty, pinFloatingOrigin } from "./scene-readiness-signal";
 
 /** Mesh hit by a GPU pick; `null` is background, `undefined` means use CPU picking. */
@@ -13,10 +14,10 @@ const READY_TIMEOUT_MS = 1000;
 const READY_POLL_MS = 16;
 const PICK_TARGET_SIZE = { width: 1, height: 1 } as const;
 
-/** Same eligibility as Babylon's default `scene.pick` predicate. */
+/** Same eligibility as Babylon's default `scene.pick` predicate, without a mesh a world view does not draw yet. */
 export function gpuPickableMeshes(scene: Scene): AbstractMesh[] {
   return scene.meshes.filter(
-    (mesh) => mesh.isPickable && mesh.isVisible && mesh.isEnabled() && mesh.getTotalVertices() > 0,
+    (mesh) => mesh.isPickable && mesh.isVisible && mesh.isEnabled() && mesh.getTotalVertices() > 0 && !isRevealPending(mesh),
   );
 }
 

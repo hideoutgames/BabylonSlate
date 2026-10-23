@@ -30,6 +30,7 @@
 import {
   ArcRotateCamera,
   DirectionalLight,
+  Mesh,
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
@@ -62,6 +63,7 @@ import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { awaitsFirstDraw } from "./shadow-first-draw";
+import { isRevealPending } from "./reveal-pending";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -578,12 +580,51 @@ describe("compile holds after the first frame", () => {
   });
 
   it.each(MODELS)("a spawned actor uses a Material no mesh drew before: %s", async (model) => {
-    // A mesh with no previous Effect has nothing to draw meanwhile.
+    // A mesh with no previous Effect has nothing to draw meanwhile: only it is left out, and the view keeps drawing.
     const world = playWorld(model, [], ["surface-a"]);
-    expectRecovers(await measure(world, () => {
+    const drawn = new Set<string>();
+    const render = Mesh.prototype.render;
+    vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
+      drawn.add(this.name);
+      return render.apply(this, args);
+    });
+    const barrel = () => world.handle.scene.getMeshByName("actor-20");
+    let hiddenWhilePending = true;
+    let pendingFrames = 0;
+    const record = await measure(world, () => {
       world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
-    }));
+      drawn.clear();
+    }, undefined, () => {
+      // Only a pending compile leaves the mesh without a variant; a synchronous link draws it in its first frame.
+      const mesh = barrel();
+      if (model === "parallel") {
+        pendingFrames++;
+        hiddenWhilePending &&= !!mesh && isRevealPending(mesh) && !drawn.has(mesh.name);
+      }
+      drawn.clear();
+    });
+    for (let index = 0; index < 2; index++) await world.frame();
+    const mesh = barrel();
+    const spawned = {
+      hiddenWhilePending: hiddenWhilePending && (model !== "parallel" || pendingFrames > 0),
+      shown: !!mesh && !isRevealPending(mesh) && drawn.has(mesh.name),
+      material: mesh?.material?.getClassName(),
+    };
+    expect(spawned, JSON.stringify(record)).toEqual({ hiddenWhilePending: true, shown: true, material: "NodeMaterial" });
+    if (model === "webgpu") {
+      // WebGPU's Effects are ready once created: the new mesh's draw still waits for its render pipeline (pipeline
+      // swaps are separate work).
+      expect(record.reasons.every((reason) => reason.endsWith("Render pipelines are compiling.")), JSON.stringify(record)).toBe(true);
+      expectRecovers(record);
+    } else {
+      expect({
+        compiled: record.litEffects > 0, heldFrames: record.heldFrames, holdReported: record.holdReported,
+        holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
+      }, JSON.stringify(record)).toEqual({
+        compiled: true, heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
+      });
+    }
   });
 
   it("a variant change on WebGPU recovers once its pipeline exists", async () => {

@@ -15,7 +15,8 @@ import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/T
 import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
-import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { drawsSomething, isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { hideUntilReady, isRevealPending } from "./reveal-pending";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
@@ -127,8 +128,17 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       this._renderer.customIsReadyFunction = (mesh, rate, preWarm) => {
         if (previous && !previous(mesh, rate, preWarm)) return false;
         if (this.neverDraws?.(mesh) === true) return true;
+        const spawn = variantSwapsTolerated() && (isRevealPending(mesh) || !drawsSomething(mesh));
         const colour = isMeshFrameReady(mesh);
+        // A hidden mesh draws nothing, its depth pre-pass included.
+        if (colour && isRevealPending(mesh)) return true;
         if (colour && depthReady(mesh)) return true;
+        // A mesh with nothing drawn yet stays hidden until its depth pre-pass is ready too.
+        if (colour && spawn) {
+          hideUntilReady(mesh);
+          noteVariantSwap();
+          return true;
+        }
         // The scan stops here. A parallel-compile driver links this mesh's depth pre-pass, which an unready colour
         // variant holds back, and the next meshes' variants meanwhile.
         requestCompilesAhead(engine, readinessScanMeshes(this._renderer, this._frameGraph.scene), mesh, this.requestedAhead,
@@ -452,10 +462,11 @@ export class ManagedShadowsTask extends FrameGraphTask {
         continue;
       }
       if (withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
-      // A map that has not drawn yet samples neutrally (lit): a steady frame draws without it while its casters' depth
-      // variants compile, and it draws on the first frame they are ready, as a swapping Material adopts its new
-      // variant. Every other probe waits for it.
-      if (variantSwapsTolerated() && awaitsFirstDraw(generator)) {
+      // A steady frame never waits for a caster's depth variant. A map that has not drawn yet samples neutrally (lit)
+      // and draws on the first frame every caster is ready (`record`), as a swapping Material adopts its new variant;
+      // a drawn map keeps drawing without the caster (Babylon skips it and redraws the map until it is ready, a
+      // spawned or newly revealed caster). Every other probe waits for it.
+      if (variantSwapsTolerated()) {
         noteVariantSwap();
         continue;
       }
