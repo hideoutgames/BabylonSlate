@@ -141,10 +141,17 @@ async function captureReflections(
   const pair = async (material: Material, mode: RenderMode, celReflections: boolean) => {
     floor.material = material;
     Object.assign(render, { mode, celReflections });
-    effects.reflections.enabled = false;
-    const off = await draw();
-    effects.reflections.enabled = true;
-    const on = await draw();
+    const capture = async (enabled: boolean) => {
+      effects.reflections.enabled = enabled;
+      try {
+        return await draw();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${material.name}, ${mode}${celReflections ? " with CEL reflections" : ""}, reflections ${enabled ? "on" : "off"}: ${message}`);
+      }
+    };
+    const off = await capture(false);
+    const on = await capture(true);
     return { off, on };
   };
   const metal = new PBRMaterial("Native Metal Floor", scene);

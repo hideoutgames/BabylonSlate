@@ -98,9 +98,9 @@ describe("CEL settings persistence and inheritance", () => {
   it("keeps CEL reflections off by default, persists the opt-in and overrides it per scene", () => {
     expect(normalizeCelShadingSettings(undefined).reflectionsEnabled).toBe(false);
     const project = normalizeProjectSettings(JSON.parse(JSON.stringify(normalizeProjectSettings({
-      render: { mode: "cel", cel: { reflectionsEnabled: true } },
+      render: { mode: "cel", cel: normalizeCelShadingSettings({ reflectionsEnabled: true }) },
     }))));
-    expect(project.render.cel.reflectionsEnabled).toBe(true);
+    expect(project.render.cel?.reflectionsEnabled).toBe(true);
     expect(resolveCelShadingSettings(project.render.cel, normalizeSceneSettings({}).celShading).reflectionsEnabled).toBe(true);
     const scene = normalizeSceneSettings({ celShading: { reflectionsEnabled: false } });
     expect(resolveCelShadingSettings(project.render.cel, scene.celShading).reflectionsEnabled).toBe(false);

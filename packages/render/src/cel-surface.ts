@@ -35,10 +35,7 @@ export function installCelSurface(
 ): void {
   if (plan.shadingModel === "unlit") return;
   const state = sceneRenderingSettings(material.getScene());
-  // Flat and reflective CEL outputs. Only the reflective one reaches the metallic and roughness inputs, whose
-  // textures would otherwise bind on every CEL draw while no reflection reads them.
-  let flat: NodeMaterialBlock | undefined;
-  let reflective: NodeMaterialBlock | undefined;
+  let cel: CelSurface | undefined;
   let active = pbr;
   let disposed = false;
   let queued = false;
@@ -58,15 +55,18 @@ export function installCelSurface(
       }
       return;
     }
-    const next = state.mode !== "cel"
-      ? pbr
-      : state.celReflections
-        ? (reflective ??= createCelSurface(material.name, created, plumbing, outputPoint, true))
-        : (flat ??= createCelSurface(material.name, created, plumbing, outputPoint, false));
-    if (active === next) return;
-    material.removeOutputNode(active);
-    material.addOutputNode(next);
-    active = next;
+    const useCel = state.mode === "cel";
+    if (useCel && !cel)
+      cel = createCelSurface(material.name, created, plumbing, outputPoint);
+    const next = useCel ? cel!.output : pbr;
+    // A NodeMaterial allows one CelLightBlock, so reflections change the one CEL surface's connections.
+    const reflectivityChanged = useCel && cel!.setReflective(state.celReflections);
+    if (active === next && !reflectivityChanged) return;
+    if (active !== next) {
+      material.removeOutputNode(active);
+      material.addOutputNode(next);
+      active = next;
+    }
     if (!rebuild) return;
     const frozen = material.isFrozen;
     material.unfreeze();
@@ -88,14 +88,18 @@ export function installCelSurface(
   });
 }
 
+interface CelSurface {
+  output: NodeMaterialBlock;
+  /** Connects or disconnects the reflectivity inputs; true when that changed the graph. */
+  setReflective(reflective: boolean): boolean;
+}
+
 function createCelSurface(
   name: string,
   created: NodeMaterialBlock[],
   plumbing: MaterialPlumbing,
   outputPoint: OutputPoint,
-  reflective: boolean,
-): NodeMaterialBlock {
-  if (reflective) name = `${name}_reflective`;
+): CelSurface {
   const lighting = new CelLightBlock(`${name}_cel`);
   const fragment = new GeometrySurfaceOutputBlock(`${name}_celFragment`);
   connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${name}_geometryNormal`, false), created);
@@ -123,13 +127,6 @@ function createCelSurface(
     created.push(fallback);
     base = fallback.output;
     toDisplay(fallback.output, "fallbackDisplay").connectTo(lighting.diffuseColor);
-  }
-  if (reflective) {
-    // The PBR surface's reflectivity encoding (geometry-surface-output-block.ts), so a CEL surface reflects as the
-    // same Material does in PBR. The linear base color, not the display one CEL lights with.
-    base.connectTo(fragment.geometryBaseColor);
-    outputPoint("metallic", `${name}_celMetallic`, false)?.connectTo(fragment.geometryMetallic);
-    outputPoint("roughness", `${name}_celRoughness`, false)?.connectTo(fragment.geometryRoughness);
   }
   const normal = outputPoint("normal", `${name}_celNormal`, false);
   if (normal) {
@@ -167,5 +164,26 @@ function createCelSurface(
   // LightBlock's output is display-space, with no PBR or image-processing block.
   fragment.convertToGammaSpace = false;
   fragment.convertToLinearSpace = false;
-  return fragment;
+  // Reflectivity uses the PBR surface's encoding (geometry-surface-output-block.ts), so a CEL surface reflects as its
+  // Material does in PBR, from the linear base color rather than the display one CEL lights with. Connected only
+  // while reflections run: metallic and roughness textures would otherwise bind on every flat CEL draw.
+  const baseColor = base;
+  let channels: [NodeMaterialConnectionPoint | null, NodeMaterialConnectionPoint][] | undefined;
+  let reflective = false;
+  const setReflective = (next: boolean): boolean => {
+    if (next === reflective) return false;
+    reflective = next;
+    channels ??= [
+      [baseColor, fragment.geometryBaseColor],
+      [outputPoint("metallic", `${name}_celMetallic`, false), fragment.geometryMetallic],
+      [outputPoint("roughness", `${name}_celRoughness`, false), fragment.geometryRoughness],
+    ];
+    for (const [source, input] of channels) {
+      if (!source) continue;
+      if (next) source.connectTo(input);
+      else source.disconnectFrom(input);
+    }
+    return true;
+  };
+  return { output: fragment, setReflective };
 }

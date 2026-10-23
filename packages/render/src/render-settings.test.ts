@@ -4,7 +4,7 @@ import {
   Scene, ShadowGenerator, Vector3,
 } from "@babylonjs/core";
 import {
-  DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
+  DEFAULT_RENDER_EFFECTS, normalizeCelShadingSettings, normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
 } from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
@@ -206,7 +206,7 @@ it("tells CEL surfaces once per change whether reflections run, after the plan i
   const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
   state.qualityOverrides = qualityPresetPatch("high");
   // Entering CEL with the opt-in on is one change: a surface rebuilds once, already reflective.
-  updateSceneRenderingSettings(scene, { mode: "cel", cel: { reflectionsEnabled: true }, effects });
+  updateSceneRenderingSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({ reflectionsEnabled: true }), effects });
   expect(seen).toEqual([["cel", true, true]]);
   updateSceneRenderingSettings(scene);
   expect(seen).toHaveLength(1);
@@ -225,7 +225,7 @@ it("tells CEL surfaces once per change whether reflections run, after the plan i
   expect(seen.slice(-2)).toEqual([["cel", true, true], ["cel", false, false]]);
   setSceneEffectsEnabled(scene, true);
   // PBR reflections never mark CEL surfaces reflective.
-  updateSceneRenderingSettings(scene, { mode: "pbr", cel: { reflectionsEnabled: true }, effects });
+  updateSceneRenderingSettings(scene, { mode: "pbr", cel: normalizeCelShadingSettings({ reflectionsEnabled: true }), effects });
   expect(seen.at(-1)).toEqual(["pbr", false, true]);
   // Without the opt-in CEL draws no reflections, so the quality tier skips none.
   updateSceneRenderingSettings(scene, { mode: "cel", effects });
