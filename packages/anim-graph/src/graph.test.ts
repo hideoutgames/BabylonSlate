@@ -85,6 +85,29 @@ describe("anim graph evaluator", () => {
     expect(next.normalisedTime).toBe(0);
   });
 
+  it("reports the transition it takes, a self-transition included, and none while no rule passes", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({ ...doc.states[0]!, id: "run", name: "Run" });
+    doc.transitions.push(
+      { id: "restart", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph() },
+      { id: "idle-to-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 1, ruleGraph: createDefaultTransitionRuleGraph() },
+    );
+    const closed = { enter: false, exit: true };
+    const open = { enter: true, exit: true };
+    const taken: string[] = [];
+    const transitionTaken = (transition: { id: string }) => taken.push(transition.id);
+    const idle = evaluateAnimGraph(doc, null, 0.1, {
+      transitionRules: { restart: closed, "idle-to-run": closed }, transitionTaken,
+    });
+    expect(taken).toEqual([]);
+    const restarted = evaluateAnimGraph(doc, idle, 0.1, {
+      transitionRules: { restart: open, "idle-to-run": closed }, transitionTaken,
+    });
+    expect(restarted).toMatchObject({ stateId: "idle", timeMs: 0 });
+    evaluateAnimGraph(doc, restarted, 0.1, { transitionRules: { restart: closed, "idle-to-run": open }, transitionTaken });
+    expect(taken).toEqual(["restart", "idle-to-run"]);
+  });
+
   it("evaluates a replaced document from its own transitions", () => {
     const doc = createDefaultAnimGraph();
     doc.states.push({

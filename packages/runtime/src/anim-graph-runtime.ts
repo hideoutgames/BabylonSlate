@@ -10,14 +10,18 @@ import {
   evaluateAnimGraph,
   type AnimEvalState,
   type AnimGraphDocument,
+  type AnimTransition,
 } from "@haptic/anim-graph";
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace } from "./script-debug";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 
 type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
+/** Stops on a state or transition when it has a breakpoint. */
+type StateMachineHit = (id: string, event: "entered" | "taken") => void;
 
 interface AnimGraphRuntimeHost {
   world(): World;
@@ -31,6 +35,8 @@ interface AnimGraphRuntimeHost {
   playAnimationOwns(slotId: number): boolean;
   scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule">;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
+  /** The session's node breakpoints, State Machines' included. */
+  breakpoints(): ScriptBreakpoints;
   emit(command: CommandMessage): void;
 }
 
@@ -240,6 +246,28 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     }
   }
 
+  /** Stops on `graphGuid`'s states and transitions as `component` runs them, or null when it has no breakpoints. */
+  private stateMachineBreakpoints(graphGuid: string, component: ActorComponent, actor: Actor): StateMachineHit | null {
+    const breakpoints = this.host.breakpoints().graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
+    if (!breakpoints) return null;
+    return (id, event) => {
+      if (breakpoints.has(id)) breakpoints.hit(id, "", component, { owner: actor, event });
+    };
+  }
+
+  /** In order: the state a new evaluation started in, then the transition it took and the state that entered. */
+  private reportStateBreakpoints(
+    hit: StateMachineHit,
+    previous: AnimEvalState | null,
+    next: AnimEvalState,
+    taken: AnimTransition | undefined,
+  ): void {
+    if (!previous) hit(taken?.fromStateId ?? next.stateId, "entered");
+    if (!taken) return;
+    hit(taken.id, "taken");
+    hit(taken.toStateId, "entered");
+  }
+
   private tickActor(actor: Actor, dtSeconds: number): void {
     const slotId = this.host.slot(actor);
     // A graph skipped this tick (owner not admitted, no slot, or a Behaviour
@@ -263,6 +291,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       this.bindGraph(evalKey, guid);
       if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
       this.seedVariables(component, document);
+      const hit = this.stateMachineBreakpoints(guid, component, actor);
       const jumpTo = this.pendingJumpByComponent.get(evalKey);
       if (jumpTo) {
         this.pendingJumpByComponent.delete(evalKey);
@@ -293,6 +322,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
             blendSeconds: 0,
             loopCount: 0,
           });
+          hit?.(jumped.id, "entered");
         }
       }
       const extras = {
@@ -318,6 +348,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         extras,
       );
       const previous = this.evalByComponent.get(evalKey) ?? null;
+      let taken: AnimTransition | undefined;
       const next = evaluateAnimGraph(
         document,
         previous,
@@ -329,9 +360,11 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
               actor,
               { variableStore: component, animFacts: facts },
             ),
+          transitionTaken: hit ? (transition) => { taken = transition; } : undefined,
         },
       );
       this.evalByComponent.set(evalKey, next);
+      if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
       if (component === this.debugComponent) this.reportStateMachine(guid, document, previous, next);
       const clip = clipForState(document, next.stateId);
       if (clip?.kind === "sprite" && clip.assetGuid) {
