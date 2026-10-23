@@ -96,7 +96,8 @@ class EnvironmentLighting {
   private skyboxes: AbstractMesh[] = [];
   private skyboxesStale = true;
   private scannedMeshes = 0;
-  private skyMatrixKey = "";
+  /** Environment Rotation and sky rotation the view's matrix was built from; NaN forces a rebuild. */
+  private readonly skyMatrixInputs = [NaN, NaN, NaN, NaN, NaN];
   private readonly skyMatrix = new Matrix();
   private readonly scene: Scene;
 
@@ -287,12 +288,16 @@ class EnvironmentLighting {
     return this.skyboxes.find((mesh) => !mesh.isDisposed() && mesh.isEnabled() && mesh.isVisible);
   }
 
-  /** True when the view's matrix changed. */
+  /** True when the view's matrix changed. Runs every frame, so it allocates nothing. */
   private applySkyRotation(rotationYDegrees: number): boolean {
     const rotation = this.visibleSky()?.absoluteRotationQuaternion ?? null;
-    const key = `${rotationYDegrees}:${rotation ? `${rotation.x},${rotation.y},${rotation.z},${rotation.w}` : ""}`;
-    if (key === this.skyMatrixKey && this.view?.getReflectionTextureMatrix() === this.skyMatrix) return false;
-    this.skyMatrixKey = key;
+    const inputs = this.skyMatrixInputs;
+    const x = rotation?.x ?? 0, y = rotation?.y ?? 0, z = rotation?.z ?? 0, w = rotation?.w ?? 1;
+    if (
+      inputs[0] === rotationYDegrees && inputs[1] === x && inputs[2] === y && inputs[3] === z && inputs[4] === w &&
+      this.view?.getReflectionTextureMatrix() === this.skyMatrix
+    ) return false;
+    inputs[0] = rotationYDegrees; inputs[1] = x; inputs[2] = y; inputs[3] = z; inputs[4] = w;
     skyboxEnvironmentMatrix(rotationYDegrees, rotation, this.skyMatrix);
     this.view!.setReflectionTextureMatrix(this.skyMatrix);
     return true;
@@ -342,7 +347,7 @@ class EnvironmentLighting {
       this.scene.environmentTexture = null;
     this.view?.dispose();
     this.view = null;
-    this.skyMatrixKey = "";
+    this.skyMatrixInputs.fill(NaN);
     this.sourceLease?.release();
     this.source = null;
     this.sourceLease = undefined;

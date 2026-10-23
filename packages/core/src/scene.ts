@@ -530,9 +530,10 @@ function normalizeEnvironmentSource(
 
 /** The environment texture a scene draws with, or null when it uses none or its Skybox. */
 export function sceneEnvironmentTextureGuid(
-  settings: Pick<SceneSettings, "environmentSource" | "environmentTextureGuid">,
+  settings: Pick<SceneSettings, "environmentTextureGuid"> & { environmentSource?: EnvironmentSource },
 ): string | null {
-  return settings.environmentSource === "texture" ? settings.environmentTextureGuid : null;
+  // A source missing from unnormalized data follows the guid, as normalization does.
+  return (settings.environmentSource ?? "texture") === "texture" ? settings.environmentTextureGuid : null;
 }
 
 function asNullableString(value: unknown): string | null {
