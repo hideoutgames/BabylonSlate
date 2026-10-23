@@ -17,6 +17,7 @@ import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMes
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
+import { materialSceneCopyUse, materialUsesWaterFields, setMeshWaterNodeSurface, type WaterNodeSurface } from "./water-node-blocks";
 import { materialHasWaterWaves } from "./water-waves-block";
 
 /**
@@ -88,8 +89,17 @@ type Surface = {
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
   /** The culling bounds' padding is stale (a wave or blend change): `updateBounds` re-pads at the next placement. */
   boundsDirty: boolean;
-  /** Counted in `copyIntents`: a built-in surface that is enabled, itself and through its ancestors. */
-  copyCounted: boolean;
+  /**
+   * What `copyIntents` counts for this surface (`COPY_REFRACTS`, `COPY_REFLECTS`): its scene-copy use while it is enabled,
+   * itself and through its ancestors; 0 otherwise.
+   */
+  copyCounted: number;
+  /**
+   * Custom Material water: what its graph's water nodes read (`setMeshWaterNodeSurface`), and its scene-copy use
+   * (`materialSceneCopyUse`, by its graph alone). Null and 0 for built-in water.
+   */
+  nodes: WaterNodeSurface | null;
+  nodeCopyUse: number;
   /** Whether the mesh was enabled (with its ancestors) when the water update last saw it; null before the first update. */
   seenEnabled: boolean | null;
   /** Process-unique id: blending orders and identifies surfaces by it. */
@@ -1427,32 +1437,44 @@ function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number
 const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9 || s.blend?.restVaries === true;
 
 /**
- * Whether any live built-in water in `scene` (a custom material has no WaterMaterialPlugin) has an asset that samples
- * the scene copy under the given device-effective features: Refraction above zero while refraction runs, or Object
- * Reflections while a screen-space march runs. The scene-level form of `waterMeshSamplesSceneCopy`; O(1).
+ * Whether any live water in `scene` samples the scene copy under the given device-effective features (`copyUse`):
+ * refraction-style reads while refraction runs, or object reflections while a screen-space march runs. The scene-level
+ * form of `waterMeshSamplesSceneCopy`; O(1).
  */
 export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, screenSpace: boolean): boolean {
   const intents = copyIntents.get(scene);
   return intents !== undefined && ((refraction && intents.refracting > 0) || (screenSpace && intents.reflecting > 0));
 }
 
+const COPY_REFRACTS = 1, COPY_REFLECTS = 2;
 /**
- * Counts a built-in surface's copy intent only while it is enabled, itself and through its ancestors (a deactivated
- * actor disables its children without notifying them, so the water update checks every frame: O(1), no allocation).
- * Disabled water therefore keeps no copy, own pair or ledger charge planned; enabling it re-plans the view's graph.
+ * A surface's scene-copy use: built-in water's asset (Refraction above 0, Object Reflections), a Custom Material's water
+ * nodes (Water Scene Color and Water Depth Fade refract; Water Reflection marches with the asset's Object Reflections).
  */
-function syncCopyIntent(scene: Scene, s: Surface): void {
-  const counted = s.plugin !== null && !s.mesh.isDisposed() && s.mesh.isEnabled();
-  if (counted === s.copyCounted) return;
-  s.copyCounted = counted;
-  countCopyIntent(scene, s.water, counted ? 1 : -1);
+function copyUse(s: Surface): number {
+  if (!s.plugin) return s.nodeCopyUse & (COPY_REFRACTS | (s.water.objectReflections ? COPY_REFLECTS : 0));
+  return (s.water.refraction > 0 ? COPY_REFRACTS : 0) | (s.water.objectReflections ? COPY_REFLECTS : 0);
 }
 
-function countCopyIntent(scene: Scene, water: WaterDefinition, delta: 1 | -1): void {
+/**
+ * Counts a surface's copy intent only while it is enabled, itself and through its ancestors (a deactivated actor
+ * disables its children without notifying them, so the water update checks every frame: O(1), no allocation), and
+ * follows an asset or Custom Material edit. Disabled water therefore keeps no copy, own pair or ledger charge planned;
+ * enabling it re-plans the view's graph.
+ */
+function syncCopyIntent(scene: Scene, s: Surface): void {
+  const counted = !s.mesh.isDisposed() && s.mesh.isEnabled() ? copyUse(s) : 0;
+  if (counted === s.copyCounted) return;
+  countCopyIntent(scene, s.copyCounted, -1);
+  countCopyIntent(scene, counted, 1);
+  s.copyCounted = counted;
+}
+
+function countCopyIntent(scene: Scene, use: number, delta: 1 | -1): void {
   let intents = copyIntents.get(scene);
   if (!intents) { intents = { refracting: 0, reflecting: 0 }; copyIntents.set(scene, intents); }
-  if (water.refraction > 0) intents.refracting = Math.max(0, intents.refracting + delta);
-  if (water.objectReflections) intents.reflecting = Math.max(0, intents.reflecting + delta);
+  if (use & COPY_REFRACTS) intents.refracting = Math.max(0, intents.refracting + delta);
+  if (use & COPY_REFLECTS) intents.reflecting = Math.max(0, intents.reflecting + delta);
 }
 
 /**
@@ -1465,14 +1487,17 @@ export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
 }
 
 /**
- * Whether `mesh` is built-in water whose asset can sample the view's scene copy: Refraction above zero while
- * refraction runs, or Object Reflections while a screen-space march runs. A per-frame check: no allocation.
+ * Whether `mesh` is water that can sample the view's scene copy: built-in water whose asset has Refraction above zero
+ * while refraction runs, or Object Reflections while a screen-space march runs, or alpha-blended Custom Material water
+ * whose water nodes read the copy (`copyUse`; an opaque Material draws before the copy exists). A per-frame check: no
+ * allocation.
  */
 export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolean, screenSpace: boolean): boolean {
   if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
   const surface = surfaceByMesh.get(mesh);
-  if (!surface?.plugin) return false;
-  return (refraction && surface.water.refraction > 0) || (screenSpace && surface.water.objectReflections);
+  if (!surface || (!surface.plugin && (!surface.nodeCopyUse || !mesh.material?.needAlphaBlendingForMesh(mesh)))) return false;
+  const use = copyUse(surface);
+  return (refraction && (use & COPY_REFRACTS) !== 0) || (screenSpace && (use & COPY_REFLECTS) !== 0);
 }
 
 /** The live body of a built water mesh, or null for other meshes. */
@@ -1556,6 +1581,51 @@ function syncCustomMaterial(s: Surface): void {
   if (s.plugin || s.mesh.material === s.material) return;
   s.material = s.mesh.material;
   setSurfaceGpu(s, materialHasWaterWaves(s.material));
+  syncNodeSurface(s);
+}
+
+/**
+ * What a Custom Material's water nodes read follows its graph: its scene-copy use, and the terrain and contact fields,
+ * built the first time a graph reads them (Water Foam, Water Depth Fade) and kept for the surface's life.
+ */
+function syncNodeSurface(s: Surface): void {
+  if (!s.nodes) return;
+  const use = materialSceneCopyUse(s.material);
+  s.nodeCopyUse = (use.refraction ? COPY_REFRACTS : 0) | (use.reflection ? COPY_REFLECTS : 0);
+  if (!s.field && materialUsesWaterFields(s.material)) attachFields(s);
+  s.nodes.field = s.field;
+  s.nodes.contacts = s.contacts;
+}
+
+/** Builds the surface's terrain and contact fields (built-in water always has them; see `syncNodeSurface`). */
+function attachFields(surface: Surface): void {
+  const { mesh, water, body, plugin } = surface, scene = mesh.getScene();
+  const fieldSurface: WaterFieldSurface = {
+    mesh, unbounded: body.kind === "global",
+    // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
+    get contactRange() { return contactRange(water); },
+    // The envelope bounds |H| exactly; the margin keeps the outermost contact layers off the clamp.
+    get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
+    // Contact Resolution caps the contact texture's cells per side; a change rebuilds it.
+    get contactCells() { return sceneWaterQualityDeviceClamp(scene).quality.contactResolution; },
+    // A blending surface discards the water a neighbour owns (the share margin is negative there), and what lies
+    // beyond the blended shoreline: contacts in either are never seen. A point the blend cannot place counts as drawn.
+    get drawStamp() { return sceneBlends.get(scene)?.index.revision ?? 0; },
+    draws: (x, z) => {
+      const state = surface.blend ? sceneBlends.get(scene) : undefined;
+      if (!state || !surface.blend) return true;
+      return !evaluateWaterBlend(state.index, surface.blend.self, x, surface.world.m[13]!, z, fieldSample) || (fieldSample.margin >= 0 && fieldSample.union >= 0);
+    },
+    surfaceY: (x, z) => waterSurfaceY(surface, x, z),
+    get restVaries() { return restVaries(surface); },
+    restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
+  };
+  const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
+  surface.field = field; surface.contacts = contacts;
+  if (plugin) { plugin.field = field; plugin.contacts = contacts; }
+  field.update(true);
+  contacts.update(performance.now(), true);
+  mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
 }
 
 /**
@@ -1576,10 +1646,9 @@ export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   const water = surface.water, next = normalizeWaterDefinition(input);
   if (next.style !== water.style || next.materialGuid !== water.materialGuid) return false;
   const scene = mesh.getScene(), range = contactRange(water);
-  // The copy intent counts this surface by its asset's Refraction and Object Reflections.
-  if (surface.copyCounted) countCopyIntent(scene, water, -1);
   Object.assign(water, next);
-  if (surface.copyCounted) countCopyIntent(scene, water, 1);
+  // The copy intent counts this surface by its asset's Refraction and Object Reflections.
+  syncCopyIntent(scene, surface);
   if (surface.plugin && mesh.material instanceof PBRMaterial) {
     applyWaterMaterialScalars(mesh.material, water);
     surface.plugin.definitionChanged();
@@ -1671,7 +1740,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
-    copyCounted: false, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
+    copyCounted: 0, nodes: null, nodeCopyUse: 0, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
     blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
   let entries = surfaces.get(scene);
@@ -1689,37 +1758,15 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.onDisposeObservable.addOnce(() => {
     entries.delete(surface);
     markBlendDirty(surface);
-    if (surface.copyCounted) countCopyIntent(scene, water, -1);
-    surface.copyCounted = false;
+    countCopyIntent(scene, surface.copyCounted, -1);
+    surface.copyCounted = 0;
   });
   refreshSurface(surface, sceneWaterTime(scene));
-  if (plugin) {
-    const fieldSurface: WaterFieldSurface = {
-      mesh, unbounded: body.kind === "global",
-      // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
-      get contactRange() { return contactRange(water); },
-      // The envelope bounds |H| exactly; the margin keeps the outermost contact layers off the clamp.
-      get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
-      // Contact Resolution caps the contact texture's cells per side; a change rebuilds it.
-      get contactCells() { return sceneWaterQualityDeviceClamp(scene).quality.contactResolution; },
-      // A blending surface discards the water a neighbour owns (the share margin is negative there), and what lies
-      // beyond the blended shoreline: contacts in either are never seen. A point the blend cannot place counts as drawn.
-      get drawStamp() { return sceneBlends.get(scene)?.index.revision ?? 0; },
-      draws: (x, z) => {
-        const state = surface.blend ? sceneBlends.get(scene) : undefined;
-        if (!state || !surface.blend) return true;
-        return !evaluateWaterBlend(state.index, surface.blend.self, x, surface.world.m[13]!, z, fieldSample) || (fieldSample.margin >= 0 && fieldSample.union >= 0);
-      },
-      surfaceY: (x, z) => waterSurfaceY(surface, x, z),
-      get restVaries() { return restVaries(surface); },
-      restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
-    };
-    const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
-    surface.field = field; surface.contacts = contacts;
-    plugin.field = field; plugin.contacts = contacts;
-    field.update(true);
-    contacts.update(performance.now(), true);
-    mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
+  if (plugin) attachFields(surface);
+  else {
+    surface.nodes = { water, field: null, contacts: null };
+    setMeshWaterNodeSurface(mesh, surface.nodes);
+    syncNodeSurface(surface);
   }
   return mesh;
 }

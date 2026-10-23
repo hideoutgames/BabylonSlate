@@ -4,6 +4,7 @@ import { AssetRegistry, createDefaultMigrationRegistry, encodeAssetDocument, pro
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createDefaultWaterDefinition, createSceneStreamingActor } from "@haptic/core";
 import { mergeEngineTypeSchemas } from "@haptic/scripting";
+import { createDefaultMaterialDocument, createWaterMaterialDocument } from "@haptic/shader-graph";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -2366,6 +2367,13 @@ describe("Water asset authoring", () => {
     expect(result.payload).toEqual(createDefaultWaterDefinition("stylized"));
     expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
     expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
+  });
+
+  it("starts a Surface Material as the chosen starter water Material, and other domains as usual", () => {
+    const water = buildNewAssetResult({ type: "Material", name: "Sea", guid: "sea", parentClass: null, waterMaterial: "painted" });
+    expect(water.payload).toEqual(createWaterMaterialDocument("Sea", "painted"));
+    const particle = buildNewAssetResult({ type: "Material", name: "Spark", guid: "spark", parentClass: null, materialDomain: "particle", waterMaterial: "painted" });
+    expect(particle.payload).toEqual(createDefaultMaterialDocument("Spark", "particle"));
   });
 });
 

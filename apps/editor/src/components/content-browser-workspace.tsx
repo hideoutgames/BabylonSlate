@@ -418,6 +418,7 @@ function ContentBrowserWorkspaceBody({
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   const [newWaterStyle, setNewWaterStyle] = useState<import("@haptic/core").WaterStyle>("realistic");
+  const [newMaterialStarter, setNewMaterialStarter] = useState<import("@haptic/shader-graph").WaterMaterialLook | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
     done: number;
@@ -2622,6 +2623,7 @@ function ContentBrowserWorkspaceBody({
         name,
         parentClass: type === "Class" ? newAssetParent : null,
         waterStyle: newWaterStyle,
+        waterMaterial: type === "Material" ? newMaterialStarter ?? undefined : undefined,
         defaultDefinitionGuid: newDataDefinition,
         typeSchemas: type === "DataDefinition" || type === "DataTree" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
@@ -2666,6 +2668,7 @@ function ContentBrowserWorkspaceBody({
     newDataDefinition,
     newDataTypes,
     newWaterStyle,
+    newMaterialStarter,
     newAssetType,
     getOpenDocuments,
     noteAssetsCreated,
@@ -3196,6 +3199,8 @@ function ContentBrowserWorkspaceBody({
         parentClass={newAssetParent}
         waterStyle={newWaterStyle}
         onWaterStyleChange={setNewWaterStyle}
+        materialStarter={newMaterialStarter}
+        onMaterialStarterChange={setNewMaterialStarter}
         definitionGuid={newDataDefinition}
         onDefinitionGuidChange={setNewDataDefinition}
         definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}

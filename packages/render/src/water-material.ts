@@ -324,13 +324,14 @@ const ifFft = (code: string, cascades: number) => `\n#if ${FFT} >= ${cascades}${
  * (mipmapped). Both stages declare the same binding (one WebGL2 texture unit, one WebGPU binding visible to both). GLSL
  * ES has no default precision for array samplers.
  */
-function fftHelpers(wgsl: boolean): string {
-  return wgsl ? `
+function fftHelpers(wgsl: boolean, declare = true): string {
+  const declaration = !declare ? "" : wgsl ? `
 var ${WATER_FFT_SAMPLER}Sampler: sampler;
-var ${WATER_FFT_SAMPLER}: texture_2d_array<f32>;
+var ${WATER_FFT_SAMPLER}: texture_2d_array<f32>;` : `
+uniform highp sampler2DArray ${WATER_FFT_SAMPLER};`;
+  return wgsl ? `${declaration}
 fn swFftTapLod(uv: vec2f, layer: f32, lod: f32) -> vec4f { return textureSampleLevel(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer), lod); }
-` : `
-uniform highp sampler2DArray ${WATER_FFT_SAMPLER};
+` : `${declaration}
 vec4 swFftTapLod(vec2 uv, float layer, float lod) { return textureLod(${WATER_FFT_SAMPLER}, vec3(uv, layer), lod); }
 `;
 }
@@ -376,7 +377,7 @@ function fftTurnTensor(c: number, j: string): string {
  * meeting the water reflects no stair-stepped edge of the copy's texels along its waterline. Returns linear colour and
  * coverage.
  */
-function marchSource(wgsl: boolean): string {
+export function marchSource(wgsl: boolean): string {
   const steps = SSR_STEPS, refine = SSR_REFINE_STEPS, base = f(SSR_THICKNESS[0]), slope = f(SSR_THICKNESS[1]);
   return wgsl ? `
 fn swMarchAt(swC0w: f32, swC1w: f32, swU: f32) -> f32 { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
@@ -533,14 +534,15 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
  * sampled with implicit derivatives so their mips filter far water (normals and foam fade into their averages instead
  * of aliasing). Only called from the shader's top level (uniform control flow), as implicit derivatives require.
  */
-function spectrumHelpers(wgsl: boolean): string {
-  return wgsl ? `
+function spectrumHelpers(wgsl: boolean, declare = true): string {
+  const declaration = !declare ? "" : wgsl ? `
 var ${WATER_FOAM_SAMPLER}Sampler: sampler;
-var ${WATER_FOAM_SAMPLER}: texture_2d_array<f32>;
+var ${WATER_FOAM_SAMPLER}: texture_2d_array<f32>;` : `
+uniform highp sampler2DArray ${WATER_FOAM_SAMPLER};`;
+  return wgsl ? `${declaration}
 fn swSpecTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer)); }
 fn swFoamTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FOAM_SAMPLER}, ${WATER_FOAM_SAMPLER}Sampler, uv, i32(layer)); }
-` : `
-uniform highp sampler2DArray ${WATER_FOAM_SAMPLER};
+` : `${declaration}
 vec4 swSpecTap(vec2 uv, float layer) { return texture(${WATER_FFT_SAMPLER}, vec3(uv, layer)); }
 vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec3(uv, layer)); }
 `;
@@ -1458,7 +1460,7 @@ const bindFragmentSource = (code: string, wgsl: boolean) => code.replace(/\bU\./
 
 /** The Water Waves node's per-stage sources for one language (`WaterWavesBlock`), built once each. */
 export interface WaterWaveNodeSources {
-  /** Samplers and taps of each stage, under `SLATE_WATER_GPU_WAVES`. */
+  /** Taps of each stage, under `SLATE_WATER_GPU_WAVES` (the block declares the samplers). */
   vertexHelpers: string;
   fragmentHelpers: string;
   /** The vertex code that fills the node's varying, given its bound name. */
@@ -1475,8 +1477,9 @@ export function waterWaveNodeSources(language: ShaderLanguage): WaterWaveNodeSou
     const vertexBind = (code: string) => stripShaderComments(bindVertexSource(wgsl ? toWgsl(code) : code, wgsl));
     const fragmentBind = (code: string) => stripShaderComments(bindFragmentSource(wgsl ? toWgsl(code) : code, wgsl));
     sources = {
-      vertexHelpers: guard(fftHelpers(wgsl)),
-      fragmentHelpers: guard(fftHelpers(wgsl) + spectrumHelpers(wgsl)),
+      // The block declares the samplers itself, once per stage.
+      vertexHelpers: guard(fftHelpers(wgsl, false)),
+      fragmentHelpers: guard(fftHelpers(wgsl, false) + spectrumHelpers(wgsl, false)),
       varying: (out) => vertexBind(nodeVaryingSource(out)),
       fragment: (rest, base, varying) => fragmentBind(nodeFragmentSource(rest, base, varying)),
     };
@@ -1630,7 +1633,7 @@ export const contactRange = (water: WaterDefinition) => Math.max(1, Math.min(8, 
 
 const placeholders = new WeakMap<Scene, RawTexture>();
 /** Field for surfaces nothing meets: far from terrain, terrain unknown. Contacts that are off ignore it. */
-function placeholderField(scene: Scene): RawTexture {
+export function placeholderField(scene: Scene): RawTexture {
   let texture = placeholders.get(scene);
   if (!texture) {
     texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 0]), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
@@ -1856,6 +1859,14 @@ const NO_REMOVALS: WaterRemovalCandidate[] = [];
  * Lazy so animations and before-render updates settle before the first water draw. Rewritten in place once per
  * render; a scene without removal volumes allocates nothing.
  */
+/**
+ * The scene's water lighting this render (`sceneWaterLighting`): the sun, ambient and the analytic sky and horizon the
+ * water nodes reflect without an environment. Shared with built-in water; read-only.
+ */
+export function sceneWaterNodeLighting(scene: Scene): Readonly<Pick<WaterLighting, "sun" | "sunColor" | "sky" | "horizon" | "sunShape">> {
+  return sceneWaterBindingData(scene).lighting;
+}
+
 function sceneWaterBindingData(scene: Scene): WaterBindingData {
   let data = waterBindings.get(scene);
   const frame = scene.getFrameId(), render = scene.getRenderId();

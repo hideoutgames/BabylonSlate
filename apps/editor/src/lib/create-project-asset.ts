@@ -11,7 +11,7 @@ import {
   isLockedEngineClassId,
   MAX_CLASS_INHERITANCE_DEPTH,
 } from "@haptic/object-model";
-import type { MaterialDomain } from "@haptic/shader-graph";
+import type { MaterialDomain, WaterMaterialLook } from "@haptic/shader-graph";
 import {
   ASSETS_ROOT,
   assetHeaderDependencyMetadata,
@@ -41,6 +41,8 @@ export async function createProjectAsset(options: {
   parentClass?: string | null;
   waterStyle?: WaterStyle;
   materialDomain?: MaterialDomain;
+  /** A new Surface Material starts as the starter Water Material of this look. */
+  waterMaterial?: WaterMaterialLook;
   /** Use the live Definition catalog so unsaved field edits supply defaults. */
   defaultDefinitionGuid?: string | null;
   typeSchemas?: TypeSchemas;
@@ -90,6 +92,7 @@ export async function createProjectAsset(options: {
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     waterStyle: options.waterStyle,
     materialDomain: options.materialDomain,
+    waterMaterial: options.waterMaterial,
     defaultDefinitionGuid,
     dataDefinition,
     dataTree: options.dataTree,
@@ -261,6 +264,7 @@ export async function createPickerAsset(options: {
   name?: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
+  waterMaterial?: WaterMaterialLook;
   defaultDefinitionGuid?: string | null;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
@@ -298,6 +302,7 @@ export async function createPickerAsset(options: {
     name,
     parentClass,
     materialDomain: options.materialDomain,
+    waterMaterial: options.waterMaterial,
     defaultDefinitionGuid: options.defaultDefinitionGuid,
     typeSchemas: type === "DataDefinition" || type === "DataTree"
       ? typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: options.openDocuments }))

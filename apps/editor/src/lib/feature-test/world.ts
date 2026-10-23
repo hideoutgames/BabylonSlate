@@ -67,9 +67,11 @@ export const FEATURE_TEST_WORLD_WATER = {
   ocean: "FT_WorldOcean",
   /** Lake: Stylized Painted. */
   lake: "FT_WorldLake",
-  /** River: Painted, a short choppy sea. */
+  /** River: Painted, a short choppy sea, drawn with `FEATURE_TEST_WORLD_RIVER_MATERIAL`. */
   river: "FT_WorldRiver",
 } as const;
+/** The River's Custom Material: the Painted starter water Material. */
+export const FEATURE_TEST_WORLD_RIVER_MATERIAL = "FT_WorldRiverMaterial";
 
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
 
@@ -172,14 +174,19 @@ const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
 
 /**
- * Water assets: Realistic long and short seas, a Painted lake and a short Painted river; and the Lake captures' Render Targets, textures and monitor Materials.
+ * Water assets: Realistic long and short seas, a Painted lake and a short Painted river with the Painted starter water
+ * Material as its Custom Material; and the Lake captures' Render Targets, textures and monitor Materials.
  */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
+  // The River draws with the Painted starter water Material: every water node on a Custom Material.
+  const riverMaterial = await ctx.createAsset("Material", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_RIVER_MATERIAL, { build: { waterMaterial: "painted" } });
   for (const key of Object.keys(FEATURE_TEST_WORLD_WATER) as WaterKey[]) {
     const { style, patch } = WATER_LOOKS[key];
+    const custom = key === "river" ? riverMaterial.guid : null;
     await ctx.createAsset("Water", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_WATER[key], {
       build: { waterStyle: style },
-      payload: (payload) => ({ ...payload, ...patch }),
+      payload: (payload) => ({ ...payload, ...patch, ...(custom ? { materialGuid: custom } : {}) }),
+      ...(custom ? { dependencies: [custom] } : {}),
     });
   }
   for (const { asset } of LAKE_CAPTURES) {

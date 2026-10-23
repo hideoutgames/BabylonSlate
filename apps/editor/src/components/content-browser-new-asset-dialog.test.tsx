@@ -62,6 +62,16 @@ describe("ContentBrowserNewAssetDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
+  it("lets a Material start as a Realistic or Painted water Material", () => {
+    const onMaterialStarterChange = vi.fn();
+    renderDialog({ type: "Material", name: "Sea", materialStarter: null, onMaterialStarterChange });
+    fireEvent.click(screen.getByRole("button", { name: "Painted Water" }));
+    expect(onMaterialStarterChange).toHaveBeenLastCalledWith("painted");
+    cleanup();
+    renderDialog({ type: "Material", name: "Sea", materialStarter: "painted", onMaterialStarterChange });
+    fireEvent.click(screen.getByRole("button", { name: "Empty" }));
+    expect(onMaterialStarterChange).toHaveBeenLastCalledWith(null);
+  });
   afterEach(() => {
     cleanup();
     layout.phone = false;

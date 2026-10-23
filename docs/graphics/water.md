@@ -75,7 +75,21 @@ A Water asset reflects scene objects only when its **Object Reflections** is on.
 
 ## Custom water Materials
 
-Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work. In the Material, [Water Surface](../scripting/material/water-surface.md) gives wave height, depth and flow, and [Water Waves](../scripting/material/water-waves.md) gives the wave offset and normal for World Position Offset and Normal.
+Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work.
+
+To start from a working water Material, choose **New Asset > Rendering > Material** with a **Starter** of **Realistic Water** or **Painted Water**, or choose **Create New** in the water asset's **Custom Material** picker. The starter is an ordinary Material graph built from the water nodes, so you can change any step.
+
+| Node | Gives |
+| --- | --- |
+| [Water Waves](../scripting/material/water-waves.md) | The simulated ocean: the wave offset for World Position Offset, the normal, height and crest foam. |
+| [Water Colors](../scripting/material/water-colors.md) | The asset's Shallow, Deep and Foam Color and Opacity. |
+| [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, and a fade from the waterline into deep water. |
+| [Water Scene Color](../scripting/material/water-scene-color.md) | The scene behind the water, bent by the waves. |
+| [Water Reflection](../scripting/material/water-reflection.md) | The reflected sky and scene objects, and the Fresnel amount. |
+| [Water Foam](../scripting/material/water-foam.md) | Whitecap, shoreline and contact foam. |
+| [Water Surface](../scripting/material/water-surface.md) | Bank distance, body depth and flow. |
+
+Without a Water Waves node, the waves still move the mesh but the Material gets no per-pixel wave normal. Water Scene Color and object reflections need a Translucent Material and work in scene viewports and Play.
 
 ## From scripts
 

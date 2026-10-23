@@ -57,6 +57,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createDefaultMaterialInstanceDocument,
+  createWaterMaterialDocument,
   materialDependencies,
   materialInstanceDependencies,
   normalizeMaterialDocument,
@@ -64,6 +65,7 @@ import {
   normalizeMaterialInstanceDocument,
   parseMaterialDomain,
   type MaterialDomain,
+  type WaterMaterialLook,
 } from "@haptic/shader-graph";
 import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
 import {
@@ -1600,6 +1602,8 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@haptic/core").SerializedGraph>;
   /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
   materialDomain?: MaterialDomain;
+  /** A new Surface Material starts as the starter Water Material of this look. */
+  waterMaterial?: WaterMaterialLook;
   defaultDefinitionGuid?: string | null;
   dataDefinition?: DataDefinitionAsset;
   dataTree?: DataTreeAsset;
@@ -1741,10 +1745,11 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Material") {
-    const payload = createDefaultMaterialDocument(
+    const water = options.waterMaterial && (options.materialDomain ?? "surface") === "surface" ? options.waterMaterial : null;
+    const payload = (water ? createWaterMaterialDocument(name, water) : createDefaultMaterialDocument(
       name,
       options.materialDomain,
-    ) as unknown as Record<string, unknown>;
+    )) as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
   }
 

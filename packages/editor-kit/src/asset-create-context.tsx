@@ -13,6 +13,8 @@ export type AssetCreateRequest = {
   /** Preferred name (the picker's search text); the host makes it unique. */
   name?: string;
   materialDomain?: AssetCreateMaterialDomain;
+  /** A new Surface Material starts as the starter Water Material of this look. */
+  waterMaterial?: "realistic" | "painted";
   /** Data Definition constraint when creating a Data Tree. */
   defaultDefinitionGuid?: string | null;
   /**

@@ -10,6 +10,10 @@ import {
 } from "./water-material";
 import { declareWaterAttributes, isWaterSurfaceMesh, WATER_SURFACE_DEFINE } from "./water-surface-block";
 
+/** Varyings of the rest point and world normal the fragment stage samples the spectrum at. */
+const WATER_NODE_REST_VARYING = "vSlateWaterRest";
+const WATER_NODE_NORMAL_VARYING = "vSlateWaterRestNormal";
+
 /** Declares a 2D-array sampler once per stage, under `SLATE_WATER_GPU_WAVES` (high precision: GLSL ES has no default). */
 function declareArraySampler(state: NodeMaterialBuildState, name: string): void {
   if (state.samplers.includes(name)) return;
@@ -125,20 +129,35 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     const vertex = state._vertexState;
     this.declareVertexInputs(vertex);
     if (vertex._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector4, WATER_GPU_WAVES_DEFINE)) {
-      vertex.compilationString += sources.varying(`${wgsl ? "vertexOutputs." : ""}${WATER_NODE_VARYING}`);
+      vertex.compilationString += `${sources.varying(`${wgsl ? "vertexOutputs." : ""}${WATER_NODE_VARYING}`)}\n`;
     }
     state._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector4, WATER_GPU_WAVES_DEFINE);
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     declareArraySampler(state, WATER_FFT_SAMPLER);
     declareArraySampler(state, WATER_FOAM_SAMPLER);
     state._emitFunction("swSpecTap", sources.fragmentHelpers, "");
-    const rest = this.worldPosition.associatedVariableName;
-    const base = this.worldNormal.isConnected ? `normalize(${this.worldNormal.associatedVariableName})` : `${v3}(0.0, 1.0, 0.0)`;
+    // Babylon adds no varying for a vertex-and-fragment block's inputs: the vertex stage hands over the rest point and the
+    // world normal itself (its inputs are vertex values, in scope at the end of the vertex program).
+    const into = wgsl ? "vertexOutputs." : "", from = wgsl ? "fragmentInputs." : "";
+    if (vertex._emitVaryingFromString(WATER_NODE_REST_VARYING, Types.Vector4)) {
+      vertex.compilationString += `${into}${WATER_NODE_REST_VARYING} = ${this.worldPosition.associatedVariableName};\n`;
+    }
+    state._emitVaryingFromString(WATER_NODE_REST_VARYING, Types.Vector4);
+    const rest = `${from}${WATER_NODE_REST_VARYING}`;
+    let worldNormal = `${v3}(0.0, 1.0, 0.0)`;
+    if (this.worldNormal.isConnected) {
+      if (vertex._emitVaryingFromString(WATER_NODE_NORMAL_VARYING, Types.Vector3)) {
+        vertex.compilationString += `${into}${WATER_NODE_NORMAL_VARYING} = ${this.worldNormal.associatedVariableName};\n`;
+      }
+      state._emitVaryingFromString(WATER_NODE_NORMAL_VARYING, Types.Vector3);
+      worldNormal = `${from}${WATER_NODE_NORMAL_VARYING}`;
+    }
+    const base = this.worldNormal.isConnected ? `normalize(${worldNormal})` : worldNormal;
     const declare = (output: (typeof this._outputs)[number], value: string) => output.hasEndpoints ? `${state._declareOutput(output)} = ${value};\n` : "";
     const local = (name: string, type: string, value: string) => wgsl ? `var ${name}: ${type} = ${value};\n` : `${type} ${name} = ${value};\n`;
-    state.compilationString += local("swnNormal", v3, this.worldNormal.isConnected ? this.worldNormal.associatedVariableName : `${v3}(0.0, 1.0, 0.0)`)
+    state.compilationString += local("swnNormal", v3, worldNormal)
       + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0")
-      + sources.fragment(rest, base, `${wgsl ? "fragmentInputs." : ""}${WATER_NODE_VARYING}`)
+      + `${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n`
       + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam")
       + declare(this.time, `${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x`);
   }
