@@ -307,7 +307,11 @@ interface WebGpuMipInternals {
 
 /** Builds every mip level of every layer of a 2D-array render target, on either backend. */
 function generateArrayMipmaps(engine: AbstractEngine, texture: InternalTexture, layers: number): void {
-  if (!engine.isWebGPU) { engine.generateMipmaps(texture); return; }
+  if (!engine.isWebGPU) {
+    // A NullEngine (tests, headless tools) has no context to build mips in.
+    if ((engine as unknown as { _gl?: unknown })._gl) engine.generateMipmaps(texture);
+    return;
+  }
   const hardware = texture._hardwareTexture as unknown as { underlyingResource?: { mipLevelCount: number } } | null;
   const levels = hardware?.underlyingResource?.mipLevelCount ?? 1;
   if (levels <= 1) return;

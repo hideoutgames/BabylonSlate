@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DirectionalLight, Vector3, type AbstractEngine, type Mesh, type Scene } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
-import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition } from "@haptic/core";
+import {
+  createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, waterUsesSpectrum, type RenderProjectSettings, type WaterDefinition,
+} from "@haptic/core";
 import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateWaterMeshDefinition,
@@ -36,6 +38,13 @@ const waveControls = [
   ["waveHeight", 0, 20], ["waveLength", 0.1, 1000], ["waveSpeed", 0, 20], ["waveDirection", -360, 360], ["choppiness", 0, 1],
   ["steepness", 0, 1], ["waveSpread", 0, 1], ["peakSharpness", 1, 7], ["waveSeed", 0, 65535], ["detailWaves", 0, 1],
 ] as const satisfies readonly NumberControl[];
+/** Realistic and Painted water (the FFT spectrum): a wind sea and a swell; Toon's crest profile and ripples do not apply. */
+const spectrumWaveControls = [
+  ["waveHeight", 0, 20], ["waveLength", 0.1, 1000], ["waveDirection", -360, 360], ["waveSpread", 0, 1],
+  ["swellHeight", 0, 20], ["swellLength", 0.5, 2000], ["swellDirection", -360, 360],
+  ["waveSpeed", 0, 20], ["steepness", 0, 1], ["peakSharpness", 1, 7], ["waveSeed", 0, 65535], ["detailWaves", 0, 1],
+] as const satisfies readonly NumberControl[];
+const spectrumHidden = new Set<NumberKey>(["rippleStrength", "rippleScale"]);
 const surfaceControls = [
   ["rippleStrength", 0, 1], ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["crestFoam", 0, 1], ["surfaceFoam", 0, 1],
   ["contactFoamWidth", 0, 8], ["subsurface", 0, 2], ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
@@ -65,6 +74,24 @@ const descriptions: Partial<Record<NumberKey, string>> = {
   sparkles: "Twinkling sun glints on the surface. Stylized: soft sparkles around the sun's path.",
   density: "Kilograms per cubic metre. Fresh water is approximately 1000.",
 };
+/** Realistic and Painted (FFT spectrum) wording where it differs. */
+const spectrumDescriptions: Partial<Record<NumberKey, string>> = {
+  waveHeight: "Wind sea: about how high crests stand above the mean, in metres. Affects physics.",
+  waveLength: "Wind sea: the most common wavelength, in metres. Short values give a choppy lake; long values give big rolling waves. Affects physics.",
+  waveDirection: "Wind sea: the heading the waves travel, in degrees. Affects physics.",
+  waveSpread: "How far wind-sea headings fan out from Wave Direction: 0 is long parallel crests, 1 is a confused sea. Affects physics.",
+  swellHeight: "A second, longer swell under the wind sea: its crest height in metres. 0 turns it off. Affects physics.",
+  swellLength: "The swell's wavelength, in metres. Long values give long-spanning waves that roll in from afar. Affects physics.",
+  swellDirection: "The heading the swell travels, in degrees. Affects physics.",
+  waveSpeed: "Scales how fast the whole sea moves. 1 is natural speed for the wavelengths.",
+  steepness: "How far water moves sideways under the crests: higher values give sharp, peaked waves that fold into whitecaps. 0 moves water only up and down. Affects physics.",
+  peakSharpness: "How tightly the waves gather around their wavelengths. Higher values give a more regular sea. Affects physics.",
+  waveSeed: "Picks another repeatable arrangement of the same sea. Affects physics.",
+  detailWaves: "Strength of the short waves riding the big ones. 0 leaves only the long waves. Floating objects follow waves longer than a few metres.",
+  crestFoam: "Whitecaps where crests fold over; their foam lingers and fades behind them. Gentle seas stay clear.",
+  surfaceFoam: "Thin foam left lingering behind breaking crests.",
+  subsurface: "Sunlight glowing through the crests of the waves.",
+};
 
 export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -84,11 +111,17 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   }, [assetRegistry, registryEpoch]);
   const pickerAssets = useMemo(() => assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })), [assets]);
   const selected = assets.find((asset) => asset.header.guid === water.materialGuid);
-  const numberRow = ([key, min, max]: NumberControl): PropertyRow => ({
-    id: `water-${key}`, kind: "number", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], min, max,
-    ...(key === "waveSeed" ? { precision: 0 } : {}), ...(oceanOnly.has(key) && water.waveModel !== "ocean" ? { disabled: true } : {}),
-    ...(descriptions[key] ? { description: descriptions[key] } : {}), onChange: (value) => commit({ ...water, [key]: value }, key),
-  });
+  // Realistic and Painted run the FFT spectrum; Toon and Custom Material water keep the analytic Wave Model.
+  const spectrum = waterUsesSpectrum(water);
+  const numberRow = ([key, min, max]: NumberControl): PropertyRow => {
+    const description = (spectrum ? spectrumDescriptions[key] : undefined) ?? descriptions[key];
+    return {
+      id: `water-${key}`, kind: "number", label: spectrum && key === "steepness" ? "Choppiness" : humanizePropertyLabel(key), value: water[key],
+      defaultValue: defaults[key], min, max,
+      ...(key === "waveSeed" ? { precision: 0 } : {}), ...(!spectrum && oceanOnly.has(key) && water.waveModel !== "ocean" ? { disabled: true } : {}),
+      ...(description ? { description } : {}), onChange: (value) => commit({ ...water, [key]: value }, key),
+    };
+  };
   const stylizedLookRow: PropertyRow = {
     id: "water-stylizedLook", kind: "enum", label: "Stylized Look", value: water.stylizedLook,
     options: [{ value: "painted", label: "Painted" }, { value: "toon", label: "Toon" }],
@@ -102,9 +135,9 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     ...(["shallowColor", "deepColor", "foamColor"] as const).map((key): PropertyRow => ({ id: `water-${key}`, kind: "color", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], onChange: (value) => commit({ ...water, [key]: [value[0], value[1], value[2]] }, key) })),
     ...lookControls.map(numberRow),
     { id: "water-objectReflections", kind: "boolean", label: "Object Reflections", value: water.objectReflections, defaultValue: defaults.objectReflections, description: "Render only: also reflect scene objects (screen-space or planar, per the Water Reflections quality setting). Off reflects only the sky. Visible in scene viewports and Play, not in this preview.", onChange: (objectReflections) => commit({ ...water, objectReflections }) },
-    { id: "water-waveModel", kind: "enum", label: "Wave Model", value: water.waveModel, defaultValue: defaults.waveModel, options: [{ value: "classic", label: "Classic" }, { value: "ocean", label: "Ocean Spectrum" }], description: "Classic is eight fixed swell waves spread around Wave Length. Ocean Spectrum draws eight waves from a sea spectrum peaking at Wave Length, with the same overall height. Affects physics.", onChange: (waveModel) => commit({ ...water, waveModel: waveModel === "ocean" ? "ocean" : "classic" }) },
-    ...waveControls.map(numberRow),
-    ...surfaceControls.map(numberRow),
+    ...(spectrum ? [] : [{ id: "water-waveModel", kind: "enum" as const, label: "Wave Model", value: water.waveModel, defaultValue: defaults.waveModel, options: [{ value: "classic", label: "Classic" }, { value: "ocean", label: "Ocean Spectrum" }], description: "Classic is eight fixed swell waves spread around Wave Length. Ocean Spectrum draws eight waves from a sea spectrum peaking at Wave Length, with the same overall height. Affects physics.", onChange: (waveModel: string) => commit({ ...water, waveModel: waveModel === "ocean" ? "ocean" : "classic" }) }]),
+    ...(spectrum ? spectrumWaveControls : waveControls).map(numberRow),
+    ...surfaceControls.filter(([key]) => !(spectrum && spectrumHidden.has(key))).map(numberRow),
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>

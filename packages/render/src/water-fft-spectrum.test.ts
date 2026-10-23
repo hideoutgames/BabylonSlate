@@ -8,7 +8,9 @@ import {
 } from "./water-fft-spectrum";
 
 const TAU = 2 * Math.PI;
-const water = (patch: Partial<WaterDefinition> = {}) => normalizeWaterDefinition({ ...createDefaultWaterDefinition(), ...patch });
+/** Analytic water's detail band: Realistic's former waves on Custom Material water (built-in Realistic runs the FFT spectrum). */
+const water = (patch: Partial<WaterDefinition> = {}) =>
+  normalizeWaterDefinition({ ...createDefaultWaterDefinition(), materialGuid: "analytic-band", waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, ...patch });
 
 /** Direct O(N⁴) inverse DFT of one atlas segment, both complex pairs of every RGBA texel. */
 function inverseDft(input: Float64Array, width: number, size: number, segment: number): Float64Array {

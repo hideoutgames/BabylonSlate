@@ -48,7 +48,7 @@ import { monitorMaterial } from "./rendering";
  */
 
 /**
- * Scene name. The world has its own scene: Ocean Spectrum water with object
+ * Scene name. The world has its own scene: Realistic spectrum water with object
  * reflections on top of the main scene misses the first-frame deadline on
  * software GL.
  */
@@ -62,9 +62,9 @@ export const FEATURE_TEST_WORLD_FOLDER = "World";
 
 /** Water assets, one per shading path. */
 export const FEATURE_TEST_WORLD_WATER = {
-  /** Global Water Volume: Realistic, classic swell. */
+  /** Global Water Volume: Realistic spectrum, wind sea over the default long swell. */
   sea: "FT_WorldSea",
-  /** Ocean: Realistic, seeded ocean spectrum. */
+  /** Ocean: Realistic spectrum, a short seeded wind sea with no swell. */
   ocean: "FT_WorldOcean",
   /** Lake: Stylized Painted. */
   lake: "FT_WorldLake",
@@ -95,7 +95,7 @@ const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; look: WaterStylizedLook
   ocean: {
     style: "realistic",
     look: "painted",
-    patch: { waveModel: "ocean", waveSeed: 7, waveHeight: 0.6, waveLength: 18, crestFoam: 0.5 },
+    patch: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0, crestFoam: 0.5 },
   },
   lake: { style: "stylized", look: "painted", patch: {} },
   river: { style: "stylized", look: "toon", patch: {} },
@@ -174,8 +174,7 @@ const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
 
 /**
- * Water assets: Realistic classic and ocean spectrum, Stylized Painted and
- * Toon; and the Lake captures' Render Targets, textures and monitor Materials.
+ * Water assets: Realistic long and short seas, Stylized Painted and Toon; and the Lake captures' Render Targets, textures and monitor Materials.
  */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
   for (const key of Object.keys(FEATURE_TEST_WORLD_WATER) as WaterKey[]) {

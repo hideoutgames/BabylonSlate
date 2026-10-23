@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, settleSceneWater, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
-  waterMeshBody, WATER_BLEND_REFRESH_MS, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_RESTORES_PER_FRAME,
+  waterMeshBody, WATER_BLEND_REFRESH_MS, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_OCEAN_CELL_BUDGET, WATER_RESTORES_PER_FRAME,
 } from "./water-mesh";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import type { WaterMaterialPlugin } from "./water-material";
@@ -49,6 +49,8 @@ function gpuVertex(mesh: Mesh, water: WaterDefinition, body: WaterBodyProperties
 const meshSurface = (water: WaterDefinition, body: WaterBodyProperties, x: number, z: number, time: number, spacing: number) =>
   sampleWaterWaves(water, x, z, time, body.waveScale, spacing).height;
 
+/** Toon water: the analytic swell and its mesh spacing (built-in Realistic and Painted run the FFT spectrum instead). */
+const toon = (patch: Partial<WaterDefinition> = {}) => ({ ...createDefaultWaterDefinition("stylized", "toon"), ...patch });
 const pluginOf = (mesh: Mesh) => (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
 const setQuality = (scene: Scene, level: QualityLevel, blendDistance?: number) =>
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)), ...(blendDistance === undefined ? {} : { water: { blendDistance } }) });
@@ -278,7 +280,7 @@ describe("Water rendering", () => {
     const camera = new ArcRotateCamera("orbit", Math.PI, 1.2, 22, new Vector3(30, 0, 0), scene);
     camera.getViewMatrix(true);
     try {
-      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), toon());
       updateSceneWater(scene);
       const xs = rowXs(global);
       const gap = (x: number) => { const k = xs.findIndex((value) => value > x); return xs[k]! - xs[k - 1]!; };
@@ -367,7 +369,7 @@ describe("Water rendering", () => {
   it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     // Half-metre cells resolve every swell component (the mesh filter fades none), so vertices sit on the queried surface.
-    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
+    const water = toon(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
     try {
       // Paused where the centre stands well off its rest height (between wave groups it can sit near rest).
       setSceneWaterTime(scene, 1.5);
@@ -453,7 +455,7 @@ describe("Water rendering", () => {
       // High's Mesh Density 1 resolves every swell component (the mesh filter fades none; Medium's cells fade the
       // shortest a little), so displaced vertices below sit exactly on the queried surface.
       setQuality(scene, "high");
-      const water = createDefaultWaterDefinition(), body = normalizeWaterBody({}, "global");
+      const water = toon(), body = normalizeWaterBody({}, "global");
       const ocean = createWaterMesh(scene, "ocean", body, water);
       updateSceneWater(scene);
       const gapAtOrigin = () => { const xs = rowXs(ocean), k = xs.findIndex((x) => x > 0); return xs[k]! - xs[k - 1]!; };
@@ -490,7 +492,7 @@ describe("Water rendering", () => {
   it("realizes and resizes an identity-transform Water component received from Play", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const binding = createSnapshotSceneBinding();
-    binding.waters = new Map([["water", { ...createDefaultWaterDefinition(), waveHeight: 0 }]]);
+    binding.waters = new Map([["water", { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 }]]);
     const assign = (width: number) => applyAssignMesh(scene, binding, {
       type: "assignMesh", slotId: 1, meshKind: "water", meshAssetGuid: "water",
       parts: [{ componentId: "lake", meshKind: "water", meshAssetGuid: "water", parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ width, length: 10, resolution: 8 }) }],
@@ -535,7 +537,7 @@ describe("Water rendering", () => {
     noBlending(scene);
     try {
       const plain = await customWaterMaterial(scene, false), waves = await customWaterMaterial(scene, true);
-      const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
+      const water = toon(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
       const cpu = createWaterMesh(scene, "cpu", body, water, plain), gpu = createWaterMesh(scene, "gpu", body, water, waves);
       const builtIn = createWaterMesh(scene, "builtIn", body, water);
       setSceneWaterTime(scene, 2); updateSceneWater(scene);
@@ -729,15 +731,17 @@ describe("Water rendering", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 4, 0), scene);
     try {
-      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 60, length: 60, resolution: 64 }));
-      const sea = createWaterMesh(scene, "sea", normalizeWaterBody({ width: 2000, length: 2000, resolution: 128 }, "ocean"));
-      const global = createWaterMesh(scene, "global", normalizeWaterBody({ resolution: 128 }, "global"));
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 60, length: 60, resolution: 64 }), toon());
+      const sea = createWaterMesh(scene, "sea", normalizeWaterBody({ width: 2000, length: 2000, resolution: 128 }, "ocean"), toon());
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({ resolution: 128 }, "global"), toon());
+      // A spectrum Ocean grades its cells around the camera: twice its effective resolution, within the Ocean cap.
+      const spectrumSea = createWaterMesh(scene, "spectrum-sea", normalizeWaterBody({ width: 2000, length: 2000, resolution: 96 }, "ocean"));
       const cells = (mesh: Mesh) => Math.sqrt(mesh.getTotalVertices()) - 1;
       const levels: QualityLevel[] = ["low", "medium", "high", "ultra"];
       const sizes = levels.map((level) => {
         // The camera never moves: a quality change alone must rebuild every grid, Global Water included.
         setQuality(scene, level, 0); updateSceneWater(scene);
-        return { lake: cells(lake), sea: cells(sea), global: cells(global) };
+        return { lake: cells(lake), sea: cells(sea), global: cells(global), spectrumSea: cells(spectrumSea) };
       });
       // Surface Resolution × density on the 60 m lake: 64 × 0.5 gives 1.5 m cells, 64 × 1.5 gives 0.5 m cells.
       expect(sizes.map((size) => size.lake)).toEqual(levels.map((level) => 60 / (48 / (64 * RENDER_QUALITY_PROFILES[level].water.meshDensity))));
@@ -745,13 +749,14 @@ describe("Water rendering", () => {
       // The caps hold at the densest tier: Global Water and large finite volumes stop growing there.
       expect(sizes[3]!.global).toBe(WATER_GLOBAL_CELL_BUDGET);
       expect(sizes.every((size) => size.sea === WATER_FINITE_CELL_BUDGET)).toBe(true);
+      expect(sizes.map((size) => size.spectrumSea)).toEqual(levels.map((level) => Math.min(WATER_OCEAN_CELL_BUDGET, Math.round(2 * 96 * RENDER_QUALITY_PROFILES[level].water.meshDensity))));
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("recentres Global Water as the camera moves by moving a grid offset in the shader and uploading no vertex data", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
     try {
-      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), toon());
       updateSceneWater(scene);
       const kinds = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset"];
       const buffers = kinds.map((kind) => global.getVertexBuffer(kind)!.getBuffer());
@@ -773,7 +778,7 @@ describe("Water rendering", () => {
       // uploaded lines plus the offset), the same static shader inputs (to float32 precision of the kilometre-wide outer
       // cells) and the same culling bounds.
       for (const spy of uploads) spy.mockRestore();
-      const fresh = createWaterMesh(scene, "fresh", normalizeWaterBody({}, "global"));
+      const fresh = createWaterMesh(scene, "fresh", normalizeWaterBody({}, "global"), toon());
       const freshOffset = gridOffset(fresh);
       expect([offset.x + offsetBefore.x, offset.z + offsetBefore.z]).toEqual([expect.closeTo(freshOffset.x, 4), expect.closeTo(freshOffset.z, 4)]);
       for (const kind of kinds) {
@@ -894,7 +899,7 @@ describe("Water rendering", () => {
   });
   it("fills a curved, widening river inside its query footprint and reshapes it live", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
-    const water = { ...createDefaultWaterDefinition(), waveHeight: 0 };
+    const water = { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 };
     const body = normalizeWaterBody({ width: 3, points: [[0, 0, 0], [0, 0, 20], [20, -1, 20]], widthScales: [1, 1, 3] }, "river");
     try {
       const mesh = createWaterMesh(scene, "river", body, water);

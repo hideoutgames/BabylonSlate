@@ -98,8 +98,17 @@ describe("WaterDetailsPanel", () => {
     expect(history.read().opacity).toBe(before.opacity);
   });
 
-  it("enables the Ocean Spectrum inputs only for that Wave Model and stores Object Reflections", async () => {
+  it("shows the swell and hides the Wave Model and ripples for spectrum water", () => {
     const history = renderWithHistory();
+    expect(screen.queryByTestId("property-water-waveModel")).toBeNull();
+    expect(screen.queryByTestId("property-water-choppiness")).toBeNull();
+    expect(screen.queryByTestId("property-water-rippleScale")).toBeNull();
+    fireEvent.change(screen.getByTestId("property-water-swellLength"), { target: { value: "120" } });
+    expect(history.read().swellLength).toBe(120);
+  });
+
+  it("enables the Ocean Spectrum inputs only for that Wave Model on Toon water and stores Object Reflections", async () => {
+    const history = renderWithHistory(createDefaultWaterDefinition("stylized", "toon"));
     const seed = () => screen.getByTestId("property-water-waveSeed") as HTMLInputElement;
     expect(seed().disabled).toBe(true);
     expect((screen.getByTestId("property-water-steepness") as HTMLInputElement).disabled).toBe(false);
@@ -110,7 +119,7 @@ describe("WaterDetailsPanel", () => {
     await waitFor(() => expect(history.read().waveModel).toBe("ocean"));
     expect(seed().disabled).toBe(false);
     fireEvent.click(screen.getByTestId("property-water-objectReflections"));
-    expect(history.read()).toMatchObject({ waveModel: "ocean", objectReflections: false });
+    expect(history.read()).toMatchObject({ waveModel: "ocean", objectReflections: !createDefaultWaterDefinition("stylized", "toon").objectReflections });
   });
 
   it("offers Stylized Look only for Stylized water and keeps colors and waves when it switches", async () => {

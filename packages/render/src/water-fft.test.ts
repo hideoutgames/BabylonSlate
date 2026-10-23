@@ -35,7 +35,9 @@ function quality(scene: Scene, water: FftQuality) {
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water }) });
 }
 
-const definition = (patch: Partial<WaterDefinition> = {}) => normalizeWaterDefinition({ ...createDefaultWaterDefinition(), ...patch });
+/** Analytic water's detail band: Realistic's former waves on Custom Material water (built-in Realistic runs the FFT spectrum). */
+const definition = (patch: Partial<WaterDefinition> = {}) =>
+  normalizeWaterDefinition({ ...createDefaultWaterDefinition(), materialGuid: "analytic-band", waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, ...patch });
 
 /** Built-in water and the definition its material plugin holds (what a water material passes to waterFftForSurface). */
 function lake(scene: Scene, asset: WaterDefinition = definition(), name = "lake") {

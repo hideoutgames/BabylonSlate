@@ -27,9 +27,12 @@ function uniforms() {
   return { buffer, vectors, matrices };
 }
 
-function water(scene: Scene, x = 0) {
+/** Toon water: the analytic swell (built-in Realistic and Painted run the FFT spectrum instead). */
+const toon = (patch: Partial<WaterDefinition> = {}) => ({ ...createDefaultWaterDefinition("stylized", "toon"), ...patch });
+
+function water(scene: Scene, x = 0, definition = createDefaultWaterDefinition()) {
   const material = new PBRMaterial("water", scene);
-  const plugin = new WaterMaterialPlugin(material, createDefaultWaterDefinition(), normalizeWaterBody({}));
+  const plugin = new WaterMaterialPlugin(material, definition, normalizeWaterBody({}));
   plugin.mesh = MeshBuilder.CreateGround("surface", { width: 2, height: 2 }, scene);
   plugin.mesh.position.x = x;
   plugin.mesh.computeWorldMatrix(true);
@@ -410,7 +413,7 @@ describe("Water material binding", () => {
   it("binds the shared swell relative to the floating origin and clock, so eye-relative rest points reproduce the kernel", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
-      const definition = normalizeWaterDefinition({ ...createDefaultWaterDefinition(), waveModel: "ocean", waveSeed: 7, choppiness: 0, steepness: 0.8 });
+      const definition = normalizeWaterDefinition(toon({ waveModel: "ocean", waveSeed: 7, choppiness: 0, steepness: 0.8 }));
       const body = normalizeWaterBody({ width: 40, length: 40, waveScale: 0.6 }, "ocean"), output = uniforms();
       const plugin = new WaterMaterialPlugin(new PBRMaterial("water", scene), definition, body);
       plugin.mesh = MeshBuilder.CreateGround("surface", { width: 2, height: 2 }, scene);
@@ -563,7 +566,7 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
-  it("compiles the FFT detail band's preset cascades only where device-effective FFT Ocean Detail and Detail Waves run, and runs no band for other water", async () => {
+  it("compiles analytic water's FFT detail band only where device-effective FFT Ocean Detail and Detail Waves run, and spectrum water's whole sea at every quality", async () => {
     const host = (floats = true) => {
       const engine = new NullEngine();
       Object.assign(engine.getCaps(), { textureFloatRender: floats, textureHalfFloatRender: true });
@@ -573,33 +576,43 @@ describe("Water material binding", () => {
     };
     const compiled = async (scene: Scene, level: QualityLevel, overrides: Partial<WaterDefinition> = {}) => {
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
-      const mesh = createWaterMesh(scene, `lake-${level}`, normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(), ...overrides });
+      const mesh = createWaterMesh(scene, `lake-${level}`, normalizeWaterBody({ resolution: 8 }), toon({ detailWaves: 1, ...overrides }));
       const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
       await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
-      // Draws are what ask for the band: water whose shader does not sample it must leave the scene without one.
-      for (let frame = 0; frame < 6; frame++) scene.render();
+      // Draws are what ask for the band (a 256² × 3 spectrum takes a dozen budgeted steps): water whose shader does not
+      // sample it must leave the scene without one.
+      for (let frame = 0; frame < 24; frame++) scene.render();
       const defines = subMesh.effect!.defines;
       mesh.dispose();
       return defines;
     };
     const capable = host(), weak = host(false);
     try {
-      expect(await compiled(capable.scene, "high")).toContain("#define SLATE_WATER_FFT 2\n");
-      expect(await compiled(capable.scene, "ultra")).toContain("#define SLATE_WATER_FFT 3\n");
+      expect(await compiled(capable.scene, "high")).toContain(`#define SLATE_WATER_FFT ${RENDER_QUALITY_PROFILES.high.water.fftCascades}\n`);
+      expect(await compiled(capable.scene, "ultra")).toContain(`#define SLATE_WATER_FFT ${RENDER_QUALITY_PROFILES.ultra.water.fftCascades}\n`);
       const before = waterFftDiagnostics(capable.scene);
       expect(before.created).toBeGreaterThan(0);
       const off = [
         await compiled(weak.scene, "ultra"),
         await compiled(capable.scene, "medium"),
         await compiled(capable.scene, "ultra", { detailWaves: 0 }),
-        await compiled(capable.scene, "ultra", createDefaultWaterDefinition("stylized")),
+        await compiled(capable.scene, "ultra", createDefaultWaterDefinition("stylized", "toon")),
       ];
       for (const defines of off) expect(defines).toContain("#define SLATE_WATER_FFT 0\n");
-      // Neither a device without float targets, Medium, Detail Waves 0 nor the Stylized default drew a spectrum or
-      // leased a simulation.
+      // Neither a device without float targets, Medium, Detail Waves 0 nor the Toon default drew a spectrum or leased a
+      // simulation.
       expect(waterFftDiagnostics(weak.scene)).toMatchObject({ simulations: [], created: 0, built: 0 });
       const after = waterFftDiagnostics(capable.scene);
       expect([after.created, after.built]).toEqual([before.created, before.built]);
+      // Realistic and Painted are the spectrum at every quality, Medium and Low included, in both stages.
+      for (const [level, definition] of [["medium", createDefaultWaterDefinition()], ["low", createDefaultWaterDefinition("stylized")]] as const) {
+        const defines = await compiled(capable.scene, level, definition);
+        const cascades = RENDER_QUALITY_PROFILES[level].water.fftCascades;
+        expect(defines).toContain("#define SLATE_WATER_SPECTRUM\n");
+        expect(defines).toContain(`#define SLATE_WATER_FFT ${cascades}\n`);
+        expect(defines).toContain(`#define SLATE_WATER_FFT_VERTEX ${cascades}\n`);
+      }
+      expect(waterFftDiagnostics(capable.scene).created).toBeGreaterThan(after.created);
     } finally {
       for (const { scene, engine } of [capable, weak]) { scene.dispose(); engine.dispose(); }
     }
@@ -613,7 +626,7 @@ describe("Water material binding", () => {
       new FreeCamera("camera", new Vector3(0, 6, -12), scene).setTarget(Vector3.Zero());
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("high")) });
       const compiled = async (name: string, body: ReturnType<typeof normalizeWaterBody>) => {
-        const mesh = createWaterMesh(scene, name, body, createDefaultWaterDefinition());
+        const mesh = createWaterMesh(scene, name, body, toon({ detailWaves: 1 }));
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
         await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
         const plugin = material.pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
@@ -622,14 +635,15 @@ describe("Water material binding", () => {
       // High's first cascade is short (Wave Length / 23, half of it 26 cm by default): a 30 m lake's cells (at least
       // half a metre) can never pass it, so only the fragment samples the band.
       const lake = await compiled("lake", normalizeWaterBody({ width: 30, length: 30 }));
-      expect(lake.defines).toContain("#define SLATE_WATER_FFT 2\n");
+      const cascades = RENDER_QUALITY_PROFILES.high.water.fftCascades;
+      expect(lake.defines).toContain(`#define SLATE_WATER_FFT ${cascades}\n`);
       expect(lake.defines).toContain("#define SLATE_WATER_FFT_VERTEX 0\n");
       expect(lake.outline).not.toContain("SLATE_WATER_FFT");
       // A 1 m puddle's 8 cm cells resolve it: its vertex stage, and its outline mask, displace by the band.
       const puddle = await compiled("puddle", normalizeWaterBody({ width: 1, length: 1 }, "puddle"));
-      expect(puddle.defines).toContain("#define SLATE_WATER_FFT 2\n");
-      expect(puddle.defines).toContain("#define SLATE_WATER_FFT_VERTEX 2\n");
-      expect(puddle.outline).toContain("#define SLATE_WATER_FFT_VERTEX 2");
+      expect(puddle.defines).toContain(`#define SLATE_WATER_FFT ${cascades}\n`);
+      expect(puddle.defines).toContain(`#define SLATE_WATER_FFT_VERTEX ${cascades}\n`);
+      expect(puddle.outline).toContain(`#define SLATE_WATER_FFT_VERTEX ${cascades}`);
     } finally {
       scene.dispose();
       engine.dispose();
@@ -646,7 +660,7 @@ describe("Water material binding", () => {
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("high")) });
       setSceneWaterTime(scene, 3);
       const body = normalizeWaterBody({ width: 40, length: 40, waveScale: 0.6, resolution: 8 }, "ocean");
-      const mesh = createWaterMesh(scene, "sea", body, { ...createDefaultWaterDefinition(), steepness: 0.7 });
+      const mesh = createWaterMesh(scene, "sea", body, toon({ steepness: 0.7, detailWaves: 1 }));
       const plugin = (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!, subMesh = mesh.subMeshes[0]!;
       // The material's own uploads to its uniform buffer: its FFT uniforms and the texture bound to the band's sampler.
       const record = (buffer: UniformBuffer) => new Proxy(buffer, {
@@ -673,7 +687,7 @@ describe("Water material binding", () => {
       expect(textures.at(-1)).toBe("water-fft-placeholder");
       for (const c of [0, 1]) expect(fft.get(`slateWaterFftCascade${c}`)![3]! * 1e-6, `cascade ${c}`).toBeGreaterThan(2.2);
       // Nothing but the water's draws asks for the band; it becomes ready within a few frames.
-      await vi.waitFor(() => { scene.render(); expect(waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready)).toBe(true); });
+      await vi.waitFor(() => { scene.render(); expect(waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready)).toBe(true); }, { timeout: 10_000 });
       scene.render();
       expect(fft.get("slateWaterFft")![0]).toBeCloseTo(0.6, 6);
       expect(fft.get("slateWaterFft")![1]).toBeCloseTo(0.7, 6);
@@ -681,7 +695,7 @@ describe("Water material binding", () => {
       // Under large-world rendering, eye-relative rest points sample the texel of their world position (texel (i, j)
       // holds (i, j) · L / N in the cascade's turned frame p = R(−θ)·(X, Z), sampled at its centre), whatever the
       // floating origin; the shader turns the eye-relative point by the same R(−θ).
-      const band = waterFftForSurface(scene, plugin.water)!, size = 128;
+      const band = waterFftForSurface(scene, plugin.water)!, size = RENDER_QUALITY_PROFILES.high.water.fftSize;
       const origin = new Vector3(81234.5, 3, -40321.25);
       vi.spyOn(scene, "floatingOriginMode", "get").mockReturnValue(true);
       vi.spyOn(scene, "floatingOriginOffset", "get").mockReturnValue(origin);
@@ -744,7 +758,7 @@ describe("Water material binding", () => {
   it("binds a surface without a plugin the same swell the plugin binds to another pass, plus its own clock", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
-      const { plugin } = water(scene), mesh = plugin.mesh!;
+      const { plugin } = water(scene, 0, toon()), mesh = plugin.mesh!;
       const waves = new WaterVertexWaves(plugin.water, plugin.body);
       plugin.time = waves.time = 7.25;
       const record = () => {
