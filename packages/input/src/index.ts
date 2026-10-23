@@ -25,6 +25,7 @@ export {
   type BindingCatalogEntry,
 } from "./binding-catalog";
 export { TOUCH_GESTURE_CODES } from "./gestures";
+export { MOTION_CODES, mappingsUseDeviceMotion } from "./motion";
 export {
   InputResolver,
   type ActionState,

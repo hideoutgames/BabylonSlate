@@ -10,6 +10,8 @@ function provider() {
     connections: { current: [] },
     frameId: () => 7,
     emit: (command) => commands.push(command),
+    requestDeviceMotion: () => {},
+    calibrateTilt: () => {},
   });
   return { input, commands };
 }

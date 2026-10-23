@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InputResolver, InputRingBuffer } from "@haptic/input";
 import { attachInputCapture } from "./input-capture";
 import { attachInputCapture as attachPlayerInputCapture } from "../../../player/src/input";
@@ -458,5 +458,89 @@ describe("pointers engine UI owns", () => {
     pointer("pointermove", 3, { offsetX: 3, offsetY: 60 });
     pointer("pointerup", 3);
     expect(handle.ring.drain()).toEqual([]);
+  });
+});
+
+describe("device motion", () => {
+  const handles: Array<{ dispose(): void }> = [];
+  afterEach(() => {
+    for (const handle of handles.splice(0)) handle.dispose();
+    delete (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent;
+  });
+
+  function fixture() {
+    const canvas = document.createElement("canvas");
+    canvas.setPointerCapture = () => {};
+    document.body.append(canvas);
+    const handle = attachInputCapture(canvas);
+    handles.push(handle);
+    const tilt = (beta: number, gamma: number) => window.dispatchEvent(Object.assign(new Event("deviceorientation"), { beta, gamma }));
+    const shake = (x: number) => window.dispatchEvent(Object.assign(new Event("devicemotion"), {
+      acceleration: { x, y: 0, z: 0 }, rotationRate: { alpha: 1, beta: 2, gamma: 3 },
+    }));
+    const tap = () => canvas.dispatchEvent(Object.assign(new Event("pointerdown", { cancelable: true }),
+      { pointerId: 1, offsetX: 0, offsetY: 0, button: 0, pointerType: "touch" }));
+    const motionEvents = () => {
+      handle.pollGamepads();
+      return handle.ring.drain().filter((event) => event.kind === "motion");
+    };
+    return { handle, tilt, shake, tap, motionEvents };
+  }
+
+  it("starts the sensors when the game asks, then sends the latest pose and the strongest acceleration once per frame", () => {
+    const { handle, tilt, shake, motionEvents } = fixture();
+    tilt(10, 20);
+    expect(motionEvents()).toEqual([]);
+    handle.enableMotion();
+    tilt(10, 20);
+    tilt(-5, 30);
+    shake(14);
+    shake(2);
+    expect(motionEvents()).toEqual([expect.objectContaining({
+      beta: -5, gamma: 30, accelerationX: 2, peakAcceleration: 14, rotationX: 2, rotationY: 3, rotationZ: 1,
+    })]);
+    expect(motionEvents()).toEqual([expect.objectContaining({ beta: -5, peakAcceleration: 0 })]);
+  });
+
+  it("asks permission during the next tap where the browser requires it, and never again once refused", async () => {
+    const requestPermission = vi.fn(async () => "granted");
+    (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent = { requestPermission };
+    const { handle, tilt, tap, motionEvents } = fixture();
+    handle.enableMotion();
+    tilt(10, 20);
+    expect(motionEvents()).toEqual([]);
+    expect(requestPermission).not.toHaveBeenCalled();
+    tap();
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    tilt(10, 20);
+    expect(motionEvents()).toEqual([expect.objectContaining({ beta: 10, gamma: 20 })]);
+
+    const refused = vi.fn(async () => "denied");
+    (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent = { requestPermission: refused };
+    const second = fixture();
+    second.handle.enableMotion();
+    second.tap();
+    await Promise.resolve();
+    await Promise.resolve();
+    second.tap();
+    second.tilt(10, 20);
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(second.motionEvents()).toEqual([]);
+  });
+
+  it("releases the tilt when the game loses input ownership, and sends nothing while it is held", () => {
+    const { handle, tilt, motionEvents } = fixture();
+    handle.enableMotion();
+    tilt(10, 20);
+    expect(motionEvents()).toHaveLength(1);
+    handle.setSuppressed(true);
+    const released = handle.ring.drain().filter((event) => event.kind === "motion");
+    expect(released).toEqual([expect.objectContaining({ beta: Number.NaN, gamma: Number.NaN })]);
+    tilt(15, 25);
+    expect(motionEvents()).toEqual([]);
+    handle.setSuppressed(false);
+    expect(motionEvents()).toEqual([expect.objectContaining({ beta: 15, gamma: 25 })]);
   });
 });

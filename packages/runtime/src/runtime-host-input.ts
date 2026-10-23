@@ -9,6 +9,9 @@ interface WorldInputDeps {
   connections: { readonly current: ResolvedInputTick["gamepadConnections"] };
   frameId(): number;
   emit(command: CommandMessage): void;
+  /** Ask the host, once, to start device motion input. */
+  requestDeviceMotion(): void;
+  calibrateTilt(): void;
 }
 
 /** The World's input provider, which TickContext input reads go through. */
@@ -26,6 +29,14 @@ export function createWorldInputProvider(deps: WorldInputDeps): WorldInputProvid
     getCursorPosition: () => resolved().cursor,
     getTouches: () => resolved().touches,
     getTouchEvents: () => resolved().touchEvents,
+    getDeviceMotion: () => {
+      deps.requestDeviceMotion();
+      return resolved().deviceMotion;
+    },
+    calibrateTilt: () => {
+      deps.requestDeviceMotion();
+      deps.calibrateTilt();
+    },
     setCursorVisible: (visible) => {
       deps.emit({
         type: "setCursorVisible",

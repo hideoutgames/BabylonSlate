@@ -2199,6 +2199,68 @@ describe("script host runs compiled graphs", () => {
     }
   });
 
+  it("reads tilt through Get Device Motion, calibrates on a tap, and asks the host for motion once", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "motion", "input.getDeviceMotion"),
+        node(registry, "tilt", "vector.break2"),
+        node(registry, "print", "debug.print", { "default:key": "tilt", "default:duration": 1 }),
+        node(registry, "began", "input.onTouchBegan"),
+        node(registry, "calibrate", "input.calibrateTilt"),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "print", "execIn"),
+        edge("e2", "motion", "tilt", "tilt", "in"),
+        edge("e3", "tilt", "x", "print", "value"),
+        edge("e4", "began", "execOut", "calibrate", "execIn"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 3, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+    await runtime.loadScripts([toScript(graph, registry, "Tilter", "tilter-asset")]);
+    runtime.spawnScriptedActor({ classId: "Tilter" });
+    runtime.start();
+    // The right side 15° down: half of a full tilt.
+    const pose = { kind: "motion", tick: 0, beta: 0, gamma: 15, screenAngle: 0, accelerationX: 0, accelerationY: 0, accelerationZ: 0,
+      peakAcceleration: 0, rotationX: 0, rotationY: 0, rotationZ: 0 } as const;
+    const tick = (events: Parameters<typeof runtime.pushInput>[0]) => {
+      const start = commands.length;
+      runtime.pushInput(events);
+      runtime.tick();
+      return commands.slice(start).flatMap((c) => c.type === "print" ? [c.message] : []);
+    };
+    try {
+      expect(tick([pose])).toEqual(["0.5"]);
+      tick([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 5, y: 5, button: 0, pointerType: "touch" }]);
+      expect(tick([pose])).toEqual(["0"]);
+      expect(commands.filter((c) => c.type === "requestDeviceMotion")).toHaveLength(1);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("asks the host for motion on the first tick when a binding reads tilt or shake, and not otherwise", async () => {
+    const motionCommands = async (code: string) => {
+      const commands: CommandMessage[] = [];
+      const runtime = createInProcessRuntime({
+        seed: 3, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command),
+        inputAssets: [{ guid: "lean", name: "Lean", type: "InputAxis", valueType: "1d", bindings: [{ id: "b", device: "touch", code }] }],
+      });
+      runtime.start();
+      runtime.tick();
+      runtime.tick();
+      runtime.stop();
+      return commands.filter((c) => c.type === "requestDeviceMotion").length;
+    };
+    expect(await motionCommands("tilt-x")).toBe(1);
+    expect(await motionCommands("shake")).toBe(1);
+    expect(await motionCommands("pinch")).toBe(0);
+  });
+
   it.each([
     { name: "a release player draws no unset trace", traceDebugDraw: false, options: "undefined", drawn: false },
     { name: "a release player draws no explicit trace", traceDebugDraw: false, options: "{ drawDebug: true }", drawn: false },

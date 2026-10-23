@@ -250,6 +250,8 @@ function initializePlayer(
   let runtimeOutput = manifest.render;
   /** Set once the runtime's pause paths exist (below). */
   let pipelineHoldChanged: (held: boolean) => void = () => {};
+  /** The game asked for device motion, perhaps before input capture was attached. */
+  let deviceMotionRequested = false;
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
@@ -372,6 +374,10 @@ function initializePlayer(
         nodeId: diagnostic.nodeId,
       });
       options.onDiagnostic?.(diagnostics);
+    },
+    onDeviceMotionRequest: () => {
+      deviceMotionRequested = true;
+      input?.enableMotion();
     },
     onTouchAxis: (controlId, value) => {
       if (options.previewDiagnostics) input?.setTouchAxis(controlId, value);
@@ -1112,6 +1118,7 @@ function initializePlayer(
     // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
     ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
+  if (deviceMotionRequested) input.enableMotion();
   if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {

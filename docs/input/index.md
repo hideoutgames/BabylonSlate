@@ -1,6 +1,6 @@
 # Input
 
-Input Actions and Input Axes turn keys, mouse buttons, gamepad controls and on-screen joysticks into named inputs your graphs respond to.
+Input Actions and Input Axes turn keys, mouse buttons, gamepad controls, on-screen joysticks, touch gestures and device tilt into named inputs your graphs respond to.
 
 ## Actions and axes
 
@@ -112,6 +112,26 @@ Haptic recognizes common gestures from the touches. Bind them like any other con
 - Pinch, Two-Finger Rotate and Two-Finger Drag follow the two lowest-numbered fingers, from the tick both are down.
 - Values per tick are small. Use the control's **Scale** or **Sensitivity** to turn them into the speed your game needs.
 - For the speed of a swipe, read **Velocity** from [On Touch Ended](../scripting/class/on-touch-ended.md).
+
+## Motion
+
+Phones and tablets can be steered by tilting them. In an Input Action or Input Axis, choose **Add Control > Touch** and pick one from the **Motion** group:
+
+| Control | Value |
+| --- | --- |
+| Tilt X, Tilt Y | From the calibrated pose, -1 to 1: X is positive when the right side tips down, Y when the top edge tips away. 30° is a full 1. |
+| Shake | Active for one tick when the device is shaken firmly, at most once every 0.75 seconds. |
+
+Bind **Tilt X** and **Tilt Y** to the X and Y of a 2D Input Axis to steer with tilt, alongside a stick or keys.
+
+| Node | Use |
+| --- | --- |
+| [Get Device Motion](../scripting/class/get-device-motion.md) | The tilt, acceleration and rotation rate. |
+| [Calibrate Tilt](../scripting/class/calibrate-tilt.md) | Make the current pose zero tilt, so players can hold the device at any angle. |
+
+- Tilt starts from the device lying flat until the game calibrates it, and follows the screen when it turns to landscape.
+- The motion sensors stay off until the game uses a motion control or node. On iPhone and iPad the player is then asked to allow motion on their next tap; if they refuse, tilt stays at zero.
+- Computers have no motion sensors, so motion stays at zero there. Test motion on a phone or tablet.
 
 ## In this section
 

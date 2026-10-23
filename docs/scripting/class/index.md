@@ -498,11 +498,13 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Add Input Action Binding](add-input-action-binding.md) | Adds a key binding to an Input Action while the game runs. |
 | [Add Input Axis Binding](add-input-axis-binding.md) | Adds a key binding to an Input Axis while the game runs. |
+| [Calibrate Tilt](calibrate-tilt.md) | Makes the device's current pose the zero point for tilt. |
 | [Event Input Action](event-input-action.md) | Runs when a chosen Input Action starts, stays held or is released. |
 | [Event Input Axis](event-input-axis.md) | Runs when a chosen Input Axis moves away from zero, stays active or returns to zero. |
 | [Export Input Bindings](export-input-bindings.md) | Returns the player's binding changes as text that can be saved. |
 | [Find Touch](find-touch.md) | Returns the touch with a given finger number this tick. |
 | [Get Cursor Position](get-cursor-position.md) | Returns the pointer position over the game view. |
+| [Get Device Motion](get-device-motion.md) | Returns how the phone or tablet is tilted, moving and turning. |
 | [Get Input Bindings](get-input-bindings.md) | Returns the current bindings of an Input Action or Input Axis. |
 | [Get Touch](get-touch.md) | Returns one of this tick's touches by its place in the list. |
 | [Get Touch Count](get-touch-count.md) | Returns how many touches the game view has this tick. |
