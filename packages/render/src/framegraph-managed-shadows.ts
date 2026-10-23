@@ -17,7 +17,7 @@ import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRevealPending } from "./reveal-pending";
-import { warmRequestedPipelines } from "./variant-pipeline-warmup";
+import { registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
@@ -58,7 +58,22 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
    * A world view's main pass: after its real draws it draws the meshes its round asked to warm, so their next
    * variants' pipelines exist before a real draw needs them (`warmRequestedPipelines`).
    */
-  warmsPipelines = false;
+  get warmsPipelines(): boolean {
+    return this.releaseWarmPasses !== undefined;
+  }
+
+  set warmsPipelines(value: boolean) {
+    if (value === this.warmsPipelines) return;
+    if (!value) {
+      this.releaseWarmPasses?.();
+      this.releaseWarmPasses = undefined;
+      return;
+    }
+    this.releaseWarmPasses = registerPipelineWarmPasses(this._frameGraph.engine,
+      [...this._renderer.renderPassIds, this.depthPrePass.renderPassId]);
+  }
+
+  private releaseWarmPasses: (() => void) | undefined;
 
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
     super(...args);
@@ -163,6 +178,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   }
 
   override dispose(): void {
+    this.warmsPipelines = false;
     this.requestedAhead.clear();
     this.depthPrePass.dispose();
     super.dispose();

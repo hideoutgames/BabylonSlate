@@ -28,6 +28,7 @@ type PipelineCache = {
 
 type DrawEngine = {
   _draw(drawType: number, fillMode: number, start: number, count: number, instancesCount: number): void;
+  _currentEffect: object;
   _cacheRenderPipeline: PipelineCache;
   _device: GPUDevice;
   _snapshotRendering: { record: boolean };
@@ -56,6 +57,8 @@ type DeferralState = {
   progressAt: number;
   /** Deferred creations that finished (created or failed) since installation. */
   settled: number;
+  /** Effects some draw has drawn with since installation: each has a pipeline for that draw's state. */
+  drawn: WeakSet<object>;
 };
 
 /** Babylon 9.29 pipeline-cache statistics a synchronous creation updates. */
@@ -74,7 +77,7 @@ function install(engine: AbstractEngine): DeferralState {
   if (typeof draw !== "function" || typeof create !== "function" || typeof lookup !== "function" ||
     typeof cache._buildRenderPipelineDescriptor !== "function")
     throw new Error("Unsupported Babylon WebGPU pipeline cache layout: _draw, getRenderPipeline, _createRenderPipeline or _buildRenderPipelineDescriptor is missing.");
-  const state: DeferralState = { scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0, settled: 0 };
+  const state: DeferralState = { scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0, settled: 0, drawn: new WeakSet() };
   /** The innermost open scope that admits the current render pass. */
   const scopeOfPass = (): Scope | undefined => {
     const scopes = state.scopes, pass = target.currentRenderPassId;
@@ -155,6 +158,7 @@ function install(engine: AbstractEngine): DeferralState {
   target._draw = function (this: DrawEngine, ...args) {
     try {
       draw.apply(this, args);
+      if (this._currentEffect) state.drawn.add(this._currentEffect);
     } catch (error) {
       if (error !== DEFERRED) throw error;
     }
@@ -239,6 +243,14 @@ export function beginPipelineDeferral(
     },
     warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
   };
+}
+
+/**
+ * Whether some draw on `engine` has drawn with `effect` since a deferring view first drew (so it has a pipeline for
+ * that draw's state); true while no view defers, when nothing is known.
+ */
+export function effectDrawn(engine: AbstractEngine, effect: object): boolean {
+  return states.get(engine)?.drawn.has(effect) ?? true;
 }
 
 /**

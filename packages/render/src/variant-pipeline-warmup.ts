@@ -8,7 +8,7 @@ import {
   type Scene,
   type SubMesh,
 } from "@babylonjs/core";
-import { beginPipelineDeferral, pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import { beginPipelineDeferral, effectDrawn, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { variantSwapsTolerated } from "./variant-swaps";
 
 /**
@@ -38,9 +38,9 @@ type ColdEntry = { usedAt: number; base: () => boolean };
 export const UNUSED_WARM_MS = 500;
 
 type WarmupState = {
-  /** Effects the Engine has returned since installation, and every Effect it held then. */
-  known: WeakSet<Effect>;
   cold: Map<Effect, ColdEntry>;
+  /** Effects that were cold and are not any more (warmed, or turned ready unused): never cold again. */
+  settled: WeakSet<Effect>;
   /** Open readiness rounds of a view that has drawn steady frames: new Effects are cold there too. */
   marking: number;
   /** Inside a warm draw: cold Effects are ready. */
@@ -53,26 +53,50 @@ type WarmupState = {
   warmPasses: Map<number, number>;
 };
 
-type EffectEngine = { createEffect(...args: unknown[]): Effect; _compiledEffects: Record<string, Effect> };
+type EffectEngine = { createEffect(...args: unknown[]): Effect };
 
 const states = new WeakMap<AbstractEngine, WarmupState>();
+/** Per Engine, the render passes of world views that warm their pipelines: a cold Effect is unready only there. */
+const warmedPasses = new WeakMap<AbstractEngine, Map<number, number>>();
+
+/**
+ * A world view's main object pass and its blended depth pre-pass, whose pipelines its warm draws create: a cold Effect
+ * waits there only (a probe pass nothing draws, such as the camera's, or a shadow map's takes it at once). Returns
+ * the release.
+ */
+export function registerPipelineWarmPasses(engine: AbstractEngine, passIds: readonly number[]): () => void {
+  let passes = warmedPasses.get(engine);
+  if (!passes) warmedPasses.set(engine, (passes = new Map()));
+  const owned = passes;
+  for (const id of passIds) owned.set(id, (owned.get(id) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const id of passIds) {
+      const count = (owned.get(id) ?? 1) - 1;
+      if (count > 0) owned.set(id, count);
+      else owned.delete(id);
+    }
+  };
+}
 
 function install(engine: AbstractEngine): WarmupState {
   const target = engine as unknown as EffectEngine;
   const create = target.createEffect;
-  if (typeof create !== "function" || !target._compiledEffects)
-    throw new Error("Unsupported Babylon engine layout: createEffect or _compiledEffects is missing.");
+  if (typeof create !== "function") throw new Error("Unsupported Babylon engine layout: createEffect is missing.");
   const state: WarmupState = {
-    known: new WeakSet(Object.values(target._compiledEffects)), cold: new Map(), marking: 0, warming: false,
+    cold: new Map(), settled: new WeakSet(), marking: 0, warming: false,
     requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(),
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
+  if (!warmedPasses.has(engine)) warmedPasses.set(engine, new Map());
   target.createEffect = function (this: EffectEngine, ...args: unknown[]) {
     const effect = create.apply(this, args);
-    if (!state.known.has(effect)) {
-      state.known.add(effect);
-      if (state.marking > 0 || variantSwapsTolerated()) makeCold(state, effect);
-    }
+    // A variant no draw has drawn with has no pipeline yet: a new one, or one only a probe pass compiled.
+    if ((state.marking > 0 || variantSwapsTolerated()) && !state.cold.has(effect) && !state.settled.has(effect) &&
+      !effectDrawn(engine, effect))
+      makeCold(state, effect);
     return effect;
   };
   const released = engine._onReleaseRenderPassObservable?.add((id) => {
@@ -92,14 +116,17 @@ function install(engine: AbstractEngine): WarmupState {
 
 function makeCold(state: WarmupState, effect: Effect): void {
   const base = effect.isReady.bind(effect);
+  const engine = effect.getEngine();
+  const passes = warmedPasses.get(engine)!;
   state.cold.set(effect, { usedAt: performance.now(), base });
-  effect.isReady = () => base() && (state.warming || !state.cold.has(effect));
+  effect.isReady = () => base() && (state.warming || !state.cold.has(effect) || !passes.has(engine.currentRenderPassId));
 }
 
 function warmUp(state: WarmupState, effect: Effect): void {
   const entry = state.cold.get(effect);
   if (!entry) return;
   state.cold.delete(effect);
+  state.settled.add(effect);
   effect.isReady = entry.base;
 }
 
@@ -114,7 +141,9 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
   let state = states.get(engine);
   if (!state) states.set(engine, (state = install(engine)));
   const now = performance.now();
-  for (const [effect, entry] of state.cold) if (now - entry.usedAt >= UNUSED_WARM_MS) warmUp(state, effect);
+  for (const [effect, entry] of state.cold) {
+    if (now - entry.usedAt >= UNUSED_WARM_MS) warmUp(state, effect);
+  }
   if (tolerated) state.requests.clear();
   state.marking += 1;
   try {
@@ -147,6 +176,11 @@ export function requestPipelineWarm(mesh: AbstractMesh): void {
 export function pipelinesWarm(mesh: AbstractMesh): boolean {
   const state = warmupActive(mesh.getScene().getEngine());
   return !state || state.meshWarm.get(mesh) === true;
+}
+
+/** Whether `mesh`'s last warm draws all found their pipelines, whatever the current round. */
+export function pipelinesWarmed(mesh: AbstractMesh): boolean {
+  return states.get(mesh.getScene().getEngine())?.meshWarm.get(mesh) === true;
 }
 
 /** The warm pass id standing in for `renderPassId`. */
