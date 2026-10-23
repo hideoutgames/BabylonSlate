@@ -204,8 +204,12 @@ const difference = (pixels: readonly number[], reference: readonly number[]) =>
   Math.max(...pixels.map((value, index) => Math.abs(value - reference[index]!)));
 
 /** A step's record without its pixels. */
-const record = ({ pixels: _pixels, adoptedPixels: _adopted, ...step }: Step & { pixels: number[]; adoptedPixels: number[] }, referenceDifference?: number): Step =>
-  referenceDifference === undefined ? step : { ...step, referenceDifference };
+const record = (step: Step & { pixels?: number[]; adoptedPixels?: number[] }, referenceDifference?: number): Step => {
+  const kept: Step & { pixels?: number[]; adoptedPixels?: number[] } = { ...step };
+  delete kept.pixels;
+  delete kept.adoptedPixels;
+  return referenceDifference === undefined ? kept : { ...kept, referenceDifference };
+};
 
 /**
  * A light stops casting shadows while a lamp switches off. The receivers' previous Effect still samples the light's
