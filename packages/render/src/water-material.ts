@@ -24,8 +24,7 @@ import { WATER_SCENE_COPY_SKY_DEPTH, WATER_SCENE_COPY_SKY_THRESHOLD, isMainWater
  * Wind-chop octaves: [heading offset (radians), wavenumber multiplier, slope, speed, phase].
  * Sharp-crested `exp(sin - 1)` waves (Stylized adds a little domain drag) read as wind chop rather than
  * the regular interference of plain sines. All are world-space and advect with the current.
- * Realistic evaluates `CHOP_TIER`'s share of them plus `CAPILLARY_OCTAVES`, heading `REAL_CHOP_TURNS` off the wind instead of
- * the offsets here; Stylized up to three (`STYLIZED_CHOP_TIER`).
+ * Toon evaluates up to three of them (`STYLIZED_CHOP_TIER`); Realistic and Painted take their waves from the FFT spectrum.
  * Their directions, wavenumbers and clock phases are uniforms (`octaveConstants`).
  */
 const DETAIL_OCTAVES = [
@@ -33,34 +32,12 @@ const DETAIL_OCTAVES = [
   [2.1, 4.17, 0.14, 0.9, 2.3], [-1.9, 6.71, 0.11, 1.1, 5.6], [0.35, 10.8, 0.08, 0.95, 0.9],
 ] as const;
 /**
- * Realistic only: capillary ripples down to about a fifteenth of the chop's base wavelength, in the same format. Their
- * slopes stay high like real wind ripples, so close water breaks reflections into fine glitter; they only shade
- * (no crest height or domain drag) and fade with the pixel footprint along their own direction. The finest (High up)
- * resolves only within a few metres of the camera.
- */
-const CAPILLARY_OCTAVES = [
-  [1.25, 17.4, 0.225, 1.0, 3.3], [-2.45, 28.1, 0.21, 0.96, 0.4], [2.75, 45.3, 0.19, 1.04, 2.2], [-0.55, 73.9, 0.165, 0.98, 5.1],
-] as const;
-/** Slope variance an octave carries when fully resolved (see `swLostDetail`). */
-const octaveVariance = (slope: number) => 0.07 * slope * slope;
-/**
- * Temporal filtering of Realistic's chop octaves and capillaries: an octave whose phase advances more than about
- * `TEMPORAL_FADE` radians per frame at 30 frames per second (its deep-water angular frequency times its speed and Wave
- * Speed) fades out of the shading normal and adds its slope variance to the filtered roughness, as one too fine for the
- * pixel does. At 24 to 30 frames per second the finest capillaries otherwise jump about a quarter of their wavelength
- * between frames, so the sun's glints on them strobe instead of travelling. Uniform-only arithmetic, every tier.
- */
-const TEMPORAL_FADE = [0.6, 1.3] as const;
-/**
  * A swell component fades by the phase it advances over one sample: radians per pixel footprint (the fragment, along its
  * own heading) and per vertex spacing (`swvF`, whose 4/Wave Length constant makes `spacing * w` 0.64 k · spacing). The
  * fragment's geometry terms (height, offset, resolved share) fade between `SWELL_GEOMETRY_FADE` per pixel, as the mesh
- * drops it by 1.56 to π per vertex; Realistic shades only the slope it can still draw cleanly (`SWELL_SLOPE_FADE`, about
- * 25 down to 6 pixels a cycle), the rest going to roughness, so a long swell row at a grazing angle never prints a stripe.
+ * drops it by 1.56 to π per vertex.
  */
 const SWELL_GEOMETRY_FADE = [0.6, 2.2] as const;
-const SWELL_SLOPE_FADE = [0.25, 1.0] as const;
-const TEMPORAL_FRAME = 1 / 30;
 
 /**
  * Metres over which an open-water edge (a finite body's bank over no terrain while a terrain field is bound, such as an
@@ -77,8 +54,8 @@ const SWASH_REACH_MAX = 10;
 /** Metres of depth over which water thins to nothing at a gentle shore (`swShoreSoft`). */
 const SOFT_SHORE_DEPTH = 0.4;
 /**
- * Refraction bends by the swell and the first chop octaves only (Realistic, Stylized): the finer chop, the capillaries and the FFT
- * band move the bed at a frequency the eye reads as jelly, and stay in the shading normal alone.
+ * Toon's refraction bends by the swell and the first chop octaves only: the finer chop and the FFT band move the bed at a
+ * frequency the eye reads as jelly, and stay in the shading normal alone.
  */
 const REFRACTION_OCTAVES = [3, 2] as const;
 /** Largest refracted screen shift (pixels of the scene copy) near the camera, and far away, over `REFRACTION_FAR` metres of view depth. */
@@ -222,40 +199,12 @@ const FFT_FRAGMENT_FADE = [0.45, 1.4] as const;
  * seam (`fftVertexSource`): neighbours' grids resolve the band differently, so at the seam neither displaces by it.
  */
 const FFT_SEAM_FADE = 2;
-/** Lowest tier evaluating each realistic chop octave, capillary, and Stylized chop octave. */
-const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
-const CAPILLARY_TIER = [1, 2, 2, 2] as const;
 const STYLIZED_CHOP_TIER = [0, 1, 2] as const;
 /**
  * Radians each Stylized chop octave's phase (the first three) drifts across the large and the medium anti-tiling noise:
  * its crests wander instead of running straight, so crossing octaves never form a regular lattice.
  */
 const CHOP_PHASE_DRIFT = [[3.1, 2.2], [-4.3, -2.5], [5.2, 1.8], [-6.1, -2.0], [7.4, 1.4], [-8.2, -1.6]] as const;
-/**
- * Realistic chop and capillaries are sums of travelling directional waves on the straight world domain; no noise bends
- * it (a smooth noise displacing ripples by metres curls their crests along its closed isolines into eddies and rings,
- * and the old self-drag moved the finest ripples by several of their own wavelengths). Each octave heads off the wind by
- * `REAL_CHOP_TURNS` / `REAL_CAPILLARY_TURNS` (radians, within about 25 and 15 degrees: a wind sea is directional, and
- * crossings stay narrow so they read as beats rather than a lattice; the wavenumbers stay incommensurate steps). The
- * noises only jitter each octave's phase (`REAL_CHOP_JITTER`, radians across the noise's range: at most about a tenth of
- * the octave's wavelength) and modulate its amplitude.
- */
-const REAL_CHOP_TURNS = [0.0, 0.4, -0.34, 0.22, -0.43, -0.12] as const;
-const REAL_CAPILLARY_TURNS = [0.09, -0.11, 0.04, -0.07] as const;
-const REAL_CHOP_JITTER = [[0.9, 0.5], [-1.0, -0.5], [0.9, 0.45], [-1.0, -0.5], [0.9, 0.5], [-1.0, -0.45]] as const;
-/** Realistic: the share of the slow chop shift (`CHOP_SHIFT`) kept, and the capillaries' amplitude where the FFT band is drawing the fine detail. */
-const REAL_CHOP_SHIFT_SHARE = 0.5;
-const REAL_CAPILLARY_FFT = 0.8;
-/**
- * Realistic capillaries fade by the pixel footprint (radians per pixel, `footprintFade`) sooner than the chop does: ripples
- * a few pixels long are drawn as roughness instead, so they never print a regular hatch across mid-distance water.
- */
-const CAPILLARY_FADE = [0.25, 0.9] as const;
-/**
- * Each capillary's patch field (GLSL over the shared noises, the fine one first): a different mix per ripple, so the four
- * never fade in step, crests are short dashes and two crossing ripples overlap only in part of the sea.
- */
-const CAPILLARY_PATCH = ["(swFine * 0.8 + swMedium * 0.2)", "(1.0 - swFine * 0.8 - swLarge * 0.2)", "(swMedium * 0.3 + (1.0 - swFine) * 0.7)", "(swLarge * 0.3 + swFine * 0.7)"] as const;
 /**
  * The chop's slow phase shift: each octave's phase also gains `CHOP_SHIFT[i]` radians times a rotating mix of the
  * centred large and gust noises, (cos θ · (large − ½) + sin θ · (gust − ½)), θ = `CHOP_SHIFT_RATE` × the first octave's
@@ -304,23 +253,12 @@ const CHOP_FM_TURNS = [[0, 1], [1, 1], [2, 1], [1, 2], [3, 1], [2, 2]] as const;
  * sine per octave.
  */
 const CHOP_FM_SLOW_TURNS = [[-1, 1], [2, -1], [-5, 4], [5, -3], [-4, 3], [3, -2]] as const;
-/** `spatial` scales how fast the modulation's world phase varies across the noises (Realistic keeps it small: no spatial bend). */
+/** `spatial` scales how fast the modulation's world phase varies across the noises. */
 function chopFm(i: number, spatial = 1): string {
   const depth = `${f(CHOP_FM_DEPTH)} * (0.4 + 0.75 * swGust + 0.45 * swLarge)`;
   return ` + ${depth} * (sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_TURNS[i]![0])}, ${f(CHOP_FM_TURNS[i]![1])})) + swGust * ${f(4 * spatial)} + ${f(0.9 + i * 1.7)})`
     + ` + sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_SLOW_TURNS[i]![0])}, ${f(CHOP_FM_SLOW_TURNS[i]![1])})) + swLarge * ${f(6 * spatial)} + ${f(2.0 + i * 2.3)}))`;
 }
-/**
- * Painted shades the chop by a rounded copy of its octaves (a sine profile, `swDetailSoft`) at this share of the sharp
- * crests' slope: broad soft lumps instead of narrow ridges. Its ripples are brush strokes: the first two capillary
- * families at `PAINTED_STROKE_K` of their wavenumber (about two thirds of a metre and a third), shown only where a noise
- * gate stretched along the wind is high (patches about a metre long and a third as wide), at `PAINTED_STROKE_SLOPE`
- * of their slope.
- */
-const PAINTED_LUMP_SLOPE = 0.8;
-const PAINTED_LUMP_WEIGHT = [1, 0.5, 0.25] as const;
-const PAINTED_STROKE_K = 0.55;
-const PAINTED_STROKE_SLOPE = 0.45;
 /** The short-crest envelope (a factor) of the chop octave whose uniform vec4 (dir.x, dir.z, k, phase) is `octave`; `bend` is added to its phase. */
 function chopCrests(octave: string, i: number, bend = ""): string {
   const turn = i % 2 ? CHOP_CREST_TURN : -CHOP_CREST_TURN, c = Math.cos(turn), s = Math.sin(turn);
@@ -333,13 +271,6 @@ function chopCrests(octave: string, i: number, bend = ""): string {
 const CREST_COUNT_PERIOD = 4096;
 /** Frequencies (per metre) of the shared large and gust noises; the chop warp sizes its amplitude to each. */
 const LARGE_NOISE = 0.07, GUST_NOISE = 0.013;
-/**
- * Slope variance of wind ripples below the smallest capillary octave, per unit of chop gain squared: added to the GGX
- * roughness (within the sea-state cap). A wind-roughened sea never mirrors the sky sharply, so close reflections of
- * cloud edges soften into sky colour instead of printing hard blotches; the sharp sun glints on the resolved facets come
- * from the facet glint term (`swGlint`), not from this lobe. Ripple Strength 0 keeps a mirror.
- */
-const OCEAN_SUB_CAPILLARY_VARIANCE = 0.003;
 /**
  * Aerial perspective (every look), scaled from the view's far plane so the editor's shorter one and Play's longer one
  * haze alike: water is half hazed (toward the horizon sky) at `WATER_HAZE_HALF` of the range, and a ramp from
@@ -361,30 +292,6 @@ export function waterHazeConstants(far: number, out: Float64Array = new Float64A
 }
 /** Realistic: wavelength-neutral scattering per absorption path unit, on top of each channel's absorption. */
 const TURBIDITY = 1.6;
-/**
- * Realistic: underwater daylight. A bed under water is lit by sunlight already filtered on its way down and by the blue
- * light of the water around it, not by the white sky light the scene lit it with, so what shows through cools toward a
- * neutral, slightly blue grey (`UNDERWATER_COOL` of the way, within the first half metre) before the per-channel
- * absorption tints it: sand under clear shallows reads cyan rather than green. Wet sand is also darker than dry sand
- * (water fills its pores): a submerged bed keeps `UNDERWATER_WET` of its light, so shallows read as a bed under water
- * rather than as a glow around the shore.
- */
-const UNDERWATER_COOL = 0.68;
-const UNDERWATER_TINT = [0.9, 1.0, 1.1] as const;
-const UNDERWATER_WET = 0.78;
-/** Realistic: what the wet band's film (the thinnest water at a waterline) keeps of the sand's colour: darker and warmer-grey than dry sand. */
-const WET_BAND_DARK = [0.64, 0.57, 0.5] as const;
-/** Realistic: the black veil a wet band falls back to where nothing can be refracted (Low, silhouettes): its share of coverage at the water and at the uncovered film. */
-const WET_VEIL = [0.1, 0.22] as const;
-/** Realistic: how fast the cooling of the bed's light follows depth (per metre; `UNDERWATER_COOL` is its limit). */
-const UNDERWATER_COOL_RATE = 1.7;
-/**
- * Realistic Low: the floor colour its own bed light assumes (linear albedo: wet sand, cooled as above and a little
- * bluer, since the real bed it passes at one transmittance keeps its own yellow), and the share of the real bed it keeps
- * above its fastest-fading channel (more would pass the sand's red and grey the shallows).
- */
-const LOW_BED = [0.3, 0.33, 0.37] as const;
-const LOW_BED_SHOWS = 0.2;
 /**
  * Low and Medium evaluate only this many swell components (the largest slopes) in the fragment shader; High and Ultra
  * all eight. The vertex shader keeps all, so the geometry is always the physics surface; a skipped component's slope
@@ -430,7 +337,6 @@ vec3 ${prefix}WarpG = vec3(0.0);` : ""}${terms}${gradient ? `
 vec3 ${prefix}WarpM = vec3(1.0 + ${prefix}WarpG.x, ${prefix}WarpG.y, 1.0 + ${prefix}WarpG.z);` : ""}`;
 }
 const CHOP_UNIFORMS = DETAIL_OCTAVES.map((_, i) => `slateWaterChop${i}`);
-const CAPILLARY_UNIFORMS = CAPILLARY_OCTAVES.map((_, i) => `slateWaterCapillary${i}`);
 
 /** `code` from `tier` up, `otherwise` below it; every directive on its own line. Code blocks start with a newline. */
 function fromTier(tier: number, code: string, otherwise = ""): string {
@@ -438,13 +344,9 @@ function fromTier(tier: number, code: string, otherwise = ""): string {
   return `\n#if ${Q} >= ${tier}${code}${otherwise ? `\n#else${otherwise}` : ""}\n#endif`;
 }
 const ifDefined = (define: string, code: string, otherwise = "") => `\n#ifdef ${define}${code}${otherwise ? `\n#else${otherwise}` : ""}\n#endif`;
-/** Sparkles exist from Medium up and only when the asset's Sparkles is above zero; otherwise `swSpark` is 0. */
-const sparkled = (code: string) => ifDefined(WATER_FEATURE_DEFINES.sparkles, fromTier(1, code, `
-float swSpark = 0.0;`), `
-float swSpark = 0.0;`);
 
 /**
- * Realistic foam's bubble web (`swWeb`): a Worley pattern over a 3 × 3 cell neighbourhood with feature points anywhere
+ * Toon's foam holes (`swWeb`): a Worley pattern over a 3 × 3 cell neighbourhood with feature points anywhere
  * in their cell (jitter 0.9), unrolled because loops do not pass `toWgsl`. Squared distances are compared, so only the
  * two nearest take a square root. With that jitter its cells are irregular polygons, so the borders read as bubbles
  * rather than a square lattice.
@@ -455,67 +357,6 @@ const FOAM_WEB_CELLS = [-1, 0, 1].flatMap((j) => [-1, 0, 1].map((i) => [i, j] as
   n2 = min(n2, max(n1, d${n}));
   n1 = min(n1, d${n});`).join("");
 
-/**
- * Realistic bed caustics (`swCaustic`, High up): an iterated, self-warping trigonometric field (after the widely used
- * tileable water caustic) whose thin bright filaments bend and merge like focused sunlight. Unrolled (loops do not pass
- * `toWgsl`); each iteration advances at its own speed. Its input is radians of a 2π tile, wrapped first: the field also
- * depends on the point's magnitude.
- */
-const causticIterations = (count: number) => [0, 1, 2, 3].slice(0, count).map((n) => `
-  t = tm * ${(1 - 3.5 / (n + 1)).toFixed(6)};
-  i = p + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
-  c += 1.0 / max(length(vec2(p.x / max(abs(sin(i.x + t)), 0.002), p.y / max(abs(cos(i.y + t)), 0.002))) * 0.005, 0.0001);`).join("");
-const CAUSTIC_ITERATIONS = causticIterations(4);
-/** `swCausticLite` (Medium): the same field with two iterations, about half the cost and a softer net. */
-const CAUSTIC_ITERATIONS_LITE = causticIterations(2);
-
-/**
- * Realistic sun glitter (`swGlitter`): one glint per cell of a world grid in rest (Lagrangian) space, so glints ride
- * the waves instead of sliding over them. A glint is a small peaked spot (compact profile (1 − r² / 4σ²)⁴ out to two
- * `GLITTER_SIGMA`, in cells) seen through a Gaussian pixel filter (`GLITTER_PIXEL` pixels): its world covariance gains
- * the filter's image under the pixel footprint, keeping its energy, so a glint thinner than a pixel spreads over about
- * one and dims instead of flickering on and off between pixels. Each glint lives for `GLITTER_SHARE` of a slow cycle
- * (1.4 to 4 s), growing from a point to its full size and shrinking back smoothly (its size rather than only its
- * brightness, so a glint bright enough to saturate still appears and leaves gradually). `GLITTER_NORM` divides by the
- * field's mean (the spot's integral, (π · 4 / 5) σ², times the mean of its squared size, share / 2), so the field
- * averages 1 and only redistributes the sun lobe's light. Cells are at least `GLITTER_CELL_PX` pixels across in their
- * most compressed direction (two grid levels crossfaded, nested, each seeded by its absolute level, so nothing pops as
- * the footprint changes) and at least `GLITTER_CELL_MIN` metres.
- */
-const GLITTER_SIGMA = 0.1;
-const GLITTER_PIXEL = 0.42;
-const GLITTER_SHARE = 0.4;
-const GLITTER_JITTER = 0.4;
-/** Glint sizes (times `GLITTER_SIGMA`, uniform over the range) and the lattice bend (cells; see `swGlitter`). */
-const GLITTER_SIZE = [0.6, 1.4] as const;
-const GLITTER_WARP = 0.45;
-const GLITTER_CELL_PX = 3;
-const GLITTER_CELL_MIN = 0.01;
-/** Mean of size² over `GLITTER_SIZE`. */
-const GLITTER_SIZE2 = (GLITTER_SIZE[1] ** 3 - GLITTER_SIZE[0] ** 3) / (3 * (GLITTER_SIZE[1] - GLITTER_SIZE[0]));
-const GLITTER_NORM = 1 / ((Math.PI * 4 / 5) * GLITTER_SIGMA * GLITTER_SIGMA * GLITTER_SIZE2 * (GLITTER_SHARE / 2));
-/**
- * The share of the sun lobe the glitter leaves smooth under the glints, and the brightest a glint may concentrate it:
- * far away the sun's path is a road of bright dashes over dark water, not a milky sheet.
- */
-const GLITTER_BASE = 0.18;
-const GLITTER_MAX = 12;
-/**
- * The `swSunReach` below which Realistic skips the glitter field (its mean, 1, stands in): every light the field
- * redistributes is scaled by that reach, so even a mirror-calm lobe's peak keeps under a thousandth of its light there.
- */
-const GLITTER_REACH_MIN = 1e-6;
-/**
- * Realistic upper-column in-scatter (`swColumn`): the sunlit top metre of the water, which still shows its blue-green at
- * grazing angles where the Fresnel mirror would take the whole body. `REAL_COLUMN_GAIN` scales the body colour's own light,
- * `REAL_COLUMN_TEAL` the share of Shallow Color's teal (blue held to green) added over shallows and in deep water, the facet's Fresnel
- * only removes `REAL_COLUMN_FRESNEL` of it.
- */
-const REAL_COLUMN_GAIN = 0.75;
-const REAL_COLUMN_TEAL = [0.14, 0.03] as const;
-const REAL_COLUMN_FRESNEL = 0.5;
-/** Realistic foam: how far the thin dark wet edge along a foam boundary darkens the water body there. */
-const REAL_FOAM_EDGE = 0.55;
 /**
  * Specular antialiasing: a lobe drawn on a normal that varies across the pixel widens by that variation, the per-axis
  * slope variance a Gaussian pixel filter of this variance (pixels²) sees through the slope's screen derivatives
@@ -545,54 +386,6 @@ vec2 swHash2(vec2 p) {
   q += vec3(dot(q, q.yzx + vec3(33.33)));
   return fract(vec2(q.x + q.y, q.x + q.z) * vec2(q.z, q.y));
 }
-float swGlitter(vec2 uvIn, vec2 fxIn, vec2 fyIn, float t, float level) {
-  // A smooth, bounded bend of the lattice (its Jacobian carried into the pixel footprint), so no row or column of
-  // cells runs straight across the sea: glints never line up into rails as the view moves along them.
-  // (WGSL parameters are immutable, so the bent lattice and footprint are new locals.)
-  vec2 wc = vec2(cos(uvIn.y * 0.61 + level * 1.7), cos(uvIn.x * 0.73 + level * 2.9)) * vec2(${f(GLITTER_WARP * 0.61)}, ${f(GLITTER_WARP * 0.73)});
-  vec2 uv = uvIn + vec2(sin(uvIn.y * 0.61 + level * 1.7), sin(uvIn.x * 0.73 + level * 2.9)) * ${f(GLITTER_WARP)};
-  vec2 fx = vec2(fxIn.x + wc.x * fxIn.y, fxIn.y + wc.y * fxIn.x);
-  vec2 fy = vec2(fyIn.x + wc.x * fyIn.y, fyIn.y + wc.y * fyIn.x);
-  vec2 id = floor(uv);
-  vec2 h = swHash2(id + vec2(41.0, 13.0) + vec2(7.13, 3.71) * level);
-  vec2 d = fract(uv) - vec2(0.5) - (h - vec2(0.5)) * ${f(GLITTER_JITTER)};
-  float life = sin(min(fract(h.x * 13.71 + h.y * 5.37 + t * (0.25 + 0.45 * fract(h.x * 3.1 + h.y * 7.7))) * ${f(1 / GLITTER_SHARE)}, 1.0) * 3.141593);
-  // Glints differ in size, so near water never reads as confetti of equal dots.
-  float size = ${f(GLITTER_SIZE[0])} + ${f(GLITTER_SIZE[1] - GLITTER_SIZE[0])} * fract(h.x * 7.31 + h.y * 2.17);
-  float s2 = ${f(GLITTER_SIGMA ** 2)} * life * life * size * size;
-  float sxx = s2 + ${f(GLITTER_PIXEL ** 2)} * (fx.x * fx.x + fy.x * fy.x);
-  float sxy = ${f(GLITTER_PIXEL ** 2)} * (fx.x * fx.y + fy.x * fy.y);
-  float syy = s2 + ${f(GLITTER_PIXEL ** 2)} * (fx.y * fx.y + fy.y * fy.y);
-  float det = max(sxx * syy - sxy * sxy, 0.0000001);
-  float q = (d.x * d.x * syy - 2.0 * d.x * d.y * sxy + d.y * d.y * sxx) / det;
-  float core = max(0.0, 1.0 - q * 0.25);
-  core *= core;
-  return core * core * s2 * ${f(GLITTER_NORM)} / sqrt(det);
-}
-// Painted's sun mark in one cell of \`uv\` (cells; \`ux\`, \`uy\` its screen derivatives): a streak with
-// half-axes \`radii\` (cells, its length varying from cell to cell) along \`ax\` (across the view) and across it,
-// jittered within its cell; about half the cells hold none. The lattice is bent by a smooth, bounded warp (its
-// Jacobian carried into the derivatives), so marks never line up in rows and columns. Its edge is antialiased by how
-// fast its shape function changes per pixel, and a streak thinner than a couple of pixels spreads over them and dims by
-// its coverage instead of flickering between pixels. It is lit for \`share\` of a 2.2 to 5 s cycle with a smooth rise
-// and fall.
-float swMark(vec2 uvIn, vec2 uxIn, vec2 uyIn, vec2 ax, vec2 radiiIn, float share, float t, vec2 seed) {
-  vec2 wc = vec2(cos(uvIn.y * 0.53 + seed.x), cos(uvIn.x * 0.67 + seed.y)) * vec2(0.212, 0.268);
-  vec2 uv = uvIn + vec2(sin(uvIn.y * 0.53 + seed.x), sin(uvIn.x * 0.67 + seed.y)) * 0.4;
-  vec2 ux = vec2(uxIn.x + wc.x * uxIn.y, uxIn.y + wc.y * uxIn.x);
-  vec2 uy = vec2(uyIn.x + wc.x * uyIn.y, uyIn.y + wc.y * uyIn.x);
-  vec2 h = swHash2(floor(uv) + seed);
-  vec2 ay = vec2(-ax.y, ax.x);
-  vec2 d = fract(uv) - vec2(0.5) - ax * ((h.x - 0.5) * 0.1) - ay * ((h.y - 0.5) * 0.36);
-  vec2 radii = radiiIn * vec2(0.55 + 0.55 * fract(h.x * 5.31 + h.y * 2.77), 1.0);
-  vec2 e = vec2(dot(d, ax), dot(d, ay)) / radii;
-  float r = length(e);
-  vec2 g = e / (radii * max(r, 0.0001));
-  float aa = abs(g.x * dot(ux, ax) + g.y * dot(ux, ay)) + abs(g.x * dot(uy, ax) + g.y * dot(uy, ay));
-  float shape = smoothstep(-aa, max(aa, 0.25), 1.0 - r) * min(1.0, 2.0 / (1.0 + aa));
-  float life = sin(min(fract(h.x * 37.13 + t * (0.2 + 0.25 * h.y)) / share, 1.0) * 3.141593);
-  return shape * life * life * step(0.45, fract(h.x * 11.7 + h.y * 3.3));
-}
 vec2 swWeb(vec2 p) {
   vec2 b = floor(p);
   vec2 f = p - b;
@@ -601,41 +394,9 @@ vec2 swWeb(vec2 p) {
   float s1 = sqrt(n1);
   return vec2(s1, sqrt(n2) - s1);
 }
-float swCaustic(vec2 uv, float tm) {
-  vec2 p = fract(uv * 0.159155) * 6.283185 - vec2(250.0);
-  vec2 i = p;
-  float c = 1.0;
-  float t = 0.0;${CAUSTIC_ITERATIONS}
-  c = 1.17 - pow(c * 0.25, 1.4);
-  c = c * c;
-  c = c * c;
-  return c * c;
-}
-float swCausticLite(vec2 uv, float tm) {
-  vec2 p = fract(uv * 0.159155) * 6.283185 - vec2(250.0);
-  vec2 i = p;
-  float c = 1.0;
-  float t = 0.0;${CAUSTIC_ITERATIONS_LITE}
-  c = 1.17 - pow(c * 0.4, 1.4);
-  c = c * c;
-  c = c * c;
-  return c * c;
-}
 `;
 
-/** Realistic, or a Stylized look: Painted (`SLATE_WATER_TOON` off) or Toon. */
-type WaterShaderStyle = "realistic" | "painted" | "toon";
 
-/**
- * One realistic chop octave or capillary: the footprint along its own direction from High up, isotropic below, times
- * its temporal fade (`TEMPORAL_FADE`).
- */
-function footprintFade(prefix: string, i: number, k: string, dir: string, speed: number, edge: readonly [number, number] = [0.4, 1.4]): string {
-  const temporal = `(1.0 - smoothstep(${f(TEMPORAL_FADE[0])}, ${f(TEMPORAL_FADE[1])}, sqrt(9.81 * ${k}) * ${f(speed * TEMPORAL_FRAME)} * U.slateWaterWaves.z))`;
-  return fromTier(2, `
-float ${prefix}${i} = (1.0 - smoothstep(${f(edge[0])}, ${f(edge[1])}, ${k} * (abs(dot(${dir}, swFootX)) + abs(dot(${dir}, swFootY))))) * ${temporal};`, `
-float ${prefix}${i} = (1.0 - smoothstep(${f(edge[0])}, ${f(edge[1])}, ${k} * swFoot * 0.64)) * ${temporal};`);
-}
 
 /**
  * Refraction (`SLATE_WATER_REFRACTION`), right after the bottom estimate: the view ray bends by the surface tilt (in
@@ -1112,11 +873,9 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
 }
 
 /**
- * Swell, wind chop, contacts and depth shared by every style and look; Stylized runs fewer chop octaves, and Painted
- * also gathers the primary swell and bends its chop domain finer.
+ * Toon's swell, wind chop, contacts and depth (the analytic waves; Realistic and Painted use `spectrumSurfaceSource`).
  */
-function surfaceSource(style: WaterShaderStyle): string {
-  const realistic = style === "realistic", painted = style === "painted", toon = style === "toon";
+function surfaceSource(): string {
   // The shared kernel's components (`waterWaveShaderConstants`) at this fragment's warped rest point (`swRestW`): the
   // same swell, crest profile and Gerstner offset the mesh, queries and buoyancy use. Phases arrive reduced on the CPU
   // relative to the floating origin, so no large-argument trigonometry runs here. Slots hold the components by
@@ -1132,8 +891,7 @@ vec2 swDm${i} = swD${i} + vec2(dot(swSwellWarpG.xy, swD${i}), dot(swSwellWarpG.y
 float swP${i} = swK${i} * dot(swD${i}, swRestW) + swWA${i}.y;
 float swA${i} = swWA${i}.x * swBlendH;
 float swPh${i} = swK${i} * (abs(dot(swDm${i}, swFootX)) + abs(dot(swDm${i}, swFootY)));
-float swFd${i} = 1.0 - smoothstep(${f(SWELL_GEOMETRY_FADE[0])}, ${f(SWELL_GEOMETRY_FADE[1])}, swPh${i});${realistic ? `
-float swFs${i} = 1.0 - smoothstep(${f(SWELL_SLOPE_FADE[0])}, ${f(SWELL_SLOPE_FADE[1])}, swPh${i});` : ""}
+float swFd${i} = 1.0 - smoothstep(${f(SWELL_GEOMETRY_FADE[0])}, ${f(SWELL_GEOMETRY_FADE[1])}, swPh${i});
 // The component's wave group (\`waterWaveGroups\`): its height envelope, which the Gerstner offset below does not carry.
 float swGn${i} = (1.0 / sqrt(1.0 + 0.5 * swWG${i}.w * swWG${i}.w));
 float swGq${i} = dot(swWG${i}.xy, swRestW) + swWG${i}.z;
@@ -1144,88 +902,38 @@ float swC${i} = cos(swP${i});
 float swE${i} = exp(swS${i} - 1.0);
 float swHv${i} = mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape);
 swHeight += swHv${i} * swF${i};
-swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * ${realistic ? `swFs${i} * swA${i} * swG${i}` : `swF${i}`});${fromTier(2, `
+swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * swF${i});${fromTier(2, `
 // The envelope's own slope (High up; about a sixteenth of the crest's, so lower tiers leave it out).
 swGradient -= swWG${i}.xy * (swWG${i}.w * swGn${i} * sin(swGq${i}) * swHv${i} * swFd${i} * swA${i});`)}
 swFold += swK${i} * swF${i} * mix(swS${i}, swE${i} * (swS${i} - swC${i} * swC${i}) / ${f(WATER_CREST_RANGE)}, swChopShape);
-swResolved += swK${i} * swFd${i} * swA${i};${realistic ? `
-swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFs${i} * swFs${i});` : painted ? `
-// The primary swell: components near the dominant wavelength, which Painted shades as the big readable waves.
-float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
-swPrimH += mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape) * swF${i} * swPw${i};
-swPrimG += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * swF${i} * swPw${i});
-swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};` : toon ? (i === 0 ? `
+swResolved += swK${i} * swFd${i} * swA${i};${i === 0 ? `
 // Toon's primary swell (its bands and crest lines follow it): the steepest slot, with from Medium the components near
 // its wavelength.
 swPrimH += swHv${i} * swF${i};${fromTier(1, `
 swPrimAmp += swA${i} * swA${i};`)}` : fromTier(1, `
 float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
 swPrimH += swHv${i} * swF${i} * swPw${i};
-swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};`)) : ""}
+swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};`)}
 float swQ${i} = swWA${i}.z * swFd${i} * swBlendD;
 swOffset += swD${i} * (swQ${i} * swC${i});
 swShear += vec3(swD${i}.x * swD${i}.x, swD${i}.x * swD${i}.y, swD${i}.y * swD${i}.y) * (swQ${i} * swK${i} * swS${i});`)).join("");
-  // Low and Medium: the swell components they skip still count as resolved slope (faded like their last one) and,
-  // Realistic, as roughness, so they widen the sun path instead of vanishing (the CPU sums the skipped slots for the
-  // compiled tier).
+  // Low and Medium: the swell components they skip still count as resolved slope (faded like their last one), so they
+  // widen the sun path instead of vanishing (the CPU sums the skipped slots for the compiled tier).
   const skipped = (last: number) => `
-swResolved += U.slateWaterSea.w * swFd${last} * swBlendH;${realistic ? `
-swLost += U.slateWaterSea.z * swBlendH * swBlendH;` : ""}`;
+swResolved += U.slateWaterSea.w * swFd${last} * swBlendH;`;
   const lowSwell = fromTier(2, "", fromTier(1, skipped(MEDIUM_SWELL_COMPONENTS - 1), skipped(LOW_SWELL_COMPONENTS - 1)));
-  const detail = realistic
-    ? DETAIL_OCTAVES.map(([, , slope, speed], i) => fromTier(CHOP_TIER[i]!, `
-// The octave is a straight travelling wave: its uniform direction already heads \`REAL_CHOP_TURNS\` off the wind
-// (\`octaveConstants\`). The noises only jitter its phase by a fraction of a wavelength (\`REAL_CHOP_JITTER\`), and the
-// slow shift and modulation stay spatially gentle: crests stay straight over metres and never curl.
+  const detail = DETAIL_OCTAVES.slice(0, STYLIZED_CHOP_TIER.length).map(([, , slope], i) => fromTier(STYLIZED_CHOP_TIER[i]!, `
 vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};
-float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + (swLarge - 0.5) * ${f(REAL_CHOP_JITTER[i]![0])} + (swMedium - 0.5) * ${f(REAL_CHOP_JITTER[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]! * REAL_CHOP_SHIFT_SHARE)}${chopFm(i, 0.25)};
+// The shared noises drift each octave's phase and, in opposition between neighbours, its strength, so crossing octaves
+// never lock into ribs or a dimple lattice.
+float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};
 float swOW${i} = exp(sin(swOX${i}) - 1.0);
-float swOCs${i} = cos(swOX${i});${footprintFade("swOFd", i, `swOC${i}.z`, `swOC${i}.xy`, speed)}
-// Anti-tiling: each octave's strength drifts with the shared noises (in patches a few metres wide, the longer octaves
-// wider), and the two octaves of each pair drift in opposition, so where one crossing direction dominates the other
-// fades: no lattice. Short crests: an oblique envelope (\`CHOP_CREST_TURN\` off the octave's heading, static in the
-// chop's domain, so crests grow and fade as they travel through it) breaks every crest into lengths of about one and a
-// half wavelengths, so no octave runs in even parallel rows (corduroy). The medium and large noises bend the envelope's
-// phase, so envelopes never line up in a grid.
-float swOA${i} = ${f(slope)} * swOFd${i} * (0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, ${f(0.5 - Math.floor(i / 2) * 0.2)}))${i % 2 === 0 ? "" : ")"})
-  * ${chopCrests(`swOC${i}`, i, " + (swMedium - 0.5) * 2.4 + (swLarge - 0.5) * 3.0")};
-swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
-swChopH += (swOW${i} - 0.37) * swOA${i};
-swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});${i === REFRACTION_OCTAVES[0] - 1 ? "\nswDetailMid = swDetail;" : ""}`, `
-swLostDetail += ${f(octaveVariance(slope))};`)).join("")
-    : DETAIL_OCTAVES.slice(0, STYLIZED_CHOP_TIER.length).map(([, , slope], i) => fromTier(STYLIZED_CHOP_TIER[i]!, `
-vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};${painted ? `
-// As Realistic: each octave's phase drifts across the shared noises and the octaves of a pair fade in opposition, so
-// crossing octaves never lock into ribs or a dimple lattice. Painted bends the phase twice as hard across the medium
-// noise and fades the pairs across it too (patches a few metres wide), so its chop is short-crested: crests a
-// wavelength or two long instead of even rows across the foreground.
-float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + (swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1] * 2)}) * swDriftK + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};` : `
-// As Realistic's: the shared noises drift each octave's phase and, in opposition between neighbours, its strength, so
-// crossing octaves never lock into ribs or a dimple lattice.
-float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};`}
-${painted ? `float swOS${i} = sin(swOX${i});
-float swOW${i} = exp(swOS${i} - 1.0);` : `float swOW${i} = exp(sin(swOX${i}) - 1.0);`}
 float swOCs${i} = cos(swOX${i});
-float swOA${i} = ${f(slope * (1 - Math.min(0.85, i * 0.14)))} * (1.0 - smoothstep(0.3, 1.1, swOC${i}.z * swFoot)) * ${painted
-    ? `(0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.35))${i % 2 === 0 ? "" : ")"})`
-    : `(0.35 + 1.3 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.6))${i % 2 === 0 ? "" : ")"})`}
+float swOA${i} = ${f(slope * (1 - Math.min(0.85, i * 0.14)))} * (1.0 - smoothstep(0.3, 1.1, swOC${i}.z * swFoot)) * (0.35 + 1.3 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.6))${i % 2 === 0 ? "" : ")"})
   * ${chopCrests(`swOC${i}`, i)};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
-swChopH += (swOW${i} - 0.37) * swOA${i};${painted ? `
-float swOSf${i} = 1.0 - smoothstep(${f(0.06 + 0.06 * i)}, ${f(0.3 + 0.1 * i)}, swOC${i}.z * swFoot);
-swDetailSoft += swOC${i}.xy * (swOCs${i} * swOA${i} * swOSf${i} * ${f(PAINTED_LUMP_SLOPE * PAINTED_LUMP_WEIGHT[i]!)});
-swChopHs += swOS${i} * swOA${i} * swOSf${i} * ${f(PAINTED_LUMP_WEIGHT[i]!)};` : ""}
+swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);${i === REFRACTION_OCTAVES[1] - 1 ? "\nswDetailMid = swDetail;" : ""}`)).join("");
-  const capillaries = realistic ? CAPILLARY_OCTAVES.map(([, , slope, speed], i) => fromTier(CAPILLARY_TIER[i]!, `
-// A directional wind ripple (its uniform direction heads \`REAL_CAPILLARY_TURNS\`, within about 15 degrees, off the wind) on
-// the straight world domain. Each ripple gathers in its own patches (a different mix of the shared noises, so the four
-// never fade in step: crests are short dashes and two crossing ripples overlap only in part of the sea, never in a regular
-// quilt); its phase jitters by a fraction of a wavelength only.
-vec4 swCC${i} = U.${CAPILLARY_UNIFORMS[i]};
-float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swChop) + swCC${i}.w + (swFine - 0.5) * ${f(i % 2 ? -0.9 : 0.9)};${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed, CAPILLARY_FADE)}
-swDetail += swCC${i}.xy * (exp(sin(swCX${i}) - 1.0) * cos(swCX${i}) * ${f(slope)} * swCFd${i} * swRipplePatch * (0.2 + 1.6 * smoothstep(0.3, 0.7, ${CAPILLARY_PATCH[i]})));
-swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swCFd${i} * swCFd${i});`, `
-swLostDetail += ${f(octaveVariance(slope))};`)).join("") : "";
   return `
 vec2 swWorld = swPosW.xz;
 float swTime = U.slateWaterMotion.x;
@@ -1269,19 +977,10 @@ float swFold = 0.0;
 float swSteep = U.slateWaterSea.x * swBlendH;
 // How steep the sea is, for thresholds (CPU, \`SEA_STATE_RMS\`); swSteep stays the sum that resolved slope is measured against.
 float swSeaState = U.slateWaterSwellInfo.w * swBlendH;
-float swResolved = 0.0;${realistic ? `
-float swLost = 0.0;
-float swLostDetail = 0.0;` : painted ? `
+float swResolved = 0.0;
 float swPrimLen = U.slateWaterWaves.y * 0.159155;
 float swPrimH = 0.0;
-vec2 swPrimG = vec2(0.0);
 float swPrimAmp = 0.0;
-// The chop's rounded copy (sine profile, no sharp crest) that Painted shades its lumps by: slope and height.
-vec2 swDetailSoft = vec2(0.0);
-float swChopHs = 0.0;` : toon ? `
-float swPrimLen = U.slateWaterWaves.y * 0.159155;
-float swPrimH = 0.0;
-float swPrimAmp = 0.0;` : ""}
 float swChopShape = U.slateWaterShape.x;
 // Unfaded Gerstner offset and S = sum(q*a*k*sin(p) * d d^T) (xx, xz, zz) at the warped rest point, filtered like the swell.
 vec2 swOffset = vec2(0.0);
@@ -1290,13 +989,11 @@ vec3 swShear = vec3(0.0);
 // M = I + dW/drest (swSwellWarpM, symmetric): grad H = M grad_u H, grad D = grad_u D M.${swellWarpSource("swSwell", "swRest", true)}
 vec2 swRestW = swRest + swSwellWarp;
 ${swell}${lowSwell}
-swGradient = vec2(dot(swSwellWarpM.xy, swGradient), dot(swSwellWarpM.yz, swGradient));${painted ? `
-swPrimG = vec2(dot(swSwellWarpM.xy, swPrimG), dot(swSwellWarpM.yz, swPrimG));
+swGradient = vec2(dot(swSwellWarpM.xy, swGradient), dot(swSwellWarpM.yz, swGradient));
 // The primary swell's height scale: its components' root-sum-square, not their sum, so a crest reads as tall whether one
-// component carries the swell or several share it (${f(PRIMARY_RMS)} keeps a single dominant train's scale).
-swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);` : toon ? `${fromTier(1, `
+// component carries the swell or several share it (\`PRIMARY_RMS\` keeps a single dominant train's scale).${fromTier(1, `
 swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);`, `
-swPrimAmp = ${f(PRIMARY_RMS)} * swA0;`)}` : ""}
+swPrimAmp = ${f(PRIMARY_RMS)} * swA0;`)}
 vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
 float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
 float swBaseZ = swBaseNormal.z / max(0.001, swBaseNormal.y);
@@ -1326,12 +1023,11 @@ swGradient = vec2(swBaseX, swBaseZ) + vec2(swJzz * swRestSlope.x - swJzx * swRes
 // never line up into rectangles or a common grid across the sea.
 vec2 swFlowedR = vec2(dot(swFlowed, vec2(0.958244, -0.285952)), dot(swFlowed, vec2(0.285952, 0.958244)));
 vec2 swWorldL = vec2(dot(swWorld, vec2(0.862807, -0.505533)), dot(swWorld, vec2(0.505533, 0.862807)));
-float swMedium = swNoise(swFlowedR * 0.43 + vec2(swTime * 0.03, 0.0));${realistic ? `
-float swLarge = swNoise(swWorldL * ${f(LARGE_NOISE)});` : `
+float swMedium = swNoise(swFlowedR * 0.43 + vec2(swTime * 0.03, 0.0));
 // Stylized posterises its colour drifts, where a value noise's cell grid would show as soft-edged rectangles: the
 // medium noise bends the large one's domain (by up to about a third of a cell), so the drifts curve instead. The bend
 // fades where the medium noise would alias, so distant drifts never speckle.
-float swLarge = swNoise(swWorldL * ${f(LARGE_NOISE)} + vec2(swMedium - 0.5, 0.5 - swMedium) * (0.7 * (1.0 - smoothstep(0.6, 1.6, swFoot))));`}${fromTier(1, `
+float swLarge = swNoise(swWorldL * ${f(LARGE_NOISE)} + vec2(swMedium - 0.5, 0.5 - swMedium) * (0.7 * (1.0 - smoothstep(0.6, 1.6, swFoot))));${fromTier(1, `
 float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
 // Gusts roughen or calm wide patches.
 float swGust = swNoise(vec2(dot(swWorld, vec2(0.479426, 0.877583)), dot(swWorld, vec2(-0.877583, 0.479426))) * ${f(GUST_NOISE)} + vec2(swTime * 0.004, 0.0));`, `
@@ -1339,39 +1035,22 @@ float swFine = swMedium;
 float swGust = swLarge;`)}${fftFragmentSource()}
 // Anti-tiling (Stylized): a bounded warp bends the chop domain, so crests curve and cross differently across the sea. (A
 // rotation about the world origin would compress the chop without limit far from it.) Each component's amplitude suits its
-// noise's frequency, so the warp never stretches the chop much; Low's gust is its large noise, so that one shrinks.
-// Realistic's octaves stay straight: its domain is the flowed world position itself.${fromTier(1, `
-vec2 swChop = swFlowed${realistic ? "" : " + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0)"};`, `
-vec2 swChop = swFlowed${realistic ? "" : ` + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)})`};`)}
+// noise's frequency, so the warp never stretches the chop much; Low's gust is its large noise, so that one shrinks.${fromTier(1, `
+vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);`, `
+vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)});`)}
 // Colour Variation's drifts: the two wide noises mixed, with edges bent by the medium one. Either wide noise alone shows
 // its cell grid as soft-edged rectangles (the gust's cells are about 77 m); mixed with each other and the medium noise
 // (six times finer than the large one) their edges curve and their cells no longer line up.
-float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic ? fromTier(1, `
-// Wind gusts (Realistic, Medium up): wide patches of the sea are glassy and others rippled, so capillaries, chop gain and the
-// roughness they add (the sub-capillary and filtered variance scale with the chop gain) come and go together.
-float swWindPatch = smoothstep(0.28, 0.72, swGust * 0.45 + swLarge * 0.4 + swMedium * 0.15);
-float swWindGain = mix(0.5, 1.35, swWindPatch);`, `
-float swWindGain = 0.7 + 0.6 * swGust;`) : ""}${painted ? fromTier(1, `
-// Bend it at a finer scale too, so crossing octaves never settle into a regular quilt in the sun's reflection; the
-// fine part fades before its noise would alias.
-swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot)) * 0.35) * 0.6;`) : ""}
+float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;
 vec2 swDetail = vec2(0.0);
 // The chop octaves refraction bends by (\`REFRACTION_OCTAVES\`): the medium-frequency part of \`swDetail\`, kept apart from the fine
 // octaves, whose high-frequency wobble would make the bed under the water shimmer like jelly.
 vec2 swDetailMid = vec2(0.0);
 float swChopH = 0.0;
 // The chop's slow phase shift (\`CHOP_SHIFT\`): a rotating mix of the two wide noises.
-float swChopShift = U.slateWaterChopShift.x * (swLarge - 0.5) + U.slateWaterChopShift.y * (swGust - 0.5);${painted ? fromTier(1, `
-float swDriftK = 1.0;`, `
-// Low's single octave would bend into swirls under the full drift.
-float swDriftK = 0.5;`) : ""}
+float swChopShift = U.slateWaterChopShift.x * (swLarge - 0.5) + U.slateWaterChopShift.y * (swGust - 0.5);
 ${detail}${fromTier(1, "", `
-swDetailMid = swDetail;`)}${realistic ? fromTier(1, `
-// Capillaries are directional wind ripples that gather in drifting gust patches (glassy water between them); once the FFT
-// band is drawing (its gain is 0 until it is ready) they are fainter, so the two never double-count the fine detail.
-float swRipplePatch = (0.6 + 0.8 * swMedium) * mix(0.2, 1.55, swWindPatch);${fromTier(3, `
-swRipplePatch *= 0.55 + 0.9 * swFine;`)}${ifFft(`
-swRipplePatch *= mix(1.0, ${f(REAL_CAPILLARY_FFT)}, clamp(swFft.x, 0.0, 1.0));`)}`) : ""}${capillaries}
+swDetailMid = swDetail;`)}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
@@ -1382,14 +1061,9 @@ float swObject = abs(swContactSigned);
 // shore (an ocean's outer edge, a lake reaching past a landscape's border). It neither foams nor swashes there, and the
 // water fades out over \`OPEN_EDGE_FADE\` metres instead (\`swOpenFade\`, applied to the final coverage). Without any
 // terrain field the bank stays the shore, as for a body that only meets meshes.
-float swOpenEdge = U.slateWaterFieldInfo.x * (1.0 - smoothstep(0.0, 0.1, swField.a * swFieldOn));${style === "toon" ? `
+float swOpenEdge = U.slateWaterFieldInfo.x * (1.0 - smoothstep(0.0, 0.1, swField.a * swFieldOn));
 float swOpenAny = swOpenEdge;
-float swOpenW = ${f(OPEN_EDGE_FADE)};` : `
-// The same where the body ends over water-covered terrain, its bank metres short of the terrain's own shoreline (a
-// lake drawn smaller than its basin): no shore there either, and the water thins out over \`OPEN_EDGE_FADE_TERRAIN\`
-// metres instead of standing as a cut sheet above the bed. Toon keeps its rim there (its banks are drawn lines).
-float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - max(0.0, IN.vSlateWater.y)));
-float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);`}
+float swOpenW = ${f(OPEN_EDGE_FADE)};
 float swBankV = mix(IN.vSlateWater.y, max(IN.vSlateWater.y, ${f(SHORE[1])}), swOpenAny);
 float swOpenFade = mix(1.0, smoothstep(0.0, swOpenW, IN.vSlateWater.y), swOpenAny);
 // Soft waterline (every look but Toon, whose banks are drawn lines): over known terrain the water thins to nothing over its
@@ -1418,18 +1092,15 @@ float swSwashX = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), ${f(SWASH_RE
 float swSurfW = clamp(swSwashX * 2.5 + swFoamWidth * 4.0, 2.0, 22.0);
 float swShoreHere = max(swFieldShore, 0.0);
 float swSwashCover = 1.0;
-float swSwashWet = 0.0;${toon ? `
+float swSwashWet = 0.0;
 float swFilmCur = 0.0;
 float swFilmOld = 0.0;
 float swFilmG0 = -1.0;
 float swFilmG1 = -1.0;
-float swFilmG2 = -1.0;` : ""}
+float swFilmG2 = -1.0;
 float swSwashFoam = 0.0;
 float swSwashRun = 0.0;
-float swSwashBack = 0.0;${realistic ? `
-// Realistic also reads how far the current wave has drained (0 at the run-up's peak, 1 when spent) and its reach.
-float swSwashDn = 0.0;
-float swSwashReach = 0.0;` : ""}
+float swSwashBack = 0.0;
 // Signed distance from the swash edge toward open water (metres; far positive off terrain), for hard-edged looks.
 float swSwashEdgeS = 1000.0;
 float swBore = 0.0;
@@ -1445,9 +1116,7 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swReach = min((0.5 + 0.5 * swHash(vec2(swCycN, 41.0))) * swSet, 1.0);
   float swRunUp = clamp(swSwU / 0.3, 0.0, 1.0);
   float swDn = clamp((swSwU - 0.3) / 0.7, 0.0, 1.0);
-  swSwashBack = step(0.3, swSwU);${realistic ? `
-  swSwashDn = swDn;
-  swSwashReach = swReach;` : ""}
+  swSwashBack = step(0.3, swSwU);
   swSwashRun = mix(1.0 - (1.0 - swRunUp) * (1.0 - swRunUp), 1.0 - swDn * sqrt(swDn), swSwashBack) * swReach;
   float swEdgeX = swSwashX * (1.0 - swSwashRun);
   float swAAX = swFoot * 0.7 + 0.02;
@@ -1462,7 +1131,7 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   // the sand beyond the wet film, and that film darkens the sand to mark the furthest reach instead).
   float swStrandW = swFoamWidth * 0.12 + swAAX;
   float swStrand = (1.0 - smoothstep(swStrandW * 0.4, swStrandW, abs(swShoreHere - swSwashX * (1.0 - swReach)))) * swSwashBack * exp(-swDn * 2.0) * 0.8;
-  swSwashFoam = ${toon ? "swFront" : "max(swFront, swStrand)"} * swSwashZone;
+  swSwashFoam = swFront * swSwashZone;
   // Wet film: time since the backwash uncovered this point (this cycle's, else the last cycle's), so the wet band lags
   // the swash and dries where only the larger waves reach.
   float swNeed = 1.0 - swShoreHere / max(swSwashX, 0.001);
@@ -1474,16 +1143,14 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swPassC = 0.3 + 0.7 * pow(max(1.0 - swNeedC, 0.000001), 0.6667);
   float swPassP = 0.3 + 0.7 * pow(max(1.0 - swNeedP, 0.000001), 0.6667);
   float swSince = mix(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0, swSwU - swPassC, step(swNeedC, 1.0) * step(swPassC, swSwU));
-  ${realistic ? `// Realistic fades this cycle's film into the last one's over the last quarter of the reach: the furthest reach is a
-  // soft edge of drying sand, not a cliff.
-  swSwashWet = mix(exp(-(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0) * 1.4), exp(-(swSwU - swPassC) * 1.4), smoothstep(1.0, 0.7, swNeedC) * step(swPassC, swSwU)) * smoothstep(-0.2, 0.0, swNeed) * swSwashZone;` : ""}${toon ? `// Toon cannot antialias the film's hard switches (the swash's furthest reach, this cycle's reach, the moment the backwash
+  // Toon cannot antialias the film's hard switches (the swash's furthest reach, this cycle's reach, the moment the backwash
   // uncovered the point) from inside this branch, which has no derivatives: it exports the two ages and the continuous
   // quantities the switches test, and blends them outside (\`swSwashWet\` below).
   swFilmCur = exp(-(swSwU - swPassC) * 1.4);
   swFilmOld = exp(-(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0) * 1.4);
   swFilmG0 = swNeed * swSwashX;
   swFilmG1 = 1.0 - swNeedC;
-  swFilmG2 = swSwU - swPassC;` : realistic ? "" : `swSwashWet = exp(-swSince * 1.4) * step(0.0, swNeed) * swSwashZone;`}
+  swFilmG2 = swSwU - swPassC;
   // Bores: cycles behind the nearest front travelling shoreward through the surf, each as strong as the run-up it brings.
   float swPsiB = swPsi + U.slateWaterSwash.z * swShoreRest * 0.159155;
   float swBoreC = floor(swPsiB);
@@ -1575,7 +1242,7 @@ float swAgitate = exp(-swObject / swContactW) * swRippleAA * swNearContact;`, `
 float swAgitate = 0.0;`)}
 vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
 // Rougher seas carry steeper chop (CPU factor in slateWaterTerms.w).
-float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "swWindGain * U.slateWaterTerms.w" : "(0.5 + swGust)"};
+float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * (0.5 + swGust);
 vec2 swSlope = swGradient + swDetail * swChopGain + swRipple;${ifFft(`
 swSlope += swFftSlope;`)}
 normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
@@ -1584,15 +1251,9 @@ vec3 swSwellNormal = normalize(vec3(swBaseX - swGradient.x, 1.0, swBaseZ - swGra
 
 // Bottom estimate: a shelving bank with an irregular floor, capped by the component Depth.
 float swShelf = 0.28 + 0.35 * swLarge;
-float swDepth = mix(swBodyDepth * (1.0 - exp(-swBank * swShelf / swBodyDepth)), max(0.0, swTerrainDepth), swKnown);${realistic ? `
-// The terrain field's own depth, before refraction bounds it by the scene copy.
-float swFieldDepth = swDepth;` : `
+float swDepth = mix(swBodyDepth * (1.0 - exp(-swBank * swShelf / swBodyDepth)), max(0.0, swTerrainDepth), swKnown);
 // The bed under this point, before refraction bounds it by whatever lies nearer.
-float swBedDepth = swDepth;`}${refractionSource(realistic ? 0.55 : 1)}${realistic ? ifDefined(REFRACTION, `
-// Over known terrain the field's depth is smooth and exact, while the copy's nearest-texel depth steps from texel to
-// texel around it (stair-stepped blocks in the shallows' colour, caustics and surf): the field's stands unless the copy
-// shows something clearly nearer than the bed (a rock or an object under the surface), and always in the thinnest water.
-swDepth = mix(swDepth, swFieldDepth, swKnown * max(1.0 - smoothstep(0.5, 1.5, swFieldDepth), 1.0 - smoothstep(0.25, 0.6, (swFieldDepth - swDepth) / max(swFieldDepth, 0.3))));`) : ""}
+float swBedDepth = swDepth;${refractionSource(1)}
 float swAbsorb = max(0.01, U.slateWaterLook.y);
 float swTone = 1.0 - exp(-swDepth * 2.0 / swAbsorb);
 float swCrest = swHeight / max(0.001, U.slateWaterWaves.x);
@@ -1613,18 +1274,7 @@ float swFoamAmount = U.slateWaterFoam.w;
 // Contact foam keeps its own strength: a low Foam Amount calms shores and crests but still marks every
 // waterline on objects; only a Foam Amount near zero (or Contact Foam Width 0) removes it (CPU, slateWaterTerms.x).
 float swContactStrength = U.slateWaterTerms.x;
-${realistic ? ifDefined(WATER_FEATURE_DEFINES.sparkles, fromTier(1, `
-// Sun glints on a jittered world grid; they twinkle and fade before they would alias.
-vec2 swSparkUv = swFlowed * 0.9 * U.slateWaterMotion.y;
-vec2 swCellId = floor(swSparkUv);
-float swRnd = swHash(swCellId);
-vec2 swJitter = vec2(swHash(swCellId + vec2(17.0, 3.0)), swHash(swCellId + vec2(5.0, 29.0))) - vec2(0.5);
-vec2 swDelta = fract(swSparkUv) - vec2(0.5) - swJitter * 0.6;
-float swTwinkle = pow(max(0.0, sin(swTime * (2.0 + swRnd * 3.0) + swRnd * 40.0)), 10.0);
-float swCore = max(0.0, 1.0 - length(swDelta) * 7.0);
-float swSparkBase = swCore * swCore * swTwinkle * smoothstep(0.4, 0.5, swRnd) * (1.0 - smoothstep(0.1, 0.35, swFoot * 0.9 * U.slateWaterMotion.y)) * U.slateWaterLook.z * min(1.0, U.slateWaterSun.w);`, `
-float swSparkBase = 0.0;`), `
-float swSparkBase = 0.0;`) : ""}
+
 `;
 }
 
@@ -1857,7 +1507,7 @@ float swSssV = clamp(dot(swV, swSssH), 0.0, 1.0);
 float swSssBack = clamp(dot(-swV, normalize(swL + swWaveN * 0.4)), 0.0, 1.0);
 float swSss = (swSssV * swSssV * swSssV * swSssV * swSssV * 30.0 + swSssBack * swSssBack * swSssBack * 6.0) * 0.15 * U.slateWaterLook.w;
 float swCrestLift = max(swSpCrest / max(U.slateWaterWaves.x * 0.5, 0.05) + 0.26, 0.0) / 4.7;
-vec3 swBody = mix(U.slateWaterDeep.rgb, clamp(U.slateWaterDeep.rgb + U.slateWaterShallow.rgb * (swSss * swCrestLift), 0.0, 1.0), clamp(swSp.x, 0.0, 1.0)) * swBodyLight;
+vec3 swBody = mix(U.slateWaterDeep.rgb, clamp(U.slateWaterDeep.rgb + U.slateWaterShallow.rgb * (swSss * swCrestLift), vec3(0.0), vec3(1.0)), clamp(swSp.x, 0.0, 1.0)) * swBodyLight;
 // Shallow water: what lies below shows through per-channel absorption (Depth Color Distance; red goes first).
 float swCosT = sqrt(1.0 - (1.0 - swNdotV * swNdotV) * 0.5625);
 float swPath = swDepth * (1.0 + 1.0 / swCosT) / (swAbsorb * 5.0);
@@ -2096,7 +1746,7 @@ if (${local}) {
  */
 function toonSource(): string {
   const { crestFoam, surfaceFoam, subsurface, sparkles } = WATER_FEATURE_DEFINES;
-  return surfaceSource("toon") + `
+  return surfaceSource() + `
 vec3 swV = viewDirectionW;
 float swUp = clamp(swV.y, 0.0, 1.0);
 vec3 swLuma = vec3(0.3, 0.59, 0.11);
@@ -3462,7 +3112,7 @@ const FRAME_UNIFORMS: readonly string[] = [
   "slateWaterSun", "slateWaterSunColor", "slateWaterSky", "slateWaterHorizon", "slateWaterSunShape", "slateWaterAbsorb", "slateWaterThrough",
   "slateWaterOrigin", "slateWaterLight",
   ...SWELL_DIRECTION.flatMap((direction, i) => [direction, SWELL_AMPLITUDE[i]!, SWELL_GROUP[i]!]), ...SWELL_WARP,
-  "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", ...CHOP_UNIFORMS, ...CAPILLARY_UNIFORMS,
+  "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", ...CHOP_UNIFORMS,
   "slateWaterRipple", "slateWaterChopShift", "slateWaterTerms", "slateWaterSwash", "slateWaterHaze",
   ...BLEND_COLOR_UNIFORMS,
 ];
@@ -3698,10 +3348,8 @@ const smoothstep = (edge0: number, edge1: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 };
-/** Chop octaves then capillaries: the CPU side of `CHOP_UNIFORMS` and `CAPILLARY_UNIFORMS`. */
-const ALL_OCTAVES = [...DETAIL_OCTAVES, ...CAPILLARY_OCTAVES];
-/** Realistic's heading of each octave off the wind, in `ALL_OCTAVES` order. */
-const REAL_OCTAVE_TURNS = [...REAL_CHOP_TURNS, ...REAL_CAPILLARY_TURNS];
+/** The chop octaves: the CPU side of `CHOP_UNIFORMS`. */
+const ALL_OCTAVES = DETAIL_OCTAVES;
 /** Swell slots by descending slope (k·a), cached per wave set: Low and Medium evaluate the first few (`swellTier`). */
 const slopeOrders = new WeakMap<WaterWaveSet, Uint8Array>();
 function slopeOrder(set: WaterWaveSet): Uint8Array {
@@ -4262,7 +3910,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       "slateWaterScreen", "slateWaterPlanar",
       // A blending surface's partner colours (\`BLEND_COLOR_UNIFORMS\`).
       ...BLEND_COLOR_UNIFORMS,
-      ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, ...CHOP_UNIFORMS, ...CAPILLARY_UNIFORMS, ...FFT_UNIFORMS,
+      ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, ...CHOP_UNIFORMS, ...FFT_UNIFORMS,
     ];
     const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => i);
     return { ubo: [
@@ -4582,14 +4230,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     sea[3] = shared.sea[3]!;
     return shared.swell;
   }
-  /** Chop octaves and capillaries: (dir.x, dir.z, k, clock phase), the phase reduced in float64. Allocation-free. */
+  /** Toon's chop octaves: (dir.x, dir.z, k, clock phase), the phase reduced in float64. Allocation-free. */
   private octaveConstants(): Float64Array {
-    const w = this.water, out = this.octaves, base = TAU * w.rippleScale / 6, heading = w.waveDirection * Math.PI / 180, realistic = w.style !== "stylized";
+    const w = this.water, out = this.octaves, base = TAU * w.rippleScale / 6, heading = w.waveDirection * Math.PI / 180;
     for (let i = 0; i < ALL_OCTAVES.length; i++) {
       const [offset, multiplier, , speed, phase] = ALL_OCTAVES[i]!, k = base * multiplier, o = i * 4;
-      // Realistic's octaves head within a few tens of degrees of the wind (`REAL_OCTAVE_TURNS`); Stylized's fan out by `DETAIL_OCTAVES`.
-      const turn = realistic ? REAL_OCTAVE_TURNS[i]! : offset;
-      out[o] = Math.cos(heading + turn); out[o + 1] = Math.sin(heading + turn); out[o + 2] = k;
+      out[o] = Math.cos(heading + offset); out[o + 1] = Math.sin(heading + offset); out[o + 2] = k;
       out[o + 3] = wrapPhase(phase - Math.sqrt(9.81 * k) * speed * w.waveSpeed * this.time);
     }
     return out;
