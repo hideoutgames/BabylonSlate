@@ -1,19 +1,23 @@
 import {
   BaseTexture,
+  Color4,
   Constants,
   type AbstractEngine,
   type InternalTexture,
   type RenderTargetWrapper,
   type Scene,
 } from "@babylonjs/core";
+import { withDrawingState } from "./engine-drawing-state";
 
 /**
  * One texel of each shadow and light-texture sampler type, bound to a sampler no real texture of its type is bound
  * to: the volumetric march's slots a light's kind does not read, and a receiver drawing its previous Effect whose
  * shader light no longer has the map or texture it was compiled for (`bindLights` in fixed-light-binding.ts). A WebGPU
  * bind group needs a texture of the declared type in every binding, and WebGL2 must not leave a released map (or a
- * texture of another type or comparison mode) behind on a unit. The depth ones carry a comparison function because
- * their samplers compare; which one does not matter.
+ * texture of another type or comparison mode) behind on a unit. Each reads as an empty shadow map, filled as Babylon
+ * clears one (white, depth at the far plane, the same comparison function), so a shader light sampling one is lit:
+ * the filters Haptic sets (PCF, PCSS, Poisson for cube maps) find no occluder. White also leaves a light's
+ * projection, IES or emission texture without effect.
  */
 export interface ShadowSamplerPlaceholders {
   /** 2D depth with comparison (`sampler2DShadow`). */
@@ -65,7 +69,7 @@ export function shadowSamplerPlaceholders(scene: Scene): ShadowSamplerPlaceholde
     texel ??= target.texture ?? undefined;
     // Engines without depth textures (NullEngine) never sample a map by comparison.
     const texture = engine._features.supportDepthStencilTexture
-      ? target.createDepthStencilTexture(Constants.LESS, true, false, 1, Constants.TEXTUREFORMAT_DEPTH32_FLOAT, name)
+      ? target.createDepthStencilTexture(engine.useReverseDepthBuffer ? Constants.GREATER : Constants.LESS, true, false, 1, Constants.TEXTUREFORMAT_DEPTH32_FLOAT, name)
       : target.texture;
     if (!texture) throw new Error("Shadow sampler placeholder could not be allocated.");
     return wrap(target, texture, name);
@@ -92,6 +96,7 @@ export function shadowSamplerPlaceholders(scene: Scene): ShadowSamplerPlaceholde
     plain: plain(0, "plain-sampler-placeholder"),
     plainCascades: plain(1, "plain-array-sampler-placeholder"),
   };
+  fill(engine, targets);
   placeholders.set(scene, owned);
   const disposed = owned;
   scene.onDisposeObservable.addOnce(() => {
@@ -100,6 +105,28 @@ export function shadowSamplerPlaceholders(scene: Scene): ShadowSamplerPlaceholde
     placeholders.delete(scene);
   });
   return owned;
+}
+
+const EMPTY_MAP = new Color4(1, 1, 1, 1);
+
+/**
+ * Clears every placeholder as Babylon clears an empty shadow map (`ShadowGenerator`'s clear for its non-ESM filters):
+ * white, and depth at the far plane (`clear` picks the reversed value with a reversed depth buffer). An unfilled
+ * texture reads zero, which every shadow filter takes for an occluder at the light.
+ */
+function fill(engine: AbstractEngine, targets: readonly RenderTargetWrapper[]): void {
+  withDrawingState(engine, () => {
+    engine.setColorWrite(true);
+    engine.setDepthWrite(true);
+    for (const target of targets) {
+      // A cube's six faces, an array's one layer, or the 2D target.
+      for (let face = 0; face < (target.isCube ? 6 : 1); face++) {
+        engine.bindFramebuffer(target, face, undefined, undefined, true, 0, 0);
+        engine.clear(EMPTY_MAP, true, true, false);
+        engine.unBindFramebuffer(target, true);
+      }
+    }
+  });
 }
 
 /** The texture type Babylon's shadow generator gives a cube map here, so a placeholder samples like a real map. */

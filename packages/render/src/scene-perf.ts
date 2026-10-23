@@ -6,6 +6,7 @@ import {
   NodeMaterial,
   NodeMaterialModes,
   type AbstractMesh,
+  type Effect,
   type Material,
   type RenderTargetTexture,
   type Scene,
@@ -21,6 +22,8 @@ import { DriverCompileWatch } from "./driver-compile";
 import { drawnMaterialVariants } from "./drawn-variants";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
+import { collectEffectRequests } from "./effect-requests";
+import { bindsAsPreviousEffect } from "./fixed-light-binding";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -165,10 +168,37 @@ export async function prewarmMeshMaterials(
 /** Babylon exposes registration, but no enumeration, of custom readiness checks. */
 type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }[] };
 
+/** The Effects the mesh being probed requested, and that mesh (reused, so a probe allocates nothing per mesh). */
+const meshRequests = new Set<Effect>();
+let probedMesh: AbstractMesh | undefined;
+const probeMesh = () => probedMesh!.isReady(true);
+const reportedFailures = new WeakSet<Effect>();
+
+/**
+ * A swapping mesh's new variant failed to compile, every fallback included: none of the Effects it requested is still
+ * compiling and one failed. Babylon then draws the previous Effect for good, so the swap is over; it is reported once.
+ */
+function swapFailed(material: Material): boolean {
+  let failed: Effect | undefined;
+  for (const effect of meshRequests) {
+    if (effect.isReady()) continue;
+    if (!effect.getCompilationError() || !effect.allFallbacksProcessed()) return false;
+    failed = effect;
+  }
+  if (!failed) return false;
+  if (!reportedFailures.has(failed)) {
+    reportedFailures.add(failed);
+    console.error(`[render] Material "${material.name}" keeps drawing its previous shader variant: its new variant failed to compile. ${failed.getCompilationError()}`);
+  }
+  return true;
+}
+
 /**
  * Probe the variants `mesh` is drawn with now. The probe never replaces a ready Effect: Babylon's hot swap keeps
  * drawing a submesh's previous Effect while a newly requested variant compiles. Such a mesh is ready only inside
- * `probeVariantSwaps(true, …)` (a world view's steady frames); everywhere else it waits for its new variant.
+ * `probeVariantSwaps(true, …)` (a world view's steady frames), and only where its previous Effect binds by its own
+ * light layout (`bindsAsPreviousEffect`); everywhere else it waits for its new variant. A swap whose new variant
+ * failed to compile is over: the mesh is ready, drawing its previous Effect.
  */
 export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   const scene = mesh.getScene();
@@ -205,7 +235,8 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
           // Babylon will not draw a previous Effect after one of its lights was disposed. A view that tolerates
           // swaps binds such an Effect by its own light layout (`bindLights` in fixed-light-binding.ts), which never
           // binds a disposed light, so the submesh keeps drawing it.
-          if (defines?._areLightsDisposed && variantSwapsTolerated() && part.effect?.isReady()) defines._areLightsDisposed = false;
+          if (defines?._areLightsDisposed && variantSwapsTolerated() && part.effect?.isReady() && bindsAsPreviousEffect(part.effect))
+            defines._areLightsDisposed = false;
         }
       }
     }
@@ -213,17 +244,22 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       if (!material._storeEffectOnSubMeshes)
         material._getDrawWrapper()._wasPreviouslyReady = false;
     }
-    if (!mesh.isReady(true)) return false;
+    probedMesh = mesh;
+    if (!collectEffectRequests(scene.getEngine(), meshRequests, probeMesh)) return false;
     // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
     for (const part of mesh.subMeshes ?? []) {
-      if (!part.getMaterial()?._storeEffectOnSubMeshes) continue;
+      const material = part.getMaterial();
+      if (!material?._storeEffectOnSubMeshes) continue;
       if (part.materialDefines?.isDirty && part.effect?.isReady()) {
+        if (swapFailed(material)) continue;
         noteVariantSwap();
-        return variantSwapsTolerated();
+        return variantSwapsTolerated() && bindsAsPreviousEffect(part.effect);
       }
     }
     return true;
   } finally {
+    probedMesh = undefined;
+    meshRequests.clear();
     for (const [material, [everyCall, onlyOnce]] of states) {
       material.checkReadyOnEveryCall = everyCall;
       material.checkReadyOnlyOnce = onlyOnce;

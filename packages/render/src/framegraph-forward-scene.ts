@@ -195,8 +195,9 @@ export class ForwardSceneFrameGraph {
    * probe again each frame until every swap is drawn (`recheckVariantSwaps`); a probe that tolerates none re-probes.
    */
   private variantSwaps = false;
-  /** Whether the latest scene or graph probe found a swap. */
+  /** Whether the latest scene or graph probe found a swap, and whether it tolerated swaps (read inside its scope). */
   private probeSwapped = false;
+  private probeTolerated = false;
   /** The readiness revision and Engine frame of the last passing probe that tolerated a swap. */
   private swapProbe: { revision: number; frame: number } | undefined;
   /** Only outline membership or style changed; the prepared graph's other tasks stay admitted. */
@@ -480,7 +481,8 @@ export class ForwardSceneFrameGraph {
   private markGraphProbed(): void {
     this.readinessDirtyFlag = false;
     this.variantSwaps = this.probeSwapped;
-    this.swapProbe = this.probeSwapped && variantSwapsTolerated()
+    // A preparation marks its probe after the probe's tolerance scope closed.
+    this.swapProbe = this.probeSwapped && this.probeTolerated
       ? { revision: this.readinessRevision, frame: this.scene.getEngine().frameId }
       : undefined;
     this.outlineDirtyFlag = false;
@@ -1285,6 +1287,7 @@ export class ForwardSceneFrameGraph {
    */
   private collectingEffects<T>(probe: () => T): T {
     const swaps = variantSwapCount();
+    this.probeTolerated = variantSwapsTolerated();
     try {
       return collectEffectRequests(this.scene.getEngine(), this.requestedEffects, probe);
     } finally {
