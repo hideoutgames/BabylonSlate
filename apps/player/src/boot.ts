@@ -1,5 +1,5 @@
 import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
-import { createSaveGameStorage } from "@haptic/vfs";
+import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";

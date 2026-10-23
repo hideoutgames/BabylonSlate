@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./node": "./src/node-adapter.ts",
     "./save-game-node": "./src/save-game-node.ts",
-    "./library-folders": "./src/library-folders.ts"
+    "./library-folders": "./src/library-folders.ts",
+    "./save-game-storage": "./src/save-game-storage.ts",
+    "./device-memory": "./src/device-memory.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
