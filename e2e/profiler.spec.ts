@@ -36,6 +36,28 @@ test("Profiler records a session and captures a frame without losing the recordi
   await results.getByRole("button", { name: "Runtime Ticks" }).click();
   await expect(results.getByRole("columnheader", { name: "Script MS" })).toBeVisible();
 
+  // Frames and ticks share one chart: a frame picked on it shows the tick it presents.
+  const chart = results.getByRole("group", { name: /^Performance timeline: \d+ frames, \d+ ticks/ });
+  const area = (await chart.boundingBox())!;
+  const tip = chart.getByRole("tooltip");
+  for (let x = area.width / 2; x < area.width - 4 && !(await tip.count()); x += 2) {
+    await page.mouse.move(area.x + x, area.y + 28);
+  }
+  await expect(tip).toContainText(/^Frames · /);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(results).toContainText(/Presented By This Frame|The tick this frame presents was not recorded/);
+  // A drag across it summarizes the frames and ticks in that range.
+  await page.mouse.move(area.x + area.width * 0.3, area.y + 28);
+  await page.mouse.down();
+  await page.mouse.move(area.x + area.width * 0.7, area.y + 28, { steps: 8 });
+  await page.mouse.up();
+  const rangeSummary = results.getByRole("status", { name: "Range Summary" });
+  await expect(rangeSummary).toContainText(/Frames \d+ · Median/);
+  await expect(rangeSummary).toContainText(/Ticks \d+ · Median/);
+  await rangeSummary.getByRole("button", { name: "Clear Range" }).click();
+  await expect(rangeSummary).toHaveCount(0);
+
   await dialog.getByRole("button", { name: "Capture Frame" }).click();
   await expect(results).toContainText(/Frame \d+ · Tick \d+/, { timeout: 30_000 });
   await expect(results.getByRole("list", { name: "Executed frame stages" }).getByRole("button").first()).toBeVisible();

@@ -232,9 +232,9 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
         <div role="table" aria-label="Samples" aria-rowcount={stream.count + 1} className="text-xs" style={{ minWidth: tableWidth }}>
           <div role="row" className="sticky top-0 z-10 grid h-7 border-b bg-panel-header" style={{ gridTemplateColumns: columns }}>
             <div role="columnheader" className="flex items-center px-2 font-medium text-muted-foreground">Sample</div>
-            {stream.columns.map((column) => <div role="columnheader" key={column}
-              className={cn("flex items-center justify-end px-2 font-medium whitespace-nowrap text-muted-foreground", metricColumns.has(column) && "text-foreground")}>
-              {humanizePropertyLabel(column)}
+            {stream.columns.map((column) => <div role="columnheader" key={column} title={humanizePropertyLabel(column)}
+              className={cn("flex min-w-0 items-center justify-end px-2 font-medium whitespace-nowrap text-muted-foreground", metricColumns.has(column) && "text-foreground")}>
+              <span className="truncate">{humanizePropertyLabel(column)}</span>
             </div>)}
           </div>
           <WindowedList itemCount={stream.count} rowHeight={rowHeight} activeIndex={index}>
