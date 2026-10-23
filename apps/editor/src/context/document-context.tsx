@@ -35,7 +35,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@haptic/core";
-import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
+import { ASSET_DOCUMENT_KINDS, createDocumentRef, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import {
   appendJournalLines,
   discardSealedJournal,
@@ -67,7 +67,9 @@ import {
   type TilemapPayload,
   type TilesetPayload,
   newAssetGuid,
+  listTraceDocuments,
   playerFilesHaveKtx2Transcoder,
+  type TraceDocumentEntry,
 } from "@haptic/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -442,6 +444,10 @@ interface DocumentContextValue {
   ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
   /** Spill a finished Play recorder payload and open the read-only Trace tab. */
   openRecordedTrace: (payload: TracePayload) => Promise<void>;
+  /** The project's recorded traces, newest first. */
+  listRecentTraces: () => Promise<TraceDocumentEntry[]>;
+  /** Open a recorded trace again in a read-only Trace tab. */
+  openTraceDocument: (path: string) => Promise<void>;
   pendingExclusiveScene: DocumentRef | null;
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
@@ -2833,6 +2839,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [ensureDerived, finishOpenDocument, projectService],
   );
 
+  const listRecentTraces = useCallback(async () => {
+    const guid = projectService.guid;
+    return guid ? listTraceDocuments(await ensureDerived(), guid) : [];
+  }, [ensureDerived, projectService]);
+
+  const openTraceDocument = useCallback(
+    async (path: string) => {
+      // A Trace tab reads its document from the derived storage.
+      projectService.setDerivedStorage(await ensureDerived());
+      await finishOpenDocument(createDocumentRef("trace", path));
+    },
+    [ensureDerived, finishOpenDocument, projectService],
+  );
+
   const confirmExclusiveSceneOpen = useCallback(
     async (mode: "save" | "discard") => {
       // Written by openDocument's setter, so a request made earlier in the
@@ -3912,6 +3932,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       openDocument,
       ensureAssetDocument,
       openRecordedTrace,
+      listRecentTraces,
+      openTraceDocument,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
@@ -4026,6 +4048,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       openDocument,
       ensureAssetDocument,
       openRecordedTrace,
+      listRecentTraces,
+      openTraceDocument,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,

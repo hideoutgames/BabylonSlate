@@ -67,6 +67,37 @@ export async function writeTraceDocument(
   return path;
 }
 
+/** A recorded trace in the project's derived data. */
+export type TraceDocumentEntry = {
+  path: string;
+  fileName: string;
+  /** When it was recorded, from the editor's `session-<ms>` name, else the file's time; null when neither is known. */
+  recordedAt: number | null;
+  /** Bytes on disk, where the storage reports it. */
+  size: number | null;
+};
+
+/** The project's recorded traces, newest first. */
+export async function listTraceDocuments(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<TraceDocumentEntry[]> {
+  const dir = tracesDir(projectGuid);
+  if (!(await derivedStorage.exists(dir))) return [];
+  return (await derivedStorage.readdir(dir))
+    .filter((entry) => !entry.isDir && isTracePath(entry.name))
+    .map((entry) => {
+      const named = /^session-(\d+)\.htrace$/.exec(entry.name);
+      return {
+        path: `${dir}/${entry.name}`,
+        fileName: entry.name,
+        recordedAt: named ? Number(named[1]) : (entry.mtime ?? null),
+        size: entry.size ?? null,
+      };
+    })
+    .sort((a, b) => (b.recordedAt ?? -Infinity) - (a.recordedAt ?? -Infinity) || b.fileName.localeCompare(a.fileName));
+}
+
 export async function readTraceDocument(
   derivedStorage: ProjectStorage,
   path: string,

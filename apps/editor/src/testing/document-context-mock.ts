@@ -187,6 +187,8 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     openDocument: resolved,
     ensureAssetDocument: unavailable("ensureAssetDocument"),
     openRecordedTrace: resolved,
+    listRecentTraces: async () => [],
+    openTraceDocument: resolved,
     pendingExclusiveScene: null,
     confirmExclusiveSceneOpen: resolved,
     cancelExclusiveSceneOpen: noop,

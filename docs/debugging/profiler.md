@@ -73,6 +73,8 @@ When Play ends, the trace opens as a read-only document with three windows:
 - **Snapshot** shows the game instance, subsystems, actors, components and their variables at the selected frame. **Changes** lists what was added, removed or changed since the previous frame.
 - **Log** shows the logs and prints of the selected frame and up to 29 frames before it.
 
+To open a trace again later, choose **Debug > Recent Traces**. It lists the project's ten newest traces by when they were recorded.
+
 **Engine Settings > Debugger > Trace > Trace Memory Budget (MiB)** limits a trace, from 1 to 256. Default 128. When the trace is full, the oldest frames are discarded and recording continues. A single frame larger than the whole budget stops recording; the frames before it are kept.
 
 ## Related

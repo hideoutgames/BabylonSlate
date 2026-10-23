@@ -64,7 +64,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 
 - `snapshot start` / `stop` fill a byte-budgeted `TraceRecorder` (default `DEFAULT_TRACE_BYTE_BUDGET`, 128 MiB; Engine Settings 1–256). The budget counts UTF-8 JSON bytes, not heap; oldest complete frames evict, an oversized frame stops recording. `retention` metadata is required.
 - Frames record `timeDilation`, BT, audio voices, sprite clips and anim-graph state. `restoreFromTrace` order is fixed: dilation, BT, Animation Graph, sprite clips, stop missing voices, replay recorded voices with their offsets and rolls.
-- Editor Stop waits at most 2 s for the trace reply. Trace opens as a read-only DockView tab; the file format is unchanged by inspection features.
+- Editor Stop waits at most 2 s for the trace reply. Trace opens as a read-only DockView tab; the file format is unchanged by inspection features. **Debug > Recent Traces** reopens one: `listTraceDocuments` reads `derived/{projectGuid}/traces/` newest first (the `session-<ms>` name, else the file time), the submenu lists ten, read again each time it opens, and `openTraceDocument` opens the tab. Nothing deletes older traces.
 
 ## Simulation Play
 

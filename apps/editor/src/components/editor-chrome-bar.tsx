@@ -281,6 +281,8 @@ export function EditorChromeBar({
     collectPlayPreviewScripts,
     activateDockPanel,
     getOpenDocuments,
+    listRecentTraces,
+    openTraceDocument,
   } = useDocumentActions();
   // Tabs re-render for opens, closes, moves, labels and dirty flags, not for
   // each content edit.
@@ -503,6 +505,11 @@ export function EditorChromeBar({
           setToolsOpen(false);
           setFeatureTestCheckOpen(true);
         } : undefined}
+        listRecentTraces={listRecentTraces}
+        onOpenTrace={(path) => {
+          setToolsOpen(false);
+          void openTraceDocument(path);
+        }}
       />
     </DropdownMenu>
   );
