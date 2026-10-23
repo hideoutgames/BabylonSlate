@@ -57,7 +57,7 @@ export function BreakpointsPanel() {
         <Empty>
           <EmptyTitle>No Breakpoints</EmptyTitle>
           <EmptyDescription>
-            Add one from a node&apos;s menu in a Class graph or a Behaviour Tree
+            Add one from a node&apos;s menu in a Class graph, a Behaviour Tree or a State Machine
             {toggleChord ? <>, or select the node and press <ShortcutKeys chord={toggleChord} /></> : null}.
             A Simulation or Play stops at the end of the tick that reaches it.
           </EmptyDescription>
