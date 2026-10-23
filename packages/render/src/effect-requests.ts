@@ -44,3 +44,24 @@ export function collectEffectRequests<T>(engine: AbstractEngine, into: Set<Effec
     open.splice(open.lastIndexOf(into), 1);
   }
 }
+
+/**
+ * Like `collectEffectRequests`, across awaits: every Effect the Engine's `createEffect` returns until the returned
+ * stop is called joins `into`, whoever asked (a warm-up that compiles while frames draw also records their requests).
+ */
+export function recordEffectRequests(engine: AbstractEngine, into: Set<Effect>): () => void {
+  let open = collectors.get(engine);
+  if (!open) {
+    open = install(engine);
+    collectors.set(engine, open);
+  }
+  const sets = open;
+  sets.push(into);
+  let stopped = false;
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    const index = sets.lastIndexOf(into);
+    if (index >= 0) sets.splice(index, 1);
+  };
+}

@@ -396,10 +396,10 @@ async function settle(world: PlayWorld): Promise<void> {
  * releases them and lets the view recover (up to 30 frames). `settled` runs once the view has settled.
  */
 async function measure(
-  world: PlayWorld, cause: () => unknown, settled?: () => void, pending?: () => void,
+  world: PlayWorld, cause: () => unknown, settled?: () => void | Promise<void>, pending?: () => void,
 ): Promise<CauseRecord> {
   await settle(world);
-  settled?.();
+  await settled?.();
   const before = world.subjectEffect();
   let checksBefore = 0;
   world.driver.arm();
@@ -486,6 +486,17 @@ function expectRecovers(record: CauseRecord): void {
   const detail = JSON.stringify(record);
   expect(record.litEffects, detail).toBeGreaterThan(0);
   expect(record.recovered, detail).toBe(true);
+}
+
+/** The names of the meshes drawn (`Mesh.render`) since the set was last cleared. */
+function spawnDraws(): Set<string> {
+  const drawn = new Set<string>();
+  const render = Mesh.prototype.render;
+  vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
+    drawn.add(this.name);
+    return render.apply(this, args);
+  });
+  return drawn;
 }
 
 /** WebGPU's Effects are ready once created, so a new pipeline still holds the view (pipeline swaps are separate work). */
@@ -579,23 +590,55 @@ describe("compile holds after the first frame", () => {
     }
   });
 
-  it.each(MODELS)("a spawned actor uses a Material no mesh drew before: %s", async (model) => {
-    // A mesh with no previous Effect has nothing to draw meanwhile: only it is left out, and the view keeps drawing.
+  it.each(MODELS)("a spawned actor's Material the load warmed compiles nothing when it spawns: %s", async (model) => {
+    // Play's load compiles what it may spawn (`warmSpawnables`): a box with this Material is drawn in its first frame.
     const world = playWorld(model, [], ["surface-a"]);
-    const drawn = new Set<string>();
-    const render = Mesh.prototype.render;
-    vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
-      drawn.add(this.name);
-      return render.apply(this, args);
+    const drawn = spawnDraws();
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+      drawn.clear();
     });
+    expect({
+      effects: record.effects, heldFrames: record.heldFrames, paused: record.pausedFrames > 0, shown: drawn.has("actor-20"),
+      warmed: world.handle.spawnableWarmStats()?.materials ?? 0,
+    }, JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true, warmed: 1 });
+  });
+
+  it.each(MODELS)("a Spawn Actor preparation compiles the actor's Material before it spawns: %s", async (model) => {
+    // Spawn Actor (and a Class load) prepares the actor's sources first: that preparation also compiles them against
+    // the current lighting, so the actor draws in its first frame.
+    const world = playWorld(model, [], ["surface-a"]);
+    const drawn = spawnDraws();
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-c" });
+      drawn.clear();
+    }, async () => {
+      const documents = new Map([["surface-c", createDefaultMaterialDocument("surface-c")]]);
+      cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true })));
+      for (let index = 0; index < 6; index++) await world.frame();
+    });
+    expect({ effects: record.effects, heldFrames: record.heldFrames, paused: record.pausedFrames > 0, shown: drawn.has("actor-20") },
+      JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true });
+  });
+
+  it.each(MODELS)("a spawned actor whose Material arrived after the load is hidden until its variant is ready: %s", async (model) => {
+    // Nothing warmed this Material: only the new mesh is left out while its variant compiles, and the view keeps drawing.
+    const world = playWorld(model, [], ["surface-a"]);
+    const drawn = spawnDraws();
     const barrel = () => world.handle.scene.getMeshByName("actor-20");
     let hiddenWhilePending = true;
     let pendingFrames = 0;
     const record = await measure(world, () => {
       world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
-      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
       drawn.clear();
-    }, undefined, () => {
+    }, async () => {
+      // A changed Material library prepares the view again; let it settle before the spawn.
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      for (let index = 0; index < 6; index++) await world.frame();
+    }, () => {
       // Only a pending compile leaves the mesh without a variant; a synchronous link draws it in its first frame.
       const mesh = barrel();
       if (model === "parallel") {

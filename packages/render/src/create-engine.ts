@@ -55,10 +55,11 @@ import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
-import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
+import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
+import { warmSpawnables } from "./spawnable-warm";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
-import type { AbstractEngine, BaseTexture, Camera, EngineView } from "@babylonjs/core";
+import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineView, Material } from "@babylonjs/core";
 import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
@@ -408,6 +409,8 @@ export interface EngineHandle {
   /** Retain prepared source maps until the consuming runtime instance is retired. */
   acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
+  /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
+  spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
   /** Release startup source ownership after its actors have retired. */
   releaseInitialSources: () => void;
   /** Refresh owned library unions without resetting live mixer session settings. */
@@ -2689,6 +2692,37 @@ function initializeEngine(
     assert();
     return { target: target!, assert };
   };
+  let spawnableWarm: { materials: number; models: number; ms: number } | null = null;
+  /**
+   * Play's load compiles what it may spawn before its first frame (`warmSpawnables`), against the Scene's final
+   * lighting: every Material document and model its sources hold, the Classes, Prefabs and spawnable actors of its
+   * required closure included. A model that cannot load here fails when it spawns, as before.
+   */
+  const warmPlaySpawnables = async (assertCurrent: () => void) => {
+    const started = performance.now();
+    const materials: Material[] = [];
+    // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh.
+    for (const [guid, document] of materialDocuments) {
+      if (document.domain !== "surface") continue;
+      const material = binding.resolveMaterial?.(guid);
+      if (material) materials.push(material);
+    }
+    const leases: { release(): void }[] = [];
+    const containers: AssetContainer[] = [];
+    try {
+      const packed = packedSlimProof(binding);
+      await Promise.all([...binding.modelSources ?? []].map(async ([guid, source]) => {
+        const lease = acquireGlbContainer(scene, guid, source, binding.modelPayloads?.get(guid), packed);
+        leases.push(lease);
+        try { containers.push(await lease.load); } catch { /* it fails when it spawns */ }
+      }));
+      assertCurrent();
+      await warmSpawnables(scene, { materials, containers }, assertCurrent);
+      spawnableWarm = { materials: materials.length, models: containers.length, ms: performance.now() - started };
+    } finally {
+      for (const lease of leases) lease.release();
+    }
+  };
   const presentationReady = (pending: PendingPresentation) => {
     try {
       pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
@@ -4294,6 +4328,8 @@ function initializeEngine(
               await lease.ready;
             });
           }
+          const spawnableMaterials: Material[] = [];
+          const spawnableContainers: AssetContainer[] = [];
           for (const [guid, document] of prepared.materialDocuments ?? []) {
             check();
             await nativePreparation.schedule({ label: `Material ${guid}`, signal: preparation.signal,
@@ -4306,6 +4342,7 @@ function initializeEngine(
               if (diagnostics.some((entry) => entry.severity === "error"))
                 throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
               compiledMaterialGuids.add(guid);
+              if (document.domain === "surface") spawnableMaterials.push(material.material);
             });
           }
           for (const [guid, source] of prepared.assets?.modelSources ?? []) {
@@ -4315,9 +4352,12 @@ function initializeEngine(
               texturesByMaterialGuid: binding.materialTextureGuids ?? new Map(), compiledMaterialGuids,
             }, preparation.priority);
             nativeReleases.push(() => lease.release());
-            await lease.load;
+            spawnableContainers.push(await lease.load);
             await lease.lods();
           }
+          // What a latent spawn (Spawn Actor, a Class load) prepared compiles now, against the current lighting,
+          // so it resolves with the actor's variants ready; anything this misses is hidden per mesh until it compiles.
+          if (options.playMode) await warmSpawnables(scene, { materials: spawnableMaterials, containers: spawnableContainers }, check);
           if (prepared.audioLibrary?.audio.size && audioService)
             nativeReleases.push(await audioService.preload([...prepared.audioLibrary.audio.keys()], preparation.priority));
           check();
@@ -4334,6 +4374,7 @@ function initializeEngine(
       }
     },
     nativePreparationStats: () => nativePreparation.snapshot(),
+    spawnableWarmStats: () => spawnableWarm,
     releaseInitialSources,
     setSourceLibraries: (libraries) => {
       if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
@@ -4423,6 +4464,7 @@ function initializeEngine(
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
       await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);
       scope.assert();
+      if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
       freezeLibraryMaterials();
       outlineHost.refreshSettings();
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
