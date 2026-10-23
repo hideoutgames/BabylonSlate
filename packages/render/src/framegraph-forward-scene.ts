@@ -35,6 +35,7 @@ import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
 import { isRevealPending, revealRound } from "./reveal-pending";
+import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -1055,6 +1056,7 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        this.objects.warmsPipelines = !this.auxiliary;
         // Clustered lighting rejects the copy; checked only here, since the
         // graph already re-plans when the cluster target changes.
         const waterScale = waterDemand > 0 ? waterSceneCopyScale(scene, camera) : 0;
@@ -1325,9 +1327,16 @@ export class ForwardSceneFrameGraph {
     }
   }
 
+  /**
+   * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first wait
+   * for their pipelines where those are deferred (`variant-pipeline-warmup.ts`), strict ones included.
+   */
+  warmsVariants = false;
+
   /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    return revealRound(() => this.collectingEffects(() => this.probeReady()));
+    return withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+      () => revealRound(() => this.collectingEffects(() => this.probeReady())));
   }
 
   private probeReady(): boolean {

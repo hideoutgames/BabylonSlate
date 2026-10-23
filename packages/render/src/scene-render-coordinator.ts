@@ -197,6 +197,8 @@ export class SceneRenderCoordinator {
     this.deferredSince = undefined;
     this.compileHold = undefined;
     this.compileHoldReleased = false;
+    // A new run (a switched scene loading) asks strictly again until it draws steady frames.
+    this.graph.warmsVariants = false;
     this.graph.invalidate();
   }
 
@@ -458,6 +460,8 @@ export class SceneRenderCoordinator {
     // image as an unready scene does; a skipped draw for any other reason does not.
     if (result.rendered === false && !status.ready) this.compileHold = this.holdsForCompiles(holding, status);
     if (result.rendered !== false) this.compileHoldReleased = false;
+    // From its first steady frame, the view's new variants wait for their pipelines where those are deferred.
+    if (result.rendered !== false && variantSwapsTolerated()) this.graph.warmsVariants = true;
     if (result.rendered !== false && this.editorOverlay) {
       const capture = activeRenderFrameCapture(this.scene.getEngine());
       if (capture) capture.stage(this.scene, { name: "Viewport editor overlay", kind: "overlay" },

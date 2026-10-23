@@ -388,11 +388,13 @@ interface CauseRecord {
   pausedFrames: number;
   /** Full readiness probes per frame while the cause's compiles were pending, after the cause's own frame (each walks every mesh). */
   probesPerFrame: number;
-  /** WebGPU model: Effects whose pipeline a skipped draw waited for. */
+  /** WebGPU model: Effects whose pipeline a view's skipped draw waited for. */
   pipelines: number;
+  /** WebGPU model: Effects whose pipeline a warm draw started before a real draw needed it. */
+  warmPipelines: number;
   /** In a frame the view drew while the cause's compiles were pending, the subject drew the Effect it had before the cause. */
   previousEffectDrawn: boolean;
-  /** After release the subject draws an Effect the cause compiled. */
+  /** After release the subject draws an Effect the cause compiled (within three frames of recovering). */
   adopted: boolean;
   /** After release the view drew within three frames and nothing stayed paused. */
   recovered: boolean;
@@ -466,6 +468,8 @@ async function measure(
     if (!view?.rendered) reasons.add(`after release: ${view?.reason ?? "no frame"}`);
   }
   const created = world.driver.created;
+  // WebGPU adopts a variant on the frame after its warm draw found the pipeline.
+  for (let index = 0; index < 3 && recovered && !created.includes(world.subjectEffect()!); index++) await world.frame();
   const after = world.subjectEffect();
   return {
     effects: created.length,
@@ -477,6 +481,7 @@ async function measure(
     pausedFrames,
     probesPerFrame,
     pipelines: world.driver.pipelines.size,
+    warmPipelines: world.driver.warmPipelines.size,
     previousEffectDrawn,
     adopted: !!after && created.includes(after),
     recovered,
@@ -506,7 +511,7 @@ function expectSwapped(record: CauseRecord, model: Model): void {
     probesAtMostOnePerFrame: record.probesPerFrame <= 1,
   }, detail).toEqual({
     heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
-    previousEffectDrawn: model === "parallel", adopted: true, probesAtMostOnePerFrame: true,
+    previousEffectDrawn: model !== "sync", adopted: true, probesAtMostOnePerFrame: true,
   });
 }
 
@@ -517,19 +522,23 @@ function expectRecovers(record: CauseRecord): void {
   expect(record.recovered, detail).toBe(true);
 }
 
-/** The names of the meshes drawn (`Mesh.render`) since the set was last cleared. */
+/**
+ * The names of the meshes drawn (`Mesh.render`) since the set was last cleared, leaving out warm draws (WebGPU: draws
+ * under a warm pass only create pipelines and are always skipped).
+ */
 function spawnDraws(): Set<string> {
   const drawn = new Set<string>();
   const render = Mesh.prototype.render;
   vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
-    drawn.add(this.name);
+    const engine = this.getScene().getEngine();
+    if (!engine.getCurrentRenderPassName().startsWith("warm ")) drawn.add(this.name);
     return render.apply(this, args);
   });
   return drawn;
 }
 
 /** WebGPU's Effects are ready once created, so a new pipeline still holds the view (pipeline swaps are separate work). */
-const SWAP_MODELS: readonly Model[] = ["sync", "parallel"];
+const SWAP_MODELS: readonly Model[] = MODELS;
 
 describe("compile holds after the first frame", () => {
   it.each(SWAP_MODELS)("a point light switches off: %s", async (model) => {
@@ -610,13 +619,7 @@ describe("compile holds after the first frame", () => {
       received: /#define SHADOW\d/.test(world.subjectEffect()?.defines ?? ""),
     };
     expect(shadow, JSON.stringify(record)).toEqual({ neutralWhilePending: true, drawn: true, received: true });
-    if (model !== "webgpu") expectSwapped(record, model);
-    else {
-      // WebGPU's Effects are ready once created: the receivers' new variants still wait for their render pipelines
-      // (pipeline swaps are separate work), but no frame waits for the shadow map.
-      expect(record.reasons.every((reason) => reason.endsWith("Render pipelines are compiling.")), JSON.stringify(record)).toBe(true);
-      expectRecovers(record);
-    }
+    expectSwapped(record, model);
   });
 
   it.each(MODELS)("a spawned actor's Material the load warmed compiles nothing when it spawns: %s", async (model) => {
@@ -668,9 +671,10 @@ describe("compile holds after the first frame", () => {
       world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
       for (let index = 0; index < 6; index++) await world.frame();
     }, () => {
-      // Only a pending compile leaves the mesh without a variant; a synchronous link draws it in its first frame.
+      // Only a pending compile or pipeline leaves the mesh without a variant; a synchronous link draws it in its first
+      // frame.
       const mesh = barrel();
-      if (model === "parallel") {
+      if (model !== "sync") {
         pendingFrames++;
         hiddenWhilePending &&= !!mesh && isRevealPending(mesh) && !drawn.has(mesh.name);
       }
@@ -679,24 +683,20 @@ describe("compile holds after the first frame", () => {
     for (let index = 0; index < 2; index++) await world.frame();
     const mesh = barrel();
     const spawned = {
-      hiddenWhilePending: hiddenWhilePending && (model !== "parallel" || pendingFrames > 0),
+      hiddenWhilePending: hiddenWhilePending && (model === "sync" || pendingFrames > 0),
       shown: !!mesh && !isRevealPending(mesh) && drawn.has(mesh.name),
       material: mesh?.material?.getClassName(),
     };
     expect(spawned, JSON.stringify(record)).toEqual({ hiddenWhilePending: true, shown: true, material: "NodeMaterial" });
-    if (model === "webgpu") {
-      // WebGPU's Effects are ready once created: the new mesh's draw still waits for its render pipeline (pipeline
-      // swaps are separate work).
-      expect(record.reasons.every((reason) => reason.endsWith("Render pipelines are compiling.")), JSON.stringify(record)).toBe(true);
-      expectRecovers(record);
-    } else {
-      expect({
-        compiled: record.litEffects > 0, heldFrames: record.heldFrames, holdReported: record.holdReported,
-        holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
-      }, JSON.stringify(record)).toEqual({
-        compiled: true, heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
-      });
-    }
+    expect({
+      compiled: record.litEffects > 0, heldFrames: record.heldFrames, holdReported: record.holdReported,
+      holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
+      // WebGPU: its pipelines were warmed by draws nothing showed, never by the view's.
+      viewPipelines: record.pipelines, warmed: model !== "webgpu" || record.warmPipelines > 0,
+    }, JSON.stringify(record)).toEqual({
+      compiled: true, heldFrames: 0, holdReported: false, holdRaised: false, paused: false, recovered: true,
+      viewPipelines: 0, warmed: true,
+    });
   });
 
   it.each(MODELS)("a spawned actor's meshes appear together, on the frame the last of them is ready: %s", async (model) => {
@@ -723,8 +723,8 @@ describe("compile holds after the first frame", () => {
         if (names.includes(mesh.name)) revealed.push([mesh.name, world.views.length]);
       }));
     }, () => {
-      // Only a pending compile keeps the lid from its first frame; a synchronous link reveals both at once.
-      if (model === "parallel") {
+      // Only a pending compile or pipeline keeps the lid from its first frame; a synchronous link reveals both at once.
+      if (model !== "sync") {
         pendingFrames++;
         hiddenWhilePending &&= names.every((name) => {
           const mesh = part20(name);
@@ -735,21 +735,17 @@ describe("compile holds after the first frame", () => {
     });
     for (let index = 0; index < 2; index++) await world.frame();
     expect({
-      hiddenWhilePending: hiddenWhilePending && (model !== "parallel" || pendingFrames > 0),
+      hiddenWhilePending: hiddenWhilePending && (model === "sync" || pendingFrames > 0),
       // Each part is revealed once, both in one frame.
       revealed: revealed.map(([name]) => name).sort(),
       together: new Set(revealed.map(([, frame]) => frame)).size === 1,
       shown: names.map((name) => !!part20(name) && !isRevealPending(part20(name)!) && drawn.has(name)),
       materials: names.map((name) => part20(name)?.material?.name),
+      viewPipelines: record.pipelines, holdRaised: record.holdRaised,
     }, JSON.stringify({ record, revealed })).toEqual({
-      hiddenWhilePending: true, revealed: names, together: true, shown: [true, true],
+      hiddenWhilePending: true, revealed: names, together: true, shown: [true, true], viewPipelines: 0, holdRaised: false,
       materials: [expect.stringContaining("surface-a"), expect.stringContaining("surface-b")],
     });
-  });
-
-  it("a variant change on WebGPU recovers once its pipeline exists", async () => {
-    const world = playWorld("webgpu", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
-    expectRecovers(await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))));
   });
 
   it("a camera move that makes the Forward budget drop a shadowed spot binds a placeholder for its map from the first frame", async () => {
