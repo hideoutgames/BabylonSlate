@@ -4511,7 +4511,8 @@ function initializeEngine(
       if (!owner && options.playMode) {
         endLoadRehearsal();
         loadRehearsalReport = null;
-        loadRehearsal = createLoadRehearsal(scene);
+        // Render-target captures first draw in the starting state, so their views' variants share its Effects.
+        loadRehearsal = createLoadRehearsal(scene, () => renderTargetCaptures.diagnostics().every((target) => target.published));
       }
     },
     whenMaterialTexturesReady: async (owner) => {

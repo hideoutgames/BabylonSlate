@@ -27,7 +27,8 @@ export interface LoadRehearsalReport {
   drawn: number;
   /** Changes the step budget left out. */
   omitted: string[];
-  /** Changes whose variants were not ready to draw within `LOAD_REHEARSAL_STEP_MS`. */
+  /** Changes whose variants were not ready to draw within `LOAD_REHEARSAL_STEP_MS` ("starting state" when it never
+   * settled). */
   timedOut: string[];
   /** Effects the rehearsal compiled (new entries in the Engine's cache). */
   variants: number;
@@ -45,7 +46,8 @@ export interface LoadRehearsal {
    * once it drew) while its meshes hold an Effect no rehearsal frame drew, or reverts it.
    */
   frame(draw: () => boolean): void;
-  /** Reverts and skips a step that has waited `LOAD_REHEARSAL_STEP_MS`; call while the view is not ready. */
+  /** Reverts and skips a step (or ends the starting state) that has waited `LOAD_REHEARSAL_STEP_MS`; call each
+   * loading frame. */
   check(): void;
   /** Reverts an applied step and ends the rehearsal (a superseded load). */
   cancel(): void;
@@ -120,11 +122,15 @@ function effectRetainer(scene: Scene): () => boolean {
  * and drawn once before the first presented frame: each change is applied, the view's strict readiness requests its
  * variants on the meshes' own draw wrappers (the variants a real change asks for, defines order included), one frame
  * draws them (a program's first use, a WebGPU pipeline), and the change is reverted. A change whose meshes then hold
- * only Effects an earlier rehearsal frame drew, or the starting state's (which the first presented frame draws), is
- * not drawn. The Effects of the starting state and of each step stay compiled while the scene lives. The caller draws
- * only on frames the view is ready for, and hides what they draw.
+ * only Effects an earlier rehearsal frame drew is not drawn. The Effects of the starting state and of each step stay
+ * compiled while the scene lives. The caller draws only on frames the view is ready for, and hides what they draw.
+ *
+ * The starting state draws first, until it holds nothing undrawn and `settled` (the views a load draws for the first
+ * time, such as render-target captures, have drawn): a view first prepared during a step would build its draw
+ * wrappers' defines in that step's order, and Babylon keys Effects by the defines text, so the starting state would
+ * compile again for it once the step is reverted.
  */
-export function createLoadRehearsal(scene: Scene): LoadRehearsal {
+export function createLoadRehearsal(scene: Scene, settled: () => boolean = () => true): LoadRehearsal {
   const all = rehearsalSteps(scene);
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
   const omitted = all.slice(LOAD_REHEARSAL_STEP_BUDGET).map((step) => step.label);
@@ -135,7 +141,12 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
   const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
   const retain = effectRetainer(scene);
   let index = 0;
+  /** The starting state is still drawing (before the first step). */
+  let starting = steps.length > 0;
+  let startDrew = false;
+  let timedOutSteps = 0;
   let applied = false;
+  /** When the current step (or the starting state) began, for its budget. */
   let appliedAt = 0;
   let renew: ((now: number) => boolean) | undefined;
   /** The applied step's meshes hold an Effect no rehearsal frame drew yet. */
@@ -157,7 +168,10 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
     const step = steps[index]!;
     step.revert();
     markSceneReadinessDirty(scene);
-    if (timed) timedOut.push(step.label);
+    if (timed) {
+      timedOut.push(step.label);
+      timedOutSteps += 1;
+    }
     applied = false;
     undrawn = false;
     stepDrew = false;
@@ -175,9 +189,21 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
     frame(draw) {
       if (index >= steps.length) return;
       if (startedAt === undefined) {
-        startedAt = performance.now();
-        // The starting state's Effects: a step that stops a map must not release its casters' depth Effects.
-        retain();
+        startedAt = appliedAt = performance.now();
+        renew = renewOnCompileProgress(engine);
+      }
+      if (starting) {
+        // Its Effects are retained too: a step that stops a map must not release its casters' depth Effects.
+        undrawn = retain() || undrawn || !startDrew;
+        if (undrawn || !settled()) {
+          if (!draw()) return;
+          retain();
+          undrawn = false;
+          startDrew = true;
+          return;
+        }
+        starting = false;
+        renew = undefined;
       }
       if (!applied) {
         steps[index]!.apply();
@@ -202,11 +228,18 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
       advance(false);
     },
     check() {
-      if (!applied) return;
+      if (!applied && !(starting && startedAt !== undefined)) return;
       const now = performance.now();
       if (now - appliedAt < LOAD_REHEARSAL_STEP_MS) return;
       if (renew?.(now)) appliedAt = now;
-      else advance(true);
+      else if (applied) advance(true);
+      else {
+        // The starting state never settled: rehearse from it as it is.
+        starting = false;
+        undrawn = false;
+        renew = undefined;
+        timedOut.push("starting state");
+      }
     },
     cancel() {
       if (applied) {
@@ -218,7 +251,7 @@ export function createLoadRehearsal(scene: Scene): LoadRehearsal {
       finish();
     },
     report: () => ({
-      steps: Math.min(index, steps.length) - timedOut.length, drawn, omitted, timedOut, variants, pipelines,
+      steps: Math.min(index, steps.length) - timedOutSteps, drawn, omitted, timedOut, variants, pipelines,
       ms: (endedAt ?? performance.now()) - (startedAt ?? performance.now()),
     }),
   };
