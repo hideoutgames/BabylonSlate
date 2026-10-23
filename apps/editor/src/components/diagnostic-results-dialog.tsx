@@ -8,27 +8,21 @@ import {
   TICK_TIMING_PHASE_LABELS,
   TICK_TIMING_PHASES,
   type PerformanceProfile,
-  type PerformanceStream,
-  type TickTimingPhase,
 } from "@haptic/debugger";
 import { parseRenderFrameReport, serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import {
   humanizePropertyLabel,
-  NumberField,
   PanelFrame,
   PropertySectionTitle,
   SearchInput,
   SelectableText,
   ToolbarStrip,
-  useTouchUi,
-  WindowedList,
-  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
 import { Separator } from "@haptic/ui/components/separator";
 import { cn } from "@haptic/ui/lib/utils";
-import { CameraIcon, ChevronsLeftIcon, ChevronsRightIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
+import { CameraIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useAppSettings } from "../context/app-settings-context";
 import { downloadBlob } from "../lib/download";
@@ -36,126 +30,15 @@ import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { DiagnosticResultsStore, type DiagnosticResult } from "../services/diagnostic-results-store";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
 import { TraceEmptyState } from "./trace-inspection-controls";
+import { Facts } from "./diagnostic-facts";
+import { PerformanceTimeline } from "./performance-timeline";
+import { formatRecorded as format, frameBudget } from "../lib/performance-timeline-model";
 
-const format = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "Unavailable" : value.toFixed(3);
-const factValue = (value: unknown) => value == null ? "Unavailable" : typeof value === "string" ? value : JSON.stringify(value);
-
-/** Read-only recorded values as selectable label/value rows rather than disabled inputs. */
-function Facts({ title, aside, data, columns = 1 }: { title: string; aside?: string; data: Record<string, unknown>; columns?: 1 | 3 }) {
-  return <section className="flex min-w-0 flex-col" aria-label={title}>
-    <PropertySectionTitle aside={aside ? <span className="font-normal text-muted-foreground">{aside}</span> : undefined}>{title}</PropertySectionTitle>
-    <dl className={cn("grid text-xs", columns === 3 && "md:grid-cols-3")}>
-      {Object.entries(data).map(([id, value], index) => <div key={id} className={cn("flex min-h-7 min-w-0 items-baseline gap-2 px-2 py-1", (columns === 1 ? index % 2 : Math.floor(index / 3) % 2) && "bg-list-stripe")}>
-        <dt className="w-32 shrink-0 truncate text-muted-foreground">{humanizePropertyLabel(id)}</dt>
-        <dd className={cn("min-w-0 flex-1 font-mono text-[11px] break-all", value == null && "font-sans text-xs text-muted-foreground")}><SelectableText>{factValue(value)}</SelectableText></dd>
-      </div>)}
-    </dl>
-  </section>;
-}
-function rowAt(stream: PerformanceStream, index: number): number[] {
-  let offset = index * stream.columns.length;
-  for (const chunk of stream.chunks) {
-    if (offset < chunk.length) return Array.from(chunk.subarray(offset, offset + stream.columns.length));
-    offset -= chunk.length;
-  }
-  return [];
-}
-/** Per-row sum of the named columns; NaN where any column is unavailable. */
-function columnSeries(stream: PerformanceStream, columns: readonly string[]): Float64Array {
-  const offsets = columns.map(column => stream.columns.indexOf(column)).filter(offset => offset >= 0);
-  const width = stream.columns.length;
-  const series = new Float64Array(stream.count);
-  let row = 0;
-  for (const chunk of stream.chunks) {
-    for (let base = 0; base + width <= chunk.length && row < stream.count; base += width, row++) {
-      let sum = 0;
-      for (const offset of offsets) sum += chunk[base + offset]!;
-      series[row] = offsets.length ? sum : NaN;
-    }
-  }
-  return series;
-}
-type Segment = { label: string; column: string; className: string };
-const STREAM_METRIC: Record<"frames" | "ticks" | "gpu", { label: string; segments: Segment[] }> = {
-  frames: { label: "Frame Interval", segments: [{ label: "Interval", column: "intervalMs", className: "bg-trace-script" }] },
-  ticks: { label: "Script + Physics", segments: [
-    { label: "Script", column: "scriptMs", className: "bg-trace-script" },
-    { label: "Physics", column: "physicsMs", className: "bg-trace-physics" },
-  ] },
-  gpu: { label: "GPU Duration", segments: [{ label: "GPU", column: "durationMs", className: "bg-trace-script" }] },
-};
-/** Tick phase colours (`--tick-*` tokens), in tick order. */
-const TICK_PHASE_CLASS: Readonly<Record<TickTimingPhase, string>> = {
-  gameInstance: "bg-tick-game-instance",
-  sceneSubsystems: "bg-tick-scene-subsystems",
-  actors: "bg-tick-actors",
-  components: "bg-tick-components",
-  physics: "bg-tick-physics",
-  postPhysics: "bg-tick-post-physics",
-  sceneSystems: "bg-tick-scene-systems",
-};
-const TICK_PHASE_METRIC = { label: "Tick Phases", segments: TICK_TIMING_PHASES.map((phase): Segment => ({
-  label: TICK_TIMING_PHASE_LABELS[phase], column: `${phase}Ms`, className: TICK_PHASE_CLASS[phase],
-})) };
-/** Version 2 ticks stack every timed phase; version 1 ticks only split script and physics. */
-function streamMetric(population: keyof typeof STREAM_METRIC, stream: PerformanceStream) {
-  return population === "ticks" && stream.columns.includes("actorsMs") ? TICK_PHASE_METRIC : STREAM_METRIC[population];
-}
 const TABLE = "w-full border-collapse text-left text-xs";
 const TH = "sticky top-0 z-10 h-7 border-b bg-panel-header px-2 font-medium whitespace-nowrap text-muted-foreground";
 const TR = "h-7 even:bg-list-stripe hover:bg-accent/50";
 const TD = "px-2 text-right font-mono text-[11px] tabular-nums";
 const percent = (part: number, whole: number) => whole ? `${(part / whole * 100).toFixed(1)}%` : "0.0%";
-const frameBudget = (profile: PerformanceProfile) => profile.identity.frameCap && profile.identity.frameCap > 0 ? 1000 / profile.identity.frameCap : 1000 / 60;
-
-/** Bucketed stacked bars over one stream; each bar selects its slowest sample. */
-function SampleChart({ segments, series, selected, threshold, onSelect }: {
-  segments: readonly Segment[]; series: readonly Float64Array[]; selected: number; threshold?: number; onSelect: (index: number) => void;
-}) {
-  const length = series[0]?.length ?? 0;
-  const total = (index: number) => series.reduce((sum, values) => sum + (Number.isFinite(values[index]) ? values[index]! : 0), 0);
-  const buckets = useMemo(() => {
-    const count = Math.min(240, length);
-    return Array.from({ length: count }, (_, bucket) => {
-      const start = Math.floor(bucket * length / count);
-      const end = Math.max(start, Math.floor((bucket + 1) * length / count) - 1);
-      let peak = start;
-      for (let index = start; index <= end; index++) if (total(index) > total(peak)) peak = index;
-      return { start, end, peak, value: total(peak) };
-    });
-    // total reads series only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [series, length]);
-  const peak = Math.max(0, ...buckets.map(bucket => bucket.value));
-  const scale = Math.max(threshold ?? 0, peak) * 1.1 || 1;
-  const axis = (value: number) => `${value / scale * 100}%`;
-  return <div className="flex h-28 border-b bg-background" data-testid="diagnostic-sample-chart">
-    <div className="relative w-14 shrink-0 border-r text-right font-mono text-[10px] text-muted-foreground tabular-nums" aria-hidden="true">
-      <span className="absolute right-1.5 translate-y-1/2" style={{ bottom: axis(peak) }}>{peak.toFixed(1)}</span>
-      {threshold !== undefined ? <span className="absolute right-1.5 translate-y-1/2 text-destructive" style={{ bottom: axis(threshold) }}>{threshold.toFixed(1)}</span> : null}
-      <span className="absolute right-1.5 bottom-0">0 ms</span>
-    </div>
-    <div className="relative flex min-w-0 flex-1 items-end gap-px px-1 pt-1">
-      <div className="pointer-events-none absolute inset-x-0 border-t border-border/60" style={{ bottom: axis(peak) }} />
-      {buckets.map(bucket => {
-        const active = selected >= bucket.start && selected <= bucket.end;
-        const over = threshold !== undefined && bucket.value > threshold;
-        const parts = segments.map((segment, index) => `${segment.label} ${format(series[index]![bucket.peak])} ms`).join(" · ");
-        const title = `${bucket.start === bucket.end ? `Sample ${bucket.start}` : `Samples ${bucket.start}–${bucket.end}, slowest ${bucket.peak}`} · ${segments.length > 1 ? `${parts} · ` : ""}Total ${format(bucket.value)} ms${over ? " · Over Budget" : ""}`;
-        return <Button key={bucket.start} variant="ghost" aria-label={title} title={title} aria-current={active ? "true" : undefined} onClick={() => onSelect(bucket.peak)}
-          className="relative h-full min-w-0 flex-1 flex-col-reverse items-stretch justify-start gap-0 rounded-none border-0 p-0 hover:bg-accent/60">
-          {segments.map((segment, index) => {
-            const value = series[index]![bucket.peak]!;
-            return <span key={segment.column} className={cn("block w-full shrink-0", active ? "bg-trace-selected" : segment.className, !active && index > 0 && "opacity-90")}
-              style={{ height: Number.isFinite(value) ? `max(1px, ${value / scale * 100}%)` : 0 }} />;
-          })}
-          {over && !active ? <span className="absolute inset-x-0 bg-destructive" style={{ bottom: axis(threshold!), height: `${(bucket.value - threshold!) / scale * 100}%` }} aria-hidden="true" /> : null}
-        </Button>;
-      })}
-      {threshold !== undefined ? <div className="pointer-events-none absolute inset-x-0 border-t border-dashed border-destructive/80" style={{ bottom: axis(threshold) }} /> : null}
-    </div>
-  </div>;
-}
 
 /** Median → p95 bar with a whisker to the maximum on a shared millisecond scale. */
 function DistributionBar({ values, scale, budget }: { values: { median: number | null; p95: number | null; maximum: number | null }; scale: number; budget?: number }) {
@@ -270,105 +153,6 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
       <p>Retained {(profile.retainedBytes / 1048576).toFixed(2)} MiB / {(profile.byteBudget / 1048576).toFixed(0)} MiB budget; {profile.droppedRecords} dropped records. Accounted buffers are not a browser heap limit.</p>
     </div>
     <Facts title="Session" data={profile.identity} columns={3} />
-  </div>;
-}
-
-/** Sample number column, then one column per recorded value. */
-const sampleColumns = (count: number) => `4rem repeat(${count}, minmax(5.5rem, 1fr))`;
-const sampleCell = (value: number) => Number.isFinite(value)
-  ? Number.isInteger(value) ? value : value.toFixed(3)
-  : <span className="font-sans text-xs text-muted-foreground">Unavailable</span>;
-
-export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }) {
-  const touch = useTouchUi();
-  const [population, setPopulation] = useState<keyof typeof STREAM_METRIC>("frames");
-  const [selected, setSelected] = useState(0);
-  const stream = profile[population];
-  const metric = streamMetric(population, stream);
-  const index = Math.max(0, Math.min(Number.isFinite(selected) ? Math.floor(selected) : 0, Math.max(0, stream.count - 1)));
-  const values = rowAt(stream, index);
-  const series = useMemo(() => metric.segments.map(segment => columnSeries(stream, [segment.column])), [stream, metric]);
-  const threshold = population === "frames" ? frameBudget(profile) : population === "ticks" ? TICK_BUDGET_MS : undefined;
-  const totalAt = (row: number) => series.reduce((sum, values) => sum + (Number.isFinite(values[row]) ? values[row]! : 0), 0);
-  const overBudget = useMemo(() => threshold === undefined ? [] : Array.from({ length: stream.count }, (_, row) => row).filter(row => totalAt(row) > threshold),
-    // totalAt reads series only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [series, threshold, stream.count]);
-  const previousOver = overBudget.findLast(row => row < index);
-  const nextOver = overBudget.find(row => row > index);
-  const metricColumns = new Set(metric.segments.map(segment => segment.column));
-  const columns = sampleColumns(stream.columns.length);
-  // Wide enough for every column, so the rows scroll sideways together with the header.
-  const tableWidth = `calc(4rem + ${stream.columns.length} * 5.5rem)`;
-  const rowHeight = touch ? WINDOWED_LIST_TOUCH_ROW_HEIGHT : 28;
-  return <div className="flex h-full min-h-0 flex-col">
-    <ToolbarStrip className="gap-2 py-0.5">
-      <ToggleGroup value={[population]} onValueChange={next => {
-        if (next[0] === "frames" || next[0] === "ticks" || next[0] === "gpu") { setPopulation(next[0]); setSelected(0); }
-      }} size="sm" variant="outline">
-        <ToggleGroupItem value="frames">Completed Frames</ToggleGroupItem><ToggleGroupItem value="ticks">Runtime Ticks</ToggleGroupItem>
-        {profile.gpu.count ? <ToggleGroupItem value="gpu">GPU Queries</ToggleGroupItem> : null}
-      </ToggleGroup>
-      {stream.count ? <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-        {threshold !== undefined ? <>
-          <span className={cn("tabular-nums", overBudget.length && "text-destructive")}>{overBudget.length} Over Budget</span>
-          <Button variant="ghost" size="icon-sm" aria-label="Previous Over Budget" title="Previous Over Budget" className="pointer-coarse:size-11"
-            disabled={previousOver === undefined} onClick={() => { if (previousOver !== undefined) setSelected(previousOver); }}><ChevronsLeftIcon /></Button>
-          <Button variant="ghost" size="icon-sm" aria-label="Next Over Budget" title="Next Over Budget" className="pointer-coarse:size-11"
-            disabled={nextOver === undefined} onClick={() => { if (nextOver !== undefined) setSelected(nextOver); }}><ChevronsRightIcon /></Button>
-          <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-        </> : null}
-        <label htmlFor="diagnostic-sample-index">Sample</label>
-        <div className="w-20"><NumberField id="diagnostic-sample-index" min={0} max={stream.count - 1} step={1} value={index} onChange={setSelected} /></div>
-        <span className="tabular-nums">/ {stream.count - 1}</span>
-      </div> : null}
-    </ToolbarStrip>
-    {stream.count ? <>
-      <SampleChart segments={metric.segments} series={series} selected={index} threshold={threshold} onSelect={setSelected} />
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-2 py-1 text-[11px] text-muted-foreground">
-        <span className="font-medium text-foreground">{metric.label}</span>
-        {metric.segments.length > 1 ? metric.segments.map(segment => <span key={segment.column} className="flex items-center gap-1">
-          <span className={cn("size-2", segment.className)} />{segment.label}
-        </span>) : null}
-        <span className="flex items-center gap-1"><span className="size-2 bg-trace-selected" />Selected</span>
-        {threshold !== undefined ? <span className="flex items-center gap-1">
-          <span className="w-3 border-t border-dashed border-destructive" />Budget {threshold.toFixed(2)} ms
-        </span> : null}
-        <span className="ml-auto">Each stream uses its own recording-relative clock. Rows are not aligned by host/Worker timestamps. Loading samples are explicitly marked.</span>
-      </div>
-      {/* Narrow layouts put the sample's details under the table instead of beside it. */}
-      <div className="flex min-h-64 flex-1 flex-col lg:flex-row">
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <div role="table" aria-label="Samples" aria-rowcount={stream.count + 1} className="text-xs" style={{ minWidth: tableWidth }}>
-            <div role="row" className="sticky top-0 z-10 grid h-7 border-b bg-panel-header" style={{ gridTemplateColumns: columns }}>
-              <div role="columnheader" className="flex items-center px-2 font-medium text-muted-foreground">Sample</div>
-              {stream.columns.map(column => <div role="columnheader" key={column}
-                className={cn("flex items-center justify-end px-2 font-medium whitespace-nowrap text-muted-foreground", metricColumns.has(column) && "text-foreground")}>
-                {humanizePropertyLabel(column)}
-              </div>)}
-            </div>
-            <WindowedList itemCount={stream.count} rowHeight={rowHeight} activeIndex={index}>
-              {row => {
-                const overRow = threshold !== undefined && totalAt(row) > threshold;
-                return <div role="row" aria-rowindex={row + 2} aria-selected={row === index} style={{ gridTemplateColumns: columns }}
-                  className={cn("grid h-full items-center hover:bg-accent/50", row % 2 === 1 && "bg-list-stripe", row === index && "bg-accent hover:bg-accent")}>
-                  <div role="cell" className="h-full">
-                    <Button variant="ghost" size="xs" className="h-full w-full justify-start rounded-none font-mono text-[11px] tabular-nums" onClick={() => setSelected(row)}>{row}</Button>
-                  </div>
-                  {rowAt(stream, row).map((value, column) => <div role="cell" key={column}
-                    className={cn(TD, metricColumns.has(stream.columns[column]!) && overRow && "text-destructive")}>
-                    {sampleCell(value)}
-                  </div>)}
-                </div>;
-              }}
-            </WindowedList>
-          </div>
-        </div>
-        <div className="max-h-48 shrink-0 overflow-auto border-t lg:max-h-none lg:w-72 lg:border-t-0 lg:border-l">
-          <Facts title={`Sample ${index}`} data={Object.fromEntries(stream.columns.map((column, offset) => [column, Number.isFinite(values[offset]) ? values[offset] : null]))} />
-        </div>
-      </div>
-    </> : <TraceEmptyState title="No Samples" description="This population had no completed samples during the recording." />}
   </div>;
 }
 
@@ -498,8 +282,17 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
   };
   const status = state.active === "profile" ? "Recording…" : state.active === "frame" ? "Capturing…" : state.mode === "play" ? "Play Session" : state.mode === "preview" ? "Preview Build" : state.mode === "simulate" ? "Simulate" : "No Session";
-  return <Dialog open={state.open} onOpenChange={open => { if (!open) store.close(); }}>
-    <DialogContent className="h-[min(90dvh,900px)] max-w-[calc(100%-1rem)] rounded-md sm:max-w-6xl" bodyClassName="flex flex-col gap-0 overflow-hidden p-0" showCloseButton={false}>
+  // Like the Inspector, the window floats over a running game: no backdrop, no focus taken from the
+  // game, and only Escape or Close dismisses it, so the game keeps its input and the Play toolbar
+  // stays reachable above it.
+  return <Dialog open={state.open} onOpenChange={open => { if (!open) store.close(); }} modal={false} disablePointerDismissal>
+    <DialogContent
+      showOverlay={false}
+      initialFocus={false}
+      className="h-[min(calc(100dvh-var(--safe-top)-var(--safe-bottom)-9rem),52rem)] w-[min(96vw,72rem)] max-w-none rounded-md sm:max-w-none"
+      bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
+      showCloseButton={false}
+    >
       <div className="flex h-8 shrink-0 items-center gap-2 border-b bg-panel-header pr-1 pl-2">
         <DialogTitle className="text-sm font-medium">Profiler and Frame Debugger</DialogTitle>
         <span className={cn("text-xs", state.active ? "text-destructive" : "text-muted-foreground")}>{status}</span>

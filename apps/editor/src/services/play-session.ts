@@ -417,7 +417,6 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   setPauseReason: (reason: import("@haptic/bridge").SessionPauseReason, paused: boolean) => Promise<import("@haptic/bridge").SessionBoundaryResult>;
   setInputMode: (mode: "game" | "edit") => Promise<void>;
-  setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   /**
    * Point the graph debugger at the live instances of `target` (null stops) and follow
    * `instanceId`. The runtime answers with `onDebugRoster` and, for the followed instance
@@ -783,8 +782,6 @@ export function startPlaySession(options: {
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
-  let editorInputSuppressed = false;
-  let editorInputRoutingEnabled = false;
   /** Capture routes exclusively once anything took input away; it must also hear the return. */
   let inputExclusive = false;
   let acknowledgedPaused = false;
@@ -820,9 +817,9 @@ export function startPlaySession(options: {
   });
   const suppressGameInput = () => {
     // A `rendering` hold stops game time only: it never neutralizes held input or exits pointer lock.
-    const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused ||
+    const suppressed = inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused ||
       [...requestedPauses].some((reason) => reason !== "rendering");
-    const routed = options.mode === "simulate" || editorInputRoutingEnabled;
+    const routed = options.mode === "simulate";
     // Ordinary Play keeps shared routing until something actually takes input
     // away; from then on the exclusive capture is told when input returns.
     if (input && (routed || suppressed || inputExclusive)) {
@@ -1900,24 +1897,6 @@ export function startPlaySession(options: {
       void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
     },
     setPauseReason,
-    setEditorInputSuppressed: async (suppressed) => {
-      const transition = ++inputTransition;
-      inputTransitionPending = true;
-      editorInputRoutingEnabled = true;
-      editorInputSuppressed = suppressed;
-      input.neutralize();
-      suppressGameInput();
-      try {
-        const result = await boundaryClient.request({ kind: "resetInput" });
-        if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
-      } finally {
-        // A failed reset still ends this transition; the open surface keeps its own hold.
-        if (transition === inputTransition && !stopped) {
-          inputTransitionPending = false;
-          suppressGameInput();
-        }
-      }
-    },
     setInputMode: async (mode) => {
       const transition = ++inputTransition;
       const previous = gameInputMode;

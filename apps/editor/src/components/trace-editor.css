@@ -1,28 +1,3 @@
-.trace-timing-chart .trace-timing-bar {
-  padding: 0;
-  border: 0;
-  border-radius: 2px 2px 0 0;
-  overflow: hidden;
-  min-width: 0;
-  background: transparent;
-}
-.trace-timing-bar .trace-script-segment {
-  background: var(--trace-script);
-}
-.trace-timing-bar .trace-physics-segment {
-  background: var(--trace-physics);
-}
-.trace-timing-bar[data-selected="true"] .trace-script-segment,
-.trace-timing-bar[data-selected="true"] .trace-physics-segment {
-  background: var(--trace-selected);
-}
-.trace-timing-bar[data-selected="true"] .trace-physics-segment {
-  opacity: 0.65;
-}
-.trace-timing-chart .trace-timing-bar:focus-visible {
-  outline: 2px solid var(--foreground);
-  outline-offset: -2px;
-}
 [data-testid="trace-playback-log-line"][data-current-tick="true"] {
   background: color-mix(in oklab, var(--trace-selected) 10%, var(--background));
 }

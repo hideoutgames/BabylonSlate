@@ -14,6 +14,7 @@ While the game runs, the toolbar at the top right of the game view has these but
 | **Console** | Opens the [console](console.md) for commands. |
 | **Inspector** | Opens a read-only view of the live game. |
 | **Profiler**, **Capture Frame** | Record performance. See [Profiler](profiler.md). |
+| **Recording** | Shows while a performance recording runs. **Stop Recording** stops it and shows its **Summary**. |
 | **Stop** | Ends Play and returns to the editor. |
 
 ## Choose the tools before you play

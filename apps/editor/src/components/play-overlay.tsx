@@ -69,7 +69,8 @@ import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { playConsoleCommands } from "../lib/play-console";
-import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
+import { nextPlayInspectorOpen, profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
+import { runProfilerConsoleCommand, withProfilerHelp } from "../lib/profiler-console";
 import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
 import {
   applyPlayPreviewCanvasLayout,
@@ -997,8 +998,6 @@ function PlayOverlayView({
         stopProfile: () => session.diagnostics.stopProfile(),
         captureFrame: () => session.diagnostics.captureFrame(),
         stopSession: () => sessionOwner && sessionTicket ? sessionOwner.stop(sessionTicket) : finishSessionRef.current(),
-        releaseInput: () => { if (simulating) changeInputModeRef.current("edit"); },
-        setSurfaceOpen: (open) => session.setEditorInputSuppressed(open),
       });
       diagnosticDetachRef.current = diagnosticLease?.release ?? null;
       if (simulating && inspectionStore) {
@@ -1410,14 +1409,22 @@ function PlayOverlayView({
         sceneAssetGuid={sceneAssetGuid}
         scene={scene}
         scenes={scenes}
-        onExecute={(line) =>
-          sessionRef.current?.executeConsoleCommand(
+        onExecute={async (line) => {
+          // Profiler commands run here, where the Profiler records; every other line goes to the game.
+          const profiler = await runProfilerConsoleCommand(
+            line,
+            diagnosticStore,
+            () => profileDefaultsFromSettings(localEngineSettings.debuggerDefaults),
+          );
+          if (profiler) return profiler;
+          const result = await (sessionRef.current?.executeConsoleCommand(
             applyInspectSelectionToConsoleLine(
               line,
               inspectSelectionRef.current,
             ),
-          ) ?? Promise.resolve({ success: false, output: "not playing" })
-        }
+          ) ?? Promise.resolve({ success: false, output: "not playing" }));
+          return withProfilerHelp(line, result);
+        }}
       />
       <DebugBehaviourTreeDialog
         open={treeOpen}

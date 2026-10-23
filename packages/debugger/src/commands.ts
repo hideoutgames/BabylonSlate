@@ -69,9 +69,16 @@ export function isReservedConsoleCommandName(name: string): boolean {
   return RESERVED_COMMAND_NAMES.has(name.trim().toLowerCase());
 }
 
+/**
+ * Commands the editor runs itself against its Profiler, never the game: reserved so a user command
+ * cannot take their names.
+ */
+export const EDITOR_COMMAND_NAMES = ["profile start", "profile stop", "capture frame"] as const;
+
 const RESERVED_COMMAND_NAMES = new Set<string>([
   ...CORE_COMMAND_NAMES,
   ...DEBUG_COMMAND_NAMES,
+  ...EDITOR_COMMAND_NAMES,
 ]);
 
 function flagCommand(

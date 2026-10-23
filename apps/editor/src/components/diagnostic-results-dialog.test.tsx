@@ -1,9 +1,11 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PERFORMANCE_TICK_COLUMNS_V1, PerformanceRecorder, type PerformanceProfile } from "@haptic/debugger";
 import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
-import DiagnosticResultsDialog, { PerformanceSummary, PerformanceTimeline } from "./diagnostic-results-dialog";
+import DiagnosticResultsDialog, { PerformanceSummary } from "./diagnostic-results-dialog";
+import { PerformanceTimeline } from "./performance-timeline";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 
 vi.mock("../context/app-settings-context", () => ({ useAppSettings: () => ({ settings: { debuggerDefaults: {} } }) }));
 
@@ -47,20 +49,74 @@ it("lists the script phases of a version 2 recording, and none for a version 1 f
 });
 it("stacks runtime ticks by phase, or by script and physics for a version 1 file", () => {
   const { unmount } = render(<PerformanceTimeline profile={recording()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
-  expect(screen.getByText("Tick Phases")).toBeTruthy();
-  expect(screen.getAllByLabelText(/Actors 0\.500 ms · .*Scene Systems 0\.150 ms/)).toHaveLength(3);
+  const legend = () => screen.getByText(/Ticks are placed on the frames/).parentElement!;
+  expect(legend().textContent).toContain("Tick Phases");
+  expect(legend().textContent).toContain("Actors");
+  expect(legend().textContent).toContain("Scene Systems");
   unmount();
   render(<PerformanceTimeline profile={versionOne(recording())} />);
-  fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
-  expect(screen.getByText("Script + Physics")).toBeTruthy();
+  expect(legend().textContent).toContain("Script + Physics");
+  expect(legend().textContent).not.toContain("Actors");
 });
-it("switches timeline populations without conflating frame and runtime clocks", () => {
+it("shows a frame with the tick it presents, and a tick with the first frame presenting it", () => {
   render(<PerformanceTimeline profile={recording()} />);
   expect(screen.getByRole("columnheader", { name: "Completed At MS" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Tick 0" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
   expect(screen.getByRole("columnheader", { name: "Elapsed MS" })).toBeTruthy();
-  expect(screen.queryByText("Completed At MS")).toBeNull();
+  expect(screen.getByRole("region", { name: "Frame 0" })).toBeTruthy();
+});
+describe("on the chart", () => {
+  // 300 px over the 60 ms recording: a sample at t ms sits at x = 5t; the Frames track is the top 56 px.
+  const at = (time: number) => Math.floor(time / 60 * 100) * 3 + 1.5;
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 300, 130));
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("selects a tapped tick and shows the frame that presents it", () => {
+    render(<PerformanceTimeline profile={recording()} />);
+    const chart = screen.getByRole("group", { name: /Performance timeline/ });
+    act(() => {
+      dispatchPointerEvent(chart, "pointerdown", { clientX: at(40), clientY: 80 });
+      dispatchPointerEvent(chart, "pointerup", { clientX: at(40), clientY: 80 });
+    });
+    expect(screen.getByRole("columnheader", { name: "Elapsed MS" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Sample 1" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Frame 1" })).toBeTruthy();
+  });
+
+  it("summarizes a dragged range of every track, until it is cleared", () => {
+    render(<PerformanceTimeline profile={recording()} />);
+    const chart = screen.getByRole("group", { name: /Performance timeline/ });
+    act(() => {
+      dispatchPointerEvent(chart, "pointerdown", { clientX: 90, clientY: 20 });
+      dispatchPointerEvent(chart, "pointermove", { clientX: 210, clientY: 20 });
+      dispatchPointerEvent(chart, "pointerup", { clientX: 210, clientY: 20 });
+    });
+    const summary = screen.getByRole("status", { name: "Range Summary" });
+    // The first frame has no interval yet, so one frame of the two in range is measured.
+    expect(summary.textContent).toContain("Frames 1 · Median 20.000 ms");
+    expect(summary.textContent).toContain("Ticks 2 · Median 3.000 ms");
+    fireEvent.click(screen.getByRole("button", { name: "Clear Range" }));
+    expect(screen.queryByRole("status", { name: "Range Summary" })).toBeNull();
+  });
+
+  it("plots the metric picked for frames", async () => {
+    render(<PerformanceTimeline profile={recording()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Metric" }));
+    const drawCalls = await screen.findByRole("option", { name: "Draw Calls" });
+    act(() => {
+      dispatchPointerEvent(drawCalls, "pointerdown", { pointerType: "mouse" });
+      dispatchPointerEvent(drawCalls, "pointerup", { pointerType: "mouse" });
+    });
+    fireEvent.click(drawCalls, { detail: 1 });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Metric" }).textContent).toContain("Draw Calls"));
+    const chart = screen.getByRole("group", { name: /Performance timeline/ });
+    act(() => dispatchPointerEvent(chart, "pointermove", { pointerType: "mouse", clientX: at(40), clientY: 20 }));
+    expect(screen.getByRole("tooltip").textContent).toContain("Draw Calls 8");
+  });
 });
 it("selects the next over-budget sample in the table and its details", () => {
   render(<PerformanceTimeline profile={recording(150, [120])} />);
