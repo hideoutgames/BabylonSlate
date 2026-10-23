@@ -662,7 +662,9 @@ describe("Play createEngine view", () => {
 
   /** A frozen clock the tests advance, so a hold's pause delay passes without waiting. */
   function frozenClock() {
-    let now = performance.now();
+    // A whole millisecond, so elapsed differences stay exact: from a fractional start, an advance that crosses a
+    // power of two rounds down, and a hold measures 249.99… ms after advancing by the 250 ms pause delay.
+    let now = Math.floor(performance.now());
     const spy = vi.spyOn(performance, "now").mockImplementation(() => now);
     handles.push({ dispose: () => spy.mockRestore() });
     return { advance: (ms: number) => { now += ms; } };

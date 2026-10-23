@@ -15,6 +15,8 @@ import type { AbstractMesh, Material, Node, Scene } from "@babylonjs/core";
  * variant change hot-swaps it like any drawn mesh.
  */
 const pending = new WeakSet<AbstractMesh>();
+/** Hidden meshes drawn only to create pipelines ahead (`hideForPipelineWarmup`): never revealed. */
+const warmOnly = new WeakSet<AbstractMesh>();
 /** Hidden meshes whose own variants are all ready: each waits for the rest of its actor. */
 const ready = new WeakSet<AbstractMesh>();
 /** Each hidden mesh's actor root, and each root's hidden meshes. */
@@ -54,8 +56,18 @@ export function noteDrawn(mesh: AbstractMesh): void {
   drawnWith.set(mesh, mesh.material ?? null);
 }
 
+/**
+ * Hides a mesh that exists only so warm draws create its pipelines ahead of a spawn (`spawnable-warm.ts` where
+ * pipelines are deferred): every pass leaves it out like a hidden mesh, probes still ask it to warm, and it is never
+ * revealed.
+ */
+export function hideForPipelineWarmup(mesh: AbstractMesh): void {
+  warmOnly.add(mesh);
+  pending.add(mesh);
+}
+
 export function hideUntilReady(mesh: AbstractMesh): void {
-  if (pending.has(mesh) && groupOf.has(mesh)) return;
+  if (warmOnly.has(mesh) || (pending.has(mesh) && groupOf.has(mesh))) return;
   pending.add(mesh);
   const root = actorRoot(mesh);
   groupOf.set(mesh, root);
@@ -69,7 +81,7 @@ export function hideUntilReady(mesh: AbstractMesh): void {
  * found its variant unready; outside one this probe decides alone.
  */
 export function noteRevealProbe(mesh: AbstractMesh, isReady: boolean): void {
-  if (!pending.has(mesh)) return;
+  if (!pending.has(mesh) || warmOnly.has(mesh)) return;
   if (roundDepth > 0) {
     (isReady ? seen : blocked).add(mesh);
     return;

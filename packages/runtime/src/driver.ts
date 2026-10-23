@@ -32,7 +32,7 @@ import {
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
   type DebugObserveTarget,
-  type BreakpointLocation,
+  type Breakpoint,
   BREAKPOINT_PAUSE_CODE,
 } from "@haptic/bridge";
 import { debugInstanceLabel, ScriptDebugObserver } from "./script-debug";
@@ -1435,7 +1435,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptDebug.observe(target, instanceId);
   }
 
-  applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void {
+  applyBreakpoints(breakpoints: readonly Breakpoint[]): void {
     if (this.stopped) return;
     this.breakpoints.set(breakpoints);
   }

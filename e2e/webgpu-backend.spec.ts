@@ -168,6 +168,31 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(externalRequests).toEqual([]);
   expect(result.retainedEngines).toBe(0);
   expect(result.cancelledEngineReleased).toBe(true);
+  // A world view on the software adapter never waits for a new variant's render pipeline: a light switching off draws
+  // each Material's previous Effect while its pipeline is created asynchronously, as do floors whose spot starts or
+  // stops casting shadows (a lost map's sampler takes a placeholder of the declared type, so no GPU validation error),
+  // a spawn with a variant nothing compiled stays hidden meanwhile, and a spawn whose Material the load warmed creates
+  // no pipeline at all.
+  const swap = result.variantSwap!;
+  expect({
+    swap: { done: swap.swap.done, held: swap.swap.held, previous: swap.swap.previousFrames > 0, ...swap.swap.pipelines,
+      asynchronous: swap.swap.pipelines.asynchronous > 0 },
+    shadowGain: { done: swap.shadowGain.done, held: swap.shadowGain.held },
+    shadowLoss: { done: swap.shadowLoss.done, held: swap.shadowLoss.held, previous: swap.shadowLoss.previousFrames > 0,
+      synchronous: swap.shadowLoss.pipelines.synchronous },
+    spawn: { done: swap.spawn.done, held: swap.spawn.held, hidden: swap.spawn.hiddenFrames > 0, ...swap.spawn.pipelines,
+      asynchronous: swap.spawn.pipelines.asynchronous > 0 },
+    staged: { done: swap.staged.done, held: swap.staged.held, ...swap.staged.pipelines,
+      asynchronous: swap.staged.pipelines.asynchronous > 0 },
+    warmSpawn: { done: swap.warmSpawn.done, held: swap.warmSpawn.held, ...swap.warmSpawn.pipelines },
+  }, JSON.stringify(swap)).toEqual({
+    swap: { done: true, held: 0, previous: true, synchronous: 0, asynchronous: true },
+    shadowGain: { done: true, held: 0 },
+    shadowLoss: { done: true, held: 0, previous: true, synchronous: 0 },
+    spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
+    staged: { done: true, held: 0, synchronous: 0, asynchronous: true },
+    warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
+  });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);
