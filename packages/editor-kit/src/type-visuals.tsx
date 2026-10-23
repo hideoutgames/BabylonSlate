@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ActivityIcon,
   AnchorIcon,
+  ApertureIcon,
   ArrowDownUpIcon,
   BoxIcon,
   BoxesIcon,
@@ -155,6 +156,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   LightComponent: "ActorComponent",
   AreaRectLightComponent: "ActorComponent",
   FogVolumeComponent: "ActorComponent",
+  ReflectionProbeComponent: "ActorComponent",
   OutlineComponent: "ActorComponent",
   DeformerComponent: "ActorComponent",
   HemisphericFillLightComponent: "ActorComponent",
@@ -285,6 +287,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   LightComponent: LightbulbIcon,
   AreaRectLightComponent: LightbulbIcon,
   FogVolumeComponent: CloudIcon,
+  ReflectionProbeComponent: ApertureIcon,
   OutlineComponent: SquareDashedIcon,
   DeformerComponent: BoxIcon,
   HemisphericFillLightComponent: LightbulbIcon,

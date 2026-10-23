@@ -90,40 +90,9 @@ function prepare(
   const current = () =>
     source.getInternalTexture() === internal &&
     internal._hardwareTexture === request.hardware;
-  // The helper awaits every submitted read before settling, including failures.
-  void readEnvironmentBaseRadiance(source, current)
-    .then((result) => {
-      if (!current() || !result) return;
-      const { size } = result;
-      const faces = result.faces.map((pixels) => {
-        if (
-          !(pixels instanceof Uint8Array || pixels instanceof Float32Array) ||
-          pixels.length !== size * size * 4
-        )
-          throw new Error(
-            "Environment irradiance readback returned invalid cube pixels.",
-          );
-        return linearPixels(
-          pixels,
-          result.linear ? false : rgbd,
-          result.linear ? false : gamma,
-          exactSrgb,
-        );
-      });
-      const [right, left, up, down, front, back] = faces;
-      request.polynomial =
-        CubeMapToSphericalPolynomialTools.ConvertCubeMapToSphericalPolynomial({
-          size,
-          right,
-          left,
-          up,
-          down,
-          front,
-          back,
-          format: 5,
-          type: 1,
-          gammaSpace: false,
-        });
+  void environmentPolynomial(source, current, { rgbd, gamma, exactSrgb })
+    .then((polynomial) => {
+      if (polynomial) request.polynomial = polynomial;
     })
     .catch((cause) => {
       request.error = new Error("Environment irradiance preparation failed.", {
@@ -136,6 +105,53 @@ function prepare(
       for (const notify of request.listeners) notify();
     });
   return request;
+}
+
+/**
+ * Irradiance coefficients of a cube's base radiance, or null when `current`
+ * turned false meanwhile. Encoding flags describe the source as sampled.
+ */
+export async function environmentPolynomial(
+  source: CubeTexture,
+  current: () => boolean,
+  encoding: { rgbd: boolean; gamma: boolean; exactSrgb: boolean } = {
+    rgbd: source.isRGBD,
+    gamma: source.gammaSpace,
+    exactSrgb: source.getInternalTexture()?.getEngine().useExactSrgbConversions ?? false,
+  },
+): Promise<SphericalPolynomial | null> {
+  // The helper awaits every submitted read before settling, including failures.
+  const result = await readEnvironmentBaseRadiance(source, current);
+  if (!current() || !result) return null;
+  const { size } = result;
+  const faces = result.faces.map((pixels) => {
+    if (
+      !(pixels instanceof Uint8Array || pixels instanceof Float32Array) ||
+      pixels.length !== size * size * 4
+    )
+      throw new Error(
+        "Environment irradiance readback returned invalid cube pixels.",
+      );
+    return linearPixels(
+      pixels,
+      result.linear ? false : encoding.rgbd,
+      result.linear ? false : encoding.gamma,
+      encoding.exactSrgb,
+    );
+  });
+  const [right, left, up, down, front, back] = faces;
+  return CubeMapToSphericalPolynomialTools.ConvertCubeMapToSphericalPolynomial({
+    size,
+    right,
+    left,
+    up,
+    down,
+    front,
+    back,
+    format: 5,
+    type: 1,
+    gammaSpace: false,
+  });
 }
 
 function linearPixels(

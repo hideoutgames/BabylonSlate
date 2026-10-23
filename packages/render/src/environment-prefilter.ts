@@ -4,6 +4,7 @@ import {
   EffectRenderer,
   EffectWrapper,
   type AbstractEngine,
+  type BaseTexture,
   type InternalTexture,
   type RenderTargetWrapper,
 } from "@babylonjs/core";
@@ -11,7 +12,6 @@ import { withDrawingState } from "./engine-drawing-state";
 import {
   beginManagedRenderAllocation,
   releaseManagedRenderLeaseAfterDisposal,
-  type ManagedRenderLease,
 } from "./managed-render-resources";
 
 /** Face size of a filtered environment: rough lighting needs no more, and it bounds the filter's GPU work. */
@@ -30,9 +30,7 @@ export interface FilteredEnvironment {
 }
 
 type Entry = {
-  cube: CubeTexture;
-  target: RenderTargetWrapper;
-  lease: ManagedRenderLease;
+  owned: FilteredEnvironmentTarget;
   ready: Promise<void>;
   references: number;
 };
@@ -60,6 +58,75 @@ function cubeBytes(size: number, bytesPerTexel: number): number {
   return bytes;
 }
 
+/** A filtered environment cube's GPU target, its engine-bound wrapper and its budget reservation. */
+export interface FilteredEnvironmentTarget {
+  readonly cube: CubeTexture;
+  readonly target: RenderTargetWrapper;
+  readonly size: number;
+  release(): void;
+}
+
+/**
+ * Allocate a filtered environment cube of at most `faceSize` per face. Null
+ * when the device cannot filter or the managed rendering budget is spent.
+ */
+export function createFilteredEnvironmentTarget(engine: AbstractEngine, faceSize: number): FilteredEnvironmentTarget | null {
+  const caps = engine.getCaps();
+  if (!engine._features.allowTexturePrefiltering || (!engine.isWebGPU && !caps.textureLOD)) return null;
+  const type = caps.textureHalfFloatRender
+    ? Constants.TEXTURETYPE_HALF_FLOAT
+    : caps.textureFloatRender ? Constants.TEXTURETYPE_FLOAT : null;
+  if (type === null) return null;
+  const size = filteredSize(faceSize);
+  const bytes = cubeBytes(size, type === Constants.TEXTURETYPE_FLOAT ? 16 : 8);
+  const lease = beginManagedRenderAllocation(engine, bytes);
+  if (!lease) return null;
+  let target: RenderTargetWrapper | undefined;
+  let cube: CubeTexture | undefined;
+  try {
+    target = engine.createRenderTargetCubeTexture(size, {
+      format: Constants.TEXTUREFORMAT_RGBA,
+      type,
+      // Pinned 9.29: WebGL cube targets ignore createMipMaps and allocate mips only by generating them.
+      createMipMaps: true,
+      generateMipMaps: !engine.isWebGPU,
+      generateDepthBuffer: false,
+      generateStencilBuffer: false,
+      samplingMode: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
+      label: "Filtered environment",
+    });
+    // Every mip is written by the filter; nothing may regenerate them over it.
+    target.texture!.generateMipMaps = false;
+    engine.updateTextureWrappingMode(target.texture!, Constants.TEXTURE_CLAMP_ADDRESSMODE, Constants.TEXTURE_CLAMP_ADDRESSMODE, Constants.TEXTURE_CLAMP_ADDRESSMODE);
+    // An engine-bound wrapper sharing the target's texture: Scene disposal never drops it.
+    cube = new CubeTexture("", engine);
+    target.texture!.incrementReferences();
+    cube._texture = target.texture;
+    cube.gammaSpace = false;
+    cube.lodGenerationScale = LOD_GENERATION_SCALE;
+    cube.lodGenerationOffset = LOD_GENERATION_OFFSET;
+    cube._prefiltered = true;
+    lease.commit([{ handle: target.texture!, bytes, category: "environment" }]);
+  } catch (error) {
+    cube?.dispose();
+    target?.dispose();
+    void releaseManagedRenderLeaseAfterDisposal(engine, lease);
+    throw error;
+  }
+  const owned = { cube, target };
+  let released = false;
+  return {
+    cube, target, size,
+    release: () => {
+      if (released) return;
+      released = true;
+      owned.cube.dispose();
+      owned.target.dispose();
+      void releaseManagedRenderLeaseAfterDisposal(engine, lease);
+    },
+  };
+}
+
 /**
  * Filter a ready source cube (a Skybox's) for image-based lighting: each mip
  * holds the GGX lobe Babylon's PBR samples it for, at a bounded face size.
@@ -71,83 +138,41 @@ export function retainFilteredEnvironment(
   source: CubeTexture,
 ): FilteredEnvironment | null {
   const internal = source.getInternalTexture();
-  const caps = engine.getCaps();
-  if (!internal?.isReady || !engine._features.allowTexturePrefiltering || (!engine.isWebGPU && !caps.textureLOD)) return null;
+  if (!internal?.isReady) return null;
   let cache = caches.get(engine);
   if (!cache) { cache = new Map(); caches.set(engine, cache); }
   let entry = cache.get(internal);
   if (!entry) {
-    const type = caps.textureHalfFloatRender
-      ? Constants.TEXTURETYPE_HALF_FLOAT
-      : caps.textureFloatRender ? Constants.TEXTURETYPE_FLOAT : null;
-    if (type === null) return null;
-    const size = filteredSize(source.getSize().width);
-    const bytes = cubeBytes(size, type === Constants.TEXTURETYPE_FLOAT ? 16 : 8);
-    const lease = beginManagedRenderAllocation(engine, bytes);
-    if (!lease) return null;
-    let target: RenderTargetWrapper | undefined;
-    let cube: CubeTexture | undefined;
-    try {
-      target = engine.createRenderTargetCubeTexture(size, {
-        format: Constants.TEXTUREFORMAT_RGBA,
-        type,
-        // Pinned 9.29: WebGL cube targets ignore createMipMaps and allocate mips only by generating them.
-        createMipMaps: true,
-        generateMipMaps: !engine.isWebGPU,
-        generateDepthBuffer: false,
-        generateStencilBuffer: false,
-        samplingMode: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
-        label: "Filtered environment",
-      });
-      // Every mip is written by the filter; nothing may regenerate them over it.
-      target.texture!.generateMipMaps = false;
-      engine.updateTextureWrappingMode(target.texture!, Constants.TEXTURE_CLAMP_ADDRESSMODE, Constants.TEXTURE_CLAMP_ADDRESSMODE, Constants.TEXTURE_CLAMP_ADDRESSMODE);
-      // An engine-bound wrapper sharing the target's texture: Scene disposal never drops it.
-      cube = new CubeTexture("", engine);
-      target.texture!.incrementReferences();
-      cube._texture = target.texture;
-      cube.gammaSpace = false;
-      cube.lodGenerationScale = LOD_GENERATION_SCALE;
-      cube.lodGenerationOffset = LOD_GENERATION_OFFSET;
-      cube._prefiltered = true;
-      lease.commit([{ handle: target.texture!, bytes, category: "environment" }]);
-    } catch (error) {
-      cube?.dispose();
-      target?.dispose();
-      void releaseManagedRenderLeaseAfterDisposal(engine, lease);
-      throw error;
-    }
-    const owned = { cube, target, lease, references: 0 } as Entry;
-    owned.ready = filter(engine, source, target, size);
+    const owned = createFilteredEnvironmentTarget(engine, source.getSize().width);
+    if (!owned) return null;
+    entry = { owned, references: 0, ready: filterEnvironment(engine, source, owned) };
     // A failed filter is reported to each holder through `ready`.
-    void owned.ready.catch(() => {});
-    entry = owned;
+    void entry.ready.catch(() => {});
     cache.set(internal, entry);
   }
   entry.references++;
   const held = entry;
   let released = false;
   return {
-    cube: held.cube,
+    cube: held.owned.cube,
     ready: held.ready,
     release: () => {
       if (released) return;
       released = true;
       if (--held.references !== 0) return;
       if (cache.get(internal) === held) cache.delete(internal);
-      held.cube.dispose();
-      held.target.dispose();
-      void releaseManagedRenderLeaseAfterDisposal(engine, held.lease);
+      held.owned.release();
     },
   };
 }
 
-async function filter(
+/** Write the GGX-filtered radiance of a ready `source` cube into every mip of `into`. */
+export async function filterEnvironment(
   engine: AbstractEngine,
-  source: CubeTexture,
-  target: RenderTargetWrapper,
-  size: number,
+  source: BaseTexture,
+  into: FilteredEnvironmentTarget,
 ): Promise<void> {
+  const { target, size } = into;
   const defines = [`#define NUM_SAMPLES ${FILTER_SAMPLES}u`];
   if (source.gammaSpace) defines.push("#define GAMMA_INPUT");
   const wgsl = engine.isWebGPU;

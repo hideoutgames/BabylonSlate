@@ -19,6 +19,8 @@ export class RenderCommandState implements RuntimeSubsystem {
   readonly captureSlots = new Set<number>();
   /** Slots whose last `setFogVolumes` sent volumes. */
   readonly fogVolumeSlots = new Set<number>();
+  /** Slots whose last `setReflectionProbes` sent probes. */
+  readonly reflectionProbeSlots = new Set<number>();
 
   releaseSlot(slotId: number, owner: Actor | undefined): void {
     this.areaLightSlots.delete(slotId);
@@ -27,5 +29,6 @@ export class RenderCommandState implements RuntimeSubsystem {
     if (owner) this.dirtyDeformerActors.delete(owner);
     this.captureSlots.delete(slotId);
     this.fogVolumeSlots.delete(slotId);
+    this.reflectionProbeSlots.delete(slotId);
   }
 }

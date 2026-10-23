@@ -6,7 +6,8 @@ import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseFogVolumeProperties, type FogVolumeBinding, type FogVolumeProperties } from "@haptic/core";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { parseFogVolumeProperties, parseReflectionProbeProperties, type FogVolumeProperties, type SerializedTransform } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
 import { volumeFillMaterial } from "./editor-volume";
 
@@ -58,11 +59,47 @@ export function createFogVolumeGuide(scene: Scene, name: string, properties: unk
   return guide;
 }
 
+/**
+ * Editor-only Reflection Probe guide: the probe's box as wires around a small
+ * mirror ball at its centre. The ball sits inside the box, so it shows the
+ * probe's latest capture.
+ */
+export function createReflectionProbeGuide(scene: Scene, name: string, properties: unknown): Mesh {
+  const probe = parseReflectionProbeProperties(properties);
+  const [width, height, depth] = probe.size;
+  const guide = CreateBox(name, { width, height, depth }, scene);
+  guide.visibility = 1;
+  guide.material = volumeFillMaterial(scene);
+  guide.isPickable = true;
+  guide.metadata = { editorVolume: true, reflectionProbeGuide: true };
+  const outline = CreateLineSystem(`${name}:outline`, { lines: outlineLines({ shape: "box", size: probe.size, enabled: true, density: 0, edgeFalloff: 0 }) }, scene);
+  outline.color = new Color3(0.85, 0.75, 0.45);
+  outline.isPickable = false;
+  outline.applyFog = false;
+  outline.parent = guide;
+  outline.renderingGroupId = RENDERING_GROUP.world;
+  outline.metadata = { editorVolume: true, editorUnpickable: true };
+  const ball = CreateSphere(`${name}:ball`, { diameter: Math.min(0.5, width / 4, height / 4, depth / 4), segments: 16 }, scene);
+  const chrome = new PBRMaterial(`${name}:ball`, scene);
+  chrome.metallic = 1;
+  chrome.roughness = 0.05;
+  ball.material = chrome;
+  ball.isPickable = false;
+  ball.parent = guide;
+  ball.metadata = { editorVolume: true, editorUnpickable: true };
+  ball.onDisposeObservable.addOnce(() => chrome.dispose());
+  guide.onDisposeObservable.addOnce(() => {
+    for (const ancestor of ancestorsByGuide.get(guide) ?? []) ancestor.dispose(true);
+    ancestorsByGuide.delete(guide);
+  });
+  return guide;
+}
+
 /** Keep the guide's editable local TRS separate from its complete component-parent chain. */
 export function syncFogVolumeGuideAttachments(
   guide: Mesh,
   actorRoot: Mesh,
-  binding: FogVolumeBinding,
+  binding: { transforms: readonly SerializedTransform[]; error?: string },
   visible: boolean,
 ): void {
   guide.setEnabled(visible && !binding.error);

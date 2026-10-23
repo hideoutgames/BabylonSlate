@@ -11,6 +11,7 @@ import {
   parseAreaRectLightProperties,
   parseDeformerProperties,
   parseFogVolumeProperties,
+  parseReflectionProbeProperties,
   parseOutlineProperties,
   parseSpringArmProperties,
   RENDER_TARGET_MODE_LABELS,
@@ -90,6 +91,8 @@ interface RenderingRefs {
   cameraTour: PlacedClass;
   dynamicMesh: PlacedClass;
   manualCapture: PlacedClass;
+  /** Mirror-finish surface for the reflection probe booth. */
+  chrome: string;
 }
 
 /** A Class plus the prefab components its scene instances copy. */
@@ -114,7 +117,8 @@ export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promis
   const manualCapture = await saveManualCapture(ctx, targets.WorldNormal.renderTarget);
   await saveScalabilityCommands(ctx);
   await addClusteredScene(ctx);
-  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture });
+  const chrome = await ctx.createAsset("Material", RENDER_FOLDER, "FT_RenderChrome", { payload: chromeMaterial("FT_RenderChrome") });
+  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture, chrome: chrome.guid });
 }
 
 /**
@@ -168,6 +172,15 @@ async function createRenderTargets(ctx: FeatureTestContext): Promise<RenderingRe
     targets[mode] = { renderTarget: renderTarget.guid, monitorMaterial: monitor.guid };
   }
   return targets;
+}
+
+/** Fully metallic, nearly smooth surface: it shows the image-based lighting it reflects. */
+function chromeMaterial(name: string): Record<string, unknown> {
+  const doc = createDefaultMaterialDocument(name);
+  const output = doc.nodes.find((node) => node.type === "output.surface");
+  if (!output) throw new Error("FeatureTest chrome Material has no surface output.");
+  output.properties = { ...output.properties, "default:metallic": [1], "default:roughness": [0.05] };
+  return doc as unknown as Record<string, unknown>;
 }
 
 /** Unlit surface sampling a Render Target Texture into Base Color. */
@@ -716,7 +729,7 @@ function latticeTwistOffsets(): number[] {
   return offsets;
 }
 
-/** Fog volume, outlines (x-ray through a wall), lattice deformer, dynamic mesh, spring arm, 3D text, ortho camera. */
+/** Fog volume, reflection probe booth, outlines (x-ray through a wall), lattice deformer, dynamic mesh, spring arm, 3D text, ortho camera. */
 function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   const zone = ctx.zone("effects");
   const add = zoneAdder(ctx, "effects");
@@ -731,6 +744,21 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   add(primitive("ft-render-fog-glow", "Fog Glow Sphere", "sphere", zone.at(-7, 0.75, -6), {
     materialGuid: ctx.assets.materials.emissive ?? null,
   }));
+
+  // A three-walled, roofed booth: the probe captures its static walls, so the chrome ball inside
+  // reflects them instead of the open sky.
+  const booth = zone.at(-7, 0, 1);
+  const boothAt = (x: number, y: number, z: number): Vec3 => [booth[0] + x, booth[1] + y, booth[2] + z];
+  add(primitive("ft-render-probe-back", "Probe Booth Back Wall", "box", boothAt(0, 1.5, 2), { materialGuid: surface, scale: [4, 3, 0.2] }));
+  add(primitive("ft-render-probe-left", "Probe Booth Left Wall", "box", boothAt(-2, 1.5, 0), { materialGuid: surface, scale: [0.2, 3, 4] }));
+  add(primitive("ft-render-probe-right", "Probe Booth Right Wall", "box", boothAt(2, 1.5, 0), { scale: [0.2, 3, 4] }));
+  add(primitive("ft-render-probe-roof", "Probe Booth Roof", "box", boothAt(0, 3.1, 0), { scale: [4.2, 0.2, 4.2] }));
+  add(primitive("ft-render-probe-ball", "Probe Chrome Ball", "sphere", boothAt(0, 0.75, 0), { materialGuid: refs.chrome }));
+  add(actor("ft-render-probe", "Reflection Probe", tf(boothAt(0, 1.5, 0)), [
+    comp("ft-render-probe-box", "ReflectionProbeComponent", {
+      ...parseReflectionProbeProperties({ size: [4, 3, 4], resolution: 128 }),
+    }),
+  ]));
 
   // The wall stands between the main camera and the cylinder, so only the x-ray outline shows through.
   add(actor("ft-render-outline-xray", "Outlined Cylinder", tf(zone.at(0, 0.75, -4)), [

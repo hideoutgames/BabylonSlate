@@ -787,59 +787,8 @@ export class RenderTargetCaptures {
     }
     return undefined;
   }
-  /**
-   * Runs a capture draw outside the scene view's own pass, then restores that
-   * view's camera, matrices, UBO, pass, viewport and floating-origin context.
-   */
   private draw(run: () => boolean, materialImageProcessing: boolean): boolean {
-    const scene = this.scene;
-    const camera = scene.activeCamera;
-    const cameras = scene.activeCameras;
-    const ubo = scene.getSceneUniformBuffer();
-    // Manual captures can precede the scene's first main-camera render, when
-    // its cached matrices are still unset. Restore the camera's valid matrices
-    // in that case instead of handing undefined to setTransformMatrix.
-    const view = scene.getViewMatrix() ?? camera?.getViewMatrix();
-    const projection = scene.getProjectionMatrix() ?? camera?.getProjectionMatrix();
-    const engine = scene.getEngine();
-    const renderPass = engine.currentRenderPassId;
-    const colorWrite = engine.getColorWrite();
-    const viewport = engine.currentViewport ?? camera?.viewport;
-    const width = engine.getRenderWidth();
-    const height = engine.getRenderHeight();
-    const outlines = scene.getOutlineRenderer?.();
-    const outlinesEnabled = outlines?.enabled;
-    const imageProcessing = scene.imageProcessingConfiguration;
-    const applyByPostProcess = imageProcessing.applyByPostProcess;
-    // Manual RTT draws bypass Scene.render(), which normally selects this
-    // global context. A sibling scene may still own it (or have no matrices).
-    const unpin = pinFloatingOrigin(scene);
-    drawing.add(scene);
-    try {
-      // Match authored unlit surfaces: Scene Color is display/gamma encoded.
-      // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
-      // invalidation; the capture has its own material render-pass defines.
-      // A Full Quality view keeps the scene's pipeline and its Display Color stage.
-      if (materialImageProcessing) imageProcessing._applyByPostProcess = false;
-      return run();
-    } finally {
-      try {
-        imageProcessing._applyByPostProcess = applyByPostProcess;
-        scene.activeCamera = camera;
-        scene.activeCameras = cameras;
-        FloatingOriginCurrentScene.eyeAtCamera = true;
-        scene.setSceneUniformBuffer(ubo);
-        if (view && projection) scene.setTransformMatrix(view, projection);
-        engine.currentRenderPassId = renderPass;
-        engine.setColorWrite(colorWrite);
-        scene.resetCachedMaterial();
-        if (outlines) outlines.enabled = outlinesEnabled!;
-        if (viewport) engine.setViewport(viewport, width, height);
-      } finally {
-        unpin();
-        drawing.delete(scene);
-      }
-    }
+    return drawOutsideSceneView(this.scene, run, materialImageProcessing);
   }
   private drawReady(destination: CaptureRenderTarget): boolean {
     let ready = false;
@@ -975,6 +924,60 @@ export class RenderTargetCaptures {
     this.textures.clear();
     this.fallback?.dispose();
     this.fallbackLease?.release();
+  }
+}
+
+/**
+ * Runs a capture draw outside the scene view's own pass, then restores that
+ * view's camera, matrices, UBO, pass, viewport and floating-origin context.
+ */
+export function drawOutsideSceneView(scene: Scene, run: () => boolean, materialImageProcessing: boolean): boolean {
+  const camera = scene.activeCamera;
+  const cameras = scene.activeCameras;
+  const ubo = scene.getSceneUniformBuffer();
+  // Manual captures can precede the scene's first main-camera render, when
+  // its cached matrices are still unset. Restore the camera's valid matrices
+  // in that case instead of handing undefined to setTransformMatrix.
+  const view = scene.getViewMatrix() ?? camera?.getViewMatrix();
+  const projection = scene.getProjectionMatrix() ?? camera?.getProjectionMatrix();
+  const engine = scene.getEngine();
+  const renderPass = engine.currentRenderPassId;
+  const colorWrite = engine.getColorWrite();
+  const viewport = engine.currentViewport ?? camera?.viewport;
+  const width = engine.getRenderWidth();
+  const height = engine.getRenderHeight();
+  const outlines = scene.getOutlineRenderer?.();
+  const outlinesEnabled = outlines?.enabled;
+  const imageProcessing = scene.imageProcessingConfiguration;
+  const applyByPostProcess = imageProcessing.applyByPostProcess;
+  // Manual RTT draws bypass Scene.render(), which normally selects this
+  // global context. A sibling scene may still own it (or have no matrices).
+  const unpin = pinFloatingOrigin(scene);
+  drawing.add(scene);
+  try {
+    // Match authored unlit surfaces: Scene Color is display/gamma encoded.
+    // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
+    // invalidation; the capture has its own material render-pass defines.
+    // A Full Quality view keeps the scene's pipeline and its Display Color stage.
+    if (materialImageProcessing) imageProcessing._applyByPostProcess = false;
+    return run();
+  } finally {
+    try {
+      imageProcessing._applyByPostProcess = applyByPostProcess;
+      scene.activeCamera = camera;
+      scene.activeCameras = cameras;
+      FloatingOriginCurrentScene.eyeAtCamera = true;
+      scene.setSceneUniformBuffer(ubo);
+      if (view && projection) scene.setTransformMatrix(view, projection);
+      engine.currentRenderPassId = renderPass;
+      engine.setColorWrite(colorWrite);
+      scene.resetCachedMaterial();
+      if (outlines) outlines.enabled = outlinesEnabled!;
+      if (viewport) engine.setViewport(viewport, width, height);
+    } finally {
+      unpin();
+      drawing.delete(scene);
+    }
   }
 }
 
