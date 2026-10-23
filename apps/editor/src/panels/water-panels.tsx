@@ -65,7 +65,7 @@ const descriptions: Partial<Record<NumberKey, string>> = {
   waveSeed: "Picks another repeatable arrangement of the same sea. Affects physics.",
   detailWaves: "Strength of the short waves riding the big ones. 0 leaves only the long waves. Affects physics.",
   foamWidth: "Metres of shoreline foam measured from the bank or terrain shoreline.",
-  crestFoam: "Whitecaps where crests fold over; their foam lingers and fades behind them. Gentle seas stay clear.",
+  crestFoam: "How much of the sea whitecaps cover, on any sea: 0.2 is a fresh breeze, 1 a storm. Their foam trails each breaking crest for about a wave.",
   surfaceFoam: "Thin foam left lingering behind breaking crests.",
   subsurface: "Sunlight glowing through the crests of the waves.",
   contactFoamWidth: "Metres of foam around objects and terrain that cross the surface.",

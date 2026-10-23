@@ -26,7 +26,7 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 | Choppiness | Sharper crests, and waves that also move the water sideways. 0 moves water only up and down. Very steep seas, tall waves on a short Wave Length, move sideways less so they do not fold into solid foam; their height is kept. |
 | Peak Sharpness, Wave Seed | Shape and arrangement of the sea. Peak Sharpness gathers the waves around Wave Length. |
 | Detail Waves | The share of short waves on top of the sea. |
-| Foam Amount, Foam Width, Crest Foam, Surface Foam, Contact Foam Width | Shoreline, whitecap, open-water and contact foam. |
+| Foam Amount, Foam Width, Crest Foam, Surface Foam, Contact Foam Width | Shoreline, whitecap, open-water and contact foam. Crest Foam sets how much of the sea whitecaps cover, the same on any sea: 0.2 is a fresh breeze with scattered whitecaps and 1 a storm. Their foam trails each breaking crest for about one wave, and bodies with a lower Wave Scale foam less. |
 | Subsurface | Sunlight glowing through the crests of the waves. |
 | Density | Kilograms per cubic metre, about 1000 for fresh water. Sets how much a floating object can carry. |
 | Custom Material | An optional Surface Material that replaces the built-in shading. Waves and buoyancy still work. **Edit As Material** creates one from the built-in look and opens it; see [Custom water Materials](../graphics/water.md#custom-water-materials). |

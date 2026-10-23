@@ -43,6 +43,28 @@ export const WATER_SPECTRUM_CHOP = 2;
  * tall Wave Height is for its Wave Length. Every preset sea lies below it, so only impossibly steep seas are limited.
  */
 export const WATER_SPECTRUM_FOLD_LIMIT = 0.5;
+/**
+ * Weight of each cascade's foam turbulence (1 − its persistent Jacobian) in the whitecap sum: whitecaps are the dominant
+ * waves breaking, so the long cascade counts fully and the shorter ones, whose ripples fold far more often, much less.
+ */
+export const WATER_FOAM_WEIGHTS: readonly number[] = [1, 0.4, 0.15];
+/**
+ * Share of the sea past the whitecap threshold per unit of Crest Foam: the default 0.2 gives 4%, a fresh breeze, and 1
+ * gives 20%, a storm. About half of it reads as white (the shader ramps foam in past the threshold), close to real
+ * whitecap cover, from a few percent to about 10% in a gale.
+ */
+const FOAM_SHARE = 0.2;
+/**
+ * The weighted foam sum's mean and standard deviation over `foamSpread` (λ times the cascades' weighted RMS slopes), as
+ * measured on the GPU's turbulence: holding each fold while it recovers shifts the sum below calm by about a third of
+ * its spread.
+ */
+const FOAM_SUM_MEAN = 0.35, FOAM_SUM_DEVIATION = 0.9;
+/**
+ * The least weighted foam sum that breaks, whatever share Crest Foam asks for: a glassy sea, whose sum barely moves,
+ * stays clear instead of foaming at its tiniest ripples.
+ */
+const FOAM_BREAKING = 0.12;
 
 interface SpectrumComponent {
   /** Variance (m²) the component integrates to, before the detail gain. */
@@ -77,6 +99,17 @@ export interface WaterSpectrum {
   readonly bandEdges: readonly number[];
   /** Standard deviation of the height (m at Wave Scale 1). */
   readonly sigma: number;
+  /**
+   * Scale of the weighted foam sum (`WATER_FOAM_WEIGHTS`) at Wave Scale 1: λ times the cascades' weighted RMS slopes.
+   * `waterFoamThreshold` places Crest Foam's share of whitecaps on it.
+   */
+  readonly foamSpread: number;
+  /**
+   * Per cascade, the period (seconds at Wave Speed 1) of the waves its foam belongs to: the wind sea's peak for the first,
+   * the longest waves of its band for the others. Foam recovers over about one of them, so it trails each breaking
+   * crest for about a wave rather than a fixed time.
+   */
+  readonly foamPeriods: readonly number[];
   /** Identity of the drawn modes: every field above but Wave Speed and choppiness. */
   readonly key: string;
 }
@@ -162,12 +195,38 @@ function buildSpectrum(w: WaterDefinition): WaterSpectrum {
   const sigma = Math.sqrt(components.reduce((sum, c) => sum + c.variance, 0));
   const spectrum = {
     components, windPeakK: TAU / w.waveLength, detail: clamp(w.detailWaves, 0, 1), choppiness: 0,
-    seed: w.waveSeed, waveSpeed: w.waveSpeed, patchSizes, bandEdges, sigma,
+    seed: w.waveSeed, waveSpeed: w.waveSpeed, patchSizes, bandEdges, sigma, foamSpread: 0,
+    foamPeriods: patchSizes.map((_, c) => Math.sqrt(TAU * (c === 0 ? w.waveLength : TAU / bandEdges[c]!) / WATER_SPECTRUM_GRAVITY)),
     key: fieldsOf({ ...w, steepness: 0, waveSpeed: 0 }),
   };
   const slope = waterSpectrumSlope(spectrum);
   spectrum.choppiness = Math.min(WATER_SPECTRUM_CHOP * w.steepness, slope > 0 ? WATER_SPECTRUM_FOLD_LIMIT / slope : Infinity);
+  let weighted = 0;
+  for (let c = 0; c < patchSizes.length; c++) {
+    const low = Math.max(bandEdges[c]!, TAU / patchSizes[c]!), high = Math.min(bandEdges[c + 1]!, Math.PI * 256 / patchSizes[c]!);
+    weighted += (WATER_FOAM_WEIGHTS[c]! * bandSlope(spectrum, low, high)) ** 2;
+  }
+  spectrum.foamSpread = spectrum.choppiness * Math.sqrt(weighted);
   return spectrum;
+}
+
+/**
+ * The weighted foam sum (`WATER_FOAM_WEIGHTS`, at Wave Scale 1) above which a sea foams: the level only Crest Foam's
+ * share of the sea passes (the sum taken as Gaussian, `FOAM_SUM_MEAN` and `FOAM_SUM_DEVIATION` of `foamSpread`), so
+ * Crest Foam sets the whitecap cover of any sea, but never below `FOAM_BREAKING`. A lower Wave Scale shrinks the sum
+ * against it, so calmer bodies foam less. Crest Foam 0 never foams (Infinity).
+ */
+export function waterFoamThreshold(spectrum: WaterSpectrum, crestFoam: number): number {
+  const crest = clamp(crestFoam, 0, 1);
+  if (!(crest > 0)) return Infinity;
+  const z = normalQuantileAbove(FOAM_SHARE * crest);
+  return Math.max(FOAM_BREAKING, (FOAM_SUM_MEAN + z * FOAM_SUM_DEVIATION) * spectrum.foamSpread);
+}
+
+/** z with P(Z > z) = p for a standard normal Z, 0 < p ≤ 0.5 (Abramowitz and Stegun 26.2.23, error under 5e-4). */
+function normalQuantileAbove(p: number): number {
+  const t = Math.sqrt(-2 * Math.log(clamp(p, 1e-9, 0.5)));
+  return t - (2.515517 + 0.802853 * t + 0.010328 * t * t) / (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
 }
 
 /** Radial and angular steps of `waterSpectrumSlope`'s quadrature. */
@@ -177,7 +236,12 @@ const SLOPE_RINGS = 160, SLOPE_ANGLES = 32;
  * lowest mode to the last cascade's Nyquist radius. Log-spaced rings, each spectrum ring evaluated once.
  */
 export function waterSpectrumSlope(spectrum: WaterSpectrum): number {
-  const kMin = TAU / spectrum.patchSizes[0]!, kMax = Math.PI * 256 / spectrum.patchSizes[spectrum.patchSizes.length - 1]!;
+  return bandSlope(spectrum, TAU / spectrum.patchSizes[0]!, Math.PI * 256 / spectrum.patchSizes[spectrum.patchSizes.length - 1]!);
+}
+
+/** RMS slope of the waves with kMin ≤ |k| < kMax (rad/m) at Wave Scale 1. */
+function bandSlope(spectrum: WaterSpectrum, kMin: number, kMax: number): number {
+  if (!(kMax > kMin)) return 0;
   const ring = new Float64Array(spectrum.components.length * 2);
   let variance = 0;
   for (let i = 0; i < SLOPE_RINGS; i++) {

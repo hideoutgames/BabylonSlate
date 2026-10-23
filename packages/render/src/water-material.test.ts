@@ -11,7 +11,7 @@ import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import {
   WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS,
-  WaterMaterialPlugin, WaterVertexWaves, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
+  WaterMaterialPlugin, WaterVertexWaves, stripShaderComments, waterFoamThresholdOf, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
 } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -515,7 +515,7 @@ describe("Water material binding", () => {
       expect(own.textures.has(WATER_FOAM_SAMPLER)).toBe(true);
       expect(own.vectors.get(WATER_CLOCK_UNIFORM)).toEqual([7.25, 0, 0, 0]);
       expect(own.vectors.get(WATER_EYE_UNIFORM)).toEqual([3, 4, -5, 0]);
-      expect(own.vectors.get(WATER_NODE_FOAM_UNIFORM)).toEqual([plugin.water.crestFoam, plugin.water.foamAmount, 0, 0]);
+      expect(own.vectors.get(WATER_NODE_FOAM_UNIFORM)).toEqual([plugin.water.crestFoam, plugin.water.foamAmount, waterFoamThresholdOf(plugin.water), 0]);
       expect(own.vectors.get(WATER_NODE_SUN_UNIFORM)![3]).toBe(plugin.water.subsurface);
     } finally { scene.dispose(); engine.dispose(); }
   });

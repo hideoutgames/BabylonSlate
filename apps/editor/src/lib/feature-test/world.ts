@@ -92,7 +92,7 @@ const LAKE_MONITOR_SIZE = 7;
 const WATER_LOOKS: Record<WaterKey, Partial<WaterDefinition>> = {
   // Ray-marched reflections over the whole horizon are the costliest pixels on software GL; the Ocean keeps them.
   sea: { objectReflections: false },
-  ocean: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0, crestFoam: 0.5 },
+  ocean: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0 },
   lake: {},
   river: { waveLength: 3, waveHeight: 0.08, swellHeight: 0 },
 };

@@ -250,8 +250,9 @@ fragmentOutputs.color = uniforms.fftScale * (a + direction * vec4f(c * b.x - s *
 }`;
 
 // Persistent foam (FFT-Ocean's turbulence), one cascade layer per draw: the Jacobian determinant J of the displaced
-// surface at λ = foamParams.x, and T = min(J, T_prev + dt·0.5 / max(J, 0.5)): T follows J down instantly where the
-// surface folds and recovers slowly, so foam (low T) lingers and fades. foamParams = (λ, dt, reset, layer).
+// surface at λ = foamParams.x, and T = min(J, T_prev + r·0.5 / max(J, 0.5)): T follows J down instantly where the
+// surface folds and recovers over about one of the cascade's wave periods (r: twice the clock step over the period),
+// so foam (low T) trails each breaking crest for about a wave and fades. foamParams = (λ, r, reset, layer).
 ShaderStore.ShadersStore[`${FOAM}PixelShader`] = `precision highp float;
 precision highp int;
 precision highp sampler2DArray;
@@ -513,7 +514,8 @@ class WaterFftSimulation {
 
   /**
    * Spectrum water: the persistent foam of every cascade from this dispatch's output into the other foam target (the
-   * last one read back), then both outputs' mips. The clock step (at most half a second) sets how far foam recovers;
+   * last one read back), then both outputs' mips. The clock step (at most half a second) over each cascade's foam period
+ * sets how far its foam recovers;
    * the first dispatch after a (re)start resets it to the surface's own Jacobian.
    */
   private runFoam(time: number): void {
@@ -525,7 +527,8 @@ class WaterFftSimulation {
       this.renderer.applyEffectWrapper(effect);
       effect.effect.setTexture("fftOutput", this.texture);
       effect.effect.setTexture("foamPrevious", textures[this.foamCurrent]!);
-      effect.effect.setFloat4("foamParams", lambda, step, reset, layer);
+      const recovery = 2 * step * this.layout.timeScale / Math.max(this.foamPeriods[layer] ?? 1, 0.05);
+      effect.effect.setFloat4("foamParams", lambda, recovery, reset, layer);
       this.renderer.draw();
       engine.unBindFramebuffer(targets[next], true);
     }
@@ -536,6 +539,8 @@ class WaterFftSimulation {
 
   /** Horizontal scale λ the foam's Jacobian is taken at (the asset's choppiness, at Wave Scale 1). */
   foamLambda = 1;
+  /** Per cascade, seconds (at Wave Speed 1) over which its foam recovers (the spectrum's `foamPeriods`). */
+  foamPeriods: readonly number[] = [];
 
   private stage(
     source: number, target: RenderTargetWrapper, layer: number, stage: number, horizontal: boolean, xOffset: number, shear: number,
@@ -676,6 +681,7 @@ export function requestWaterFft(scene: Scene, mesh: AbstractMesh, definition: Wa
   if (entry.sim) {
     entry.sim.requestedRun = state.run;
     entry.sim.foamLambda = spectrum.choppiness;
+    entry.sim.foamPeriods = spectrum.foamPeriods;
   }
   else if (entry.pendingRun !== state.run) {
     entry.pendingRun = state.run;

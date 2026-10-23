@@ -3,7 +3,8 @@ import {
   Texture, ThinTexture, Vector3, type AbstractEngine, type AbstractMesh, type Effect, type Material, Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
-  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, waterBankFadeLength, waterSpectrum, type WaterBodyProperties, type WaterDefinition, type WaterShadingDetail,
+  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS, waterBankFadeLength, waterFoamThreshold, waterSpectrum, type WaterBodyProperties,
+  type WaterDefinition, type WaterShadingDetail, type WaterSpectrum,
 } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { waterFftForSurface, type WaterFftResult } from "./water-fft";
@@ -177,8 +178,29 @@ const PIXEL_SLOPE_CAP = 0.012;
 
 const f = (n: number) => n.toFixed(6);
 
+const foamThresholds = new WeakMap<WaterSpectrum, { crest: number; value: number }>();
+/**
+ * `waterFoamThreshold` of an asset, cached on its spectrum and Crest Foam, and finite for the shaders (Crest Foam 0, no
+ * whitecaps, is a sum no sea reaches).
+ */
+export function waterFoamThresholdOf(water: WaterDefinition): number {
+  const spectrum = waterSpectrum(water);
+  let cached = foamThresholds.get(spectrum);
+  if (!cached || cached.crest !== water.crestFoam) {
+    cached = { crest: water.crestFoam, value: Math.min(waterFoamThreshold(spectrum, water.crestFoam), 1e4) };
+    foamThresholds.set(spectrum, cached);
+  }
+  return cached.value;
+}
+
 /** FFT-Ocean's foam: coverage per unit of turbulence below the bias. */
 const SPECTRUM_FOAM_SCALE = 2.4;
+/**
+ * The least `crest` edge foam reads (how far the foam sum lies past the crest threshold): about where calm water lies
+ * at the default Crest Foam, so shore and contact foam keep their look when Crest Foam is 0 (no threshold) or the sea is
+ * glassy.
+ */
+const EDGE_FOAM_CALM = -0.5;
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
 const HELPERS = `
 float swHash(vec2 p) {
@@ -766,8 +788,7 @@ float swSw${c} = ${c === 0 ? "1.0" : `clamp(swSp.w / max(swSc${c}.x * swEyeDist,
 swSpGrad += ${fftTurnOut(c, `swSb${c}.xy`)} * swSw${c};
 swSpJ += ${fftTurnTensor(c, `vec3(swSb${c}.z, swSa${c}.w, swSb${c}.w)`)} * swSw${c};
 // Turbulence at this body's own scale (the foam pass takes it at Wave Scale 1); a faded cascade counts as calm.
-swTurb += 1.0 + (swSt${c} - 1.0) * swSw${c} * swTurbScale;
-swCascades += 1.0;${c === 0 ? `
+swFoamSum += ${f(WATER_FOAM_WEIGHTS[c]!)} * (1.0 - swSt${c}) * swSw${c} * swTurbScale;${c === 0 ? `
 swSpLarge = swSa0.y;` : `
 swSpSmall += swSa${c}.y * swSw${c};`}`;
     return c === 0 ? code : ifFft(code, c + 1);
@@ -815,8 +836,8 @@ vec2 swSpGrad = vec2(0.0);
 vec3 swSpJ = vec3(0.0);
 float swSpLarge = 0.0;
 float swSpSmall = 0.0;
-float swTurb = 0.0;
-float swCascades = 0.0;${cascades}
+// The weighted foam sum (\`WATER_FOAM_WEIGHTS\`): how far below calm the cascades' turbulence lies, the long waves first.
+float swFoamSum = 0.0;${cascades}
 swSpGrad = swSpGrad * (swSp.x * swBlendH);
 swSpJ = swSpJ * (swSp.x * swSp.y * swGain * swBlendD);
 float swJxx = 1.0 + swSpJ.x;
@@ -856,8 +877,9 @@ float swAbsorb = max(0.01, U.slateWaterLook.y);
 
 // Foam. Crests: FFT-Ocean's bias of n − 1 cascades plus Crest Foam's threshold, over the summed turbulence.
 float swFoamAmount = U.slateWaterFoam.w;
-float swCrestBias = swCascades - 1.0 + mix(0.55, 1.0, U.slateWaterShape.z);
-float swCrestRaw = (swCrestBias - swTurb) * ${f(SPECTRUM_FOAM_SCALE)};
+// Past the asset's threshold (\`waterFoamThreshold\`): Crest Foam's share of a steep sea, none of a gentle one.
+float swCrestPast = swFoamSum - U.slateWaterShape.x;
+float swCrestRaw = swCrestPast * ${f(SPECTRUM_FOAM_SCALE)};
 // Fine bubbly breakup drifting with the water, faded before it would alias.
 float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9 + vec2(swTime * 0.05, 0.0)) * 0.65 + swNoise(swFlowed * 3.1 - vec2(0.0, swTime * 0.08)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swFoot));
 // Many patches away the foam's repeat would show as a grid of the same caps: it fades out there (beyond a kilometre or
@@ -865,13 +887,13 @@ float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9 + vec2(swTime * 0.05, 0.0)) 
 float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swEyeDist * swSc0.x);
 float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0) * swPatchFar;
 // Surface Foam: thin lingering residue where turbulence is still recovering behind the caps.
-float swResidue = clamp((swCrestBias + 0.35 - swTurb) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
+float swResidue = clamp((swFoamSum - U.slateWaterShape.x * 0.5) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
 // Edges: foam thick at every object's waterline and along shallow shores, thinning outward (\`edgeFoamHelpers\`).
 float swContactStrength = U.slateWaterTerms.x;
 float swContactW = max(0.05, U.slateWaterShape.w);
 float swCollar = swContactFoamAmount(swFlowed, swTime, swObject, swContactW);
 float swShoreFoam = swKnown * (1.0 - swOpenAny) * swShoreFoamAmount(swFlowed, swTime, swTerrainDepth, U.slateWaterMotion.w * 0.35 + 0.08);
-float swEdgeFoam = swEdgeFoamCover(swFlowed, max(swCollar, swShoreFoam) * swContactStrength, swCrestBias - swTurb, swFoot);
+float swEdgeFoam = swEdgeFoamCover(swFlowed, max(swCollar, swShoreFoam) * swContactStrength, max(swCrestPast, ${f(EDGE_FOAM_CALM)}), swFoot);
 float swFoam = clamp(max(max(swCrestFoam, swResidue), swEdgeFoam), 0.0, 1.0);
 `;
 }
@@ -1361,7 +1383,7 @@ export class WaterVertexWaves {
     const camera = scene.activeCamera, origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     const eye = camera?.globalPosition ?? Vector3.ZeroReadOnly;
     sink.setFloat4(WATER_EYE_UNIFORM, eye.x - origin.x, eye.y - origin.y, eye.z - origin.z, 0);
-    sink.setFloat4(WATER_NODE_FOAM_UNIFORM, this.water.crestFoam, this.water.foamAmount, 0, 0);
+    sink.setFloat4(WATER_NODE_FOAM_UNIFORM, this.water.crestFoam, this.water.foamAmount, waterFoamThresholdOf(this.water), 0);
     const sun = sceneWaterNodeLighting(scene).sun;
     sink.setFloat4(WATER_NODE_SUN_UNIFORM, sun[0]!, sun[1]!, sun[2]!, this.water.subsurface);
   }
@@ -1397,7 +1419,7 @@ export function waterWaveBlockSource(language: ShaderLanguage): string {
 
 /** The Water Waves node's eye position uniform (`waterWaveBlockSource`): the camera relative to the rest positions. */
 export const WATER_EYE_UNIFORM = "slateWaterEye";
-/** The Water Waves node's foam terms: (Crest Foam, Foam Amount, 0, 0). */
+/** The Water Waves node's foam terms: (Crest Foam, Foam Amount, the foam threshold `waterFoamThresholdOf`, 0). */
 export const WATER_NODE_FOAM_UNIFORM = "slateWaterNodeFoam";
 /** The Water Waves node's light: (direction toward the sun, Subsurface). */
 export const WATER_NODE_SUN_UNIFORM = "slateWaterNodeWaveSun";
@@ -1461,8 +1483,7 @@ swnJ += ${fftTurnTensor(c, `vec3(swnSb${c}.z, swnSa${c}.w, swnSb${c}.w)`)} * swn
 swnH += swnSa${c}.y * swnSw${c};${c === 0 ? `
 swnLarge = swnSa0.y;` : `
 swnSmall += swnSa${c}.y * swnSw${c};`}
-swnTurb += 1.0 + (swnSt${c} - 1.0) * swnSw${c} * swnTurbScale;
-swnCascades += 1.0;`;
+swnFoamSum += ${f(WATER_FOAM_WEIGHTS[c]!)} * (1.0 - swnSt${c}) * swnSw${c} * swnTurbScale;`;
     return c === 0 ? code : ifFft(code, c + 1);
   }).join("");
   return `
@@ -1481,8 +1502,7 @@ vec3 swnJ = vec3(0.0);
 float swnH = 0.0;
 float swnLarge = 0.0;
 float swnSmall = 0.0;
-float swnTurb = 0.0;
-float swnCascades = 0.0;${cascades}
+float swnFoamSum = 0.0;${cascades}
 swnGrad = swnGrad * (swnSp.x * swnShares.y);
 swnJ = swnJ * (swnSp.x * swnSp.y * swnShares.x);
 float swnJxx = 1.0 + swnJ.x;
@@ -1494,13 +1514,13 @@ vec3 swnBase = ${base};
 swnNormal = normalize(vec3(swnBase.x / max(swnBase.y, 0.001) - swnSlope.x, 1.0, swnBase.z / max(swnBase.y, 0.001) - swnSlope.y));
 swnHeight = swnH * swnSp.x * swnShares.y;
 vec4 swnTerms = U.${WATER_NODE_FOAM_UNIFORM};
-float swnBias = swnCascades - 1.0 + mix(0.55, 1.0, swnTerms.x);
+float swnCrestPast = swnFoamSum - swnTerms.z;
 float swnPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swnDist * swnSc0.x);
-swnFoam = clamp((swnBias - swnTurb) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * clamp(swnTerms.y * 1.6, 0.0, 1.0) * step(0.000001, swnTerms.x) * swnPatchFar;
+swnFoam = clamp(swnCrestPast * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * clamp(swnTerms.y * 1.6, 0.0, 1.0) * step(0.000001, swnTerms.x) * swnPatchFar;
 ${subsurfaceSource(`U.${WATER_NODE_SUN_UNIFORM}.xyz`, `normalize(U.${WATER_EYE_UNIFORM}.xyz - swnRestW - vec3(0.0, swnHeight, 0.0))`, "swnNormal",
     "(0.2 * swnLarge + swnSmall) * swnSp.x * swnShares.y", `U.${WATER_NODE_SUN_UNIFORM}.w`, "swnSp.x", "swnSss")}
 swnSubsurface = swnSss;
-swnEdgeTurbulence = swnBias - swnTurb;
+swnEdgeTurbulence = max(swnCrestPast, ${f(EDGE_FOAM_CALM)});
 }
 #endif
 `;
@@ -2458,7 +2478,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     o = put4(v, o, origin.x, origin.y, origin.z, w.roughness);
     o = put4(v, o, ambient[0]!, ambient[1]!, ambient[2]!, waterBodyLight(ambient, lighting));
     o = put4(v, o, bankFade, 0, w.colorVariation, 0);
-    o = put4(v, o, 0, w.waveSpread, w.crestFoam, w.contactFoamWidth);
+    o = put4(v, o, waterFoamThresholdOf(w), w.waveSpread, w.crestFoam, w.contactFoamWidth);
     o = put4(v, o, smoothstep(0, 0.1, w.foamAmount) * Math.max(w.foamAmount, 0.85) * smoothstep(0, 0.05, w.contactFoamWidth), smoothstep(0, 0.05, w.crestFoam), 0, 0);
     const haze = lighting.haze;
     o = put4(v, o, haze[0]!, haze[1]!, haze[2]!, haze[3]!);

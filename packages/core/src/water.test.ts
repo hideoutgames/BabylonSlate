@@ -6,7 +6,7 @@ import {
   sampleWaterSurface, sampleWaterWaves, waterBankFadeLength, waterBankGain, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline,
   waterWaveEnvelope,
 } from "./water";
-import { evaluateWaterSpectrum, waterSpectrum } from "./water-spectrum";
+import { evaluateWaterSpectrum, WATER_SPECTRUM_GRAVITY, waterFoamThreshold, waterSpectrum } from "./water-spectrum";
 
 const realistic = createDefaultWaterDefinition();
 const storm = { ...realistic, waveHeight: 1.2, waveLength: 30, swellHeight: 0.6, swellLength: 90, steepness: 1 };
@@ -284,6 +284,29 @@ describe("Spectrum water", () => {
       expect(spectrum.sigma).toBe(waterSpectrum({ ...steep, steepness: 0 }).sigma);
       expect(folded(spectrum, waveLength), `${waveHeight} m on ${waveLength} m`).toBeLessThan(0.3);
     }
+  });
+
+  it("sets whitecap cover by Crest Foam, so a steeper sea needs deeper folds to foam", () => {
+    const base = createDefaultWaterDefinition();
+    const gentle = waterSpectrum({ ...base, swellHeight: 0 }), steep = waterSpectrum({ ...base, waveHeight: 1.2, swellHeight: 0 });
+    expect(waterFoamThreshold(gentle, 0)).toBe(Infinity);
+    // More Crest Foam lowers the threshold: more of the same sea foams.
+    expect(waterFoamThreshold(gentle, 0.2)).toBeGreaterThan(waterFoamThreshold(gentle, 0.5));
+    expect(waterFoamThreshold(gentle, 0.5)).toBeGreaterThan(waterFoamThreshold(gentle, 1));
+    // The same share of a steeper sea lies further below calm: steepness alone no longer whitens the sea.
+    expect(steep.foamSpread).toBeGreaterThan(gentle.foamSpread);
+    expect(waterFoamThreshold(steep, 0.2)).toBeGreaterThan(waterFoamThreshold(gentle, 0.2));
+    // A glassy sea, whose turbulence barely moves, still needs a real fold.
+    const glassy = waterSpectrum({ ...base, waveHeight: 0.001, swellHeight: 0 });
+    expect(waterFoamThreshold(glassy, 1)).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it("lets each cascade's foam recover over about one of its wave periods", () => {
+    const base = createDefaultWaterDefinition();
+    const spectrum = waterSpectrum({ ...base, waveLength: 18 });
+    expect(spectrum.foamPeriods[0]).toBeCloseTo(Math.sqrt(2 * Math.PI * 18 / WATER_SPECTRUM_GRAVITY), 6);
+    for (let c = 1; c < spectrum.foamPeriods.length; c++) expect(spectrum.foamPeriods[c]).toBeLessThan(spectrum.foamPeriods[c - 1]!);
+    expect(waterSpectrum({ ...base, waveLength: 60 }).foamPeriods[0]).toBeGreaterThan(spectrum.foamPeriods[0]!);
   });
 
   const body = normalizeWaterBody({ width: 4000, length: 4000 }, "ocean");

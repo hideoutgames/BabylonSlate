@@ -11,7 +11,7 @@ import {
   waterMeshBody, WATER_BLEND_REFRESH_MS, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_OCEAN_CELL_BUDGET, WATER_RESTORES_PER_FRAME,
 } from "./water-mesh";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
-import type { WaterMaterialPlugin } from "./water-material";
+import { waterFoamThresholdOf, type WaterMaterialPlugin } from "./water-material";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { WATER_FIELD_EDGE_RAMP } from "./water-field";
 import { applyAssignMesh, applySnapshotToScene, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -306,7 +306,9 @@ describe("Water rendering", () => {
       const vectors = bindWater(mesh);
       expect(vectors.get("slateWaterShallow")).toEqual([1, 0, 0, water.opacity]);
       expect(vectors.get("slateWaterFoam")![3]).toBe(0.2);
-      expect(vectors.get("slateWaterShape")).toEqual([0, water.waveSpread, 0.8, 2.5]);
+      // The edited Crest Foam moves the whitecap threshold with it.
+      expect(vectors.get("slateWaterShape")).toEqual([waterFoamThresholdOf(edited), water.waveSpread, 0.8, 2.5]);
+      expect(waterFoamThresholdOf(edited)).toBeLessThan(waterFoamThresholdOf(water));
       expect(vectors.get("slateWaterContactInfo")!.slice(0, 2)).toEqual([1, 7.5]);
       // A Custom Material replaces the shader: that edit changes nothing here.
       expect(updateWaterMeshDefinition(mesh, { ...edited, materialGuid: "custom", roughness: 0.9 })).toBe(false);
