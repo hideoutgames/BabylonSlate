@@ -98,41 +98,27 @@ describe("WaterDetailsPanel", () => {
     expect(history.read().opacity).toBe(before.opacity);
   });
 
-  it("shows the swell and hides the Wave Model and ripples for spectrum water", () => {
+  it("edits the wind sea and swell lengths apart from their heights, over a puddle's ripples to an ocean's swell", () => {
     const history = renderWithHistory();
-    expect(screen.queryByTestId("property-water-waveModel")).toBeNull();
-    expect(screen.queryByTestId("property-water-choppiness")).toBeNull();
-    expect(screen.queryByTestId("property-water-rippleScale")).toBeNull();
-    fireEvent.change(screen.getByTestId("property-water-swellLength"), { target: { value: "120" } });
-    expect(history.read().swellLength).toBe(120);
-  });
-
-  it("enables the Ocean Spectrum inputs only for that Wave Model on Toon water and stores Object Reflections", async () => {
-    const history = renderWithHistory(createDefaultWaterDefinition("stylized", "toon"));
-    const seed = () => screen.getByTestId("property-water-waveSeed") as HTMLInputElement;
-    expect(seed().disabled).toBe(true);
-    expect((screen.getByTestId("property-water-steepness") as HTMLInputElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId("property-water-waveModel"));
-    const ocean = await screen.findByRole("option", { name: "Ocean Spectrum" });
-    fireEvent.pointerDown(ocean);
-    fireEvent.click(ocean);
-    await waitFor(() => expect(history.read().waveModel).toBe("ocean"));
-    expect(seed().disabled).toBe(false);
+    for (const key of ["waveModel", "choppiness", "rippleScale", "stylizedLook"]) expect(screen.queryByTestId(`property-water-${key}`), key).toBeNull();
+    fireEvent.change(screen.getByTestId("property-water-swellLength"), { target: { value: "1500" } });
+    fireEvent.change(screen.getByTestId("property-water-waveLength"), { target: { value: "0.3" } });
+    expect(history.read()).toMatchObject({ swellLength: 1500, waveLength: 0.3, waveHeight: createDefaultWaterDefinition().waveHeight });
     fireEvent.click(screen.getByTestId("property-water-objectReflections"));
-    expect(history.read()).toMatchObject({ waveModel: "ocean", objectReflections: !createDefaultWaterDefinition("stylized", "toon").objectReflections });
+    expect(history.read().objectReflections).toBe(!createDefaultWaterDefinition().objectReflections);
   });
 
-  it("offers Stylized Look only for Stylized water and keeps colors and waves when it switches", async () => {
-    renderWithHistory();
-    expect(screen.queryByTestId("property-water-stylizedLook")).toBeNull();
-    cleanup();
-    const history = renderWithHistory({ ...createDefaultWaterDefinition("stylized"), shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
-    fireEvent.click(screen.getByTestId("property-water-stylizedLook"));
-    const toon = await screen.findByRole("option", { name: "Toon" });
-    fireEvent.pointerDown(toon);
-    fireEvent.click(toon);
-    await waitFor(() => expect(history.read().stylizedLook).toBe("toon"));
-    expect(history.read()).toMatchObject({ style: "stylized", shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
+  it("offers Painted as the other Style, keeps colors and waves when it switches, and shows its bands and glints", async () => {
+    const history = renderWithHistory({ ...createDefaultWaterDefinition(), shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
+    expect(screen.queryByTestId("property-water-colorBands")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-water-style"));
+    const painted = await screen.findByRole("option", { name: "Painted" });
+    fireEvent.pointerDown(painted);
+    fireEvent.click(painted);
+    await waitFor(() => expect(history.read().style).toBe("stylized"));
+    expect(history.read()).toMatchObject({ shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
+    expect(screen.getByTestId("property-water-colorBands")).toBeTruthy();
+    expect(screen.getByTestId("property-water-sparkles")).toBeTruthy();
   });
 
   it("records a color picker drag as one undo step", () => {

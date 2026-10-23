@@ -53,22 +53,14 @@ function tap(path: string) {
 }
 
 describe("ContentBrowserNewAssetDialog", () => {
-  it("lets a Water asset choose Stylized rendering before creation", () => {
+  it("lets a Water asset choose Painted rendering before creation", () => {
     const onWaterStyleChange = vi.fn();
     const { onCreate } = renderDialog({ type: "Water", name: "Lagoon", waterStyle: "realistic", onWaterStyleChange });
-    fireEvent.click(screen.getByRole("button", { name: "Stylized" }));
+    expect(screen.queryByRole("button", { name: "Toon" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Painted" }));
     expect(onWaterStyleChange).toHaveBeenCalledWith("stylized");
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledOnce();
-  });
-  it("offers the Painted or Toon look only for Stylized Water", () => {
-    const onWaterStylizedLookChange = vi.fn();
-    renderDialog({ type: "Water", name: "Lagoon", waterStyle: "realistic", onWaterStylizedLookChange });
-    expect(screen.queryByRole("button", { name: "Toon" })).toBeNull();
-    cleanup();
-    renderDialog({ type: "Water", name: "Lagoon", waterStyle: "stylized", onWaterStylizedLookChange });
-    fireEvent.click(screen.getByRole("button", { name: "Toon" }));
-    expect(onWaterStylizedLookChange).toHaveBeenCalledWith("toon");
   });
   afterEach(() => {
     cleanup();

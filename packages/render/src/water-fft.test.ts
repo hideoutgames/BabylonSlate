@@ -1,12 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Constants, EffectRenderer, FreeCamera, NullEngine, PBRMaterial, Scene, Vector3, Viewport } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, normalizeWaterDefinition, waterWaveSet, type WaterDefinition,
+  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, normalizeWaterDefinition, waterSpectrum, type WaterDefinition,
 } from "@haptic/core";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
 import { WATER_FFT_IDLE_RUNS, WATER_FFT_MAX_SIMULATIONS, waterFftDiagnostics, waterFftForSurface } from "./water-fft";
-import { WATER_FFT_BUILD_TEXELS, waterFftLayout } from "./water-fft-spectrum";
+import { WATER_FFT_BUILD_TEXELS, waterSpectrumLayout } from "./water-fft-spectrum";
 import type { WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 
@@ -16,7 +16,7 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-type FftQuality = { fft?: boolean; fftSize?: number; fftCascades?: number };
+type FftQuality = { fftSize?: number; fftCascades?: number };
 
 /** A device that renders float and half-float targets, a camera over the origin, and a Water quality. */
 function host(fft: FftQuality = {}, caps = { textureFloatRender: true, textureHalfFloatRender: true }) {
@@ -27,7 +27,7 @@ function host(fft: FftQuality = {}, caps = { textureFloatRender: true, textureHa
   const camera = new FreeCamera("camera", new Vector3(0, 8, -12), scene);
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
-  quality(scene, { fft: true, fftSize: 64, fftCascades: 1, ...fft });
+  quality(scene, { fftSize: 64, fftCascades: 1, ...fft });
   return { engine, scene };
 }
 
@@ -35,9 +35,8 @@ function quality(scene: Scene, water: FftQuality) {
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water }) });
 }
 
-/** Analytic water's detail band: Realistic's former waves on Custom Material water (built-in Realistic runs the FFT spectrum). */
 const definition = (patch: Partial<WaterDefinition> = {}) =>
-  normalizeWaterDefinition({ ...createDefaultWaterDefinition(), materialGuid: "analytic-band", waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, ...patch });
+  normalizeWaterDefinition({ ...createDefaultWaterDefinition(), waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, ...patch });
 
 /** Built-in water and the definition its material plugin holds (what a water material passes to waterFftForSurface). */
 function lake(scene: Scene, asset: WaterDefinition = definition(), name = "lake") {
@@ -68,48 +67,43 @@ async function untilReady(engine: NullEngine, scene: Scene, sampled: WaterDefini
   return frames;
 }
 
-/** Bytes the FFT leases: h0 (C·N × N RGBA32F), two work atlases (2C·N × N RGBA32F) and the 2C-layer RGBA16F output. */
+/**
+ * Bytes the FFT leases: h0 (C·N × N RGBA32F), two work atlases (2C·N × N RGBA32F), the 2C-layer RGBA16F output and two
+ * C-layer RGBA16F foam targets, those three with their mips (a third more).
+ */
 const footprint = (size: number, cascades: number) =>
-  cascades * size * size * 16 + 2 * (2 * cascades * size * size * 16) + 2 * cascades * size * size * 8;
+  cascades * size * size * 16 + 2 * (2 * cascades * size * size * 16) + Math.ceil(2 * cascades * size * size * 8 * 4 / 3)
+    + 2 * Math.ceil(cascades * size * size * 8 * 4 / 3);
 
-it("does no work while FFT Ocean Detail is off, Detail Waves is zero, the water is out of view, no material samples it, or floats do not render", async () => {
+it("does no work while the water is out of view, no material samples it, or the device cannot render floats", async () => {
   const draws = vi.spyOn(EffectRenderer.prototype, "draw");
-  const off = host({ fft: false });
-  const offWater = lake(off.scene).water;
-  for (let i = 0; i < 3; i++) frame(off.engine, off.scene, [offWater]);
-  expect(waterFftForSurface(off.scene, offWater)).toBeNull();
-
   const on = host();
-  const calm = lake(on.scene, definition({ detailWaves: 0 }), "calm").water;
   const hidden = lake(on.scene, definition(), "hidden");
   hidden.mesh.setEnabled(false);
   const behind = lake(on.scene, definition({ waveSeed: 5 }), "behind");
   behind.mesh.position.z = -40;
-  // Visible built-in water whose material never asks for the band: no simulation and no spectrum work either.
+  // Visible water whose material never asks for the spectrum: no simulation and no spectrum work either.
   lake(on.scene, definition({ waveSeed: 6 }), "unsampled");
-  const sampled = [calm, hidden.water, behind.water];
+  const sampled = [hidden.water, behind.water];
   for (let i = 0; i < 3; i++) frame(on.engine, on.scene, sampled);
   for (const water of sampled) expect(waterFftForSurface(on.scene, water)).toBeNull();
   expect(waterFftDiagnostics(on.scene)).toMatchObject({ simulations: [], built: 0, building: null });
-  // The same scene does run the band for sampled water in view.
+  // The same scene does run the spectrum for sampled water in view.
   const seen = lake(on.scene, definition(), "seen").water;
   await untilReady(on.engine, on.scene, [...sampled, seen], seen);
   expect(waterFftDiagnostics(on.scene)).toMatchObject({ created: 1, built: 1 });
   draws.mockClear();
   on.scene.dispose();
 
-  // Without float render targets the device clamp turns FFT off and reports why.
+  // Without float render targets the device clamp leaves water flat and reports why.
   const weak = host({}, { textureFloatRender: false, textureHalfFloatRender: true });
   const weakWater = lake(weak.scene).water;
   for (let i = 0; i < 3; i++) frame(weak.engine, weak.scene, [weakWater]);
   expect(waterFftForSurface(weak.scene, weakWater)).toBeNull();
-  expect(sceneWaterQualityDeviceClamp(weak.scene).limits).toEqual([expect.stringContaining("FFT Ocean Detail")]);
-
-  for (const { engine, scene } of [off, weak]) {
-    expect(waterFftDiagnostics(scene)).toMatchObject({ simulations: [], created: 0, built: 0 });
-    expect(managedRenderReservations(engine).categoryBytes.water).toBe(0);
-  }
-  // Disposing the scene released the one band that ran.
+  expect(sceneWaterQualityDeviceClamp(weak.scene).limits).toEqual([expect.stringContaining("FFT ocean")]);
+  expect(waterFftDiagnostics(weak.scene)).toMatchObject({ simulations: [], created: 0, built: 0 });
+  expect(managedRenderReservations(weak.engine).categoryBytes.water).toBe(0);
+  // Disposing the scene released the one simulation that ran.
   expect(managedRenderReservations(on.engine).categoryBytes.water).toBe(0);
   expect(draws).not.toHaveBeenCalled();
 });
@@ -120,22 +114,20 @@ it("shares one leased simulation per spectrum, becomes ready without blocking, a
   const a = lake(scene, definition(), "a").water;
   const second = lake(scene, definition(), "b");
   second.mesh.position.x = 3;
-  const half = lake(scene, definition({ detailWaves: 0.5 }), "half");
-  half.mesh.position.x = -3;
-  const sampled = [a, second.water, half.water];
+  const sampled = [a, second.water];
   setSceneWaterTime(scene, 2);
-  // Frames keep rendering (analytic only) while the spectrum is drawn and the effects compile.
+  // Frames keep rendering (flat water) while the spectrum is drawn and the effects compile.
   await untilReady(engine, scene, sampled);
   const view = waterFftForSurface(scene, a)!;
-  // Equal waves share one simulation and texture; each asset keeps its own Detail Waves gain.
-  expect(waterFftForSurface(scene, second.water)!.texture).toBe(view.texture);
-  expect(waterFftForSurface(scene, half.water)).toMatchObject({ texture: view.texture, amplitudeGain: 0.5 });
-  expect(view).toMatchObject({ cascades: 1, amplitudeGain: 1, patchSizes: waterFftLayout(waterWaveSet(a), 64, 1).patchSizes });
+  // Equal waves share one simulation, texture and foam.
+  expect(waterFftForSurface(scene, second.water)).toMatchObject({ texture: view.texture, foam: view.foam });
+  expect(view).toMatchObject({ cascades: 1, patchSizes: waterSpectrumLayout(waterSpectrum(a), 64, 1).patchSizes });
   expect(waterFftDiagnostics(scene)).toMatchObject({ created: 1, built: 1, simulations: [{ size: 64, cascades: 1 }] });
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(footprint(64, 1));
 
-  // 1 evolution + log2 64 horizontal + (log2 64 − 1) vertical atlas passes + one final pass per layer (2 layers).
-  const perDispatch = 1 + 6 + 5 + 2;
+  // 1 evolution + log2 64 horizontal + (log2 64 − 1) vertical atlas passes + one final pass per layer (2 layers) + one
+  // foam pass per cascade.
+  const perDispatch = 1 + 6 + 5 + 2 + 1;
   draws.mockClear();
   setSceneWaterTime(scene, 2.5);
   frame(engine, scene, sampled);
@@ -208,7 +200,7 @@ it("draws a new spectrum in budgeted steps without holding storage, so no single
   const { water } = lake(scene);
   // The first frame registers the material's demand; the build starts on the next observer run.
   frame(engine, scene, [water]);
-  const steps = Math.ceil(2 * 3 * 256 * 256 / WATER_FFT_BUILD_TEXELS);
+  const steps = Math.ceil(3 * 256 * 256 / WATER_FFT_BUILD_TEXELS);
   for (let i = 0; i < steps - 1; i++) {
     frame(engine, scene, [water]);
     expect(waterFftDiagnostics(scene)).toMatchObject({ built: 0, building: expect.any(String), simulations: [] });
@@ -228,10 +220,10 @@ it("reuses storage and spectra across asset edits, bodies viewed in turn, and id
   await untilReady(engine, scene, [first.water]);
   const storage = waterFftForSurface(scene, first.water)!.texture;
 
-  // Wave Height, Wave Length and Wave Speed edits rebuild the water with a new definition: the idle simulation takes
-  // the new uniforms in the same frame, with no spectrum work and no upload.
+  // A Wave Speed edit rebuilds the water with a new definition: the idle simulation takes the new clock in the same
+  // frame, with no spectrum work and no upload.
   first.mesh.dispose();
-  const taller = lake(scene, definition({ waveHeight: 0.8, waveLength: 20, waveSpeed: 0.7 }), "taller");
+  const taller = lake(scene, definition({ waveSpeed: 0.7 }), "taller");
   frame(engine, scene, [taller.water]);
   frame(engine, scene, [taller.water]);
   expect(waterFftForSurface(scene, taller.water)).toMatchObject({ texture: storage, ready: true });
@@ -281,28 +273,24 @@ it("never holds more than WATER_FFT_MAX_SIMULATIONS simulations through repeated
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(WATER_FFT_MAX_SIMULATIONS * footprint(64, 1));
 });
 
-it("releases its lease at once when FFT turns off or the Water quality size changes", async () => {
+it("releases its lease at once when the Water quality size changes", async () => {
   const { engine, scene } = host();
   const { water } = lake(scene);
   await untilReady(engine, scene, [water]);
-  quality(scene, { fft: true, fftSize: 128, fftCascades: 2 });
+  quality(scene, { fftSize: 128, fftCascades: 2 });
   expect(waterFftForSurface(scene, water)).toBeNull();
   await untilReady(engine, scene, [water]);
   expect(waterFftDiagnostics(scene)).toMatchObject({ retired: 1, simulations: [{ size: 128, cascades: 2 }] });
   expect(waterFftForSurface(scene, water)).toMatchObject({ cascades: 2 });
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(footprint(128, 2));
-  quality(scene, { fft: false });
-  expect(waterFftForSurface(scene, water)).toBeNull();
-  frame(engine, scene, [water]);
-  expect(waterFftDiagnostics(scene)).toMatchObject({ simulations: [], retired: 2 });
-  expect(managedRenderReservations(engine).categoryBytes.water).toBe(0);
 });
 
-it("keeps analytic-only water when the managed ledger cannot admit the band, retries later, and falls back to idle storage", async () => {
+it("keeps water flat when the managed ledger cannot admit the spectrum, retries later, and falls back to idle storage", async () => {
   const ultra = host({ fftSize: 256, fftCascades: 3 });
   const deep = lake(ultra.scene).water;
   limitManagedRenderBytes(ultra.engine, footprint(256, 3) - 1);
-  for (let i = 0; i < 30; i++) frame(ultra.engine, ultra.scene, [deep]);
+  // Long enough for the spectrum's budgeted build, then the refused lease.
+  for (let i = 0; i < Math.ceil(3 * 256 * 256 / WATER_FFT_BUILD_TEXELS) + 10; i++) frame(ultra.engine, ultra.scene, [deep]);
   expect(waterFftForSurface(ultra.scene, deep)).toBeNull();
   expect(waterFftDiagnostics(ultra.scene)).toMatchObject({ denied: 1, created: 0, built: 1, simulations: [] });
   expect(managedRenderReservations(ultra.engine).reservedBytes).toBe(0);

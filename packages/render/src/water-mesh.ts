@@ -4,9 +4,9 @@ import {
   type AbstractMesh, type Camera, type Material, type PickingInfo, type Scene, type SubMesh, type TrianglePickingPredicate,
 } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, createWaterBlendSample, waterUsesSpectrum, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
+  createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
   normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
-  waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
+  waterMovesSideways, waterRiverCentreline, waterSpectrum, waterWaveEnvelope,
   type Transform, type WaterBlendBody, type WaterBodyProperties, type WaterDefinition,
 } from "@haptic/core";
 import { inActiveView } from "./active-view";
@@ -86,11 +86,8 @@ type Surface = {
   layoutColumns: number;
   /** Sub-meshes whose culling bounds were last padded (shadow partitioning may replace them later). */
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
-  /**
-   * The vertex shader adds the FFT detail band's displacement (GPU path, band compiled in): finite bodies pad their
-   * bounds by its horizontal bound too. `boundsDirty` re-pads at the next placement when this changes.
-   */
-  fftDisplaced: boolean; boundsDirty: boolean;
+  /** The culling bounds' padding is stale (a wave or blend change): `updateBounds` re-pads at the next placement. */
+  boundsDirty: boolean;
   /** Counted in `copyIntents`: a built-in surface that is enabled, itself and through its ancestors. */
   copyCounted: boolean;
   /** Whether the mesh was enabled (with its ancestors) when the water update last saw it; null before the first update. */
@@ -335,9 +332,9 @@ export function updateSceneWater(scene: Scene, early = false): void {
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
     surface.field?.update();
     surface.contacts?.update(now);
-    // Visible built-in water asks for its FFT detail band (it is already known to be drawn or in view); the
-    // simulations run once below, after every request.
-    if (surface.plugin) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
+    // Visible water a spectrum displaces asks for it (it is already known to be drawn or in view); the simulations run
+    // once below, after every request.
+    if (surface.plugin || surface.waves) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
   }
   updateSceneWaterFft(scene, time);
 }
@@ -575,8 +572,7 @@ function cameraWorld(camera: Camera, local: Vector3, out: Vector3): Vector3 {
 
 /**
  * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes;
- * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials. A material that
- * now samples the FFT detail band (or stops) in its vertex shader re-pads the culling bounds.
+ * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials.
  */
 function syncQuality(s: Surface): void {
   const scene = s.mesh.getScene(), revision = sceneWaterQualityRevision(scene);
@@ -585,7 +581,6 @@ function syncQuality(s: Surface): void {
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;
   if (density !== s.density) { s.density = density; s.version++; }
-  if (s.fftDisplaced !== (s.gpu && (s.plugin?.fftVertexCascades ?? 0) > 0)) s.boundsDirty = true;
 }
 
 const UNCHANGED = 0, RECENTRED = 1, REBUILT = 2;
@@ -603,13 +598,11 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
   const m = world.m;
   const sx = Math.hypot(m[0]!, m[1]!, m[2]!), sz = Math.hypot(m[8]!, m[9]!, m[10]!);
   // Water Mesh Density scales Surface Resolution; the cell caps bound the result.
-  const resolution = body.resolution * s.density, spectrum = waterUsesSpectrum(water);
-  // Spectrum water's vertex stage reads each cascade at the mip its spacing resolves, so its spacing follows the wind
-  // sea's wavelength only loosely (a twentieth of it, within a few centimetres and metres).
-  const step = spectrum
-    ? Math.min(3, Math.max(0.2, water.waveLength / 20)) * 96 / resolution
-    : Math.max(0.025, water.waveLength / 12 * 48 / resolution);
-  const graded = spectrum && body.kind === "ocean";
+  const resolution = body.resolution * s.density;
+  // The vertex stage reads each cascade at the mip its spacing resolves, so the spacing follows the wind sea's
+  // wavelength only loosely (a twentieth of it, within a few centimetres and metres).
+  const step = Math.min(3, Math.max(0.2, water.waveLength / 20)) * 96 / resolution;
+  const graded = body.kind === "ocean";
   const budget = body.kind === "global" ? globalBudget(resolution) : graded ? oceanBudget(resolution) : 0;
   let cx = 0, cz = 0, extent = 0;
   if (graded) {
@@ -713,12 +706,6 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
       Math.hypot(worldBase[a]! - worldBase[below]!, worldBase[a + 2]! - worldBase[below + 2]!),
       Math.hypot(worldBase[a]! - worldBase[above]!, worldBase[a + 2]! - worldBase[above + 2]!),
     );
-  }
-  // The finest spacing decides whether the vertex stage can resolve any of the FFT detail band (a recentre keeps it).
-  if (s.plugin) {
-    let finest = Infinity;
-    for (let index = 0; index < s.spacing.length; index++) finest = Math.min(finest, s.spacing[index]!);
-    s.plugin.meshSpacing = finest;
   }
   writeRestPositions(s, 0, count);
   const indices: number[] = [], uvs: number[] = [];
@@ -925,15 +912,11 @@ const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vecto
  */
 function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boolean): void {
   s.boundsDirty = false;
-  s.fftDisplaced = s.gpu && (s.plugin?.fftVertexCascades ?? 0) > 0;
   if (!s.base.length) return;
   // A blending surface can take a rougher neighbour's waves near the seam: pad by its largest swell scale.
   const blendScale = s.blend ? s.blend.heightScale * (s.plugin?.waveScale ?? s.body.waveScale) : s.body.waveScale;
   const vertical = waterWaveEnvelope(s.water, blendScale);
-  // The FFT detail band's horizontal displacement (λ = Steepness at most) stays within λ · its 4σ height; the vertical
-  // envelope already includes the band.
-  const detail = s.fftDisplaced ? s.water.steepness * waterWaveSet(s.water).detailHeight * s.water.detailWaves * Math.abs(s.body.waveScale) : 0;
-  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, blendScale) + detail;
+  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, blendScale);
   const m = inverse.m;
   boundsPad.set(
     Math.abs(m[0]!) * horizontal + Math.abs(m[4]!) * vertical + Math.abs(m[8]!) * horizontal,
@@ -1383,16 +1366,16 @@ function animateSurface(s: Surface, time: number): void {
   Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inverse, up);
   Vector3.TransformNormalFromFloatsToRef(1, 0, 0, inverse, across);
   Vector3.TransformNormalFromFloatsToRef(0, 0, 1, inverse, along);
-  const set = waterWaveSet(s.water), scale = s.plugin?.waveScale ?? s.body.waveScale, o = waveOut, blend = s.blend ? s.blendData : null;
+  const spectrum = waterSpectrum(s.water), scale = s.plugin?.waveScale ?? s.body.waveScale, o = waveOut, blend = s.blend ? s.blendData : null;
   // Finite bodies fade the horizontal offset to zero at their banks, exactly as queries do (`waterBankGain`).
-  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterWaveQ(set, scale) > 0;
+  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterMovesSideways(spectrum, scale);
   for (let i = 0; i < s.base.length; i += 3) {
     const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
     const d = i / 3 * 4, v = i / 3 * 2;
     // Forward evaluation at this vertex's world rest point: the mesh never inverts, queries do.
     // Blending scales the swell height and the Gerstner offset (and its fade length) by the vertex's blend data.
     const heightScale = blend ? blend[d]! : 1, offsetScale = blend ? blend[d + 1]! : 1;
-    evaluateWaterVertex(set, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.spacing[i / 3]!, scale, s.data[d + 1]!, fadeLength * offsetScale, s.bankGradient[v]!, s.bankGradient[v + 1]!, o);
+    evaluateWaterVertex(spectrum, s.worldBase[i]!, s.worldBase[i + 2]!, time, scale, s.data[d + 1]!, fadeLength * offsetScale, s.bankGradient[v]!, s.bankGradient[v + 1]!, o);
     const height = o[0]! * heightScale, offsetX = o[1]! * offsetScale, offsetZ = o[2]! * offsetScale;
     s.offsets[v] = offsetX; s.offsets[v + 1] = offsetZ;
     s.positions[i] = x + up.x * height + across.x * offsetX + along.x * offsetZ;
@@ -1687,7 +1670,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
-    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
+    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
     copyCounted: false, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
     blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };

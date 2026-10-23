@@ -4,7 +4,7 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@haptic/assets";
-import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle, WaterStylizedLook } from "@haptic/core";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle } from "@haptic/core";
 import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@haptic/scripting";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
 import {
@@ -40,7 +40,6 @@ export async function createProjectAsset(options: {
   name: string;
   parentClass?: string | null;
   waterStyle?: WaterStyle;
-  waterStylizedLook?: WaterStylizedLook;
   materialDomain?: MaterialDomain;
   /** Use the live Definition catalog so unsaved field edits supply defaults. */
   defaultDefinitionGuid?: string | null;
@@ -90,7 +89,6 @@ export async function createProjectAsset(options: {
     parentOf: options.classParentOf,
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     waterStyle: options.waterStyle,
-    waterStylizedLook: options.waterStylizedLook,
     materialDomain: options.materialDomain,
     defaultDefinitionGuid,
     dataDefinition,

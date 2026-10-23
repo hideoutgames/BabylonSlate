@@ -20,7 +20,6 @@ import {
   type WaterDefinition,
   type WaterRiverSample,
   type WaterStyle,
-  type WaterStylizedLook,
 } from "@haptic/core";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
@@ -68,7 +67,7 @@ export const FEATURE_TEST_WORLD_WATER = {
   ocean: "FT_WorldOcean",
   /** Lake: Stylized Painted. */
   lake: "FT_WorldLake",
-  /** River: Stylized Toon. */
+  /** River: Painted, a short choppy sea. */
   river: "FT_WorldRiver",
 } as const;
 
@@ -89,16 +88,15 @@ const LAKE_CAPTURE_SIZE = 256;
 const LAKE_MONITOR_Z = -33;
 const LAKE_MONITOR_SIZE = 7;
 
-const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; look: WaterStylizedLook; patch: Partial<WaterDefinition> }> = {
+const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; patch: Partial<WaterDefinition> }> = {
   // Ray-marched reflections over the whole horizon are the costliest pixels on software GL; the Ocean keeps them.
-  sea: { style: "realistic", look: "painted", patch: { objectReflections: false } },
+  sea: { style: "realistic", patch: { objectReflections: false } },
   ocean: {
     style: "realistic",
-    look: "painted",
     patch: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0, crestFoam: 0.5 },
   },
-  lake: { style: "stylized", look: "painted", patch: {} },
-  river: { style: "stylized", look: "toon", patch: {} },
+  lake: { style: "stylized", patch: {} },
+  river: { style: "stylized", patch: { waveLength: 3, waveHeight: 0.08, swellHeight: 0 } },
 };
 
 /** Global Water Volume elevation: the island shore and the Ocean surface. */
@@ -174,13 +172,13 @@ const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
 
 /**
- * Water assets: Realistic long and short seas, Stylized Painted and Toon; and the Lake captures' Render Targets, textures and monitor Materials.
+ * Water assets: Realistic long and short seas, a Painted lake and a short Painted river; and the Lake captures' Render Targets, textures and monitor Materials.
  */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
   for (const key of Object.keys(FEATURE_TEST_WORLD_WATER) as WaterKey[]) {
-    const { style, look, patch } = WATER_LOOKS[key];
+    const { style, patch } = WATER_LOOKS[key];
     await ctx.createAsset("Water", FEATURE_TEST_WORLD_FOLDER, FEATURE_TEST_WORLD_WATER[key], {
-      build: { waterStyle: style, waterStylizedLook: look },
+      build: { waterStyle: style },
       payload: (payload) => ({ ...payload, ...patch }),
     });
   }

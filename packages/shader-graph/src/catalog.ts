@@ -269,18 +269,19 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     cost: 0,
   },
   {
-    // Opt-in GPU displacement for Custom Material water: the water mesh keeps a static rest grid and the graph applies
-    // the waves (Offset into World Position Offset, Normal into Normal).
+    // The FFT ocean for Custom Material water: the water mesh keeps a static rest grid and the graph applies the waves
+    // (Offset into World Position Offset); Normal, Wave Height and Crest Foam are per pixel where the fragment reads them.
     type: "input.waterWaves",
     title: "Water Waves",
     category: "Input",
-    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "gpu"],
+    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "fft", "whitecap", "foam", "normal"],
     domains: ["surface"],
     inputs: [],
     outputs: [
       { id: "offset", name: "Offset", type: VEC3 },
       { id: "height", name: "Wave Height", type: FLOAT },
       { id: "normal", name: "Normal", type: VEC3 },
+      { id: "crestFoam", name: "Crest Foam", type: FLOAT },
       { id: "time", name: "Simulation Time", type: FLOAT },
     ],
     cost: 8,

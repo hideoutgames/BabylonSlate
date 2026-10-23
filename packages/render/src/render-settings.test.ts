@@ -98,10 +98,10 @@ it("keeps the cached water quality and its revision until a resolved value actua
   expect(sceneWaterQualityRevision(scene)).toBe(revision);
   expect(dirty.value).toBe(0);
 
-  sceneRenderingSettings(scene).localQualityOverrides = { water: { refraction: false, fft: true } };
-  sceneRenderingSettings(scene).qualityOverrides = { water: { fft: false } };
+  sceneRenderingSettings(scene).localQualityOverrides = { water: { refraction: false, fftSize: 256 } };
+  sceneRenderingSettings(scene).qualityOverrides = { water: { fftSize: 64 } };
   updateSceneRenderingSettings(scene);
-  expect(sceneWaterQuality(scene)).toMatchObject({ refraction: false, fft: false });
+  expect(sceneWaterQuality(scene)).toMatchObject({ refraction: false, fftSize: 64 });
   expect(sceneWaterQualityRevision(scene)).not.toBe(revision);
   expect(dirty.value).toBe(1);
   const changed = sceneWaterQualityRevision(scene);
@@ -135,16 +135,18 @@ it("reports device-clamped water features while keeping the requested quality", 
   caps.textureFloatRender = false;
   caps.textureHalfFloatRender = false;
   const clamped = sceneWaterQualityDeviceClamp(scene);
-  expect(clamped.quality).toMatchObject({ fft: false, refraction: false, reflections: "sky", fftSize: 128 });
+  expect(clamped.quality).toMatchObject({ refraction: false, reflections: "sky" });
+  expect(clamped.spectrum).toBe(false);
   expect(clamped.limits).toHaveLength(3);
-  expect(sceneWaterQuality(scene)).toMatchObject({ fft: true, refraction: true, reflections: "screenSpace" });
+  expect(sceneWaterQuality(scene)).toMatchObject({ refraction: true, reflections: "screenSpace" });
 
   // Planar stays for flat water, but its Screen Space fallback has no scene copy to march.
   const planar = fixture();
   Object.assign(planar.getEngine().getCaps(), { textureFloatRender: true, textureHalfFloatRender: false });
   updateSceneRenderingSettings(planar, tier("ultra"));
   const planarClamp = sceneWaterQualityDeviceClamp(planar);
-  expect(planarClamp.quality).toMatchObject({ reflections: "planar", refraction: false, fft: true });
+  expect(planarClamp.quality).toMatchObject({ reflections: "planar", refraction: false });
+  expect(planarClamp.spectrum).toBe(true);
   expect(planarClamp.screenSpaceFallback).toBe(false);
   expect(planarClamp.limits).toEqual([expect.stringContaining("Water Refraction"), expect.stringContaining("Planar")]);
   // Scene Linear mirrors into a half-float target too: no planar pass can run, so readback reports Sky Only, and
@@ -170,7 +172,7 @@ it("reports device-clamped water features while keeping the requested quality", 
   Object.assign(capable.getEngine().getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
   updateSceneRenderingSettings(capable, tier("ultra"));
   const capableClamp = sceneWaterQualityDeviceClamp(capable);
-  expect(capableClamp).toEqual({ quality: sceneWaterQuality(capable), screenSpaceFallback: true, limits: [] });
+  expect(capableClamp).toEqual({ quality: sceneWaterQuality(capable), screenSpaceFallback: true, spectrum: true, limits: [] });
   // With half-float targets the colour pipeline cannot change what runs, so switching it keeps the same clamp.
   updateSceneRenderingSettings(capable, sceneLinear);
   expect(sceneWaterQualityDeviceClamp(capable)).toBe(capableClamp);

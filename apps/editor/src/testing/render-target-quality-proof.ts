@@ -59,7 +59,7 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     box.position.set((index % 20) * 0.5 - 5, 0.6 + Math.floor(index / 20) * 0.5, 4 + (index % 3));
   }
   createWaterMesh(scene, "Lake", normalizeWaterBody({ width: 10, length: 10, resolution: 32 }),
-    { ...createDefaultWaterDefinition(), waveHeight: 0, rippleStrength: 0, detailWaves: 0, refraction: 0.35 });
+    { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0, detailWaves: 0, refraction: 0.35 });
   // A still surface: both views shade the same water.
   setSceneWaterTime(scene, 0);
   const view = new SceneRenderCoordinator(scene);

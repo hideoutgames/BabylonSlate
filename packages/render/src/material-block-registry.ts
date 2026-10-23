@@ -626,7 +626,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     // The compiler creates the one block, at the rest world position, before any node is realized.
     const block = plumbing.waterWaves;
     if (!block) throw new Error("Water Waves is only available in a Surface material");
-    return { blocks: [], inputs: {}, outputs: { offset: block.offset, height: block.height, normal: block.normal, time: block.time } };
+    return { blocks: [], inputs: {}, outputs: { offset: block.offset, height: block.height, normal: block.normal, crestFoam: block.crestFoam, time: block.time } };
   },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition

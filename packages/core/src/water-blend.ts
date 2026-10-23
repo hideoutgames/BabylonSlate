@@ -2,9 +2,10 @@ import type { Transform, Vec3 } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import {
   createWaterWaveOutput, emptyWaterSample, invertWaterWaves, sampleWaterSurface, waterBankDistance, waterBankFadeLength, waterBankGain,
-  waterEulerianGradient, waterHorizontalEnvelope, waterRestBase, waterRiverCentreline, waterWaveDrift, waterWaveQ, waterWaveSet,
+  waterEulerianGradient, waterHorizontalEnvelope, waterMovesSideways, waterRestBase, waterRiverCentreline,
   type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterSample, type WaterWaveGain,
 } from "./water";
+import { waterSpectrum } from "./water-spectrum";
 
 /**
  * Rest-height difference (metres) up to which neighbours blend fully; they stop blending at twice it, so a river above
@@ -26,11 +27,12 @@ export function waterBlendClass(kind: WaterKind): number {
   }
 }
 
-/** Whether two definitions make the same swell (physics and the vertex waves): every analytic wave field matches. */
+/** Whether two definitions make the same waves (physics and the vertex waves): every field of their spectrum matches. */
 export function sameWaterWaves(a: WaterDefinition, b: WaterDefinition): boolean {
-  return a === b || (a.waveModel === b.waveModel && a.waveHeight === b.waveHeight && a.waveLength === b.waveLength
-    && a.waveSpeed === b.waveSpeed && a.waveDirection === b.waveDirection && a.waveSpread === b.waveSpread
-    && a.choppiness === b.choppiness && a.steepness === b.steepness && a.peakSharpness === b.peakSharpness && a.waveSeed === b.waveSeed);
+  return a === b || (a.waveHeight === b.waveHeight && a.waveLength === b.waveLength && a.waveSpeed === b.waveSpeed
+    && a.waveDirection === b.waveDirection && a.waveSpread === b.waveSpread && a.swellHeight === b.swellHeight
+    && a.swellLength === b.swellLength && a.swellDirection === b.swellDirection && a.steepness === b.steepness
+    && a.peakSharpness === b.peakSharpness && a.waveSeed === b.waveSeed && a.detailWaves === b.detailWaves);
 }
 
 /** Whether two definitions colour water alike (Shallow, Deep and Foam Color and Opacity). */
@@ -95,10 +97,10 @@ function prepare(source: WaterBlendBody): PreparedWaterBlendBody {
     const up = quatRotateVector(inverse, { x: 0, y: 1, z: 0 });
     if (Math.abs(up.y / sy) >= 1e-6) ray = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
   }
-  const set = waterWaveSet(definition), scale = body.waveScale, referenceScale = Math.abs(scale) > 1e-6 ? scale : 1;
+  const choppiness = waterSpectrum(definition).choppiness, scale = body.waveScale, referenceScale = Math.abs(scale) > 1e-6 ? scale : 1;
   return {
     definition, body, transform, inverse, ray, blendClass: waterBlendClass(body.kind), bounds: blendBounds(body, transform),
-    referenceScale, scale, offsetAmount: waterWaveQ(set, scale) * scale, referenceOffset: waterWaveQ(set, referenceScale) * referenceScale,
+    referenceScale, scale, offsetAmount: choppiness * scale, referenceOffset: choppiness * referenceScale,
     fadeLength: body.kind === "global" ? 0 : waterBankFadeLength(definition, referenceScale),
     depth: body.depth * Math.abs(sy),
   };
@@ -531,12 +533,9 @@ class PlanarGain implements WaterWaveGain {
 }
 
 const blendStencil = new BlendStencil(), planarGain = new PlanarGain(), blendSample = createWaterBlendSample(), restStart = { x: 0, z: 0 };
-const waveScratch = createWaterWaveOutput(), gradientOut = new Float64Array(2), slopeScratch = new Float64Array(2), driftScratch = { x: 0, z: 0 }, fadeScratch = new Float64Array(2);
+const waveScratch = createWaterWaveOutput(), gradientOut = new Float64Array(2), slopeScratch = new Float64Array(2);
 
 const restSlope = new Float64Array(4);
-
-/** Optional detail of a blended query: the offset scale its drift correction carries (1 off the blend). */
-export interface WaterBlendQueryInfo { offsetScale: number; fade: number }
 
 /**
  * `sampleWaterSurface` on the blended surface (`evaluateWaterBlend`) for body `self` of `index`. A body with no
@@ -558,10 +557,9 @@ export interface WaterBlendQueryInfo { offsetScale: number; fade: number }
  * took about fifteen, and agrees with that to better than 0.02 mm in height.
  */
 export function sampleWaterBlend(
-  index: WaterBlendIndex, self: number, position: Vec3, time: number, owned = true, info?: WaterBlendQueryInfo,
+  index: WaterBlendIndex, self: number, position: Vec3, time: number, owned = true,
 ): WaterSample {
   const me = index.bodies[self]!;
-  if (info) { info.offsetScale = 1; info.fade = 1; }
   const list = index.neighbours(self);
   if (!list.length || !me.ray || !(Number.isFinite(time) && Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)) || !me.body.enabled) {
     return sampleWaterSurface(me.definition, me.body, position, time, me.transform);
@@ -573,13 +571,13 @@ export function sampleWaterBlend(
     if (position.x >= b[0]! - reach && position.x <= b[1]! + reach && position.z >= b[4]! - reach && position.z <= b[5]! + reach) { near = true; break; }
   }
   if (!near) return sampleWaterSurface(me.definition, me.body, position, time, me.transform);
-  const set = waterWaveSet(me.definition), scale = me.referenceScale, gerstner = waterWaveQ(set, scale) > 0, wave = waveScratch;
+  const spectrum = waterSpectrum(me.definition), scale = me.referenceScale, gerstner = waterMovesSideways(spectrum, scale), wave = waveScratch;
   const stencil = blendStencil, s = blendSample, y = position.y;
   let found: boolean;
   if (gerstner) {
     planarGain.constant(evaluateWaterBlend(index, self, position.x, y, position.z, s) ? stencil.gainOf(me, s) : 0);
     restStart.x = position.x; restStart.z = position.z;
-    invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, planarGain, restStart);
+    invertWaterWaves(spectrum, position.x, position.z, time, wave, scale, planarGain, restStart);
     let moved = Infinity;
     const decline = owned ? -blendOwnerSlack(index.distance) : -Infinity;
     for (let pass = 0; pass < BLEND_MAX_STENCILS && moved > BLEND_RESTENCIL_DISTANCE; pass++) {
@@ -593,14 +591,14 @@ export function sampleWaterBlend(
         planarGain.constant(0);
       }
       restStart.x = centreX; restStart.z = centreZ;
-      invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, planarGain, restStart);
+      invertWaterWaves(spectrum, position.x, position.z, time, wave, scale, planarGain, restStart);
       moved = Math.hypot(wave[11]! - centreX, wave[12]! - centreZ);
     }
     // The inversion ends at the plane's rest point; the kernel there is read afresh unless it hardly moved.
     found = stencil.valid ? moved <= BLEND_REEVALUATE_DISTANCE || evaluateWaterBlend(index, self, wave[11]!, y, wave[12]!, s)
       : stencil.evaluate(index, self, wave[11]!, y, wave[12]!, s);
   } else {
-    invertWaterWaves(set, position.x, position.z, time, 0, wave, scale);
+    invertWaterWaves(spectrum, position.x, position.z, time, wave, scale);
     found = stencil.evaluate(index, self, position.x, y, position.z, s);
   }
   if (!found || s.union < 0 || (owned && s.margin < 0)) return emptyWaterSample();
@@ -615,12 +613,8 @@ export function sampleWaterBlend(
   const surface = s.restHeight + s.heightScale * height;
   const velocity = { x: s.flowX, y: s.flowY, z: s.flowZ };
   if (gerstner) {
-    waterBankGain(s.union, me.fadeLength * s.offsetScale, fadeScratch);
-    const fade = fadeScratch[0]! * fadeScratch[0]! * s.offsetScale * s.offsetScale;
-    waterWaveDrift(set, scale, driftScratch, 0, position.x, position.z, time);
-    velocity.x += wave[9]! + driftScratch.x * fade; velocity.z += wave[10]! + driftScratch.z * fade;
+    velocity.x += wave[9]!; velocity.z += wave[10]!;
     velocity.y += s.heightScale * wave[8]! - (ex * wave[9]! + ez * wave[10]!);
-    if (info) { info.offsetScale = s.offsetScale; info.fade = fadeScratch[0]!; }
   } else {
     velocity.y += s.heightScale * wave[8]!;
   }

@@ -580,9 +580,12 @@ function holdWaterLinks(engine: NullEngine) {
   };
 }
 
-/** Realistic, Painted and Toon water side by side, warmed as a load warms: three bodies whose variants all differ. */
+/**
+ * Realistic, Painted and a Realistic body that refracts but reflects no objects, side by side, warmed as a load warms:
+ * three bodies whose variants all differ and all sample the scene copy.
+ */
 async function threeWaterBodies(scene: Scene): Promise<Mesh[]> {
-  const looks = [createDefaultWaterDefinition(), createDefaultWaterDefinition("stylized"), createDefaultWaterDefinition("stylized", "toon")];
+  const looks = [createDefaultWaterDefinition(), createDefaultWaterDefinition("stylized"), { ...createDefaultWaterDefinition(), objectReflections: false }];
   const bodies = looks.map((water, index) => {
     const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water);
     mesh.position.x = (index - 1) * 4;

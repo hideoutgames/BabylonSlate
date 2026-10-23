@@ -1,7 +1,7 @@
 import type { WaterDefinition } from "./water";
 
 /**
- * FFT ocean spectrum: the wave source of Realistic and Painted water (`waterUsesSpectrum`), after the FFT-Ocean
+ * FFT ocean spectrum: the wave source of every water body, after the FFT-Ocean
  * approach (JONSWAP wind sea plus an optional swell, Cosine-2s spreading, three cascades). The renderer synthesizes
  * every cascade on the GPU (`water-fft.ts`); physics, queries and buoyancy evaluate the large-wave part of the same
  * modes on the CPU (`WaterSpectrumField`), so floating objects ride the waves that are drawn.
@@ -37,11 +37,6 @@ export const WATER_SPECTRUM_TURNS = [0, 0.5411, 1.0297] as const;
 export const WATER_SPECTRUM_PHYSICS_SIZE = 64;
 /** Horizontal displacement (choppiness λ) per unit of Steepness. */
 export const WATER_SPECTRUM_CHOP = 2;
-
-/** Water whose waves and look come from the FFT spectrum: Realistic and Painted built-in shading. */
-export function waterUsesSpectrum(water: WaterDefinition): boolean {
-  return !water.materialGuid && !(water.style === "stylized" && water.stylizedLook === "toon");
-}
 
 interface SpectrumComponent {
   /** Variance (m²) the component integrates to, before the detail gain. */
@@ -522,8 +517,8 @@ export function waterSpectrumField(spectrum: WaterSpectrum): WaterSpectrumField 
 const fieldSample = new Float64Array(WATER_SPECTRUM_SAMPLE_SIZE);
 
 /**
- * `evaluateWaterWaves` for spectrum water: the large-wave field at rest point (x0, z0) and `time`, in `WaterWaveSlot`
- * order (0-10 and 13). Wave Scale `scale` multiplies height and offset; `gain` (with its gradient) is a finite body's bank
+ * The waves at rest point (x0, z0) and `time` (the large-wave field physics, queries and CPU-displaced meshes read), in
+ * `WaterWaveSlot` order (0-10 and 13). Wave Scale `scale` multiplies height and offset; `gain` (with its gradient) is a finite body's bank
  * fade of the offset.
  */
 export function evaluateWaterSpectrum(

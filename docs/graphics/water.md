@@ -4,7 +4,7 @@ Water bodies draw animated water surfaces with waves, foam, reflections and refr
 
 ## Create water
 
-1. In the **Content Browser**, create a [Water](../assets/water.md) asset. Choose a **Water Style**: **Realistic**, or **Stylized** with a **Painted** or **Toon** look.
+1. In the **Content Browser**, create a [Water](../assets/water.md) asset. Choose a **Water Style** of **Realistic** or **Painted**.
 2. Open it to tune colours, waves, foam and reflections in **Preview** and the **Inspector**.
 3. Drag the asset from **Place Actors** into a 3D scene to create a lake, or add a water component and pick the asset in its **Water** field.
 
@@ -64,13 +64,12 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Water Reflections** | Sky Only | Sky Only | Screen Space | Planar |
-| **FFT Ocean Detail** | Off | Off | On | On |
 
 - **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
 - **Refraction Resolution** sets the scene copy's scale, shared with Screen Space reflections.
 - **Water Reflections**: **Sky Only** reflects the environment, **Screen Space** also reflects visible objects, and **Planar** mirrors flat water and uses Screen Space elsewhere. **Reflection Steps** and **Planar Resolution** tune them.
-- Realistic and Painted water simulate their waves on every level: **FFT Size** and **FFT Cascades** set how much short-wave detail they draw. On Toon and Custom Material water they add fine wave detail when **FFT Ocean Detail** is on.
-- Floating objects and queries on Realistic and Painted water follow the larger waves; the shortest rendered ripples are visual only.
+- Water simulates its waves on the GPU on every level: **FFT Size** and **FFT Cascades** set how much short-wave detail it draws. Devices without float render targets draw the water flat.
+- Floating objects and queries follow the larger waves; the shortest rendered ripples are visual only.
 
 A Water asset reflects scene objects only when its **Object Reflections** is on.
 

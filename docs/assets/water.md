@@ -4,7 +4,7 @@ The look and waves shared by oceans, lakes, rivers and puddles. The same waves d
 
 ## Create
 
-In the **Content Browser**, choose **New Asset > Rendering > Water**. Choose a **Water Style**: **Realistic**, or **Stylized** with a **Stylized Look** of **Painted** or **Toon**. Each style starts with its own colours and wave defaults. Realistic and Painted draw a simulated ocean of many wave trains, with foam that gathers on breaking crests and fades slowly; Toon draws a few smooth swells.
+In the **Content Browser**, choose **New Asset > Rendering > Water**. Choose a **Water Style** of **Realistic** or **Painted**. Each style starts with its own colours and wave defaults. Both draw a simulated ocean of many wave trains, with foam that gathers on breaking crests and fades slowly.
 
 ## Editor
 
@@ -18,21 +18,19 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 
 | Setting | Description |
 | --- | --- |
-| Style, Stylized Look | Switching styles keeps your colours and wave settings. |
+| Style | **Realistic** or **Painted**. Switching styles keeps your colours and wave settings. |
 | Shallow Color, Deep Color, Foam Color | The water colours. |
 | Opacity, Roughness, Reflection Strength, Refraction, Color Variation, Depth Color Distance | Water look. Depth Color Distance is the metres of water that absorb most light. |
 | Object Reflections | Also reflects scene objects, following the project's Water Reflections quality. Off reflects only the sky. |
-| Wave Model | Toon and Custom Material only: **Classic** or **Ocean Spectrum**. The choice affects physics. |
-| Wave Height, Wave Length, Wave Speed, Wave Direction, Wave Spread | Size, spacing, speed and heading of the waves. On Realistic and Painted these set the local wind sea: Wave Length is the metres between its biggest crests, so a short length gives a choppy sea and a long one rolling waves. |
-| Swell Height, Swell Length, Swell Direction | Realistic and Painted only. Long waves from a distant storm, rolling under the wind sea. Set Swell Height to 0 for none. |
-| Choppiness, Steepness | Sharper crests, and waves that also move the water sideways. |
+| Wave Height, Wave Length, Wave Speed, Wave Direction, Wave Spread | Size, spacing, speed and heading of the local wind sea. Wave Length is the metres between its biggest crests, from 0.1 m for a pond to 2000 m for open ocean, and is independent of Wave Height: a short length gives a choppy sea and a long one rolling waves. |
+| Swell Height, Swell Length, Swell Direction | Long waves from a distant storm, rolling under the wind sea. Set Swell Height to 0 for none. |
+| Choppiness | Sharper crests, and waves that also move the water sideways. 0 moves water only up and down. |
 | Peak Sharpness, Wave Seed | Shape and arrangement of the sea. Peak Sharpness gathers the waves around Wave Length. |
-| Detail Waves | Render only. Toon and Custom Material: fine wave detail, drawn when **FFT Ocean Detail** is on. Realistic and Painted: the share of short waves on top of the sea. |
-| Ripple Strength, Ripple Scale | Toon and Custom Material only. Small wind ripples. |
+| Detail Waves | The share of short waves on top of the sea. |
 | Foam Amount, Foam Width, Crest Foam, Surface Foam, Contact Foam Width | Shoreline, whitecap, open-water and contact foam. |
-| Subsurface, Color Bands, Sparkles | Light through crests, Stylized depth bands, and sun glints. |
+| Subsurface, Color Bands, Sparkles | Light through crests. Painted only: light steps painted across each wave, and sun glints. |
 | Density | Kilograms per cubic metre, about 1000 for fresh water. Sets how much a floating object can carry. |
-| Custom Material | An optional Surface Material that replaces the built-in shading. Waves and buoyancy still work. |
+| Custom Material | An optional Surface Material that replaces the built-in shading. Waves and buoyancy still work; see [Custom water Materials](../graphics/water.md#custom-water-materials). |
 
 ## Use it
 
