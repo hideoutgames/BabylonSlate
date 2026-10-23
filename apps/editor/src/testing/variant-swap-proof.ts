@@ -39,6 +39,8 @@ import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
+import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
+import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Step = {
@@ -436,6 +438,71 @@ async function warmSpawn() {
   }
 }
 
+/**
+ * A load rehearses its authored lights' changes (`createLoadRehearsal`): each change is applied, drawn once by a
+ * strict frame and reverted. Afterwards a point switching off and a spot starting to cast shadows link no program on the
+ * real context, and the view never holds.
+ */
+async function rehearsedChanges() {
+  const view = await worldView();
+  try {
+    const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), view.scene);
+    authored(sun, [1, 0.95, 0.85], 0.4);
+    const point = new PointLight(`${AUTHORED_LIGHT_PREFIX}point`, new Vector3(-0.6, 1.6, -1.2), view.scene);
+    authored(point, [0.3, 0.4, 1], 0.9);
+    const spot = new SpotLight(`${AUTHORED_LIGHT_PREFIX}spot`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
+    authored(spot, [0.9, 0.85, 0.7], 1.4);
+    await view.coordinator.prepare();
+    await view.settle();
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const rehearsal = createLoadRehearsal(view.scene);
+    for (let attempt = 0; attempt < 600 && !rehearsal.done; attempt++) {
+      rehearsal.check();
+      if (view.coordinator.isReady()) rehearsal.frame(() => view.frame(false));
+      await pause();
+    }
+    const report = rehearsal.report();
+    await view.settle();
+    const gl = (view.engine as unknown as { _gl: WebGL2RenderingContext })._gl;
+    const linkProgram = gl.linkProgram;
+    let links = 0;
+    gl.linkProgram = function countedLinkProgram(this: WebGL2RenderingContext, program: WebGLProgram) {
+      links++;
+      return linkProgram.call(this, program);
+    };
+    const errorsBefore = glErrorTraceEntries().length;
+    /** Frames from `apply` until the drawn Effects change and `live` holds, counting links and held frames. */
+    const change = async (apply: () => void, live = () => true) => {
+      links = 0;
+      const before = view.drawnEffects();
+      apply();
+      let held = 0;
+      let frames = 0;
+      for (; frames < 30 && (view.drawnEffects().every((effect, index) => effect === before[index]) || !live()); frames++) {
+        if (!view.frame(true)) held++;
+        await pause();
+      }
+      return { links, held, frames, changed: view.drawnEffects().some((effect, index) => effect !== before[index]) };
+    };
+    try {
+      const pointOff = await change(() => setAuthoredLightEnabled(point, false));
+      // One change at a time, as rehearsed: the point back on first (the variants the load drew).
+      await change(() => setAuthoredLightEnabled(point, true));
+      // Until the spot's map draws (its casters' depth programs in use), not only the receivers' swap.
+      const spotShadows = await change(() => authored(spot, [0.9, 0.85, 0.7], 1.4, true),
+        () => (spot.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() === 0);
+      return {
+        report, pointOff, spotShadows,
+        glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
+      };
+    } finally {
+      gl.linkProgram = linkProgram;
+    }
+  } finally {
+    view.dispose();
+  }
+}
+
 export async function runVariantSwapProof() {
   const untrace = installGlErrorTrace();
   try {
@@ -497,7 +564,7 @@ export async function runVariantSwapProof() {
         return { light: point, castShadows: (enabled) => authored(point, [1, 0.8, 0.5], 1.4, enabled) };
       }),
     ];
-    return { steps, shadowGains, spawn: await spawnReveal(), warmSpawn: await warmSpawn() };
+    return { steps, shadowGains, spawn: await spawnReveal(), warmSpawn: await warmSpawn(), rehearsed: await rehearsedChanges() };
   } finally {
     untrace();
   }

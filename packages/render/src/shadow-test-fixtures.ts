@@ -31,3 +31,17 @@ export function enableHeadlessCascades(engine: AbstractEngine): void {
     return texture;
   };
 }
+
+/**
+ * Babylon 9.29 NullEngine creates a cube render target's texture without attaching it to the target, so a point
+ * light's map never reports a texture. Attach it, so a point light can cast shadows headlessly.
+ */
+export function enableHeadlessCubeTargets(engine: AbstractEngine): void {
+  const createCube = engine.createRenderTargetCubeTexture.bind(engine);
+  engine.createRenderTargetCubeTexture = (size, options) => {
+    const target = createCube(size, options);
+    const created = engine.getLoadedTexturesCache().at(-1);
+    if (!target.texture && created?.isCube) target.setTexture(created, 0, false);
+    return target;
+  };
+}
