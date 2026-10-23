@@ -27,6 +27,7 @@ import {
   parseText3DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
+  parseMirrorProperties,
   parseOutlineProperties,
   parseDeformerProperties,
   parseRagdollProperties,
@@ -1704,6 +1705,31 @@ export function componentPropertyRows(
           value: properties.edgeFalloff, defaultValue: defaults.edgeFalloff, min: 0, max: 1, step: 0.01,
           description: "Fraction of the half-size used for soft edges. Zero gives a hard boundary; one fades from the center.",
           onChange: (next) => update("edgeFalloff", Math.min(1, Math.max(0, next))) },
+      ];
+    }
+    case "MirrorComponent": {
+      const properties = parseMirrorProperties(component.properties);
+      const defaults = parseMirrorProperties({});
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled",
+          value: properties.enabled, defaultValue: defaults.enabled,
+          description: "The reflective side faces local -Z, as a Plane mesh does. Off hides the surface.",
+          onChange: (next) => update("enabled", next) },
+        ...(["width", "height"] as const).map((key): PropertyRow => ({
+          kind: "number", id: rowId(actorId, component.id, key), label: key === "width" ? "Width" : "Height",
+          value: properties[key], defaultValue: defaults[key], min: 0.01, sensitivity: 0.05,
+          description: "Local units. Actor and component scale also apply.",
+          onChange: (next) => update(key, Math.max(0.01, next)),
+        })),
+        { kind: "slider", id: rowId(actorId, component.id, "resolutionScale"), label: "Resolution Scale",
+          value: properties.resolutionScale, defaultValue: defaults.resolutionScale, min: 0.1, max: 1, step: 0.05,
+          description: "Reflection resolution as a fraction of the view's. Lower values save GPU time and memory.",
+          onChange: (next) => update("resolutionScale", Math.min(1, Math.max(0.1, next))) },
+        { kind: "color", id: rowId(actorId, component.id, "tint"), label: "Tint", value: properties.tint,
+          description: "Multiplies the reflection on the built-in surface. A Material override decides its own look.",
+          onChange: (next) => update("tint", next) },
+        { ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mirror Material", "Built-In Surface"),
+          description: "Use a Mirror Reflection node to read the reflection." },
       ];
     }
     case "AreaRectLightComponent": {

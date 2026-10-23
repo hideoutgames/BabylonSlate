@@ -15,6 +15,7 @@ import {
   parseJoystick2DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
+  parseMirrorProperties,
   parseOutlineProperties,
   parseDeformerProperties,
   parseRagdollProperties,
@@ -115,6 +116,8 @@ export function defaultComponentAuthoringProperties(
       return { ...createDefaultRenderTargetCaptureProperties() };
     case "FogVolumeComponent":
       return { ...parseFogVolumeProperties({}) };
+    case "MirrorComponent":
+      return { ...parseMirrorProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
     case "DeformerComponent":

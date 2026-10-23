@@ -11,6 +11,7 @@ const SAMPLER_NODES = new Set([
   "input.sceneDepth",
   "input.sceneNormal",
   "input.environmentSample",
+  "input.mirrorReflection",
 ]);
 
 /** Whether the plan's surface takes scene lights, so a fixed light layout shares its samplers. */

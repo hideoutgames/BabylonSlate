@@ -4,6 +4,7 @@ import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
 import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
 import { WaterSurfaceBlock } from "./water-surface-block";
+import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import type { WaterWavesBlock } from "./water-waves-block";
 import {
   AddBlock,
@@ -656,6 +657,13 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "input.sceneColor": ({ name }) => {
     const block = new CurrentScreenBlock(name);
     return single(block, { uv: block.uv }, { color: block.rgba });
+  },
+  "input.mirrorReflection": ({ name, plumbing }) => {
+    // A Mirror surface's reflection at its own screen position; black on any other mesh.
+    if (!plumbing.worldPosition) throw new Error("Mirror Reflection is only available in a Surface material");
+    const block = new MirrorReflectionBlock(name);
+    plumbing.worldPosition.connectTo(block.worldPosition);
+    return single(block, { offset: block.offset }, { color: block.color });
   },
   "input.environmentSample": ({ name }) => {
     const block = new EnvironmentSampleBlock(name);

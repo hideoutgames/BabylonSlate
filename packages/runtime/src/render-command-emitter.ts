@@ -14,6 +14,7 @@ import {
   parseFoliageProperties,
   parseJoystick2DProperties,
   parseLandscapeProperties,
+  parseMirrorProperties,
   parseOverlayPanelProperties,
   parseOverlayVisualStyle,
   parseSceneLayerHitTest,
@@ -505,6 +506,7 @@ function isPlayRenderable(
     component.classId === "LandscapeComponent" ||
     component.classId === "FoliageComponent" ||
     component.classId === "CableComponent" ||
+    component.classId === "MirrorComponent" ||
     component.classId === "DynamicRuntimeMeshComponent" ||
     component.classId === "MeshComponent" ||
     component.classId === "SpriteComponent" ||
@@ -578,6 +580,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (isUIControl2DClass(component.classId)) return "2dcontrol";
   if (isOverlayLayoutClass(component.classId)) return "2dlayout";
   if (component.classId === "CableComponent") return "cable";
+  if (component.classId === "MirrorComponent") return "mirror";
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (waterKindForClass(component.classId)) return "water";
   if (component.classId === "WaterRemovalVolumeComponent") return "waterRemoval";
@@ -638,7 +641,7 @@ function playPartsNeeded(components: readonly ActorComponent[]): boolean {
     components.some((component) => isOverlayLayoutClass(component.classId) || component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent") ||
     components.some((component) => component.classId === "2DJoystickComponent") ||
     components.some((component) => component.classId === "2DPainterComponent") ||
-    components.some((component) => component.classId === "CableComponent") ||
+    components.some((component) => component.classId === "CableComponent" || component.classId === "MirrorComponent") ||
     components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
     components.length > 1 ||
@@ -756,6 +759,8 @@ function playMeshPartOf(
     scale: [scale.x, scale.y, scale.z],
     ...(waterKindForClass(component.classId) ? { water: normalizeWaterBody(Object.fromEntries(component.variables), waterKindForClass(component.classId)!) } : {}),
     ...(component.classId === "WaterRemovalVolumeComponent" ? { waterRemoval: normalizeWaterRemoval(Object.fromEntries(component.variables)) } : {}),
+    // A Mirror surface never casts shadows.
+    ...(component.classId === "MirrorComponent" ? { mirror: parseMirrorProperties(Object.fromEntries(component.variables)), castShadows: false } : {}),
     ...(component.classId === "Text3DComponent"
       ? {
           text3d: text3dAssignPayload(component),

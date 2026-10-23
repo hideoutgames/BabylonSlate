@@ -100,6 +100,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   MeshComponent: ["assetGuid", "materialGuid"],
   DynamicRuntimeMeshComponent: ["materialGuid"],
   CableComponent: ["materialGuid"],
+  MirrorComponent: ["materialGuid"],
   SpriteComponent: ["assetGuid", "materialGuid"],
   TilemapComponent: ["assetGuid", "materialGuid"],
   LandscapeComponent: ["materialGuid"],

@@ -661,6 +661,8 @@ export type CommandMessage =
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
         parentTransforms?: import("@haptic/core").Transform[];
         cable?: import("@haptic/core").CableProperties & { simulationId?: number };
+        /** Mirror surface on `mirror` parts. */
+        mirror?: import("@haptic/core").MirrorProperties;
         water?: import("@haptic/core").WaterBodyProperties;
         /** Water Removal Volume shape; Play keeps an invisible mesh that cuts water. */
         waterRemoval?: import("@haptic/core").WaterRemovalProperties;

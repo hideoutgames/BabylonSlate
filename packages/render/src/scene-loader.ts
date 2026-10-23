@@ -9,6 +9,8 @@ import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { bindEditorCable, configureCableMesh, createCableMesh, findEditorCableMesh, hasEditorCableMeshes, pruneEditorCables, updateCablePreview } from "./cable-mesh";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
+import { MIRROR_CLASS_ID, parseMirrorProperties } from "@haptic/core";
+import { createMirrorSurfaceMesh } from "./mirrors";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
 import { sceneShadowController } from "./shadow-controller";
 import { createJoystick2DMesh } from "./joystick2d-mesh";
@@ -243,6 +245,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   ...OVERLAY_LAYOUT_CLASSES,
   "DynamicRuntimeMeshComponent",
   "CableComponent",
+  MIRROR_CLASS_ID,
   "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
@@ -279,6 +282,7 @@ const SURFACE_COMPONENT_CLASS_IDS = new Set([
   "2DPainterComponent",
   "DynamicRuntimeMeshComponent",
   "CableComponent",
+  MIRROR_CLASS_ID,
   "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
@@ -542,6 +546,8 @@ function componentVisualKind(
     return `cable:${cable.enabled}:${cable.numSegments}:${cable.numSides}:${cable.tileMaterial}:${JSON.stringify(cable.materialGuid)}`;
   }
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
+  // Every property but the Material rebuilds the surface; editor material binding applies the override.
+  if (component.classId === MIRROR_CLASS_ID) return `mirror:${JSON.stringify({ ...parseMirrorProperties(component.properties), materialGuid: null })}`;
   if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
@@ -839,6 +845,7 @@ function createComponentMesh(
     return mesh;
   }
   if (component.classId === "DynamicRuntimeMeshComponent") return createDynamicRuntimeMesh(scene, name);
+  if (component.classId === MIRROR_CLASS_ID) return createMirrorSurfaceMesh(scene, name, parseMirrorProperties(component.properties));
   if (component.classId === "SplineComponent") return createSplineMesh(scene, name, component.properties);
   if (component.classId === "SceneStreamingComponent") return createEditorBillboard(scene, name, "default");
   const waterKind = waterKindForClass(component.classId);
