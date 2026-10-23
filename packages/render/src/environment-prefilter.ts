@@ -91,13 +91,16 @@ export function retainFilteredEnvironment(
       target = engine.createRenderTargetCubeTexture(size, {
         format: Constants.TEXTUREFORMAT_RGBA,
         type,
+        // Pinned 9.29: WebGL cube targets ignore createMipMaps and allocate mips only by generating them.
         createMipMaps: true,
-        generateMipMaps: false,
+        generateMipMaps: !engine.isWebGPU,
         generateDepthBuffer: false,
         generateStencilBuffer: false,
         samplingMode: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
         label: "Filtered environment",
       });
+      // Every mip is written by the filter; nothing may regenerate them over it.
+      target.texture!.generateMipMaps = false;
       engine.updateTextureWrappingMode(target.texture!, Constants.TEXTURE_CLAMP_ADDRESSMODE, Constants.TEXTURE_CLAMP_ADDRESSMODE, Constants.TEXTURE_CLAMP_ADDRESSMODE);
       // An engine-bound wrapper sharing the target's texture: Scene disposal never drops it.
       cube = new CubeTexture("", engine);

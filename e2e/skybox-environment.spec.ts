@@ -52,7 +52,7 @@ test("a Skybox environment source lights surfaces from the sky in the editor and
   // The sky is GGX-filtered on the GPU; a failure would silently fall back to the raw sky.
   const filterErrors: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error" && /environment (filtering|lighting) failed/i.test(message.text())) filterErrors.push(message.text());
+    if (["warning", "error"].includes(message.type()) && /environment (filtering|lighting) failed|GL_INVALID|WebGL: INVALID_/i.test(message.text())) filterErrors.push(message.text());
   });
   await openTestProject(page);
   await openMainScene(page);
