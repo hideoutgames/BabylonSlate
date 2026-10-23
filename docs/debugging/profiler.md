@@ -90,6 +90,8 @@ When Play ends, the trace opens as a read-only document with three windows:
 - **Snapshot** shows the game instance, subsystems, actors, components and their variables at the selected frame, with the Behaviour Trees, the **Audio** voices playing, the **Sprite Clips** actors show and each **Animation Graphs** state. Voices, clips and graphs are named for their actors. **Changes** lists what was added, removed or changed in any of them since the previous frame. Traces recorded before audio, sprite clips and Animation Graphs were kept show none of them.
 - **Log** shows the logs and prints of the selected frame and up to 29 frames before it.
 
+To open a trace again later, choose **Debug > Recent Traces**. It lists the project's ten newest traces by when they were recorded.
+
 **Engine Settings > Debugger > Trace > Trace Memory Budget (MiB)** limits a trace, from 1 to 256. Default 128. When the trace is full, the oldest frames are discarded and recording continues. A single frame larger than the whole budget stops recording; the frames before it are kept.
 
 ## Related

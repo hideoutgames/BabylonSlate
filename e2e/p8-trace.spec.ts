@@ -172,5 +172,16 @@ test.describe("P8 Trace document tab", () => {
     await expect(page.getByTestId("trace-value-detail")).toContainText(
       "/transform/position/0",
     );
+
+    // Closed, the trace stays recorded: Debug > Recent Traces opens it again.
+    const traceTab = page.locator('[data-testid="document-tab"][data-document-kind="trace"]');
+    await traceTab.getByTestId("document-tab-close").click();
+    await expect(traceTab).toHaveCount(0);
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("recent-traces-submenu").click();
+    await expect(page.getByTestId("recent-trace")).toHaveCount(1);
+    await page.getByTestId("recent-trace").click();
+    await expect(traceTab).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("trace-timeline-panel")).toBeVisible();
   });
 });

@@ -4,6 +4,7 @@ import {
   decodeTraceDocument,
   encodeTraceDocument,
   isTracePath,
+  listTraceDocuments,
   readTraceDocument,
   TRACE_ASSET_TYPE,
   TRACE_FILE_EXTENSION,
@@ -75,5 +76,20 @@ describe("trace documents", () => {
     expect(loaded?.guid).toBe("trace-guid");
     expect(loaded?.payload).toEqual(payload);
     await expect(readTraceDocument(storage, "missing.htrace")).resolves.toBeNull();
+  });
+
+  it("lists the project's recorded traces, newest first", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("traces-root");
+    expect(await listTraceDocuments(storage, "project")).toEqual([]);
+    const document = { name: "session", guid: "trace", payload: { seed: 1, dt: 1 / 60, frames: [] } };
+    for (const name of ["session-1000", "session-3000", "session-2000"]) await writeTraceDocument(storage, "project", name, document);
+    await storage.writeText(`${tracesDir("project")}/notes.txt`, "not a trace");
+    const traces = await listTraceDocuments(storage, "project");
+    expect(traces.map(({ fileName, recordedAt }) => [fileName, recordedAt])).toEqual([
+      ["session-3000.htrace", 3000], ["session-2000.htrace", 2000], ["session-1000.htrace", 1000],
+    ]);
+    expect(traces[0]!.path).toBe(tracePath("project", "session-3000"));
+    expect((await readTraceDocument(storage, traces[0]!.path))?.guid).toBe("trace");
   });
 });
