@@ -180,6 +180,8 @@ export type ControlMessage =
       traceByteBudget?: number;
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
+      /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin), for Get Third-Party Notices. */
+      thirdPartyNoticesUrl?: string;
       sceneAssetGuid: string;
       /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@haptic/core").InputAssetDefinition[];

@@ -789,6 +789,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Project Name](get-project-name.md) | Returns the name of the project. |
 | [Get Project Version](get-project-version.md) | Returns the version of the project as text. |
+| [Get Third-Party Notices](get-third-party-notices.md) | Reads the licence notices of the open-source software the game runs on. |
 
 ## Debug
 

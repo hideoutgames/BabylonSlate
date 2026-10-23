@@ -73,6 +73,8 @@ export interface RuntimeDriverOptions {
   /** Serialized trace retention budget in bytes for this session. */
   traceByteBudget?: number;
   project?: { name: string; version: string };
+  /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin); Get Third-Party Notices fails without one. */
+  thirdPartyNoticesUrl?: string;
   seed: number;
   dt?: number;
   maxActors?: number;
