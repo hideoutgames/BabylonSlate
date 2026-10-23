@@ -17,7 +17,7 @@ Returns the foam built-in water draws, as masks from 0 to 1: whitecaps, shorelin
 
 ## Notes
 
-- The asset's **Foam Amount** scales every mask. The edges of Shore Foam and Contact Foam break up with a noise that drifts with the current.
+- The asset's **Foam Amount** scales every mask. Shore Foam and Contact Foam are lacy: thick at the waterline, breaking into foam with holes that thin out with distance. They churn slowly in place and drift with the current, and on shores bands of foam wash in.
 - Use Foam to blend toward the [**Water Colors**](water-colors.md) Foam Color with [**Mix**](mix.md).
 - On meshes that are not water, every output is 0.
 - Only in Surface and Landscape materials.

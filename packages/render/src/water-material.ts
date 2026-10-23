@@ -190,7 +190,63 @@ float swNoise(vec2 p) {
   t = t * t * (vec2(3.0) - 2.0 * t);
   return mix(mix(swHash(i), swHash(i + vec2(1.0, 0.0)), t.x), mix(swHash(i + vec2(0.0, 1.0)), swHash(i + vec2(1.0, 1.0)), t.x), t.y);
 }
+` + edgeFoamHelpers("sw");
+
+/**
+ * Shore and contact foam, shared by built-in water and the Water Foam node (`prefix` names the functions and the
+ * caller's `<prefix>Hash` and `<prefix>Noise`), GLSL-shaped for `toWgsl`.
+ *
+ * `<prefix>EdgeLace(p, t, amount, foot)` draws foam as it breaks up on real water: a white sheet with round holes that
+ * shrink as it thickens (`amount` 0 leaves none, 1 covers all), from jittered cells at two scales whose points circle
+ * slowly, so it churns in place and travels only with the current (`p`, flowed world metres; `t`, seconds). `foot`
+ * (metres per pixel) softens its edges by a pixel and, once its cells near a few pixels, hands over to the sheet's
+ * mean coverage, so distant foam never shimmers. Thin foam is partly clear, as the ocean's whitecaps fade at their edges.
+ * It skips its taps where there is no foam.
+ *
+ * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
+ * water is 1.6 `width` deep, with bands that wash in toward the shore, out of step along it. `<prefix>ContactFoamAmount(dist,
+ * width)` is an object's: a tight band at its waterline, thinning out to about 1.6 `width`.
+ */
+export function edgeFoamHelpers(prefix: string): string {
+  const taps = [-1, 0, 1].flatMap((y) => [-1, 0, 1].map((x) => `vec2(${x}.0, ${y}.0)`));
+  return `
+float ${prefix}LaceTap(vec2 i, vec2 f, vec2 c, float t) {
+  vec2 h = vec2(${prefix}Hash(i + c), ${prefix}Hash(i + c + vec2(17.13, 41.71)));
+  vec2 o = c + vec2(0.5) + sin(h * 6.2831 + t * (h + vec2(0.5))) * 0.35 - f;
+  return dot(o, o);
+}
+float ${prefix}LaceCells(vec2 p, float t) {
+  vec2 i = floor(p);
+  vec2 f = p - i;
+  float d = ${prefix}LaceTap(i, f, ${taps[0]}, t);
+${taps.slice(1).map((tap) => `  d = min(d, ${prefix}LaceTap(i, f, ${tap}, t));`).join("\n")}
+  return sqrt(d);
+}
+float ${prefix}EdgeLace(vec2 p, float t, float amount, float foot) {
+  float a = clamp(amount, 0.0, 1.0);
+  if (a <= 0.0) { return 0.0; }
+  float fine = 1.0 - smoothstep(0.2, 0.6, foot * 7.0);
+  float d = ${prefix}LaceCells(p * 2.5, t * 0.6) + (${prefix}LaceCells(p * 7.0 + vec2(7.3, 1.9), t) - 0.5) * 0.45 * fine;
+  float hole = (1.0 - a) * 0.85;
+  float edge = 0.04 + 0.18 * (1.0 - a) + foot * 3.0;
+  float lace = smoothstep(hole - edge, hole + edge, d);
+  float mean = clamp(1.0 - 2.27 * hole * hole, 0.0, 1.0);
+  return mix(lace, mean, smoothstep(0.25, 0.7, foot * 2.5)) * (0.45 + 0.55 * a) * smoothstep(0.0, 0.05, a);
+}
+float ${prefix}ShoreFoamAmount(vec2 p, float t, float depth, float width) {
+  float s = max(depth, 0.0) / max(width, 0.001);
+  float phase = fract(t * 0.08 + ${prefix}Noise(p * 0.06) * 2.0);
+  float wash = (1.0 - smoothstep(0.0, 0.16, abs(s - 1.2 * (1.0 - phase)))) * sin(phase * 3.14159) * 0.55;
+  float close = 1.0 - smoothstep(0.0, 1.6, s);
+  return max(close * close, wash);
+}
+float ${prefix}ContactFoamAmount(float dist, float width) {
+  float band = 1.0 - smoothstep(0.03, 0.06 + width * 0.08, dist);
+  float close = 1.0 - smoothstep(0.0, width * 1.6, dist);
+  return max(close * close, band * 0.95);
+}
 `;
+}
 
 
 
@@ -823,13 +879,13 @@ float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATC
 float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0) * swPatchFar;
 // Surface Foam: thin lingering residue where turbulence is still recovering behind the caps.
 float swResidue = clamp((swCrestBias + 0.35 - swTurb) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
-// Contacts: a collar at every object's waterline that frays outward, and shallow shores churn white.
+// Edges: lacy foam thick at every object's waterline and along shallow shores, thinning outward (\`edgeFoamHelpers\`).
 float swContactStrength = U.slateWaterTerms.x;
 float swContactW = max(0.05, U.slateWaterShape.w);
-float swCollar = (1.0 - smoothstep(0.0, swContactW, swObject)) * (0.65 + 0.35 * swFoamNoise);
-swCollar = max(swCollar, (1.0 - smoothstep(swContactW, swContactW * 2.5, swObject)) * smoothstep(0.55, 0.7, swFoamNoise));
-float swShoreFoam = swKnown * (1.0 - smoothstep(0.0, U.slateWaterMotion.w * 0.35 + 0.08, swTerrainDepth)) * (1.0 - swOpenAny) * (0.6 + 0.4 * swFoamNoise);
-float swFoam = clamp(max(max(swCrestFoam, swResidue), max(swCollar, swShoreFoam) * swContactStrength), 0.0, 1.0);
+float swCollar = swContactFoamAmount(swObject, swContactW);
+float swShoreFoam = swKnown * (1.0 - swOpenAny) * swShoreFoamAmount(swFlowed, swTime, swTerrainDepth, U.slateWaterMotion.w * 0.35 + 0.08);
+float swEdgeFoam = swEdgeLace(swFlowed, swTime, max(swCollar, swShoreFoam) * swContactStrength, swFoot);
+float swFoam = clamp(max(max(swCrestFoam, swResidue), swEdgeFoam), 0.0, 1.0);
 `;
 }
 

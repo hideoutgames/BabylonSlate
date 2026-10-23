@@ -10,7 +10,7 @@ import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
 import {
-  contactRange, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, sceneWaterNodeLighting, stripShaderComments, toWgsl,
+  contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, sceneWaterNodeLighting, stripShaderComments, toWgsl,
   transmittanceSource, waterAbsorption,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE, WATER_NODE_BLEND_DEFINE,
 } from "./water-material";
@@ -344,8 +344,8 @@ abstract class WaterNodeBlock extends NodeMaterialBlock {
 /**
  * Water Foam: the foam built-in water draws, as masks. Crest Foam is the Water Waves block's whitecaps (0 without a
  * Water Waves node); Shore Foam is where the water over known terrain is shallow (Foam Width); Contact Foam is the
- * collar around objects crossing the surface (Contact Foam Width), frayed by a breakup noise drifting with the flow.
- * Foam is all of them, as built-in water combines them. Foam Amount scales every mask.
+ * band around objects crossing the surface (Contact Foam Width), both broken into churning lace as built-in water draws
+ * them (`edgeFoamHelpers`). Foam is all of them, as built-in water combines them. Foam Amount scales every mask.
  */
 export class WaterFoamBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -389,7 +389,7 @@ float swnNoise(vec2 p) {
   t = t * t * (vec2(3.0) - 2.0 * t);
   return mix(mix(swnHash(i), swnHash(i + vec2(1.0, 0.0)), t.x), mix(swnHash(i + vec2(0.0, 1.0)), swnHash(i + vec2(1.0, 1.0)), t.x), t.y);
 }
-`, wgsl), "");
+${edgeFoamHelpers("swn")}`, wgsl), "");
     const [foam, , shore, contact] = this._outputs.map((output) => output.associatedVariableName);
     const crestValue = this.value(this.crestFoam, "0.0");
     state.compilationString += this.declare(state, this.foam, "0.0") + this.declare(state, this.crest, crestValue)
@@ -404,15 +404,12 @@ float swnNoise(vec2 p) {
 vec4 swnTerms = U.${FOAM_UNIFORM};
 vec2 swnFlowed = swnPos.xz - swnFlow.xz * swnTime;
 float swnFoot = length(fwidth(swnPos.xz));
-float swnBreak = mix(0.5, swnNoise(swnFlowed * 0.9 + vec2(swnTime * 0.05, 0.0)) * 0.65 + swnNoise(swnFlowed * 3.1 - vec2(0.0, swnTime * 0.08)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swnFoot));
-float swnShore = swnField.w * (1.0 - smoothstep(0.0, swnTerms.x * 0.35 + 0.08, swnDepth)) * (0.6 + 0.4 * swnBreak) * swnTerms.z;
-float swnObject = abs(swnContactAt(swnPos.xz, swnHeight));
-float swnWidth = max(0.05, swnTerms.y);
-float swnCollar = (1.0 - smoothstep(0.0, swnWidth, swnObject)) * (0.65 + 0.35 * swnBreak);
-swnCollar = max(swnCollar, (1.0 - smoothstep(swnWidth, swnWidth * 2.5, swnObject)) * smoothstep(0.55, 0.7, swnBreak)) * swnTerms.z;
+float swnShoreAmount = swnField.w * swnShoreFoamAmount(swnFlowed, swnTime, swnDepth, swnTerms.x * 0.35 + 0.08) * swnTerms.z;
+float swnContactAmount = swnContactFoamAmount(abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
 `, wgsl)
-      + assign(this.foam, foam, `clamp(max(${crestValue}, max(swnShore, swnCollar)), 0.0, 1.0)`)
-      + assign(this.shore, shore, "swnShore") + assign(this.contact, contact, "swnCollar")
+      + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeLace(swnFlowed, swnTime, max(swnShoreAmount, swnContactAmount), swnFoot)), 0.0, 1.0)`)
+      + assign(this.shore, shore, "swnEdgeLace(swnFlowed, swnTime, swnShoreAmount, swnFoot)")
+      + assign(this.contact, contact, "swnEdgeLace(swnFlowed, swnTime, swnContactAmount, swnFoot)")
       + "#endif\n}\n";
     return this;
   }
