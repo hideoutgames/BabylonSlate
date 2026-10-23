@@ -78,6 +78,7 @@ describe("bindingCodesForDevice", () => {
       "joystick-x", "joystick-y", "dpad-x", "dpad-y", "Jump",
       "tap", "double-tap", "long-press", "swipe-up", "swipe-down", "swipe-left", "swipe-right",
       "pinch", "two-finger-rotate", "two-finger-drag-x", "two-finger-drag-y",
+      "tilt-x", "tilt-y", "shake",
     ]);
   });
 });

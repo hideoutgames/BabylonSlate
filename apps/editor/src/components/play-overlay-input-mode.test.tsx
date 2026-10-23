@@ -4,7 +4,9 @@ import type { Engine } from "@babylonjs/core";
 import { GameSessionOwner } from "../services/game-session-owner";
 import { startPlaySession, type PlaySession, type PlaySessionResult } from "../services/play-session";
 import { PlayOverlay } from "./play-overlay";
+import { BREAKPOINT_PAUSE_CODE } from "@haptic/bridge";
 import { BreakpointStoreProvider } from "../context/breakpoints-context";
+import { SimulationControlsProvider, useSimulationControls, type SimulationControls } from "../context/simulation-controls-context";
 import { BreakpointStore } from "../services/breakpoint-store";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
@@ -125,4 +127,68 @@ it("starts a Simulation with the enabled breakpoints and sends it each change", 
   act(() => store.setEnabled(at("off"), true));
   act(() => store.remove(at("on")));
   expect(setBreakpoints.mock.calls).toEqual([[[at("on"), at("off")]], [[at("off")]]]);
+});
+
+it("stops editor Play at a breakpoint behind the editor, and Resume returns to the game", async () => {
+  const result: PlaySessionResult = {
+    diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
+    released: Promise.resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false }),
+    runtimeMode: "worker", lastTrace: null,
+  };
+  const boundary = (paused: boolean) => ({
+    sessionGeneration: 0, requestId: 1, success: true, paused, pauseReasons: paused ? ["user" as const] : [],
+    tickIndex: 3, sceneAssetGuid: "scene", sceneLoadId: 0, commandRevision: 0,
+  });
+  const setPauseReason = vi.fn<PlaySession["setPauseReason"]>(async (_reason, paused) => boundary(paused));
+  vi.mocked(startPlaySession).mockReturnValue({
+    handle: { resize() {}, setSize() {}, scheduler: { setResizing() {} } },
+    executeConsoleCommand: () => Promise.resolve({ success: true, output: "" }),
+    setPauseReason,
+    setBreakpoints() {},
+    observeGraphDebug() {},
+    requestPausedRedraw() {},
+    stop: () => result,
+  } as unknown as PlaySession);
+  let controls: SimulationControls | null = null;
+  function Toolbar() {
+    controls = useSimulationControls();
+    return null;
+  }
+  const at = { assetGuid: "Content/Hero.class", graphId: "event-graph", nodeId: "print" };
+  const store = new BreakpointStore();
+  store.toggle(at, { className: "Hero", graphName: "Event Graph", nodeTitle: "Print" });
+  const owner = new GameSessionOwner<PlaySessionResult>();
+  const ticket = owner.begin("play")!;
+  const onPausedAt = vi.fn();
+  const onPlayBreak = vi.fn();
+  render(
+    <SimulationControlsProvider>
+      <BreakpointStoreProvider store={store}>
+        <PlayOverlay sharedEngine={{} as Engine} sessionOwner={owner} sessionTicket={ticket}
+          pauseOnErrors onPausedAt={onPausedAt} onPlayBreak={onPlayBreak} onClose={() => {}} />
+      </BreakpointStoreProvider>
+      <Toolbar />
+    </SimulationControlsProvider>,
+  );
+  await act(async () => {});
+  // Play runs with the breakpoints and Pause On Errors, as a Simulation does.
+  const options = vi.mocked(startPlaySession).mock.lastCall![0];
+  expect(options.breakpoints).toEqual([at]);
+  expect(options.pauseOnErrors).toBe(true);
+  expect(controls).toBeNull();
+
+  const cause = { code: BREAKPOINT_PAUSE_CODE, message: "Breakpoint", ...at, instanceId: "hero", instanceLabel: "Hero" };
+  await act(async () => { options.onSessionPaused?.(true, cause); });
+  const overlay = screen.getByTestId("play-overlay");
+  expect(setPauseReason).toHaveBeenLastCalledWith("user", true);
+  expect(onPausedAt).toHaveBeenCalledWith(cause);
+  expect(onPlayBreak).toHaveBeenLastCalledWith(cause);
+  expect(overlay.classList.contains("hidden")).toBe(true);
+  expect(controls).toMatchObject({ mode: "play", paused: true, stoppedAt: cause });
+
+  await act(async () => { controls!.togglePause(); });
+  expect(setPauseReason).toHaveBeenLastCalledWith("user", false);
+  expect(onPlayBreak).toHaveBeenLastCalledWith(null);
+  expect(overlay.classList.contains("hidden")).toBe(false);
+  expect(controls).toBeNull();
 });

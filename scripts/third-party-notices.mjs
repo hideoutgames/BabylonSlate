@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Builds the third-party notices from the installed production dependency tree
 // plus the vendored runtime files listed in scripts/third-party-notices/vendored.json.
+// The game scope keeps only the npm packages the player bundle really contains, as
+// recorded in scripts/third-party-notices/game-packages.json; the player build fails
+// when that list no longer matches its bundle.
 //
 // Writes two files:
 // - apps/editor/public/legal/THIRD-PARTY-NOTICES.txt: what ships in exported games
@@ -11,6 +14,8 @@
 // Usage:
 //   node scripts/third-party-notices.mjs           # regenerate both files
 //   node scripts/third-party-notices.mjs --check   # fail when either file is stale
+//   node scripts/third-party-notices.mjs --from-player-build
+//     # after `pnpm --filter player build`: refresh game-packages.json, then regenerate
 
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -21,6 +26,8 @@ const dataDir = path.join(repoRoot, "scripts/third-party-notices");
 
 export const GAME_NOTICES_PATH = "apps/editor/public/legal/THIRD-PARTY-NOTICES.txt";
 export const EDITOR_NOTICES_PATH = "apps/editor/src/lib/third-party-notices.json";
+export const GAME_PACKAGES_PATH = "scripts/third-party-notices/game-packages.json";
+const PLAYER_BUNDLED_PACKAGES_PATH = "apps/player/dist/bundled-packages.json";
 
 /** Workspace roots whose production dependencies each scope ships. */
 const SCOPE_ROOTS = {
@@ -140,8 +147,20 @@ function vendoredPackages(scope) {
     }));
 }
 
+/** The game scope's npm packages: those of the player's dependency tree that its bundle contains. */
+function gameNpmPackages() {
+  const reachable = [...collectPackages(SCOPE_ROOTS.game).values()];
+  const bundled = readJson(path.join(repoRoot, GAME_PACKAGES_PATH));
+  const missing = bundled.filter(name => !reachable.some(entry => entry.name === name));
+  if (missing.length > 0) {
+    throw new Error(`${GAME_PACKAGES_PATH} lists ${missing.join(", ")}, which the player does not depend on.`);
+  }
+  return reachable.filter(entry => bundled.includes(entry.name));
+}
+
 function packagesFor(scope) {
-  const packages = [...collectPackages(SCOPE_ROOTS[scope]).values(), ...vendoredPackages(scope)];
+  const npm = scope === "game" ? gameNpmPackages() : [...collectPackages(SCOPE_ROOTS[scope]).values()];
+  const packages = [...npm, ...vendoredPackages(scope)];
   for (const entry of packages) {
     if (entry.texts.length === 0) {
       // A few packages publish no licence file; keep their declared licence and author.
@@ -218,6 +237,14 @@ export function staleThirdPartyNotices(generated = generateThirdPartyNotices()) 
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  if (process.argv.includes("--from-player-build")) {
+    const report = path.join(repoRoot, PLAYER_BUNDLED_PACKAGES_PATH);
+    if (!existsSync(report)) {
+      console.error(`${PLAYER_BUNDLED_PACKAGES_PATH} is missing. Run pnpm --filter player build first.`);
+      process.exit(1);
+    }
+    writeFileSync(path.join(repoRoot, GAME_PACKAGES_PATH), readFileSync(report, "utf8"));
+  }
   const generated = generateThirdPartyNotices();
   if (process.argv.includes("--check")) {
     const stale = staleThirdPartyNotices(generated);

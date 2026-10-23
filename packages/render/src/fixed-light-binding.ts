@@ -486,6 +486,16 @@ export function sceneBindsPreviousEffects(scene: Scene): boolean {
 }
 
 /**
+ * Whether a world view may draw `effect` as a Material's previous Effect while its changed variant compiles: an Effect
+ * on Babylon's light path, which `bindLights` binds by its own light layout with placeholders for whatever its lights
+ * no longer supply. A seat-bound Effect (fixed-shape lighting, or one compiled before the switch was turned off) binds
+ * its seats from the current table with no placeholders, so its Material waits for the new variant.
+ */
+export function bindsAsPreviousEffect(effect: Effect): boolean {
+  return effectLightSeats(effect) === null;
+}
+
+/**
  * Allocates what a previous Effect's bindings may need (the sampler placeholders) before a frame's passes: a render
  * target allocated inside a pass would rebind the framebuffer it draws to.
  */

@@ -28,10 +28,12 @@
  * are in the failure message.
  */
 import {
+  ArcRotateCamera,
   DirectionalLight,
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
+  PBRMaterial,
   PointLight,
   Scene,
   UniversalCamera,
@@ -50,12 +52,14 @@ import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@hap
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEngine } from "./create-engine";
+import { effectLightSeats } from "./fixed-light-binding";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
+import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
 import { compileMaterialPlan } from "./material-compiler";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -209,6 +213,10 @@ function driverModel(engine: NullEngine, model: Model) {
       pending.clear();
       holding = false;
     },
+    /** Every pending link fails, with no fallback left: those Effects never become ready. */
+    fail: () => {
+      for (const effect of pending) Object.assign(effect, { _compilationError: "ERROR: 0:1: injected link failure", _allFallbacksProcessed: true });
+    },
     created,
     pipelines,
   };
@@ -286,6 +294,13 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     handle.applyCommand({ type: "despawn", slotId, actorGuid: actor!.guid });
     pose();
   };
+  /** Moves an actor through the snapshot alone, as the worker poses it: its visual is not sent again. */
+  const move = (slotId: number, position: Vec3, rotation?: Quat) => {
+    const actor = world.find((entry) => entry.slotId === slotId)!;
+    actor.position = position;
+    if (rotation) actor.rotation = rotation;
+    pose();
+  };
   for (const actor of world) handle.applyCommand({ type: "spawn", slotId: actor.slotId, actorGuid: actor.guid, classId: "Actor" });
   for (const actor of world) assign(actor);
   place(...actors);
@@ -317,7 +332,7 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     const pass = handle.scene.activeCamera?.renderPassId;
     return pass === undefined ? null : handle.scene.getMeshByName(subject)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
   };
-  return { engine, handle, driver, holds, world, place, remove, frame, views, subjectEffect };
+  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect };
 }
 
 type PlayWorld = ReturnType<typeof playWorld>;
@@ -547,6 +562,38 @@ describe("compile holds after the first frame", () => {
     const world = playWorld("webgpu", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])]);
     expectRecovers(await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))));
   });
+
+  it("a camera move that makes the Forward budget drop a shadowed spot binds a placeholder for its map from the first frame", async () => {
+    // Ten local lights for nine shader slots. Near the spot the floor receives its shadow; seen from the far side it
+    // is the farthest light, and its place goes to a point. Only the camera moved, so the frame's own readiness probe
+    // is the first to see the swap, and the floor's previous Effect still samples the map the spot no longer binds.
+    const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -5]));
+    const world = playWorld("parallel", [...points, spot(30, [4, 5, 4], { castShadows: true })], [], "actor-1");
+    const scene = world.handle.scene;
+    const camera = scene.activeCamera as ArcRotateCamera;
+    camera.setTarget(Vector3.Zero());
+    camera.setPosition(new Vector3(4, 3, 12));
+    await settle(world);
+    const spotLight = scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}30`)!;
+    const before = world.subjectEffect()!;
+    expect([isForwardLightExcluded(spotLight), /#define SHADOW\d/.test(before.defines)]).toEqual([false, true]);
+    // No swap has needed them yet.
+    expect(existingShadowSamplerPlaceholders(scene)).toBeUndefined();
+    // Whether the placeholders existed each time the previous Effect bound its lights.
+    const bound: boolean[] = [];
+    const hooks = (scene as unknown as { _materialLightHooks: { bindLights: (...args: unknown[]) => boolean } })._materialLightHooks;
+    const bindLights = hooks.bindLights;
+    hooks.bindLights = function (...args: unknown[]) {
+      if (args[2] === before) bound.push(existingShadowSamplerPlaceholders(scene) !== undefined);
+      return bindLights.apply(this, args);
+    };
+    world.driver.arm();
+    camera.setPosition(new Vector3(-4, 3, -14));
+    const { view, effect } = await world.frame();
+    expect(isForwardLightExcluded(spotLight)).toBe(true);
+    expect(world.driver.created.length).toBeGreaterThan(0);
+    expect({ drawn: view?.rendered, previous: effect === before, bound }).toEqual({ drawn: true, previous: true, bound: [true] });
+  });
 });
 
 /** Prepared area emission pixels, as the derived chunk holds them. */
@@ -554,41 +601,55 @@ async function areaEmissionPixels() {
   return decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
 }
 
+/**
+ * The editor's world view: the same coordinator as Play's, drawing steady frames (`render(false)`) on a world Scene
+ * without Play's end-of-frame readiness check, under the parallel driver. A box with the default graph Material
+ * receives a sun and two points.
+ */
+async function editorView(options: { fixedShape?: boolean; native?: boolean } = {}) {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
+  cleanups.push(() => vi.useRealTimers());
+  const engine = headlessEngine();
+  const driver = driverModel(engine, "parallel");
+  if (options.fixedShape) setFixedShapeLightingEnabled(engine, true);
+  const scene = new Scene(engine);
+  const camera = new UniversalCamera("camera", new Vector3(0, 3, -10), scene);
+  camera.setTarget(Vector3.Zero());
+  scene.activeCamera = camera;
+  setFixedShapeLightingWorldScene(scene);
+  new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
+  new PointLight("near", new Vector3(-1.5, 2.5, -1), scene);
+  const far = new PointLight("far", new Vector3(1.5, 2.5, -1), scene);
+  const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+  if (!lowered.ok) throw new Error("The default Material did not lower.");
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph" });
+  if (!compiled.ok) throw new Error("The default Material did not compile.");
+  const box = MeshBuilder.CreateBox("box", {}, scene);
+  box.material = options.native ? new PBRMaterial("native", scene) : compiled.material;
+  const view = new SceneRenderCoordinator(scene, { deferPipelines: true });
+  cleanups.push(() => view.dispose());
+  await withClock(view.prepare());
+  /** One steady frame; whether it drew. */
+  const frame = async () => {
+    engine.beginFrame();
+    const drawn = view.render(false).rendered;
+    engine.endFrame();
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    return drawn;
+  };
+  const effect = () => box.subMeshes[0]!._getDrawWrapper(camera.renderPassId)?.effect;
+  /** The output resizes, as the canvas does: the graph needs a preparation for the new size. */
+  const resize = (width: number, height: number) =>
+    Object.assign((engine as unknown as { _options: NullEngineOptions })._options, { renderWidth: width, renderHeight: height });
+  for (let index = 0; index < 3; index++) expect(await frame()).toBe(true);
+  return { engine, driver, scene, far, material: compiled.material, view, frame, effect, resize };
+}
+
 describe("the editor world view", () => {
   it("probes each steady frame while a frozen graph Material swaps, so it draws its new variant once that is ready", async () => {
-    // The editor's world view is the same coordinator without Play's end-of-frame readiness check, and it freezes
-    // library Materials: a frozen NodeMaterial adopts a ready variant only when a probe asks it again.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
-    cleanups.push(() => vi.useRealTimers());
-    const engine = headlessEngine();
-    const driver = driverModel(engine, "parallel");
-    const scene = new Scene(engine);
-    const camera = new UniversalCamera("camera", new Vector3(0, 3, -10), scene);
-    camera.setTarget(Vector3.Zero());
-    scene.activeCamera = camera;
-    setFixedShapeLightingWorldScene(scene);
-    new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
-    new PointLight("near", new Vector3(-1.5, 2.5, -1), scene);
-    const far = new PointLight("far", new Vector3(1.5, 2.5, -1), scene);
-    const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
-    if (!lowered.ok) throw new Error("The default Material did not lower.");
-    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph" });
-    if (!compiled.ok) throw new Error("The default Material did not compile.");
-    const box = MeshBuilder.CreateBox("box", {}, scene);
-    box.material = compiled.material;
-    const view = new SceneRenderCoordinator(scene, { deferPipelines: true });
-    cleanups.push(() => view.dispose());
-    await withClock(view.prepare());
-    const frame = async () => {
-      engine.beginFrame();
-      const drawn = view.render(false).rendered;
-      engine.endFrame();
-      await vi.advanceTimersByTimeAsync(FRAME_MS);
-      return drawn;
-    };
-    const effect = () => box.subMeshes[0]!._getDrawWrapper(camera.renderPassId)?.effect;
-    for (let index = 0; index < 3; index++) expect(await frame()).toBe(true);
-    compiled.material.freeze();
+    // The editor freezes library Materials: a frozen NodeMaterial adopts a ready variant only when a probe asks again.
+    const { driver, far, material, frame, effect } = await editorView();
+    material.freeze();
     const before = effect();
     driver.arm();
     setAuthoredLightEnabled(far, false);
@@ -601,4 +662,75 @@ describe("the editor world view", () => {
     expect(await frame()).toBe(true);
     expect(driver.created).toContain(effect());
   });
+
+  it("holds a seated Material for its new variant under fixed-shape lighting instead of drawing its previous Effect", async () => {
+    // A seat-bound Effect binds its seats from the current slot table, with no placeholder for a map a seat lost.
+    const { driver, scene, frame, effect } = await editorView({ fixedShape: true, native: true });
+    const before = effect()!;
+    expect(effectLightSeats(before)).not.toBeNull();
+    driver.arm();
+    new PointLight("extra", new Vector3(0, 2.5, 1), scene);
+    for (let index = 0; index < 3; index++) expect(await frame()).toBe(false);
+    expect(driver.created.length).toBeGreaterThan(0);
+    driver.release();
+    let drawn = false;
+    for (let index = 0; index < 3 && !drawn; index++) drawn = await frame();
+    expect(drawn).toBe(true);
+    expect(driver.created).toContain(effect());
+  });
+
+  it("draws the previous Effect through a preparation a strict readiness question started", async () => {
+    // Play asks its world view strictly at the end of each frame. When that question is the first to find the graph
+    // needing a preparation (here for a new output size), the preparation it starts serves the steady frames, which
+    // draw a swapping Material's previous Effect.
+    const { driver, far, view, frame, effect, resize } = await editorView();
+    const before = effect();
+    driver.arm();
+    setAuthoredLightEnabled(far, false);
+    resize(320, 200);
+    expect(view.isReady()).toBe(false);
+    expect(view.settled).toBe(false);
+    const frames: boolean[] = [];
+    for (let index = 0; index < 4; index++) frames.push(await frame() && effect() === before);
+    expect(driver.created.length).toBeGreaterThan(0);
+    expect(frames.slice(1)).toEqual([true, true, true]);
+  });
+
+  it("answers a strict question after a tolerant preparation found a swap without probing the scene again", async () => {
+    const { driver, far, view, frame, resize } = await editorView();
+    driver.arm();
+    setAuthoredLightEnabled(far, false);
+    resize(320, 200);
+    // The steady frame cannot draw before the graph is prepared for the new size; that preparation tolerates the swap.
+    expect(await frame()).toBe(false);
+    for (let step = 0; step < 50 && !view.settled; step++) await vi.advanceTimersByTimeAsync(16);
+    expect(view.settled).toBe(true);
+    const checks = view.strictReadinessChecks;
+    expect(view.isReady()).toBe(false);
+    expect(view.strictReadinessChecks).toBe(checks);
+  });
+
+  it("ends a swap whose new variant failed to link: the previous Effect stays, probing stops and strict readiness passes", async () => {
+    const { driver, far, view, frame, effect } = await editorView();
+    const before = effect();
+    driver.arm();
+    setAuthoredLightEnabled(far, false);
+    expect(await frame()).toBe(true);
+    expect(view.isReady()).toBe(false);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    driver.fail();
+    // This frame's probe finds the failure.
+    expect(await frame()).toBe(true);
+    const checks = view.strictReadinessChecks;
+    for (let index = 0; index < 3; index++) {
+      expect(await frame()).toBe(true);
+      expect(effect()).toBe(before);
+    }
+    expect(view.strictReadinessChecks).toBe(checks);
+    expect(view.isReady()).toBe(true);
+    const reports = error.mock.calls.map(([message]) => String(message)).filter((message) => message.includes("previous shader variant"));
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toContain("injected link failure");
+  });
 });
+

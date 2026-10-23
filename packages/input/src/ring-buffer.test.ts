@@ -52,6 +52,15 @@ describe("input ring buffer", () => {
     expect(decodeInputEvents(encodeInputEvents(events))).toEqual(events);
   });
 
+  it("round-trips a motion sample, including a released one with no reading", () => {
+    const sample: RawInputEvent = {
+      kind: "motion", tick: 4, beta: -45, gamma: 12.5, screenAngle: 90, accelerationX: 0.5, accelerationY: -1, accelerationZ: 9.75,
+      peakAcceleration: 14, rotationX: 30, rotationY: -60, rotationZ: 0.25,
+    };
+    const released: RawInputEvent = { ...sample, beta: Number.NaN, gamma: Number.NaN };
+    expect(decodeInputEvents(encodeInputEvents([sample, released]))).toEqual([sample, released]);
+  });
+
   it("round-trips the pointer type and pressure, and leaves them out when not given", () => {
     const events: RawInputEvent[] = [
       { kind: "pointer", tick: 1, pointerId: 7, phase: "down", x: 1, y: 2, button: 0, pointerType: "pen", pressure: 0.25 },

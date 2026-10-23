@@ -52,6 +52,8 @@ async function openSession(mode: "simulate" | "play", target: DebugObserveTarget
     handle: { resize() {}, setSize() {}, scheduler: { setResizing() {} } },
     executeConsoleCommand: () => Promise.resolve({ success: true, output: "" }),
     observeGraphDebug,
+    setPauseReason: async (_reason: string, paused: boolean) => ({ success: true, paused, pauseReasons: paused ? ["user"] : [] }),
+    requestPausedRedraw() {},
     stop: () => ({
       diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
       released: Promise.resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false }),
@@ -66,6 +68,7 @@ async function openSession(mode: "simulate" | "play", target: DebugObserveTarget
   );
   await act(async () => {});
   const options = vi.mocked(startPlaySession).mock.calls.at(-1)![0] as unknown as {
+    onSessionPaused?: (paused: boolean, cause?: { code: string; message: string; assetGuid?: string; nodeId?: string }) => void;
     onDebugRoster?: (roster: Roster) => void;
     onExecutionTrace?: (trace: Trace) => void;
     onBtState?: (state: BtState) => void;
@@ -78,7 +81,7 @@ const roster = (ids: string[], reset = true, removed: string[] = []): Roster => 
   added: ids.map((id) => ({ id, kind: "actor", label: id })),
 });
 
-describe("Simulation graph debugging in the Play overlay", () => {
+describe("Graph debugging in the Play overlay", () => {
   it("asks the runtime to watch the focused Class as the Simulation starts, then to follow the first instance listed", async () => {
     const { observeGraphDebug, options } = await openSession("simulate");
     expect(observeGraphDebug).toHaveBeenCalledExactlyOnceWith(DOOR, null);
@@ -123,11 +126,17 @@ describe("Simulation graph debugging in the Play overlay", () => {
     expect(store!.getSnapshot().target).toBeNull();
   });
 
-  it("leaves fullscreen Play alone", async () => {
+  it("watches nothing while Play runs behind its view, and the focused graph while Play is stopped", async () => {
     const { observeGraphDebug, options } = await openSession("play");
-    expect(options.onDebugRoster).toBeUndefined();
-    expect(options.onExecutionTrace).toBeUndefined();
-    expect(options.onBtState).toBeUndefined();
     expect(observeGraphDebug).not.toHaveBeenCalled();
+
+    await act(async () => options.onSessionPaused!(true, { code: "runtime.breakpoint", message: "Breakpoint", assetGuid: "Door.class", nodeId: "open" }));
+    expect(observeGraphDebug).toHaveBeenCalledExactlyOnceWith(DOOR, null);
+    act(() => options.onDebugRoster!(roster(["d1"])));
+    expect(observeGraphDebug).toHaveBeenLastCalledWith(DOOR, "d1");
+
+    // Back in the game, the runtime stops watching.
+    await act(async () => options.onSessionPaused!(false));
+    expect(observeGraphDebug).toHaveBeenLastCalledWith(null, null);
   });
 });

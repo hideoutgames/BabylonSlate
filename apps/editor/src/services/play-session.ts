@@ -869,6 +869,8 @@ export function startPlaySession(options: {
     else runtime?.applyRenderPathStatus(control);
   };
 
+  /** The game asked for device motion, perhaps before input capture was attached. */
+  let deviceMotionRequested = false;
   const handle = createEngine(canvas, {
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
@@ -950,6 +952,10 @@ export function startPlaySession(options: {
     },
     // Virtual sticks share the capture's suppression and fresh-transition admission.
     onTouchAxis: (controlId, value) => input?.setTouchAxis(controlId, value),
+    onDeviceMotionRequest: () => {
+      deviceMotionRequested = true;
+      input?.enableMotion();
+    },
     onSceneLayerScroll: (event) => {
       if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -1756,6 +1762,7 @@ export function startPlaySession(options: {
     // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
     ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
+  if (deviceMotionRequested) input.enableMotion();
   if (options.mode === "simulate") input.setSuppressed(false);
 
   const unlock = () => {
