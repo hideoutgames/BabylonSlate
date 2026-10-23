@@ -183,6 +183,28 @@ export function canonicalizeForwardLightSlots(
 }
 
 /**
+ * Puts `scene.lights` back in `order` (the same lights, as a load rehearsal recorded them before a light change it
+ * tried) and re-sorts the receivers to it. Admission exchanges a light it drops with the one it admits in that order,
+ * so receivers keep their defines; the exchanges a change made and its revert did not undo would leave the same
+ * lights in other slots, and receivers asking for variants a load without the change never compiles. Returns whether
+ * any light moved.
+ */
+export function restoreSceneLightOrder(scene: Scene, order: readonly Light[]): boolean {
+  const lights = scene.lights;
+  if (lights.length !== order.length) return false;
+  const members = new Set(lights);
+  if (!order.every((light) => members.has(light))) return false;
+  let moved = false;
+  for (let index = 0; index < order.length; index++) {
+    if (lights[index] === order[index]) continue;
+    lights[index] = order[index]!;
+    moved = true;
+  }
+  if (moved) sortReceiverLightSources(scene);
+  return moved;
+}
+
+/**
  * Re-sort every receiver whose `lightSources` is out of `scene.lights` order,
  * which is the order Babylon's rebuilds (`addMesh`, `addLight`, `layerMask`)
  * reproduce. A receiver whose re-sort only permutes lights with one slot

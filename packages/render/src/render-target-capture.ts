@@ -406,6 +406,14 @@ export class RenderTargetCaptures {
       this.published(capture, target);
     }
   }
+  /**
+   * Whether a Full Quality capture's own view is preparing its graph and variants. A view whose preparation failed (a
+   * refused budget) is not: it retries only from its own draw, inside the scene view's.
+   */
+  preparing(): boolean {
+    for (const target of this.targets.values()) if (target.fullQuality?.renderer.preparing) return true;
+    return false;
+  }
   /** Rendering state of every capture output, in insertion order. */
   diagnostics(): RenderTargetCaptureDiagnostics[] {
     return [...this.targets].map(([renderTargetGuid, target]) => ({
