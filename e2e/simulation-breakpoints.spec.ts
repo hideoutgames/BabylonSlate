@@ -88,3 +88,58 @@ test("a breakpoint set from a node's menu stops a Simulation, opens the node and
   await expect(page.getByTestId("simulation-step")).toHaveCount(0);
   await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveCount(0);
 });
+
+/** Event Tick runs Do N, whose Counter output counts its earlier runs (0, 1, 2, ...), then prints. */
+const COUNTER_GRAPH = {
+  nodes: [
+    node("tick", "flow.event.tick", {}, 0, 0),
+    node("count", "flow.doN", { "default:n": 100 }, 320, 0),
+    node("print", "debug.print", { "default:key": "tick", "default:duration": 0.1 }, 640, 0),
+  ],
+  edges: [
+    { id: "tick.execOut>count.execIn", source: "tick", sourceHandle: "execOut", target: "count", targetHandle: "execIn" },
+    { id: "count.then>print.execIn", source: "count", sourceHandle: "then", target: "print", targetHandle: "execIn" },
+  ],
+} as unknown as SerializedGraph;
+
+test("a breakpoint's condition and hit count decide which run stops a Simulation", async ({ page }) => {
+  test.setTimeout(240_000);
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  expect(await page.evaluate((graph) => (globalThis as TestHost).__hapticTest.setMainGraphContent(graph), COUNTER_GRAPH)).toBe(true);
+  const scene = createDefaultScene();
+  scene.actors = [
+    ...scene.actors.filter((actor) => actor.classId !== "main"),
+    createActor("hero", "Hero", { classId: "main", transform: identitySerializedTransform(), components: [createMeshComponent("hero-mesh", "box")] }),
+  ];
+  await setPreviewScene(page, scene);
+
+  await page.locator('[data-testid="document-tab"][data-document-kind="graph"]').getByTestId("document-tab-select").click();
+  const countNode = graphPanel(page).locator('.react-flow__node[data-id="count"]');
+  await expect(countNode).toBeVisible({ timeout: 15_000 });
+  await countNode.locator("[data-node-role]").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add Breakpoint" }).click();
+  await countNode.locator("[data-node-role]").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit Breakpoint…" }).click();
+
+  // Counter ≥ 2, second time: the runs counting 2 and 3 meet it, so the fourth tick stops.
+  const dialog = page.getByTestId("breakpoint-settings-dialog");
+  await dialog.getByLabel("Condition").click();
+  await page.getByRole("option", { name: "Counter" }).click();
+  await dialog.getByLabel("Comparison").click();
+  await page.getByRole("option", { name: "≥" }).click();
+  await dialog.getByLabel("Value").fill("2");
+  await dialog.getByRole("checkbox", { name: "Stop Only On Hit" }).click();
+  await dialog.getByLabel("Hit Count").fill("2");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
+  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
+  await expect(page.getByTestId("simulation-step")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Do N on Hero");
+  const stoppedAt = await tickIndex(page);
+  expect(stoppedAt).toBeGreaterThanOrEqual(3);
+  await page.waitForTimeout(300);
+  expect(await tickIndex(page)).toBe(stoppedAt);
+});

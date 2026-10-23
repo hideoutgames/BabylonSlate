@@ -61,7 +61,7 @@ A breakpoint stops a Simulation or Play when a node runs. You can set one on any
 - With a mouse, click the faint dot at the start of the node's title bar, at the left edge of a Behaviour Tree node, or at the top left of a state.
 - For a transition, select it or its state and choose **Add Breakpoint** in **Details**. A Both Ways transition has **Add Reverse Breakpoint** for its other direction.
 
-A red dot then marks the node, and a red ring marks a transition (either direction of a Both Ways pair). A hollow dot or a faint ring means the breakpoint is disabled: it is kept but does not stop. The node's menu has **Remove Breakpoint** and **Disable Breakpoint** / **Enable Breakpoint**.
+A red dot then marks the node, and a red ring marks a transition (either direction of a Both Ways pair). A hollow dot or a faint ring means the breakpoint is disabled: it is kept but does not stop. The node's menu has **Remove Breakpoint**, **Disable Breakpoint** / **Enable Breakpoint** and **Edit Breakpoint…**.
 
 When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. The toolbar names where it stopped: the Class, the event or function, the node and the object. Choose that name to open the node again. **Debug Instance** switches to that object, and its path and pin values show from its next tick on, for example after a **Step**. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
 
@@ -69,9 +69,18 @@ In a Behaviour Tree, a breakpoint stops when its node starts running and when it
 
 In a State Machine, a state's breakpoint stops when the graph enters the state: when it starts in it, when a transition enters it (a transition back to the same state too), or when [Jump To State](../scripting/class/jump-to-state.md) sets it. A transition's breakpoint stops when the transition is taken. The toolbar names the graph, the state or transition, **Entered** or **Taken**, and the actor.
 
-The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in assets you have closed. From it you can switch a breakpoint on or off, remove it, or open its node. It also has **Enable All**, **Disable All** and **Remove All**.
+The **Breakpoints** window, opened from the **Windows** menu, lists every breakpoint in the project, including those in assets you have closed. From it you can switch a breakpoint on or off, remove it, or open its node to edit it. It also has **Enable All**, **Disable All** and **Remove All**.
 
 Breakpoints are kept with the project on this device, not in its assets. Setting one never changes a document. Preview Build and exported games never stop at them.
+
+#### Conditions and hit counts
+
+**Edit Breakpoint…** (in **Details** for a transition) sets when a breakpoint stops:
+
+- **Condition** (Class graph nodes only): one comparison on one of the node's pins, such as **Health** **≤** `0`. Pick an output, or an input that has a wire; an input without one always holds the same value. Numbers compare with `=`, `≠`, `<`, `≤`, `>` and `≥`, true/false and text values with `=` and `≠`, and object pins with **Is Valid** and **Is Not Valid**. A run of the node counts once, the first time the node reads (or produces) a value that meets the condition, whichever object runs it. Vectors, structures, arrays and wildcard pins can't have a condition.
+- **Stop Only On Hit**: the breakpoint stops only on that run, counting the runs that meet its condition (or every run without one), for every object. With **Stop Only On Hit** at `3`, it stops on the third run and not again.
+
+Counting starts with each Simulation or Play, and starts over when you change the breakpoint or switch it off and on. If another breakpoint already stopped the tick in which the counted run happens, the Simulation stops at that one instead. The **Breakpoints** window shows each breakpoint's settings next to its node, such as **Counter ≥ 2 · Hit 3**.
 
 ### Stop in Play
 

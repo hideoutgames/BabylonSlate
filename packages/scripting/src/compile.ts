@@ -510,6 +510,9 @@ export function compileGraph(
     preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
     preamble.push("var __dw = (t, node, pin, value) => (t === null ? value : (t.write(node, pin, value), value));");
   }
+  if (options.instrumentBreakpoints === true && options.stripDevelopmentOnly !== true) {
+    preamble.push("var __bv = (b, node, pin, value) => (b === null ? value : b.read(node, pin, value));");
+  }
   if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {
     preamble.push(...tagRuntimeSource(options.tagRegistry).split("\n"));
   }
@@ -536,6 +539,11 @@ export function compileGraph(
    * null check. Probe text never allocates and never changes evaluation order.
    */
   const traceProbe = (call: string) => `  if (__dbg !== null) ${call};`;
+  /**
+   * Breakpoint probes run for every instance: `__bp` is the graph's breakpoints, null when it has none.
+   * In a graph with breakpoints the values exec nodes read and produce also reach `__bp`, which
+   * checks a breakpoint's condition against them.
+   */
   const checkBreakpoints =
     options.instrumentBreakpoints === true && options.stripDevelopmentOnly !== true;
   /** The event or function entry the exec chain being emitted starts from, for breakpoint hits. */
@@ -691,15 +699,17 @@ export function compileGraph(
   }
 
   /**
-   * A node that runs records what it read from a wired data input. A pure node records its outputs
-   * instead (`tracedPureOutput`); what flowed into its inputs is what their sources produced, and
-   * an unwired input shows its literal on the node.
+   * A node that runs records what it read from a wired data input, and checks it against the node's
+   * breakpoint. A pure node records its outputs instead (`tracedPureOutput`); what flowed into its
+   * inputs is what their sources produced, and an unwired input shows its literal on the node.
    */
   function tracedRead(node: GraphNode, p: GraphPin, expression: string): string {
-    if (!traceExecution || options.registry.get(node.typeId)?.pure) return expression;
+    if ((!traceExecution && !checkBreakpoints) || options.registry.get(node.typeId)?.pure) return expression;
     const edge = index.incoming(node.id, p.id);
     if (!edge || !index.node(edge.sourceNodeId)) return expression;
-    return `__dv(__dbg, ${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}, ${expression})`;
+    const ids = `${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}`;
+    const checked = checkBreakpoints ? `__bv(__bp, ${ids}, ${expression})` : expression;
+    return traceExecution ? `__dv(__dbg, ${ids}, ${checked})` : checked;
   }
 
   /** `bound` names the variables that already hold a node's subject inputs. */
@@ -870,14 +880,15 @@ export function compileGraph(
     }
   }
 
-  /** Records every data output of `node` once its statements have run. */
+  /** Records every data output of `node` once its statements have run, and checks it against the node's breakpoint. */
   function emitOutputProbe(node: GraphNode, ctx: CodegenContext) {
-    if (!traceExecution) return;
+    if (!traceExecution && !checkBreakpoints) return;
     const outs = node.pins.filter((p) => p.kind === "data" && p.direction === "out");
     if (outs.length === 0) return;
-    const writes = outs.map((p) =>
-      `__dbg.write(${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}, ${ctx.output(p.id)});`);
-    emitBody(`  if (__dbg !== null) { ${writes.join(" ")} }`);
+    const writes = (target: string) => outs.map((p) =>
+      `${target}.write(${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}, ${ctx.output(p.id)});`).join(" ");
+    if (traceExecution) emitBody(`  if (__dbg !== null) { ${writes("__dbg")} }`);
+    if (checkBreakpoints) emitBody(`  if (__bp !== null && __bp.has(${JSON.stringify(node.id)})) { ${writes("__bp")} }`);
   }
 
   function declareDataOuts(node: GraphNode, ctx: CodegenContext) {
@@ -1429,7 +1440,7 @@ export function compileGraph(
             anchor,
           );
           emitExecProbes(node.id);
-          if (traceExecution) emitOutputProbe(node, ctx);
+          emitOutputProbe(node, ctx);
           emitAlong(execSuccessorEdges(index, node.id, phase), new Map(visited));
           emitBody("    }", anchor);
         }
@@ -1454,7 +1465,7 @@ export function compileGraph(
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
         emitExecProbes(node.id);
-        if (traceExecution) emitOutputProbe(node, ctx);
+        emitOutputProbe(node, ctx);
         emitAlong(execSuccessorEdges(index, node.id, "Then"), visited);
         emitBody("  }", anchor);
         break;
@@ -1490,7 +1501,7 @@ export function compileGraph(
           if (value) emitBody(`    ${ctx.output(pin.id)} = ${value};`, anchor);
         }
         emitExecProbes(node.id);
-        if (traceExecution) emitOutputProbe(node, ctx);
+        emitOutputProbe(node, ctx);
         emitAlong(execSuccessorEdges(index, node.id, "execOut"), visited);
         emitBody("  }", anchor);
         break;
@@ -1518,7 +1529,7 @@ export function compileGraph(
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${padIndexSlot} = __pad.gamepadIndex;`, anchor);
         emitExecProbes(node.id);
-        if (traceExecution) emitOutputProbe(node, ctx);
+        emitOutputProbe(node, ctx);
         emitAlong(execSuccessorEdges(index, node.id, "then"), visited);
         emitBody(`  }`, anchor);
         break;
