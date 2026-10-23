@@ -1,11 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  PERFORMANCE_TICK_COLUMNS,
+  PERFORMANCE_TICK_COLUMNS_V1,
   PerformanceRecorder,
   parsePerformanceProfile,
   serializePerformanceProfile,
   summarizePerformanceColumn,
   summarizePerformanceColumns,
   type PerformanceIdentity,
+  type PerformanceTickSample,
 } from "./performance-recorder";
 
 const identity: PerformanceIdentity = {
@@ -14,6 +18,12 @@ const identity: PerformanceIdentity = {
   runtimeHost: "worker", quality: "Low", frameCap: 60, dynamicResolution: false,
   enabledDiagnostics: ["performance"], gpuTiming: "unavailable",
 };
+/** A tick whose unnamed timings are 0. */
+const tick = (sample: Partial<PerformanceTickSample> & Pick<PerformanceTickSample, "tickId" | "elapsedMs">): PerformanceTickSample => ({
+  scriptMs: 0, physicsMs: 0, publishMs: 0, otherMs: 0,
+  gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 0, componentsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0,
+  ...sample,
+});
 const frame = (frameId: number, completedAtMs: number) => ({
   frameId, tickId: frameId, sceneGeneration: 1, completedAtMs,
   preparationMs: 1, submissionMs: 2, copyMs: 0.5, drawCalls: 5,
@@ -28,7 +38,7 @@ describe("PerformanceRecorder", () => {
     recorder.recordFrame(frame(1, 1005));
     recorder.recordFrame(frame(2, 1025));
     recorder.recordFrame(frame(4, 1065));
-    recorder.recordTick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, publishMs: 1, otherMs: 0 });
+    recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, publishMs: 1 }));
     now = 1100;
     const result = recorder.stop()!;
     expect(summarizePerformanceColumn(result.frames, "intervalMs", 16.67)).toEqual({
@@ -56,8 +66,8 @@ describe("PerformanceRecorder", () => {
   it("reports the combined script and physics budget per runtime tick", () => {
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start(identity);
-    recorder.recordTick({ tickId: 1, elapsedMs: 0, scriptMs: 6, physicsMs: 4, publishMs: 100, otherMs: 0 });
-    recorder.recordTick({ tickId: 2, elapsedMs: 16, scriptMs: 2, physicsMs: 4, publishMs: 200, otherMs: 0 });
+    recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 6, physicsMs: 4, publishMs: 100 }));
+    recorder.recordTick(tick({ tickId: 2, elapsedMs: 16, scriptMs: 2, physicsMs: 4, publishMs: 200 }));
     const result = recorder.stop()!;
     expect(summarizePerformanceColumns(result.ticks, ["scriptMs", "physicsMs"], 8)).toEqual({
       count: 2, median: 8, p95: 10, p99: 10, maximum: 10, overBudgetCount: 1,
@@ -83,9 +93,9 @@ describe("PerformanceRecorder", () => {
   it("counts a drained tick stamped past the recording window as dropped", () => {
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start(identity, { durationMs: 1000 });
-    const tick = { tickId: 1, elapsedMs: 999, scriptMs: 1, physicsMs: 1, publishMs: 0, otherMs: 0 };
-    expect(recorder.recordTick(tick, { drain: true })).toBe(true);
-    expect(recorder.recordTick({ ...tick, tickId: 2, elapsedMs: 1001 }, { drain: true })).toBe(false);
+    const late = tick({ tickId: 1, elapsedMs: 999, scriptMs: 1, physicsMs: 1 });
+    expect(recorder.recordTick(late, { drain: true })).toBe(true);
+    expect(recorder.recordTick({ ...late, tickId: 2, elapsedMs: 1001 }, { drain: true })).toBe(false);
     const result = recorder.stop()!;
     expect(result.ticks.count).toBe(1);
     expect(result.droppedRecords).toBe(1);
@@ -96,7 +106,8 @@ describe("PerformanceRecorder", () => {
     expect(() => recorder.start({ ...identity, mode: "simulate" })).toThrow("Use Play or Preview Build");
     recorder.start(identity);
     expect(() => recorder.start(identity)).toThrow("already active");
-    expect(() => recorder.recordTick({ tickId: 1, elapsedMs: 0, scriptMs: NaN, physicsMs: 0, publishMs: 0, otherMs: 0 })).toThrow("finite");
+    expect(() => recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: NaN }))).toThrow("finite");
+    expect(() => recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, actorsMs: Infinity }))).toThrow("finite");
     expect(recorder.stop()?.ticks.count).toBe(0);
   });
 
@@ -112,6 +123,32 @@ describe("PerformanceRecorder", () => {
     expect(summarizePerformanceColumn(reopened!.frames, "intervalMs", 16.67).count).toBe(0);
     expect(parsePerformanceProfile({ ...JSON.parse(json), version: 99 })).toBeNull();
     expect(parsePerformanceProfile({ ...JSON.parse(json), frames: { ...JSON.parse(json).frames, count: 100 } })).toBeNull();
+  });
+
+  it("records every tick phase as version 2, and opens it again", () => {
+    const recorder = new PerformanceRecorder({ now: () => 0 });
+    recorder.start(identity);
+    recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, actorsMs: 1.25, sceneSystemsMs: 0.75 }));
+    const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)));
+    expect(reopened?.version).toBe(2);
+    expect(reopened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
+    expect(summarizePerformanceColumn(reopened!.ticks, "actorsMs").median).toBe(1.25);
+    expect(summarizePerformanceColumn(reopened!.ticks, "sceneSystemsMs").median).toBe(0.75);
+    // Version 2 tick rows are the full width; version 1 rows under a version 2 label are not.
+    const json = JSON.parse(serializePerformanceProfile(reopened!));
+    expect(parsePerformanceProfile({ ...json, ticks: { ...json.ticks, columns: [...PERFORMANCE_TICK_COLUMNS_V1] } })).toBeNull();
+  });
+
+  it("opens a version 1 profile with its script and physics split, and exports it as it was", () => {
+    const golden = JSON.parse(readFileSync(new URL("./__fixtures__/profile-v1.golden.json", import.meta.url), "utf8"));
+    const opened = parsePerformanceProfile(golden);
+    expect(opened?.version).toBe(1);
+    expect(opened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS_V1);
+    expect(summarizePerformanceColumn(opened!.ticks, "scriptMs").median).toBe(4);
+    // No phase is invented for a version 1 tick.
+    expect(summarizePerformanceColumn(opened!.ticks, "actorsMs").count).toBe(0);
+    const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(opened!)));
+    expect(reopened).toEqual(opened);
   });
 
   it("retains a separate bounded valid-query population without repeating stale GPU results", () => {

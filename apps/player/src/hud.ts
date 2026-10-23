@@ -26,6 +26,8 @@ export type PlayerHudStats = {
   physicsMs: number;
   /** Snapshot publish ms from the worker, apart from the script/physics tick. */
   publishMs?: number;
+  /** The last tick's ms per timed phase, for `stat unit`. */
+  phaseMs?: readonly number[];
   draws: number;
   geometryBytes?: number;
   /** Accounted texture bytes; sampled only while Stats shows. */
@@ -56,6 +58,7 @@ export function applyWorkerPlayerStats(
     scriptMs: number;
     physicsMs: number;
     publishMs?: number;
+    phaseMs?: readonly number[];
     liveActors?: number;
     snapshotCapacity?: number;
   },
@@ -66,6 +69,7 @@ export function applyWorkerPlayerStats(
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
     publishMs: command.publishMs ?? 0,
+    ...(command.phaseMs ? { phaseMs: command.phaseMs } : {}),
     draws: previous?.draws ?? 0,
     geometryBytes: previous?.geometryBytes,
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
@@ -89,6 +93,7 @@ export function applyPlayerFpsSample(
     scriptMs: previous?.scriptMs ?? 0,
     physicsMs: previous?.physicsMs ?? 0,
     publishMs: previous?.publishMs ?? 0,
+    ...(previous?.phaseMs ? { phaseMs: previous.phaseMs } : {}),
     draws: previous?.draws ?? 0,
     geometryBytes: previous?.geometryBytes,
     liveActors: previous?.liveActors ?? 0,

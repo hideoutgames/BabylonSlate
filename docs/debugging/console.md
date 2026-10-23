@@ -49,7 +49,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `freecam` | `on`/`off` | Flies a separate camera while the game keeps running. Pointer, touch and WASD move the camera, and an on-screen fly stick appears; a gamepad still controls the game. `off`, `possess` or `changescene` return to the game camera. | Yes |
 | `possess` | actor name or GUID | Views the game through that actor's camera. | Yes |
 | `showfps` | `on`/`off` | Shows or hides Stats. | Yes |
-| `stat unit` | `on`/`off` | Adds the tick breakdown and a history graph to Stats. | Yes |
+| `stat unit` | `on`/`off` | Adds the tick total, the time of each tick phase, the publish time and a history graph to Stats. | Yes |
 | `stat memory` | `on`/`off` | Adds memory use to Stats. | Yes |
 | `stat draws` | `on`/`off` | Adds draw calls, meshes, textures and render timings to Stats. | Yes |
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |

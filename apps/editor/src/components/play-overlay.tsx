@@ -353,7 +353,7 @@ function PlayOverlayView({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
-  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity">>({});
+  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity" | "phaseMs">>({});
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -892,7 +892,7 @@ function PlayOverlayView({
               setScriptMs(stats.scriptMs);
               setPhysicsMs(stats.physicsMs);
               setPublishMs(stats.publishMs);
-              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity });
+              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity, phaseMs: stats.phaseMs });
             }
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },

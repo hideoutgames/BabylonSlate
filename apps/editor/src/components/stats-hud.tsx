@@ -11,6 +11,8 @@ export type StatsHudProps = {
   physicsMs: number;
   /** Snapshot publish ms; shown apart from the script/physics tick budget. */
   publishMs?: number;
+  /** The last tick's ms per timed phase, for `stat unit`. */
+  phaseMs?: readonly number[];
   memoryBytes?: number;
   hostMemory?: HostMemoryStats | null;
   geometryBytes?: number;
@@ -84,6 +86,7 @@ export function StatsHud({
   scriptMs,
   physicsMs,
   publishMs,
+  phaseMs,
   memoryBytes,
   hostMemory,
   geometryBytes,
@@ -119,6 +122,7 @@ export function StatsHud({
     scriptMs,
     physicsMs,
     publishMs,
+    phaseMs,
     memoryBytes,
     jsHeapBytes: hostMemory?.jsHeapBytes,
     appFootprintBytes: hostMemory?.appFootprintBytes,

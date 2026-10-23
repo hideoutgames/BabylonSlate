@@ -1,20 +1,23 @@
 import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@haptic/bridge";
 import {
+  TICK_TIMING_PHASES,
   TraceRecorder,
   isInfiniteLoopError,
   shouldEmitStatsCommand,
   type CommandResult,
   type TraceFrame,
+  type TickTimingPhase,
   type TracePayload,
 } from "@haptic/debugger";
 import type { RawInputEvent } from "@haptic/input";
-import { createWorldSnapshot, stringifyWorldSnapshot, type TickPhase, type World } from "@haptic/object-model";
+import { createWorldSnapshot, stringifyWorldSnapshot, type World } from "@haptic/object-model";
 import type { LogRingBuffer, LogSeverity } from "./log-ring";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import type { SnapshotPublisher } from "./snapshot-publisher";
 
 /** Catch-up cap for one `advance()`: more ticks than this drop the rest of the elapsed time. */
 const MAX_CATCH_UP_TICKS = 4;
+const PHYSICS_PHASE = TICK_TIMING_PHASES.indexOf("physics");
 
 interface TickPipelineHost {
   /** Running, not paused, outside a Save Game boundary and no blocking stream load. */
@@ -57,9 +60,10 @@ export class TickPipeline {
   private elapsedReset = false;
   private _processing = false;
   private phaseMark = 0;
-  private currentTimingPhase: TickPhase | null = null;
-  private phaseScriptMs = 0;
-  private phasePhysicsMs = 0;
+  private currentTimingPhase: number = -1;
+  /** This tick's milliseconds per `TICK_TIMING_PHASES` entry. */
+  private readonly phaseMs = new Float64Array(TICK_TIMING_PHASES.length);
+  private readonly _lastPhaseMs = new Float64Array(TICK_TIMING_PHASES.length);
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
   /** Publish time spent in the current tick while a profile records. */
@@ -95,8 +99,11 @@ export class TickPipeline {
 
   /** A tick is running; pause changes and some component writes wait for its end. */
   get processing(): boolean { return this._processing; }
+  /** Every timed phase but physics. */
   get lastScriptMs(): number { return this._lastScriptMs; }
   get lastPhysicsMs(): number { return this._lastPhysicsMs; }
+  /** The last tick's milliseconds per `TICK_TIMING_PHASES` entry; read it, never keep it. */
+  get lastPhaseMs(): Readonly<Float64Array> { return this._lastPhaseMs; }
   get recorder(): RuntimeDiagnosticRecorder | null { return this.diagnosticRecorder; }
   get lastTrace(): TracePayload | null { return this._lastTrace; }
 
@@ -116,7 +123,7 @@ export class TickPipeline {
     } finally {
       this._processing = false;
       if (profiling && this.world.clock.tickIndex > previousTick) this.diagnosticRecorder?.record(this.world.clock.tickIndex,
-        this.now() - profileStarted, this._lastScriptMs, this._lastPhysicsMs, this.profilePublishMs);
+        this.now() - profileStarted, this._lastPhaseMs, this.profilePublishMs);
       this.host.settlePauseChanges();
     }
   }
@@ -149,26 +156,28 @@ export class TickPipeline {
 
   /** Start of the tick's timed phases. */
   beginPhaseTiming(): void {
-    this.phaseScriptMs = 0;
-    this.phasePhysicsMs = 0;
-    this.currentTimingPhase = null;
+    this.phaseMs.fill(0);
+    this.currentTimingPhase = -1;
     this.phaseMark = this.now();
   }
 
-  /** World phase boundary: time since the last mark counts toward the phase it closes. */
-  markPhase(phase: TickPhase): void {
+  /** Phase boundary (the World's phases, then the scene systems): time since the last mark counts toward the phase it closes. */
+  markPhase(phase: TickTimingPhase): void {
     const now = this.now();
     this.closeTimingPhase(now);
-    this.currentTimingPhase = phase;
+    this.currentTimingPhase = TICK_TIMING_PHASES.indexOf(phase);
     this.phaseMark = now;
   }
 
-  /** End of the timed phases: the tick's script and physics milliseconds become the latest. */
+  /** End of the timed phases: the tick's phase, script and physics milliseconds become the latest. */
   closePhaseTiming(): void {
     this.closeTimingPhase(this.now());
-    this.currentTimingPhase = null;
-    this._lastScriptMs = this.phaseScriptMs;
-    this._lastPhysicsMs = this.phasePhysicsMs;
+    this.currentTimingPhase = -1;
+    this._lastPhaseMs.set(this.phaseMs);
+    let scriptMs = 0;
+    for (let index = 0; index < this.phaseMs.length; index++) if (index !== PHYSICS_PHASE) scriptMs += this.phaseMs[index]!;
+    this._lastScriptMs = scriptMs;
+    this._lastPhysicsMs = this.phaseMs[PHYSICS_PHASE]!;
   }
 
   /** Snapshot publish time counted toward the tick's profile sample. */
@@ -192,6 +201,7 @@ export class TickPipeline {
         tickIndex: this.world.clock.tickIndex,
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
+        phaseMs: Array.from(this._lastPhaseMs),
         publishMs: this.snapshots.lastPublishMs,
         liveActors: this.host.liveActors(),
         snapshotCapacity: this.snapshots.capacity,
@@ -204,6 +214,7 @@ export class TickPipeline {
         timeDilation,
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
+        publishMs: this.snapshots.lastPublishMs,
         logs: this.logs
           .entries()
           .filter((entry) => entry.frameId === completedFrameId)
@@ -274,12 +285,7 @@ export class TickPipeline {
   stopDiagnostics(): void { this.diagnosticRecorder?.stop(); }
 
   private closeTimingPhase(now: number): void {
-    if (this.currentTimingPhase === null) return;
-    const elapsed = now - this.phaseMark;
-    if (this.currentTimingPhase === "physics") {
-      this.phasePhysicsMs += elapsed;
-    } else {
-      this.phaseScriptMs += elapsed;
-    }
+    if (this.currentTimingPhase < 0) return;
+    this.phaseMs[this.currentTimingPhase]! += now - this.phaseMark;
   }
 }

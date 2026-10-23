@@ -20,11 +20,11 @@ Choose a view:
 
 | View | Shows |
 | --- | --- |
-| Summary | **Frame Pacing**: median frame time, FPS and how many frames were slow. **Worker Tick**: median script and physics time, and how many ticks went over 8 ms. |
-| Timeline | Every sample as a table. Switch between **Completed Frames**, **Runtime Ticks** and, when available, **GPU Queries**. **Previous Over Budget** and **Next Over Budget** jump between slow samples. |
+| Summary | **Frame Pacing**: median frame time, FPS and how many frames were slow. **Worker Tick**: median script and physics time, and how many ticks went over 8 ms. The table also lists each phase of the tick: **Game Instance**, **Scene Subsystems**, **Actors**, **Components**, **Physics**, **Post-Physics** and **Scene Systems** (Delays, Behaviour Trees, Animation Graphs and crowds). |
+| Timeline | Every sample as a table. Switch between **Completed Frames**, **Runtime Ticks** and, when available, **GPU Queries**. **Runtime Ticks** stacks each tick's phases in the chart. **Previous Over Budget** and **Next Over Budget** jump between slow samples. |
 | Frame Report | The result of **Capture Frame**. |
 
-Only one recording or frame capture runs at a time. The window keeps the latest recording and the latest frame capture, so capturing a frame does not replace a recording. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report.
+Only one recording or frame capture runs at a time. The window keeps the latest recording and the latest frame capture, so capturing a frame does not replace a recording. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report. A recording saved before tick phases were recorded opens with script and physics only.
 
 In **Timeline**, select any sample in the chart, the table or the **Sample** field; the table scrolls to it. On a narrow screen the sample's details sit under the table.
 
@@ -56,7 +56,7 @@ A trace records the whole game state on every tick, with its logs, prints and in
 
 When Play ends, the trace opens as a read-only document with three windows:
 
-- **Timeline** graphs script and physics time per tick. Scrub or step to any frame, or jump between frames that went over budget.
+- **Timeline** graphs script and physics time per tick and shows the selected frame's publish time. Scrub or step to any frame, or jump between frames that went over budget.
 - **Snapshot** shows the game instance, subsystems, actors, components and their variables at the selected frame. **Changes** lists what was added, removed or changed since the previous frame.
 - **Log** shows the logs and prints of the selected frame and up to 29 frames before it.
 
