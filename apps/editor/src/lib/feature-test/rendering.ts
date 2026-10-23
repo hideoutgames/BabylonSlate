@@ -605,6 +605,8 @@ function placeGlobals(ctx: FeatureTestContext, refs: RenderingRefs): void {
     }
     for (const extra of skies.slice(1)) scene.actors.splice(scene.actors.indexOf(extra), 1);
   }
+  // Image-based lighting from that sky.
+  scene.settings.environmentSource = "skybox";
 
   // Directional sun: shadowed, admitted before every local shadow caster.
   let sun = scene.actors.find((entry) => entry.id === DEFAULT_SCENE_SUN_ACTOR_ID);

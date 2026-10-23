@@ -1,10 +1,11 @@
-import { CubeTexture, Material, type Scene } from "@babylonjs/core";
+import { CubeTexture, Material, Matrix, PBRMaterial, Quaternion, Texture, type AbstractMesh, type Scene } from "@babylonjs/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
-import type { TextureResources, ResourceLease } from "./resource-cache";
+import { resourceCacheForEngine, type TextureResources, type ResourceLease } from "./resource-cache";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
+import { isSkyboxMesh } from "./skybox";
 
 const controllers = new WeakMap<Scene, EnvironmentLighting>();
 
@@ -17,17 +18,40 @@ function controller(scene: Scene): EnvironmentLighting {
   return owned;
 }
 
-/** The source lease and texture view belong to this Scene, not its materials. */
+/**
+ * The source lease and texture view belong to this Scene, not its materials.
+ * `skybox` lights the scene from its visible Skybox's cube instead of `guid`.
+ */
 export function applyEnvironmentLighting(
   scene: Scene,
   guid: string | null,
   assets?: MeshAssetContext,
+  options: { skybox?: boolean } = {},
 ): void {
+  const skybox = options.skybox === true;
   controller(scene).configure(
-    guid,
-    guid ? assets?.textureBytes?.get(guid) : undefined,
+    skybox ? null : guid,
+    !skybox && guid ? assets?.textureBytes?.get(guid) : undefined,
     assets?.resourceCache,
+    skybox,
   );
+}
+
+/**
+ * Reflection matrix that samples the Skybox cube where the sky shows it: the
+ * sky mesh draws its cube by local direction, so world directions turn by the
+ * inverse of its rotation after the Environment Rotation.
+ */
+export function skyboxEnvironmentMatrix(
+  rotationYDegrees: number,
+  skyRotation: Quaternion | null,
+  result = new Matrix(),
+): Matrix {
+  Matrix.RotationYToRef((rotationYDegrees * Math.PI) / 180, result);
+  if (!skyRotation) return result;
+  const inverse = Matrix.Identity();
+  Quaternion.Inverse(skyRotation).toRotationMatrix(inverse);
+  return result.multiplyToRef(inverse, result);
 }
 
 export function syncEnvironmentLighting(scene: Scene): void {
@@ -66,12 +90,24 @@ class EnvironmentLighting {
   private preparationError: Error | null = null;
   private settingsKey = "";
   private disposed = false;
+  private skybox = false;
+  /** A visible Skybox whose cube is still uploading holds readiness. */
+  private skyPending = false;
+  private skyboxes: AbstractMesh[] = [];
+  private skyboxesStale = true;
+  private scannedMeshes = 0;
+  private skyMatrixKey = "";
+  private readonly skyMatrix = new Matrix();
   private readonly scene: Scene;
 
   constructor(scene: Scene) {
     this.scene = scene;
+    // Removal notifies synchronously; Babylon defers the add notification, so
+    // adds are caught by the mesh count instead.
+    scene.onMeshRemovedObservable.add(() => { this.skyboxesStale = true; });
     // Rendering only applies pending changes; readiness consumers report a failure.
     scene.onBeforeRenderObservable.add(() => {
+      if (this.skybox) this.followSky();
       if (this.view) this.refresh();
     });
     scene.onDisposeObservable.addOnce(() => {
@@ -86,13 +122,15 @@ class EnvironmentLighting {
     guid: string | null,
     bytes: Uint8Array | Blob | undefined,
     cache: TextureResources | undefined,
+    skybox = false,
   ): void {
-    const changed = this.guid !== guid || this.bytes !== bytes || this.cache !== cache;
+    const changed = this.guid !== guid || this.bytes !== bytes || this.cache !== cache || this.skybox !== skybox;
     this.requestChanged ||= changed;
     if (changed) this.preparationError = null;
     this.guid = guid;
     this.bytes = bytes;
     this.cache = cache;
+    this.skybox = skybox;
     this.sync();
   }
 
@@ -105,16 +143,39 @@ class EnvironmentLighting {
     // Native PBR and graph ReflectionBlock apply this multiplier once. Keep
     // scene.environmentIntensity independent for future baked/probe lighting.
     this.scene.iblIntensity = settings.enabled ? settings.intensity : 0;
-    if (
-      (!settings.enabled && !this.samples.size) ||
-      !this.guid ||
-      !this.bytes ||
-      !this.cache
+    const wanted = settings.enabled || this.samples.size > 0;
+    const sky = this.skybox && wanted ? this.skyCube() : null;
+    if (!this.skybox || !wanted) this.skyPending = false;
+    if (this.skybox && !sky && this.skyPending && this.view) {
+      // A replaced Skybox keeps lighting with the previous cube until its own uploads.
+    } else if (
+      !wanted ||
+      (this.skybox
+        ? !sky
+        : !this.guid || !this.bytes || !this.cache)
     ) {
       changed = !!this.view || changed;
       this.clear();
       this.preparationError = null;
-    } else if (!this.preparationError && (
+    } else if (sky) {
+      if (
+        this.requestChanged ||
+        sky !== this.source ||
+        !this.view ||
+        isDisposedGpuTexture(this.view)
+      ) {
+        // The Skybox's own lease keeps its cube; this one keeps it through the view.
+        const cache = this.cache ?? resourceCacheForEngine(this.scene.getEngine());
+        try {
+          this.publish(cache.acquireExisting(sky), cache);
+          changed = true;
+        } catch (error) {
+          changed = !!this.view || changed;
+          this.clear();
+          console.error("Skybox environment lighting failed", error);
+        }
+      }
+    } else if (!this.skybox && this.guid && this.bytes && this.cache && !this.preparationError && (
       this.requestChanged ||
       !this.source ||
       !this.view ||
@@ -156,7 +217,9 @@ class EnvironmentLighting {
       }
     }
     this.requestChanged = false;
-    if (
+    if (this.view && this.skybox) {
+      changed = this.applySkyRotation(settings.rotationYDegrees) || changed;
+    } else if (
       this.view &&
       this.view.rotationY !== (settings.rotationYDegrees * Math.PI) / 180
     ) {
@@ -167,9 +230,10 @@ class EnvironmentLighting {
   }
 
   isReady(): boolean {
+    if (this.skybox) this.followSky();
     this.refresh();
     if (this.preparationError) throw this.preparationError;
-    if (this.pendingLease) return false;
+    if (this.pendingLease || this.skyPending) return false;
     return (
       !this.view ||
       (this.view.isReady() &&
@@ -193,7 +257,48 @@ class EnvironmentLighting {
     }
   }
 
-  private publish(lease: ResourceLease<CubeTexture>): void {
+  /** Republish when the visible Skybox, its cube or its rotation changed. */
+  private followSky(): void {
+    if (this.disposed || this.scene.isDisposed) return;
+    const settings = sceneRenderingSettings(this.scene).environmentLighting;
+    if (!settings.enabled && !this.samples.size) return;
+    const sky = this.skyCube();
+    if (sky !== this.source) this.sync();
+    else if (this.view && this.applySkyRotation(settings.rotationYDegrees)) this.invalidateMaterials();
+  }
+
+  /** The ready cube of the first enabled, visible Skybox, or null. */
+  private skyCube(): CubeTexture | null {
+    const mesh = this.visibleSky();
+    const texture = mesh?.material instanceof PBRMaterial ? mesh.material.reflectionTexture : null;
+    const cube = texture instanceof CubeTexture && !texture.loadingError ? texture : null;
+    this.skyPending = !!cube && !cube.isReady();
+    return cube && !this.skyPending ? cube : null;
+  }
+
+  /** Scanned only after the mesh list changed: this runs every frame. */
+  private visibleSky(): AbstractMesh | undefined {
+    const meshes = this.scene.meshes;
+    if (this.skyboxesStale || meshes.length !== this.scannedMeshes) {
+      this.skyboxes = meshes.filter(isSkyboxMesh);
+      this.skyboxesStale = false;
+      this.scannedMeshes = meshes.length;
+    }
+    return this.skyboxes.find((mesh) => !mesh.isDisposed() && mesh.isEnabled() && mesh.isVisible);
+  }
+
+  /** True when the view's matrix changed. */
+  private applySkyRotation(rotationYDegrees: number): boolean {
+    const rotation = this.visibleSky()?.absoluteRotationQuaternion ?? null;
+    const key = `${rotationYDegrees}:${rotation ? `${rotation.x},${rotation.y},${rotation.z},${rotation.w}` : ""}`;
+    if (key === this.skyMatrixKey && this.view?.getReflectionTextureMatrix() === this.skyMatrix) return false;
+    this.skyMatrixKey = key;
+    skyboxEnvironmentMatrix(rotationYDegrees, rotation, this.skyMatrix);
+    this.view!.setReflectionTextureMatrix(this.skyMatrix);
+    return true;
+  }
+
+  private publish(lease: ResourceLease<CubeTexture>, cache: TextureResources = this.cache!): void {
     const source = lease.resource;
     let view: CubeTexture;
     try {
@@ -205,7 +310,7 @@ class EnvironmentLighting {
     } catch (error) { lease.release(); throw error; }
     let irradiance: ReturnType<typeof ownEnvironmentIrradiance>;
     try {
-      irradiance = ownEnvironmentIrradiance(view, source, this.cache!, () => {
+      irradiance = ownEnvironmentIrradiance(view, source, cache, () => {
         if (!this.disposed && this.view === view) this.irradianceChanged = true;
       });
     } catch (error) { view.dispose(); lease.release(); throw error; }
@@ -214,6 +319,8 @@ class EnvironmentLighting {
     this.sourceLease = lease;
     this.view = view;
     this.irradiance = irradiance;
+    // A Skybox draws its cube in skybox mode; its lighting view samples by direction.
+    view.coordinatesMode = Texture.CUBIC_MODE;
     this.scene.environmentTexture = view;
     void lease.ready?.catch((error) => this.failInitialPreparation(lease, error));
   }
@@ -235,6 +342,7 @@ class EnvironmentLighting {
       this.scene.environmentTexture = null;
     this.view?.dispose();
     this.view = null;
+    this.skyMatrixKey = "";
     this.sourceLease?.release();
     this.source = null;
     this.sourceLease = undefined;

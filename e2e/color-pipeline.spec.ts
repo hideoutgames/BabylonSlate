@@ -74,7 +74,7 @@ function colorPipelineScene(): SerializedScene {
   const scene = createDefaultScene();
   scene.name = "Color Pipeline";
   scene.settings.environmentColor = [0, 0, 0];
-  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentSource = "none";
   scene.settings.grid.showGrid = false;
   scene.actors = scene.actors.filter(
     (actor) =>

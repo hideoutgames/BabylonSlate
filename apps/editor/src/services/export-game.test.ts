@@ -340,6 +340,7 @@ describe("collectAndExportGame", () => {
       ...createDefaultScene(),
       settings: {
         ...createDefaultScene().settings,
+        environmentSource: "texture" as const,
         environmentTextureGuid: "boot-only",
         sceneLayers: [
           { assetGuid: "scene-z", zOrder: 0, enabled: true },

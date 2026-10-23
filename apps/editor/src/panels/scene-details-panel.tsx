@@ -66,6 +66,8 @@ import {
   newGuid,
   waterKindForClass,
   DEFORMER_COMPONENT_CLASS_ID,
+  ENVIRONMENT_SOURCES,
+  type EnvironmentSource,
 } from "@haptic/core";
 import {
   ChevronDownIcon,
@@ -155,6 +157,9 @@ import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
+
+/** Scene rows shown inside the Environment Lighting section. */
+const ENVIRONMENT_ROW_IDS = new Set(["scene-environment-source", "scene-environment-texture"]);
 
 const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
 const CLASS_KINDS = ["graph"] as const;
@@ -704,23 +709,49 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           ]
         : []),
       {
-        kind: "asset",
-        id: "scene-environment-texture",
-        label: "Environment Texture",
-        value: scene.settings.environmentTextureGuid,
-        placeholder: "None",
-        onPick: () => setEnvTexturePickOpen(true),
-        onChange: (environmentTextureGuid) =>
+        kind: "enum",
+        id: "scene-environment-source",
+        label: "Environment Source",
+        description: "What lights surfaces with image-based lighting. Skybox uses the scene's visible Skybox; Texture uses an imported environment cube.",
+        value: scene.settings.environmentSource,
+        options: [
+          { value: "none", label: "None" },
+          { value: "skybox", label: "Skybox" },
+          { value: "texture", label: "Texture" },
+        ],
+        onChange: (source) =>
           mutate({
             ...scene,
-            settings: { ...scene.settings, environmentTextureGuid },
+            settings: {
+              ...scene.settings,
+              environmentSource: ENVIRONMENT_SOURCES.includes(source as EnvironmentSource)
+                ? (source as EnvironmentSource)
+                : "none",
+            },
           }),
-        ...assetRowIdentity(
-          pickerAssets.find(
-            (asset) => asset.guid === scene.settings.environmentTextureGuid,
-          ),
-        ),
       },
+      ...(scene.settings.environmentSource === "texture"
+        ? [
+            {
+              kind: "asset" as const,
+              id: "scene-environment-texture",
+              label: "Environment Texture",
+              value: scene.settings.environmentTextureGuid,
+              placeholder: "None",
+              onPick: () => setEnvTexturePickOpen(true),
+              onChange: (environmentTextureGuid: string | null) =>
+                mutate({
+                  ...scene,
+                  settings: { ...scene.settings, environmentTextureGuid },
+                }),
+              ...assetRowIdentity(
+                pickerAssets.find(
+                  (asset) => asset.guid === scene.settings.environmentTextureGuid,
+                ),
+              ),
+            },
+          ]
+        : []),
       {
         kind: "asset",
         id: "scene-default-camera",
@@ -889,7 +920,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       });
 
     const visibleSettingsRows = filterRows(
-      overlay ? overlaySettingsRows : settingsRows.filter((row) => row.id !== "scene-environment-texture"),
+      overlay ? overlaySettingsRows : settingsRows.filter((row) => !ENVIRONMENT_ROW_IDS.has(row.id)),
       "Scene Settings",
     );
     const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
@@ -974,7 +1005,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           <div className="px-2 pb-3">
             <DisclosureSection title="Environment Lighting" open={overrideOpen("environment")} onOpenChange={(open) => setOverrideOpen("environment", open)}>
               <EnvironmentLightingFields hideTitle cel={celEnabled} project={projectDocument?.settings.render.environmentLighting} overrides={scene.settings.environmentLighting ?? {}} onChange={(environmentLighting) => mutate({ ...scene, settings: { ...scene.settings, environmentLighting } })}>
-                <PropertyGrid rows={settingsRows.filter((row) => row.id === "scene-environment-texture")} />
+                <PropertyGrid rows={settingsRows.filter((row) => ENVIRONMENT_ROW_IDS.has(row.id))} />
               </EnvironmentLightingFields>
             </DisclosureSection>
           </div>
