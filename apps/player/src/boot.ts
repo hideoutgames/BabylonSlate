@@ -1242,6 +1242,7 @@ function initializePlayer(
         },
         observeFrames: (listener) => handle.observePerformance(listener),
         observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+        sampleMemory: () => ({ textureBytes: handle.resourceCache.accountedBytes(), geometryBytes: handle.accountedGeometryBytes() }),
         setEditorInputSuppressed,
         captureFrame: async (signal) => {
           const cancel = () => handle.cancelFrameCapture("Preview frame capture was cancelled.");

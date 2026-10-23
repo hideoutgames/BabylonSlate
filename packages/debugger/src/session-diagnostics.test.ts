@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionDiagnostics, type DiagnosticOperationRequest } from "./session-diagnostics";
+import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 import { PERFORMANCE_TICK_COLUMNS, summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample,
   type PerformanceIdentity, type PerformanceTickSample } from "./performance-recorder";
 
@@ -44,6 +45,41 @@ describe("SessionDiagnostics", () => {
     expect(summarizePerformanceColumn(ticks, "sceneSystemsMs").median).toBe(0.5);
     expect(requests.map((request) => request.action)).toEqual(["start", "stop"]);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("samples memory at the stats rate and records long tasks while recording, and names both in the profile", async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    let textureBytes = 1000;
+    let longTasks: ((task: { startedAtMs: number; durationMs: number }) => void) | undefined;
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => now,
+      observeFrames: () => () => {}, captureFrame: async () => "frame", runtimeOperation: async () => ({ success: true }),
+      sampleMemory: () => ({ textureBytes, geometryBytes: 500 }),
+      observeLongTasks: (consume) => { longTasks = consume; return () => { longTasks = undefined; }; },
+    });
+    expect(await session.startProfile()).toEqual({ success: true });
+    now = STATS_COMMAND_INTERVAL_MS;
+    textureBytes = 3000;
+    await vi.advanceTimersByTimeAsync(STATS_COMMAND_INTERVAL_MS);
+    longTasks!({ startedAtMs: 100, durationMs: 90 });
+    const profile = await session.stopProfile();
+    expect(Array.from(profile!.memory.chunks[0]!)).toEqual([0, 1000, 500, STATS_COMMAND_INTERVAL_MS, 3000, 500]);
+    expect(Array.from(profile!.longTasks.chunks[0]!)).toEqual([100, 90]);
+    expect(profile!.identity.enabledDiagnostics).toEqual(["performance", "memory", "long-tasks"]);
+    // Both stop with the recording.
+    expect(longTasks).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("records no long tasks where the browser reports none, and says so", async () => {
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity,
+      observeFrames: () => () => {}, captureFrame: async () => "frame", runtimeOperation: async () => ({ success: true }),
+      observeLongTasks: () => null,
+    });
+    await session.startProfile();
+    const profile = await session.stopProfile();
+    expect(profile!.identity.enabledDiagnostics).toEqual(["performance"]);
+    expect(profile!.longTasks.count).toBe(0);
   });
 
   it("refuses Simulation and simultaneous expensive operations before subscribing", async () => {
