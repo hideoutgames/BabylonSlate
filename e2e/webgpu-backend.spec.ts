@@ -193,6 +193,18 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     staged: { done: true, held: 0, synchronous: 0, asynchronous: true },
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
   });
+  // After a load rehearsal of the lights' changes (each drawn once behind the loading screen), a point switching off
+  // and a spot starting to cast shadows create no pipeline at all.
+  const rehearsed = result.rehearsedChanges!;
+  expect({
+    rehearsed: rehearsed.report.steps > 0 && rehearsed.report.timedOut.length === 0,
+    pointOff: { done: rehearsed.pointOff.done, held: rehearsed.pointOff.held, ...rehearsed.pointOff.pipelines },
+    spotShadows: { done: rehearsed.spotShadows.done, held: rehearsed.spotShadows.held, ...rehearsed.spotShadows.pipelines },
+  }, JSON.stringify(rehearsed)).toEqual({
+    rehearsed: true,
+    pointOff: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
+    spotShadows: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
+  });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);

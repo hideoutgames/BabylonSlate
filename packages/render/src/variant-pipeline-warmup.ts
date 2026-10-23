@@ -12,33 +12,51 @@ import { beginPipelineDeferral, effectDrawn, pipelinesDeferred } from "./webgpu-
 import { variantSwapsTolerated } from "./variant-swaps";
 
 /**
- * Variant swaps where pipelines are created apart from shaders (WebGPU). An Effect is ready there as soon as it
- * exists, and its render pipeline is created on its first draw, so Babylon's hot swap (which keeps a previous Effect
- * only while the new one is not ready) never engages: the first draw of a new variant misses its pipeline and the view
- * holds (`webgpu-pipeline-deferral.ts`).
+ * First draws of new variants in a world view's steady frames, and on WebGPU their render pipelines.
  *
- * Here an Effect first requested by a world view that draws steady frames (inside a tolerant scope: its steady frames
- * and their preparations; or inside any readiness round once it has drawn one, such as Play's strict end-of-frame
- * question, which often asks for a new variant first) is cold: it reports not ready, so a
- * Material keeps drawing its previous Effect and a spawned mesh stays hidden (`reveal-pending.ts`). The probes ask
- * for the meshes that swap or wait to be revealed (`requestPipelineWarm`); after its real draws, the view's main object
- * pass draws each of them again under a second render pass id (`warmPassId`: its own draw wrappers, so the real pass
+ * An Effect first requested by a world view that draws steady frames (inside a tolerant scope: its steady frames and
+ * their preparations; or inside any readiness round once it has drawn one, such as Play's strict end-of-frame
+ * question, which often asks for a new variant first) is cold: it reports not ready in the view's main object pass and
+ * blended depth pre-pass, so a Material keeps drawing its previous Effect and a spawned mesh stays hidden
+ * (`reveal-pending.ts`). A cold Effect turns ready only when it is admitted, and each steady frame admits at most
+ * `FIRST_DRAWS_PER_FRAME` of them (oldest first; one that links inside the frame that requests it is admitted at once
+ * while the frame has room), so a burst of swaps spreads its first draws over frames: a new program's first draw can
+ * hold a thread (about 100 ms on iPad WebKit WebGL2), and a WebGPU pipeline is created there.
+ *
+ * WebGL2: a new Effect is cold, and admissible once linked. WebGPU: an Effect is ready as soon as it exists and its
+ * render pipeline is created on its first draw, so Babylon's hot swap (which keeps a previous Effect only while the new
+ * one is not ready) would never engage, and the first draw would miss its pipeline and hold the view
+ * (`webgpu-pipeline-deferral.ts`). There an Effect no draw has drawn with is cold, and admissible once warm: the probes
+ * ask for the meshes that swap or wait to be revealed (`requestPipelineWarm`); after its real draws, the view's main
+ * object pass draws each again under a second render pass id (`warmPassId`: its own draw wrappers, so the real pass
  * keeps its previous Effect) inside a warm deferral scope, with the real pass's target and the group's render state.
  * Those draws are always skipped; a missing pipeline starts creating asynchronously. An Effect warms once every warm
- * draw that used it in a frame found its pipeline, and the next probe adopts it, so the real draw finds the pipeline
- * too. A mesh's own warm draws all finding theirs (`pipelinesWarm`) is part of its reveal.
+ * draw that used it in a frame found its pipeline. A mesh's own warm draws all finding theirs (`pipelinesWarm`) is part
+ * of its reveal.
  *
  * A cold Effect that no warm draw used for `UNUSED_WARM_MS` (one only the camera's probe pass compiles, a shadow
- * caster's depth variant, a geometry pass's variant, or one whose view stopped warming) turns ready again, and waits
- * as it did before.
+ * caster's depth variant, a geometry pass's variant, or one whose view stopped warming) becomes admissible as it is,
+ * and waits as it did before.
  */
-type ColdEntry = { usedAt: number; base: () => boolean };
+type ColdEntry = { usedAt: number; base: () => boolean; warmed: boolean };
 
-/** A cold Effect no warm draw used for this long turns ready (a view that warms one draws it every frame). */
+/** A cold Effect no warm draw used for this long becomes admissible as it is (a view that warms one draws it every frame). */
 export const UNUSED_WARM_MS = 500;
 
+/**
+ * New variants a world view's steady frame admits at most, so their first draws (a program's first use, a WebGPU
+ * pipeline) spread over frames.
+ */
+export const FIRST_DRAWS_PER_FRAME = 2;
+
 type WarmupState = {
+  /** Cold Effects, oldest first. */
   cold: Map<Effect, ColdEntry>;
+  /** WebGL2: every Effect the Engine held at installation or returned since (a new one is cold). */
+  known: WeakSet<Effect>;
+  /** Admissions left in the Engine frame `budgetFrame` (`engine.frameId`), shared by its rounds and views. */
+  budget: number;
+  budgetFrame: number;
   /** Effects that were cold and are not any more (warmed, or turned ready unused): never cold again. */
   settled: WeakSet<Effect>;
   /** Open readiness rounds of a view that has drawn steady frames: new Effects are cold there too. */
@@ -85,18 +103,28 @@ function install(engine: AbstractEngine): WarmupState {
   const target = engine as unknown as EffectEngine;
   const create = target.createEffect;
   if (typeof create !== "function") throw new Error("Unsupported Babylon engine layout: createEffect is missing.");
+  const compiled = (engine as unknown as { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
   const state: WarmupState = {
-    cold: new Map(), settled: new WeakSet(), marking: 0, warming: false,
+    cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false,
     requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(),
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
   if (!warmedPasses.has(engine)) warmedPasses.set(engine, new Map());
   target.createEffect = function (this: EffectEngine, ...args: unknown[]) {
     const effect = create.apply(this, args);
-    // A variant no draw has drawn with has no pipeline yet: a new one, or one only a probe pass compiled.
-    if ((state.marking > 0 || variantSwapsTolerated()) && !state.cold.has(effect) && !state.settled.has(effect) &&
-      !effectDrawn(engine, effect))
-      makeCold(state, effect);
+    const known = state.known.has(effect);
+    state.known.add(effect);
+    if ((state.marking === 0 && !variantSwapsTolerated()) || state.cold.has(effect) || state.settled.has(effect)) return effect;
+    // WebGPU: a variant no draw has drawn with has no pipeline yet (a new one, or one only a probe pass compiled).
+    // WebGL2: a new variant has not been drawn either.
+    if (pipelinesDeferred(engine) ? effectDrawn(engine, effect) : known) return effect;
+    // A variant linked as soon as it is requested (a synchronous driver) draws in this frame while it has room.
+    if (!pipelinesDeferred(engine) && variantSwapsTolerated() && state.budget > 0 && effect.isReady()) {
+      state.budget -= 1;
+      state.settled.add(effect);
+      return effect;
+    }
+    makeCold(state, effect);
     return effect;
   };
   const released = engine._onReleaseRenderPassObservable?.add((id) => {
@@ -118,7 +146,7 @@ function makeCold(state: WarmupState, effect: Effect): void {
   const base = effect.isReady.bind(effect);
   const engine = effect.getEngine();
   const passes = warmedPasses.get(engine)!;
-  state.cold.set(effect, { usedAt: performance.now(), base });
+  state.cold.set(effect, { usedAt: performance.now(), base, warmed: false });
   effect.isReady = () => base() && (state.warming || !state.cold.has(effect) || !passes.has(engine.currentRenderPassId));
 }
 
@@ -132,20 +160,40 @@ function warmUp(state: WarmupState, effect: Effect): void {
 }
 
 /**
- * Runs a world view's readiness round on an Engine whose pipelines are deferred: the Effects it requests first are
- * cold when the round is tolerant, or when the view has drawn steady frames (`steady`). A tolerant round starts the
- * round's warm requests afresh. Cold Effects no warm draw used for `UNUSED_WARM_MS` turn ready first.
+ * Runs a world view's readiness round: the Effects it requests first are cold when the round is tolerant, or when the
+ * view has drawn steady frames (`steady`). A tolerant round (one per steady frame) first admits up to
+ * `FIRST_DRAWS_PER_FRAME` admissible cold Effects, oldest first, and starts its warm requests afresh.
  */
 export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boolean, run: () => T): T {
   const tolerated = variantSwapsTolerated();
-  if (!(tolerated || steady) || !pipelinesDeferred(engine)) return run();
+  if (!(tolerated || steady)) return run();
   let state = states.get(engine);
   if (!state) states.set(engine, (state = install(engine)));
-  const now = performance.now();
-  for (const [effect, entry] of state.cold) {
-    if (now - entry.usedAt >= UNUSED_WARM_MS) warmUp(state, effect);
+  if (tolerated) {
+    const deferred = pipelinesDeferred(engine);
+    const now = performance.now();
+    // Per Engine frame: a tolerant preparation and a second view's rounds in the same frame share its admissions.
+    if (state.budgetFrame !== engine.frameId) {
+      state.budgetFrame = engine.frameId;
+      state.budget = FIRST_DRAWS_PER_FRAME;
+    }
+    let budget = state.budget;
+    for (const [effect, entry] of state.cold) {
+      // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous Effect
+      // for good): it leaves the queue without a first draw to spread.
+      if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+        warmUp(state, effect);
+        continue;
+      }
+      if (budget === 0) break;
+      const unused = now - entry.usedAt >= UNUSED_WARM_MS;
+      if (!(deferred ? entry.warmed || unused : entry.base())) continue;
+      warmUp(state, effect);
+      budget -= 1;
+    }
+    state.budget = budget;
+    state.requests.clear();
   }
-  if (tolerated) state.requests.clear();
   state.marking += 1;
   try {
     return run();
@@ -156,7 +204,7 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
 
 /** Whether probes on `engine` ask for warm draws: inside a tolerant round where pipelines are deferred. */
 function warmupActive(engine: AbstractEngine): WarmupState | undefined {
-  return variantSwapsTolerated() ? states.get(engine) : undefined;
+  return variantSwapsTolerated() && pipelinesDeferred(engine) ? states.get(engine) : undefined;
 }
 
 /**
@@ -231,7 +279,7 @@ export function warmRequestedPipelines(scene: Scene, renderPassId: number, depth
     const entry = state.cold.get(effect);
     if (!entry) continue;
     entry.usedAt = performance.now();
-    if (warm) warmUp(state, effect);
+    if (warm) entry.warmed = true;
   }
 }
 
