@@ -41,6 +41,10 @@ Waves, foam and currents are measured in world metres, so scaling a water body d
 
 Water bodies closer than **Project Settings > Rendering > Water > Water Blend Distance** merge into one surface, for example where a river meets a lake. This affects rendering and water queries. Set it to 0 to turn blending off.
 
+- Where bodies meet, the shoreline rounds the corner between them, and gaps narrower than half the distance fill with water.
+- Bodies with different Water assets fade from one colour to the other over about twice the distance. A body can fade toward up to three differently coloured neighbours, each where it meets that neighbour.
+- Custom Material water fades the same way through [Water Colors](../scripting/material/water-colors.md).
+
 ## Floating objects
 
 Add [Water Buoyancy](../components/water-buoyancy.md) to a 3D actor to make it float. It also works as the actor's physics body if the actor has no Rigid Body.
@@ -81,8 +85,8 @@ To edit the built-in look, choose **Edit As Material** in the Water asset's Insp
 
 The water Material moves with the asset's waves and takes its colours on every kind of water body, so the Water asset's settings still apply. It is Translucent and built from every water node:
 
-- Deep Color, with the sunlight through the crests (Water Waves **Subsurface**) in Shallow Color.
-- In shallow water, what lies below through Shallow Color, fading to the deep water's colour with depth.
+- Deep Color, with the sunlight through the crests (Water Waves **Subsurface**) in Shallow Color, lit by the scene (Water Colors **Scene Light**).
+- In shallow water, what lies below, by the water's [Transmittance](../scripting/material/water-depth-fade.md): clear in the shallows, tinted toward the deep water's colour with depth.
 - Reflections, mixed in by their Fresnel.
 - Foam in Foam Color, lit by the scene.
 
@@ -92,7 +96,7 @@ It is an ordinary Material graph, so you can change any step, for example for st
 | --- | --- |
 | [Water Waves](../scripting/material/water-waves.md) | The simulated ocean: the wave offset for World Position Offset, the normal, height, crest foam and subsurface light. |
 | [Water Colors](../scripting/material/water-colors.md) | The asset's Shallow, Deep and Foam Color and Opacity. |
-| [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, and a fade from the waterline into deep water. |
+| [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, a fade from the waterline into deep water, and how much light the water lets through. |
 | [Water Scene Color](../scripting/material/water-scene-color.md) | The scene behind the water, bent by the waves. |
 | [Water Reflection](../scripting/material/water-reflection.md) | The reflected sky and scene objects, and the Fresnel amount. |
 | [Water Foam](../scripting/material/water-foam.md) | Whitecap, shoreline and contact foam. |

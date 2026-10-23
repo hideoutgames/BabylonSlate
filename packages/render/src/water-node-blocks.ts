@@ -5,13 +5,14 @@ import {
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
-import { createDefaultWaterDefinition, type WaterDefinition } from "@haptic/core";
+import { createDefaultWaterDefinition, WATER_BLEND_COLOR_PARTNERS, type WaterDefinition } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
 import {
   contactRange, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, sceneWaterNodeLighting, stripShaderComments, toWgsl,
-  WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
+  transmittanceSource, waterAbsorption,
+  sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE, WATER_NODE_BLEND_DEFINE,
 } from "./water-material";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
@@ -32,6 +33,8 @@ export interface WaterNodeSurface {
   field: WaterField | null;
   /** Objects crossing the surface, likewise. */
   contacts: WaterContactField | null;
+  /** The neighbours whose colours it mixes toward while blending, by slot (null where a slot is empty). */
+  partners: readonly (WaterDefinition | null)[];
 }
 const nodeSurfaces = new WeakMap<AbstractMesh, WaterNodeSurface>();
 /** Registers (or with null removes) what `mesh`'s Custom Material water nodes read. */
@@ -58,6 +61,9 @@ const FIELD_UNIFORMS = ["slateWaterFieldBounds", "slateWaterFieldInfo", "slateWa
 const ORIGIN_UNIFORM = "slateWaterNodeOrigin";
 /** (Foam Width, Contact Foam Width, contact and shore foam strength, Depth Color Distance). */
 const FOAM_UNIFORM = "slateWaterNodeFoamTerms";
+/** Water Depth Fade's per-channel absorption and path cap (`waterAbsorption`). */
+const ABSORB_UNIFORM = "slateWaterNodeAbsorb";
+const absorbScratch = new Float64Array(4);
 /** (Refraction, Roughness, Reflection Strength, 1 for an orthographic view). */
 const LOOK_UNIFORM = "slateWaterNodeLook";
 /** (1 / output width, 1 / output height, projection [0][0], projection [1][1]). */
@@ -414,10 +420,13 @@ swnCollar = max(swnCollar, (1.0 - smoothstep(swnWidth, swnWidth * 2.5, swnObject
 RegisterClass("BABYLON.WaterFoamBlock", WaterFoamBlock);
 
 /**
- * Water Depth Fade: metres of water below this pixel (Depth) and a fade from 0 at the waterline toward 1 in deep water
- * over Distance metres (1 − e^(−Depth / Distance); Depth Color Distance where Distance is not connected). Where the pass
- * has the view's scene copy, Depth is what the copy holds behind the surface (any geometry under the water), measured
- * straight down; elsewhere the terrain the water mesh knows, else the body's shelving bank and Depth.
+ * Water Depth Fade: metres of water below this pixel (Depth), a fade from 0 at the waterline toward 1 in deep water
+ * over Distance metres (1 − e^(−Depth / Distance); Depth Color Distance where Distance is not connected), and the
+ * Transmittance built-in water sees through that depth: per channel, how much of what lies below reaches the eye
+ * (`transmittanceSource`, with the asset's absorption, at the Water Waves block's normal; none where the copy holds
+ * nothing behind the water). Where the pass has the view's scene copy, Depth is what the copy holds behind the surface
+ * (any geometry under the water), measured straight down; elsewhere the terrain the water mesh knows, else the body's
+ * shelving bank and Depth.
  */
 export class WaterDepthFadeBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -427,16 +436,21 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
     this.registerInput("view", Types.Matrix);
     this.registerInput("distance", Types.Float, true);
     this.registerInput("waveHeight", Types.Float, true);
+    this.registerInput("waveNormal", Types.Vector3, true);
     this.registerOutput("depth", Types.Float);
     this.registerOutput("fade", Types.Float);
+    this.registerOutput("transmittance", Types.Vector3);
   }
   get worldPosition() { return this._inputs[0]!; }
   get cameraPosition() { return this._inputs[1]!; }
   get view() { return this._inputs[2]!; }
   get distance() { return this._inputs[3]!; }
   get waveHeight() { return this._inputs[4]!; }
+  /** The Water Waves block's Normal, which Transmittance sees the surface by (the compiler connects it). */
+  get waveNormal() { return this._inputs[5]!; }
   get depth() { return this._outputs[0]!; }
   get fade() { return this._outputs[1]!; }
+  get transmittance() { return this._outputs[2]!; }
   override getClassName(): string { return "WaterDepthFadeBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     prepareSurfaceDefines(defines, material, mesh, true);
@@ -445,21 +459,26 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
     const scene = material.getScene();
     bindSurface(effect, scene, mesh);
     bindCopy(effect, scene, mesh);
+    const absorb = waterAbsorption(meshWaterNodeSurface(mesh)?.water ?? PREVIEW_WATER, scene.getEngine().useExactSrgbConversions, absorbScratch);
+    effect.setFloat4(ABSORB_UNIFORM, absorb[0]!, absorb[1]!, absorb[2]!, absorb[3]!);
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state);
+    const wgsl = wgslOf(state), v3 = wgsl ? "vec3f" : "vec3";
     emitSurfaceVaryings(state);
     emitFieldHelpers(state);
     emitCopyHelpers(state);
-    const [depth, fade] = this._outputs.map((output) => output.associatedVariableName);
-    state.compilationString += this.declare(state, this.depth, "1.0") + this.declare(state, this.fade, "1.0");
+    state._emitUniformFromString(ABSORB_UNIFORM, Types.Vector4);
+    const [depth, fade, transmittance] = this._outputs.map((output) => output.associatedVariableName);
+    state.compilationString += this.declare(state, this.depth, "1.0") + this.declare(state, this.fade, "1.0")
+      + this.declare(state, this.transmittance, `${v3}(0.0)`);
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName, view = this.view.associatedVariableName;
     const distance = this.value(this.distance, `${wgsl ? "uniforms." : ""}${FOAM_UNIFORM}.w`);
     state.compilationString += `{\n${surfaceLocals(state, position)}#ifdef ${WATER_SURFACE_DEFINE}\n`
       + bind(`float swnHeight = swnData.x;\n`, wgsl)
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
       + bind(depthSource("swnHeight"), wgsl)
+      + bind("float swnOpenSky = 0.0;\n", wgsl)
       + `#ifdef ${WATER_NODE_COPY_DEFINE}\n`
       + bind(`
 vec2 swnUv = ${fragCoord(state)}.xy * U.${SCREEN_UNIFORM}.xy;
@@ -469,10 +488,17 @@ float swnOrtho = U.${LOOK_UNIFORM}.w;
 float swnDrop = mix(abs(${eye}.y - ${position}.y) / max(swnWaterZ, 0.001), abs(${view}[1][2]), swnOrtho);
 float swnBehind = step(swnWaterZ, swnSceneZ) * (1.0 - step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnSceneZ));
 swnDepth = mix(swnDepth, max(swnSceneZ - swnWaterZ, 0.0) * swnDrop, swnBehind);
+// No geometry behind the water in the copy (its sky depth): open water lets nothing through, as built-in water.
+swnOpenSky = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnSceneZ);
 `, wgsl)
       + "#endif\n"
       + (this.depth.hasEndpoints ? `${depth} = swnDepth;\n` : "")
       + (this.fade.hasEndpoints ? `${fade} = 1.0 - exp(-swnDepth / max(${distance}, 0.001));\n` : "")
+      + (this.transmittance.hasEndpoints ? bind(`
+vec3 swnTN = normalize(${this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`)});
+float swnTNdotV = clamp(dot(swnTN, normalize(${eye} - ${position}.xyz)), 0.0, 1.0);${transmittanceSource("swnDepth", "swnTNdotV", `max(${distance}, 0.001)`, `U.${ABSORB_UNIFORM}.rgb`, `U.${ABSORB_UNIFORM}.w`, "swnT")}
+${transmittance} = swnT * (1.0 - swnOpenSky);
+`, wgsl) : "")
       + "#endif\n}\n";
     return this;
   }
@@ -650,6 +676,9 @@ RegisterClass("BABYLON.WaterReflectionBlock", WaterReflectionBlock);
 /** Water Colors' uniforms, apart from every other water uniform (the Water Waves node's foam terms are `slateWaterNodeFoam`). */
 export const WATER_NODE_COLOR_UNIFORMS = ["slateWaterNodeShallowColor", "slateWaterNodeDeepColor", "slateWaterNodeFoamColor"] as const;
 const COLOR_UNIFORMS = WATER_NODE_COLOR_UNIFORMS;
+/** Partner k's colours (`WaterNodeSurface.partners`), in `COLOR_UNIFORMS` order: `slateWaterNodeShallowColor${k}` and so on. */
+const PARTNER_COLOR_UNIFORMS = Array.from({ length: WATER_BLEND_COLOR_PARTNERS }, (_, k) => COLOR_UNIFORMS.map((name) => `${name}${k}`));
+const BLEND_SHARES_VARYING = "vSlateWaterNodeShares";
 const COLOR_FIELDS = ["shallowColor", "deepColor", "foamColor"] as const;
 /** The Realistic defaults a material preview shows. */
 const PREVIEW_WATER = createDefaultWaterDefinition();
@@ -657,34 +686,68 @@ const colorScratch = new Color3(), linearScratch = new Color3();
 
 /**
  * Water Colors: the asset's Shallow, Deep and Foam Color (linear, as built-in water converts them) and its Opacity, so a
- * Custom Material follows the Water asset's Inspector. Off a water mesh (a material preview) the Realistic defaults.
+ * Custom Material follows the Water asset's Inspector. Where the water mesh blends with neighbours coloured unlike it,
+ * the colours mix toward theirs by the same per-vertex shares built-in water uses, so a Custom Material body and its
+ * neighbours meet in one colour. Scene Light is how strongly the scene lights the water's own colour, as built-in water
+ * scales it. Off a water mesh (a material preview) the default water's.
  */
 export class WaterColorsBlock extends WaterNodeBlock {
   constructor(name: string) {
     super(name);
     for (const output of ["shallowColor", "deepColor", "foamColor"]) this.registerOutput(output, Types.Color3);
     this.registerOutput("opacity", Types.Float);
+    this.registerOutput("sceneLight", Types.Float);
   }
   get shallowColor() { return this._outputs[0]!; }
   get deepColor() { return this._outputs[1]!; }
   get foamColor() { return this._outputs[2]!; }
   get opacity() { return this._outputs[3]!; }
+  /** How strongly the scene lights the water's own colour, as built-in water scales Deep Color (`sceneWaterBodyLight`). */
+  get sceneLight() { return this._outputs[4]!; }
   override getClassName(): string { return "WaterColorsBlock"; }
-  override prepareDefines(): void {}
+  override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
+    defines.setValue(WATER_NODE_BLEND_DEFINE, isWaterSurfaceMesh(mesh) && mesh!.isVerticesDataPresent("slateWaterBlendColors"), true);
+  }
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
-    const w = meshWaterNodeSurface(mesh)?.water ?? PREVIEW_WATER, exact = material.getScene().getEngine().useExactSrgbConversions;
-    for (const [i, name] of COLOR_UNIFORMS.entries()) {
-      const [r, g, b] = w[COLOR_FIELDS[i]!];
-      colorScratch.set(r, g, b).toLinearSpaceToRef(linearScratch, exact);
-      effect.setFloat4(name, linearScratch.r, linearScratch.g, linearScratch.b, i === 0 ? w.opacity : 0);
-    }
+    const surface = meshWaterNodeSurface(mesh), w = surface?.water ?? PREVIEW_WATER, exact = material.getScene().getEngine().useExactSrgbConversions;
+    const scene = material.getScene(), light = sceneWaterBodyLight(scene, w, waterSkyCube(scene) !== null);
+    // w: Opacity with Shallow Color, the scene's light on the water with Deep Color.
+    const put = (names: readonly string[], water: WaterDefinition) => {
+      for (const [i, name] of names.entries()) {
+        const [r, g, b] = water[COLOR_FIELDS[i]!];
+        colorScratch.set(r, g, b).toLinearSpaceToRef(linearScratch, exact);
+        effect.setFloat4(name, linearScratch.r, linearScratch.g, linearScratch.b, i === 0 ? water.opacity : i === 1 ? light : 0);
+      }
+    };
+    put(COLOR_UNIFORMS, w);
+    // An empty slot repeats the asset's own colours, so a share toward it changes nothing.
+    for (let k = 0; k < WATER_BLEND_COLOR_PARTNERS; k++) put(PARTNER_COLOR_UNIFORMS[k]!, surface?.partners[k] ?? w);
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const u = wgslOf(state) ? "uniforms." : "";
-    for (const name of COLOR_UNIFORMS) state._emitUniformFromString(name, Types.Vector4);
-    state.compilationString += COLOR_UNIFORMS.map((name, i) => this.declare(state, this._outputs[i]!, `${u}${name}.rgb`)).join("")
-      + this.declare(state, this.opacity, `${u}${COLOR_UNIFORMS[0]}.w`);
+    const wgsl = wgslOf(state), u = wgsl ? "uniforms." : "", v3 = wgsl ? "vec3f" : "vec3";
+    for (const name of [...COLOR_UNIFORMS, ...PARTNER_COLOR_UNIFORMS.flat()]) state._emitUniformFromString(name, Types.Vector4);
+    // The partners' shares: partner 0's in slateWaterBlend's w, partners 1 and 2's in slateWaterBlendColors.
+    const vertex = state._vertexState, into = wgsl ? "vertexOutputs." : "", input = wgsl ? "vertexInputs." : "";
+    declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
+    declareWaterAttributes(vertex, WATER_NODE_BLEND_DEFINE, [["slateWaterBlendColors", 2]]);
+    if (vertex._emitVaryingFromString(BLEND_SHARES_VARYING, Types.Vector3, WATER_NODE_BLEND_DEFINE)) {
+      vertex.compilationString += `#ifdef ${WATER_NODE_BLEND_DEFINE}\n${into}${BLEND_SHARES_VARYING} = ${v3}(${input}slateWaterBlend.w, ${input}slateWaterBlendColors);\n#endif\n`;
+    }
+    state._emitVaryingFromString(BLEND_SHARES_VARYING, Types.Vector3, WATER_NODE_BLEND_DEFINE);
+    const shares = `${wgsl ? "fragmentInputs." : ""}${BLEND_SHARES_VARYING}`;
+    const color = (i: number, swizzle: string) => {
+      const own = `${u}${COLOR_UNIFORMS[i]}.${swizzle}`;
+      const mixed = `${own} * (1.0 - ${shares}.x - ${shares}.y - ${shares}.z)`
+        + PARTNER_COLOR_UNIFORMS.map((names, k) => ` + ${u}${names[i]}.${swizzle} * ${shares}.${"xyz"[k]}`).join("");
+      return { own, mixed };
+    };
+    const outputs = [...COLOR_UNIFORMS.map((_, i) => [this._outputs[i]!, color(i, "rgb")] as const), [this.opacity, color(0, "w")] as const];
+    for (const [output, { own, mixed }] of outputs) {
+      if (!output.hasEndpoints) continue;
+      state.compilationString += `${state._declareOutput(output)} = ${own};\n#ifdef ${WATER_NODE_BLEND_DEFINE}\n${output.associatedVariableName} = ${mixed};\n#endif\n`;
+    }
+    state.compilationString += this.declare(state, this.sceneLight, `${u}${COLOR_UNIFORMS[1]}.w`);
     return this;
   }
 }

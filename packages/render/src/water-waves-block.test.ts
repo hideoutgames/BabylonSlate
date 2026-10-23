@@ -56,8 +56,9 @@ async function programFor(material: NodeMaterial, mesh: AbstractMesh) {
 }
 
 /** Whether `line` is declared in the `#ifdef define` block of generated shader text. */
+/** Whether `line` sits in an `#ifdef define` block, or an `#if condition` block when `define` is a condition. */
 function declaredUnder(source: string, define: string, line: string): boolean {
-  return [...source.matchAll(/#ifdef (\w+)\s([\s\S]*?)#endif/g)].some((block) => block[1] === define && block[2]!.includes(line));
+  return [...source.matchAll(/#if(?:def)? ([^\n]+)\n([\s\S]*?)#endif/g)].some((block) => block[1] === define && block[2]!.includes(line));
 }
 
 describe("Water Waves node", () => {
@@ -75,7 +76,7 @@ describe("Water Waves node", () => {
     }
     expect(fragment.split(uniform(WATER_NODE_FOAM_UNIFORM)).length - 1).toBe(1);
     const attribute = (name: string, components: number) => wgsl ? `attribute ${name}: vec${components}f;` : `attribute vec${components} ${name};`;
-    for (const [name, components, define] of [["slateWaterData", 4, "SLATE_WATER_SURFACE"], ["slateWaterBaseNormal", 3, "SLATE_WATER_SURFACE"], ["slateWaterBlend", 4, "SLATE_WATER_BLEND"]] as const) {
+    for (const [name, components, define] of [["slateWaterData", 4, "SLATE_WATER_SURFACE"], ["slateWaterBaseNormal", 3, "SLATE_WATER_SURFACE"], ["slateWaterBlend", 4, "defined(SLATE_WATER_BLEND) || defined(SLATE_WATER_NODE_BLEND)"]] as const) {
       expect(declaredUnder(source, define, attribute(name, components)), name).toBe(true);
       expect(source.split(attribute(name, components)).length - 1, name).toBe(1);
     }

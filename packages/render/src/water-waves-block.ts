@@ -5,7 +5,7 @@ import {
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import {
-  meshVertexWaves, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE,
+  meshVertexWaves, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_NODE_VARYING, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource, waterWaveNodeSources,
 } from "./water-material";
 import { declareWaterAttributes, isWaterSurfaceMesh, WATER_SURFACE_DEFINE } from "./water-surface-block";
@@ -117,7 +117,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
   /** Attributes, uniforms and the spectrum's sampler of the vertex stage (the displacement and the fragment's varying). */
   private declareVertexInputs(state: NodeMaterialBuildState): void {
     declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterBaseNormal", 3]]);
-    declareWaterAttributes(state, WATER_BLEND_DEFINE, [["slateWaterBlend", 4]]);
+    declareWaterAttributes(state, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     declareArraySampler(state, WATER_FFT_SAMPLER);
     state._emitFunction("swFftTapLod", waterWaveNodeSources(state.shaderLanguage).vertexHelpers, "");

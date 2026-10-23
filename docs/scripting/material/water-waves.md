@@ -22,4 +22,5 @@ Returns the water asset's simulated ocean at this point: the wave offset, height
 - Connect Offset to **World Position Offset** and Normal to **Normal** on [**Material Output**](material-output.md) to displace and shade the water.
 - Wave Height, Normal, Crest Foam and Subsurface are sampled per pixel, so short waves stay sharp between mesh vertices.
 - Only affects water bodies that use this material as their Custom Material. Other meshes get no offset and keep their own normal.
+- Where the body merges with others (see [Water Blend Distance](../../graphics/water.md#water-blend-distance)), it hides the water another body draws, as built-in water does, when the material reads any of Normal, Wave Height, Crest Foam or Subsurface.
 - Only in Surface and Landscape materials.

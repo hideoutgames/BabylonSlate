@@ -50,7 +50,8 @@ describe("Water material binding", () => {
       b.material.reflectionTexture = new Texture(null, scene);
       const ambient = (plugin: WaterMaterialPlugin, expected: number[]) => {
         plugin.hardBindForSubMesh(output.buffer, scene);
-        output.vectors.get("slateWaterLight")!.forEach((value, i) => expect(value).toBeCloseTo(expected[i]!, 6));
+        // The ambient light (w is the light on the water's colour).
+        output.vectors.get("slateWaterLight")!.slice(0, 3).forEach((value, i) => expect(value).toBeCloseTo(expected[i]!, 6));
       };
       scene.customRenderFunction = () => {
         enabled.mockClear();
@@ -531,9 +532,9 @@ describe("Water material binding", () => {
       }
       first.plugin.hardBindForSubMesh(output.buffer, a);
       expect([0, 1, 2, 3].map((i) => output.vectors.get(`slateWaterRemovalShape${i}`)![0])).toEqual([1, 2, 3, 4]);
-      expect(output.vectors.get("slateWaterLight")).toEqual([0.08, 0.08, 0.08, 0]);
+      expect(output.vectors.get("slateWaterLight")!.slice(0, 3)).toEqual([0.08, 0.08, 0.08]);
       second.plugin.hardBindForSubMesh(output.buffer, b);
-      expect(output.vectors.get("slateWaterLight")).toEqual([0, 0, 0.55, 0]);
+      expect(output.vectors.get("slateWaterLight")!.slice(0, 3)).toEqual([0, 0, 0.55]);
       expect([0, 1, 2, 3].map((i) => output.vectors.get(`slateWaterRemovalShape${i}`)![0])).toEqual([0, 0, 0, 0]);
     } finally { a.dispose(); b.dispose(); engine.dispose(); }
   });

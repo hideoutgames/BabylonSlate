@@ -8,9 +8,9 @@ import { materialPinDefaultPropertyKey } from "./pin-defaults";
  * asset's colours (Water Colors), so the Water asset's Inspector still applies.
  *
  * It is lit and translucent, after FFT-Ocean: the water's colour is emitted (Deep Color with the subsurface light through
- * the crests in Shallow Color; in shallow water what lies below through Shallow Color, absorbed toward it with depth),
- * the reflection is mixed over it by its Fresnel, foam is Foam Color as rough lit albedo with a faint glow, and the
- * scene's lights add the sun's highlight on the waves.
+ * the crests in Shallow Color, times the scene's light on it; in shallow water what lies below, by the Transmittance
+ * built-in water sees through it), the reflection is mixed over it by its Fresnel, foam is Foam Color as rough lit albedo
+ * with a faint glow, and the scene's lights add the sun's highlight on the waves.
  */
 export function createWaterMaterialDocument(name: string): MaterialDocument {
   const doc = createDefaultMaterialDocument(name);
@@ -52,13 +52,14 @@ export function createWaterMaterialDocument(name: string): MaterialDocument {
   // Deep water: Deep Color, with the light scattered through the crests in Shallow Color.
   node("scatter", "math.multiply", -600, -120);
   wire("colors", "shallowColor", "scatter", "a"); splat("waves", "subsurface", "scatter", "b");
-  node("deep", "math.add", -300, -60);
-  wire("colors", "deepColor", "deep", "a"); wire("scatter", "out", "deep", "b");
-  // Shallow water: what lies below, through Shallow Color, absorbed toward the deep water's colour with depth.
-  node("tint", "math.multiply", -600, 380);
-  wire("scene", "color", "tint", "a"); wire("colors", "shallowColor", "tint", "b");
+  node("deepGlow", "math.add", -450, -60);
+  wire("colors", "deepColor", "deepGlow", "a"); wire("scatter", "out", "deepGlow", "b");
+  // Lit by the scene as built-in water is: a dim scene keeps a dim sea.
+  node("deep", "math.multiply", -300, -60);
+  wire("deepGlow", "out", "deep", "a"); splat("colors", "sceneLight", "deep", "b");
+  // Shallow water: what lies below shows through by the water's Transmittance, the deep water's colour where it does not.
   node("below", "math.mix", -300, 200);
-  wire("tint", "out", "below", "a"); wire("deep", "out", "below", "b"); splat("depth", "fade", "below", "alpha");
+  wire("deep", "out", "below", "a"); wire("scene", "color", "below", "b"); wire("depth", "transmittance", "below", "alpha");
   node("body", "math.mix", 0, 120);
   wire("deep", "out", "body", "a"); wire("below", "out", "body", "b"); splat("scene", "available", "body", "alpha");
   node("water", "math.mix", 300, 200);

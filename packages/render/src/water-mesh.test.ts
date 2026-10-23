@@ -952,6 +952,35 @@ describe("Water rendering", () => {
       expect([a, b].map((mesh) => [pluginOf(mesh).blend, mesh.isVerticesDataPresent("slateWaterBlend")])).toEqual([[false, false], [false, false]]);
     } finally { scene.dispose(); engine.dispose(); }
   });
+  it("mixes a lake's colours toward each differently coloured neighbour where that one meets it", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+    try {
+      const own = createDefaultWaterDefinition(), red = { ...own, shallowColor: [1, 0.2, 0.2] as [number, number, number] };
+      const blue = { ...own, shallowColor: [0.1, 0.2, 1] as [number, number, number] };
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), own);
+      const east = createWaterMesh(scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), red);
+      const west = createWaterMesh(scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), blue);
+      east.position.set(18, 0, 0); west.position.set(-18, 0, 0);
+      updateSceneWater(scene);
+      const partners = pluginOf(lake).partners.map((partner) => partner?.shallowColor[0] ?? null);
+      const slotOf = (color: number) => partners.indexOf(color);
+      expect([slotOf(1), slotOf(0.1)].every((slot) => slot >= 0)).toBe(true);
+      // Per vertex: partner 0's share in slateWaterBlend.w, partners 1 and 2's in slateWaterBlendColors.
+      const positions = lake.getVerticesData(VertexBuffer.PositionKind)!, blend = lake.getVerticesData("slateWaterBlend")!;
+      const colors = lake.getVerticesData("slateWaterBlendColors")!;
+      const share = (v: number, slot: number) => slot === 0 ? blend[v * 4 + 3]! : colors[v * 2 + slot - 1]!;
+      let eastSide = 0, westSide = 0;
+      for (let v = 0; v < positions.length / 3; v++) {
+        const x = positions[v * 3]!, z = positions[v * 3 + 2]!;
+        if (Math.abs(z) > 2) continue;
+        // Toward the red lake only the red share rises, toward the blue lake only the blue one.
+        if (x > 7 && x < 11) { eastSide++; expect(share(v, slotOf(1))).toBeGreaterThan(0.1); expect(share(v, slotOf(0.1))).toBe(0); }
+        if (x < -7 && x > -11) { westSide++; expect(share(v, slotOf(0.1))).toBeGreaterThan(0.1); expect(share(v, slotOf(1))).toBe(0); }
+      }
+      expect(Math.min(eastSide, westSide)).toBeGreaterThan(0);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("keeps Global Water's blend data on the world as its grid recentres under a moving camera", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 10, -30), scene);
@@ -1000,7 +1029,7 @@ describe("Water rendering", () => {
       // included) only over the rows near the lake.
       expect(meshUploads).not.toHaveBeenCalled();
       const partial = rangeUploads.mock.calls.filter(([, , offset]) => offset !== undefined);
-      expect(partial.length).toBe(6);
+      expect(partial.length).toBe(7);
       for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(count);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
@@ -1149,7 +1178,7 @@ describe("Water rendering", () => {
         expect(frames).toBeGreaterThan(1);
         expect(frames).toBeLessThan(60);
         const partial = rows();
-        expect(partial.length).toBe(6);
+        expect(partial.length).toBe(7);
         for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(sea.getTotalVertices());
         const fresh = build(12);
         other = fresh.s;

@@ -634,7 +634,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   // Normal for an unconnected Normal pin.
   "input.waterColors": ({ name }) => {
     const block = new WaterColorsBlock(name);
-    return { blocks: [block], inputs: {}, outputs: { shallowColor: block.shallowColor, deepColor: block.deepColor, foamColor: block.foamColor, opacity: block.opacity } };
+    return { blocks: [block], inputs: {}, outputs: { shallowColor: block.shallowColor, deepColor: block.deepColor, foamColor: block.foamColor, opacity: block.opacity, sceneLight: block.sceneLight } };
   },
   "input.waterFoam": ({ name, plumbing }) => {
     const block = new WaterFoamBlock(name);
@@ -649,7 +649,8 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     plumbing.cameraPosition?.connectTo(block.cameraPosition);
     plumbing.view?.connectTo(block.view);
     plumbing.waterWaves?.height.connectTo(block.waveHeight);
-    return { blocks: [block], inputs: { distance: block.distance }, outputs: { depth: block.depth, fade: block.fade } };
+    plumbing.waterWaves?.normal.connectTo(block.waveNormal);
+    return { blocks: [block], inputs: { distance: block.distance }, outputs: { depth: block.depth, fade: block.fade, transmittance: block.transmittance } };
   },
   "input.waterSceneColor": ({ name, plumbing, operation }) => {
     const block = new WaterSceneColorBlock(name);

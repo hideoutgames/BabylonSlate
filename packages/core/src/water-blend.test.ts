@@ -156,6 +156,20 @@ describe("Water blend surface", () => {
     expect(a.heightScale).toBe(1);
   });
 
+  it("rounds the corner where a lake meets an ocean's edge into a smooth shoreline, with no cliff where either fades", () => {
+    const index = new WaterBlendIndex();
+    index.update([body("ocean", { width: 400, length: 300 }, 0, 0, -150), body("lake", { width: 60, length: 54 }, 0, 0, 22)], 8);
+    const s = createWaterBlendSample(), h = 0.05;
+    const union = (x: number, z: number) => evaluateWaterBlend(index, 1, x, 0, z, s, true) ? s.union : NaN;
+    let steepest = 0;
+    for (let x = -34; x <= -14; x += 0.25) for (let z = -2; z <= 10; z += 0.25) {
+      // Near the shoreline the union is as gentle as a distance: a steeper one draws the corner as a stepped tab.
+      if (!(Math.abs(union(x, z)) < 1)) continue;
+      steepest = Math.max(steepest, Math.hypot((union(x + h, z) - union(x - h, z)) / (2 * h), (union(x, z + h) - union(x, z - h)) / (2 * h)));
+    }
+    expect(steepest).toBeLessThan(1.1);
+  });
+
   it("fills a gap narrower than the distance with water, and leaves it dry when blending is off", () => {
     const bodies = [lake(0, 20), lake(23, 20)];
     const index = new WaterBlendIndex();

@@ -122,6 +122,28 @@ describe("Water material nodes", () => {
     expect(bound.get(read)!.map((value) => value.slice(0, 3).map((v) => Number(v.toFixed(5))))).toEqual(bound.get(read)!.map(() => expected));
   });
 
+  it("mix Water Colors toward a differently coloured neighbour where the bodies blend", async () => {
+    const scene = host(), own = createDefaultWaterDefinition(), red = { ...own, shallowColor: [1, 0.2, 0.2] as [number, number, number] };
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+    const result = compile(scene, graph(["waterWaves", "waterColors"], [["waterWaves", "offset", "worldPositionOffset"], ["waterColors", "shallowColor", "baseColor"]]));
+    expect(await result.ready).toEqual([]);
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 24, length: 24, resolution: 16 }), own, result.material);
+    const neighbour = createWaterMesh(scene, "neighbour", normalizeWaterBody({ width: 24, length: 24, resolution: 16 }), red);
+    neighbour.position.set(18, 0, 0);
+    updateSceneWater(scene);
+    expect(await definesFor(result.material, lake)).toMatch(/^#define SLATE_WATER_NODE_BLEND$/m);
+    const slot = meshWaterNodeSurface(lake)!.partners.findIndex((partner) => partner?.shallowColor[0] === 1);
+    expect(slot).toBeGreaterThanOrEqual(0);
+    const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[]>();
+    vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
+    result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
+    // That partner's slot carries the neighbour's Shallow Color, which the shader mixes in by the vertex's share.
+    const linear = new Color3(1, 0.2, 0.2).toLinearSpace(scene.getEngine().useExactSrgbConversions);
+    expect(bound.get(`slateWaterNodeShallowColor${slot}`)!.slice(0, 3)).toEqual([linear.r, linear.g, linear.b].map((v) => expect.closeTo(v, 5)));
+    expect(result.material.compiledShaders).toMatch(new RegExp(`slateWaterNodeShallowColor${slot}\\.rgb \\* vSlateWaterNodeShares\\.`));
+  });
+
   it("compile without Water Waves, where Crest Foam and the per-pixel Normal fall back", async () => {
     const result = compile(host(), graph(["waterFoam", "waterReflection", "waterSceneColor"],
       [["waterFoam", "crestFoam", "roughness"], ["waterFoam", "foam", "metallic"], ["waterReflection", "color", "baseColor"], ["waterSceneColor", "color", "emissive"]]));

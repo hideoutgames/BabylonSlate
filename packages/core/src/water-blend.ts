@@ -81,6 +81,20 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
+/**
+ * World metres beyond its own footprint a body takes part in the blend at Blend Distance `distance`: its share ends at
+ * half the distance, and over the outer half it fades out of the union shoreline, where its pull on the shoreline is
+ * already small, so the shoreline bends smoothly instead of stepping where it stops.
+ */
+export const waterBlendReach = (distance: number) => distance;
+
+/**
+ * Colour partners a rendered blending surface mixes toward: its neighbours coloured unlike it (alike-coloured ones
+ * sharing one), each by its per-vertex colour share (`WaterBlendSample.participants`). Past these, further colours keep
+ * the surface's own.
+ */
+export const WATER_BLEND_COLOR_PARTNERS = 3;
+
 /** Smooth maximum with blend radius `k`: max(a, b) plus up to k/4 where a and b are within k of each other. */
 export function waterSmoothMax(a: number, b: number, k: number): number {
   if (a === Infinity || b === Infinity) return Infinity;
@@ -255,12 +269,16 @@ export class WaterBlendIndex {
 
 const ascending = (a: number, b: number) => a - b;
 
-/** Per-participant scratch: body index, signed edge distance, rest height, weight terms and current. */
+/**
+ * Per-participant scratch: body index, signed edge distance, rest height, weight terms, current, and the colour coverage
+ * and colour share (`colorWeight`, which `evaluateWaterBlend` leaves for its caller: see `WaterBlendSample.participants`).
+ */
 function createParticipants(size: number) {
   return {
     index: new Int32Array(size), edge: new Float64Array(size), height: new Float64Array(size), phi: new Float64Array(size),
     vertical: new Float64Array(size), weight: new Float64Array(size), flowX: new Float64Array(size), flowY: new Float64Array(size),
     flowZ: new Float64Array(size), waves: new Uint8Array(size), colors: new Uint8Array(size),
+    colorPhi: new Float64Array(size), colorWeight: new Float64Array(size),
   };
 }
 
@@ -270,7 +288,7 @@ export interface WaterBlendSample {
   found: boolean;
   /**
    * World metres inside the blended shoreline (negative outside): the smooth union of every participant's bank
-   * distance, so edges that face another body are no shore, and gaps narrower than the Blend Distance fill.
+   * distance, so edges that face another body are no shore, and gaps narrower than half the Blend Distance fill.
    */
   union: number;
   /** This body's share of the blended surface (shares sum to 1). */
@@ -283,9 +301,14 @@ export interface WaterBlendSample {
   /** Swell height and Gerstner offset relative to this body's waves at its `referenceScale`. */
   heightScale: number;
   offsetScale: number;
-  /** Share of participants coloured differently from this body, and the strongest of them (-1 when none). */
+  /** Colour share of participants coloured differently from this body, and the strongest of them (-1 when none). */
   foreign: number;
   partner: number;
+  /**
+   * Participants (this body first): until the next evaluation with the same index, `index.scratch` holds each one's body
+   * (`index`), whether it is coloured like this body (`colors`) and its colour share (`colorWeight`, summing to 1).
+   */
+  participants: number;
   /** Blended current (world metres per second). */
   flowX: number;
   flowY: number;
@@ -298,7 +321,7 @@ export interface WaterBlendSample {
 
 export const createWaterBlendSample = (): WaterBlendSample => ({
   found: false, union: 0, weight: 1, margin: 1, restHeight: 0, ownRestHeight: 0, heightScale: 1, offsetScale: 1, foreign: 0,
-  partner: -1, flowX: 0, flowY: 0, flowZ: 0, depth: 0, others: 0,
+  partner: -1, participants: 0, flowX: 0, flowY: 0, flowZ: 0, depth: 0, others: 0,
 });
 
 /** World current of a body at a footprint, as `sampleWaterSurface` reports it. */
@@ -319,6 +342,9 @@ function addParticipant(
   const p = index.scratch, reach = index.distance / 2;
   p.index[count] = i; p.edge[count] = edge; p.height[count] = height; p.vertical[count] = vertical;
   p.phi[count] = index.distance > 0 ? smoothstep(-reach, reach, edge) * vertical : edge >= 0 ? 1 : 0;
+  // Colours fade over twice the distance, all of it within the participant's reach, so a change of water colour is
+  // gradual where the surface itself already meets.
+  p.colorPhi[count] = index.distance > 0 ? smoothstep(-reach, 3 * reach, edge) * vertical : edge >= 0 ? 1 : 0;
   bodyFlow(index.bodies[i]!, footprint.flowX, footprint.flowY, footprint.flowZ, flowScratch);
   p.flowX[count] = flowScratch[0]!; p.flowY[count] = flowScratch[1]!; p.flowZ[count] = flowScratch[2]!;
   p.waves[count] = waves ? 1 : 0; p.colors[count] = colors ? 1 : 0;
@@ -329,28 +355,40 @@ function addParticipant(
  * The blended water surface at world X/Z (`x`, `z`; `y` starts the rest-base search of tilted volumes) as body `index`
  * evaluates it. Every body within the Blend Distance R of the point (and within the vertical tolerance V of this body's
  * rest height) takes part:
- * - Coverage φ = smoothstep(−R/2, R/2, bank distance) × the vertical fade (1 → 0 between V and 2V), so a body reaches R/2
- *   beyond its footprint and blends over R across its edge.
+ * - Coverage φ = smoothstep(−R/2, R/2, bank distance) × the vertical fade (1 → 0 between V and 2V), so a body's share
+ *   reaches R/2 beyond its footprint and blends over R across its edge. It takes part out to R (`waterBlendReach`).
  * - Shares: φ times (1 − φ) of every participant of a higher class (`waterBlendClass`), normalised to sum to 1.
- * - The union shoreline is the smooth maximum (radius 2R, in ascending body order) of the bank distances; a body leaving
- *   the blend (vertically, or over the outer half of its reach) fades out of it, so the shoreline never steps.
+ * - The union shoreline is the smooth maximum (radius R, in ascending body order) of the bank distances; a body leaving
+ *   the blend (vertically, or over the outer half of its reach, R/2 to R outside it) fades out of it, so the shoreline
+ *   never steps. The smooth maximum adds up to R/4 where the edges meet and nothing once they are R apart, so rounded
+ *   corners and filled gaps (narrower than R/2) end well short of where a body fades: a fade reaching them would cut
+ *   them off straight.
+ * - Colours use the same shares over a wider coverage, smoothstep(−R/2, 3R/2, bank distance) × the vertical fade, so
+ *   they change over twice the distance but only where the participant takes part.
  * - Rest height, current and Depth average by share. The swell averages Wave Scale and q·s over the participants with
  *   the same swell; where other swells hold a share, both sides calm toward the seam (smoothstep(0.5, 1, same share)),
  *   so differing assets meet flat and continuous.
- * Writes `out` and returns `out.found`. Allocation-free apart from the shared rest-base helpers.
+ * Writes `out` and returns `out.found`. Past this body's reach it has no water and is not found, unless `outside` asks
+ * for the blended surface there anyway (a rendered grid's outer vertices, which interpolate toward it): the body is then
+ * found with no share, so another owns the point. Allocation-free apart from the shared rest-base helpers.
  */
-export function evaluateWaterBlend(index: WaterBlendIndex, self: number, x: number, y: number, z: number, out: WaterBlendSample): boolean {
+export function evaluateWaterBlend(
+  index: WaterBlendIndex, self: number, x: number, y: number, z: number, out: WaterBlendSample, outside = false,
+): boolean {
   const bodies = index.bodies, me = bodies[self]!, distance = index.distance;
   out.found = false;
   if (!me.ray) return false;
   const hit = waterRestBase(me.body, me.transform, me.inverse, me.ray, x, y, z);
   if (!hit) return false;
-  const p = index.scratch, reach = distance / 2, tolerance = waterBlendVerticalTolerance(distance);
+  const p = index.scratch, reach = waterBlendReach(distance), tolerance = waterBlendVerticalTolerance(distance);
   const ownEdge = me.body.kind === "global" ? Infinity : waterBankDistance(hit.footprint, me.transform, gradientScratch);
   const ownHeight = y + hit.distance;
   let count = addParticipant(index, 0, self, ownEdge, ownHeight, 1, hit.footprint, true, true);
-  // A body has no water beyond its reach: nothing to blend there.
-  if (!(p.phi[0]! > 0)) return false;
+  // A body has no water beyond its reach: nothing to blend there, unless asked for the neighbours' surface.
+  if (!(p.phi[0]! > 0)) {
+    if (!outside) return false;
+    p.phi[0] = 0; p.colorPhi[0] = 0;
+  }
   const list = index.neighbours(self);
   for (let n = 0; n < list.length; n++) {
     const j = list[n]!, other = bodies[j]!, b = other.bounds;
@@ -372,6 +410,16 @@ export function evaluateWaterBlend(index: WaterBlendIndex, self: number, x: numb
     p.weight[a] = raw; total += raw;
   }
   if (!(total > 0)) return false;
+  // Colour shares, the same way over the wider colour coverage.
+  let colorTotal = 0;
+  for (let a = 0; a < count; a++) {
+    let raw = p.colorPhi[a]!;
+    const cls = bodies[p.index[a]!]!.blendClass;
+    for (let b = 0; b < count; b++) if (bodies[p.index[b]!]!.blendClass > cls) raw *= 1 - p.colorPhi[b]!;
+    p.colorWeight[a] = raw; colorTotal += raw;
+  }
+  // Coverages this wide can all vanish only where the shares cannot: fall back to them.
+  for (let a = 0; a < count; a++) p.colorWeight[a] = colorTotal > 0 ? p.colorWeight[a]! / colorTotal : p.weight[a]! / total;
   let union = -Infinity, restHeight = 0, flowX = 0, flowY = 0, flowZ = 0, depth = 0, foreign = 0, partner = -1, partnerWeight = 0;
   let sameShare = 0, scale = 0, offset = 0, strongest = 0, strongestIndex = -1, others = 0;
   // The union in ascending body order, so every participant computes the same value.
@@ -382,9 +430,9 @@ export function evaluateWaterBlend(index: WaterBlendIndex, self: number, x: numb
     previous = p.index[next]!;
     // A body leaving the blend (vertically, or over the outer half of its reach) counts as ever farther from the
     // shoreline it would otherwise share, so the union never steps where it stops taking part.
-    const fade = p.vertical[next]! * smoothstep(-distance / 2, -distance / 4, p.edge[next]!);
+    const fade = p.vertical[next]! * smoothstep(-distance, -distance / 2, p.edge[next]!);
     const edge = p.edge[next]! - (1 - fade) * 4 * distance;
-    union = step === 0 ? edge : waterSmoothMax(union, edge, Math.max(2 * distance, 1e-6));
+    union = step === 0 ? edge : waterSmoothMax(union, edge, Math.max(distance, 1e-6));
   }
   for (let a = 0; a < count; a++) {
     const w = p.weight[a]! / total, prepared = bodies[p.index[a]!]!;
@@ -392,7 +440,8 @@ export function evaluateWaterBlend(index: WaterBlendIndex, self: number, x: numb
     restHeight += w * p.height[a]!; depth += w * prepared.depth;
     flowX += w * p.flowX[a]!; flowY += w * p.flowY[a]!; flowZ += w * p.flowZ[a]!;
     if (p.waves[a]) { sameShare += w; scale += w * prepared.scale; offset += w * prepared.offsetAmount; }
-    if (!p.colors[a]) { foreign += w; if (w > partnerWeight) { partnerWeight = w; partner = p.index[a]!; } }
+    const c = p.colorWeight[a]!;
+    if (!p.colors[a]) { foreign += c; if (c > partnerWeight) { partnerWeight = c; partner = p.index[a]!; } }
     if (a > 0) {
       if (w > 0) others++;
       // Ties go to the higher class, then to the lower index.
@@ -410,7 +459,7 @@ export function evaluateWaterBlend(index: WaterBlendIndex, self: number, x: numb
   out.restHeight = restHeight; out.ownRestHeight = ownHeight;
   out.heightScale = calm * meanScale / me.referenceScale;
   out.offsetScale = me.referenceOffset > 0 ? calm * meanOffset / me.referenceOffset : 0;
-  out.foreign = foreign; out.partner = partner;
+  out.foreign = foreign; out.partner = partner; out.participants = count;
   out.flowX = flowX; out.flowY = flowY; out.flowZ = flowZ; out.depth = depth; out.others = others;
   return true;
 }
@@ -564,7 +613,7 @@ export function sampleWaterBlend(
   if (!list.length || !me.ray || !(Number.isFinite(time) && Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)) || !me.body.enabled) {
     return sampleWaterSurface(me.definition, me.body, position, time, me.transform);
   }
-  const reach = index.distance / 2 + waterHorizontalEnvelope(me.definition, me.referenceScale) + BLEND_DERIVATIVE_STEP;
+  const reach = waterBlendReach(index.distance) + waterHorizontalEnvelope(me.definition, me.referenceScale) + BLEND_DERIVATIVE_STEP;
   let near = false;
   for (const j of list) {
     const b = index.bodies[j]!.bounds;

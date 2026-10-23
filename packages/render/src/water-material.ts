@@ -3,7 +3,7 @@ import {
   Texture, ThinTexture, Vector3, type AbstractEngine, type AbstractMesh, type Effect, type Material, Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
-  WATER_FFT_CASCADES_MAX, waterBankFadeLength, waterSpectrum, type WaterBodyProperties, type WaterDefinition, type WaterShadingDetail,
+  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, waterBankFadeLength, waterSpectrum, type WaterBodyProperties, type WaterDefinition, type WaterShadingDetail,
 } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { waterFftForSurface, type WaterFftResult } from "./water-fft";
@@ -37,13 +37,24 @@ const REFRACTION_FAR = [6, 60] as const;
 export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
 /**
  * The surface blends with other water bodies (`evaluateWaterBlend`): the mesh carries `slateWaterBlend` per vertex
- * (swell height scale, Gerstner offset scale, ownership margin, partner-colour share), its bank distance is the blended
+ * (swell height scale, Gerstner offset scale, ownership margin, colour share of partner 0) and `slateWaterBlendColors`
+ * (colour shares of partners 1 and 2), its bank distance is the blended
  * union shoreline and its rest grid already holds the blended rest height. Compiled only into bodies with neighbours, so
  * water that blends with nothing pays nothing.
  */
 export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
-/** The colours a blending surface mixes toward by its partner-colour share (`WaterMaterialPlugin.partner`). */
-const BLEND_COLOR_UNIFORMS = ["slateWaterBlendShallow", "slateWaterBlendDeep", "slateWaterBlendFoam", "slateWaterBlendAbsorb", "slateWaterBlendThrough"] as const;
+/** A Custom Material's Water Colors node mixes toward a blending mesh's colour partners (`WaterColorsBlock`). */
+export const WATER_NODE_BLEND_DEFINE = "SLATE_WATER_NODE_BLEND";
+/** Where a water node graph reads `slateWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */
+export const WATER_BLEND_ATTRIBUTE_CONDITION = `defined(${WATER_BLEND_DEFINE}) || defined(${WATER_NODE_BLEND_DEFINE})`;
+/** Colour partners a blending surface mixes toward (`WaterMaterialPlugin.partners`). */
+const BLEND_PARTNERS = WATER_BLEND_COLOR_PARTNERS;
+/**
+ * The colours a blending surface mixes toward, per partner (`WaterMaterialPlugin.partners`), each by its per-vertex
+ * colour share: partner k's uniforms are `slateWaterBlendShallow${k}` and so on, in `COLOR_UNIFORMS` order.
+ */
+const BLEND_COLOR_UNIFORMS = Array.from({ length: BLEND_PARTNERS }, (_, k) =>
+  ["slateWaterBlendShallow", "slateWaterBlendDeep", "slateWaterBlendFoam", "slateWaterBlendAbsorb", "slateWaterBlendThrough"].map((name) => `${name}${k}`)).flat();
 /** Per-asset colour uniforms the fragment reads through blended locals (`blendColors`), in `BLEND_COLOR_UNIFORMS` order. */
 const COLOR_UNIFORMS = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterAbsorb", "slateWaterThrough"] as const;
 const COLOR_LOCALS = ["swShallowU", "swDeepU", "swFoamU", "swAbsorbU", "swThroughU"] as const;
@@ -546,6 +557,38 @@ vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec
 `;
 }
 
+/**
+ * What shallow water lets through, declared as `out` (a vec3): the light from what lies `depth` metres below, seen at
+ * `nDotV` across the surface, down and back through the water by Snell's law, per channel absorbed by `absorb`
+ * (`waterAbsorption`, its path capped at `pathCap`) and evenly by turbidity, over Depth Color Distance `distance`; none
+ * beyond 0.85 of it.
+ */
+export function transmittanceSource(depth: string, nDotV: string, distance: string, absorb: string, pathCap: string, out: string): string {
+  return `
+float ${out}CosT = sqrt(1.0 - (1.0 - ${nDotV} * ${nDotV}) * 0.5625);
+float ${out}Path = ${depth} * (1.0 + 1.0 / ${out}CosT) / (${distance} * 5.0);
+float ${out}Visible = 1.0 - smoothstep(0.35, 0.85, ${depth} / ${distance});
+vec3 ${out} = exp(-min(${out}Path, ${pathCap}) * ${absorb} - vec3(${out}Path * ${f(TURBIDITY)})) * ${out}Visible;`;
+}
+
+/**
+ * Per-channel absorption of `water` for `transmittanceSource` (`slateWaterAbsorb`) into `out` (r, g, b, and Opacity's
+ * cap on the absorption path, where the slowest channel reaches 1 − Opacity), from Shallow Color in linear space:
+ * channels it lacks absorb fastest (`absorbCoefficient`), normalized so the slowest channel absorbs over five Depth Color
+ * Distances: clear shallows keep the bed's light in the colour the water keeps. A grey Shallow Color absorbs evenly.
+ * Allocation-free.
+ */
+export function waterAbsorption(water: WaterDefinition, exact: boolean, out: Float64Array): Float64Array {
+  const tint = water.shallowColor;
+  gammaScratch.set(Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])).toLinearSpaceToRef(linearScratch, exact);
+  const r = linearScratch.r, g = linearScratch.g, b = linearScratch.b, top = Math.max(r, g, b);
+  const k = absorbCoefficient;
+  const kr = k(r, top), kg = k(g, top), kb = k(b, top), weight = Math.min(kr, kg, kb);
+  out[0] = kr / weight; out[1] = kg / weight; out[2] = kb / weight;
+  out[3] = -Math.log(Math.max(1 - water.opacity, 1e-6)) / Math.min(out[0]!, out[1]!, out[2]!);
+  return out;
+}
+
 /** FFT-Ocean's far roughness: normal detail its mips average away. */
 export const WATER_FAR_ROUGHNESS = 0.31;
 /** FFT-Ocean's distance gloss: roughness reaches halfway to `WATER_FAR_ROUGHNESS` at 1 / this many metres. */
@@ -837,13 +880,9 @@ swRefl.y = mix(swRefl.y, swRefl.y + (max(swLiftA, 0.0) + log(1.0 + exp(-abs(swLi
 normalW = normalize(swV + normalize(swRefl));
 // Body: Deep Color, lit by the scene (a dim scene keeps a dim sea), with FFT-Ocean's subsurface light (Shallow Color).
 vec3 swLumW = vec3(0.3, 0.59, 0.11);
-float swBodyLight = clamp(dot(swAmb, swLumW) * 1.4 + dot(swSun, swLumW) * max(swL.y, 0.0) * 0.35, 0.05, 1.6);${subsurfaceSource("swL", "swV", "swWaveN", "swSpCrest", "U.slateWaterLook.w", "swSp.x", "swSss")}
+float swBodyLight = U.slateWaterLight.w;${subsurfaceSource("swL", "swV", "swWaveN", "swSpCrest", "U.slateWaterLook.w", "swSp.x", "swSss")}
 vec3 swBody = clamp(U.slateWaterDeep.rgb + U.slateWaterShallow.rgb * swSss, vec3(0.0), vec3(1.0)) * swBodyLight;
-// Shallow water: what lies below shows through per-channel absorption (Depth Color Distance; red goes first).
-float swCosT = sqrt(1.0 - (1.0 - swNdotV * swNdotV) * 0.5625);
-float swPath = swDepth * (1.0 + 1.0 / swCosT) / (swAbsorb * 5.0);
-float swVisible = 1.0 - smoothstep(0.35, 0.85, swDepth / swAbsorb);
-vec3 swTransmitRgb = exp(-min(swPath, U.slateWaterThrough.w) * U.slateWaterAbsorb.rgb - vec3(swPath * ${f(TURBIDITY)})) * swVisible;${ifDefined(REFRACTION, `
+// Shallow water: what lies below shows through per-channel absorption (Depth Color Distance; red goes first).${transmittanceSource("swDepth", "swNdotV", "swAbsorb", "U.slateWaterAbsorb.rgb", "U.slateWaterThrough.w", "swTransmitRgb")}${ifDefined(REFRACTION, `
 // No geometry behind the water in the copy (its sky depth): open water transmits nothing.
 swTransmitRgb *= 1.0 - step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
 swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);`)}
@@ -940,15 +979,17 @@ function cutSource(wgsl: boolean): string {
     ? `var ${name}: vec4f = textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, ${uv}, 0.0);`
     : `vec4 ${name} = texture2DLodEXT(slateWaterFieldSampler, ${uv}, 0.0);`;
   const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
+  const blended = (name: string, i: number) => Array.from({ length: BLEND_PARTNERS }, (_, k) =>
+    ` + U.${BLEND_COLOR_UNIFORMS[k * COLOR_UNIFORMS.length + i]} * swBlendShares[${k}]`).join("");
   const colors = (blend: boolean) => COLOR_UNIFORMS.map((name, i) =>
-    `vec4 ${COLOR_LOCALS[i]} = ${blend ? `mix(U.${name}, U.${BLEND_COLOR_UNIFORMS[i]}, swBlendShare)` : `U.${name}`};`).join("\n");
+    `vec4 ${COLOR_LOCALS[i]} = ${blend ? `U.${name} * (1.0 - swBlendShares.x - swBlendShares.y - swBlendShares.z)${blended(name, i)}` : `U.${name}`};`).join("\n");
   return `
 // Large-world rendering makes vPositionW eye-relative; rebuild the absolute world position.
 vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
-// The asset's colours, mixed toward a blended neighbour's by its share (\`SLATE_WATER_BLEND\`). A blending surface keeps
+// The asset's colours, mixed toward each blended neighbour's by its colour share (\`SLATE_WATER_BLEND\`). A blending surface keeps
 // only fragments it owns (margin >= 0, in metres, with a 1.5 cm overlap, wider than the margin's interpolation error, so seams never open) inside the blended shoreline.
 #ifdef ${WATER_BLEND_DEFINE}
-float swBlendShare = IN.vSlateWaterBlend.w;
+vec3 swBlendShares = vec3(IN.vSlateWaterBlend.w, IN.vSlateWaterBlendColors);
 ${colors(true)}
 float swBlendKeep = min(IN.vSlateWater.y, IN.vSlateWaterBlend.z + 0.015);
 #else
@@ -1084,6 +1125,7 @@ O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, A.slateWaterOffset);
 O.vSlateWaterBaseNormal = A.slateWaterBaseNormal;
 #ifdef ${WATER_BLEND_DEFINE}
 O.vSlateWaterBlend = A.slateWaterBlend;
+O.vSlateWaterBlendColors = A.slateWaterBlendColors;
 #ifdef ${WATER_GPU_WAVES_DEFINE}
 // Water this blending surface never draws (a neighbour's share, or past the blended shoreline) is discarded fragment by
 // fragment, but only after the whole look has run on it, and where it overlaps the neighbour's surface the depth test
@@ -1316,7 +1358,10 @@ export const WATER_EYE_UNIFORM = "slateWaterEye";
 export const WATER_NODE_FOAM_UNIFORM = "slateWaterNodeFoam";
 /** The Water Waves node's light: (direction toward the sun, Subsurface). */
 export const WATER_NODE_SUN_UNIFORM = "slateWaterNodeWaveSun";
-/** Varying the Water Waves node's vertex stage hands its fragment stage: (bank gain × offset share, height share, 0, 0). */
+/**
+ * Varying the Water Waves node's vertex stage hands its fragment stage: (bank gain × offset share, height share, and
+ * while blending the union bank distance and ownership margin, both in metres).
+ */
 export const WATER_NODE_VARYING = "vSlateWaterWaves";
 
 /**
@@ -1337,7 +1382,13 @@ swvDs = A.slateWaterBlend.y;
 #endif
 float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
 float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));
-${out} = vec4(swvGain * swvDs, swvHs, 0.0, 0.0);
+float swvKeepBank = 1.0;
+float swvKeepMargin = 1.0;
+#ifdef ${WATER_BLEND_DEFINE}
+swvKeepBank = A.slateWaterData.y;
+swvKeepMargin = A.slateWaterBlend.z;
+#endif
+${out} = vec4(swvGain * swvDs, swvHs, swvKeepBank, swvKeepMargin);
 }
 #endif
 `;
@@ -1346,7 +1397,8 @@ ${out} = vec4(swvGain * swvDs, swvHs, 0.0, 0.0);
 /**
  * The Water Waves node's fragment code: the spectrum at this pixel's rest point (`rest`, the interpolated undisplaced
  * world position plus the grid offset), every cascade through its mips as built-in water samples it
- * (`spectrumSurfaceSource`): the displaced surface's normal over the mesh's base normal (`base`), the height, and
+ * (`spectrumSurfaceSource`): it discards what a blending surface does not own, then gives the displaced surface's
+ * normal over the mesh's base normal (`base`), the height, and
  * FFT-Ocean's crest foam from the persistent turbulence with the asset's Crest Foam and Foam Amount, and the subsurface
  * light built-in water draws (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam` and `swnSubsurface`.
  * GLSL-shaped with `U.`; `varying` is the bound `WATER_NODE_VARYING`.
@@ -1377,6 +1429,8 @@ vec2 swnRest = swnRestW.xz;
 float swnDist = max(length(swnRestW - U.${WATER_EYE_UNIFORM}.xyz), 0.001);
 vec4 swnSp = U.slateWaterFft;
 vec4 swnShares = ${varying};
+// A blending surface draws only the water it owns inside the blended shoreline, as built-in water does (\`cutSource\`).
+if (min(swnShares.z, swnShares.w + 0.015) < 0.0) { discard; }
 float swnTurbScale = swnSp.x * swnShares.x;
 vec2 swnGrad = vec2(0.0);
 vec3 swnJ = vec3(0.0);
@@ -1606,7 +1660,7 @@ const putLinear = (v: Float64Array, o: number, color: readonly number[], w: numb
 };
 /**
  * The per-render vec4s `WaterMaterialPlugin.frameConstants` packs, in its write order; from `FRAME_BLEND_START` on, the
- * partner colours only a blending surface binds.
+ * partners' colours only a blending surface binds.
  */
 const FRAME_UNIFORMS: readonly string[] = [
   "slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves",
@@ -1615,14 +1669,15 @@ const FRAME_UNIFORMS: readonly string[] = [
   ...BLEND_COLOR_UNIFORMS,
 ];
 const FRAME_BLEND_START = FRAME_UNIFORMS.length - BLEND_COLOR_UNIFORMS.length;
+const NO_BLEND_PARTNERS: readonly (WaterDefinition | null)[] = Object.freeze([null, null, null]);
 /** The numeric definition fields the packed vec4s read besides the colours (`frameInputsChanged`). */
 const FRAME_DEFINITION_FIELDS = [
   "opacity", "reflectionStrength", "foamAmount", "foamWidth", "depthColorDistance",
   "subsurface", "waveHeight", "waveLength", "waveSpeed", "waveDirection", "surfaceFoam", "roughness", "colorVariation", "waveSpread",
   "crestFoam", "contactFoamWidth",
 ] as const satisfies readonly (keyof WaterDefinition)[];
-/** Render, clock, origin, scale, tier, reflection source and bank fade; the fields; three colours; the partner's six and nine. */
-const FRAME_KEY_LENGTH = 10 + FRAME_DEFINITION_FIELDS.length + 9 + 3 + 9;
+/** Render, clock, origin, scale, tier, reflection source and bank fade; the fields; three colours; each partner's three and nine. */
+const FRAME_KEY_LENGTH = 10 + FRAME_DEFINITION_FIELDS.length + 9 + BLEND_PARTNERS * (3 + 9);
 const REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemovalShape${i}`);
 const REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemoval${i}`);
 
@@ -1659,7 +1714,7 @@ type WaterLighting = {
   haze: Float64Array;
 };
 
-const linearScratch = new Color3(), gammaScratch = new Color3();
+const linearScratch = new Color3(), gammaScratch = new Color3(), absorbScratch = new Float64Array(4);
 /**
  * A Shallow Color channel's relative absorption through clear water (see `WaterMaterialPlugin.absorption`): the optical
  * depth that leaves the channel at its share of the brightest, over a small common floor. A cyan Shallow Color thus
@@ -1739,6 +1794,26 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
 
 /** Each material's ambient: the scene's, plus its environment's share and a low-light floor. Writes `waterAmbient`. */
 const waterAmbient = new Float64Array(3);
+/**
+ * How strongly the scene lights a water body's own colour (Deep Color and its subsurface light), from the ambient light
+ * the water sees (`withWaterEnvironment`) and the sun: a dim scene keeps a dim sea. 0.05 to 1.6.
+ */
+function waterBodyLight(ambient: ArrayLike<number>, light: Pick<WaterLighting, "sun" | "sunColor">): number {
+  const luminance = (r: number, g: number, b: number) => r * 0.3 + g * 0.59 + b * 0.11;
+  const sun = light.sun, color = light.sunColor;
+  const lit = luminance(ambient[0]!, ambient[1]!, ambient[2]!) * 1.4 + luminance(color[0]!, color[1]!, color[2]!) * sun[3]! * Math.max(sun[1]!, 0) * 0.35;
+  return Math.min(1.6, Math.max(0.05, lit));
+}
+
+/**
+ * `waterBodyLight` of `water` in `scene` this frame, as built-in water lights its colour (`slateWaterLight.w`), for a
+ * Custom Material's Water Colors node. `reflective`: the water reflects an environment or skybox cube.
+ */
+export function sceneWaterBodyLight(scene: Scene, water: WaterDefinition, reflective: boolean): number {
+  const lighting = sceneWaterBindingData(scene).lighting;
+  return waterBodyLight(withWaterEnvironment(lighting, water.reflectionStrength, reflective), lighting);
+}
+
 function withWaterEnvironment(light: WaterLighting, environmentStrength: number, reflective: boolean): Float64Array {
   const out = waterAmbient, extra = reflective ? 0.45 * environmentStrength : 0;
   out[0] = light.ambient[0]! + 0.8 * extra; out[1] = light.ambient[1]! + 0.9 * extra; out[2] = light.ambient[2]! + extra;
@@ -1861,8 +1936,9 @@ function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage):
   const varying = (type: string, name: string) => (wgsl ? `varying ${name}: ${type};` : `varying ${type} ${name};`) + "\n";
   // vSlateWaterFlow packs the world current (x, z) and the Gerstner offset (Dx, Dz), so the fragment finds its rest point.
   const varyings = varying(v4, "vSlateWater") + varying(v4, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal")
-    + `#ifdef ${WATER_BLEND_DEFINE}\n` + varying(v4, "vSlateWaterBlend") + "#endif\n";
-  const blendAttribute = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif\n`;
+    + `#ifdef ${WATER_BLEND_DEFINE}\n` + varying(v4, "vSlateWaterBlend") + varying(wgsl ? "vec2f" : "vec2", "vSlateWaterBlendColors") + "#endif\n";
+  const blendAttribute = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n`
+    + `${wgsl ? "attribute slateWaterBlendColors: vec2f;" : "attribute vec2 slateWaterBlendColors;"}\n#endif\n`;
   if (stage === "vertex") {
     const vertex = waterVertexSource(language);
     return {
@@ -1975,10 +2051,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   /** The surface blends with neighbours (`SLATE_WATER_BLEND`); the water mesh owns it with the per-vertex blend data. */
   private _blend = false;
   /**
-   * The neighbour whose colours a blending surface mixes toward (by each vertex's partner-colour share); null keeps the
-   * asset's own. Set by the water mesh with `blend`.
+   * The neighbours whose colours a blending surface mixes toward, by slot (each by its per-vertex colour share); null
+   * keeps the asset's own. Set by the water mesh with `blend`.
    */
-  partner: WaterDefinition | null = null;
+  partners: readonly (WaterDefinition | null)[] = NO_BLEND_PARTNERS;
   /** Device-effective features this asset asks for; the copy features also need a copy for the pass drawn. */
   private refracts = false;
   private marches = false;
@@ -1997,7 +2073,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private readonly frameValues = new Float64Array(FRAME_UNIFORMS.length * 4);
   private readonly frameKey = new Float64Array(FRAME_KEY_LENGTH).fill(NaN);
   private readonly frameScratch = new Float64Array(FRAME_KEY_LENGTH);
-  private framePartner: WaterDefinition | null = null;
+  private readonly framePartners: (WaterDefinition | null)[] = [null, null, null];
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, {
       SLATE_WATER: true, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
@@ -2137,7 +2213,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   override getAttributes(attributes: string[]): void {
     attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset");
-    if (this._blend) attributes.push("slateWaterBlend");
+    if (this._blend) attributes.push("slateWaterBlend", "slateWaterBlendColors");
   }
   override getUniforms() {
     const vectors = [
@@ -2151,7 +2227,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       // (1 / output width, 1 / output height, Refraction, march distance) and (planar on, display-encoded,
       // distortion, 0): per draw, from the pass's scene copy and the view's planar reflection.
       "slateWaterScreen", "slateWaterPlanar",
-      // A blending surface's partner colours (\`BLEND_COLOR_UNIFORMS\`).
+      // A blending surface's partners' colours (\`BLEND_COLOR_UNIFORMS\`).
       ...BLEND_COLOR_UNIFORMS, ...FFT_UNIFORMS,
     ];
     const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => i);
@@ -2285,34 +2361,36 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   /**
    * Writes every input of `frameConstants` into `frameKey` (the render, which owns the scene lighting, the clock, the
    * origin, Wave Scale, tier, reflection source and each definition field it reads) and reports whether any changed
-   * since the last call, or the partner did. Allocation-free.
+   * since the last call, or a partner did. Allocation-free.
    */
-  private frameInputsChanged(data: WaterBindingData, origin: Vector3, scale: number, reflective: boolean, bankFade: number, partner: WaterDefinition | null): boolean {
+  private frameInputsChanged(data: WaterBindingData, origin: Vector3, scale: number, reflective: boolean, bankFade: number, blend: boolean): boolean {
     const s = this.frameScratch, w = this.water;
     let n = 0;
     s[n++] = data.frame; s[n++] = data.render; s[n++] = this.time; s[n++] = origin.x; s[n++] = origin.y; s[n++] = origin.z;
     s[n++] = scale; s[n++] = this.tier; s[n++] = reflective ? 1 : 0; s[n++] = bankFade;
     for (let i = 0; i < FRAME_DEFINITION_FIELDS.length; i++) s[n++] = w[FRAME_DEFINITION_FIELDS[i]!];
     for (let c = 0; c < 3; c++) { s[n++] = w.shallowColor[c]!; s[n++] = w.deepColor[c]!; s[n++] = w.foamColor[c]!; }
-    if (partner) {
+    let changed = false;
+    for (let k = 0; k < BLEND_PARTNERS; k++) {
+      const partner = blend ? this.partners[k] ?? w : null;
+      if (this.framePartners[k] !== partner) { this.framePartners[k] = partner; changed = true; }
+      if (!partner) continue;
       s[n++] = partner.opacity; s[n++] = partner.reflectionStrength; s[n++] = partner.foamAmount;
       for (let c = 0; c < 3; c++) { s[n++] = partner.shallowColor[c]!; s[n++] = partner.deepColor[c]!; s[n++] = partner.foamColor[c]!; }
     }
     const key = this.frameKey;
-    let changed = this.framePartner !== partner;
     for (let i = 0; i < n; i++) if (!Object.is(key[i], s[i])) { key[i] = s[i]!; changed = true; }
-    this.framePartner = partner;
     return changed;
   }
   /** The bound vec4s in `FRAME_UNIFORMS` order (colours, lighting and the asset's terms), read from the definition at every bind. */
   private frameConstants(scene: Scene, data: WaterBindingData): Float64Array {
     const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
-    const w = this.water, scale = this.waveScale, partner = this._blend ? this.partner ?? w : null;
+    const w = this.water, scale = this.waveScale, blend = this._blend;
     const material = this._material as PBRMaterial, reflective = material.reflectionTexture !== null || scene.environmentTexture !== null;
     const bankFade = this.bankFade();
     // The depth pre-pass and colour draws (and further views) of one render bind the same values: compare every input
     // (a few dozen numbers) instead of recomputing them, so in-place asset edits still apply at the next draw.
-    if (!this.frameInputsChanged(data, origin, scale, reflective, bankFade, partner)) return this.frameValues;
+    if (!this.frameInputsChanged(data, origin, scale, reflective, bankFade, blend)) return this.frameValues;
     const v = this.frameValues;
     let o = 0;
     const lighting = data.lighting, ambient = withWaterEnvironment(lighting, w.reflectionStrength, reflective);
@@ -2333,44 +2411,38 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     this.absorption(v, o, lighting, w, exact); o += 8;
     // With floating origin, shaders see positions relative to this offset (the eye); patterns must stay world-anchored.
     o = put4(v, o, origin.x, origin.y, origin.z, w.roughness);
-    o = put4(v, o, ambient[0]!, ambient[1]!, ambient[2]!, 0);
+    o = put4(v, o, ambient[0]!, ambient[1]!, ambient[2]!, waterBodyLight(ambient, lighting));
     o = put4(v, o, bankFade, 0, w.colorVariation, 0);
     o = put4(v, o, 0, w.waveSpread, w.crestFoam, w.contactFoamWidth);
     o = put4(v, o, smoothstep(0, 0.1, w.foamAmount) * Math.max(w.foamAmount, 0.85) * smoothstep(0, 0.05, w.contactFoamWidth), smoothstep(0, 0.05, w.crestFoam), 0, 0);
     const haze = lighting.haze;
     o = put4(v, o, haze[0]!, haze[1]!, haze[2]!, haze[3]!);
-    if (partner) {
-      // The partner's colours, through the same conversions as the asset's own (its own again without a partner).
+    for (let k = 0; blend && k < BLEND_PARTNERS; k++) {
+      // Each partner's colours, through the same conversions as the asset's own (its own again in an empty slot).
+      const partner = this.partners[k] ?? w;
       o = putLinear(v, o, partner.shallowColor, partner.opacity, exact);
       o = putLinear(v, o, partner.deepColor, partner.reflectionStrength, exact);
       o = putLinear(v, o, partner.foamColor, partner.foamAmount, exact);
-      this.absorption(v, o, lighting, partner, exact);
+      this.absorption(v, o, lighting, partner, exact); o += 8;
     }
     return v;
   }
   /**
-   * Per-channel absorption for Realistic transmittance (`slateWaterAbsorb`) from Shallow Color, the colour shallows
-   * take, in linear space: channels it lacks absorb fastest (`absorbCoefficient`), normalized so the slowest channel
-   * absorbs over five Depth Color Distances: clear shallows keep the bed's light in the colour the water keeps. A grey
-   * Shallow Color absorbs evenly (`w` is spare, 0). The light through thin crests (`slateWaterThrough`, Subsurface) is
-   * the sun's colour times what a crest transmits, by the gentler `glowCoefficient`. Allocation-free.
+   * Per-channel absorption for Realistic transmittance (`slateWaterAbsorb`, `waterAbsorption`; `w` is spare, 0), and
+   * the light through thin crests (`slateWaterThrough`, Subsurface): the sun's colour times what a crest transmits, by
+   * the gentler `glowCoefficient`, with Opacity's cap on the absorption path in `w`. Allocation-free.
    */
   private absorption(v: Float64Array, o: number, lighting: WaterLighting, water: WaterDefinition, exact: boolean): void {
-    const tint = water.shallowColor;
-    gammaScratch.set(Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])).toLinearSpaceToRef(linearScratch, exact);
-    const r = linearScratch.r, g = linearScratch.g, b = linearScratch.b, top = Math.max(r, g, b);
-    const k = absorbCoefficient;
-    const kr = k(r, top), kg = k(g, top), kb = k(b, top), weight = Math.min(kr, kg, kb);
-    const ar = kr / weight, ag = kg / weight, ab = kb / weight;
-    put4(v, o, ar, ag, ab, 0);
+    const absorb = waterAbsorption(water, exact, absorbScratch), pathCap = absorb[3]!;
+    put4(v, o, absorb[0]!, absorb[1]!, absorb[2]!, 0);
+    gammaScratch.set(Math.max(0, water.shallowColor[0]), Math.max(0, water.shallowColor[1]), Math.max(0, water.shallowColor[2])).toLinearSpaceToRef(linearScratch, exact);
+    const r = linearScratch.r, g = linearScratch.g, b = linearScratch.b;
     // Light through a crest crosses more open water than a shallow, through gentler ratios, and blue goes at least as
     // fast as green there (the plankton and dissolved matter of open water absorb blue), so crests glow teal against the
     // navy body even where clear shallows over sand read azure.
     const gr = glowCoefficient(r), gg = glowCoefficient(g), gb = Math.max(glowCoefficient(b), gg), glowWeight = Math.min(gr, gg, gb);
     const tr = Math.min(gr / glowWeight, GLOW_RATIO_CAP), tg = Math.min(gg / glowWeight, GLOW_RATIO_CAP), tb = Math.min(gb / glowWeight, GLOW_RATIO_CAP);
     const sun = lighting.sun[3]! * lighting.subsurfaceLift * 0.8, color = lighting.sunColor;
-    // w: Opacity's cap on the absorption path, where the slowest channel reaches 1 − Opacity.
-    const pathCap = -Math.log(Math.max(1 - water.opacity, 1e-6)) / Math.min(ar, ag, ab);
     put4(v, o + 4, color[0]! * Math.exp(-tr * 1.6) * sun, color[1]! * Math.exp(-tg * 1.6) * sun, color[2]! * Math.exp(-tb * 1.6) * sun, pathCap);
   }
   private bankFade(): number { return this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, this.waveScale); }

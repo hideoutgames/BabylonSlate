@@ -5,7 +5,7 @@ import {
 } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
-  normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
+  normalizeWaterDefinition, sameWaterColors, WATER_BLEND_COLOR_PARTNERS, waterBankFadeLength, waterBlendReach, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
   waterMovesSideways, waterRiverCentreline, waterSpectrum, waterWaveEnvelope,
   type Transform, type WaterBlendBody, type WaterBodyProperties, type WaterDefinition,
 } from "@haptic/core";
@@ -13,7 +13,10 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin, WaterVertexWaves } from "./water-material";
+import {
+  applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin,
+  WaterVertexWaves,
+} from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
@@ -111,10 +114,11 @@ type Surface = {
   /** Blending with neighbours (`syncSceneBlend`), or null while it blends with nothing. */
   blend: SurfaceBlend | null;
   /**
-   * Per vertex while blending: (swell height scale, Gerstner offset scale, ownership margin, partner-colour share) as
-   * the `slateWaterBlend` attribute, and the blended union bank distance, depth, current (x, y, z) and world rest height.
+   * Per vertex while blending: (swell height scale, Gerstner offset scale, ownership margin, colour share of partner 0)
+   * as the `slateWaterBlend` attribute, the colour shares of partners 1 and 2 (`slateWaterBlendColors`), and the
+   * blended union bank distance, depth, current (x, y, z) and world rest height.
    */
-  blendData: Float32Array; blendRest: Float32Array;
+  blendData: Float32Array; blendColors: Float32Array; blendRest: Float32Array;
   /** Bumped by in-place body and asset edits: neighbours rebuild their blend data. */
   blendRevision: number;
   /** World matrix and enabled state the blend pass last saw. */
@@ -130,22 +134,26 @@ type Surface = {
   stage: BlendRebuild | null;
 };
 /** Per-vertex arrays (and rest extents) of a blend write: the surface's own, or a budgeted rebuild's staging copies. */
-type RestBuffers = Pick<Surface, "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendRest" | "restMin" | "restMax">;
-type RestArray = "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendRest";
+type RestBuffers = Pick<Surface, "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendColors" | "blendRest" | "restMin" | "restMax">;
+type RestArray = "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendColors" | "blendRest";
 /** `RestBuffers`' arrays with their floats per vertex. */
 const REST_ARRAYS: ReadonlyArray<readonly [RestArray, number]> = [
-  ["base", 3], ["worldBase", 3], ["normals", 3], ["baseNormals", 3], ["data", 4], ["flow", 3], ["bankGradient", 2], ["blendData", 4], ["blendRest", 6],
+  ["base", 3], ["worldBase", 3], ["normals", 3], ["baseNormals", 3], ["data", 4], ["flow", 3], ["bankGradient", 2], ["blendData", 4], ["blendColors", 2],
+  ["blendRest", 6],
 ];
 type StageBuffers = RestBuffers & { metres: Float32Array };
 /**
  * What `blendRange` reads and accumulates: the neighbour index it evaluates (the scene's, or a rebuild's frozen copy), the
- * body's world matrix, the neighbours' world bounds, and per write the extremes a finished write applies to the surface.
+ * body's world matrix, the neighbours' world bounds, per write the extremes a finished write applies to the surface, and
+ * the colour partners: neighbours coloured unlike this body, those coloured alike sharing a slot, by body index (`slots`)
+ * and per slot (`partners`, one body of each).
  */
 type BlendInputs = {
   index: WaterBlendIndex; distance: number; self: number; world: Matrix; inverse: Matrix;
   near: Float64Array[]; lift: Vector3;
-  ranged: boolean; varies: boolean; highest: number; partners: Map<number, number>;
+  ranged: boolean; varies: boolean; highest: number; slots: Map<number, number>; partners: number[];
 };
+
 const KERNEL = 0, FIT = 1, LANDED = 2;
 /**
  * A moved blending body's periodic blend refresh, spread over frames (`advanceBlendRebuild`). It evaluates a frozen copy
@@ -183,7 +191,11 @@ type SurfaceBlend = {
   restVaries: boolean;
   /** The largest swell height scale over the grid (a calmer body takes a rougher neighbour's waves near the seam). */
   heightScale: number;
+  /** The definitions of the colour partners, by slot (`WATER_BLEND_COLOR_PARTNERS`; null where a slot is empty). */
+  partners: (WaterDefinition | null)[];
 };
+/** No colour partners: a surface that blends with nothing coloured unlike it. */
+const NO_PARTNERS: readonly (WaterDefinition | null)[] = Object.freeze([null, null, null]);
 /**
  * One scene's blending: its index of enabled surfaces and the distance it was built for. `waiting` is set while a
  * moved surface's neighbours keep their previous blend data (`WATER_BLEND_REFRESH_MS`).
@@ -423,7 +435,11 @@ function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
   for (const s of entries) {
     const self = members.indexOf(s), neighbours = self < 0 ? [] : index.neighbours(self);
     if (!neighbours.length) {
-      if (s.blend) { s.blend = null; s.version++; if (s.plugin) { s.plugin.blend = false; s.plugin.partner = null; } }
+      if (s.blend) {
+        s.blend = null; s.version++;
+        if (s.plugin) { s.plugin.blend = false; s.plugin.partners = NO_PARTNERS; }
+        if (s.nodes) s.nodes.partners = NO_PARTNERS;
+      }
       s.stage = null;
       continue;
     }
@@ -455,7 +471,7 @@ function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
       continue;
     }
     if (stage) stage.active = false;
-    s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1 };
+    s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1, partners: [null, null, null] };
     s.version++;
     if (s.plugin) s.plugin.blend = true;
   }
@@ -735,10 +751,12 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
   mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
   mesh.setVerticesData("slateWaterOffset", s.offsets, true, 2);
   if (s.blend) {
-    s.blendData = new Float32Array(count * 4); s.blendRest = new Float32Array(count * 6);
+    s.blendData = new Float32Array(count * 4); s.blendColors = new Float32Array(count * 2); s.blendRest = new Float32Array(count * 6);
     mesh.setVerticesData("slateWaterBlend", s.blendData, true, 4);
+    mesh.setVerticesData("slateWaterBlendColors", s.blendColors, true, 2);
   } else if (mesh.isVerticesDataPresent("slateWaterBlend")) {
     mesh.removeVerticesData("slateWaterBlend");
+    mesh.removeVerticesData("slateWaterBlendColors");
   }
   return REBUILT;
 }
@@ -768,7 +786,7 @@ const blendSample = createWaterBlendSample(), blendPoint = new Vector3();
 
 const createBlendInputs = (): BlendInputs => ({
   index: null as unknown as WaterBlendIndex, distance: 0, self: 0, world: Matrix.Identity(), inverse: Matrix.Identity(),
-  near: [], lift: new Vector3(), ranged: false, varies: false, highest: 1, partners: new Map(),
+  near: [], lift: new Vector3(), ranged: false, varies: false, highest: 1, slots: new Map(), partners: [],
 });
 
 /** Points `inputs` at a neighbour index, the body `self` in it and the world matrix the body is evaluated at. */
@@ -796,12 +814,12 @@ function inBlendReach(bounds: readonly Float64Array[], reach: number, x: number,
 
 /**
  * Blended rest data of a blending surface's grid (`evaluateWaterBlend` at each vertex's world rest point): lifts the rest
- * grid to the blended rest height and fills `blendData` (the vertex attribute) and `blendRest` (union bank distance,
- * depth, current and world rest height, which `placeRestData` uploads), then the rest extents. Picks the partner whose
- * colours the most vertices mix toward. On change only: a rebuilt grid, a rotated or scaled volume, or a recentred
+ * grid to the blended rest height and fills `blendData` and `blendColors` (the vertex attributes) and `blendRest` (union
+ * bank distance, depth, current and world rest height, which `placeRestData` uploads), then the rest extents. Each vertex
+ * mixes toward every colour partner by its colour share. On change only: a rebuilt grid, a rotated or scaled volume, or a recentred
  * Global grid. With a vertex range (`first` to `end`), only those vertices are rewritten (Global Water's rows near a
  * neighbour, `placeGlobalBlend`): the rest extents then cover open water's plane and the range, and the height scale
- * and partner come from the range alone (open water outside it has neither).
+ * comes from the range alone (open water outside it has none).
  */
 function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end = s.base.length / 3): void {
   const state = sceneBlends.get(s.mesh.getScene()), blend = s.blend;
@@ -812,10 +830,22 @@ function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end =
   finishBlend(s, inputs);
 }
 
-/** Starts a write of `b`: a range leaves open water's plane (local y = 0) everywhere else. */
+/**
+ * Starts a write of `b`: a range leaves open water's plane (local y = 0) everywhere else. The colour partners are this
+ * body's neighbours coloured unlike it, in index order, alike-coloured ones sharing a slot; past
+ * `WATER_BLEND_COLOR_PARTNERS` further colours keep this body's own.
+ */
 function beginBlend(inputs: BlendInputs, b: RestBuffers, ranged: boolean): void {
   inputs.ranged = ranged; inputs.varies = false; inputs.highest = 1;
-  inputs.partners.clear();
+  const { index, self, slots, partners } = inputs, list = index.neighbours(self);
+  slots.clear(); partners.length = 0;
+  for (let n = 0; n < list.length; n++) {
+    const j = list[n]!;
+    if (index.colorsMatch(self, n)) continue;
+    let slot = partners.findIndex((k) => sameWaterColors(index.bodies[k]!.definition, index.bodies[j]!.definition));
+    if (slot < 0 && partners.length < WATER_BLEND_COLOR_PARTNERS) slot = partners.push(j) - 1;
+    if (slot >= 0) slots.set(j, slot);
+  }
   Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inputs.inverse, inputs.lift);
   if (ranged) { b.restMin.y = 0; b.restMax.y = 0; }
   else { b.restMin.setAll(Infinity); b.restMax.setAll(-Infinity); }
@@ -823,13 +853,14 @@ function beginBlend(inputs: BlendInputs, b: RestBuffers, ranged: boolean): void 
 
 /** The kernel over vertices [first, end) of `b`, which may be called again for further ranges of one write. */
 function blendRange(inputs: BlendInputs, s: Surface, b: RestBuffers, first: number, end: number): void {
-  const base = b.base, data = b.blendData, rest = b.blendRest, sample = blendSample, partners = inputs.partners, lift = inputs.lift;
+  const base = b.base, data = b.blendData, colors = b.blendColors, rest = b.blendRest, sample = blendSample, slots = inputs.slots, lift = inputs.lift;
   const world = inputs.world, index = inputs.index, self = inputs.self, near = inputs.near, ranged = inputs.ranged;
   // Vertices beyond every neighbour's reach keep the body's own rest data (most of a Global grid): no kernel call.
-  const reach = inputs.distance / 2;
+  const reach = waterBlendReach(inputs.distance);
   const open = s.body.kind === "global";
   for (let v = first; v < end; v++) {
-    const i = v * 3, d = v * 4, r = v * 6;
+    const i = v * 3, d = v * 4, c = v * 2, r = v * 6;
+    colors[c] = 0; colors[c + 1] = 0;
     // The own rest height first (a recentred Global grid keeps the previous lift; its own plane is at 0).
     base[i + 1] = open ? 0 : waterFootprint(s.body, base[i]!, base[i + 2]!).height;
     Vector3.TransformCoordinatesFromFloatsToRef(base[i]!, base[i + 1]!, base[i + 2]!, world, blendPoint);
@@ -837,14 +868,22 @@ function blendRange(inputs: BlendInputs, s: Surface, b: RestBuffers, first: numb
       // NaN marks the body's own rest data for `placeRestData`.
       data[d] = 1; data[d + 1] = 1; data[d + 2] = 1; data[d + 3] = 0;
       rest[r] = NaN; rest[r + 5] = blendPoint.y;
-    } else if (evaluateWaterBlend(index, self, blendPoint.x, blendPoint.y, blendPoint.z, sample)) {
+    } else if (evaluateWaterBlend(index, self, blendPoint.x, blendPoint.y, blendPoint.z, sample, true)) {
+      // Past this body's reach (its grid's outer vertices) it owns nothing but takes the neighbours' surface, so the
+      // shoreline and ownership interpolate toward their true values instead of stepping along the grid.
       const blendLift = sample.restHeight - sample.ownRestHeight;
       if (Math.abs(blendLift) > 1e-4) inputs.varies = true;
       base[i] = base[i]! + lift.x * blendLift; base[i + 1] = base[i + 1]! + lift.y * blendLift; base[i + 2] = base[i + 2]! + lift.z * blendLift;
-      data[d] = sample.heightScale; data[d + 1] = sample.offsetScale; data[d + 2] = sample.margin; data[d + 3] = sample.foreign;
+      data[d] = sample.heightScale; data[d + 1] = sample.offsetScale; data[d + 2] = sample.margin; data[d + 3] = 0;
+      // Each colour partner's share (the participants are in the index's scratch until the next evaluation).
+      const p = index.scratch;
+      for (let a = 1; a < sample.participants; a++) {
+        const slot = p.colors[a] ? -1 : slots.get(p.index[a]!) ?? -1;
+        if (slot === 0) data[d + 3] += p.colorWeight[a]!;
+        else if (slot > 0) colors[c + slot - 1] += p.colorWeight[a]!;
+      }
       rest[r] = Math.max(-1e4, Math.min(1e4, sample.union)); rest[r + 1] = sample.depth;
       rest[r + 2] = sample.flowX; rest[r + 3] = sample.flowY; rest[r + 4] = sample.flowZ; rest[r + 5] = sample.restHeight;
-      if (sample.partner >= 0) partners.set(sample.partner, (partners.get(sample.partner) ?? 0) + sample.foreign);
     } else {
       // No water of this body here: outside the union and owned by nobody, so the fragment discards.
       data[d] = 0; data[d + 1] = 0; data[d + 2] = -1; data[d + 3] = 0;
@@ -866,9 +905,13 @@ function finishBlend(s: Surface, inputs: BlendInputs): void {
   if (!blend) return;
   blend.restVaries = inputs.varies;
   blend.heightScale = inputs.highest;
-  let partner = -1, most = 0;
-  for (const [index, weight] of inputs.partners) if (weight > most) { most = weight; partner = index; }
-  if (s.plugin) s.plugin.partner = partner >= 0 ? inputs.index.bodies[partner]!.definition : null;
+  const partners = blend.partners;
+  for (let k = 0; k < WATER_BLEND_COLOR_PARTNERS; k++) {
+    const j = inputs.partners[k];
+    partners[k] = j === undefined ? null : inputs.index.bodies[j]!.definition;
+  }
+  if (s.plugin) s.plugin.partners = partners;
+  if (s.nodes) s.nodes.partners = partners;
 }
 
 /**
@@ -1069,7 +1112,10 @@ function placeRestData(s: Surface): void {
 function uploadRestData(s: Surface, blended: boolean): void {
   s.mesh.updateVerticesData("slateWaterFlow", s.flow);
   s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
-  if (blended) s.mesh.updateVerticesData("slateWaterBlend", s.blendData);
+  if (blended) {
+    s.mesh.updateVerticesData("slateWaterBlend", s.blendData);
+    s.mesh.updateVerticesData("slateWaterBlendColors", s.blendColors);
+  }
   if (s.gpu) {
     // A static rest grid: the vertex shader adds every displacement and computes its own offsets.
     if (!s.offsetsZero) { s.offsets.fill(0); s.offsetsZero = true; s.mesh.updateVerticesData("slateWaterOffset", s.offsets); }
@@ -1091,7 +1137,7 @@ const globalFlow = new Vector3(), globalNormal = new Vector3(), rowStart = new V
 function globalReachRows(s: Surface, inputs: BlendInputs, out: Int32Array): void {
   out[0] = 1; out[1] = 0;
   const base = s.base, stride = s.layoutColumns + 1, rows = base.length / 3 / stride - 1, world = inputs.world;
-  const reach = inputs.distance / 2, near = inputs.near;
+  const reach = waterBlendReach(inputs.distance), near = inputs.near;
   let first = rows + 1, last = -1;
   for (let row = 0; row <= rows; row++) {
     const a = row * stride * 3, b = (row * stride + stride - 1) * 3;
@@ -1163,6 +1209,7 @@ function uploadGlobalRows(s: Surface, begin: number, end: number): void {
   uploadVertexRange(s.mesh, "slateWaterFlow", s.flow, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterBaseNormal", s.baseNormals, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterBlend", s.blendData, 4, begin, end);
+  uploadVertexRange(s.mesh, "slateWaterBlendColors", s.blendColors, 2, begin, end);
 }
 
 /**
@@ -1202,7 +1249,8 @@ function createStageBuffers(count: number): StageBuffers {
   return {
     base: new Float32Array(count * 3), worldBase: new Float32Array(count * 3), normals: new Float32Array(count * 3),
     baseNormals: new Float32Array(count * 3), data: new Float32Array(count * 4), flow: new Float32Array(count * 3),
-    bankGradient: new Float32Array(count * 2), blendData: new Float32Array(count * 4), blendRest: new Float32Array(count * 6),
+    bankGradient: new Float32Array(count * 2), blendData: new Float32Array(count * 4), blendColors: new Float32Array(count * 2),
+    blendRest: new Float32Array(count * 6),
     restMin: new Vector3(), restMax: new Vector3(), metres: new Float32Array(count),
   };
 }
@@ -1737,7 +1785,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
-    copyCounted: 0, nodes: null, nodeCopyUse: 0, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
+    copyCounted: 0, nodes: null, nodeCopyUse: 0, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendColors: empty, blendRest: empty, blendRevision: 0,
     blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
   let entries = surfaces.get(scene);
@@ -1761,7 +1809,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   refreshSurface(surface, sceneWaterTime(scene));
   if (plugin) attachFields(surface);
   else {
-    surface.nodes = { water, field: null, contacts: null };
+    surface.nodes = { water, field: null, contacts: null, partners: NO_PARTNERS };
     setMeshWaterNodeSurface(mesh, surface.nodes);
     syncNodeSurface(surface);
   }
