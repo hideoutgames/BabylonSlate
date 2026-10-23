@@ -222,6 +222,23 @@ it("enables PBR ambient occlusion, scene reflections and scene-light fog indepen
   expect(planSceneEffects(settings, "pbr", false)).toBeNull();
 });
 
+it("runs reflections in CEL only on its opt-in, keeping ambient occlusion PBR-only and quality allowances", () => {
+  const settings = effects({ reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  expect(planSceneEffects(settings, "cel")).toBeNull();
+  expect(planSceneEffects(settings, "cel", true, { celReflections: true })).toMatchObject({
+    reflections: settings.reflections, ambientOcclusion: null, sceneLinear: false });
+  // The opt-in never turns the project effect on.
+  expect(planSceneEffects(effects(), "cel", true, { celReflections: true })).toBeNull();
+  const { medium, high } = RENDER_QUALITY_PROFILES;
+  expect(planSceneEffects(settings, "cel", true, { celReflections: true, allowed: medium.postprocessing })).toBeNull();
+  expect(planSceneEffects(settings, "cel", true, { celReflections: true, allowed: high.postprocessing })?.reflections)
+    .toEqual(settings.reflections);
+  // The prepared graph rebuilds when CEL gains reflections; PBR ignores the CEL opt-in.
+  expect(sceneEffectsKey(settings, "cel", true, { celReflections: true })).not.toBe(sceneEffectsKey(settings, "cel", true));
+  expect(sceneEffectsKey(settings, "pbr", true, { celReflections: true })).toBe(sceneEffectsKey(settings, "pbr", true));
+});
+
 it("skips the screen-space effects a quality tier cannot afford but keeps authored Fog Volumes", () => {
   const settings = effects({ reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
     ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },

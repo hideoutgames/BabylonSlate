@@ -93,8 +93,8 @@ export function celSourceReflectivity(
   }
   // Babylon's Standard encoding: the linear specular color at full gloss. A specular map is not read, so none.
   if (source.specularTexture) return [0, 0, 0, 0, 0];
-  const color = source.specularColor.toLinearSpaceToRef(linearSpecular);
-  return [color.r, color.g, color.b, 0, 1];
+  source.specularColor.toLinearSpaceToRef(linearSpecular);
+  return [linearSpecular.r, linearSpecular.g, linearSpecular.b, 0, 1];
 }
 
 /** Native non-PBR surface adapter for imported and engine fallback materials. */

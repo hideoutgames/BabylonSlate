@@ -8,15 +8,20 @@ import {
   PBRMaterial,
   Scene,
   SpotLight,
+  StandardMaterial,
+  type Material,
+  type Mesh,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import {
   fogVolumeBindings,
   identitySerializedTransform,
+  normalizeCelShadingSettings,
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
   normalizeRenderingQuality,
+  type RenderMode,
 } from "@haptic/core";
 import {
   applyAuthoredLightProperties,
@@ -117,10 +122,51 @@ async function captureAmbientOcclusion(
   return { off, on, linear, orthographic, orthographicOff, disabled };
 }
 
+/** The render mode and CEL opt-in the proof's next draw applies. */
+type ReflectionRender = { mode: RenderMode; celReflections: boolean };
+
+/**
+ * A red unlit box over a floor, drawn without and with Real-Time Reflections for each surface kind: an authored
+ * graph mirror in PBR, in CEL by default and in CEL with the opt-in, a native PBR metal under CEL's adapter, and an
+ * unlit Standard floor, whose white default specular color must not make it a mirror.
+ */
+async function captureReflections(
+  scene: Scene,
+  floor: Mesh,
+  mirror: Material,
+  render: ReflectionRender,
+  effects: ReturnType<typeof normalizeRenderEffectsSettings>,
+  draw: () => Promise<number[]>,
+) {
+  const pair = async (material: Material, mode: RenderMode, celReflections: boolean) => {
+    floor.material = material;
+    Object.assign(render, { mode, celReflections });
+    effects.reflections.enabled = false;
+    const off = await draw();
+    effects.reflections.enabled = true;
+    const on = await draw();
+    return { off, on };
+  };
+  const metal = new PBRMaterial("Native Metal Floor", scene);
+  metal.metallic = 1;
+  metal.roughness = 0.05;
+  metal.albedoColor = new Color3(0.9, 0.9, 0.9);
+  const unlit = new StandardMaterial("Unlit Standard Floor", scene);
+  unlit.disableLighting = true;
+  unlit.diffuseColor = new Color3(0.1, 0.1, 0.1);
+  return {
+    pbr: await pair(mirror, "pbr", false),
+    celDefault: await pair(mirror, "cel", false),
+    cel: await pair(mirror, "cel", true),
+    celNative: await pair(metal, "cel", true),
+    unlitStandard: await pair(unlit, "pbr", false),
+  };
+}
+
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
-  kind: "combined" | "fogVolumes" | "ambientOcclusion",
+  kind: "combined" | "fogVolumes" | "ambientOcclusion" | "reflections",
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -179,7 +225,8 @@ export async function runSpatialEffectsProof(
         crate.position.y = 0.75;
         crate.material = black;
       }
-      if (kind === "combined") {
+      let mirror: Material | undefined;
+      if (kind === "combined" || kind === "reflections") {
         const document = createDefaultMaterialDocument("Authored Mirror");
         document.nodes.find(
           (node) => node.id === "baseColor",
@@ -194,7 +241,7 @@ export async function runSpatialEffectsProof(
           (await compiled.ready).some((d) => d.severity === "error")
         )
           throw new Error("Mirror compilation failed");
-        floor.material = compiled.material;
+        floor.material = mirror = compiled.material;
         const red = new PBRMaterial("Red Reflection Subject", scene);
         red.unlit = true;
         red.albedoColor = new Color3(0.6, 0, 0);
@@ -247,9 +294,11 @@ export async function runSpatialEffectsProof(
           enabled: false, density: 0, intensity: 0, resolutionScale: 1, maxDistance: 20,
         });
       }
+      const render: ReflectionRender = { mode: "pbr", celReflections: false };
       const settings = () =>
         setSceneRenderSettings(scene, {
-          mode: "pbr",
+          mode: render.mode,
+          cel: normalizeCelShadingSettings({ reflectionsEnabled: render.celReflections }),
           effects,
           // Medium, the default tier, skips reflections and scene-wide volumetrics.
           quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
@@ -319,6 +368,9 @@ export async function runSpatialEffectsProof(
         if (kind === "ambientOcclusion") {
           return { occlusionCaptures: [await captureAmbientOcclusion(camera, effects, draw)] };
         }
+        if (kind === "reflections") {
+          return { reflectionCaptures: [await captureReflections(scene, floor, mirror!, render, effects, draw)] };
+        }
         const off = await draw();
         effects.reflections.enabled = true;
         effects.volumetricLighting.enabled = true;
@@ -369,8 +421,8 @@ export async function runSpatialEffectsProof(
         engine.endFrame();
       }
     };
-    const { captures = [], fogCaptures = [], occlusionCaptures = [] } = await captureScene();
-    return { captures, fogCaptures, occlusionCaptures, reservations: managedRenderReservations(engine) };
+    const { captures = [], fogCaptures = [], occlusionCaptures = [], reflectionCaptures = [] } = await captureScene();
+    return { captures, fogCaptures, occlusionCaptures, reflectionCaptures, reservations: managedRenderReservations(engine) };
   } finally {
     engine.dispose();
     canvas.remove();
