@@ -616,7 +616,7 @@ describe("compile holds after the first frame", () => {
       drawn.clear();
     }, async () => {
       const documents = new Map([["surface-c", createDefaultMaterialDocument("surface-c")]]);
-      cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true })));
+      cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true, warm: true })));
       for (let index = 0; index < 6; index++) await world.frame();
     });
     expect({ effects: record.effects, heldFrames: record.heldFrames, paused: record.pausedFrames > 0, shown: drawn.has("actor-20") },

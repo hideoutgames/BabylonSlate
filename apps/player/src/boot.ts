@@ -889,7 +889,8 @@ function initializePlayer(
       let releaseRender: (() => void) | undefined;
       try {
         request.controller.signal.throwIfAborted();
-        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal, priority });
+        // A preload is a latent spawn's (Spawn Actor, a Class load): it resolves with the actor's variants compiled.
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, warm: true, signal: request.controller.signal, priority });
         request.controller.signal.throwIfAborted();
         request.release = () => { releaseRender?.(); source.release(); };
         clearResourceFailures(requiredGameAssets(manifest, ids));

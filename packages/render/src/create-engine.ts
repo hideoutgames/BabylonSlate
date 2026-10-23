@@ -407,7 +407,12 @@ export interface EngineHandle {
    */
   replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => string[];
   /** Retain prepared source maps until the consuming runtime instance is retired. */
-  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
+  /**
+   * `prepare` loads the sources' textures, Materials and models before resolving; `warm` (a latent spawn's preload:
+   * Spawn Actor, a Class load) then also compiles them against the current lighting (`warmSpawnables`). A scene's
+   * sources leave `warm` off: its load compiles once its lighting is final.
+   */
+  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; warm?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
   /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
   spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
@@ -4357,7 +4362,8 @@ function initializeEngine(
           }
           // What a latent spawn (Spawn Actor, a Class load) prepared compiles now, against the current lighting,
           // so it resolves with the actor's variants ready; anything this misses is hidden per mesh until it compiles.
-          if (options.playMode) await warmSpawnables(scene, { materials: spawnableMaterials, containers: spawnableContainers }, check);
+          if (options.playMode && preparation.warm)
+            await warmSpawnables(scene, { materials: spawnableMaterials, containers: spawnableContainers }, check);
           if (prepared.audioLibrary?.audio.size && audioService)
             nativeReleases.push(await audioService.preload([...prepared.audioLibrary.audio.keys()], preparation.priority));
           check();
