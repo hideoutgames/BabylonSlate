@@ -79,6 +79,19 @@ describe("TimelineChart", () => {
     expect(onRange).toHaveBeenLastCalledWith(null);
   });
 
+  it("lets a finger reach further for the nearest bar than a mouse", () => {
+    render(<Harness />);
+    const plot = screen.getByRole("group", { name: "Timeline" });
+    const tap = (pointerType: "mouse" | "touch") => act(() => {
+      dispatchPointerEvent(plot, "pointerdown", { pointerType, clientX: x(55), clientY: 20 });
+      dispatchPointerEvent(plot, "pointerup", { pointerType, clientX: x(55), clientY: 20 });
+    });
+    tap("mouse");
+    expect(screen.getByTestId("selected").textContent).toBe("none");
+    tap("touch");
+    expect(screen.getByTestId("selected").textContent).toBe("ticks 1");
+  });
+
   it("names a hovered sample's parts, total and budget, and a hovered marker", () => {
     render(<Harness />);
     const plot = screen.getByRole("group", { name: "Timeline" });

@@ -35,6 +35,8 @@ const TRACK_PX = 56;
 const MARKER_PX = 18;
 /** Pixels a press must move before it selects a range instead of a sample. */
 const DRAG_PX = 4;
+/** Buckets either side a tap may reach for the nearest bar: about 44pt across for a finger. */
+const TOUCH_REACH = Math.ceil(22 / TIMELINE_BUCKET_PX);
 const defaultTime = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
 const withUnit = (text: string | number, unit: string) => `${text}${unit ? ` ${unit}` : ""}`;
 const formatValue = (value: number, unit: string) => withUnit(Number.isInteger(value) ? value : value.toFixed(3), unit);
@@ -195,10 +197,10 @@ export function TimelineChart({
       row: Math.floor(offsetY / TRACK_PX),
     };
   };
-  const sampleAt = (point: ReturnType<typeof locate>) => {
+  const sampleAt = (point: ReturnType<typeof locate>, reach?: number) => {
     const entry = layout[point.row];
     if (!entry) return null;
-    const index = timelineHit(entry.peaks, point.bucket);
+    const index = timelineHit(entry.peaks, point.bucket, reach);
     return index < 0 ? null : { entry, index };
   };
 
@@ -238,7 +240,7 @@ export function TimelineChart({
       onRangeChange?.([Math.min(held.time, time), Math.max(held.time, time)]);
       return;
     }
-    const hit = sampleAt(locate(event));
+    const hit = sampleAt(locate(event), event.pointerType === "mouse" ? undefined : TOUCH_REACH);
     if (hit) onSelect?.({ track: hit.entry.track.id, index: hit.index });
   };
   const cancel = () => {
