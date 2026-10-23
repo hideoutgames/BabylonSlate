@@ -25,7 +25,9 @@ import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } fr
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
-import { hideUntilReady, isRevealPending, revealMesh } from "./reveal-pending";
+import { hideUntilReady, isRevealPending, markRevealReady } from "./reveal-pending";
+import { awaitsFirstDraw } from "./shadow-first-draw";
+import { drawsDepthPrePass } from "./depth-pre-pass-draws";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -187,13 +189,13 @@ const deferredCasters: { generator: ShadowGenerator; own: boolean; isReady: Shad
  * and redraws the map until it is ready). So such a probe still requests those variants but does not let them hold
  * the mesh: its colour variant decides.
  */
-function deferCasterChecks(mesh: AbstractMesh): void {
+function deferCasterChecks(mesh: AbstractMesh, firstDrawsOnly: boolean): void {
   for (const light of mesh.lightSources) {
     const generators = light.getShadowGenerators();
     if (!generators) continue;
     for (const generator of generators.values()) {
       const shadows = generator as ShadowGenerator;
-      if (deferredCasters.some((entry) => entry.generator === shadows)) continue;
+      if ((firstDrawsOnly && !awaitsFirstDraw(shadows)) || deferredCasters.some((entry) => entry.generator === shadows)) continue;
       const own = Object.prototype.hasOwnProperty.call(shadows, "isReady");
       const isReady = shadows.isReady;
       deferredCasters.push({ generator: shadows, own, isReady });
@@ -260,10 +262,12 @@ export function drawsSomething(mesh: AbstractMesh): boolean {
  * failed to compile is over: the mesh is ready, drawing its previous Effect.
  *
  * A mesh with nothing to draw meanwhile (a spawn, a changed Material) is hidden instead inside such a probe
- * (`hideUntilReady`): no pass draws it until a probe finds it ready, which reveals it, and the probe passes. A hidden
- * mesh whose variant failed to compile stays hidden, reported once.
+ * (`hideUntilReady`), and the probe passes. It is revealed (`markRevealReady`, with the rest of its actor) once a
+ * probe finds every variant it draws with ready: colour, its caster depth variant for every shadow map that has drawn,
+ * and `alsoReady` (an object pass's transparent depth pre-pass; a probe without one leaves a mesh that draws a depth
+ * pre-pass to the object pass). A hidden mesh whose variant failed to compile stays hidden, reported once.
  */
-export function isMeshFrameReady(mesh: AbstractMesh): boolean {
+export function isMeshFrameReady(mesh: AbstractMesh, alsoReady?: (mesh: AbstractMesh) => boolean): boolean {
   const scene = mesh.getScene();
   // Native influence edits become attribute-dirty only when the manager resolves
   // its active targets. Resolve before native readiness can accept old defines.
@@ -311,16 +315,26 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     // Before the probe: a spawn's first request sets its still-compiling Effect on the submesh.
     const hideable = tolerated && (isRevealPending(mesh) || !drawsSomething(mesh));
     probedMesh = mesh;
-    if (tolerated) deferCasterChecks(mesh);
-    if (!collectEffectRequests(scene.getEngine(), meshRequests, probeMesh)) {
-      if (!hideable) return false;
+    // A mesh to reveal also needs its caster depth variant for every map that has drawn (a map awaiting its first
+    // draw waits for its casters itself); a drawn mesh lets the maps wait for theirs.
+    if (tolerated) deferCasterChecks(mesh, hideable);
+    const meshReady = collectEffectRequests(scene.getEngine(), meshRequests, probeMesh);
+    if (hideable) {
       hideUntilReady(mesh);
-      const failed = failedRequest();
-      if (failed) reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
-      else noteVariantSwap();
+      if (!meshReady) {
+        markRevealReady(mesh, false);
+        const failed = failedRequest();
+        if (failed) reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
+        else noteVariantSwap();
+        return true;
+      }
+      if (alsoReady) markRevealReady(mesh, alsoReady(mesh));
+      else if (!drawsDepthPrePass(mesh)) markRevealReady(mesh, true);
+      // Still hidden: waiting for the rest of its variants or of its actor.
+      if (isRevealPending(mesh)) noteVariantSwap();
       return true;
     }
-    revealMesh(mesh);
+    if (!meshReady) return false;
     // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
     for (const part of mesh.subMeshes ?? []) {
       const material = part.getMaterial();

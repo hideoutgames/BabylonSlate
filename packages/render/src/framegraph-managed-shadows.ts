@@ -15,8 +15,8 @@ import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/T
 import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
-import { drawsSomething, isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
-import { hideUntilReady, isRevealPending } from "./reveal-pending";
+import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { isRevealPending } from "./reveal-pending";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
@@ -128,17 +128,10 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       this._renderer.customIsReadyFunction = (mesh, rate, preWarm) => {
         if (previous && !previous(mesh, rate, preWarm)) return false;
         if (this.neverDraws?.(mesh) === true) return true;
-        const spawn = variantSwapsTolerated() && (isRevealPending(mesh) || !drawsSomething(mesh));
-        const colour = isMeshFrameReady(mesh);
-        // A hidden mesh draws nothing, its depth pre-pass included.
+        // A hidden mesh draws nothing, its depth pre-pass included; it is revealed once that is ready too.
+        const colour = isMeshFrameReady(mesh, depthReady);
         if (colour && isRevealPending(mesh)) return true;
         if (colour && depthReady(mesh)) return true;
-        // A mesh with nothing drawn yet stays hidden until its depth pre-pass is ready too.
-        if (colour && spawn) {
-          hideUntilReady(mesh);
-          noteVariantSwap();
-          return true;
-        }
         // The scan stops here. A parallel-compile driver links this mesh's depth pre-pass, which an unready colour
         // variant holds back, and the next meshes' variants meanwhile.
         requestCompilesAhead(engine, readinessScanMeshes(this._renderer, this._frameGraph.scene), mesh, this.requestedAhead,

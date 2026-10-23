@@ -406,10 +406,16 @@ export class SceneShadowController {
       this.cameraPass = false;
       this.refreshShadowMaps();
     });
-    // A hidden mesh casts into no map; revealed, it joins their caster lists, so every map draws again with it.
+    // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
+    // with it: a local light's only when the mesh is within its range, a sun's always.
     const unwatchReveals = onMeshRevealed(scene, (mesh) => {
       if (!this.meshes.has(mesh)) return;
-      this.forEachGenerator((generator) => generator.getShadowMap()?.resetRefreshCounter());
+      this.forEachGenerator((generator) => {
+        const light = generator.getLight();
+        if (!(light instanceof DirectionalLight) && "range" in light && Number.isFinite(light.range) &&
+          !casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number)) return;
+        generator.getShadowMap()?.resetRefreshCounter();
+      });
     });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);

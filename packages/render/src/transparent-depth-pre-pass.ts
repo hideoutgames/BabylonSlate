@@ -5,22 +5,12 @@ import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
 import { isMeshFrameReady } from "./scene-perf";
+import { drawsDepthPrePass } from "./depth-pre-pass-draws";
 
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
 /** The Babylon 9.29 members `RenderingGroup._RenderSorted` reads; the sort is the group's (authored or default). */
 type SortedGroup = { _transparentSortCompareFn?: SortCompare | null; disableDepthPrePass?: boolean };
 type TransparentHook = (subMeshes: SmartArray<SubMesh>, group?: RenderingGroup) => void;
-
-/** Whether one of `mesh`'s blended draws carries a depth pre-pass (`needDepthPrePass`). */
-function drawsDepthPrePass(mesh: AbstractMesh): boolean {
-  const parts = mesh.subMeshes;
-  if (!parts) return false;
-  for (let index = 0; index < parts.length; index += 1) {
-    const material = parts[index]!.getMaterial();
-    if (material?.needDepthPrePass && material.needAlphaBlendingForMesh(mesh)) return true;
-  }
-  return false;
-}
 
 /**
  * Transparent depth pre-passes drawn under their own render pass id.
