@@ -207,10 +207,15 @@ export interface PlayOverlayProps {
     >
   >;
   pauseOnPlay?: boolean;
-  /** Simulation: pause the first time each node reports an error. */
+  /** Pause the first time each node reports an error. */
   pauseOnErrors?: boolean;
-  /** A Simulation paused itself, on an error or at a breakpoint: show where. */
+  /** The session paused itself, on an error or at a breakpoint: show where. */
   onPausedAt?: (cause: SessionPauseCause) => void;
+  /**
+   * Editor Play stopped at a breakpoint or an error and hid its view behind the editor (the cause),
+   * or returned to the game (null). The session stays, paused, while hidden.
+   */
+  onPlayBreak?: (cause: SessionPauseCause | null) => void;
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
@@ -319,6 +324,7 @@ function PlayOverlayView({
   pauseOnPlay = false,
   pauseOnErrors = false,
   onPausedAt,
+  onPlayBreak,
   onClose,
 }: PlayOverlayProps) {
   const { appendLog, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
@@ -369,8 +375,10 @@ function PlayOverlayView({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
-  /** The breakpoint the Simulation stopped at, until it resumes. */
+  /** The breakpoint the session stopped at, until it resumes. */
   const [stoppedAt, setStoppedAt] = useState<SessionPauseCause | null>(null);
+  /** Editor Play stopped at a breakpoint or an error: its view hides until Resume. */
+  const [playBreak, setPlayBreak] = useState<SessionPauseCause | null>(null);
   const [pausePending, setPausePending] = useState(false);
   const [inputMode, setInputMode] = useState<"game" | "edit">("game");
   const [inputPending, setInputPending] = useState(false);
@@ -470,7 +478,11 @@ function PlayOverlayView({
       if (!result.success) { setControlError(result.reason ?? "Pause could not reach a completed runtime boundary."); return; }
       userPausedRef.current = result.pauseReasons.includes("user");
       setPaused(result.paused);
-      if (!result.paused) setStoppedAt(null);
+      if (!result.paused) {
+        setStoppedAt(null);
+        // Play shows its view again; the canvas takes game input once it is laid out (see below).
+        setPlayBreak(null);
+      }
       if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
       if (result.paused) session.requestPausedRedraw();
       // Pause keeps Simulation's input mode; resumed game input returns to the canvas.
@@ -499,11 +511,12 @@ function PlayOverlayView({
     }).finally(() => { if (sessionRef.current === session) setStepPending(false); });
   };
 
-  // The global toolbar presents Simulation's Pause, Step, Stop and input mode.
+  // The global toolbar presents Simulation's Pause, Step, Stop and input mode, and stopped Play's Resume.
   const simulationKeepChanges = simulationSession?.keepChanges ?? false;
   const simulationControls = useMemo(
-    () => simulating
+    () => simulating || playBreak
       ? {
+          mode: simulating ? "simulate" as const : "play" as const,
           paused,
           pausePending,
           stepPending,
@@ -516,13 +529,26 @@ function PlayOverlayView({
           setInputMode: (mode: "game" | "edit") => changeInputModeRef.current(mode),
         }
       : null,
-    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges, stoppedAt],
+    [simulating, playBreak, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges, stoppedAt],
   );
-  // While a Simulation is paused, its graphs keep what ran last lit.
+  // While a Simulation, or Play at a stop, is paused, its graphs keep what ran last lit.
+  const debuggingPaused = paused && (simulating || playBreak !== null);
   useEffect(() => {
-    if (simulating) graphDebug?.setHeld(paused);
-  }, [graphDebug, paused, simulating]);
+    graphDebug?.setHeld(debuggingPaused);
+  }, [graphDebug, debuggingPaused]);
   usePublishSimulationControls(simulationControls);
+  const onPlayBreakRef = useRef(onPlayBreak);
+  onPlayBreakRef.current = onPlayBreak;
+  const playBreakShownRef = useRef(false);
+  useEffect(() => {
+    onPlayBreakRef.current?.(playBreak);
+    if (playBreak) { playBreakShownRef.current = true; return; }
+    if (!playBreakShownRef.current) return;
+    playBreakShownRef.current = false;
+    // Back from a stop, shown again (the overlay's resize observer lays the view out): game input returns to the canvas.
+    canvasRef.current?.focus({ preventScroll: true });
+  }, [playBreak]);
+  useEffect(() => () => onPlayBreakRef.current?.(null), []);
 
   useEffect(() => {
     if (!simulating) return;
@@ -855,20 +881,25 @@ function PlayOverlayView({
           audioReverbBytes: audioReverbBytesRef.current,
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
-          pauseOnErrors: simulating && initialPauseOnErrorsRef.current,
-          breakpoints: simulating ? breakpointStore?.enabledLocations() : undefined,
+          pauseOnErrors: initialPauseOnErrorsRef.current,
+          breakpoints: breakpointStore?.enabledLocations(),
           onSceneLoading: setSceneLoading,
           onSceneLoadFailed: () => setSceneLoadFailed(true),
           onSessionPaused: (next, cause) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
-            if (!next) setStoppedAt(null);
-            if (!simulating || !cause) return;
+            if (!next) {
+              setStoppedAt(null);
+              setPlayBreak(null);
+            }
+            if (!cause) return;
             if (cause.code === BREAKPOINT_PAUSE_CODE) {
               setStoppedAt(cause);
               // The graph shows the object that stopped: its path and values from its next tick on.
               if (cause.instanceId) graphDebug?.follow(cause.instanceId);
             }
+            // Play hides its view and shows the editor at the stop; the session stays, paused.
+            if (!simulating) setPlayBreak(cause);
             // The runtime paused itself on an error or at a breakpoint: take the user pause through
             // the session boundary so Resume and Step treat it like Pause, then show where it stopped.
             pauseRef.current("user", true);
@@ -907,10 +938,10 @@ function PlayOverlayView({
             if (enabled) setConsoleOpen(false);
           },
           onBehaviourTreeSnapshot: setTrees,
-          // Only a Simulation debugs graphs; the store reads these off the render path.
-          onBtState: simulating ? (state) => graphDebug?.receiveBtState(state) : undefined,
-          onDebugRoster: simulating ? (roster) => graphDebug?.receiveRoster(roster) : undefined,
-          onExecutionTrace: simulating ? (trace) => graphDebug?.receiveTrace(trace) : undefined,
+          // The store reads these off the render path; Play observes nothing until it stops.
+          onBtState: (state) => graphDebug?.receiveBtState(state),
+          onDebugRoster: (roster) => graphDebug?.receiveRoster(roster),
+          onExecutionTrace: (trace) => graphDebug?.receiveTrace(trace),
           onRenderOutputChanged: (settings) => {
             runtimeRenderRef.current = settings;
             liveSizeRef.current = null;
@@ -938,13 +969,9 @@ function PlayOverlayView({
       }
       sessionRef.current = session;
       // The graph debugger asks the runtime to watch the focused graph's instances.
-      const unsubscribeGraphDebug = simulating
-        ? graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId))
-        : undefined;
-      // Breakpoints set, removed or switched off while the Simulation runs apply from its next run of the node.
-      const unsubscribeBreakpoints = simulating
-        ? breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()))
-        : undefined;
+      const unsubscribeGraphDebug = graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId));
+      // Breakpoints set, removed or switched off while the session runs apply from its next run of the node.
+      const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()));
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -1096,10 +1123,8 @@ function PlayOverlayView({
         detachLifecycle();
         unsubscribeGraphDebug?.();
         unsubscribeBreakpoints?.();
-        if (simulating) {
-          graphDebug?.setHeld(false);
-          graphDebug?.setTarget(null);
-        }
+        graphDebug?.setHeld(false);
+        graphDebug?.setTarget(null);
         finishSessionRef.current();
       };
     });
@@ -1234,9 +1259,12 @@ function PlayOverlayView({
         playPreview.followSystem
           ? "bg-background"
           : "items-center justify-center bg-black",
+        // Stopped Play stays mounted, paused and sized, behind the editor.
+        playBreak && "hidden",
       )}
       data-testid="play-overlay"
       data-mode={simulating ? "simulate" : "play"}
+      data-play-break={playBreak ? "" : undefined}
       data-scene-guid={sceneAssetGuid ?? ""}
       data-post-process-passes={testMode ? String(postProcessPasses) : undefined}
       data-assigned-materials={testMode ? assignedMaterials : undefined}

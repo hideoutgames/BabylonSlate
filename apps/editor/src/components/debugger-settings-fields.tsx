@@ -46,17 +46,17 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         <Switch id="setting-keep-simulation-changes" checked={defaults.keepSimulationChanges}
           onCheckedChange={(keepSimulationChanges) => update({ keepSimulationChanges })} />
       </Field>
+    </FieldSet>
+    <FieldSet>
+      <FieldLegend>Session</FieldLegend>
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-pause-simulation-on-errors">Pause On Errors</FieldLabel>
-          <FieldDescription>Applies to the next Simulation session. The first time a node throws, logs an Error or fails an Assert, the Simulation pauses at the end of that tick and opens the graph at the node. Later errors from the same node only add to its count in the session report.</FieldDescription>
+          <FieldDescription>Applies to the next Play or Simulation session. The first time a node throws, logs an Error or fails an Assert, the game pauses at the end of that tick and the editor opens the graph at the node; Play hides the game until you choose Resume. Later errors from the same node only add to its count in the session report.</FieldDescription>
         </FieldContent>
         <Switch id="setting-pause-simulation-on-errors" checked={defaults.pauseSimulationOnErrors}
           onCheckedChange={(pauseSimulationOnErrors) => update({ pauseSimulationOnErrors })} />
       </Field>
-    </FieldSet>
-    <FieldSet>
-      <FieldLegend>Session</FieldLegend>
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-pause-on-play">Pause On Play</FieldLabel>

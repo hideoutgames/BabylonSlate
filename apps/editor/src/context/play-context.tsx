@@ -31,7 +31,7 @@ import {
   type CollisionTriangleMesh,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
-import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry } from "@haptic/bridge";
+import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
@@ -860,12 +860,19 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Play and Preview Build cover the editor, so its background work waits; a Simulation runs inside it.
-  const gameCoversEditor = playOpen && sessionState.mode !== null && sessionState.mode !== "simulate";
+  /** Editor Play stopped at a breakpoint or an error, its view hidden behind the editor until Resume. */
+  const [playBreak, setPlayBreak] = useState<SessionPauseCause | null>(null);
+  const playStopped = playBreak !== null;
+  // Play and Preview Build cover the editor, so its background work waits; a Simulation runs inside it,
+  // and stopped Play shows it.
+  const gameCoversEditor = playOpen && sessionState.mode !== null && sessionState.mode !== "simulate" && !playStopped;
   useEffect(() => {
     setEditorQuiet(gameCoversEditor);
   }, [gameCoversEditor]);
   useEffect(() => () => setEditorQuiet(false), []);
+  // Stopped Play leaves the editor read-only, as a running Simulation does; breakpoints can still change.
+  const { lockAuthoring } = documents;
+  useEffect(() => (playStopped ? lockAuthoring("Read-only while Play is stopped") : undefined), [lockAuthoring, playStopped]);
 
   useEffect(() => {
     if (projectDocument) return;
@@ -1418,8 +1425,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
-          traceExecution: simulating,
-          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: simulating }),
+          // Editor Play and Simulation compile with the breakpoint check and the graph debugger's probes,
+          // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
+          traceExecution: true,
+          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true }),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
@@ -1833,6 +1842,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             pauseOnPlay={pauseOnPlay}
             pauseOnErrors={simulationDefaultsFromSettings(appSettings.debuggerDefaults).pauseOnErrors}
             // A breakpoint stop opens its node like an error does, but is not an error.
+            onPlayBreak={setPlayBreak}
             onPausedAt={(cause) => void navigateToSessionReportEntry(
               { severity: cause.code === BREAKPOINT_PAUSE_CODE ? "info" : "error", ...cause },
               sessionReportNavigationHost,

@@ -10,6 +10,7 @@ afterEach(() => {
 
 function controls(overrides: Partial<SimulationControls> = {}): SimulationControls {
   return {
+    mode: "simulate",
     paused: false,
     pausePending: false,
     stepPending: false,
