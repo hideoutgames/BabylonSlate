@@ -28,12 +28,17 @@ import { cn } from "@haptic/ui/lib/utils";
 import { ChevronsLeftIcon, ChevronsRightIcon, XIcon } from "lucide-react";
 import { Facts } from "./diagnostic-facts";
 import { TraceEmptyState } from "./trace-inspection-controls";
-import { formatRecorded, frameBudget, linkedRow, profileMarkers, streamColumn, summarizeRange, tickTimes } from "../lib/performance-timeline-model";
+import { accountedMemoryMiB, formatRecorded, frameBudget, linkedRow, profileMarkers, streamColumn, summarizeRange, tickTimes } from "../lib/performance-timeline-model";
 
-type Population = "frames" | "ticks" | "gpu";
-/** A plotted part of a stream, with the recorded column it comes from. */
-type ProfilerSegment = TimelineSegment & { column: string };
-type ProfilerTrack = Omit<TimelineTrack, "id" | "segments"> & { id: Population; segments: readonly ProfilerSegment[] };
+type Population = "frames" | "ticks" | "gpu" | "memory";
+/** A plotted part of a stream, with the recorded columns it sums. */
+type ProfilerSegment = TimelineSegment & { columns: readonly string[] };
+type ProfilerTrack = Omit<TimelineTrack, "id" | "segments"> & {
+  id: Population;
+  segments: readonly ProfilerSegment[];
+  /** Recorded units per plotted unit, such as bytes per MiB; 1 when they match. */
+  scale?: number;
+};
 /** What the Frames track plots, or which tick column replaces the stacked phases. */
 type Metric = "frameTime" | "preparation" | "submission" | "drawCalls" | "script" | "physics";
 
@@ -72,7 +77,8 @@ const COLOR_CLASS: Readonly<Record<string, string>> = {
   "--tick-post-physics": "bg-tick-post-physics",
   "--tick-scene-systems": "bg-tick-scene-systems",
 };
-const POPULATION_LABEL: Readonly<Record<Population, string>> = { frames: "Frames", ticks: "Ticks", gpu: "GPU" };
+const POPULATION_LABEL: Readonly<Record<Population, string>> = { frames: "Frames", ticks: "Ticks", gpu: "GPU", memory: "Memory" };
+const isPopulation = (value: unknown): value is Population => typeof value === "string" && Object.hasOwn(POPULATION_LABEL, value);
 
 const formatTime = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
 /** Sample number column, then one column per recorded value. */
@@ -96,7 +102,7 @@ const rowFacts = (stream: PerformanceStream, row: number) => {
 };
 
 const segment = (stream: PerformanceStream, label: string, column: string, color: string): ProfilerSegment =>
-  ({ label, column, color, values: streamColumn(stream, column) });
+  ({ label, columns: [column], color, values: streamColumn(stream, column) });
 
 /** The ticks' stacked parts: every timed phase (version 2), else script and physics (version 1), or the one column the metric picks. */
 function tickSegments(stream: PerformanceStream, metric: Metric): ProfilerSegment[] {
@@ -109,8 +115,8 @@ function tickSegments(stream: PerformanceStream, metric: Metric): ProfilerSegmen
 }
 
 /**
- * Every recorded sample on one time axis: frames, ticks (stacked by phase), GPU queries and markers,
- * each on its own scale. Ticks are placed on the frames' clock through the frames that present them.
+ * Every recorded sample on one time axis: frames, ticks (stacked by phase), GPU queries, accounted
+ * memory and markers (loading, scene changes and long tasks), each on its own scale. Ticks are placed on the frames' clock through the frames that present them.
  * Selecting a sample shows it with the frame or tick it belongs to; dragging selects a range and
  * summarizes it. The table lists one population's samples.
  */
@@ -126,6 +132,7 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
     frames: streamColumn(profile.frames, "completedAtMs"),
     ticks: tickTimes(profile),
     gpu: streamColumn(profile.gpu, "observedAtMs"),
+    memory: streamColumn(profile.memory, "sampledAtMs"),
   }), [profile]);
   const frameMetric = FRAME_METRIC[metric] ?? FRAME_METRIC.frameTime!;
   const tracks = useMemo(() => {
@@ -142,12 +149,16 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
       list.push({ id: "gpu", label: "GPU", times: times.gpu, unit: "ms",
         segments: [segment(profile.gpu, "GPU Duration", "durationMs", "--trace-script")] });
     }
+    if (profile.memory.count) {
+      list.push({ id: "memory", label: "Memory", times: times.memory, unit: "MiB", scale: 1024 * 1024,
+        segments: [{ label: "Accounted", columns: ["textureBytes", "geometryBytes"], color: "--trace-script", values: accountedMemoryMiB(profile.memory) }] });
+    }
     return list;
   }, [budget, frameMetric, metric, profile, times]);
   const markers = useMemo(() => profileMarkers(profile), [profile]);
   const domain = useMemo((): TimelineDomain => {
     let end = profile.durationMs;
-    for (const values of [times.frames, times.ticks, times.gpu]) {
+    for (const values of Object.values(times)) {
       for (const time of values) if (Number.isFinite(time) && time > end) end = time;
     }
     return [0, Math.max(end, 1)];
@@ -170,7 +181,7 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   }, [population, tracks]);
   const previousOver = overBudget.findLast((row) => row < index);
   const nextOver = overBudget.find((row) => row > index);
-  const metricColumns = new Set(tableTrack?.segments.map((part) => part.column));
+  const metricColumns = new Set(tableTrack?.segments.flatMap((part) => part.columns));
   const columns = sampleColumns(stream.columns.length);
   // Wide enough for every column, so the rows scroll sideways together with the header.
   const tableWidth = `calc(4rem + ${stream.columns.length} * 5.5rem)`;
@@ -188,10 +199,11 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   return <div className="flex h-full min-h-0 flex-col">
     <ToolbarStrip className="gap-2 py-0.5">
       <ToggleGroup value={[population]} onValueChange={(next) => {
-        if (next[0] === "frames" || next[0] === "ticks" || next[0] === "gpu") select(next[0], 0);
+        if (isPopulation(next[0])) select(next[0], 0);
       }} size="sm" variant="outline">
         <ToggleGroupItem value="frames">Completed Frames</ToggleGroupItem><ToggleGroupItem value="ticks">Runtime Ticks</ToggleGroupItem>
         {profile.gpu.count ? <ToggleGroupItem value="gpu">GPU Queries</ToggleGroupItem> : null}
+        {profile.memory.count ? <ToggleGroupItem value="memory">Memory Samples</ToggleGroupItem> : null}
       </ToggleGroup>
       <Select value={metric} items={METRICS} onValueChange={(value) => { if (value) setMetric(value as Metric); }}>
         <SelectTrigger size="sm" aria-label="Metric" className="w-36" data-testid="performance-timeline-metric"><SelectValue /></SelectTrigger>
@@ -218,12 +230,14 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
         domain={domain}
         selected={chartSelection}
         range={range}
-        onSelect={({ track, index: row }) => { if (track === "frames" || track === "ticks" || track === "gpu") select(track, row); }}
+        onSelect={({ track, index: row }) => { if (isPopulation(track)) select(track, row); }}
         onRangeChange={setRange}
         formatTime={formatTime}
-        aria-label={`Performance timeline: ${profile.frames.count} frames, ${profile.ticks.count} ticks${profile.gpu.count ? `, ${profile.gpu.count} GPU queries` : ""}`}
+        aria-label={`Performance timeline: ${profile.frames.count} frames, ${profile.ticks.count} ticks${profile.gpu.count ? `, ${profile.gpu.count} GPU queries` : ""}${profile.memory.count ? `, ${profile.memory.count} memory samples` : ""}`}
       />
-      <TimelineLegend tracks={tracks} budget={budget} metric={metric} />
+      <TimelineLegend tracks={tracks} budget={budget} metric={metric}
+        // Version 3 names what its host recorded; an earlier recording had no long tasks to report.
+        longTasksUnreported={profile.version >= 3 && !profile.identity.enabledDiagnostics.includes("long-tasks")} />
       {range ? <RangeSummary profile={profile} tracks={tracks} times={times} range={range} onClear={() => setRange(null)} /> : null}
     </> : null}
     {stream.count ? <div className="flex min-h-64 flex-1 flex-col lg:flex-row">
@@ -265,7 +279,12 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   </div>;
 }
 
-function TimelineLegend({ tracks, budget, metric }: { tracks: readonly ProfilerTrack[]; budget: number; metric: Metric }) {
+function TimelineLegend({ tracks, budget, metric, longTasksUnreported }: {
+  tracks: readonly ProfilerTrack[];
+  budget: number;
+  metric: Metric;
+  longTasksUnreported: boolean;
+}) {
   const ticks = tracks.find((track) => track.id === "ticks")!;
   return <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-2 py-1 text-[11px] text-muted-foreground">
     <span className="font-medium text-foreground">{ticks.segments.length > 2 ? "Tick Phases" : ticks.segments.length === 2 ? "Script + Physics" : METRICS.find((entry) => entry.value === metric)?.label}</span>
@@ -274,7 +293,10 @@ function TimelineLegend({ tracks, budget, metric }: { tracks: readonly ProfilerT
     </span>) : null}
     <span className="flex items-center gap-1"><span className="size-2 bg-trace-selected" />Selected</span>
     <span className="flex items-center gap-1"><span className="w-3 border-t border-dashed border-destructive" />Budget {budget.toFixed(2)} ms per frame · {TICK_BUDGET_MS} ms per tick</span>
-    <span className="ml-auto">Ticks are placed on the frames&apos; clock through the frames that present them. Drag across the chart to summarize a range.</span>
+    <span className="ml-auto">
+      Ticks are placed on the frames&apos; clock through the frames that present them.
+      {longTasksUnreported ? " This browser does not report long tasks." : ""} Drag across the chart to summarize a range.
+    </span>
   </div>;
 }
 
@@ -288,10 +310,11 @@ function RangeSummary({ profile, tracks, times, range, onClear }: {
   return <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-2 py-1 text-xs" role="status" aria-label="Range Summary" data-testid="performance-range-summary">
     <span className="font-medium">{formatTime(range[0])} – {formatTime(range[1])}</span>
     {tracks.map((track) => {
-      const summary = summarizeRange(profile[track.id], times[track.id], range, track.segments.map((part) => part.column), track.threshold);
+      const summary = summarizeRange(profile[track.id], times[track.id], range, track.segments.flatMap((part) => part.columns), track.threshold);
       const unit = track.unit ? ` ${track.unit}` : "";
+      const shown = (value: number | null) => formatRecorded(value == null ? value : value / (track.scale ?? 1));
       return <span key={track.id} className="text-muted-foreground">
-        <span className="text-foreground">{track.label}</span> {summary.count} · Median {formatRecorded(summary.median)}{unit} · p95 {formatRecorded(summary.p95)}{unit} · Max {formatRecorded(summary.maximum)}{unit}
+        <span className="text-foreground">{track.label}</span> {summary.count} · Median {shown(summary.median)}{unit} · p95 {shown(summary.p95)}{unit} · Max {shown(summary.maximum)}{unit}
         {summary.overBudgetCount ? <span className="text-destructive"> · {summary.overBudgetCount} Over Budget</span> : null}
       </span>;
     })}

@@ -33,6 +33,8 @@ test("Profiler records a session and captures a frame without losing the recordi
 
   await dialog.getByRole("button", { name: "Timeline" }).click();
   await expect(results.getByRole("table", { name: "Samples" })).toBeVisible();
+  // Play sampled the engine's accounted memory while recording.
+  await expect(results.getByRole("button", { name: "Memory Samples" })).toBeVisible();
   await results.getByRole("button", { name: "Runtime Ticks" }).click();
   await expect(results.getByRole("columnheader", { name: "Script MS" })).toBeVisible();
 
