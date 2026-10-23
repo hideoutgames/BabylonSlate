@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { FolderIcon, TriangleAlertIcon } from "lucide-react";
 import type { FolderNode } from "@haptic/assets";
 import { TypeVisualIcon, type TypeVisual } from "@haptic/editor-kit";
@@ -95,12 +95,16 @@ export function ContentBrowserMoveDialog({
     (path: string) => destinationError(path) !== null,
     [destinationError],
   );
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-md"
         data-testid="content-browser-move-dialog"
+        // Touch opens keyboard-free so the folder tree pans at once (FolderPickerDialog).
+        initialFocus={(interaction) => (interaction === "keyboard" ? searchRef.current : bodyRef.current)}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -130,6 +134,8 @@ export function ContentBrowserMoveDialog({
           isDisabled={isIllegalDestination}
           searchTestId="content-browser-move-search"
           treeTestId="content-browser-move-tree"
+          searchRef={searchRef}
+          bodyRef={bodyRef}
         />
         <p className="text-sm text-muted-foreground" data-testid="content-browser-move-destination">
           Destination: <span className="text-foreground">{destinationPath}</span>
