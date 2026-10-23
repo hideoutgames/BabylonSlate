@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
+import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
 
-function setup(document: AnimGraphDocument, count = 1) {
+function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptBreakpoints(() => {})) {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
   const actors = Array.from({ length: count }, () => {
     const actor = new Actor({ classId: "Hero" });
@@ -21,6 +23,7 @@ function setup(document: AnimGraphDocument, count = 1) {
     playAnimationOwns: () => gate.playAnimationOwns,
     scripts: () => ({ invokeAnimEvent, invokeAnimRule: vi.fn() }),
     setSpriteClip: () => {},
+    breakpoints: () => breakpoints,
     emit: () => {},
   });
   runtime.register("graph", document);
@@ -28,6 +31,33 @@ function setup(document: AnimGraphDocument, count = 1) {
 }
 
 describe("AnimGraphRuntime", () => {
+  it("stops on a state when the graph starts in it, jumps to it or enters it, and on a transition it takes", () => {
+    const document = createDefaultAnimGraph();
+    document.states.push({ ...document.states[0]!, id: "run", name: "Run" });
+    // A rule that decides nothing passes, so Idle goes to Run on every tick it is in Idle.
+    document.transitions.push({
+      id: "go", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    const hits: BreakpointHit[] = [];
+    const breakpoints = new ScriptBreakpoints((hit) => hits.push(hit));
+    breakpoints.set(["idle", "go", "run"].map((nodeId) => ({ assetGuid: "graph", graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId })));
+    const { actors, runtime } = setup(document, 1, breakpoints);
+    const component = actors[0]!.components[0]!;
+    const stops = () => hits.map(({ nodeId, event }) => `${nodeId} ${event}`);
+
+    runtime.tick(0.1);
+    expect(stops()).toEqual(["idle entered", "go taken", "run entered"]);
+    expect(hits[0]).toMatchObject({ assetGuid: "graph", graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, instance: component, owner: actors[0] });
+
+    hits.length = 0;
+    runtime.tick(0.1);
+    expect(stops()).toEqual([]);
+
+    runtime.control(component)!.jumpToState("Idle");
+    runtime.tick(0.1);
+    expect(stops()).toEqual(["idle entered", "go taken", "run entered"]);
+  });
+
   it.each(["canTick", "playAnimationOwns"] as const)("resumes a graph skipped for one tick (%s) without initializing it again", (skip) => {
     const { gate, invokeAnimEvent, runtime } = setup(createDefaultAnimGraph());
     runtime.tick(0.1);

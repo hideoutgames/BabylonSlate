@@ -80,6 +80,8 @@ export interface AnimGraphInputs {
     transition: AnimTransition,
     facts: AnimStateFacts,
   ) => AnimTransitionDecision | undefined;
+  /** The evaluation took `transition`, a self-transition included: at most one per evaluation. */
+  transitionTaken?: (transition: AnimTransition) => void;
 }
 
 export interface AnimStateFacts {
@@ -686,6 +688,7 @@ export function evaluateAnimGraph(
     justLooped = false;
     justFinished = false;
     startedBlend = row.blendSeconds > 0 ? row : null;
+    inputs.transitionTaken?.(row);
     break;
   }
 
