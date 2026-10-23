@@ -15,17 +15,16 @@ import {
 } from "react";
 import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
 import {
-  ContextMenuOverlay,
   humanizePropertyLabel,
   PinShapeGlyph,
   tagDisplayName,
   useTags,
-  useContextMenu,
 } from "@haptic/editor-kit";
 import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@haptic/scripting";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
+import { useNodeMenu } from "./use-node-menu";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";
 import {
@@ -368,7 +367,7 @@ function NodeErrorBadge({
  * dot, hollow while disabled. With a mouse the dot toggles it, and a faint dot on title-bar (or card)
  * hover adds one; touch uses the node menu, and the keyboard the canvas's Toggle Breakpoint key.
  */
-function NodeBreakpointDot({ nodeId, data, className }: {
+export function NodeBreakpointDot({ nodeId, data, className }: {
   nodeId: string;
   data?: Record<string, unknown>;
   /** Places the dot; the default sits at the start of a title bar. */
@@ -532,27 +531,6 @@ export function BlueprintNodeShell({
       </div>
     </div>
   );
-}
-
-/**
- * Right-click and long-press menu of a script-style node. The items are built
- * when the menu opens, after the selection rule has run for this node.
- */
-function useNodeMenu(nodeId: string) {
-  const { nodeMenu } = useGraphEditorContext();
-  const enabled = nodeMenu?.enabled === true;
-  const menu = useContextMenu({
-    items: () => nodeMenu?.resolve(nodeId) ?? [],
-    enabled,
-  });
-  const bind = {
-    ...menu.bind,
-    onContextMenu: (event: MouseEvent) => {
-      if (enabled) event.stopPropagation();
-      menu.bind.onContextMenu(event);
-    },
-  };
-  return { bind, overlay: <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} /> };
 }
 
 export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
