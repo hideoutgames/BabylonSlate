@@ -34,12 +34,12 @@ export interface LoadRehearsalReport {
   variants: number;
   /** WebGPU render pipelines it created (Babylon's pipeline-cache misses). */
   pipelines: number;
-  /** Time from its first frame to its last. */
+  /** Time from its first frame to the loading frame after its last step. */
   ms: number;
 }
 
 export interface LoadRehearsal {
-  /** Every step has been rehearsed (or skipped). */
+  /** Every step has been rehearsed (or skipped), and a loading frame has followed the last one. */
   readonly done: boolean;
   /**
    * A loading frame in which the view is ready to draw: applies the next step, draws the applied one with `draw` (true
@@ -177,17 +177,22 @@ export function createLoadRehearsal(scene: Scene, settled: () => boolean = () =>
     stepDrew = false;
     renew = undefined;
     index += 1;
-    if (index >= steps.length) finish();
   };
   if (!steps.length) {
     startedAt = endedAt = performance.now();
   }
   return {
     get done() {
-      return index >= steps.length;
+      return endedAt !== undefined;
     },
     frame(draw) {
-      if (index >= steps.length) return;
+      if (endedAt !== undefined) return;
+      // One more loading frame after the last step: it starts once the last draw's GPU work let it, so the duration
+      // includes that work.
+      if (index >= steps.length) {
+        finish();
+        return;
+      }
       if (startedAt === undefined) {
         startedAt = appliedAt = performance.now();
         renew = renewOnCompileProgress(engine);
