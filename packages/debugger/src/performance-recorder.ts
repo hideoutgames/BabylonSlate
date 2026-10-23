@@ -33,6 +33,13 @@ export const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequ
 export const PERFORMANCE_MEMORY_COLUMNS = ["sampledAtMs", "textureBytes", "geometryBytes"] as const;
 /** Version 3: main-thread tasks of 50 ms or more, where the browser reports them (not Safari). */
 export const PERFORMANCE_LONG_TASK_COLUMNS = ["startedAtMs", "durationMs"] as const;
+/**
+ * Version 4: per tick, one row for each script entry point that ran: how often and for how long, not
+ * counting the entry points it called. `entry` indexes the profile's `scriptEntries`.
+ */
+export const PERFORMANCE_SCRIPT_COLUMNS = ["tickId", "entry", "calls", "totalMs"] as const;
+/** The most script entries a profile names. */
+export const MAX_PERFORMANCE_SCRIPT_ENTRIES = 1024;
 export const DEFAULT_PROFILE_DURATION_MS = 10_000;
 export const DEFAULT_PROFILE_BYTE_BUDGET = 16 * 1024 * 1024;
 export const MAX_PROFILE_BYTE_BUDGET = 64 * 1024 * 1024;
@@ -79,6 +86,15 @@ export type PerformanceTickSample = {
 export type PerformanceMemorySample = { sampledAtMs: number; textureBytes: number; geometryBytes: number };
 /** Host performance.now() start, converted to a recording-relative origin on admission. */
 export type PerformanceLongTaskSample = { startedAtMs: number; durationMs: number };
+/** A script entry point a profile timed: the Class, the event or function, and where its entry node is. */
+export type PerformanceScriptEntry = {
+  assetGuid: string; classId: string; className?: string;
+  /** The compiled export the runtime called. */
+  exportName: string; event?: string;
+  /** The entry node's canvas title (`Event Tick`), or the function's name. */
+  title?: string;
+  graphId?: string; nodeId?: string;
+};
 export type PerformanceStopReason = "requested" | "duration" | "budget" | "session-ended" | "error";
 export type PerformanceStream = {
   columns: readonly string[];
@@ -89,9 +105,10 @@ export type PerformanceStream = {
 export type PerformanceProfile = {
   /**
    * Version 1 profiles keep their tick rows (`PERFORMANCE_TICK_COLUMNS_V1`); version 2 adds the tick phases;
-   * recordings write version 3, which adds memory and long tasks (empty when opening an earlier version).
+   * version 3 adds memory and long tasks; recordings write version 4, which adds script costs. Each addition
+   * is empty when opening an earlier version.
    */
-  kind: "haptic-performance"; version: 1 | 2 | 3;
+  kind: "haptic-performance"; version: 1 | 2 | 3 | 4;
   identity: PerformanceIdentity;
   requestedDurationMs: number; durationMs: number;
   byteBudget: number;
@@ -100,6 +117,7 @@ export type PerformanceProfile = {
   droppedRecords: number; stopReason: PerformanceStopReason;
   frames: PerformanceStream; ticks: PerformanceStream; gpu: PerformanceStream;
   memory: PerformanceStream; longTasks: PerformanceStream;
+  scripts: PerformanceStream; scriptEntries: PerformanceScriptEntry[];
 };
 
 type BufferStream = PerformanceStream & { tailUsed: number };
@@ -115,6 +133,7 @@ export class PerformanceRecorder {
     byteBudget: number; retainedBytes: number; previousCompletedAt: number | null; droppedRecords: number;
     frames: BufferStream; ticks: BufferStream; gpu: BufferStream; previousGpuAt: number | null; previousGpuSequence: number;
     memory: BufferStream; previousMemoryAt: number | null; longTasks: BufferStream;
+    scripts: BufferStream; scriptEntries: PerformanceScriptEntry[];
   } | undefined;
   private result: PerformanceProfile | undefined;
   private readonly now: () => number;
@@ -141,7 +160,8 @@ export class PerformanceRecorder {
       startedAtMs: this.now(), durationMs, byteBudget, retainedBytes, previousCompletedAt: null, droppedRecords: 0,
       frames: newStream(PERFORMANCE_FRAME_COLUMNS), ticks: newStream(PERFORMANCE_TICK_COLUMNS), gpu: newStream(PERFORMANCE_GPU_COLUMNS),
       previousGpuAt: null, previousGpuSequence: 0,
-      memory: newStream(PERFORMANCE_MEMORY_COLUMNS), previousMemoryAt: null, longTasks: newStream(PERFORMANCE_LONG_TASK_COLUMNS) };
+      memory: newStream(PERFORMANCE_MEMORY_COLUMNS), previousMemoryAt: null, longTasks: newStream(PERFORMANCE_LONG_TASK_COLUMNS),
+      scripts: newStream(PERFORMANCE_SCRIPT_COLUMNS), scriptEntries: [] };
     this.result = undefined;
   }
 
@@ -175,6 +195,28 @@ export class PerformanceRecorder {
     // A tick stamped past the window is outside the profile, so it counts as dropped.
     if (sample.elapsedMs > this.active!.durationMs) { this.active!.droppedRecords++; return false; }
     return this.append(this.active!.ticks, PERFORMANCE_TICK_COLUMNS.map((key) => sample[key]));
+  }
+
+  /** The script entries a runtime chunk names first; they count toward the retained budget. */
+  recordScriptEntries(entries: readonly PerformanceScriptEntry[], options: { drain?: boolean } = {}): boolean {
+    if (!(options.drain ? this.recording : this.advance())) return false;
+    const state = this.active!;
+    if (state.scriptEntries.length + entries.length > MAX_PERFORMANCE_SCRIPT_ENTRIES || !entries.every(validScriptEntry))
+      throw new Error("Script entries must be named and fit the profile's entry limit.");
+    const bytes = entries.reduce((sum, entry) => sum + scriptEntryBytes(entry), 0);
+    if (state.retainedBytes + bytes > state.byteBudget) { state.droppedRecords++; this.stop("budget"); return false; }
+    state.retainedBytes += bytes;
+    state.scriptEntries.push(...entries.map(copyScriptEntry));
+    return true;
+  }
+
+  /** One entry point's calls and time in a tick the profile kept. */
+  recordScript(row: { tickId: number; entry: number; calls: number; totalMs: number }, options: { drain?: boolean } = {}): boolean {
+    if (!(options.drain ? this.recording : this.advance())) return false;
+    const state = this.active!;
+    if (!safeId(row.tickId) || !safeId(row.entry) || row.entry >= state.scriptEntries.length || !safeId(row.calls) || !finite(row.totalMs))
+      throw new Error("Script rows require a valid tick, a named entry, a call count and a finite time.");
+    return this.append(state.scripts, [row.tickId, row.entry, row.calls, row.totalMs]);
   }
 
   recordGpu(sample: PerformanceGpuSample): boolean {
@@ -217,11 +259,12 @@ export class PerformanceRecorder {
     this.active = undefined;
     const finish = (stream: BufferStream): PerformanceStream => ({ columns: stream.columns, count: stream.count,
       chunks: stream.chunks.map((chunk, index) => index === stream.chunks.length - 1 ? chunk.subarray(0, stream.tailUsed) : chunk) });
-    this.result = { kind: "haptic-performance", version: 3, identity: state.identity,
+    this.result = { kind: "haptic-performance", version: 4, identity: state.identity,
       requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
       byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: state.droppedRecords,
       stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu),
-      memory: finish(state.memory), longTasks: finish(state.longTasks) };
+      memory: finish(state.memory), longTasks: finish(state.longTasks),
+      scripts: finish(state.scripts), scriptEntries: state.scriptEntries };
     this.onStopped?.(this.result);
     return this.result;
   }
@@ -276,7 +319,7 @@ export function serializePerformanceProfile(profile: PerformanceProfile): string
 export function parsePerformanceProfile(value: unknown): PerformanceProfile | null {
   if (!value || typeof value !== "object") return null;
   const data = value as PerformanceProfile;
-  if (data.kind !== "haptic-performance" || (data.version !== 1 && data.version !== 2 && data.version !== 3) || !validIdentity(data.identity) ||
+  if (data.kind !== "haptic-performance" || ![1, 2, 3, 4].includes(data.version) || !validIdentity(data.identity) ||
     data.identity.mode === "simulate" || !finite(data.durationMs) || !finite(data.requestedDurationMs) ||
     data.requestedDurationMs < 1000 || data.requestedDurationMs > 60_000 ||
     !safeId(data.byteBudget) || data.byteBudget > MAX_PROFILE_BYTE_BUDGET || !safeId(data.retainedBytes) ||
@@ -304,14 +347,44 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
   const gpu = ticks && parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS);
   // Earlier versions recorded neither, so they open with both empty.
   const emptyStream = (columns: readonly string[]): PerformanceStream => ({ columns, count: 0, chunks: [] });
-  const memory = gpu && (data.version === 3 ? parseStream(data.memory, PERFORMANCE_MEMORY_COLUMNS) : emptyStream(PERFORMANCE_MEMORY_COLUMNS));
-  const longTasks = memory && (data.version === 3 ? parseStream(data.longTasks, PERFORMANCE_LONG_TASK_COLUMNS) : emptyStream(PERFORMANCE_LONG_TASK_COLUMNS));
-  if (!frames || !ticks || !gpu || !memory || !longTasks || bytes > data.retainedBytes ||
-    (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
+  const memory = gpu && (data.version >= 3 ? parseStream(data.memory, PERFORMANCE_MEMORY_COLUMNS) : emptyStream(PERFORMANCE_MEMORY_COLUMNS));
+  const longTasks = memory && (data.version >= 3 ? parseStream(data.longTasks, PERFORMANCE_LONG_TASK_COLUMNS) : emptyStream(PERFORMANCE_LONG_TASK_COLUMNS));
+  const entries = data.version >= 4 ? data.scriptEntries : [];
+  if (!Array.isArray(entries) || entries.length > MAX_PERFORMANCE_SCRIPT_ENTRIES || !entries.every(validScriptEntry)) return null;
+  bytes += entries.reduce((sum, entry) => sum + scriptEntryBytes(entry), 0);
+  const scripts = longTasks && (data.version >= 4 ? parseStream(data.scripts, PERFORMANCE_SCRIPT_COLUMNS) : emptyStream(PERFORMANCE_SCRIPT_COLUMNS));
+  if (!frames || !ticks || !gpu || !memory || !longTasks || !scripts || bytes > data.retainedBytes ||
+    (gpu.count > 0 && data.identity.gpuTiming !== "unpaired") || !scriptRowsNameEntries(scripts, entries.length)) return null;
   return { kind: "haptic-performance", version: data.version, identity: copyIdentity(data.identity),
     requestedDurationMs: data.requestedDurationMs, durationMs: data.durationMs,
     byteBudget: data.byteBudget, retainedBytes: data.retainedBytes,
-    droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu, memory, longTasks };
+    droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu, memory, longTasks,
+    scripts, scriptEntries: entries.map(copyScriptEntry) };
+}
+
+const SCRIPT_ENTRY_TEXT = ["assetGuid", "classId", "exportName", "className", "event", "title", "graphId", "nodeId"] as const;
+function validScriptEntry(value: unknown): value is PerformanceScriptEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return SCRIPT_ENTRY_TEXT.every((key) => {
+    const text = entry[key];
+    const required = key === "assetGuid" || key === "classId" || key === "exportName";
+    return text === undefined ? !required : typeof text === "string" && text.length <= 1024;
+  });
+}
+/** Known fields only, so extra imported fields neither count nor survive. */
+function copyScriptEntry(entry: PerformanceScriptEntry): PerformanceScriptEntry {
+  return Object.fromEntries(SCRIPT_ENTRY_TEXT.flatMap((key) => entry[key] === undefined ? [] : [[key, entry[key]]])) as PerformanceScriptEntry;
+}
+function scriptEntryBytes(entry: PerformanceScriptEntry): number {
+  return new TextEncoder().encode(JSON.stringify(copyScriptEntry(entry))).byteLength;
+}
+function scriptRowsNameEntries(stream: PerformanceStream, entries: number): boolean {
+  const width = PERFORMANCE_SCRIPT_COLUMNS.length;
+  return stream.chunks.every((chunk) => {
+    for (let offset = 1; offset < chunk.length; offset += width) if (!Number.isSafeInteger(chunk[offset]) || chunk[offset]! >= entries) return false;
+    return true;
+  });
 }
 
 function validIdentity(value: unknown): value is PerformanceIdentity {

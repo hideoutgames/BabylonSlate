@@ -26,11 +26,12 @@ Choose a view:
 | --- | --- |
 | Summary | **Frame Pacing**: median frame time, FPS and how many frames were slow. **Worker Tick**: median script and physics time, and how many ticks went over 8 ms. The table also lists each phase of the tick: **Game Instance**, **Scene Subsystems**, **Actors**, **Components**, **Physics**, **Post-Physics** and **Scene Systems** (Delays, Behaviour Trees, Animation Graphs and crowds). |
 | Timeline | A chart of every frame, tick and GPU query and the game's memory on one time axis, with a **Markers** row for loading screens, scene changes and long tasks, then the samples as a table. |
+| Scripts | Each Class's events and functions, with how often they ran and for how long, slowest first. See [Scripts](#scripts). |
 | Frame Report | The result of **Capture Frame**. |
 
 Only one recording or frame capture runs at a time. The window keeps your last five recordings and last five frame captures until you close the editor, so capturing a frame does not replace a recording. Very large recordings are kept fewer at a time. When it holds more than one, a second row picks which **Recording** or **Frame Capture** to show.
 
-To compare two recordings, show the newer one in **Summary** and pick the older one in **Compare With**. Each row then shows the older value, the newer value and the change; a slower value is marked in red. The comparison stays while you record again, so you can record, change something, record, and compare. A saved recording you open joins the list under its file name, so you can compare with a baseline you exported earlier. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report. A recording saved before tick phases were recorded opens with script and physics only, and one saved before memory and long tasks were recorded opens without them.
+To compare two recordings, show the newer one in **Summary** and pick the older one in **Compare With**. Each row then shows the older value, the newer value and the change; a slower value is marked in red. The comparison stays while you record again, so you can record, change something, record, and compare. A saved recording you open joins the list under its file name, so you can compare with a baseline you exported earlier. **Copy** puts the result of the current view on the clipboard as JSON, **Export** downloads it as a file, and **Open Saved Result** loads an exported recording or frame report. A recording saved before tick phases were recorded opens with script and physics only, one saved before memory and long tasks were recorded opens without them, and one saved before scripts were measured has nothing in **Scripts**.
 
 In **Timeline**:
 
@@ -40,6 +41,22 @@ In **Timeline**:
 - Hover a bar to read its sample. Tap or click it to select it: the table switches to its frames or ticks, and the details show the sample with the tick its frame presents, or the first frame that presented the tick. The arrow keys move to the previous or next sample.
 - Drag across the chart to select a time range. A summary then shows each row's count, median, p95 and maximum in that range, and how many samples went over budget. **Clear Range** or <kbd>Esc</kbd> removes it.
 - **Completed Frames**, **Runtime Ticks**, **GPU Queries** and **Memory Samples** choose the table. **Memory Samples** lists texture and geometry bytes apart. **Previous Over Budget** and **Next Over Budget** jump between slow samples, and the **Sample** field selects one by number. On a narrow screen the sample's details sit under the table.
+
+### Scripts
+
+**Scripts** lists every Class whose scripts ran while recording, slowest first, and under each one its events, functions and transition rules:
+
+| Column | Shows |
+| --- | --- |
+| Calls | How many times it ran, counting every object of the Class. |
+| Total | Its time over the whole recording, in milliseconds. |
+| Per Tick | **Total** divided by the recorded ticks: its average share of a tick. |
+| Worst Tick | The most time it took in a single tick. |
+| Share | Its part of all the time scripts ran while recording. |
+
+Each row counts its own time. When **Event Tick** calls a function, the function's time is on the function's row and not on **Event Tick**'s, so a Class's rows add up to the Class. A latent event or function is timed until its first wait, such as a **Delay**. Very short calls are measured with the browser's clock, whose steps can be longer than the call, so trust totals over many calls more than one call's time.
+
+Search filters by Class, event or function name. Tap an event or function to open its graph at its first node, including after Play has stopped. A recording made in a [Preview Build](../publishing/preview-build.md) measures scripts too. Nothing is measured while you aren't recording.
 
 ## Capture a frame
 

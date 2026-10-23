@@ -1,8 +1,12 @@
 import type { CommandMessage, DiagnosticOperationRequest, DiagnosticOperationResult, GameSessionMode } from "@haptic/bridge";
-import { PERFORMANCE_TICK_COLUMNS, TICK_TIMING_PHASES } from "@haptic/debugger";
+import { PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, TICK_TIMING_PHASES } from "@haptic/debugger";
+import { ScriptCostMeter } from "./script-cost-meter";
 
 const ROWS = 256;
 const WIDTH = PERFORMANCE_TICK_COLUMNS.length;
+/** Script rows held between deliveries; a delivery goes early rather than overflow them. */
+const SCRIPT_ROWS = 4096;
+const SCRIPT_WIDTH = PERFORMANCE_SCRIPT_COLUMNS.length;
 const column = (name: (typeof PERFORMANCE_TICK_COLUMNS)[number]) => PERFORMANCE_TICK_COLUMNS.indexOf(name);
 const SCRIPT = column("scriptMs");
 const PHYSICS = column("physicsMs");
@@ -14,9 +18,13 @@ type Recording = {
   id: string; kind: "profile" | "frame"; started: number; deadline: number;
   budget: number; sentBytes: number; sequence: number; count: number; dropped: number;
   buffer: Float64Array | null;
+  /** The script cost rows of the ticks in `buffer`, and the meter that times them. */
+  scripts: Float64Array | null; scriptCount: number; meter: ScriptCostMeter | null;
   timer: ReturnType<typeof setTimeout>;
   delivery: ReturnType<typeof setInterval> | null;
 };
+
+const skipRow = () => {};
 
 /** Allocates timing storage/timers only while an explicit exclusive lease is held. */
 export class RuntimeDiagnosticRecorder {
@@ -27,10 +35,14 @@ export class RuntimeDiagnosticRecorder {
   private readonly host: {
     generation: number; mode: GameSessionMode; enabled: boolean;
     traceActive(): boolean; now(): number; emit(command: CommandMessage): void;
+    /** Times the scripts' entry points with `meter` while a profile records; null stops. */
+    meterScripts?(meter: ScriptCostMeter | null): void;
   };
   constructor(host: {
     generation: number; mode: GameSessionMode; enabled: boolean;
     traceActive(): boolean; now(): number; emit(command: CommandMessage): void;
+    /** Times the scripts' entry points with `meter` while a profile records; null stops. */
+    meterScripts?(meter: ScriptCostMeter | null): void;
   }) { this.host = host; }
   get recording(): boolean { return this.active?.kind === "profile"; }
   get busy(): boolean { return this.active !== null; }
@@ -63,12 +75,18 @@ export class RuntimeDiagnosticRecorder {
         resolve(reply("Invalid diagnostic duration or numeric data budget.")); return;
       }
       const now = this.host.now();
+      const profile = accepted.kind === "profile";
       const active: Recording = { id: accepted.recordingId, kind: accepted.kind, started: now, deadline: now + duration,
         budget, sentBytes: 0, sequence: 0, count: 0, dropped: 0,
-        buffer: accepted.kind === "profile" ? new Float64Array(ROWS * WIDTH) : null,
+        buffer: profile ? new Float64Array(ROWS * WIDTH) : null,
+        scripts: profile ? new Float64Array(SCRIPT_ROWS * SCRIPT_WIDTH) : null, scriptCount: 0,
+        meter: profile ? new ScriptCostMeter(() => this.host.now()) : null,
         timer: setTimeout(() => this.finish("duration"), duration), delivery: null };
       this.active = active;
-      if (accepted.kind === "profile") active.delivery = setInterval(() => this.flush(), 200);
+      if (profile) {
+        active.delivery = setInterval(() => this.flush(), 200);
+        this.host.meterScripts?.(active.meter);
+      }
       resolve(reply());
     }));
   }
@@ -77,9 +95,13 @@ export class RuntimeDiagnosticRecorder {
     const active = this.active;
     if (!active?.buffer) return;
     if (this.host.now() >= active.deadline) { this.finish("duration"); return; }
-    if (active.count >= ROWS) { active.dropped++; return; }
-    if (active.sentBytes + (active.count + 1) * WIDTH * 8 > active.budget) {
+    // The tick's script rows go with its row, or are dropped with it.
+    const scriptRows = active.meter?.ranCount ?? 0;
+    if (active.count >= ROWS) { active.dropped++; active.meter?.drainTick(skipRow); return; }
+    if (active.scriptCount + scriptRows > SCRIPT_ROWS) this.flush();
+    if (active.sentBytes + (active.count + 1) * WIDTH * 8 + (active.scriptCount + scriptRows) * SCRIPT_WIDTH * 8 > active.budget) {
       active.dropped++;
+      active.meter?.drainTick(skipRow);
       // Deferred until advance() finishes attributing its final snapshot write.
       queueMicrotask(() => { if (this.active === active) this.finish("budget"); }); return;
     }
@@ -94,6 +116,11 @@ export class RuntimeDiagnosticRecorder {
     row[offset + SCRIPT] = phasesMs - row[offset + PHYSICS]!;
     row[offset + PUBLISH] = publishMs;
     row[offset + OTHER] = Math.max(0, totalMs - phasesMs - publishMs);
+    const scripts = active.scripts;
+    if (scripts) active.meter?.drainTick((entry, calls, ms) => {
+      const at = active.scriptCount++ * SCRIPT_WIDTH;
+      scripts[at] = tickId; scripts[at + 1] = entry; scripts[at + 2] = calls; scripts[at + 3] = ms;
+    });
   }
   addPublishCost(tickId: number, milliseconds: number): void {
     const active = this.active;
@@ -105,15 +132,19 @@ export class RuntimeDiagnosticRecorder {
     const active = this.active;
     if (!active?.buffer || (!active.count && !active.dropped)) return;
     const rows = active.buffer.slice(0, active.count * WIDTH);
-    active.sentBytes += rows.byteLength; active.count = 0;
+    const scripts = active.scripts && active.scriptCount ? active.scripts.slice(0, active.scriptCount * SCRIPT_WIDTH) : null;
+    const scriptEntries = active.meter?.takeNewEntries() ?? [];
+    active.sentBytes += rows.byteLength + (scripts?.byteLength ?? 0); active.count = 0; active.scriptCount = 0;
     this.host.emit({ type: "performanceTicks", sessionGeneration: this.host.generation, recordingId: active.id,
-      sequence: active.sequence++, rows, droppedRecords: active.dropped });
+      sequence: active.sequence++, rows, droppedRecords: active.dropped,
+      ...(scripts ? { scripts } : {}), ...(scriptEntries.length ? { scriptEntries } : {}) });
     active.dropped = 0;
   }
   private finish(reason: "requested" | "duration" | "budget" | "session-ended"): void {
     const active = this.active;
     if (!active) return;
     clearTimeout(active.timer); if (active.delivery !== null) clearInterval(active.delivery);
+    if (active.meter) this.host.meterScripts?.(null);
     this.flush(); this.active = null;
     this.host.emit({ type: "diagnosticOperationStopped", sessionGeneration: this.host.generation,
       recordingId: active.id, kind: active.kind, reason });

@@ -130,7 +130,7 @@ describe("PerformanceRecorder", () => {
     recorder.start(identity);
     recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, actorsMs: 1.25, sceneSystemsMs: 0.75 }));
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)));
-    expect(reopened?.version).toBe(3);
+    expect(reopened?.version).toBe(4);
     expect(reopened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
     expect(summarizePerformanceColumn(reopened!.ticks, "actorsMs").median).toBe(1.25);
     expect(summarizePerformanceColumn(reopened!.ticks, "sceneSystemsMs").median).toBe(0.75);
@@ -139,7 +139,7 @@ describe("PerformanceRecorder", () => {
     expect(parsePerformanceProfile({ ...json, ticks: { ...json.ticks, columns: [...PERFORMANCE_TICK_COLUMNS_V1] } })).toBeNull();
   });
 
-  it("records memory and long tasks as version 3, leaving out a long task that started before the recording", () => {
+  it("records memory and long tasks, leaving out a long task that started before the recording", () => {
     let now = 1000;
     const recorder = new PerformanceRecorder({ now: () => now });
     recorder.start(identity);
@@ -151,12 +151,37 @@ describe("PerformanceRecorder", () => {
     expect(recorder.recordLongTask({ startedAtMs: 1050, durationMs: 120 })).toBe(true);
     now = 1300;
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)))!;
-    expect(reopened.version).toBe(3);
     expect(Array.from(reopened.memory.chunks[0]!)).toEqual([0, 4096, 1024, 200, 8192, 1024]);
     expect(Array.from(reopened.longTasks.chunks[0]!)).toEqual([50, 120]);
-    // A version 3 profile without them is incomplete.
+    // A profile of version 3 or later without them is incomplete.
     const json = JSON.parse(serializePerformanceProfile(reopened));
     expect(parsePerformanceProfile({ ...json, longTasks: undefined })).toBeNull();
+  });
+
+  it("records script costs as version 4, each row naming one of its entries, and opens a version 3 profile with none", () => {
+    const recorder = new PerformanceRecorder({ now: () => 0 });
+    recorder.start(identity);
+    recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3 }));
+    const door = { assetGuid: "Door.class", classId: "Door", className: "Door", exportName: "onTick", event: "onTick", title: "Event Tick",
+      graphId: "event-graph", nodeId: "tick" };
+    expect(recorder.recordScriptEntries([door])).toBe(true);
+    expect(recorder.recordScript({ tickId: 1, entry: 0, calls: 2, totalMs: 1.5 })).toBe(true);
+    expect(() => recorder.recordScript({ tickId: 1, entry: 1, calls: 1, totalMs: 1 })).toThrow();
+    const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)))!;
+    expect(reopened.version).toBe(4);
+    expect(reopened.scriptEntries).toEqual([door]);
+    expect(Array.from(reopened.scripts.chunks[0]!)).toEqual([1, 0, 2, 1.5]);
+    const json = JSON.parse(serializePerformanceProfile(reopened));
+    // A row naming an entry the profile lacks, or an entry without its Class, is not a profile.
+    expect(parsePerformanceProfile({ ...json, scriptEntries: [] })).toBeNull();
+    expect(parsePerformanceProfile({ ...json, scriptEntries: [{ ...door, classId: undefined }] })).toBeNull();
+    const version3 = { ...json, version: 3 };
+    delete version3.scripts;
+    delete version3.scriptEntries;
+    const opened = parsePerformanceProfile(version3);
+    expect(opened?.version).toBe(3);
+    expect(opened?.scripts.count).toBe(0);
+    expect(opened?.scriptEntries).toEqual([]);
   });
 
   it("opens a version 2 profile with no memory or long tasks, and exports it as it was", () => {

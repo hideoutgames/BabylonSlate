@@ -1,9 +1,12 @@
-import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample, type PerformanceGpuSample,
-  type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile, type PerformanceStopReason,
-  type PerformanceTickSample } from "./performance-recorder";
+import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample,
+  type PerformanceGpuSample, type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile, type PerformanceScriptEntry,
+  type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
 import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 
 const TICK_ROW_WIDTH = PERFORMANCE_TICK_COLUMNS.length;
+const SCRIPT_ROW_WIDTH = PERFORMANCE_SCRIPT_COLUMNS.length;
+/** The runtime delivers a chunk before its script rows outgrow this. */
+const MAX_CHUNK_SCRIPT_ROWS = 4096;
 
 export type DiagnosticOperationRequest = {
   kind: "profile" | "frame"; action: "start" | "stop"; recordingId: string;
@@ -116,12 +119,17 @@ export class SessionDiagnostics<FrameReport> {
   }
 
   /** Reliable ordered chunks; gaps fail the capture rather than inventing ticks. */
-  receiveTicks(message: { recordingId: string; sequence: number; rows: Float64Array; droppedRecords?: number }): boolean {
+  receiveTicks(message: { recordingId: string; sequence: number; rows: Float64Array; droppedRecords?: number;
+    scripts?: Float64Array; scriptEntries?: readonly PerformanceScriptEntry[] }): boolean {
     const state = this.operation;
     if (!state || state.kind !== "profile" || state.id !== message.recordingId || !state.recorder) return false;
+    const scripts = message.scripts;
     if (!Number.isSafeInteger(message.sequence) || message.sequence !== state.sequence ||
       !(message.rows instanceof Float64Array) || (!message.rows.length && !message.droppedRecords) ||
       message.rows.length % TICK_ROW_WIDTH || message.rows.length > 256 * TICK_ROW_WIDTH ||
+      (scripts !== undefined && (!(scripts instanceof Float64Array) || scripts.length % SCRIPT_ROW_WIDTH ||
+        scripts.length > MAX_CHUNK_SCRIPT_ROWS * SCRIPT_ROW_WIDTH)) ||
+      (message.scriptEntries !== undefined && !Array.isArray(message.scriptEntries)) ||
       (message.droppedRecords !== undefined && (!Number.isSafeInteger(message.droppedRecords) || message.droppedRecords < 0))) {
       void this.finish(state, "error");
       return false;
@@ -130,12 +138,20 @@ export class SessionDiagnostics<FrameReport> {
     if (Number.isSafeInteger(message.droppedRecords) && message.droppedRecords! >= 0)
       state.droppedRecords += message.droppedRecords!;
     try {
+      // A tick's script rows are kept only with the tick.
+      const kept = new Set<number>();
       for (let index = 0; index < message.rows.length; index += TICK_ROW_WIDTH) {
         // A budget stop counts its rejected row; the rest of the chunk is dropped too.
         if (!state.recorder.recording) { state.droppedRecords += (message.rows.length - index) / TICK_ROW_WIDTH; break; }
         const sample = {} as PerformanceTickSample;
         PERFORMANCE_TICK_COLUMNS.forEach((column, offset) => { sample[column] = message.rows[index + offset]!; });
-        state.recorder.recordTick(sample, { drain: true });
+        if (state.recorder.recordTick(sample, { drain: true })) kept.add(sample.tickId);
+      }
+      if (message.scriptEntries?.length) state.recorder.recordScriptEntries(message.scriptEntries, { drain: true });
+      if (scripts) for (let index = 0; index < scripts.length && state.recorder.recording; index += SCRIPT_ROW_WIDTH) {
+        if (!kept.has(scripts[index]!)) continue;
+        state.recorder.recordScript({ tickId: scripts[index]!, entry: scripts[index + 1]!, calls: scripts[index + 2]!, totalMs: scripts[index + 3]! },
+          { drain: true });
       }
       return true;
     } catch { void this.finish(state, "error"); return false; }
