@@ -9,7 +9,7 @@ import {
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 
 type ViewportHost = { __hapticViewportTest: { setShadowCaptureView(position: number[], target: number[], fov: number): void } };
 
@@ -44,8 +44,8 @@ async function expectReflected(canvas: Locator, name: string, channel: "red" | "
   }
 }
 
-test("a Mirror shows an object behind the camera in the editor viewport and in Play, built in and through a Mirror Reflection Material", async ({ page }) => {
-  test.setTimeout(240_000);
+test("a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material", async ({ page }) => {
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -124,5 +124,12 @@ test("a Mirror shows an object behind the camera in the editor viewport and in P
   await clickPlayAndWaitForOverlay(page);
   await expectReflected(page.getByTestId("play-canvas"), "mirror-node-play", "blue");
   await page.getByTestId("play-overlay-close").click();
+
+  // The packed player draws the same reflection from its own Engine.
+  await page.getByTestId("debug-menu").click();
+  await page.getByTestId("preview-build-toggle").click();
+  await page.getByTestId("play-preview").click();
+  await waitForPreviewBuildBoot(page);
+  await expectReflected(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas"), "mirror-node-preview-build", "blue");
   expect(errors).toEqual([]);
 });
