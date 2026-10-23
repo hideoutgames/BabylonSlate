@@ -55,7 +55,10 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
-import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
+import { useSimulationControls } from "../context/simulation-controls-context";
+import { GraphSteppingBar } from "../components/graph-stepping-bar";
+import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -97,7 +100,7 @@ export function GraphPanel(
   const { applyGraphChange, applyAssetDocumentChange } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const { activeDocumentId, animEditorMode } = useActiveDocumentState();
-  const { focusedNodeId } = usePlay();
+  const { focusedNodeId, openSessionSource } = usePlay();
   const {
     setSelectedNodeIds,
     activeFunctionId: focusedFunctionId,
@@ -166,6 +169,18 @@ export function GraphPanel(
     indexed?.header.guid,
   );
   const runTrace = classRunTrace ?? animObjectRunTrace;
+  // While a debugged graph is paused, its canvas carries the stepping control.
+  const graphDebug = useGraphDebugStore();
+  const simulationControls = useSimulationControls();
+  const focusStep = useCallback((position: GraphDebugStepPosition) => {
+    void openSessionSource({
+      severity: "info", code: "editor.step", message: "Step",
+      assetGuid: position.assetGuid, graphId: position.graphId, nodeId: position.nodeId,
+    });
+  }, [openSessionSource]);
+  const steppingBar = runTrace && graphDebug && simulationControls?.paused
+    ? <GraphSteppingBar store={graphDebug} controls={simulationControls} onFocus={focusStep} />
+    : undefined;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
@@ -590,6 +605,7 @@ export function GraphPanel(
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
             runTrace={runTrace}
+            overlay={steppingBar}
             breakpoints={breakpoints}
             commitPositionsOnDragEnd
             singleExecOutputOnConnect

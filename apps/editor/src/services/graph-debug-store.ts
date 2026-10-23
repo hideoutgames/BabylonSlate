@@ -44,6 +44,8 @@ export type GraphDebugStepPosition = {
   truncated: boolean;
   /** The newest visit recorded: Forward from here runs another tick. */
   newest: boolean;
+  /** The oldest visit kept: there is nothing to step back to. */
+  oldest: boolean;
   assetGuid: string;
   graphId: string;
   nodeId: string;
@@ -156,10 +158,16 @@ export class GraphDebugStore {
       stepCount: tick.steps.length,
       truncated: tick.truncated,
       newest: review.tick === this.stepTicks.length - 1 && review.step === tick.steps.length - 1,
+      oldest: review.tick === 0 && review.step === 0,
       assetGuid: graph.assetGuid,
       graphId: graph.graphId,
       nodeId: step[1],
     };
+  }
+
+  /** Whether any visits are recorded to review (none until the followed object's first traced tick). */
+  hasRecordedSteps(): boolean {
+    return this.stepTicks.length > 0;
   }
 
   /** Reviews the visit before this one, or the newest one recorded; false when there is none earlier. */
