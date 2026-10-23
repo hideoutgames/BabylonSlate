@@ -9,9 +9,18 @@ import {
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
+import { PROJECT_FILE } from "../packages/core/src/project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-type ViewportHost = { __hapticViewportTest: { setShadowCaptureView(position: number[], target: number[], fov: number): void } };
+test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+
+type ViewportHost = {
+  __hapticViewportTest: {
+    setShadowCaptureView(position: number[], target: number[], fov: number): void;
+    renderingBaseline(): { backend: string } | null;
+  };
+};
 
 /** Average colour of the canvas's central tenth: the middle of the mirror. */
 async function centerColor(canvas: Locator): Promise<number[]> {
@@ -44,7 +53,7 @@ async function expectReflected(canvas: Locator, name: string, channel: "red" | "
   }
 }
 
-test("a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material", async ({ page }) => {
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material, on ${backend}`, async ({ page }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -53,6 +62,9 @@ test("a Mirror shows an object behind the camera in the editor, Play and Preview
       /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection/i.test(message.text())) errors.push(message.text());
   });
   const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.gpuBackend = backend;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const materialGuid = "00000000-0000-4000-8000-000000000030";
   const material = createDefaultMaterialDocument("Red");
   material.shadingModel = "unlit";
@@ -106,6 +118,7 @@ test("a Mirror shows an object behind the camera in the editor, Play and Preview
 
   await openMinimalTestProject(page, files);
   await openMainScene(page);
+  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
   // The editor view looks down at the mirror from just in front of the scene camera (and its camera model).
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   await expectReflected(page.getByTestId("viewport-canvas"), "mirror-editor", "red");
