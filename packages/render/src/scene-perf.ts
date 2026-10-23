@@ -20,6 +20,7 @@ import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_
 import { DriverCompileWatch } from "./driver-compile";
 import { drawnMaterialVariants } from "./drawn-variants";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
+import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -164,22 +165,25 @@ export async function prewarmMeshMaterials(
 /** Babylon exposes registration, but no enumeration, of custom readiness checks. */
 type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }[] };
 
-/** Probe requested material variants instead of Babylon's older hot-swap effects. */
+/**
+ * Probe the variants `mesh` is drawn with now. The probe never replaces a ready Effect: Babylon's hot swap keeps
+ * drawing a submesh's previous Effect while a newly requested variant compiles. Such a mesh is ready only inside
+ * `probeVariantSwaps(true, …)` (a world view's steady frames); everywhere else it waits for its new variant.
+ */
 export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   const scene = mesh.getScene();
   // Native influence edits become attribute-dirty only when the manager resolves
   // its active targets. Resolve before native readiness can accept old defines.
   void mesh.morphTargetManager?.numInfluencers;
-  const states = new Map<Material, readonly [boolean, boolean, boolean]>();
+  const states = new Map<Material, readonly [boolean, boolean]>();
   const capture = (material: Material | null | undefined): void => {
     if (!material || states.has(material)) return;
-    states.set(material, [material.allowShaderHotSwapping, material.checkReadyOnEveryCall, material.checkReadyOnlyOnce]);
+    states.set(material, [material.checkReadyOnEveryCall, material.checkReadyOnlyOnce]);
     // UV transform setters similarly defer texture-define invalidation until
     // getTextureMatrix detects an identity/nonidentity transition at bind time.
     for (const texture of material.getActiveTextures()) texture.getTextureMatrix();
-    // Material.forceCompilation also disables hot swapping. Its temporary
-    // submesh bypasses these caches; our live submeshes need public cache flags.
-    material.allowShaderHotSwapping = false;
+    // The probe evaluates the requested variant now; Material.forceCompilation's
+    // temporary submesh bypasses these caches, our live submeshes need public cache flags.
     material.checkReadyOnEveryCall = true;
     material.checkReadyOnlyOnce = false;
     if (material instanceof MultiMaterial)
@@ -191,14 +195,17 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       for (const part of mesh.subMeshes) {
         const material = part.getMaterial();
         capture(material);
-        // A strict probe can replace a ready effect with a compiling variant.
-        // Babylon 9.29 otherwise retains the previous effect's frozen/same-frame
-        // readiness and can bind the new effect before its pipeline exists.
+        // Babylon 9.29 otherwise answers from the previous effect's frozen or
+        // same-frame readiness and never requests the changed variant.
         if (material?._storeEffectOnSubMeshes) {
           const wrapper = part._drawWrapperOverride ?? part._getDrawWrapper();
           if (wrapper) wrapper._wasPreviouslyReady = false;
           const defines = part.materialDefines;
           if (defines) defines._renderId = -1;
+          // Babylon will not draw a previous Effect after one of its lights was disposed. A view that tolerates
+          // swaps binds such an Effect by its own light layout (`bindLights` in fixed-light-binding.ts), which never
+          // binds a disposed light, so the submesh keeps drawing it.
+          if (defines?._areLightsDisposed && variantSwapsTolerated() && part.effect?.isReady()) defines._areLightsDisposed = false;
         }
       }
     }
@@ -206,10 +213,18 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       if (!material._storeEffectOnSubMeshes)
         material._getDrawWrapper()._wasPreviouslyReady = false;
     }
-    return mesh.isReady(true);
+    if (!mesh.isReady(true)) return false;
+    // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
+    for (const part of mesh.subMeshes ?? []) {
+      if (!part.getMaterial()?._storeEffectOnSubMeshes) continue;
+      if (part.materialDefines?.isDirty && part.effect?.isReady()) {
+        noteVariantSwap();
+        return variantSwapsTolerated();
+      }
+    }
+    return true;
   } finally {
-    for (const [material, [hotSwap, everyCall, onlyOnce]] of states) {
-      material.allowShaderHotSwapping = hotSwap;
+    for (const [material, [everyCall, onlyOnce]] of states) {
       material.checkReadyOnEveryCall = everyCall;
       material.checkReadyOnlyOnce = onlyOnce;
     }

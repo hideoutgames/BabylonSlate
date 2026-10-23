@@ -33,6 +33,7 @@ import {
   SCENE_DRIVER_COMPILE_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { probeVariantSwaps } from "./variant-swaps";
 
 it("notifies readiness-dirty listeners per scene until unsubscribed", () => {
   const engine = new NullEngine();
@@ -247,16 +248,21 @@ describe("prewarmSceneMaterials", () => {
       expect(material.allowShaderHotSwapping).toBe(true);
       expect(material.checkReadyOnEveryCall).toBe(false);
       expect(material.isFrozen).toBe(true);
-      // Native callers after our probe must keep waiting, including a real draw.
-      expect(mesh.isReady(true)).toBe(false);
+      // The probe waits without replacing the drawn Effect: a native draw binds the previous, ready variant,
+      // never the one still compiling.
+      expect(mesh.subMeshes[0]!.effect).toBe(previous);
+      expect(mesh.isReady(true)).toBe(true);
       scene.render();
-      expect(onBind).not.toHaveBeenCalled();
+      expect(onBind).toHaveBeenCalledTimes(1);
+      expect(mesh.subMeshes[0]!.effect).toBe(previous);
+      // Inside a world view's steady frame the same mesh is ready, drawing its previous Effect meanwhile.
+      expect(probeVariantSwaps(true, () => isSceneFrameReady(scene))).toBe(true);
       compiled = true;
       expect(isSceneFrameReady(scene)).toBe(true);
       expect(mesh.subMeshes[0]!.effect).not.toBe(previous);
       expect(mesh.subMeshes[0]!.effect!.defines).toContain("#define SPOTLIGHT1");
       scene.render();
-      expect(onBind).toHaveBeenCalled();
+      expect(onBind).toHaveBeenCalledTimes(2);
       expect(engine.areAllEffectsReady()).toBe(false);
       const failure = new Error("material probe failed");
       vi.spyOn(material, "isReadyForSubMesh").mockImplementationOnce(() => { throw failure; });

@@ -225,12 +225,13 @@ it("keeps one set of shadow placeholders per live scene and releases it with tha
     expect(volumeShadowPlaceholders(first)).toBe(placeholders);
     const other = volumeShadowPlaceholders(second);
     expect(other).not.toBe(placeholders);
-    expect(new Set([...Object.values(placeholders), ...Object.values(other)]).size).toBe(6);
-    expect(engine._renderTargetWrapperCache.length).toBe(targets + 6);
+    // Comparison 2D, cube and cascades for shadow samplers; plain 2D and array for PCSS depth and light textures.
+    expect(new Set([...Object.values(placeholders), ...Object.values(other)]).size).toBe(10);
+    expect(engine._renderTargetWrapperCache.length).toBe(targets + 10);
     first.dispose();
-    expect(Object.values(placeholders).map((texture) => texture.getInternalTexture())).toEqual([null, null, null]);
+    expect(Object.values(placeholders).map((texture) => texture.getInternalTexture())).toEqual([null, null, null, null, null]);
     expect(Object.values(other).every((texture) => texture.getInternalTexture() !== null)).toBe(true);
-    expect(engine._renderTargetWrapperCache.length).toBe(targets + 3);
+    expect(engine._renderTargetWrapperCache.length).toBe(targets + 5);
     // A disposed scene never notifies its disposal again: textures made for it now would never be released.
     expect(() => volumeShadowPlaceholders(first)).toThrow();
     second.dispose();
