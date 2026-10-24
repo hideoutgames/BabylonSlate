@@ -27,6 +27,8 @@ import {
   parseText3DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
+  parseReflectionProbeProperties,
+  REFLECTION_PROBE_RESOLUTIONS,
   parseOutlineProperties,
   parseDeformerProperties,
   parseRagdollProperties,
@@ -1704,6 +1706,25 @@ export function componentPropertyRows(
           value: properties.edgeFalloff, defaultValue: defaults.edgeFalloff, min: 0, max: 1, step: 0.01,
           description: "Fraction of the half-size used for soft edges. Zero gives a hard boundary; one fades from the center.",
           onChange: (next) => update("edgeFalloff", Math.min(1, Math.max(0, next))) },
+      ];
+    }
+    case "ReflectionProbeComponent": {
+      const properties = parseReflectionProbeProperties(component.properties);
+      const defaults = parseReflectionProbeProperties({});
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled",
+          value: properties.enabled, defaultValue: defaults.enabled,
+          description: "Captures static actors around its center. Moving actors are left out, and screen-space reflections still show them.",
+          onChange: (next) => update("enabled", next) },
+        { kind: "vector3", id: rowId(actorId, component.id, "size"), label: "Size", unit: "scene units",
+          value: properties.size, defaultValue: defaults.size, sensitivity: 0.1,
+          description: "Fit it to the room. Surfaces whose center is inside reflect this probe, projected onto this box; the smallest probe wins where boxes overlap. Rotation is ignored.",
+          onChange: (next) => update("size", next.slice(0, 3).map((value) => Math.max(0.01, value))) },
+        { kind: "enum", id: rowId(actorId, component.id, "resolution"), label: "Resolution",
+          value: String(properties.resolution), defaultValue: String(defaults.resolution),
+          options: REFLECTION_PROBE_RESOLUTIONS.map((size) => ({ value: String(size), label: `${size} px` })),
+          description: "Size of each captured face. Larger is sharper and takes longer to capture.",
+          onChange: (next) => update("resolution", Number(next)) },
       ];
     }
     case "AreaRectLightComponent": {

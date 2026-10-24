@@ -28,6 +28,7 @@ A component gives an actor one ability: drawing a mesh, simulating a body, casti
 | [Rectangular Area Light](area-rect-light.md) | A rectangular light for windows, screens and light panels. |
 | [Hemispheric Fill Light](hemispheric-fill-light.md) | Soft fill light with one colour from above and another from below. |
 | [Fog Volume](fog-volume.md) | A local box or sphere of fog with soft edges. |
+| [Reflection Probe](reflection-probe.md) | Captures the static scene so surfaces inside its box reflect their surroundings. |
 | [Outline](outline.md) | Draws a coloured silhouette around an actor. |
 | [Deformer](deformer.md) | Bends and squashes a Mesh with a lattice of control points. |
 | [Skybox](skybox.md) | A cubemap sky that surrounds the scene. |
