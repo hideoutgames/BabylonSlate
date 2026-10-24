@@ -922,7 +922,8 @@ async function addClusteredScene(ctx: FeatureTestContext): Promise<void> {
 
 /**
  * Moderate-cost PBR showcase: every effect on at modest resolution scales, FSR below native. CEL (`ft_cel`) opts in
- * to Real-Time Reflections, so the metal and mirror surfaces keep reflecting there.
+ * to Real-Time Reflections, so the metal and mirror surfaces keep reflecting there, and to Reflection Textures, so an
+ * imported model's metalness, roughness and specular maps would apply too.
  */
 function applyRenderSettings(settings: ProjectSettings, lut: string | null): ProjectSettings {
   const render = settings.render;
@@ -936,7 +937,7 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
       // Clustered Forward is WebGL2-only.
       gpuBackend: "webgl2",
       mode: "pbr",
-      cel: { ...normalizeCelShadingSettings(render.cel), reflectionsEnabled: true },
+      cel: { ...normalizeCelShadingSettings(render.cel), reflectionsEnabled: true, reflectionTexturesEnabled: true },
       shadows: { ...shadows, enabled: true },
       effects: {
         ...effects,
