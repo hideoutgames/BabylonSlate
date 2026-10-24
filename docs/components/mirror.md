@@ -39,6 +39,7 @@ Assign a Material with a [**Mirror Reflection**](../scripting/material/mirror-re
 - Mirrors reflect opaque surfaces and the sky. Transparent surfaces, particles, water and other mirrors don't appear in the reflection.
 - No reflection is drawn for orthographic cameras or under **Clustered Forward** lighting; the surface keeps its last reflection, or shows black before its first.
 - Render Target Captures that see a mirror show the reflection drawn for the main camera.
+- Reflection Probes don't capture mirrors.
 - A mirror never casts shadows.
 
 ## Related

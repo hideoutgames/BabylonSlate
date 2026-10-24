@@ -53,7 +53,7 @@ async function expectReflected(canvas: Locator, name: string, channel: "red" | "
   }
 }
 
-for (const backend of ["webgl2"] as const) test(`a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material, on ${backend}`, async ({ page }) => {
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material, on ${backend}`, async ({ page }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
