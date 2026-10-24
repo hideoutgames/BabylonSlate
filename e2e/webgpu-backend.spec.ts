@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
+import type { runWebGpuPredictedAdmissionsProof, runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
@@ -205,41 +205,6 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     pointOff: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     spotShadows: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
   });
-  // A light that waits within reach of an admission has the Effects it asks for compiled ahead and their render
-  // pipelines created by warm draws: a spot entering the Forward budget (and a shadowed one, whose standby map comes
-  // back with it), one taking a point's shadow map and one taking the first spot map (its variants and caster
-  // pipelines from a prediction map) compile no Effect, create no pipeline and hold no frame when admitted, its new
-  // map's first draw included, and draw their new variants in its own frame. Jumping straight in, the same admissions
-  // compile their Effects then (the first spot map creating a shadow pass pipeline synchronously). A prediction left
-  // to expire leaves no pipeline behind.
-  const predicted = result.predictedAdmissions!;
-  const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
-    admitted: admission.admitted, done: admission.done, effects: admission.effectsAtAdmission, held: admission.held,
-    late: admission.lateFrames, ...admission.pipelines,
-  });
-  expect({
-    forward: outcome(predicted.forward.approached), standby: outcome(predicted.standby.approached),
-    shadow: outcome(predicted.shadow.approached), first: outcome(predicted.first.approached),
-    aheadForward: predicted.forward.approached.effectsAhead > 0 && predicted.forward.approached.pipelinesAhead > 0,
-    aheadStandby: predicted.standby.approached.effectsAhead > 0 && predicted.standby.approached.pipelinesAhead > 0,
-    jumpedStandby: predicted.standby.jumped.admitted && predicted.standby.jumped.effectsAtAdmission > 0,
-    aheadShadow: predicted.shadow.approached.effectsAhead > 0 && predicted.shadow.approached.pipelinesAhead > 0,
-    jumpedForward: predicted.forward.jumped.admitted && predicted.forward.jumped.effectsAtAdmission > 0,
-    jumpedShadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.effectsAtAdmission > 0,
-    aheadFirst: predicted.first.approached.effectsAhead > 0 && predicted.first.approached.pipelinesAhead > 0,
-    jumpedFirst: predicted.first.jumped.admitted && predicted.first.jumped.effectsAtAdmission > 0 &&
-      predicted.first.jumped.pipelines.synchronous > 0,
-    expired: { forward: predicted.forward.expired.pipelinesLeft, standby: predicted.standby.expired.pipelinesLeft,
-      shadow: predicted.shadow.expired.pipelinesLeft, first: predicted.first.expired.pipelinesLeft },
-  }, JSON.stringify(predicted)).toEqual({
-    forward: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
-    standby: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
-    shadow: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
-    first: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
-    aheadForward: true, aheadStandby: true, jumpedStandby: true, aheadShadow: true, jumpedForward: true,
-    jumpedShadow: true, aheadFirst: true, jumpedFirst: true,
-    expired: { forward: 0, standby: 0, shadow: 0, first: 0 },
-  });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);
@@ -416,6 +381,64 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       `${mode} preview texture rows`,
     ).toBeGreaterThan(40);
   }
+});
+
+test("WebGPU admissions a waiting light approaches have their variants and casters' pipelines ready ahead", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (isGpuFailure(message.type(), message.text())) errors.push(message.text());
+  });
+  await page.goto("/?webgpuProof");
+  await page.waitForFunction(() => "__hapticWebGpuPredictedAdmissionsProof" in window);
+  const result = await page.evaluate(() =>
+    (window as unknown as {
+      __hapticWebGpuPredictedAdmissionsProof: typeof runWebGpuPredictedAdmissionsProof;
+    }).__hapticWebGpuPredictedAdmissionsProof(),
+  );
+  await testInfo.attach("webgpu-predicted-admissions", { body: JSON.stringify(result), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(result.retainedEngines).toBe(0);
+  // A light that waits within reach of an admission has the Effects it asks for compiled ahead: a spot entering the
+  // Forward budget (and a shadowed one, whose standby map comes back with it), one taking a point's shadow map and one
+  // taking the first spot map compile no Effect and hold no frame when admitted, its new map's first draw included.
+  // Their receivers' render pipelines are still created then, asynchronously, previous variants drawing meanwhile. The
+  // casters of a returning standby map and of the first spot map create no pipeline synchronously: a render of the
+  // controller's prediction map created theirs ahead, while nothing else creates pipelines ahead. Jumping straight in,
+  // the same admissions compile their Effects then, and the first spot map creates a shadow pass pipeline
+  // synchronously. A prediction left to expire leaves no pipeline behind.
+  const predicted = result.predictedAdmissions;
+  const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
+    admitted: admission.admitted, done: admission.done, effects: admission.effectsAtAdmission, held: admission.held,
+    synchronous: admission.pipelines.synchronous, asynchronous: admission.pipelines.asynchronous > 0,
+  });
+  expect({
+    forward: outcome(predicted.forward.approached), standby: outcome(predicted.standby.approached),
+    shadow: outcome(predicted.shadow.approached), first: outcome(predicted.first.approached),
+    ahead: {
+      forward: predicted.forward.approached.effectsAhead > 0 && predicted.forward.approached.pipelinesAhead === 0,
+      standby: predicted.standby.approached.effectsAhead > 0 && predicted.standby.approached.pipelinesAhead > 0,
+      shadow: predicted.shadow.approached.effectsAhead > 0 && predicted.shadow.approached.pipelinesAhead === 0,
+      first: predicted.first.approached.effectsAhead > 0 && predicted.first.approached.pipelinesAhead > 0,
+    },
+    jumped: {
+      forward: predicted.forward.jumped.admitted && predicted.forward.jumped.effectsAtAdmission > 0,
+      standby: predicted.standby.jumped.admitted && predicted.standby.jumped.effectsAtAdmission > 0,
+      shadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.effectsAtAdmission > 0,
+      first: predicted.first.jumped.admitted && predicted.first.jumped.effectsAtAdmission > 0 &&
+        predicted.first.jumped.pipelines.synchronous > 0,
+    },
+    expired: { standby: predicted.standby.expired.pipelinesLeft, first: predicted.first.expired.pipelinesLeft },
+  }, JSON.stringify(predicted)).toEqual({
+    forward: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    standby: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    shadow: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    first: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    ahead: { forward: true, standby: true, shadow: true, first: true },
+    jumped: { forward: true, standby: true, shadow: true, first: true },
+    expired: { standby: 0, first: 0 },
+  });
 });
 
 function isGpuFailure(type: string, message: string): boolean {

@@ -17,9 +17,8 @@ import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRevealPending } from "./reveal-pending";
-import { admitPredictedVariants, registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
+import { registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
-import { releaseLightPredictions, warmPredictedPipelines } from "./variant-prediction";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
 import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
@@ -92,22 +91,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       try { return render.apply(renderer, renderArgs); }
       finally { scene._intermediateRendering = intermediate; }
     };
-    // Before the real draws: a predicted variant an admission asks for draws in this frame once draws with this
-    // pass's state find its pipelines.
-    renderer.onBeforeRenderingManagerRenderObservable.add(() => {
-      if (!this.warmsPipelines) return;
-      warmSafely(scene, () => admitPredictedVariants(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId));
-    });
     // After the real draws and before the task restores its lights' shadow flags, so warm draws compile the variants
     // the real ones draw with.
     renderer.onAfterRenderingManagerRenderObservable.add(() => {
       if (!this.warmsPipelines) return;
-      const pass = scene.getEngine().currentRenderPassId;
-      warmSafely(scene, () => {
-        warmRequestedPipelines(scene, pass, this.depthPrePass.renderPassId);
-        // Then the variants predictions compiled for lights about to be admitted, with their lights substituted.
-        warmPredictedPipelines(scene, pass, this.depthPrePass.renderPassId);
-      });
+      warmSafely(scene, () => warmRequestedPipelines(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId));
     });
   }
 
@@ -526,17 +514,20 @@ export class ManagedShadowsTask extends FrameGraphTask {
   }
 }
 
+/** Scenes whose warm draws failed once already: a failure repeats every frame, and is reported once. */
+const warmFailures = new WeakSet<Scene>();
+
 /**
  * Runs a pass's warm draws, which never end the pass early: Babylon's ObjectRenderer restores nothing when a draw
  * throws, and the task restores its lights' shadow flags after it, so a light holding a standby map would otherwise
- * stay unshadowed for good. A failure releases the scene's predictions after the frame (their warm draws would fail
- * again) and is reported.
+ * stay unshadowed for good.
  */
 function warmSafely(scene: Scene, warm: () => void): void {
   try {
     warm();
   } catch (error) {
-    scene.getEngine().onEndFrameObservable.addOnce(() => releaseLightPredictions(scene));
+    if (warmFailures.has(scene)) return;
+    warmFailures.add(scene);
     console.warn(`[render] Pipeline warm draws failed: ${String(error)}`);
   }
 }

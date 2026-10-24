@@ -187,8 +187,6 @@ export type PipelineDeferral = {
   waiting(): boolean;
   /** A warm scope: some draw looked its pipeline up, and every one found it. */
   warmed(): boolean;
-  /** A warm scope: the pipeline-cache nodes its draws looked up, for `releaseWarmPipelines`. */
-  pipelineNodes?(): readonly object[];
   /** A warm scope: each Effect a draw looked a pipeline up for, with that pipeline's cache node. */
   pipelineEffects?(): readonly (readonly [object, object])[];
 };
@@ -252,15 +250,14 @@ export function beginPipelineDeferral(
       return false;
     },
     warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
-    pipelineNodes: () => [...scope.tokens.keys()],
     pipelineEffects: () => [...scope.tokens].map(([node, effect]) => [effect, node] as const),
   };
 }
 
 /**
- * Drops the pipelines warm draws created (or are creating) at `nodes`, cache nodes of Effects since released: Babylon's
- * pipeline cache is a tree it never prunes, keyed by each Effect's unique id, so a released Effect's pipelines would
- * stay referenced for the page's lifetime.
+ * Drops the pipelines warm draws created (or are creating) at `nodes`, cache nodes of Effects since released, at once:
+ * Babylon's pipeline cache, a tree keyed by each Effect's unique id, keeps a released Effect's pipelines until the
+ * Engine's cache pruning (`webgpu-cache-pruning.ts`) drops its branch.
  */
 export function releaseWarmPipelines(engine: AbstractEngine, nodes: Iterable<object>): void {
   const state = states.get(engine);

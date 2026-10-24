@@ -56,7 +56,6 @@ export async function runWebGpuProof() {
   let cancelledEngineReleased = false;
   let variantSwap: Awaited<ReturnType<typeof proveWebGpuVariantSwap>> | null = null;
   let rehearsedChanges: Awaited<ReturnType<typeof proveWebGpuRehearsedChanges>> | null = null;
-  let predictedAdmissions: Awaited<ReturnType<typeof proveWebGpuPredictedAdmissions>> | null = null;
   for (const backend of ["webgl2", "webgpu"] as const) {
     if (backend === "webgpu" && !(await WebGPUEngine.IsSupportedAsync))
       throw new Error("The local browser did not provide a WebGPU adapter.");
@@ -204,7 +203,6 @@ export async function runWebGpuProof() {
       if (backend === "webgpu") {
         variantSwap = await proveWebGpuVariantSwap(engine);
         rehearsedChanges = await proveWebGpuRehearsedChanges(engine);
-        predictedAdmissions = await proveWebGpuPredictedAdmissions(engine);
       }
     } finally {
       engine.dispose();
@@ -221,9 +219,32 @@ export async function runWebGpuProof() {
     cancelledEngineReleased,
     variantSwap,
     rehearsedChanges,
-    predictedAdmissions,
     retainedEngines: EngineStore.Instances.length - initialEngines,
   };
+}
+
+/**
+ * The WebGPU admissions a waiting light approaches or jumps into (`proveWebGpuPredictedAdmissions`), on an Engine of
+ * their own: their runs, each prediction left to expire included, take long enough for a test of their own.
+ */
+export async function runWebGpuPredictedAdmissionsProof() {
+  WebGPUCacheRenderPipeline.LogErrorIfNoVertexBuffer = true;
+  if (!(await WebGPUEngine.IsSupportedAsync))
+    throw new Error("The local browser did not provide a WebGPU adapter.");
+  const initialEngines = EngineStore.Instances.length;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  document.getElementById("root")!.append(canvas);
+  const engine = await createAppWebGpuEngine(canvas);
+  let predictedAdmissions: Awaited<ReturnType<typeof proveWebGpuPredictedAdmissions>>;
+  try {
+    engine.setSize(96, 72);
+    predictedAdmissions = await proveWebGpuPredictedAdmissions(engine);
+  } finally {
+    engine.dispose();
+    canvas.remove();
+  }
+  return { predictedAdmissions, retainedEngines: EngineStore.Instances.length - initialEngines };
 }
 
 /**

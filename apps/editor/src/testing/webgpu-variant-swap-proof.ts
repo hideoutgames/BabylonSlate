@@ -37,7 +37,6 @@ import { createLoadRehearsal } from "../../../../packages/render/src/load-rehear
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
-import { existingShadowSamplerPlaceholders } from "../../../../packages/render/src/shadow-sampler-placeholders";
 import { pruneWebGpuCachesNow, webGpuPipelinesOutside } from "../../../../packages/render/src/webgpu-cache-pruning";
 import { deferredPipelineCount } from "../../../../packages/render/src/webgpu-pipeline-deferral";
 import { PREDICTION_EXPIRY_MS } from "../../../../packages/render/src/variant-prediction";
@@ -87,7 +86,7 @@ type PredictedAdmission = {
   effectsAtAdmission: number;
   /** Render pipelines the device created meanwhile. */
   pipelines: PipelineCounts;
-  /** Render pipelines created while the light waited within reach, by the prediction's warm draws. */
+  /** Render pipelines created while the light waited within reach (a new or returning map's casters', by its prediction map). */
   pipelinesAhead: number;
   /**
    * Pipelines Babylon's cache holds now beyond those it held before the approach; for a prediction left to expire, the
@@ -105,9 +104,11 @@ type PredictedAdmission = {
 /**
  * A light comes within reach of an admission and then into it, approaching (it waits within the prediction margin
  * first) or jumping straight in: a spot the Forward budget (two local lights) leaves out takes a point's place, and a
- * shadowed spot takes a farther point's shadow map (two local maps, the other a spot's). Approached, the admission's
- * Effects were compiled ahead and their render pipelines created by warm draws; a prediction left to expire gives its
- * pipelines back.
+ * shadowed spot takes a farther point's shadow map (two local maps, the other a spot's, or another point's for the first
+ * spot map), and a shadowed spot whose map waits on standby enters the Forward budget. Approached, the admission's
+ * Effects were compiled ahead, and a new or returning map's casters' depth pipelines created by a render of the
+ * controller's prediction map; the receivers' pipelines are still created at the admission, while previous variants
+ * draw. A prediction left to expire gives its prediction map's pipelines back.
  */
 export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
   let variant = 0;
@@ -127,8 +128,8 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: shadows ? 16 : 2 } }),
       shadows: normalizeShadowSettings({ cascades: 1, localLightMode: "manual", maxLocalLights: 2 }),
     });
-    // One Engine serves every run and the proofs before them, and its Effect cache outlives their Scenes: each run
-    // draws its own variants, which nothing compiled before.
+    // One Engine serves every run, and its Effect cache outlives their Scenes: each run draws its own variants, which
+    // nothing compiled before.
     variant++;
     const pbr = new PBRMaterial("native pbr", scene);
     pbr.albedoColor = new Color3(0.8, 0.8, 0.8);
@@ -212,9 +213,8 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
       for (let index = 0; index < 4; index++) await frame();
       if (admission === "standby") {
-        // Left out by the Forward budget, its map waits on standby; then the receivers take `pbr`. Strict frames, so no
-        // swap is pending in a steady frame: that would give the scene the shadow sampler placeholders a previous
-        // Effect binds, which would stand in for the standby map in a warm draw that missed it.
+        // Left out by the Forward budget, its map waits on standby; then the receivers take `pbr` (strict frames: each
+        // change is drawn before the next).
         spot.position.set(0, 3.2, 24);
         for (let attempt = 0; attempt < 300; attempt++) if (await frame(true) && await frame(true)) break;
         for (const mesh of receivers) mesh.material = pbr;
@@ -232,15 +232,15 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         const known = new Set(cache());
         counts.synchronous = counts.asynchronous = 0;
         spot.position.set(0, 3.2, shadows ? 6 : 1);
-        // Long enough for the warm draws' asynchronous pipelines too (the software adapter can take longer than
-        // twelve frames), then two frames for warm draws to find them.
+        // Long enough for the prediction map's asynchronous caster pipelines too (the software adapter can take longer
+        // than twelve frames), then two frames.
         for (let index = 0; index < 300 && (index < 12 || deferredPipelineCount(engine) > 0); index++) await frame();
         for (let index = 0; index < 2; index++) await frame();
         effectsAhead = compiledSince(known);
         pipelinesAhead = counts.synchronous + counts.asynchronous;
       }
       if (expire) {
-        // Out of the margin past the prediction's expiry: its Effects and their warm pipelines go.
+        // Out of the margin past the prediction's expiry: its Effects and its prediction map's pipelines go.
         spot.position.set(0, 3.2, 24);
         const start = performance.now();
         while (performance.now() - start < PREDICTION_EXPIRY_MS + 500) await frame();
@@ -253,8 +253,8 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       }
       if (admitted()) throw new Error(`The ${admission} admission came before the change.`);
       // A Forward admission of a shadowed spot: its map waits on standby, bound but not admitted, until then.
-      if (admission === "standby" && (!findSceneShadowController(scene)?.boundGenerator(spot) || existingShadowSamplerPlaceholders(scene)))
-        throw new Error("The standby spot holds no shadow map before its admission, or the scene has placeholders.");
+      if (admission === "standby" && !findSceneShadowController(scene)?.boundGenerator(spot))
+        throw new Error("The standby spot holds no shadow map before its admission.");
       reasons.clear();
       const known = new Set(cache());
       counts.synchronous = counts.asynchronous = 0;
@@ -286,9 +286,9 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     }
   };
   return {
-    forward: { approached: await run("forward", true), jumped: await run("forward", false), expired: await run("forward", true, true) },
+    forward: { approached: await run("forward", true), jumped: await run("forward", false) },
     standby: { approached: await run("standby", true), jumped: await run("standby", false), expired: await run("standby", true, true) },
-    shadow: { approached: await run("shadow", true), jumped: await run("shadow", false), expired: await run("shadow", true, true) },
+    shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
     first: { approached: await run("first", true), jumped: await run("first", false), expired: await run("first", true, true) },
   };
 }

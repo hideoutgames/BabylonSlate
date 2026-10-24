@@ -39,7 +39,6 @@ import {
   NullEngineOptions,
   Light,
   Material,
-  Matrix,
   PBRMaterial,
   PointLight,
   Scene,
@@ -48,8 +47,8 @@ import {
   SubMesh,
   UniversalCamera,
   Vector3,
-  Effect,
   type AbstractEngine,
+  type Effect,
   type ShadowGenerator,
 } from "@babylonjs/core";
 import {
@@ -219,26 +218,16 @@ function driverModel(engine: NullEngine, model: Model) {
     return effect;
   }) as unknown as typeof engine.createEffect);
 
-  // The WebGPU model: a view's scope skips each draw whose pipeline is still pending, as the real deferral does; a warm
-  // scope skips every draw and reports whether each found its pipeline. A pipeline is keyed, as Babylon's cache keys
-  // it, by its Effect, by which of its texture channels hold a depth texture (a shadow map bound for comparison) and
-  // by whether the draw is instanced (its vertex layout): a draw that binds other maps, or draws otherwise, needs
-  // another pipeline.
+  // The WebGPU model: a view's scope skips each draw whose Effect's pipeline is still pending, as the real deferral does;
+  // a warm scope skips every draw and reports whether each found its pipeline.
   const pipelines = new Set<Effect>();
   const warmPipelines = new Set<Effect>();
-  /** WebGPU model: pipeline keys whose pipeline exists, those being created, and the Effects a draw has drawn with. */
-  const pipelineReady = new Set<string>();
-  const pendingKeys = new Set<string>();
-  const keyEffects = new Map<string, Effect>();
+  /** WebGPU model: Effects whose render pipeline exists, and those a draw has drawn with. */
+  const pipelineReady = new WeakSet<Effect>();
   const drawnEffects = new WeakSet<Effect>();
-  /** Per Effect and render pass (standing in for a draw wrapper's material context): its channels bound to depth textures. */
-  const boundDepth = new Map<string, Set<string>>();
-  /** Keys prediction warm draws and real draws used, by Effect. */
-  const warmKeys = new Map<Effect, Set<string>>();
-  const realKeys = new Map<Effect, Set<string>>();
-  /** Set by `skewPredictionWarm`: prediction warm draws key apart from the real ones (a warm draw that missed a state). */
-  let skew = false;
-  type Scope = { allows: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number; keys: Set<string> };
+  /** WebGPU model: Effects whose pipeline a draw outside any deferring scope (a shadow map's) created synchronously. */
+  const synchronous = new Set<Effect>();
+  type Scope = { allows: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number; effects: Set<Effect> };
   const scopes: Scope[] = [];
   if (model === "webgpu") {
     vi.mocked(pipelinesDeferred).mockReturnValue(true);
@@ -246,7 +235,7 @@ function driverModel(engine: NullEngine, model: Model) {
     vi.mocked(beginPipelineDeferral).mockImplementation((_engine, allows, options = {}) => {
       if (options.nested && !scopes.length) return undefined;
       const warm = options.warm === true;
-      const scope: Scope = { allows, warm, skipped: 0, lookups: 0, hits: 0, keys: new Set() };
+      const scope: Scope = { allows, warm, skipped: 0, lookups: 0, hits: 0, effects: new Set() };
       scopes.push(scope);
       let closed = false;
       return {
@@ -258,73 +247,16 @@ function driverModel(engine: NullEngine, model: Model) {
             const parent = scopes[index - 1];
             if (parent && !warm) {
               parent.skipped += scope.skipped;
-              for (const key of scope.keys) parent.keys.add(key);
+              for (const effect of scope.effects) parent.effects.add(effect);
             }
           }
           return scope.skipped;
         },
-        waiting: () => [...scope.keys].some((key) => pendingKeys.has(key)),
+        waiting: () => [...scope.effects].some((effect) => pending.has(effect)),
         warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
       };
     });
     const internals = engine as unknown as { _currentEffect: Effect | null; currentRenderPassId: number };
-    const bind = (effect: Effect, channel: string, depth: boolean) => {
-      if (effect.getEngine() !== engine) return;
-      const at = `${effect.uniqueId}:${internals.currentRenderPassId}`;
-      let channels = boundDepth.get(at);
-      if (!channels) boundDepth.set(at, (channels = new Set()));
-      if (depth) channels.add(channel);
-      else channels.delete(channel);
-    };
-    const setTexture = Effect.prototype.setTexture;
-    const setDepthStencilTexture = Effect.prototype.setDepthStencilTexture;
-    // A WebGPU device makes the comparison placeholders depth textures (NullEngine has none, so they are colour here).
-    const comparison = (texture: unknown) => engine.scenes.some((scene) => {
-      const placeholders = existingShadowSamplerPlaceholders(scene);
-      return !!placeholders && (texture === placeholders.compare || texture === placeholders.cascades);
-    });
-    Effect.prototype.setTexture = function (this: Effect, channel: string, texture: unknown, ...rest: unknown[]) {
-      bind(this, channel, comparison(texture));
-      return (setTexture as (...args: unknown[]) => void).call(this, channel, texture, ...rest);
-    };
-    Effect.prototype.setDepthStencilTexture = function (this: Effect, channel: string, texture: unknown, ...rest: unknown[]) {
-      bind(this, channel, texture != null);
-      return (setDepthStencilTexture as (...args: unknown[]) => void).call(this, channel, texture, ...rest);
-    };
-    cleanups.push(() => {
-      Effect.prototype.setTexture = setTexture;
-      Effect.prototype.setDepthStencilTexture = setDepthStencilTexture;
-    });
-    // Only the channels the Effect's shader declares key its pipeline (a light binds its map whatever the variant).
-    const declared = (effect: Effect, channel: string) => {
-      const light = /^(?:shadowTexture|depthTexture)(\d+)$/.exec(channel);
-      return !light || new RegExp(`#define SHADOW${light[1]}\\b`).test(effect.defines);
-    };
-    // A hardware-instanced draw (Babylon's instanced paths) binds the instance attributes: another vertex layout.
-    let instancedDraws = 0;
-    for (const name of ["_renderWithInstances", "_renderWithThinInstances"] as const) {
-      const prototype = Mesh.prototype as unknown as Record<string, (...args: unknown[]) => unknown>;
-      const original = prototype[name]!;
-      prototype[name] = function (this: unknown, ...args: unknown[]) {
-        instancedDraws++;
-        try {
-          return original.apply(this, args);
-        } finally {
-          instancedDraws--;
-        }
-      };
-      cleanups.push(() => { prototype[name] = original; });
-    }
-    const keyOf = (effect: Effect) => {
-      const channels = [...boundDepth.get(`${effect.uniqueId}:${internals.currentRenderPassId}`) ?? []].filter((channel) => declared(effect, channel));
-      const prediction = engine.getRenderPassNames()[internals.currentRenderPassId]?.startsWith("prediction") === true;
-      return `${effect.uniqueId}|${channels.sort().join(",")}|${instancedDraws > 0 ? "instanced" : "plain"}${skew && prediction ? "|skewed" : ""}`;
-    };
-    const record = (keys: Map<Effect, Set<string>>, effect: Effect, key: string) => {
-      let set = keys.get(effect);
-      if (!set) keys.set(effect, (set = new Set()));
-      set.add(key);
-    };
     for (const name of ["drawElementsType", "drawArraysType"] as const) {
       const draw = (engine[name] as (...args: unknown[]) => void).bind(engine);
       vi.spyOn(engine, name).mockImplementation(((...args: unknown[]) => {
@@ -332,38 +264,33 @@ function driverModel(engine: NullEngine, model: Model) {
         let scope: Scope | undefined;
         for (let index = scopes.length - 1; index >= 0 && !scope; index--)
           if (scopes[index]!.allows(internals.currentRenderPassId)) scope = scopes[index];
-        const key = effect ? keyOf(effect) : "";
-        // A pipeline's first draw needs it created: at once before arming or after release, pending in between (an
-        // Effect the load compiled without drawing it, such as a spawnable's, has none yet; one compiled since
-        // arming has none for any state).
-        if (effect && !pipelineReady.has(key) && !pendingKeys.has(key)) {
-          if ((armed && holding) || pending.has(effect)) {
-            pendingKeys.add(key);
-            keyEffects.set(key, effect);
-          } else pipelineReady.add(key);
+        // An Effect's first draw needs its pipeline: at once before arming or after release, pending in between (an
+        // Effect the load compiled without drawing it, such as a spawnable's, has none yet).
+        if (effect && !pipelineReady.has(effect) && !pending.has(effect)) {
+          if (armed && holding) pending.add(effect);
+          else pipelineReady.add(effect);
         }
-        const missing = !!effect && pendingKeys.has(key);
+        const missing = !!effect && pending.has(effect);
         if (scope?.warm) {
           scope.lookups += 1;
           scope.skipped += 1;
-          if (effect && engine.getRenderPassNames()[internals.currentRenderPassId]?.startsWith("prediction")) record(warmKeys, effect, key);
           if (missing) {
             warmPipelines.add(effect);
-            scope.keys.add(key);
+            scope.effects.add(effect);
           } else scope.hits += 1;
           return;
         }
-        if (effect) record(realKeys, effect, key);
         if (scope && missing) {
           pipelines.add(effect);
           scope.skipped += 1;
-          scope.keys.add(key);
+          scope.effects.add(effect);
           return;
         }
         // Outside a deferring scope (a shadow map) a missing pipeline is created synchronously.
         if (missing) {
-          pendingKeys.delete(key);
-          pipelineReady.add(key);
+          synchronous.add(effect);
+          pending.delete(effect);
+          pipelineReady.add(effect);
         }
         if (effect) drawnEffects.add(effect);
         draw(...args);
@@ -378,8 +305,6 @@ function driverModel(engine: NullEngine, model: Model) {
     /** The driver finishes everything pending; later requests compile at once again. */
     release: () => {
       pending.clear();
-      for (const key of pendingKeys) pipelineReady.add(key);
-      pendingKeys.clear();
       holding = false;
       lags = undefined;
     },
@@ -387,10 +312,6 @@ function driverModel(engine: NullEngine, model: Model) {
     lagOnly: (lagging: (effect: Effect) => boolean) => {
       lags = lagging;
       for (const effect of [...pending]) if (!lagging(effect)) pending.delete(effect);
-      for (const key of [...pendingKeys]) if (!lagging(keyEffects.get(key)!)) {
-        pendingKeys.delete(key);
-        pipelineReady.add(key);
-      }
     },
     isPending: (effect: Effect) => pending.has(effect),
     /** Every pending link fails, with no fallback left: those Effects never become ready. */
@@ -402,10 +323,8 @@ function driverModel(engine: NullEngine, model: Model) {
     pipelines,
     /** WebGPU model: Effects whose pipeline a warm draw started before any real draw needed it. */
     warmPipelines,
-    /** WebGPU model: the pipeline keys a prediction's warm draws and the real draws used with `effect`. */
-    pipelineKeys: (effect: Effect) => ({ warm: [...warmKeys.get(effect) ?? []], real: [...realKeys.get(effect) ?? []] }),
-    /** WebGPU model: from now on prediction warm draws key their pipelines apart from the real draws'. */
-    skewPredictionWarm: () => { skew = true; },
+    /** WebGPU model: Effects whose pipeline a shadow map's draw created synchronously (the shadow pass defers none). */
+    synchronous,
   };
 }
 
@@ -659,7 +578,6 @@ const spot = (slotId: number, position: Vec3, properties: Partial<PlayLightPrope
 
 const MODELS: readonly Model[] = ["sync", "parallel", "webgpu"];
 
-/** The view keeps drawing, raises no hold and pauses nothing; the subject drew its previous Effect while the new one compiled. */
 /**
  * Effects the driver compiled since it was armed that a real pass draws or probes with (not only a prediction's own
  * passes: a later prediction for another light compiles ahead too).
@@ -675,6 +593,7 @@ function realCompiles(world: PlayWorld): Effect[] {
   return world.driver.created.filter((effect) => held.has(effect));
 }
 
+/** The view keeps drawing, raises no hold and pauses nothing; the subject drew its previous Effect while the new one compiled. */
 function expectSwapped(record: CauseRecord, model: Model): void {
   const detail = JSON.stringify(record);
   // The cause really compiled a lit variant, so the states below mean something.
@@ -755,8 +674,7 @@ describe("compile holds after the first frame", () => {
     "a spot nearing the Forward budget's cut-off has its variant compiled before the budget admits it, %s: %s", async (kind, model) => {
     // The sun and eight points fill the nine shader slots. The spot first comes within the prediction margin, where the
     // budget still leaves it out, then near enough that it takes a point's place. A shadowed spot's map waits on
-    // standby meanwhile and comes back with its admission; nothing has swapped, so the scene has no shadow sampler
-    // placeholders, which would bind in place of a map a warm draw left unbound.
+    // standby meanwhile and comes back with its admission.
     predictAhead = true;
     const shadowed = kind !== "unshadowed";
     const at = (position: Vec3) => spot(30, position, shadowed ? { castShadows: true } : {});
@@ -769,7 +687,6 @@ describe("compile holds after the first frame", () => {
     for (let index = 0; index < 12; index++) await world.frame();
     const limited = isForwardLightExcluded(spotLight());
     const standby = controller().boundGenerator(spotLight()) !== null && controller().generator(spotLight()) === null;
-    const placeholders = existingShadowSamplerPlaceholders(world.handle.scene) !== undefined;
     const before = world.subjectEffect();
     world.driver.arm();
     world.place(at([0, 5, -8]));
@@ -780,84 +697,36 @@ describe("compile holds after the first frame", () => {
       frames.push(view?.rendered === true);
       if (effect && effect !== before) adoptedAfter = index;
     }
-    // Every pipeline the admission's draws use with the adopted variant is one its warm draws created (WebGPU).
-    const keys = world.driver.pipelineKeys(world.subjectEffect()!);
-    // Admitted in the change's own frame, with an Effect compiled ahead and, on WebGPU, its pipelines created ahead by
-    // warm draws in the object pass, with the lights and maps (the standby one included) the admission binds. On
-    // WebGL2 the returning map's casters' depth variants are first draws too, which the frame's first-draw budget
-    // spreads with the receivers': the subject's comes in the next frame.
-    expect({ limited, standby, placeholders, admitted: !isForwardLightExcluded(spotLight()), compiled: realCompiles(world).length,
-      pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean), adoptedAfter,
-      keysWarmed: keys.real.every((key) => keys.warm.includes(key)) }, JSON.stringify(keys)).toEqual({
-      limited: true, standby: shadowed, placeholders: false, admitted: true, compiled: 0, pipelines: 0, drawn: true,
-      adoptedAfter: shadowed && model !== "webgpu" ? 1 : 0, keysWarmed: true,
+    // Admitted in the change's own frame, with an Effect compiled ahead. On WebGL2 the returning map's casters' depth
+    // variants are first draws too, which the frame's first-draw budget spreads with the receivers': the subject's
+    // comes in the next frame. On WebGPU its pipeline, which only a draw creates, still comes after (the previous
+    // Effect draws meanwhile), while the returning map's casters find theirs: the controller's prediction map, standing
+    // in for it, drew them ahead.
+    expect({ limited, standby, admitted: !isForwardLightExcluded(spotLight()), compiled: realCompiles(world).length,
+      drawn: frames.every(Boolean), adoptedAfter, warmedPipelines: world.driver.warmPipelines.size > 0,
+      synchronousPipelines: world.driver.synchronous.size }).toEqual({
+      limited: true, standby: shadowed, admitted: true, compiled: 0, drawn: true,
+      adoptedAfter: model === "webgpu" ? -1 : shadowed ? 1 : 0, warmedPipelines: model === "webgpu", synchronousPipelines: 0,
     });
   });
 
-  it("warm draws leave every real draw after them its own render state", async () => {
-    // WebGPU: a blended receiver (with a depth pre-pass) and an opaque one wait for a spot entering the Forward budget,
-    // so the object pass's warm draws include depth pre-pass draws with colour writes off. Frame by frame, every real
-    // draw (outside warm and prediction passes) runs with the pass, colour write, alpha mode and Material it would
-    // run with without prediction.
-    const run = async (predict: boolean) => {
-      for (const cleanup of cleanups.splice(0).reverse()) cleanup();
-      if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
-      predictAhead = predict;
-      const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
-      const world = playWorld("webgpu", [...points, spot(30, [0, 5, 40])]);
-      const scene = world.handle.scene;
-      // A post-process pass draws after the object pass, with whatever state that pass leaves.
-      updateSceneRenderingSettings(scene, { effects: { ...sceneRenderingSettings(scene).effects, fxaa: true } });
-      const glass = new PBRMaterial("blended-receiver", scene);
-      glass.alpha = 0.5;
-      glass.needDepthPrePass = true;
-      const box = MeshBuilder.CreateBox("blended-receiver", { size: 1 }, scene);
-      box.position.set(1, 1, -4);
-      box.material = glass;
-      await settle(world);
-      const draws: string[][] = [];
-      let frame: string[] = [];
-      const engine = world.engine;
-      for (const name of ["drawElementsType", "drawArraysType"] as const) {
-        const draw = vi.mocked(engine[name]).getMockImplementation()!;
-        vi.mocked(engine[name]).mockImplementation(((...args: unknown[]) => {
-          const pass = engine.getRenderPassNames()[engine.currentRenderPassId] ?? "?";
-          if (!pass.startsWith("prediction") && !pass.startsWith("warm"))
-            frame.push(`${pass}:${engine.getColorWrite()}:${engine.getAlphaMode()}:${(scene as unknown as { _cachedMaterial: Material | null })._cachedMaterial?.name ?? null}`);
-          return (draw as (...a: unknown[]) => unknown)(...args);
-        }) as never);
-      }
-      world.place(spot(30, [0, 5, 3]));
-      for (let index = 0; index < 12; index++) {
-        frame = [];
-        await world.frame();
-        draws.push(frame);
-      }
-      return draws;
-    };
-    const baseline = await run(false);
-    const predicted = await run(true);
-    expect(predicted).toEqual(baseline);
-    // Some real draw follows the object pass's warm draws in each frame.
-    expect(baseline.every((frame) => frame.some((draw) => !draw.startsWith("Forward objects"))), JSON.stringify(baseline[0])).toBe(true);
-  });
-
-  it("a warm draw that throws leaves every light's shadows as they were", async () => {
-    // The object pass leaves a light holding a standby map unshadowed until it ends. A prediction's warm draws that
-    // throw must not end the pass early: the light's shadow flag comes back after every frame, the prediction is
-    // released and the failure reported, and the light casts shadows once admitted.
-    predictAhead = true;
-    const at = (position: Vec3) => spot(30, position, { castShadows: true });
+  it("a warm draw that throws leaves every light's shadows as they were, and is reported once", async () => {
+    // WebGPU: the object pass leaves a light holding a standby map unshadowed until it ends. One shadowed spot waits on
+    // standby while another enters the Forward budget, whose receivers' new variants are warm-drawn in every frame
+    // their pipelines are pending. Warm draws that throw must not end the pass early: the waiting spot's shadow flag
+    // comes back after every frame, and the failure is reported once.
     const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
-    const world = playWorld("webgpu", [...points, at([0, 5, 40])]);
+    const world = playWorld("webgpu", [...points, spot(30, [0, 5, 40], { castShadows: true }), spot(31, [0, 5, 40], { castShadows: true })]);
     const controller = () => findSceneShadowController(world.handle.scene)!;
-    const spotLight = () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}30`)!;
+    const spotLight = (slotId: number) => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${slotId}`)!;
+    const onStandby = () => controller().boundGenerator(spotLight(31)) !== null && controller().generator(spotLight(31)) === null;
     await settle(world);
-    const standby = controller().boundGenerator(spotLight()) !== null && controller().generator(spotLight()) === null;
+    world.place(spot(31, [0, 5, 3], { castShadows: true }));
+    for (let index = 0; index < 12; index++) await world.frame();
     const render = Mesh.prototype.render;
     let thrown = 0;
     Mesh.prototype.render = function (this: Mesh, ...args: Parameters<typeof render>) {
-      if (world.engine.getRenderPassNames()[world.engine.currentRenderPassId]?.startsWith("prediction")) {
+      if (world.engine.getRenderPassNames()[world.engine.currentRenderPassId]?.startsWith("warm ")) {
         thrown++;
         throw new Error("injected warm draw failure");
       }
@@ -865,111 +734,28 @@ describe("compile holds after the first frame", () => {
     };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     cleanups.push(() => { Mesh.prototype.render = render; warn.mockRestore(); });
-    world.place(at([0, 5, 3]));
+    const standby = onStandby();
+    world.driver.arm();
+    world.place(spot(30, [0, 5, -8], { castShadows: true }));
     let escaped = false;
     const shadowed: boolean[] = [];
-    for (let index = 0; index < 12; index++) {
+    const waiting: boolean[] = [];
+    let throwingFrames = 0;
+    for (let index = 0; index < 8; index++) {
+      const before = thrown;
       try {
         await world.frame();
       } catch {
         escaped = true;
       }
-      shadowed.push(spotLight().shadowEnabled);
+      if (thrown > before) throwingFrames++;
+      waiting.push(onStandby());
+      shadowed.push(spotLight(31).shadowEnabled);
     }
-    Mesh.prototype.render = render;
-    const reported = warn.mock.calls.some(([message]) => String(message).includes("warm draws failed"));
-    world.place(at([0, 5, -8]));
-    for (let index = 0; index < 8; index++) await world.frame();
-    expect({ standby, thrown: thrown > 0, escaped, shadowed: shadowed.every(Boolean), reported,
-      admitted: controller().generator(spotLight()) !== null, shadowedOnceAdmitted: spotLight().shadowEnabled })
-      .toEqual({ standby: true, thrown: true, escaped: false, shadowed: true, reported: true, admitted: true, shadowedOnceAdmitted: true });
-  });
-
-  it("a predicted variant whose warm draws missed the admission's state is admitted as without prediction, never held", async () => {
-    // WebGPU: the prediction's warm draws key their pipelines apart from the real draws', as a warm draw that bound
-    // something else would. Before its real draws the admission's frame finds the variant's pipeline missing for its
-    // own state: the subject keeps drawing its previous Effect (no frame waits for a pipeline) while that pipeline is
-    // created, and adopts the variant once it exists.
-    predictAhead = true;
-    const at = (position: Vec3) => spot(30, position, { castShadows: true });
-    const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
-    const world = playWorld("webgpu", [...points, at([0, 5, 40])]);
-    await settle(world);
-    world.driver.skewPredictionWarm();
-    world.place(at([0, 5, 3]));
-    for (let index = 0; index < 12; index++) await world.frame();
-    const before = world.subjectEffect();
-    world.driver.arm();
-    world.place(at([0, 5, -8]));
-    const frames: boolean[] = [];
-    let adoptedAfter = -1;
-    for (let index = 0; index < 16 && adoptedAfter < 0; index++) {
-      if (index === PENDING_FRAMES) world.driver.release();
-      const { view, effect } = await world.frame();
-      frames.push(view?.rendered === true);
-      if (effect && effect !== before) adoptedAfter = index;
-    }
-    expect({ compiled: realCompiles(world).length, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
-      late: adoptedAfter > 0, adopted: adoptedAfter >= 0 }).toEqual({ compiled: 0, pipelines: 0, drawn: true, late: true, adopted: true });
-  });
-
-  it.each(["instances", "thin instances"] as const)("a receiver drawn with %s settles its prediction and adopts at once on WebGPU", async (kind) => {
-    // WebGPU keeps a mesh's visible instances per render pass, which only the real pass's evaluation fills: modelled
-    // here on the box, with hardware instancing. A prediction's warm draws of it run under their own pass ids; they
-    // draw it instanced, as the real pass does, so its prediction settles (no draw wrapper is dropped, no warm draw
-    // repeats once its pipelines exist) and the box adopts its new variant in the admission's frame.
-    predictAhead = true;
-    const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
-    const world = playWorld("webgpu", [...points, spot(30, [0, 5, 40])]);
-    const scene = world.handle.scene;
-    (world.engine.getCaps() as { instancedArrays: boolean }).instancedArrays = true;
-    const box = MeshBuilder.CreateBox("instanced-receiver", { size: 1 }, scene);
-    const storage = (box as unknown as { _instanceDataStorage: { useMonoDataStorageRenderPass: boolean; renderPasses: object; hardwareInstancedRendering: boolean } })._instanceDataStorage;
-    storage.hardwareInstancedRendering = true;
-    storage.useMonoDataStorageRenderPass = false;
-    storage.renderPasses = {};
-    box.position.set(0, 1, -4);
-    box.material = new StandardMaterial("instanced-receiver", scene);
-    if (kind === "instances") {
-      box.createInstance("instanced-receiver-a").position.set(1.5, 1, -4);
-      box.createInstance("instanced-receiver-b").position.set(-1.5, 1, -4);
-    } else box.thinInstanceAdd([Matrix.Translation(1.5, 0, 0), Matrix.Translation(-1.5, 0, 0)]);
-    await settle(world);
-    let removals = 0;
-    const remove = SubMesh.prototype._removeDrawWrapper;
-    SubMesh.prototype._removeDrawWrapper = function (this: SubMesh, ...args: Parameters<typeof remove>) {
-      removals++;
-      return remove.apply(this, args);
-    };
-    let warmDraws = 0;
-    const render = Mesh.prototype.render;
-    Mesh.prototype.render = function (this: Mesh, ...args: Parameters<typeof render>) {
-      if (this === box && world.engine.getRenderPassNames()[world.engine.currentRenderPassId]?.startsWith("prediction")) warmDraws++;
-      return render.apply(this, args);
-    };
-    cleanups.push(() => { SubMesh.prototype._removeDrawWrapper = remove; Mesh.prototype.render = render; });
-    world.place(spot(30, [0, 5, 3]));
-    for (let index = 0; index < 12; index++) await world.frame();
-    const settledAt = { removals, warmDraws };
-    for (let index = 0; index < 10; index++) await world.frame();
-    const steady = { removals: removals - settledAt.removals, warmDraws: warmDraws - settledAt.warmDraws };
-    const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
-    const before = box.subMeshes[0]!._getDrawWrapper(pass())?.effect;
-    world.driver.arm();
-    world.place(spot(30, [0, 5, -8]));
-    await world.frame();
-    const adopted = box.subMeshes[0]!._getDrawWrapper(pass())?.effect;
-    // Its warm draws drew it instanced, as the admission does: the pipelines they created are the admission's.
-    const keys = adopted ? world.driver.pipelineKeys(adopted) : { warm: [], real: [] };
-    expect({
-      instanced: storage.useMonoDataStorageRenderPass === false && (kind !== "instances" || box.instances.length === 2),
-      removals: steady.removals, warmDraws: steady.warmDraws, warmedAhead: settledAt.warmDraws > 0,
-      adoptedAtOnce: adopted !== before, pipelines: world.driver.pipelines.size,
-      keysWarmed: keys.real.length > 0 && keys.real.every((key) => keys.warm.includes(key)),
-      drawnInstanced: keys.real.some((key) => key.endsWith("|instanced")),
-    }, JSON.stringify(keys)).toEqual({
-      instanced: true, removals: 0, warmDraws: 0, warmedAhead: true, adoptedAtOnce: true, pipelines: 0, keysWarmed: true, drawnInstanced: true,
-    });
+    const reports = warn.mock.calls.filter(([message]) => String(message).includes("warm draws failed")).length;
+    expect({ standby, admitted: !isForwardLightExcluded(spotLight(30)), waiting: waiting.every(Boolean), repeated: throwingFrames > 1,
+      escaped, shadowed: shadowed.every(Boolean), reports }).toEqual({
+      standby: true, admitted: true, waiting: true, repeated: true, escaped: false, shadowed: true, reports: 1 });
   });
 
   it("a prediction that never comes true expires and gives back its passes and Effects", async () => {
@@ -1037,17 +823,16 @@ describe("compile holds after the first frame", () => {
     // asks for its casters' depth variants, so it is part of the admission.
     for (let index = 0; index < 6; index++) await world.frame();
     const compiled = realCompiles(world).length;
-    // Every pipeline the real draws use with the adopted variant is one its warm draws created, with the borrowed or
-    // prediction map bound (WebGPU).
-    const keys = world.driver.pipelineKeys(world.subjectEffect()!);
+    // On WebGPU the receivers' pipelines, which only a draw creates, still come after the admission (their previous
+    // Effects draw meanwhile), while the new map's casters find theirs: the admitted spot map's, or those the
+    // prediction map's warm render created ahead.
     expect({ waiting, predictionMaps, attached, map: controller().generator(lightOf(30)) !== null,
       point: controller().generator(lightOf(11)) !== null,
       // The spot's prediction map goes with its admission (the point that lost its map may now be predicted with one).
       released: controller().heldPredictionMaps.filter((map) => map.getLight() instanceof SpotLight).length,
-      compiled, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
-      adoptedAtOnce: adoptedAfter === 0, keysWarmed: keys.real.every((key) => keys.warm.includes(key)) }, JSON.stringify(keys)).toEqual({
+      compiled, drawn: frames.every(Boolean), adoptedAtOnce: adoptedAfter === 0, synchronousPipelines: world.driver.synchronous.size }).toEqual({
       waiting: { lit: true, map: false, point: true }, predictionMaps: start === "borrowed" ? 0 : 1, attached: false,
-      map: true, point: false, released: 0, compiled: 0, drawn: true, pipelines: 0, adoptedAtOnce: true, keysWarmed: true,
+      map: true, point: false, released: 0, compiled: 0, drawn: true, adoptedAtOnce: model !== "webgpu", synchronousPipelines: 0,
     });
   });
 
@@ -1154,7 +939,6 @@ describe("compile holds after the first frame", () => {
       }));
       const states: unknown[] = [];
       const drawn: (string | null)[] = [];
-      const drawnEffects = new Set<Effect>();
       const predictionMaps: number[] = [];
       const wrapperMarks: string[][] = [];
       const adopted: number[] = [];
@@ -1188,7 +972,6 @@ describe("compile holds after the first frame", () => {
         });
         wrapperMarks.push(marks);
         drawn.push(effect?.defines ?? null);
-        if (effect) drawnEffects.add(effect);
         predictionMaps.push(controller().heldPredictionMaps.length);
         const current = new Map(real().map(({ name, wrapper }) => [name, wrapper.effect]));
         adopted.push([...current].filter(([key, held]) => previous.has(key) && previous.get(key) !== held).length);
@@ -1196,12 +979,7 @@ describe("compile holds after the first frame", () => {
         compiled.push(Object.keys(effects).length);
         checks.push(view?.checks ?? -1);
       }
-      // WebGPU: every pipeline the real draws used with a variant a prediction warmed is one its warm draws created.
-      const keysWarmed = [...drawnEffects].every((effect) => {
-        const keys = world.driver.pipelineKeys(effect);
-        return !keys.warm.length || keys.real.every((key) => keys.warm.includes(key));
-      });
-      return { states, drawn, wrapperMarks, adopted, compiled, checks, keysWarmed, predictionMaps };
+      return { states, drawn, wrapperMarks, adopted, compiled, checks, predictionMaps };
     };
     const baseline = await approach(false);
     const predicted = await approach(true);
@@ -1217,8 +995,7 @@ describe("compile holds after the first frame", () => {
       notLater: lagged(predicted) <= lagged(baseline),
       firstDraws: Math.max(...predicted.adopted) <= FIRST_DRAWS_PER_FRAME,
       adoptedAlike: predicted.adopted.reduce((sum, count) => sum + count, 0) === baseline.adopted.reduce((sum, count) => sum + count, 0),
-      keysWarmed: predicted.keysWarmed,
-    }, counts).toEqual({ sameOrAdopted: true, notLater: true, firstDraws: true, adoptedAlike: true, keysWarmed: true });
+    }, counts).toEqual({ sameOrAdopted: true, notLater: true, firstDraws: true, adoptedAlike: true });
     // The admission frame compiles nothing with prediction: what it asks for was compiled on earlier frames.
     const admitted = baseline.compiled.findIndex((count, index) => index > 0 && count > baseline.compiled[index - 1]!);
     expect(admitted, counts).toBeGreaterThan(0);
@@ -1245,13 +1022,13 @@ describe("compile holds after the first frame", () => {
     }, counts).toEqual({ atAdmission: 0, ahead: true, addedProbes: false });
   });
 
-  it.each(["sync", "webgpu"] as const)("predictions settle with more lights near the Forward budget's cut-off than they hold: %s", async (model) => {
+  it("predictions settle with more lights near the Forward budget's cut-off than they hold", async () => {
     // Thirteen points at nearly one distance from the camera: those past the budget all sit within the margin, more
     // than PREDICTIONS_MAX of them. With the camera still, prediction work ends after its first frames: no what-if
     // admission toggles a light and no prediction's draw wrappers are dropped.
     predictAhead = true;
     const lights = Array.from({ length: 13 }, (_, index) => point(100 + index, [Math.cos(index) * 6, 2.5 + (index % 3) * 0.1, Math.sin(index) * 6]));
-    const world = playWorld(model, [...lights]);
+    const world = playWorld("sync", [...lights]);
     await settle(world);
     const near = nearForwardAdmissions(world.handle.scene, 1.5).length;
     for (let index = 0; index < 20; index++) await world.frame();
@@ -1272,12 +1049,12 @@ describe("compile holds after the first frame", () => {
     expect({ moreThanHeld: near > PREDICTIONS_MAX, toggles, removals }).toEqual({ moreThanHeld: true, toggles: 0, removals: 0 });
   });
 
-  it.each(["sync", "webgpu"] as const)("predictions settle while the fourth and fifth lights near the cut-off trade places every frame: %s", async (model) => {
+  it("predictions settle while the fourth and fifth lights near the cut-off trade places every frame", async () => {
     // The thirteen-point ring: the fifth candidate moves 1% either side of the fourth's distance each frame, so the two
     // trade ranks. Neither prediction is dropped for the other while both stay near.
     predictAhead = true;
     const ring = (index: number): Vec3 => [Math.cos(index) * 6, 2.5 + (index % 3) * 0.1, Math.sin(index) * 6];
-    const world = playWorld(model, Array.from({ length: 13 }, (_, index) => point(100 + index, ring(index))));
+    const world = playWorld("sync", Array.from({ length: 13 }, (_, index) => point(100 + index, ring(index))));
     await settle(world);
     for (let index = 0; index < 20; index++) await world.frame();
     const near = nearForwardAdmissions(world.handle.scene, 1.5);
@@ -1328,17 +1105,16 @@ describe("compile holds after the first frame", () => {
     expect({ admitted: predicted.admitted, same: predicted.drawn === baseline.drawn }).toEqual({ admitted: true, same: true });
   });
 
-  it.each(["sync", "webgpu"] as const)("predicted variants adopt within FIRST_DRAWS_PER_FRAME on WebGL2, and at once once warmed on WebGPU: %s", async (model) => {
+  it("predicted variants still adopt at most FIRST_DRAWS_PER_FRAME new variants per frame", async () => {
     // Six barrels with Materials of their own: a spot the prediction compiled ahead for comes into the Forward budget,
-    // and each Material asks for its variant at once. On WebGL2 the first draws still spread over frames (on iPad
-    // WebKit a program's first draw is the stall), with nothing left to compile. On WebGPU the budget spreads pipeline
-    // creation, and warm draws created the pipelines ahead, so all six adopt in the admission's frame.
+    // and each Material asks for its variant at once. The first draws still spread over frames (on iPad WebKit WebGL2
+    // a program's first draw is the stall), with nothing left to compile.
     const guids = ["surface-a", "surface-b", "surface-c", "surface-d", "surface-e", "surface-f"];
     const barrels: Actor[] = guids.map((_, index) =>
       ({ slotId: 50 + index, guid: `barrel-${index}`, position: [-5 + index * 2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } }));
     const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
     predictAhead = true;
-    const world = playWorld(model, [...points, spot(30, [0, 5, 40]), ...barrels], guids);
+    const world = playWorld("sync", [...points, spot(30, [0, 5, 40]), ...barrels], guids);
     guids.forEach((guid, index) => world.handle.applyCommand({ type: "assignMaterial", slotId: 50 + index, materialAssetGuid: guid }));
     await settle(world);
     world.place(spot(30, [0, 5, 3]));
@@ -1356,9 +1132,8 @@ describe("compile holds after the first frame", () => {
       perFrame.push(next.filter((effect, at) => effect !== current[at]).length);
       current = next;
     }
-    expect({ compiled: realCompiles(world).length, pipelines: world.driver.pipelines.size, most: Math.max(...perFrame),
-      all: current.every((effect, at) => effect !== start[at]) }, JSON.stringify(perFrame))
-      .toEqual({ compiled: 0, pipelines: 0, most: model === "sync" ? FIRST_DRAWS_PER_FRAME : barrels.length, all: true });
+    expect({ compiled: world.driver.created.length, most: Math.max(...perFrame), all: current.every((effect, at) => effect !== start[at]) },
+      JSON.stringify(perFrame)).toEqual({ compiled: 0, most: FIRST_DRAWS_PER_FRAME, all: true });
   });
 
   it.each(MODELS)("an area light's emission texture arrives: %s", async (model) => {
