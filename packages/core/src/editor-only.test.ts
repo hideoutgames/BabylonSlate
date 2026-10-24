@@ -13,10 +13,10 @@ import {
 describe("editor-only assets", () => {
   const parentOf = (id: string) => {
     if (id === "LevelTools") return "EditorUtilityObject";
-    if (id === "EditorUtilityObject") return "BObject";
+    if (id === "EditorUtilityObject") return "Object";
     if (id === "Hero") return "Actor";
     if (id === "MathLib") return "FunctionLibrary";
-    if (id === "FunctionLibrary") return "BObject";
+    if (id === "FunctionLibrary") return "Object";
     if (id === "EditorMath") return "EditorFunctionLibrary";
     if (id === "EditorFunctionLibrary") return "FunctionLibrary";
     return null;

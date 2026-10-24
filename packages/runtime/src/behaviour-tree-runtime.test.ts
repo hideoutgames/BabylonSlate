@@ -109,7 +109,7 @@ describe("BehaviourTreeRuntime", () => {
       behaviourTrees: { "tree-1": { name: "Edit", rootId: "edit", blackboardGuid: "board-1", nodes: [task("edit", "BTTask_Edit")] } },
       blackboards: { "board-1": { name: "Edits", keys: [
         { name: "list", type: { kind: "array", element: { kind: "string" } }, defaultValue: ["a"] },
-        { name: "nested", type: { kind: "objectRef", classId: "BObject" }, defaultValue: { hits: 0, tags: ["a"] } },
+        { name: "nested", type: { kind: "objectRef", classId: "Object" }, defaultValue: { hits: 0, tags: ["a"] } },
         { name: "lookup", type: { kind: "map", key: { kind: "string" }, value: { kind: "string" } }, defaultValue: new Map([["a", 1]]) },
       ] } },
       onCommand: (command) => commands.push(command),

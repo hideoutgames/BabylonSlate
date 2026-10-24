@@ -199,7 +199,7 @@ describe("workspace registry traversal", () => {
       "unlit",
     );
 
-    await reparent(registry, "base", "BObject");
+    await reparent(registry, "base", "Object");
     rerender(<DocumentWorkspace />);
     expect(screen.getByTestId("first").getAttribute("data-mode")).toBe("3d");
     expect(screen.getByTestId("prefab-docks").getAttribute("data-prefab")).toBe(

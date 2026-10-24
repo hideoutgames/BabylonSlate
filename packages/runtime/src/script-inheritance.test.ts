@@ -237,7 +237,7 @@ describe("user class inheritance at runtime", () => {
       runtime.realizePlayWorld();
       expect(scriptLogs(commands)).toEqual(["LeafGI.init"]);
       expect(runtime.getWorld().classRegistry.ancestry("LeafGI")).toEqual([
-        "LeafGI", "MidGI", "BaseGI", "GameInstance", "BObject",
+        "LeafGI", "MidGI", "BaseGI", "GameInstance", "Object",
       ]);
     } finally {
       runtime.stop();
@@ -254,7 +254,7 @@ describe("user class inheritance at runtime", () => {
       const classes = runtime.getWorld().classRegistry;
       for (const classId of ["Loop", "Knot"]) {
         expect(classes.has(classId)).toBe(true);
-        expect(classes.ancestry(classId).slice(-2)).toEqual(["Actor", "BObject"]);
+        expect(classes.ancestry(classId).slice(-2)).toEqual(["Actor", "Object"]);
       }
     } finally {
       runtime.stop();

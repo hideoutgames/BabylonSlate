@@ -213,14 +213,14 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 | Import-only | Texture, Model, Skeleton, Animation, Audio, Font |
 | Not Content Browser assets | PluginSettings (one per plugin), Trace (`.htrace` in derived data) |
 
-- **Class parents, not file types**: BObject, Actor, ActorComponent, GameInstance, GameSubsystem, SceneSubsystem (hidden abstract `Subsystem` is never offered), FunctionLibrary, EditorFunctionLibrary, EditorUtilityObject, BDebugCommand, BTTask, BTDecorator, BTService, BTComposite, plus scene/streaming/capture actor bases ([ids.ts](../../packages/object-model/src/ids.ts)).
+- **Class parents, not file types**: Object, Actor, ActorComponent, GameInstance, GameSubsystem, SceneSubsystem (hidden abstract `Subsystem` is never offered), FunctionLibrary, EditorFunctionLibrary, EditorUtilityObject, DebugCommand, BTTask, BTDecorator, BTService, BTComposite, plus scene/streaming/capture actor bases ([ids.ts](../../packages/object-model/src/ids.ts)).
 - Every creatable class picks a parent at creation; re-parenting is supported with cycle detection and a diff of broken inherited members.
 - EditorUtilityObject and EditorFunctionLibrary are editor-only and stripped from Play and export; leftover `EditorUtilityInterface` strings stay editor-only.
 - **UserInterface / game HUD is removed and must not be re-added**: no UserInterface asset, no `@haptic/ui-runtime`, no WidgetComponent, no `ui.*` nodes, no Interface-domain materials, no Play/player Babylon GUI (`AdvancedDynamicTexture`), no `.ui.hasset` migration. `documentKindForAssetType("UserInterface")` is `null`.
 
 ## Object model
 
-- `BObject` (guid, class, variables, `OnCreation` / `OnTick` / `OnDestroyed`); `Actor` adds transform, component tree, world membership, spawn/destroy; `ActorComponent` attaches to an Actor with its own tick and is the component scripting host (each attachment its own object).
+- `Object` is the root class (TypeScript `EngineObject`: guid, class, variables, `OnCreation` / `OnTick` / `OnDestroyed`); `Actor` adds transform, component tree, world membership, spawn/destroy; `ActorComponent` attaches to an Actor with its own tick and is the component scripting host (each attachment its own object).
 - `GameInstance`: one per session from Project Settings; On Init / Tick / End (End only on application stop, never `changeScene`) plus scene loading events.
 - Subsystems are engine-created singletons: every leaf GameSubsystem lives for the session and wraps the Game Instance lifecycle; every leaf SceneSubsystem lives with each main Scene (never streamed sub-scenes or SceneLayers). Created in class-id order with fixed guids, no registration list; graphs reach them with pure **Get `<ClassId>`** nodes.
 - Engine components are listed in [engine-components.ts](../../packages/core/src/engine-components.ts) with their world/overlay placement. Colliders cover 3D and 2D shapes; the scene's physics world decides which apply.
@@ -229,8 +229,8 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## Visual scripting
 
-- **Pin types**: exec, bool, int, float, string, vec2/3/4, rotator, quat, transform, color, `objectRef(class)` (live instance), `actorRef(class)`, `classRef(class)` (class value, not an instance), `assetRef(type)`, struct and enum by guid (engine Hit Result, Collision Channel), array, map, delegate, wildcard, `tag`. Variables pick an inner type plus Container Single / Array / Map.
-- **Assignability** lives only in [types.ts](../../packages/scripting/src/types.ts) with exhaustive tests: int → float widening; subclass → superclass of the same reference kind; any reference → `objectRef("BObject")`; `actorRef` → a wider `objectRef`; empty `assetRef` type matches any. Narrowing needs Cast. `classRef` never assigns to instance pins. Literal defaults are allowed on `classRef` but rejected on object/actor instance pins. Spawn Actor / Add Component `classId` pins are `classRef`, not strings.
+- **Pin types**: exec, bool, int, float, string, vec2/3/4, rotator, quat, transform, color, `objectRef(class)` (live instance of the class or a subclass; an actor reference is `objectRef("Actor")` or an Actor subclass, never a separate kind), `classRef(class)` (class value, not an instance), `assetRef(type)`, struct and enum by guid (engine Hit Result, Collision Channel), array, map, delegate, wildcard, `tag`. Variables pick an inner type plus Container Single / Array / Map.
+- **Assignability** lives only in [types.ts](../../packages/scripting/src/types.ts) with exhaustive tests: int → float widening; subclass → superclass of the same reference kind, decided by the class hierarchy alone; any reference → `objectRef("Object")`; empty `assetRef` type matches any. Narrowing needs Cast. `classRef` never assigns to instance pins. Literal defaults are allowed on `classRef` but rejected on object instance pins. Spawn Actor / Add Component `classId` pins are `classRef`, not strings.
 - **Wildcards are two things**: a resolving wildcard is a compile-time generic shared by a resolution group (container nodes); a boxed wildcard is a runtime any (Print, user wildcard params). Anything boxes implicitly; unboxing is always explicit through the generated `WildcardTo*` family, which reports success plus fallback instead of throwing. `formatValue` in `core` backs Log, Print and `WildcardToString` and is golden-tested.
 - Unconnected literal inputs edit inline on nodes; Engine Settings → Graph → Read-Only Pin Defaults locks them.
 - **Compiler**: IR → deterministic plain JavaScript ES modules (no TypeScript, no transpiler in the browser). Exec flow becomes straight-line code with native `if`/`for`/`while`; pure nodes inline with CSE; latent nodes use async entry functions. Modules load by blob-URL dynamic import inside the worker. Each module gets `//# sourceURL=haptic:///<assetGuid>.js` and an anchor table (generated line/column → asset/graph/node); any pass that moves code rewrites anchors, and compiled game scripts are never minified.
@@ -277,7 +277,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## Debugging tiers
 
 - The command system is always present; only the debugger UI and debug-tier commands are optional and tree-shaken out of non-debug exports.
-- Core commands ship in every build: `changescene`, `quality` (and its groups), `renderpath`, `fixedlights`, `framecap`, `volume`, `quit`, `help`, and every user `BDebugCommand`. Debug-tier commands (`stat *`, `showcollision`, `wireframe`, `pause`, `step`, `slomo`, `freecam`, `possess`, `destroyactor`, `dumplog`, …) ship only with the bundled debugger ([packages/debugger/src](../../packages/debugger/src/)).
+- Core commands ship in every build: `changescene`, `quality` (and its groups), `renderpath`, `fixedlights`, `framecap`, `volume`, `quit`, `help`, and every user `DebugCommand`. Debug-tier commands (`stat *`, `showcollision`, `wireframe`, `pause`, `step`, `slomo`, `freecam`, `possess`, `destroyactor`, `dumplog`, …) ship only with the bundled debugger ([packages/debugger/src](../../packages/debugger/src/)).
 - Engine command names are reserved; a colliding user command fails at edit time.
 - Stats HUD on the main thread at about 5 Hz, splitting render, script and physics time; memory shown as accounted bytes; per-channel bridge traffic. HUDs never `setState` at 60 Hz.
 - The trace recorder spills `.htrace` (same container format) to derived data; with input stream and RNG seed it replays through the headless harness.
@@ -335,7 +335,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## AI
 
 - **Behaviour trees** are React Flow graphs in `graph-ui` with parent-child edges; sibling order is `children[]`, never wire topology. Decorators and services render as attached rows, not nodes. Positions (`editorPositions`) are optional; Auto Arrange never changes `children[]`; the runtime ignores positions.
-- Composites (Selector, Sequence, Parallel), tasks, decorators (gate entry, can abort Self / Lower Priority / Both) and services (interval tick). Every kind is a `BObject` subclass implemented with visual scripting.
+- Composites (Selector, Sequence, Parallel), tasks, decorators (gate entry, can abort Self / Lower Priority / Both) and services (interval tick). Every kind is an `Object` subclass implemented with visual scripting.
 - Tree structure is data interpreted by a deterministic explicit-stack evaluator in the worker; node logic is compiled JS. Abort semantics get a table-driven test matrix.
 - Blackboard keys use the pin type system; trees and blackboards are separate assets. `BehaviourTreeComponent` attaches to any Actor (no AI controller concept).
 - **Navigation** uses `recast-navigation-js` for both bake (`@recast-navigation/generators`) and query (`@recast-navigation/core`) so the serialised navmesh is one library's own round trip. Babylon's `RecastJSPlugin` (Scene-coupled, main-thread-only) and `@recast-navigation/babylon` are not used.

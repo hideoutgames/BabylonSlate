@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { compileGraph, compileTransitionRuleGraph } from "./compile";
 import { NodeRegistry, pin } from "./node-registry";
-import { BOOL, EXEC, FLOAT, actorRef, objectRef } from "./types";
+import { BOOL, EXEC, FLOAT, objectRef } from "./types";
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
 
-const actor = actorRef("Actor");
+const actor = objectRef("Actor");
 const subject = (id: string, name: string): GraphPin => ({ ...pin(id, name, "in", actor), subject: true });
 const selfSubject = (id: string, name: string): GraphPin => ({
   ...pin(id, name, "in", actor, "data", true),

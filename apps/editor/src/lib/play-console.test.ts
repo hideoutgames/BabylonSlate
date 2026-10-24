@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { playConsoleCommands, playConsoleCompletionContext } from "./play-console";
 
 describe("playConsoleCommands", () => {
-  it("includes core commands and compiled user BDebugCommand names", () => {
+  it("includes core commands and compiled user DebugCommand names", () => {
     const names = playConsoleCommands([
       {
         assetGuid: "heal",

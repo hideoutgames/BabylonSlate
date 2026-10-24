@@ -98,7 +98,7 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
           showOptional={false}
           showDefault={false}
           classEntries={subclassClassEntries(
-            "BObject",
+            "Object",
             assetRegistry?.list() ?? [],
           )}
           typeAssets={typeAssetPickerEntries(

@@ -7,7 +7,7 @@ describe("classGraphDebugTarget", () => {
     Door: "Actor",
     Helpers: "FunctionLibrary",
     MoreHelpers: "Helpers",
-    Cheats: "BDebugCommand",
+    Cheats: "DebugCommand",
     Tooling: "EditorUtilityObject",
   };
   const parentOf = (id: string) => parents[id] ?? null;

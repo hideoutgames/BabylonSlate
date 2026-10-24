@@ -271,12 +271,11 @@ function defaultValueForVariableType(
   if (spec.container === "array" || spec.container === "map") return [];
   if (
     spec.typeId === "object" ||
-    spec.typeId === "actor" ||
     spec.typeId === "wildcard"
   ) {
     return undefined;
   }
-  if (spec.typeId === "class") return spec.typeClassId ?? "BObject";
+  if (spec.typeId === "class") return spec.typeClassId ?? "Object";
   return defaultValueForMember(spec.typeId, spec.typeClassId, schemas);
 }
 
@@ -285,7 +284,7 @@ function seedVariableEntry(
   typeClassId: string | undefined,
   schemas: ReturnType<typeof typeSchemasFromGraphAssets>,
 ): unknown {
-  if (typeId === "object" || typeId === "actor" || typeId === "wildcard") {
+  if (typeId === "object" || typeId === "wildcard") {
     return null;
   }
   return defaultValueForMember(typeId, typeClassId, schemas);
@@ -301,8 +300,7 @@ function constrainedTypeClassId(
 ): string | undefined {
   const trimmed = typeClassId?.trim();
   if (trimmed) return trimmed;
-  if (typeId === "actor") return "Actor";
-  if (typeId === "object" || typeId === "class") return "BObject";
+  if (typeId === "object" || typeId === "class") return "Object";
   return undefined;
 }
 
@@ -367,14 +365,13 @@ function ClassMemberDetails({
     const typeId = member.typeId ?? "float";
     const container = variableContainerOf(member);
     const isObject = typeId === "object";
-    const isActor = typeId === "actor";
     const isClass = typeId === "class";
     const isStruct = typeId === "struct";
     const isEnum = typeId === "enum";
     const isAsset = typeId === "asset";
     const typeClassId =
       member.typeClassId?.trim() ||
-      (isObject || isClass ? "BObject" : isActor ? "Actor" : "");
+      (isObject || isClass ? "Object" : "");
     const typeAsset = typeAssets.find((asset) => asset.guid === typeClassId);
     const typeAssetIdentity = assetRowIdentity(
       typeAsset
@@ -477,7 +474,7 @@ function ClassMemberDetails({
           classEntries={classEntries}
           typeAssets={typeAssets}
         />
-        {isObject || isActor || isClass ? (
+        {isObject || isClass ? (
           <Field>
             <FieldLabel>Class Type</FieldLabel>
             <Button
@@ -771,7 +768,7 @@ function ClassMemberDetails({
             (entryPick?.field === "key"
               ? member.keyTypeClassId
               : member.typeClassId
-            )?.trim() || "BObject"
+            )?.trim() || "Object"
           }
           title="Pick Class"
           onPick={(classId) => {
@@ -1243,7 +1240,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         type: asset.header.type,
         path: asset.path,
       })),
-      bobjectClassEntries: subclassClassEntries("BObject", assets, { editorGraph }),
+      objectClassEntries: subclassClassEntries("Object", assets, { editorGraph }),
       projectClasses: assets
         .filter((asset) => asset.header.type === "Class")
         .map((asset) => ({
@@ -1254,7 +1251,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         })),
     };
   }, [assetRegistry, editorGraph, registryEpoch]);
-  const { interfaceAssets, pickerAssets, bobjectClassEntries, projectClasses } = registryViews;
+  const { interfaceAssets, pickerAssets, objectClassEntries, projectClasses } = registryViews;
   // Other open tabs' unsaved content these catalogs read, by kind.
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const dataDocuments = useOpenDocumentsOfKinds(DATA_KINDS);
@@ -1499,7 +1496,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           actorClassId={doc?.ref.kind === "graph" && doc.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
           component={selectedPrefabComponent}
           components={prefabComponents}
-          sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
+          sceneLayerClasses={objectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
           sortingLayers={sortingLayers}
           collisionLayers={collisionLayers}
           collisionPresets={projectDocument?.settings.physics?.collisionPresets}
@@ -1575,7 +1572,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           graph={graph}
           member={selectedMember}
           interfaceAssets={interfaceAssets}
-          classEntries={bobjectClassEntries}
+          classEntries={objectClassEntries}
           typeAssets={typeAssets}
           pickerAssets={pickerAssets}
           schemas={typeSchemas}
@@ -1783,7 +1780,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     updateNodeData,
     {
       enumMembers,
-      classEntries: bobjectClassEntries,
+      classEntries: objectClassEntries,
       onPickClass: (pinId, constraintClassId) => {
         setClassPinPick({ pinId, constraintClassId });
       },
@@ -1941,7 +1938,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               rows={javaScriptPinRows(inputs, "in")}
               showContainer showOptional={false} showDefault={false}
               selectedId={selectedJsPin} onSelect={selectJsPin}
-              classEntries={bobjectClassEntries}
+              classEntries={objectClassEntries}
               typeAssets={typeAssets}
               itemLabel="Input"
               testIdPrefix="js-input"
@@ -1954,7 +1951,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               rows={javaScriptPinRows(outputs, "out")}
               showContainer showOptional={false} showDefault={false}
               selectedId={selectedJsPin} onSelect={selectJsPin}
-              classEntries={bobjectClassEntries}
+              classEntries={objectClassEntries}
               typeAssets={typeAssets}
               itemLabel="Output"
               testIdPrefix="js-output"
@@ -2073,7 +2070,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             title="Outputs"
             rows={eventOutputRows}
             types={PIN_PICKER_TYPES}
-            classEntries={bobjectClassEntries}
+            classEntries={objectClassEntries}
             typeAssets={typeAssets}
             itemLabel="Output"
             testIdPrefix="event-out"

@@ -60,7 +60,7 @@ export interface WorldLike {
   rngNextFloat(): number;
 }
 
-export type LifecycleHooks<T extends BObject = BObject> = {
+export type LifecycleHooks<T extends EngineObject = EngineObject> = {
   onCreation?: (self: T) => void;
   onTick?: (self: T, ctx: TickContext) => void;
   onDestroyed?: (self: T) => void;
@@ -158,7 +158,7 @@ function freezeCollisionValue(value: unknown, seen = new WeakSet<object>()): unk
   return value;
 }
 
-export class BObject {
+export class EngineObject {
   readonly guid: Guid;
   readonly classId: string;
   readonly variables: Map<string, unknown>;
@@ -222,7 +222,7 @@ export class BObject {
   }
 }
 
-export class Actor extends BObject {
+export class Actor extends EngineObject {
   transform: Transform;
   readonly components: ActorComponent[] = [];
   world: WorldLike | null = null;
@@ -343,7 +343,7 @@ export class SceneStreamingActor extends Actor {
   }
 }
 
-export class ActorComponent extends BObject {
+export class ActorComponent extends EngineObject {
   override callOnDestroyed(): void {
     this.owner?.world?.markStructureChanged?.();
     super.callOnDestroyed();
@@ -452,7 +452,7 @@ export class ActorComponent extends BObject {
 }
 
 /** Engine-neutral reference to one mesh component's current material instance. */
-export class MaterialObject extends BObject {
+export class MaterialObject extends EngineObject {
   readonly targetKind = "mesh" as const;
   readonly component: ActorComponent;
   readonly materialAssetGuid: string;
@@ -479,7 +479,7 @@ export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
   onSceneExit?: (self: GameInstance, sceneName: string) => void;
 };
 
-export class SceneLayer extends BObject {
+export class SceneLayer extends EngineObject {
   assetGuid: string;
   zOrder: number;
   ownerSceneGuid: string | null;
@@ -522,7 +522,7 @@ export class SceneLayer extends BObject {
   }
 }
 
-export class Scene extends BObject {
+export class Scene extends EngineObject {
   assetGuid: string;
   postProcessStack: ScenePostProcessEntry[];
 
@@ -553,7 +553,7 @@ export class Scene extends BObject {
 }
 
 /** A pass reference shares the reflected MaterialObject type without inventing a mesh owner. */
-export class PostProcessMaterialObject extends BObject {
+export class PostProcessMaterialObject extends EngineObject {
   readonly targetKind = "postProcess" as const;
   readonly materialAssetGuid: string;
   readonly owner: Scene | SceneLayer;
@@ -598,7 +598,7 @@ export function getPostProcessMaterialObject(
   return reference;
 }
 
-export class GameInstance extends BObject {
+export class GameInstance extends EngineObject {
   private readonly gameHooks: GameInstanceHooks;
 
   constructor(
@@ -654,7 +654,7 @@ type SubsystemOptions<H> = {
  * after End. The instance is `ended` from the moment End starts and
  * `destroyed` once it returns.
  */
-export abstract class Subsystem extends BObject {
+export abstract class Subsystem extends EngineObject {
   private initStarted = false;
   private endStarted = false;
 

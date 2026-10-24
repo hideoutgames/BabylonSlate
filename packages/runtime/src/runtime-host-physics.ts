@@ -1,5 +1,5 @@
 import { emptyWaterSample } from "@haptic/core";
-import { Actor, ActorComponent, SceneLayer, type BObject, type World } from "@haptic/object-model";
+import { Actor, ActorComponent, SceneLayer, type EngineObject, type World } from "@haptic/object-model";
 import type { MovementWorldSync } from "./movement";
 import type { PhysicsWorldSync } from "./physics-sync";
 import type { RagdollWorldSync } from "./ragdoll-sync";
@@ -42,7 +42,7 @@ const miss = () => ({ hit: false, location: null, normal: null, distance: 0, act
  * actor's (or its component's owner's) layer, or the calling Scene Layer
  * itself. Null for main-Scene callers and callers outside any actor.
  */
-export function callerSceneLayerId(caller: BObject | null | undefined): string | null {
+export function callerSceneLayerId(caller: EngineObject | null | undefined): string | null {
   if (caller instanceof Actor) return caller.sceneLayerId;
   if (caller instanceof ActorComponent) return caller.owner?.sceneLayerId ?? null;
   if (caller instanceof SceneLayer) return caller.guid;
@@ -58,7 +58,7 @@ export function callerSceneLayerId(caller: BObject | null | undefined): string |
 export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHostServices,
   "sampleWater" | "lineTrace" | "projectCursorToScene" | "projectTouchToScene" | "sphereOverlap" | "shapeSweep" |
   "addImpulse" | "moveCharacter" | "teleportActor"> {
-  const queryWorld = (caller: BObject | null | undefined): PhysicsWorldSync | null => {
+  const queryWorld = (caller: EngineObject | null | undefined): PhysicsWorldSync | null => {
     const layerId = callerSceneLayerId(caller);
     return layerId ? deps.layerPhysics(layerId) : deps.physics();
   };

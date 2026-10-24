@@ -6,7 +6,7 @@ import {
   BOOL,
   FLOAT,
   STRING,
-  actorRef,
+  objectRef,
   arrayOf,
   enumRef,
   ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
@@ -55,7 +55,7 @@ export const navigationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "target", "in", actorRef("Actor"))),
+      subject(pin("target", "target", "in", objectRef("Actor"))),
       pin("destination", "destination", "in", VEC3),
     ],
     codegen: (ctx) => {
@@ -71,7 +71,7 @@ export const navigationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "target", "in", actorRef("Actor"))),
+      subject(pin("target", "target", "in", objectRef("Actor"))),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.stopMovement(${ctx.input("target")});`);

@@ -454,7 +454,7 @@ describe("collectAndExportGame", () => {
       preset: defaultExportPreset(),
       parentOf: (id) => {
         if (id === "MyGame") return "GameInstance";
-        if (id === "Tools" || id === "EditorUtilityObject") return "BObject";
+        if (id === "Tools" || id === "EditorUtilityObject") return "Object";
         return null;
       },
       sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),

@@ -56,7 +56,7 @@ describe("compiler emits runnable JavaScript", () => {
   it.each([false, true])("passes objects, arrays and Maps through named JavaScript variables (async=%s)", async (async) => {
     const registry = createDefaultNodeRegistry();
     const types = [
-      { kind: "objectRef", classId: "BObject" },
+      { kind: "objectRef", classId: "Object" },
       { kind: "array", element: { kind: "float" } },
       { kind: "map", key: { kind: "string" }, value: { kind: "float" } },
     ];

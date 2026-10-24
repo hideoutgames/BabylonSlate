@@ -19,7 +19,7 @@ function stubServices(
   };
 }
 
-describe("ScriptHost BObject receivers", () => {
+describe("ScriptHost Object receivers", () => {
   it("still moves an Actor through the narrowed transform API", () => {
     const actor = new Actor({ classId: "Hero" });
     const ctx = new ScriptHost(stubServices()).createContext(actor, 0, 0);

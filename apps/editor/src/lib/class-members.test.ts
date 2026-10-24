@@ -472,13 +472,12 @@ describe("addClassMember", () => {
     });
   });
 
-  it("treats single object and actor variables as Validated Get types", () => {
+  it("treats single object variables as Validated Get types", () => {
     expect(isObjectInstanceVariableType("object")).toBe(true);
-    expect(isObjectInstanceVariableType("actor")).toBe(true);
     expect(isObjectInstanceVariableType("bool")).toBe(false);
     expect(isObjectInstanceVariableType("class")).toBe(false);
     expect(isObjectInstanceVariableType("object", "array")).toBe(false);
-    expect(isObjectInstanceVariableType("actor", "map")).toBe(false);
+    expect(isObjectInstanceVariableType("object", "map")).toBe(false);
   });
 
   it("spawns Validated Get onto the event graph for an object variable", () => {
@@ -734,7 +733,7 @@ describe("addClassMember", () => {
       graph = addClassMember(graph, "function", "Cast", () => "fn-cast", { pins: pinsOf(6) });
       graph = addClassMember(graph, "event", "On Hit", () => "evt-hit");
       graph = addClassMember(graph, "variable", "Health", () => "var-health", { typeId: "float" });
-      graph = addClassMember(graph, "variable", "Pawn", () => "var-pawn", { typeId: "actor", typeClassId: "Actor" });
+      graph = addClassMember(graph, "variable", "Pawn", () => "var-pawn", { typeId: "object", typeClassId: "Actor" });
       return graph;
     }
     const rows = [
@@ -742,7 +741,7 @@ describe("addClassMember", () => {
       { id: "fn-cast", kind: "function" as const, name: "Cast" },
       { id: "evt-hit", kind: "event" as const, name: "On Hit", eventType: "flow.event.custom" },
       { id: "var-health", kind: "variable" as const, name: "Health", typeId: "float" },
-      { id: "var-pawn", kind: "variable" as const, name: "Pawn", typeId: "actor", typeClassId: "Actor" },
+      { id: "var-pawn", kind: "variable" as const, name: "Pawn", typeId: "object", typeClassId: "Actor" },
       { id: "native:flow.event.beginPlay", kind: "event" as const, name: "Event Begin Play", eventType: "flow.event.beginPlay" },
       { id: "if-1", kind: "interface" as const, name: "Damageable" },
     ];
@@ -1056,7 +1055,7 @@ describe("addClassMember", () => {
 });
 
 describe("blueprintSectionsForClass", () => {
-  it("lists Functions, Variables, Events, and Interfaces for Actor and BObject", () => {
+  it("lists Functions, Variables, Events, and Interfaces for Actor and Object", () => {
     expect(blueprintSectionsForClass({ parentClass: "Actor" }).map((s) => s.id)).toEqual([
       "functions",
       "variables",
@@ -1064,7 +1063,7 @@ describe("blueprintSectionsForClass", () => {
       "interfaces",
     ]);
     expect(
-      blueprintSectionsForClass({ parentClass: "BObject" }).map((s) => s.id),
+      blueprintSectionsForClass({ parentClass: "Object" }).map((s) => s.id),
     ).toEqual(["functions", "variables", "events", "interfaces"]);
     expect(
       blueprintSectionsForClass({
@@ -1090,7 +1089,7 @@ describe("blueprintSectionsForClass", () => {
       blueprintSectionsForClass({
         parentClass: "EditorFunctionLibrary",
         parentOf: (id) =>
-          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "Object",
         activeFunctionId: "fn-1",
       }).map((s) => s.id),
     ).toEqual(["functions", "local-variables"]);
@@ -1134,7 +1133,7 @@ describe("classAllowsMemberKind", () => {
       classAllowsMemberKind("event", {
         parentClass: "EditorFunctionLibrary",
         parentOf: (id) =>
-          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "Object",
       }),
     ).toBe(false);
   });
@@ -1149,7 +1148,7 @@ describe("functionLibraryShowsEventGraphEmpty", () => {
       functionLibraryShowsEventGraphEmpty({
         parentClass: "EditorFunctionLibrary",
         parentOf: (id) =>
-          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "Object",
       }),
     ).toBe(true);
     expect(

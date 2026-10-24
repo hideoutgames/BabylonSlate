@@ -6,7 +6,6 @@ import {
   EXEC,
   FLOAT,
   COLOR,
-  actorRef,
   assetRef,
   classRef,
   objectRef,
@@ -43,7 +42,7 @@ function registry(): NodeRegistry {
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
       pin("classId", "classId", "in", classRef("Actor")),
-      pin("out", "out", "out", actorRef("Actor")),
+      pin("out", "out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => {
       const out = ctx.output("out");
@@ -126,7 +125,7 @@ describe("compile pinExpr defaults", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
             pin("classId", "classId", "in", classRef("Actor")),
-            pin("out", "out", "out", actorRef("Actor")),
+            pin("out", "out", "out", objectRef("Actor")),
           ],
           properties: { "default:classId": "Pawn" },
         },

@@ -164,7 +164,7 @@ export const debugNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("object", "Object", "in", objectRef("BObject")),
+      pin("object", "Object", "in", objectRef("Object")),
       pin("message", "Message", "in", STRING, "data", true, ""),
     ],
     codegen: (ctx) => {

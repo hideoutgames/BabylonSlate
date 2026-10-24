@@ -6,7 +6,7 @@ import {
   isLockedEngineClassId,
   type Actor,
   type ActorComponent,
-  type BObject,
+  type EngineObject,
   type LifecycleHooks,
   type SceneActorHooks,
   type World,
@@ -59,7 +59,7 @@ export interface ScriptedActorSpawn {
   variables?: Record<string, unknown>;
   implementedInterfaces?: string[];
   transform?: Transform;
-  streamOwner?: BObject | null;
+  streamOwner?: EngineObject | null;
 }
 
 /**

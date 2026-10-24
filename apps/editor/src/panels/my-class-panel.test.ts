@@ -154,9 +154,9 @@ describe("My Class members", () => {
     expect(events.map((row) => row.eventType)).toEqual(["flow.event.beginPlay"]);
   });
 
-  it("lists no native Actor events for a BObject class", () => {
+  it("lists no native Actor events for an Object class", () => {
     expect(
-      membersForGraph({ nodes: [], edges: [] }, { parentClass: "BObject" }),
+      membersForGraph({ nodes: [], edges: [] }, { parentClass: "Object" }),
     ).toEqual([]);
   });
 

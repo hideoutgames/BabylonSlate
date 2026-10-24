@@ -286,7 +286,7 @@ describe("pinDefaultPreview", () => {
       name: "actor",
       kind: "data",
       direction: "in",
-      type: { kind: "actorRef", classId: "Actor" },
+      type: { kind: "objectRef", classId: "Actor" },
     });
     const structPin = pin({
       id: "hit",
@@ -301,7 +301,7 @@ describe("pinDefaultPreview", () => {
       placeholder: true,
     });
     expect(pinDefaultPreview(actorPin, {}, false)).toEqual({
-      kind: "actorRef",
+      kind: "objectRef",
       text: "Actor",
       placeholder: true,
     });
@@ -447,12 +447,12 @@ describe("pinDefaultPreview", () => {
   });
 
   it("shows no field on a pin the catalog marks selfWhenUnwired, wired or not", () => {
-    const actor: SerializedPin = { id: "actor", name: "actor", kind: "data", direction: "in", optional: true, selfWhenUnwired: true, type: { kind: "actorRef", classId: "Actor" } };
-    const water: SerializedPin = { id: "waterActor", name: "Water Actor", kind: "data", direction: "in", optional: true, type: { kind: "actorRef", classId: "Actor" } };
+    const actor: SerializedPin = { id: "actor", name: "actor", kind: "data", direction: "in", optional: true, selfWhenUnwired: true, type: { kind: "objectRef", classId: "Actor" } };
+    const water: SerializedPin = { id: "waterActor", name: "Water Actor", kind: "data", direction: "in", optional: true, type: { kind: "objectRef", classId: "Actor" } };
     expect(pinDefaultPreview(actor, {}, false)).toBeNull();
     expect(pinDefaultPreview(actor, {}, true)).toBeNull();
     // An optional pin that does not read Self keeps its class placeholder.
-    expect(pinDefaultPreview(water, {}, false)).toEqual({ kind: "actorRef", text: "Actor", placeholder: true });
+    expect(pinDefaultPreview(water, {}, false)).toEqual({ kind: "objectRef", text: "Actor", placeholder: true });
   });
 
   it("returns null for texture pins", () => {

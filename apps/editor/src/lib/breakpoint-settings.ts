@@ -17,7 +17,6 @@ const VALUE_KIND: Partial<Record<string, ConditionValueKind>> = {
   bool: "boolean",
   string: "string",
   objectRef: "object",
-  actorRef: "object",
 };
 
 /** The comparisons each kind of value offers, in menu order. */

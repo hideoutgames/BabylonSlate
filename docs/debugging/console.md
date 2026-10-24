@@ -83,7 +83,7 @@ Actor names must match exactly and belong to one actor; use the GUID when names 
 
 ## Your own commands
 
-Create a Class whose parent is **BDebugCommand** and add [Event On Command Run](../scripting/class/event-on-command-run.md). Set its **Command Name**, **Description**, **Category** and **Parameters** in the **Inspector**; each parameter becomes an output pin.
+Create a Class whose parent is **DebugCommand** and add [Event On Command Run](../scripting/class/event-on-command-run.md). Set its **Command Name**, **Description**, **Category** and **Parameters** in the **Inspector**; each parameter becomes an output pin.
 
 - Your commands work in every build, including release exports, and appear in suggestions and `help`.
 - The names of built-in commands are reserved.

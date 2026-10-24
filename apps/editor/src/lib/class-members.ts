@@ -388,7 +388,7 @@ export function nativeEventStubs(
   // Game Instance, GameSubsystem and SceneSubsystem lifecycles come from the
   // engine catalog so the editor and runtime share one table.
   types.push(...lineageNativeEventTypes(chain));
-  if (chain.includes("BDebugCommand")) {
+  if (chain.includes("DebugCommand")) {
     types.push("flow.event.commandRun");
   }
   return eventStubsForTypes(types).map((stub) => chain.includes("ActorComponent") && stub.eventType === "flow.event.destroyed" ? { ...stub, name: "Event Destroyed" } : stub);
@@ -577,7 +577,7 @@ export function isScriptCatalogNodeAllowed(
     return chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId);
   }
   if (nodeId === "flow.event.commandRun") {
-    return chain.includes("Actor") || chain.includes("BDebugCommand");
+    return chain.includes("Actor") || chain.includes("DebugCommand");
   }
   return !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
 }
@@ -613,13 +613,13 @@ export function variableFieldsForPickerType(
     };
   }
   const typeClassId =
-    pickerType === "actor" ? "Actor" : pickerType === "object" || pickerType === "class" ? "BObject" : undefined;
+    pickerType === "object" || pickerType === "class" ? "Object" : undefined;
   const defaultValue =
-    pickerType === "object" || pickerType === "actor" || pickerType === "wildcard" ||
+    pickerType === "object" || pickerType === "wildcard" ||
     pickerType === "struct" || pickerType === "enum"
       ? undefined
       : pickerType === "class"
-        ? "BObject"
+        ? "Object"
         : defaultValueForMember(pickerType, typeClassId);
   return {
     typeId: pickerType,
@@ -1313,7 +1313,7 @@ export function isObjectInstanceVariableType(
   container?: string | null,
 ): boolean {
   if (container === "array" || container === "map") return false;
-  return typeId === "object" || typeId === "actor";
+  return typeId === "object";
 }
 
 export type GraphSpawnOptions = {

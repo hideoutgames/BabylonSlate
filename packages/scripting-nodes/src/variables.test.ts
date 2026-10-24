@@ -4,7 +4,6 @@ import {
   EXEC,
   INT,
   compileGraph,
-  actorRef,
   objectRef,
   type GraphNode,
   type LogicGraph,
@@ -551,7 +550,7 @@ describe("variables.get / variables.set", () => {
         name: "Target",
         direction: "out",
         kind: "data",
-        type: actorRef("Actor"),
+        type: objectRef("Actor"),
       },
     ]);
   });

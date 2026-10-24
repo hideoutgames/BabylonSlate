@@ -18,7 +18,7 @@ function fixture() {
   after.name = "Final";
   after.actors = [createActor("spawned", "Spawned"), after.actors[0]!];
   after.actors[1]!.parentId = "spawned";
-  after.actors[1]!.properties = { reference: { kind: "actorRef", actorId: "spawned" }, nested: { labels: [] } };
+  after.actors[1]!.properties = { reference: { kind: "objectRef", actorId: "spawned" }, nested: { labels: [] } };
   after.actors[1]!.components = [{ ...createMeshComponent("replacement", "sphere"), properties: { materialGuid: "surface", parameters: { tint: { kind: "color", value: [1, 0, 0, 1] } } } }];
   after.actors[1]!.transform.position = [1, 2, 3];
   after.settings.fogEnabled = true;

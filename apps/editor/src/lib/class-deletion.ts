@@ -21,7 +21,7 @@ export function classDeletionCandidates(
   const projectIds = new Set(classes.map(classIdFromClassAsset));
   const deletedIds = new Set(classes.filter((asset) => deleting.has(asset.header.guid)).map(classIdFromClassAsset));
   const base = walkAncestry(classIdFromClassAsset(source), parentOf)
-    .find((id) => !projectIds.has(id)) ?? "BObject";
+    .find((id) => !projectIds.has(id)) ?? "Object";
   return classes.filter((asset) => {
     if (deleting.has(asset.header.guid)) return false;
     const ancestry = walkAncestry(classIdFromClassAsset(asset), parentOf);

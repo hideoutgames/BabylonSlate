@@ -37,7 +37,7 @@ describe("particle nodes", () => {
     expect(stop?.category).toBe("particles");
     const actorPin = play?.pins({}).find((pin) => pin.name === "actor");
     expect(actorPin?.optional).toBe(true);
-    expect(actorPin?.type).toEqual({ kind: "actorRef", classId: "Actor" });
+    expect(actorPin?.type).toEqual({ kind: "objectRef", classId: "Actor" });
   });
 
   it("compiled Play/Stop Particles act on Self when the actor pin is unwired", () => {

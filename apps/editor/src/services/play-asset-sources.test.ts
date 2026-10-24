@@ -238,7 +238,7 @@ describe("Play source ownership", () => {
     const guid = "command-owner-guid";
     const command = { name: "stream_left_load", description: "Load left", category: "game", parameters: [] };
     await storage.writeBinary(path, await encodeHasset({
-      header: { guid, name: "LoadLeft.class", type: "Class", parentClass: "BDebugCommand", version: 1, engineVersion: "0.0.0", mode: "thin",
+      header: { guid, name: "LoadLeft.class", type: "Class", parentClass: "DebugCommand", version: 1, engineVersion: "0.0.0", mode: "thin",
         payload: { nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], consoleCommand: command },
       chunks: [],
     }));
@@ -246,7 +246,7 @@ describe("Play source ownership", () => {
     await registry.mountRoot(projectContentRoot());
     const loading = createRegistryAssetLoadingService(registry, { projectId: "console-reload" });
     const compilerOutput: ScriptBundleEntry = {
-      assetGuid: path, classId: "LoadLeft", parentClassId: "BDebugCommand", command,
+      assetGuid: path, classId: "LoadLeft", parentClassId: "DebugCommand", command,
       source: 'export async function onCommandRun(ctx) { await Promise.resolve(); ctx.reportCommand(true, "loaded"); }',
       entryPoints: [{ name: "onCommandRun", event: "onCommandRun", isAsync: true }],
       anchors: [{ assetGuid: path, line: 1, column: 1, graphId: "graph", nodeId: "run" }],
@@ -367,7 +367,7 @@ describe("Play source ownership", () => {
     for (const [name, guid, parent] of [
       ["Session", "session", "GameInstance"], ["SystemBase", "base", "GameSubsystem"],
       ["System", "system", "SystemBase"], ["Weather", "weather", "SceneSubsystem"],
-      ["Debug", "debug", "BDebugCommand"], ["UnusedPrefab", "unused", "Actor"],
+      ["Debug", "debug", "DebugCommand"], ["UnusedPrefab", "unused", "Actor"],
     ]) await storage.writeBinary(`assets/${name}.class.hasset`, await encodeHasset({
       header: { guid: guid!, name: name!, type: "Class", parentClass: parent, engineVersion: "0.0.0", version: 1, mode: "thin",
         dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: {} },

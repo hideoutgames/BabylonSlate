@@ -296,7 +296,7 @@ export interface GraphClassMemberPin {
   name: string;
   typeId: string;
   direction: "in" | "out";
-  /** Object/class pin constraint, or Structure/Enum asset guid. Missing means unconstrained BObject at pin conversion. */
+  /** Object/class pin constraint, or Structure/Enum asset guid. Missing means unconstrained Object at pin conversion. */
   typeClassId?: string;
   /** Number and vector inputs: display unit (`VALUE_UNITS`) on the pin's literal. Missing is none. */
   unit?: string;

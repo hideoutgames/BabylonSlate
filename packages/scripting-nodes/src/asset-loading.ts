@@ -7,7 +7,7 @@ import {
 const ASSET = assetRef("");
 const ASSETS = arrayOf(ASSET);
 /** Any Class. */
-const CLASS = classRef("BObject");
+const CLASS = classRef("Object");
 
 const priorityPin = () => pin("priority", "Priority", "in", enumRef(ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID), "data", true, "Normal");
 const sessionWidePin = () => pin("sessionWide", "Session Wide", "in", BOOL, "data", true, false);

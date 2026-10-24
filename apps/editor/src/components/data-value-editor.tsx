@@ -35,7 +35,7 @@ export function DataValueEditor({ field, value, defaultValue, onChange, label, p
   const invalid = issues.some((issue) => issue.code === "type-mismatch" && (issue.path === path || issue.path.startsWith(`${path}.`) || issue.path.startsWith(`${path}[`)));
   const change = (next: unknown) => { if (!disabled) onChange(next); };
   const shared = { disabled, catalog, issues, depth: depth + 1, visitedDefinitions };
-  const seed = (typeId: string, typeClassId?: string) => ["object", "actor", "wildcard"].includes(typeId) ? null : defaultValueForMember(typeId, typeClassId, catalog.schemas);
+  const seed = (typeId: string, typeClassId?: string) => ["object", "wildcard"].includes(typeId) ? null : defaultValueForMember(typeId, typeClassId, catalog.schemas);
   const resetValue = defaultValue === undefined ? (field.container === "array" || field.container === "map" ? [] : seed(field.typeId, field.typeClassId)) : defaultValue;
   if (field.container === "array" || field.container === "map") {
     const single = { ...field, container: "single" as const };

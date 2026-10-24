@@ -263,7 +263,7 @@ describe("project documents as .hasset", () => {
       ["one", "Hero", none ? "Actor" : "NPC"], ["two", "Second", none ? "Actor" : "NPC"],
     ]);
     expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual(none ? [] : [replacementGuid]);
-    expect(readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass).toBe(none ? "BObject" : "NPC");
+    expect(readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass).toBe(none ? "Object" : "NPC");
     expect(reloaded.guidForPath(sourcePath)).toBeNull();
   });
 
@@ -2361,7 +2361,7 @@ describe("project documents as .hasset", () => {
     expect((await service.loadDocument("sprite", "assets/hero.sprite.hasset") as { notes: { favourite: string | null } }).notes.favourite).toBeNull();
   });
 
-  it("resets a Class parentClass to BObject when the parent Class is deleted", async () => {
+  it("resets a Class parentClass to Object when the parent Class is deleted", async () => {
     const { storage, service } = await scaffolded();
     const parentPath = "assets/Hero.class.hasset";
     const childPath = "assets/Sidekick.class.hasset";
@@ -2399,7 +2399,7 @@ describe("project documents as .hasset", () => {
     });
     expect(
       readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass,
-    ).toBe("BObject");
+    ).toBe("Object");
   });
 
   it("clears a dirty open referrer in memory and on disk without dropping dirty", async () => {

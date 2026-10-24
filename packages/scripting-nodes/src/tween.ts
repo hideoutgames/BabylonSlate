@@ -1,13 +1,13 @@
 import {
   pin, EXEC, FLOAT, INT, VEC2, VEC3, VEC4, ROTATOR, QUAT, COLOR, TRANSFORM,
-  actorRef, objectRef, enumRef, defaultJsValue,
+  objectRef, enumRef, defaultJsValue,
   ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID,
   type NodeDefinition, type PinType,
 } from "@haptic/scripting";
 
 const curve = enumRef(ENGINE_EASING_CURVE_ENUM_ID);
 const space = enumRef(ENGINE_TWEEN_SPACE_ENUM_ID);
-const actor = actorRef("Actor");
+const actor = objectRef("Actor");
 const component = objectRef("ActorComponent");
 const sceneLayer = objectRef("SceneLayer");
 const identityTransform = {

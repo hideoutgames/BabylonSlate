@@ -85,7 +85,7 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
     setPick(null);
   };
   const parentOf = catalogs.parentOf;
-  const classConstraint = activePick?.kind === "class" ? activePick.classId : "BObject";
+  const classConstraint = activePick?.kind === "class" ? activePick.classId : "Object";
   const editorGraph = hostEditorGraph || request.nodeData.__editorOnly === true ||
     isEditorGraphClass(classConstraint, parentOf) ||
     isEditorGraphClass(String(request.nodeData.classId ?? ""), parentOf);
@@ -139,7 +139,7 @@ export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) 
     assets, materialDocuments,
     pickerAssets: assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })),
     assetEntries: assets.map((asset) => ({ id: asset.header.guid, name: asset.header.name, type: asset.header.type })),
-    classEntries: subclassClassEntries("BObject", assets, { editorGraph: true }),
+    classEntries: subclassClassEntries("Object", assets, { editorGraph: true }),
     parentOf: classParentLookup(assets),
     enumMembers: collectEnumMemberNames(enumDocuments, assets),
     dataTrees: collectDataGraphAssets(assets, treeDocuments),

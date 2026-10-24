@@ -51,7 +51,7 @@ export {
 export {
   Actor,
   ActorComponent,
-  BObject,
+  EngineObject,
   MaterialObject,
   PostProcessMaterialObject,
   getPostProcessMaterialObject,

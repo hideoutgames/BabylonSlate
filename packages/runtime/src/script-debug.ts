@@ -7,7 +7,7 @@ import type {
 } from "@haptic/bridge";
 import { sameDebugObserveTarget } from "@haptic/bridge";
 import { formatValue } from "@haptic/core";
-import { BObject, type Actor, type World } from "@haptic/object-model";
+import { EngineObject, type Actor, type World } from "@haptic/object-model";
 import { animGraphGuidOf, behaviourTreeGuidOf, evaluatedBehaviourTreeComponent } from "./component-assets";
 import { componentOwners } from "./world-component-index";
 
@@ -62,7 +62,7 @@ function isPlainObject(value: object): value is Record<string, unknown> {
 function displayable(value: unknown, depth: number): unknown {
   if (typeof value === "number") return roundForDisplay(value);
   if (value === null || typeof value !== "object") return value;
-  if (value instanceof BObject) return { guid: value.guid, classId: value.classId };
+  if (value instanceof EngineObject) return { guid: value.guid, classId: value.classId };
   if (depth >= DEBUG_VALUE_MAX_DEPTH) return "…";
   if (Array.isArray(value)) {
     const shown = value.slice(0, DEBUG_VALUE_MAX_ENTRIES).map((entry) => displayable(entry, depth + 1));
@@ -308,12 +308,12 @@ export class ExecutionTraceSink implements ScriptDebugTrace, StepLog {
 }
 
 /** An object's name as the Debug Instance list shows it: its `name` variable, else its class. */
-export function debugInstanceLabel(object: BObject): string {
+export function debugInstanceLabel(object: EngineObject): string {
   const name = object.variables.get("name");
   return typeof name === "string" && name.length > 0 ? name : object.classId;
 }
 
-type InstanceVisitor = (object: BObject, kind: DebugInstance["kind"], owner?: Actor) => boolean | void;
+type InstanceVisitor = (object: EngineObject, kind: DebugInstance["kind"], owner?: Actor) => boolean | void;
 
 /**
  * The live objects `target` debugs, in world order, until `found` returns true or `limit` objects were
@@ -323,7 +323,7 @@ type InstanceVisitor = (object: BObject, kind: DebugInstance["kind"], owner?: Ac
  */
 function collectInstances(world: World, target: DebugObserveTarget, limit: number, found: InstanceVisitor): void {
   let count = 0;
-  const visit = (object: BObject, kind: DebugInstance["kind"], owner?: Actor): boolean => {
+  const visit = (object: EngineObject, kind: DebugInstance["kind"], owner?: Actor): boolean => {
     count += 1;
     return found(object, kind, owner) === true || count >= limit;
   };
@@ -345,7 +345,7 @@ function collectInstances(world: World, target: DebugObserveTarget, limit: numbe
     return;
   }
   const { classId } = target;
-  const visitClass = (object: BObject, kind: DebugInstance["kind"], owner?: Actor): boolean =>
+  const visitClass = (object: EngineObject, kind: DebugInstance["kind"], owner?: Actor): boolean =>
     object.classId === classId && !object.destroyed && visit(object, kind, owner);
   if (world.gameInstance && visitClass(world.gameInstance, "gameInstance")) return;
   for (const subsystem of world.getGameSubsystems()) if (visitClass(subsystem, "subsystem")) return;
@@ -372,8 +372,8 @@ export function debugInstancesOf(world: World, target: DebugObserveTarget, limit
   return instances;
 }
 
-function findInstance(world: World, target: DebugObserveTarget, id: string): BObject | null {
-  let match: BObject | null = null;
+function findInstance(world: World, target: DebugObserveTarget, id: string): EngineObject | null {
+  let match: EngineObject | null = null;
   collectInstances(world, target, Number.MAX_SAFE_INTEGER, (object) => {
     if (object.guid !== id) return false;
     match = object;
@@ -402,11 +402,11 @@ export interface ScriptDebugObserverHost {
   world(): World;
   emit(command: CommandMessage): void;
   /** Routes `ctx.debugTrace` to `sink` for runs on `object`; null removes it. */
-  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void;
+  setDebugTrace(object: EngineObject | null, sink: ScriptDebugTrace | null): void;
 }
 
 /** What the world looked like when the roster was last built. */
-type RosterBasis = { revision: number; gameInstance: BObject | null; subsystems: number };
+type RosterBasis = { revision: number; gameInstance: EngineObject | null; subsystems: number };
 
 /**
  * Serves the editor's graph debugger: the roster of live instances of the
@@ -415,7 +415,7 @@ type RosterBasis = { revision: number; gameInstance: BObject | null; subsystems:
  */
 export class ScriptDebugObserver {
   private target: DebugObserveTarget | null = null;
-  private followed: BObject | null = null;
+  private followed: EngineObject | null = null;
   private sink: ExecutionTraceSink | null = null;
   /** The roster last sent, to send only changes. Null before the first send for this target. */
   private sent: Map<string, DebugInstance> | null = null;
@@ -478,7 +478,7 @@ export class ScriptDebugObserver {
     this.follow(null);
   }
 
-  private follow(object: BObject | null): void {
+  private follow(object: EngineObject | null): void {
     this.sink?.close();
     this.followed = object;
     this.sink = object ? new ExecutionTraceSink() : null;

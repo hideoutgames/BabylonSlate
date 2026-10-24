@@ -1,5 +1,5 @@
 import type { Breakpoint, BreakpointCondition, BreakpointEvent, BreakpointLocation } from "@haptic/bridge";
-import type { BObject } from "@haptic/object-model";
+import type { EngineObject } from "@haptic/object-model";
 
 /**
  * Node breakpoints for the editor's Simulation and Play. A breakpoint-instrumented script looks up its graph's
@@ -14,13 +14,13 @@ import type { BObject } from "@haptic/object-model";
 export type BreakpointHit = BreakpointLocation & {
   /** The event or function entry node the run started from. */
   entryNodeId: string;
-  instance: BObject | null;
+  instance: EngineObject | null;
   /** The actor that names a Behaviour Tree or Animation Graph component in the Debug Instance list. */
-  owner?: BObject;
+  owner?: EngineObject;
   event?: BreakpointEvent;
 };
 
-type HitDetail = { owner?: BObject; event?: BreakpointEvent };
+type HitDetail = { owner?: EngineObject; event?: BreakpointEvent };
 
 /** A node's breakpoint and what it has counted this session. */
 export type NodeBreakpoint = {
@@ -31,7 +31,7 @@ export type NodeBreakpoint = {
   /** Runs counted: those that met the condition, or every run without one. */
   hits: number;
   /** With a condition, the latest run of the node: it counts once, the first time the value meets it. */
-  run: { entryNodeId: string; instance: BObject | null; counted: boolean } | null;
+  run: { entryNodeId: string; instance: EngineObject | null; counted: boolean } | null;
 };
 
 function settingsOf({ condition, hitCount }: Breakpoint): string {
@@ -82,7 +82,7 @@ export class GraphBreakpoints {
    * A node with a breakpoint ran. Without a condition the run counts now; with one it counts when the
    * node reads or produces a value that meets it.
    */
-  hit(nodeId: string, entryNodeId: string, instance: BObject | null, detail?: HitDetail): void {
+  hit(nodeId: string, entryNodeId: string, instance: EngineObject | null, detail?: HitDetail): void {
     const breakpoint = this.nodes.get(nodeId);
     if (!breakpoint) return;
     if (breakpoint.condition) breakpoint.run = { entryNodeId, instance, counted: false };
@@ -127,7 +127,7 @@ export class GraphBreakpoints {
     this.count(nodeId, breakpoint, run.entryNodeId, run.instance);
   }
 
-  private count(nodeId: string, breakpoint: NodeBreakpoint, entryNodeId: string, instance: BObject | null, detail?: HitDetail): void {
+  private count(nodeId: string, breakpoint: NodeBreakpoint, entryNodeId: string, instance: EngineObject | null, detail?: HitDetail): void {
     breakpoint.hits++;
     if (breakpoint.hitCount !== null && breakpoint.hits !== breakpoint.hitCount) return;
     this.onHit({ assetGuid: this.assetGuid, graphId: this.graphId, nodeId, entryNodeId, instance, ...detail });

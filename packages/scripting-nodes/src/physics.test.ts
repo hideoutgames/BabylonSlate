@@ -64,7 +64,7 @@ describe("physics nodes", () => {
       expect.arrayContaining(["target", "translation", "offset"]),
     );
     expect(pins.find((p) => p.id === "target")?.type).toEqual({
-      kind: "actorRef",
+      kind: "objectRef",
       classId: "Actor",
     });
     const { ctx, emits } = emitCtx();
@@ -116,7 +116,7 @@ describe("physics nodes", () => {
     );
     expect(pins.find((pin) => pin.id === "actors")?.type).toEqual({
       kind: "array",
-      element: { kind: "actorRef", classId: "Actor" },
+      element: { kind: "objectRef", classId: "Actor" },
     });
     expect(pins.find((pin) => pin.id === "count")?.type.kind).toBe("int");
     const { ctx, emits } = emitCtx({

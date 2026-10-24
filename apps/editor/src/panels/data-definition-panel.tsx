@@ -48,10 +48,10 @@ function SelectedFieldDetails() {
   ].filter(Boolean).join(" · ");
   const constraints: PropertyRow[] = [];
   if (selected.typeId === "class") {
-    const classId = selected.typeClassId?.trim() || "BObject";
+    const classId = selected.typeClassId?.trim() || "Object";
     constraints.push({ id: `${controlId}:class-type`, kind: "asset", label: "Class Type", value: classId,
       ...classRowIdentity(catalog.classEntries.find(entry => entry.id === classId), classId),
-      onPick: () => setClassPickerOpen(true), onChange: value => changeSelectedType({ typeClassId: value ?? "BObject" }),
+      onPick: () => setClassPickerOpen(true), onChange: value => changeSelectedType({ typeClassId: value ?? "Object" }),
     });
   } else if ((selected.typeId === "struct" && selected.typeClassId !== "engine:TagContainer") || selected.typeId === "enum") {
     constraints.push({ id: `${controlId}:type-asset`, kind: "asset", label: selected.typeId === "enum" ? "Enum Type" : "Data Definition Type", value: selected.typeClassId ?? null,

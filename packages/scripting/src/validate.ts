@@ -494,8 +494,7 @@ function validatePinTyping(
           !readsSelf &&
           (!literalPin || interfaceOutput)
         ) {
-          const liveRef =
-            pin.type.kind === "objectRef" || pin.type.kind === "actorRef";
+          const liveRef = pin.type.kind === "objectRef";
           out.push(
             diagnostic({
               severity: requiresReference || liveRef || interfaceOutput ? "error" : "warning",
@@ -737,9 +736,7 @@ function validateMemberBindings(
       }
       for (const pin of node.pins) {
         if (
-          (pin.type.kind === "objectRef" ||
-            pin.type.kind === "actorRef" ||
-            pin.type.kind === "classRef") &&
+          (pin.type.kind === "objectRef" || pin.type.kind === "classRef") &&
           pin.type.classId &&
           !ctx.knownClassIds.has(pin.type.classId)
         ) {

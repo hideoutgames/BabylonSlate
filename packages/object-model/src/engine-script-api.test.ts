@@ -32,13 +32,13 @@ describe("engine script API catalog", () => {
   it("resolves native lifecycle events from the nearest engine class in the ancestry", () => {
     const typesFor = (ancestry: string[]) =>
       engineNativeEventsFor(ancestry).map((event) => event.eventType);
-    const gameInstance = typesFor(["MyGame", "GameInstance", "BObject"]);
+    const gameInstance = typesFor(["MyGame", "GameInstance", "Object"]);
     // A user subsystem chain (user parent first) inherits GameSubsystem's set,
     // which has full Game Instance parity.
     expect(
-      typesFor(["Inventory", "BaseInventory", "GameSubsystem", "Subsystem", "BObject"]),
+      typesFor(["Inventory", "BaseInventory", "GameSubsystem", "Subsystem", "Object"]),
     ).toEqual(gameInstance);
-    const sceneSubsystem = typesFor(["Weather", "SceneSubsystem", "Subsystem", "BObject"]);
+    const sceneSubsystem = typesFor(["Weather", "SceneSubsystem", "Subsystem", "Object"]);
     expect(sceneSubsystem).toEqual(expect.arrayContaining([
       "flow.event.init",
       "flow.event.end",
@@ -47,8 +47,8 @@ describe("engine script API catalog", () => {
     ]));
     // Scene-scoped subsystems do not receive the session-level scene hooks.
     expect(sceneSubsystem).not.toContain("flow.event.sceneExit");
-    expect(typesFor(["Hero", "Actor", "BObject"])).toEqual([]);
-    expect(typesFor(["Subsystem", "BObject"])).toEqual([]);
+    expect(typesFor(["Hero", "Actor", "Object"])).toEqual([]);
+    expect(typesFor(["Subsystem", "Object"])).toEqual([]);
     // Host-only functions stay off subsystem catalog entries (no stray Call rows).
     expect(engineScriptApiFor("GameSubsystem")?.functions).toBeUndefined();
     expect(engineScriptApiFor("SceneSubsystem")?.functions).toBeUndefined();

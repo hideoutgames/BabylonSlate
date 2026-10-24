@@ -84,7 +84,7 @@ export function classParentLookup(
     if (asset.header.type !== "Class") continue;
     const id = classIdFromClassAsset(asset);
     // The first file keeps a shared id, as in buildParentClassTreeRows.
-    if (!byId.has(id)) byId.set(id, asset.header.parentClass ?? "BObject");
+    if (!byId.has(id)) byId.set(id, asset.header.parentClass ?? "Object");
   }
   return (id) => {
     if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
@@ -113,5 +113,5 @@ export function classDocumentShowsPrefab(
   parentClass: string | null | undefined,
   parentOf: (id: string) => string | null,
 ): boolean {
-  return walkAncestry(parentClass ?? "BObject", parentOf).includes("Actor");
+  return walkAncestry(parentClass ?? "Object", parentOf).includes("Actor");
 }

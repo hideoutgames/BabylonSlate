@@ -5,7 +5,7 @@ import type {
   RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeInspectorValue, RuntimeObjectIdentity,
   RuntimePropertyCapability, RuntimePropertyDescriptor,
 } from "@haptic/bridge";
-import { Actor, ActorComponent, BObject, MaterialObject, engineScriptApiFor, type World } from "@haptic/object-model";
+import { Actor, ActorComponent, EngineObject, MaterialObject, engineScriptApiFor, type World } from "@haptic/object-model";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 
 const MAX_BATCH_BYTES = 64 * 1024;
@@ -37,7 +37,7 @@ export interface RuntimeInspectorHost {
 
 /** No subscriptions or hot-path collection. `RuntimeInspectorService` invokes requests at a completed tick boundary. */
 export class RuntimeInspector {
-  private readonly tokens = new WeakMap<BObject, number>();
+  private readonly tokens = new WeakMap<EngineObject, number>();
   private nextToken = 0;
   /** Weak ownership: editing a destroyed object never retains it through a session. */
   private readonly sequences = new WeakMap<Target, Map<string, number>>();
@@ -95,7 +95,7 @@ export class RuntimeInspector {
     return { sceneInstanceId: this.host.sceneIdentity(actor), actorGuid: actor.guid, actorToken: this.token(actor),
       ...(target instanceof ActorComponent ? { componentGuid: target.guid, componentToken: this.token(target) } : {}) };
   }
-  private token(target: BObject): number {
+  private token(target: EngineObject): number {
     const prior = this.tokens.get(target);
     if (prior !== undefined) return prior;
     const token = ++this.nextToken; this.tokens.set(target, token); return token;

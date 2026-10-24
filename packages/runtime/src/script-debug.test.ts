@@ -3,7 +3,7 @@ import type { CommandMessage, DebugGraphTrace } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings, type SerializedScene } from "@haptic/core";
 import { FLOAT, compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
-import { BObject } from "@haptic/object-model";
+import { EngineObject } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { DEBUG_ROSTER_LIMIT, DEBUG_STEPS_PER_TICK, ExecutionTraceSink, formatDebugValue } from "./script-debug";
 import type { CompiledScript } from "./script-host";
@@ -195,7 +195,7 @@ describe("formatDebugValue", () => {
   });
 
   it("shows an object reference, not the object's state", () => {
-    const actor = new BObject({ classId: "Door", guid: "door-1", variables: { hp: 3 } });
+    const actor = new EngineObject({ classId: "Door", guid: "door-1", variables: { hp: 3 } });
     expect(formatDebugValue(actor)).toBe("Door(door-1)");
     expect(formatDebugValue({ owner: actor })).toBe("{owner: Door(door-1)}");
   });

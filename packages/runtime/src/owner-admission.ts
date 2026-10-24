@@ -9,7 +9,7 @@ import {
   Scene,
   SceneLayer,
   SceneSubsystem,
-  type BObject,
+  type EngineObject,
   type World,
 } from "@haptic/object-model";
 import type { SceneLayers } from "./scene-layers";
@@ -38,10 +38,10 @@ interface OwnerAdmissionHost {
  * creation/destruction bookkeeping and the script error guard.
  */
 export class OwnerAdmission {
-  private readonly pending = new Map<BObject, Array<() => void>>();
+  private readonly pending = new Map<EngineObject, Array<() => void>>();
   /** Nonzero while `flush` runs queued owner work. */
   private flushing = 0;
-  private readonly created = new WeakSet<BObject>();
+  private readonly created = new WeakSet<EngineObject>();
   private readonly host: OwnerAdmissionHost;
 
   constructor(host: OwnerAdmissionHost) { this.host = host; }
@@ -63,7 +63,7 @@ export class OwnerAdmission {
     return this.host.layers().get(actor.sceneLayerId)?.ready === true;
   }
 
-  canRun(owner: BObject): boolean {
+  canRun(owner: EngineObject): boolean {
     const stopped = this.host.stopped();
     if (this.host.paused() && !stopped) return false;
     if (this.host.saveBoundaryActive()) return false;
@@ -107,7 +107,7 @@ export class OwnerAdmission {
    * SceneSubsystem has queued work (On Init first), so every subsystem hears
    * Spawned right before the actor's Begin Play.
    */
-  canRunActions(owner: BObject): boolean {
+  canRunActions(owner: EngineObject): boolean {
     if (owner instanceof SceneSubsystem) return this.canRunSceneSubsystem(owner);
     if (!this.canRun(owner)) return false;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner : null;
@@ -116,7 +116,7 @@ export class OwnerAdmission {
   }
 
   /** Run now when the owner's actions may run, else queue it behind the owner's earlier work. */
-  run(owner: BObject, action: () => void): void {
+  run(owner: EngineObject, action: () => void): void {
     if (this.canRunActions(owner)) { action(); return; }
     if (this.host.stopped() || owner.destroyed) return;
     const actions = this.pending.get(owner) ?? [];
@@ -125,7 +125,7 @@ export class OwnerAdmission {
   }
 
   /** As `run`, but behind work already queued for the owner even while that queue drains. */
-  runAfterQueued(owner: BObject, action: () => void): void {
+  runAfterQueued(owner: EngineObject, action: () => void): void {
     // An empty queue is one being drained (its On Init may be running).
     const queued = this.pending.get(owner);
     if (queued && queued.length > 0) queued.push(action);
@@ -133,7 +133,7 @@ export class OwnerAdmission {
   }
 
   /** An owner's authored creation (Begin Play, On Init), once it may run. */
-  runCreation(owner: BObject, create: () => void): void {
+  runCreation(owner: EngineObject, create: () => void): void {
     // Restored actors already contain checkpoint values. Begin Play must not
     // overwrite them; On Game Loaded is their post-restoration lifecycle hook.
     if (this.host.saveBoundaryActive()) { this.created.add(owner); return; }
@@ -146,7 +146,7 @@ export class OwnerAdmission {
   }
 
   /** An owner's authored destruction: dropped queued work, and On Destroyed only after its creation ran. */
-  runDestroyed(owner: BObject, destroy: () => void): void {
+  runDestroyed(owner: EngineObject, destroy: () => void): void {
     this.host.releaseAssets(owner.guid);
     this.pending.delete(owner);
     if (this.host.saveBoundaryActive()) return;
@@ -154,7 +154,7 @@ export class OwnerAdmission {
   }
 
   /** The owner's authored creation has run (or a checkpoint restored it). */
-  isCreated(owner: BObject): boolean {
+  isCreated(owner: EngineObject): boolean {
     return this.created.has(owner);
   }
 
@@ -182,7 +182,7 @@ export class OwnerAdmission {
     } else this.flush();
   }
 
-  drop(owner: BObject): void {
+  drop(owner: EngineObject): void {
     this.pending.delete(owner);
   }
 
@@ -218,7 +218,7 @@ export class OwnerAdmission {
     return this.host.stopped() || !this.host.blocks().active;
   }
 
-  private drain(owner: BObject): void {
+  private drain(owner: EngineObject): void {
     const actions = this.pending.get(owner);
     if (!actions) return;
     if (owner.destroyed) { this.pending.delete(owner); return; }

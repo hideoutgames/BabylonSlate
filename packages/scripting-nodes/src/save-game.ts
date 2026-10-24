@@ -1,5 +1,5 @@
 import {
-  arrayOf, actorRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
+  arrayOf, objectRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
   pin, pinTypeForMember, structRef, type NodeDefinition, type PinType,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
@@ -8,7 +8,7 @@ import { subject } from "./self-pin";
 export function saveFieldPinType(properties: Record<string, unknown>): PinType {
   if (typeof properties.typeId !== "string") return BOXED_WILDCARD;
   const type = String(properties.typeId ?? "string");
-  const base = type === "actor" ? actorRef("Actor") : type === "asset" ? assetRef("")
+  const base = type === "actor" ? objectRef("Actor") : type === "asset" ? assetRef("")
     : pinTypeForMember(type === "vector3" ? "vec3" : type);
   return properties.array === true ? arrayOf(base) : base;
 }
@@ -84,7 +84,7 @@ export const saveGameNodes: NodeDefinition[] = [
     id: "saveGame.registerActor", title: "Register Save Actor", category: "save-game",
     description: "Register a spawned actor for persistence. Use a stable custom ID to reconnect it across loads; its Save Game Component selects saved state.",
     pins: () => [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC),
-      subject(pin("actor", "Actor", "in", actorRef("Actor"))), pin("persistentId", "Persistent ID", "in", STRING, "data", true, "")],
+      subject(pin("actor", "Actor", "in", objectRef("Actor"))), pin("persistentId", "Persistent ID", "in", STRING, "data", true, "")],
     codegen: (ctx) => { ctx.emit(`ctx.registerSaveActor(${ctx.input("actor")}, ${ctx.input("persistentId")} || undefined);`); },
   },
   {

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   EXEC,
   STRING,
-  actorRef,
   compileGraph,
   objectRef,
   validateGraphs,
@@ -64,7 +63,7 @@ const PARENT_OF: Record<string, string> = {
   InventorySubsystem: "InventoryBase",
   InventoryBase: "GameSubsystem",
   GameSubsystem: "Subsystem",
-  Subsystem: "BObject",
+  Subsystem: "Object",
 };
 
 const hierarchy: ClassHierarchy = {
@@ -145,7 +144,7 @@ describe("Get <Subsystem>", () => {
         assetGuid: "hud",
         classId: "HudController",
         hierarchy,
-        knownClassIds: new Set([...Object.keys(PARENT_OF), "BObject", "HudController"]),
+        knownClassIds: new Set([...Object.keys(PARENT_OF), "Object", "HudController"]),
         members: [
           { id: "fn", kind: "function", name: "Add Item", classId: "InventoryBase", pins: addItemPins },
           { id: "cap", kind: "variable", name: "Capacity", classId: "InventorySubsystem", typeId: "int" },
@@ -191,13 +190,13 @@ type EventCase = {
 };
 
 const STREAMED_PINS = [
-  { id: "streamingActor", name: "Streaming Actor", type: actorRef("SceneStreamingActor") },
+  { id: "streamingActor", name: "Streaming Actor", type: objectRef("SceneStreamingActor") },
   { id: "scene", name: "Scene", type: objectRef("Scene") },
 ];
 const LAYER_PINS = [
   { id: "sceneLayer", name: "Scene Layer", type: objectRef("SceneLayer") },
 ];
-const ACTOR_PINS = [{ id: "actor", name: "Actor", type: actorRef("Actor") }];
+const ACTOR_PINS = [{ id: "actor", name: "Actor", type: objectRef("Actor") }];
 
 const SCENE_SUBSYSTEM_EVENTS: EventCase[] = [
   {

@@ -1,4 +1,4 @@
-import { actorRef, pin, type GraphPin, type PinType } from "@haptic/scripting";
+import { objectRef, pin, type GraphPin, type PinType } from "@haptic/scripting";
 
 /**
  * Marks an object or Actor input as the node's subject: the object it reads,
@@ -20,5 +20,5 @@ export function selfPin(id: string, name: string, type: PinType): GraphPin {
 
 /** {@link selfPin} for an Actor input. */
 export function selfActorPin(id: string, name: string = id): GraphPin {
-  return selfPin(id, name, actorRef("Actor"));
+  return selfPin(id, name, objectRef("Actor"));
 }

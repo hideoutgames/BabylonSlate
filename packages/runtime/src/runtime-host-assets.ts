@@ -1,4 +1,4 @@
-import { isLockedEngineClassId, type BObject, type World } from "@haptic/object-model";
+import { isLockedEngineClassId, type EngineObject, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { ScriptHostServices } from "./script-host";
 import type { SimulationBlocks } from "./simulation-blocks";
@@ -12,7 +12,7 @@ interface AssetHostDeps {
     "releaseHandle" | "unload" | "handleState" | "handleProgress" | "getState">;
   blocks: Pick<SimulationBlocks, "hold">;
   /** Pending while Pause, a blocking load or a session boundary holds the owner's continuation. */
-  continueSimulation(owner: BObject | null): Promise<void> | undefined;
+  continueSimulation(owner: EngineObject | null): Promise<void> | undefined;
 }
 
 /**
@@ -25,8 +25,8 @@ export function createAssetHostBindings(deps: AssetHostDeps): Pick<ScriptHostSer
   "requestAssetLoad" | "requestClassLoad" | "waitForAssetLoad" | "releaseAssetLoad" | "unloadAsset" |
   "getAssetLoadHandleState" | "getAssetLoadHandleProgress"> {
   const preloads = deps.assetPreloads;
-  const ownerId = (owner: BObject | null): string => owner?.guid ?? deps.world().currentScene?.guid ?? "session";
-  const continueFor = async (owner: BObject | null): Promise<void> => {
+  const ownerId = (owner: EngineObject | null): string => owner?.guid ?? deps.world().currentScene?.guid ?? "session";
+  const continueFor = async (owner: EngineObject | null): Promise<void> => {
     const pending = deps.continueSimulation(owner);
     if (pending) await pending;
   };

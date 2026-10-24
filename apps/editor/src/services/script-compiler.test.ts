@@ -204,7 +204,7 @@ describe("script compiler service", () => {
         },
       },
       { path: "assets/Save.class.hasset", parentClassId: "GameSubsystem", content: empty },
-      { path: "assets/Notes.class.hasset", parentClassId: "BObject", content: empty },
+      { path: "assets/Notes.class.hasset", parentClassId: "Object", content: empty },
     ]);
     expect(scripts.map((script) => [script.classId, script.parentClassId])).toEqual([
       ["Weather", "SceneSubsystem"],
@@ -268,7 +268,7 @@ describe("script compiler service", () => {
       parentClassId,
       content: empty,
     });
-    expect(compileGraphDocuments([base("BObject"), leaf], { cache })).toEqual([]);
+    expect(compileGraphDocuments([base("Object"), leaf], { cache })).toEqual([]);
     expect(
       compileGraphDocuments([base("GameSubsystem"), leaf], { cache }).map((script) => script.classId),
     ).toEqual(["Base", "Leaf"]);

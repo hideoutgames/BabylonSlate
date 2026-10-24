@@ -13,7 +13,7 @@ import {
   SceneStreamingActor,
   hydrateScenePropertyReferences,
   sceneAssetClassId,
-  type BObject,
+  type EngineObject,
   type LifecycleHooks,
   type World,
 } from "@haptic/object-model";
@@ -130,7 +130,7 @@ export class SceneStreams implements RuntimeSubsystem {
   }
 
   /** As `actorReady`, for the stream owning a Scene, actor or component. */
-  ownerReady(owner?: BObject | null): boolean {
+  ownerReady(owner?: EngineObject | null): boolean {
     return this.ready(this.streamFor(owner));
   }
 
@@ -141,11 +141,11 @@ export class SceneStreams implements RuntimeSubsystem {
   }
 
   /** The streamed Scene a Scene, actor or component belongs to. */
-  sceneFor(owner?: BObject | null): Scene | undefined {
+  sceneFor(owner?: EngineObject | null): Scene | undefined {
     return this.streamFor(owner)?.scene;
   }
 
-  resolveInstanceId(owner: BObject | null | undefined, id: string): string {
+  resolveInstanceId(owner: EngineObject | null | undefined, id: string): string {
     return this.streamFor(owner)?.idMap.get(id) ?? id;
   }
 
@@ -155,13 +155,13 @@ export class SceneStreams implements RuntimeSubsystem {
   }
 
   /** A script spawn on behalf of `owner` is refused while its stream is not ready. */
-  canSpawnFor(owner?: BObject | null): boolean {
+  canSpawnFor(owner?: EngineObject | null): boolean {
     const stream = this.streamFor(owner);
     return !(stream && (owner?.destroyed || !this.ready(stream)));
   }
 
   /** A script-spawned actor joins the stream of the owner that spawned it. */
-  adoptSpawned(owner: BObject | null | undefined, actor: Actor): void {
+  adoptSpawned(owner: EngineObject | null | undefined, actor: Actor): void {
     const stream = this.streamFor(owner);
     if (!stream) return;
     stream.actors.add(actor);
@@ -354,7 +354,7 @@ export class SceneStreams implements RuntimeSubsystem {
     } : undefined;
   }
 
-  private streamFor(owner?: BObject | null): SceneStream | undefined {
+  private streamFor(owner?: EngineObject | null): SceneStream | undefined {
     if (owner instanceof Scene) return this.streamScenes.get(owner);
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner : null;
     return actor ? this.actorStream.get(actor) : undefined;

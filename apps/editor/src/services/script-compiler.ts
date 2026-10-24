@@ -866,7 +866,7 @@ function compileAnimGraphDocument(
     path: entry.path,
     className: entry.name,
     graphId: ANIM_OBJECT_DEBUG_GRAPH_ID,
-    parentClassId: "BObject",
+    parentClassId: "Object",
     stripDevelopmentOnly: options.stripDevelopmentOnly,
     tagRegistry: options.tagRegistry,
   });
@@ -874,7 +874,7 @@ function compileAnimGraphDocument(
     scripts.push({
       ...objectScript,
       classId: animGraphScriptClassId(entry.guid),
-      parentClassId: "BObject",
+      parentClassId: "Object",
     });
   }
   for (const transition of doc.transitions) {
@@ -910,7 +910,7 @@ function compileAnimGraphDocument(
         ...(point.event ? { event: point.event } : {}),
         title: "Transition Rule",
       })),
-      parentClassId: "BObject",
+      parentClassId: "Object",
     });
   }
   return scripts;

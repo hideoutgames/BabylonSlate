@@ -16,7 +16,6 @@ import {
   toSerializedGraph as logicToSerializedGraph,
   isAssignable,
   pinTypeEquals,
-  isActorClassId,
   isLogicGraphPayload,
   knownGuidsFromSchemas,
   snapshotDataFields,
@@ -283,20 +282,6 @@ function parentLookup(
   };
 }
 
-function resultKindForClass(
-  classId: string,
-  parentOf: (id: string) => string | null | undefined,
-): "actorRef" | "objectRef" {
-  return isActorClassId(classId, {
-    isSubclassOf(childClassId, parentClassId) {
-      if (childClassId === parentClassId) return true;
-      return walkAncestry(childClassId, parentOf).includes(parentClassId);
-    },
-  })
-    ? "actorRef"
-    : "objectRef";
-}
-
 function pinGuid(type: unknown, kind: "structRef" | "enumRef"): string | undefined {
   if (!type || typeof type !== "object") return undefined;
   const record = type as { kind?: unknown; guid?: unknown };
@@ -372,7 +357,7 @@ function connectedCastClassId(
   );
   if (!edge) return undefined;
   const source = graph.nodes.find((node) => node.id === edge.source);
-  if (!source) return "BObject";
+  if (!source) return "Object";
   const rawData = { ...(source.data as Record<string, unknown>) };
   const typeId = catalogTypeId({ type: source.type, data: rawData });
   const def = nodeRegistry.get(typeId);
@@ -384,20 +369,19 @@ function connectedCastClassId(
   const sourcePin = pins.find(
     (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
   );
-  return pinClassId(sourcePin?.type) ?? "BObject";
+  return pinClassId(sourcePin?.type) ?? "Object";
 }
 
 /**
  * Cast types its Result from the Class wired into it, else from the Class
- * picked on the node (`default:class`). Records the Result kind on
- * `properties` and returns the pin inputs, for the editor and validation alike.
+ * picked on the node (`default:class`). Returns the pin inputs, for the
+ * editor and validation alike.
  */
 function castPinProperties(
   properties: Record<string, unknown>,
   graph: SerializedGraph,
   nodeId: string,
   nodeRegistry: NodeRegistry,
-  parentOf: (id: string) => string | null | undefined,
 ): {
   pinProperties: Record<string, unknown>;
   defaultClassId: string;
@@ -406,7 +390,6 @@ function castPinProperties(
   const defaultClassId = castDefaultClassId(properties);
   const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
   const resultClassId = wiredClassId ?? defaultClassId;
-  properties.resultKind = resultKindForClass(resultClassId, parentOf);
   return {
     pinProperties: { ...properties, "default:class": resultClassId },
     defaultClassId,
@@ -723,7 +706,7 @@ export function hydrateSerializedGraphForEditor(
     const classId =
       typeof data.classId === "string" && data.classId.trim()
         ? data.classId.trim()
-        : (options?.classId ?? "BObject");
+        : (options?.classId ?? "Object");
     const functionName =
       typeof data.functionName === "string" ? data.functionName : "fn";
     return isLatentFunctionKey(classId, functionName, latentFunctions, parentOf);
@@ -764,7 +747,7 @@ export function hydrateSerializedGraphForEditor(
           : undefined;
 
       if (typeId === "casting.cast") {
-        const { pinProperties, defaultClassId, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
+        const { pinProperties, defaultClassId, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry);
         const def = nodeRegistry.get(typeId);
         const pins: GraphPin[] = def ? def.pins(pinProperties) : [];
         return {
@@ -877,7 +860,7 @@ function editorLatentFunctions(
 ): Set<string> {
   const sources = [
     ...latentSourcesFromSerializedGraph(
-      options?.classId ?? "BObject",
+      options?.classId ?? "Object",
       options?.graph ?? {},
     ),
     ...Object.entries(options?.otherClassGraphs ?? {}).flatMap(
@@ -942,7 +925,7 @@ function defaultEventNodeId(eventType: string): string {
 function pinTypeIdFromPinType(type: PinType | undefined): string {
   if (!type || typeof type !== "object" || !("kind" in type)) return "float";
   const kind = String((type as { kind: string }).kind);
-  if (kind === "objectRef" || kind === "actorRef") return "object";
+  if (kind === "objectRef") return "object";
   if (kind === "classRef") return "class";
   if (kind === "assetRef") return "asset";
   return kind || "float";
@@ -1166,7 +1149,7 @@ function callCustomEventPaletteNodes(
 ): PaletteNode[] {
   const def = nodeRegistry.get("flow.event.call");
   if (!def) return [];
-  const localClassId = options?.classId ?? "BObject";
+  const localClassId = options?.classId ?? "Object";
   const localEvents = customEventRows(options?.graph);
   const localNames = new Set(localEvents.map((event) => event.name));
   const rows: Array<{
@@ -1287,7 +1270,7 @@ function callFunctionPaletteNodes(
 ): PaletteNode[] {
   const def = nodeRegistry.get("functions.call");
   if (!def) return [];
-  const localClassId = options?.classId ?? "BObject";
+  const localClassId = options?.classId ?? "Object";
   const parentOf = paletteParentOf(options);
   const latentFunctions = editorLatentFunctions(nodeRegistry, {
     classId: localClassId,
@@ -1519,7 +1502,7 @@ function variableAccessPaletteNodes(
   const setDef = nodeRegistry.get("variables.set");
   const validatedDef = nodeRegistry.get("variables.getValidated");
   if (!getDef || !setDef) return [];
-  const localClassId = options?.classId ?? "BObject";
+  const localClassId = options?.classId ?? "Object";
   const classVars = classVariableRows(options?.graph);
   const classNames = new Set(classVars.map((entry) => entry.name));
   const rows: Array<{
@@ -1763,11 +1746,7 @@ function castPaletteNodes(
     .filter((classId) => !isHiddenEngineBaseClassId(classId))
     .sort((a, b) => a.localeCompare(b));
   return classIds.map((classId) => {
-    const resultKind = resultKindForClass(classId, parentOf);
-    const defaultData: Record<string, unknown> = {
-      "default:class": classId,
-      resultKind,
-    };
+    const defaultData: Record<string, unknown> = { "default:class": classId };
     const sceneName = sceneTitles.get(classId);
     return {
       id: `casting.cast:${classId}`,
@@ -2268,7 +2247,6 @@ export function materializeLogicGraph(
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
   const logic = fromSerializedGraph(content, graphId, kind);
-  const parentOf = parentLookup(options?.parentOf);
   for (let i = 0; i < logic.nodes.length; i++) {
     const data = content.nodes[i]?.data as
       | { __pins?: LogicGraph["nodes"][0]["pins"]; __nodeType?: string }
@@ -2296,7 +2274,7 @@ export function materializeLogicGraph(
     refreshVariableReferenceAccess(typeId, properties);
     // Pins follow a wired Class here exactly as they do on the canvas.
     const pinProperties = typeId === "casting.cast"
-      ? castPinProperties(properties, content, logic.nodes[i]!.id, registry, parentOf).pinProperties
+      ? castPinProperties(properties, content, logic.nodes[i]!.id, registry).pinProperties
       : assetsByClassPinProperties(typeId, properties, content, logic.nodes[i]!.id, registry);
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);

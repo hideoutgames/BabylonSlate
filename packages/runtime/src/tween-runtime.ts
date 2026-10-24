@@ -2,14 +2,14 @@ import {
   cloneTweenValue, interpolateTweenValue, parseEasingCurve, sampleEasingCurve,
   type EasingCurve, type TweenValue, type TweenValueType,
 } from "@haptic/core";
-import { ActorComponent, type BObject } from "@haptic/object-model";
+import { ActorComponent, type EngineObject } from "@haptic/object-model";
 
 /** Storage identity is separate from its current value, including for scalar locals. */
 export type TweenReference = {
   identity: object;
   property: string;
   set(value: unknown): void | boolean;
-  owner?: BObject;
+  owner?: EngineObject;
   /** Compound writes claim the same channels as their individual property writers. */
   channels?: readonly string[];
   /** World writes run after local writes, with live ancestors evaluated first. */
@@ -23,7 +23,7 @@ export type TweenRequest = {
   b: unknown;
   duration: number;
   curve: unknown;
-  owner?: BObject | null;
+  owner?: EngineObject | null;
 };
 
 type ActiveTween = TweenRequest & {
@@ -36,7 +36,7 @@ type ActiveTween = TweenRequest & {
   reject(error: unknown): void;
 };
 
-export function tweenOwnerAlive(owner?: BObject | null): boolean {
+export function tweenOwnerAlive(owner?: EngineObject | null): boolean {
   return !owner || (!owner.destroyed && (!(owner instanceof ActorComponent) ||
     (!!owner.owner && !owner.owner.destroyed)));
 }
@@ -45,9 +45,9 @@ export function tweenOwnerAlive(owner?: BObject | null): boolean {
 export class TweenRuntime {
   private readonly active = new Set<ActiveTween>();
   private stopped = false;
-  private readonly canRun: (owner?: BObject | null) => boolean;
+  private readonly canRun: (owner?: EngineObject | null) => boolean;
 
-  constructor(canRun: (owner?: BObject | null) => boolean = () => true) {
+  constructor(canRun: (owner?: EngineObject | null) => boolean = () => true) {
     this.canRun = canRun;
   }
 

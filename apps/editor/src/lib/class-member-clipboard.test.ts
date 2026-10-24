@@ -961,7 +961,7 @@ describe("pasteClassMembers events", () => {
     });
     expect(hit!.data.pins).toEqual([
       { name: "Hit Result", typeId: "struct", direction: "out", typeClassId: "engine:HitResult" },
-      { name: "Other Actor", typeId: "actor", direction: "out", typeClassId: "Actor" },
+      { name: "Other Actor", typeId: "object", direction: "out", typeClassId: "Actor" },
       { name: "Location", typeId: "vec3", direction: "out" },
       { name: "Normal", typeId: "vec3", direction: "out" },
     ]);
@@ -1016,7 +1016,7 @@ describe("pasteClassMembers events", () => {
     const clip = copy([{ id: "evt-collide", kind: "event", name: "Event On Hit (Collider)" }], hero);
     const hitPins = [
       { name: "Hit Result", typeId: "struct", direction: "out", typeClassId: "engine:HitResult" },
-      { name: "Other Actor", typeId: "actor", direction: "out", typeClassId: "Actor" },
+      { name: "Other Actor", typeId: "object", direction: "out", typeClassId: "Actor" },
       { name: "Location", typeId: "vec3", direction: "out" },
       { name: "Normal", typeId: "vec3", direction: "out" },
     ];

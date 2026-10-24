@@ -44,7 +44,7 @@ export type VariableTypeFieldsProps = {
 };
 
 function needsClassType(typeId: string): boolean {
-  return typeId === "object" || typeId === "actor" || typeId === "class";
+  return typeId === "object" || typeId === "class";
 }
 
 function needsTypeAsset(typeId: string): boolean {
@@ -70,7 +70,7 @@ export function VariableTypeFields({
     : "single";
   const keyTypeId = value.keyTypeId ?? "string";
   const keyClassId = value.keyTypeClassId?.trim() || (
-    needsClassType(keyTypeId) ? "BObject" : ""
+    needsClassType(keyTypeId) ? "Object" : ""
   );
   const keyAsset = typeAssets.find((asset) => asset.guid === keyClassId);
 

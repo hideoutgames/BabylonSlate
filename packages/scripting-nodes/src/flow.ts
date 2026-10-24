@@ -9,7 +9,6 @@ import {
   STRING,
   VEC3,
   objectRef,
-  actorRef,
   structRef,
   flowSwitchCasePinId,
   intSwitchCasesOf,
@@ -170,7 +169,7 @@ const STREAMED_SCENE_ARGS: readonly EventArgPin[] = [
   {
     id: "streamingActor",
     name: "Streaming Actor",
-    type: actorRef("SceneStreamingActor"),
+    type: objectRef("SceneStreamingActor"),
   },
   { id: "scene", name: "Scene", type: objectRef("Scene") },
 ];
@@ -178,7 +177,7 @@ const SCENE_LAYER_ARGS: readonly EventArgPin[] = [
   { id: "sceneLayer", name: "Scene Layer", type: objectRef("SceneLayer") },
 ];
 const SCENE_ACTOR_ARGS: readonly EventArgPin[] = [
-  { id: "actor", name: "Actor", type: actorRef("Actor") },
+  { id: "actor", name: "Actor", type: objectRef("Actor") },
 ];
 
 /** Scene Subsystem events beyond On Init / Tick / On End. */
@@ -338,7 +337,7 @@ export const flowNodes: NodeDefinition[] = [
     pins: () => [
       pin("execOut", "then", "out", EXEC),
       pin("hitResult", "Hit Result", "out", structRef(ENGINE_HIT_RESULT_STRUCT_ID)),
-      pin("otherActor", "Other Actor", "out", actorRef("Actor")),
+      pin("otherActor", "Other Actor", "out", objectRef("Actor")),
       pin("location", "Location", "out", VEC3),
       pin("normal", "Normal", "out", VEC3),
     ],
@@ -356,7 +355,7 @@ export const flowNodes: NodeDefinition[] = [
     pure: true,
     pins: () => [
       pin("execOut", "then", "out", EXEC),
-      pin("instigator", "Instigator", "out", actorRef("Actor")),
+      pin("instigator", "Instigator", "out", objectRef("Actor")),
     ],
     codegen: () => ({ instigator: "(ctx.args.instigator)" }),
   },
@@ -367,7 +366,7 @@ export const flowNodes: NodeDefinition[] = [
     pure: true,
     pins: () => [
       pin("execOut", "then", "out", EXEC),
-      pin("instigator", "Instigator", "out", actorRef("Actor")),
+      pin("instigator", "Instigator", "out", objectRef("Actor")),
     ],
     codegen: () => ({ instigator: "(ctx.args.instigator)" }),
   },
@@ -432,13 +431,13 @@ export const flowNodes: NodeDefinition[] = [
     { id: "index", name: "Index", type: INT }, { id: "value", name: "Value", type: STRING },
   ]),
   ...["Switching", "Switched"].map((suffix) => argsEvent(`flow.event.sceneLayerActor${suffix}`, `Event On Scene Layer Actor ${suffix}`, [
-    { id: "previousActor", name: "Previous Actor", type: actorRef("SceneLayerActor") },
-    { id: "currentActor", name: "Current Actor", type: actorRef("SceneLayerActor") },
+    { id: "previousActor", name: "Previous Actor", type: objectRef("SceneLayerActor") },
+    { id: "currentActor", name: "Current Actor", type: objectRef("SceneLayerActor") },
     { id: "previousIndex", name: "Previous Index", type: INT },
     { id: "index", name: "Index", type: INT },
   ])),
   ...["To", "From"].map((suffix) => argsEvent(`flow.event.sceneLayerActorSwitched${suffix}`, `Event On Scene Layer Actor Switched ${suffix}`, [
-    { id: "switcher", name: "Switcher", type: actorRef("SceneLayerActorSwitcher") },
+    { id: "switcher", name: "Switcher", type: objectRef("SceneLayerActorSwitcher") },
     { id: "index", name: "Index", type: INT },
   ])),
   {
@@ -517,7 +516,7 @@ export const flowNodes: NodeDefinition[] = [
       const classId =
         typeof properties.classId === "string" && properties.classId.trim()
           ? properties.classId.trim()
-          : "BObject";
+          : "Object";
       return [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
@@ -565,7 +564,7 @@ export const flowNodes: NodeDefinition[] = [
         typeof ctx.node.properties.parentClassId === "string" &&
         ctx.node.properties.parentClassId.trim()
           ? ctx.node.properties.parentClassId.trim()
-          : "BObject";
+          : "Object";
       const catalogEvent = catalogEventExport(ctx.node.properties);
       const rawName =
         typeof ctx.node.properties.eventName === "string"

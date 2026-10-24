@@ -43,7 +43,7 @@ describe("inline numeric default storage", () => {
 
   it("never stores live object or actor constraint labels as literal values", () => {
     expect(inlinePinDefaultStorageValue(pin({ kind: "objectRef", classId: "Component" }), {}, "Component")).toBeUndefined();
-    expect(inlinePinDefaultStorageValue(pin({ kind: "actorRef", classId: "Actor" }), {}, "Actor")).toBeUndefined();
+    expect(inlinePinDefaultStorageValue(pin({ kind: "objectRef", classId: "Actor" }), {}, "Actor")).toBeUndefined();
     expect(inlinePinDefaultStorageValue(pin({ kind: "structRef", guid: "engine:InputBinding" }), {}, { Input: { Name: "Space" } })).toBeUndefined();
     expect(inlinePinDefaultStorageValue(pin({ kind: "structRef", guid: "user:Stats" }), {}, { Health: 100 })).toBeUndefined();
     expect(inlinePinDefaultStorageValue(pin({ kind: "structRef", guid: "engine:TagContainer" }), {}, { Tags: [2, 7] })).toEqual({ Tags: [2, 7] });

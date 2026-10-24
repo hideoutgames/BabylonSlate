@@ -5,7 +5,7 @@ import { classIdForGraphPath } from "../services/script-compiler";
 import { registryClassParentLookup } from "./class-asset-lookup";
 
 /** Classes that run without an instance (libraries, commands, editor utilities): nothing to follow. */
-const INSTANCELESS_BASES = ["FunctionLibrary", "EditorFunctionLibrary", "EditorUtilityObject", "BDebugCommand"];
+const INSTANCELESS_BASES = ["FunctionLibrary", "EditorFunctionLibrary", "EditorUtilityObject", "DebugCommand"];
 
 /**
  * What a focused Class graph is debugged against while a Simulation runs: the live

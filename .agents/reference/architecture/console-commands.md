@@ -18,7 +18,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 
 1. Names do what they say: success means the host applied the change or reported the current value, not that a log line was written.
 2. Editor Play includes the debug set by default; release exports strip debug implementations.
-3. User `BDebugCommand` commands stay core and keep their authored names. Do not prefix them or move them to debug.
+3. User `DebugCommand` commands stay core and keep their authored names. Do not prefix them or move them to debug.
 4. Engine names are reserved (`CORE_COMMAND_NAMES ∪ DEBUG_COMMAND_NAMES`, lowercase, stripped names included). `register` refuses overwrite and the Command Name field shows an inline error. Duplicate user names: last compiled wins.
 5. One pause path: console `pause` / `resume` / `step` and overlay buttons share `RuntimeDriver.pause` / `resume` and the overlay step helper. Overlay chrome follows the worker → main `sessionPaused` command.
 6. Optional arguments query: setters print the current value when called bare. Bool flags default to on when omitted, except explicit pairs (`pause` / `resume`).
@@ -63,5 +63,5 @@ The visualization commands stay off the Debug menu; the console arms them.
 
 ## Not engine commands
 
-- Game cheats (`god`, `heal`, `give`, `teleport`) belong in user `BDebugCommand` classes.
+- Game cheats (`god`, `heal`, `give`, `teleport`) belong in user `DebugCommand` classes.
 - Parked: a standalone exported-player command line, `screenshot`, `viewmode`, console `spawn` / `kill`, `restart` (`changescene` of the current scene reloads), a toggling `pause`.

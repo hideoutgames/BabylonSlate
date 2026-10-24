@@ -11,7 +11,7 @@ describe("conditionPins", () => {
       pin("execIn", "in", "exec"),
       pin("lastIndex", "in", "int"),
       pin("firstIndex", "in", "int"),
-      pin("target", "in", "actorRef"),
+      pin("target", "in", "objectRef"),
       pin("location", "in", "vec3"),
       pin("index", "out", "int"),
       pin("hit", "out", "bool"),

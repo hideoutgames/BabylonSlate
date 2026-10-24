@@ -308,8 +308,7 @@ function validateFieldValue(
     }
     case "struct": valid = record(value); break;
     // Data assets cannot retain references to live scene/runtime instances.
-    case "object":
-    case "actor": valid = value === null; break;
+    case "object": valid = value === null; break;
     case "wildcard": break;
     default: issue(issues, "unsupported-type", path, `Unsupported data field type: ${field.typeId}.`); return;
   }

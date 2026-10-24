@@ -178,7 +178,7 @@ function rootsFromIndex(input: ExportRootInput, { sortedAssets }: ClosureIndex):
   for (const asset of sortedAssets) if (isSubsystemClassAsset(asset, hierarchy)) startupRefs.push(asset.guid);
   // Commands are discoverable from catalog metadata, but their resources
   // remain deferred until the command runs.
-  for (const asset of sortedAssets) if (asset.consoleCommand || (asset.type === "Class" && asset.parentClass && hierarchy.ancestry(asset.parentClass).includes("BDebugCommand"))) startupRefs.push(asset.guid);
+  for (const asset of sortedAssets) if (asset.consoleCommand || (asset.type === "Class" && asset.parentClass && hierarchy.ancestry(asset.parentClass).includes("DebugCommand"))) startupRefs.push(asset.guid);
   for (const ref of [input.gameInstanceClass, input.audioMixerGuid, input.saveGameDefinitionGuid, ...(input.renderAssetGuids ?? [])]) {
     if (ref?.trim()) startupRefs.push(ref.trim());
   }

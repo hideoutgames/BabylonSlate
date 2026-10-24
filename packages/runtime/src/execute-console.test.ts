@@ -21,7 +21,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       const request = commands.find(command => command.type === "assetPreload");
       if (request?.type !== "assetPreload") throw new Error("Expected on-demand command acquisition");
       expect(request.assetGuids).toEqual(["heal-class"]);
-      await runtime.loadScripts([{ assetGuid: "heal-class", classId: "Heal", parentClassId: "BDebugCommand", anchors: [],
+      await runtime.loadScripts([{ assetGuid: "heal-class", classId: "Heal", parentClassId: "DebugCommand", anchors: [],
         entryPoints: [{ name: "onCommandRun", event: "onCommandRun", isAsync: true }],
         source: 'export async function onCommandRun(ctx) { await Promise.resolve(); ctx.reportCommand(true, "healed " + ctx.args.amount); }',
       }]);
@@ -259,7 +259,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
-  it("runs a user BDebugCommand from the console without the debug tier", () => {
+  it("runs a user DebugCommand from the console without the debug tier", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,

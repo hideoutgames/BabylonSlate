@@ -70,7 +70,7 @@ function movingRuleScript(transitionId: string): CompiledScript {
     source: compiled.source,
     anchors: compiled.anchors,
     entryPoints: compiled.entryPoints,
-    parentClassId: "BObject",
+    parentClassId: "Object",
   };
 }
 

@@ -10,7 +10,7 @@ describe("actor clipboard", () => {
       createActor("actor-1", "Owner", { properties: {
         target: { guid: "actor-2", classId: "Actor" },
         outside: { guid: "outside", classId: "Actor" },
-        nested: [{ kind: "actorRef", id: "actor-2" }],
+        nested: [{ kind: "objectRef", id: "actor-2" }],
         lookup: new Map([["target", { kind: "objectRef", guid: "target-mesh", classId: "MeshComponent" }]]),
         assetGuid: "actor-2", label: "actor-2",
       }, components: [{ id: "owner-mesh", classId: "MeshComponent", properties: {
@@ -26,7 +26,7 @@ describe("actor clipboard", () => {
     const [owner, target] = pasteSceneActors(destination, snapshot);
     expect(owner!.properties).toEqual({
       target: { guid: target!.id, classId: "Actor" }, outside: null,
-      nested: [{ kind: "actorRef", id: target!.id }],
+      nested: [{ kind: "objectRef", id: target!.id }],
       lookup: new Map([["target", { kind: "objectRef", guid: target!.components[0]!.id, classId: "MeshComponent" }]]),
       assetGuid: "actor-2", label: "actor-2",
     });

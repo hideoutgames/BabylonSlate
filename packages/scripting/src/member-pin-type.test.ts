@@ -5,7 +5,6 @@ import {
   FLOAT,
   QUAT,
   ROTATOR,
-  actorRef,
   arrayOf,
   assetRef,
   mapOf,
@@ -18,26 +17,14 @@ import {
 } from "./index";
 
 describe("pinTypeForMember picker gaps", () => {
-  it("emits actorRef, assetRef, boxed wildcard, and quat", () => {
-    expect(pinTypeForMember("actor")).toEqual(actorRef("Actor"));
-    expect(pinTypeForMember("actor", "Hero")).toEqual(actorRef("Hero"));
+  it("emits objectRef, assetRef, boxed wildcard, and quat", () => {
+    expect(pinTypeForMember("object")).toEqual(objectRef("Object"));
+    expect(pinTypeForMember("object", "Hero")).toEqual(objectRef("Hero"));
     expect(pinTypeForMember("asset", "Audio")).toEqual(assetRef("Audio"));
     expect(pinTypeForMember("wildcard")).toEqual(BOXED_WILDCARD);
     expect(pinTypeForMember("quat")).toEqual(QUAT);
   });
 
-  it("emits actorRef for object pins whose class is Actor ancestry", () => {
-    expect(pinTypeForMember("object", "Actor")).toEqual(actorRef("Actor"));
-    expect(pinTypeForMember("object", "Hero")).toEqual(objectRef("Hero"));
-    const hierarchy = {
-      isSubclassOf(child: string, parent: string) {
-        return child === "Hero" && parent === "Actor";
-      },
-    };
-    expect(pinTypeForMember("object", "Hero", hierarchy)).toEqual(
-      actorRef("Hero"),
-    );
-  });
 });
 
 describe("pinTypeForVariable", () => {
@@ -66,21 +53,21 @@ describe("pinTypeForVariable", () => {
       container: "array",
     });
     const mapType = pinTypeForVariable({
-      typeId: "actor",
+      typeId: "object",
       typeClassId: "Hero",
       container: "map",
       keyTypeId: "string",
     });
-    expect(typeIdFromPinType(mapType)).toBe("actor");
+    expect(typeIdFromPinType(mapType)).toBe("object");
     expect(typeClassIdFromPinType(mapType)).toBe("Hero");
     expect(variableTypeFromPinType(mapType)).toEqual({
-      typeId: "actor",
+      typeId: "object",
       typeClassId: "Hero",
       container: "map",
       keyTypeId: "string",
     });
     expect(typeIdFromPinType(BOOL)).toBe("bool");
-    expect(typeIdFromPinType(actorRef("Hero"))).toBe("actor");
+    expect(typeIdFromPinType(objectRef("Hero"))).toBe("object");
     expect(typeIdFromPinType(assetRef("Audio"))).toBe("asset");
     expect(typeClassIdFromPinType(assetRef("Audio"))).toBe("Audio");
     expect(typeIdFromPinType(BOXED_WILDCARD)).toBe("wildcard");

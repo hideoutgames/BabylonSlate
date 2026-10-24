@@ -1,11 +1,11 @@
 import { ENGINE_RENDER_TARGET_MODE_ENUM_ID, type RenderTargetCaptureProperty } from "@haptic/core";
 import {
-  actorRef, arrayOf, assetRef, BOOL, enumRef, EXEC, FLOAT, pin,
+  objectRef, arrayOf, assetRef, BOOL, enumRef, EXEC, FLOAT, pin,
   type NodeDefinition, type PinType,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
-const CAPTURE = actorRef("RenderTargetCapture");
+const CAPTURE = objectRef("RenderTargetCapture");
 
 function propertyNodes(
   suffix: string,
@@ -76,7 +76,7 @@ export const renderTargetNodes: NodeDefinition[] = [
   ...propertyNodes("Enabled", "Enabled", "enabled", BOOL),
   ...propertyNodes("EveryFrame", "Every Frame", "captureEveryFrame", BOOL),
   ...propertyNodes("OnlyActors", "Only Actors", "captureOnlyActors", BOOL),
-  ...propertyNodes("Actors", "Actors", "actorIds", arrayOf(actorRef("Actor"))),
+  ...propertyNodes("Actors", "Actors", "actorIds", arrayOf(objectRef("Actor"))),
   ...propertyNodes("FieldOfView", "Field Of View", "fieldOfView", FLOAT),
   ...propertyNodes("NearClip", "Near Clip", "nearClip", FLOAT),
   ...propertyNodes("FarClip", "Far Clip", "farClip", FLOAT),

@@ -27,7 +27,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 
 - `ANIM_GRAPH_SCHEMA_VERSION = 2`; parse reads only v2. Fields: `states`, `entryStateId`, `clips`, typed `variables[]` (bool / int / float / string / tag / Tag Container), `animationObject` (a scripting graph seeded with protected Event Initialize / Update Animation), `transitions[]` (`blendSeconds`, `priority` — lower wins, `ruleGraph`, side handles).
 - Clip kind `animation` = Animation asset guid + glTF `AnimationGroup` name; kind `sprite` = Sprite Animation guid (no clip name).
-- Compiled class ids: `AnimGraph:{guid}` (Animation Object) and `AnimRule:{guid}:{transitionId}` (`export function evaluate(ctx)` → `{ enter, exit }`), both `parentClassId: "BObject"`. Loading compiled scripts never instantiates actors.
+- Compiled class ids: `AnimGraph:{guid}` (Animation Object) and `AnimRule:{guid}:{transitionId}` (`export function evaluate(ctx)` → `{ enter, exit }`), both `parentClassId: "Object"`. Loading compiled scripts never instantiates actors.
 - `AnimState.position` and editor-only `clipLabel` are presentation data; `__disabled` on One Way rules is canvas-only and stripped on persist.
 
 ## Evaluator

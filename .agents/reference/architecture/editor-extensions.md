@@ -50,7 +50,7 @@ The bundled Experimental extension ([`engine-extensions/glsl-to-material/`](../.
 
 | Type | Kind | Notes |
 | --- | --- | --- |
-| EditorUtilityObject | Class parent (`BObject`), `*.class.hasset` | Events: Editor On Begin Play, On Editor Startup, On Scene Open, On Scene Saved, On Editor Shutdown. Never game Begin Play / Tick |
+| EditorUtilityObject | Class parent (`Object`), `*.class.hasset` | Events: Editor On Begin Play, On Editor Startup, On Scene Open, On Scene Saved, On Editor Shutdown. Never game Begin Play / Tick |
 | EditorFunctionLibrary | Class parent (`FunctionLibrary`), `*.class.hasset` | Static Call Function rows only on editor graph hosts |
 | SkyboxCreator | `*.skyboxcreator.hasset` helper | Slices a Texture into six skybox faces; the generated Textures are runtime assets and ship when a `SkyboxComponent` references them |
 

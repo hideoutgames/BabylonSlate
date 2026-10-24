@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BObject } from "@haptic/object-model";
+import { EngineObject } from "@haptic/object-model";
 import { copyBlackboard, sameBlackboard } from "./bt-blackboard";
 
 /** A hang cannot be interrupted, but a copy that takes exponentially long fails here on any run that finishes. */
@@ -20,10 +20,10 @@ describe("Blackboard baseline copy", () => {
   });
 
   it("compares live objects by identity, never by their contents", () => {
-    const actor = new BObject({ classId: "Actor", guid: "a" });
+    const actor = new EngineObject({ classId: "Actor", guid: "a" });
     const board = { target: actor };
     expect(sameBlackboard(copyBlackboard(board), board)).toBe(true);
-    expect(sameBlackboard(copyBlackboard(board), { target: new BObject({ classId: "Actor", guid: "a" }) })).toBe(false);
+    expect(sameBlackboard(copyBlackboard(board), { target: new EngineObject({ classId: "Actor", guid: "a" }) })).toBe(false);
   });
 
   it("never claims unchanged a value with a Map, a class instance or a function", () => {

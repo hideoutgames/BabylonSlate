@@ -146,7 +146,7 @@ export type ScriptBundleEntry = {
     /** The entry node's canvas title (`Event Tick`), or the function's name. */
     title?: string;
   }>;
-  /** Present when the graph is a BDebugCommand OnCommandRun handler. */
+  /** Present when the graph is a DebugCommand OnCommandRun handler. */
   command?: ScriptConsoleCommand;
   /** Class registry parent; omitted scripts default to Actor at load. */
   parentClassId?: string;

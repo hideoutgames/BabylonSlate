@@ -12,7 +12,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [vfs](../../packages/vfs/src/) | Storage adapters (OPFS, Capacitor, Electron IPC, Node, memory), `createStorage()`, `getHostPlatform()`, app settings, secret store, native HTTP, Save Game storage |
 | [assets](../../packages/assets/src/) | `.hasset` codec, project folder/zip backends, content-root-aware header-only registry, search index, importers, texture encode queue and import worker |
 | [edit](../../packages/edit/src/) | Per-document undo stacks, reversible commands with merge keys, crash-recovery journal and replay |
-| [object-model](../../packages/object-model/src/) | Headless `BObject` / Actor / ActorComponent / World, class registry, interfaces, subsystems, deterministic tick |
+| [object-model](../../packages/object-model/src/) | Headless `Object` (`EngineObject`) / Actor / ActorComponent / World, class registry, interfaces, subsystems, deterministic tick |
 | [scripting](../../packages/scripting/src/) | Graph IR, pin types and assignability, pure validator, JS code generator with anchor tables |
 | [scripting-nodes](../../packages/scripting-nodes/src/) | Data-driven node catalog (definition + codegen per node) |
 | [input](../../packages/input/src/) | Raw input ring, action/axis mapping model, `InputResolver` |
@@ -20,7 +20,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [physics](../../packages/physics/src/) | Body/shape protocol; Havok 3D (Physics V2 on a worker-local NullEngine), Rapier 2D, software test backend |
 | [bridge](../../packages/bridge/src/) | SAB seq-lock and transferable transports, snapshot layout, typed channel messages |
 | [render](../../packages/render/src/) | Babylon view: Engine/Scene lifecycle, snapshot apply, ResourceCache, render scheduler, editor tools and gizmos, material/particle lowering, audio and particle services, KTX2 transcode, font registry |
-| [debugger](../../packages/debugger/src/) | Console command registry, parser, tiers, `BDebugCommand` helpers, stats, trace recorder |
+| [debugger](../../packages/debugger/src/) | Console command registry, parser, tiers, `DebugCommand` helpers, stats, trace recorder |
 | [anim-graph](../../packages/anim-graph/src/) | Animation Graph model and worker evaluator |
 | [behaviour-tree](../../packages/behaviour-tree/src/) | Tree IR, blackboard, explicit-stack evaluator, tree validation |
 | [navigation](../../packages/navigation/src/) | Recast bake/query port, 2D axis remap, Scene navmesh chunk |
