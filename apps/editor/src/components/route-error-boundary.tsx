@@ -6,6 +6,7 @@ import {
 } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import { SelectableText } from "@haptic/editor-kit";
+import { releaseBootIntro } from "./boot-intro";
 
 interface RouteErrorBoundaryState {
   error: Error | null;
@@ -14,7 +15,8 @@ interface RouteErrorBoundaryState {
 /**
  * Replaces the whole app with a way out when a route cannot load, such as a
  * lazy chunk that failed to download. Sits outside the launcher transition so
- * its splash cover cannot hide the Reload action.
+ * its splash cover cannot hide the Reload action, and releases the boot intro,
+ * which lives outside React.
  */
 export class RouteErrorBoundary extends Component<
   { children: ReactNode },
@@ -24,6 +26,10 @@ export class RouteErrorBoundary extends Component<
 
   static getDerivedStateFromError(error: unknown): RouteErrorBoundaryState {
     return { error: error instanceof Error ? error : new Error(String(error)) };
+  }
+
+  componentDidCatch() {
+    releaseBootIntro();
   }
 
   render(): ReactNode {

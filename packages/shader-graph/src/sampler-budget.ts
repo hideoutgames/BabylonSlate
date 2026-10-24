@@ -11,6 +11,7 @@ const SAMPLER_NODES = new Set([
   "input.sceneDepth",
   "input.sceneNormal",
   "input.environmentSample",
+  "input.mirrorReflection",
 ]);
 
 /**

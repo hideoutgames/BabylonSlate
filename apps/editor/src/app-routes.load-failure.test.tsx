@@ -26,10 +26,16 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
   }));
   vi.spyOn(console, "error").mockImplementation(() => {});
+  // The boot intro index.html paints outside React.
+  document.body.insertAdjacentHTML(
+    "afterbegin",
+    '<div id="haptic-intro" class="slate-loading" role="status"></div>',
+  );
 });
 
 afterEach(() => {
   cleanup();
+  document.getElementById("haptic-intro")?.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   documentState.route = "home";
@@ -48,7 +54,7 @@ describe("route chunk that fails to load", () => {
         </TooltipProvider>,
       );
       const button = await screen.findByRole("button", { name: "Reload" });
-      // The launcher splash would cover the route and disable its Reload action.
+      // The boot intro would cover the route and disable its Reload action.
       expect(document.querySelector(".slate-loading")).toBeNull();
       fireEvent.click(button);
       expect(reload).toHaveBeenCalledOnce();

@@ -37,6 +37,10 @@ import { variantSwapsTolerated } from "./variant-swaps";
  * A cold Effect that no warm draw used for `UNUSED_WARM_MS` (one only the camera's probe pass compiles, a shadow
  * caster's depth variant, a geometry pass's variant, or one whose view stopped warming) becomes admissible as it is,
  * and waits as it did before.
+ *
+ * Admission happens only in tolerant rounds, so a strict round of a view's new run (after an invalidation, until it
+ * draws steady frames again) probes a cold Effect as it is and settles it once ready: that run waits for every variant
+ * anyway, and an Effect left cold by the previous run would otherwise hold its preparation for good.
  */
 type ColdEntry = {
   usedAt: number;
@@ -69,6 +73,8 @@ type WarmupState = {
   marking: number;
   /** Inside a warm draw: cold Effects are ready. */
   warming: boolean;
+  /** Open strict rounds of a view's new run: cold Effects are probed as they are, and settle once ready. */
+  strict: number;
   /** Inside a variant prediction (`withPredictedEffects`): the Effects it creates are known, never cold. */
   predicting: boolean;
   /** Predicted Effects whose pipelines a prediction's warm draws created (`notePredictedPipelines`). */
@@ -115,7 +121,7 @@ function install(engine: AbstractEngine): WarmupState {
   if (typeof create !== "function") throw new Error("Unsupported Babylon engine layout: createEffect is missing.");
   const compiled = (engine as unknown as { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
   const state: WarmupState = {
-    cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false,
+    cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false, strict: 0,
     requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(), predicting: false, predictedWarm: new WeakSet(),
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
@@ -160,7 +166,14 @@ function makeCold(state: WarmupState, effect: Effect): void {
   const engine = effect.getEngine();
   const passes = warmedPasses.get(engine)!;
   state.cold.set(effect, { usedAt: performance.now(), base, warmed: false, predicted: state.predictedWarm.has(effect) });
-  effect.isReady = () => base() && (state.warming || !state.cold.has(effect) || !passes.has(engine.currentRenderPassId));
+  effect.isReady = () => {
+    if (state.strict > 0 && state.cold.has(effect)) {
+      const ready = base();
+      if (ready) warmUp(state, effect);
+      return ready;
+    }
+    return base() && (state.warming || !state.cold.has(effect) || !passes.has(engine.currentRenderPassId));
+  };
 }
 
 /** An Effect that warms keeps its original readiness as its own `isReady` (a bound copy), deliberately: one closure. */
@@ -179,7 +192,16 @@ function warmUp(state: WarmupState, effect: Effect): void {
  */
 export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boolean, run: () => T): T {
   const tolerated = variantSwapsTolerated();
-  if (!(tolerated || steady)) return run();
+  if (!(tolerated || steady)) {
+    const strict = states.get(engine);
+    if (!strict?.cold.size) return run();
+    strict.strict += 1;
+    try {
+      return run();
+    } finally {
+      strict.strict -= 1;
+    }
+  }
   let state = states.get(engine);
   if (!state) states.set(engine, (state = install(engine)));
   if (tolerated) {

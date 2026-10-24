@@ -1612,6 +1612,32 @@ describe("compile holds after the first frame", () => {
     });
   });
 
+  it.each(MODELS)("a mesh hidden for a new Material when the view's graph is invalidated is still shown: %s", async (model) => {
+    // A changed Material library invalidates the view right after the spawn: its new run probes strictly and must
+    // neither wait for an admission only steady frames make nor leave the hidden mesh for a reveal they would make.
+    const world = playWorld(model, [], ["surface-a"]);
+    const drawn = spawnDraws();
+    const barrel = () => world.handle.scene.getMeshByName("actor-20");
+    let invalidated = false;
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
+    }, async () => {
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      for (let index = 0; index < 6; index++) await world.frame();
+    }, () => {
+      // After the frame that hid it, as a scene naming a new Material changes the library.
+      if (!invalidated) world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b", "surface-c"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      invalidated = true;
+      drawn.clear();
+    });
+    for (let index = 0; index < 4; index++) await world.frame();
+    const mesh = barrel();
+    expect({
+      recovered: record.recovered, shown: !!mesh && !isRevealPending(mesh) && drawn.has(mesh.name), material: mesh?.material?.getClassName(),
+    }, JSON.stringify(record)).toEqual({ recovered: true, shown: true, material: "NodeMaterial" });
+  });
+
   it.each(MODELS)("a spawned actor's meshes appear together, on the frame the last of them is ready: %s", async (model) => {
     // The body's Material was warmed at load, the lid's arrived after it: the body waits, hidden, for the lid.
     const world = playWorld(model, [], ["surface-a"]);

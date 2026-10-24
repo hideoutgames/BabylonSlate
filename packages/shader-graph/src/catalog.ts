@@ -447,6 +447,19 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
   },
   {
+    // The reflection a Mirror component drew, read at the surface's own screen position; black on any other mesh.
+    type: "input.mirrorReflection",
+    title: "Mirror Reflection",
+    category: "Input",
+    searchAliases: ["mirror", "reflection", "planar", "reflect", "ripple"],
+    domains: ["surface"],
+    stages: ["fragment"],
+    cost: 3,
+    samples: 1,
+    inputs: [{ id: "offset", name: "Offset", type: VEC2, defaultValue: [0, 0] }],
+    outputs: [{ id: "color", name: "Color", type: VEC3, colorHint: true }],
+  },
+  {
     type: "input.environmentSample",
     title: "Environment Sample",
     category: "Input",

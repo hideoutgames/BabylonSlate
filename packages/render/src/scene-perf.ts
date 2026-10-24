@@ -266,7 +266,8 @@ function drawsSomething(mesh: AbstractMesh): boolean {
  * variant is ready (`noteRevealProbe`; the colour probe also needs its caster depth variant for every shadow map that
  * has drawn). The world view's readiness round reveals it, with the rest of its actor, once no pass found one unready.
  * A mesh that has drawn is never hidden: one pass's new variant (a geometry pass added, a depth pre-pass newly
- * blended) waits as before. A hidden mesh whose variant failed to compile stays hidden, reported once.
+ * blended) waits as before. A hidden mesh whose variant failed to compile stays hidden, reported once. A strict probe
+ * that finds a hidden mesh ready notes it for its round too, so a mesh hidden by the view's previous run is revealed.
  */
 export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   const scene = mesh.getScene();
@@ -333,6 +334,9 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       return true;
     }
     if (!meshReady) return false;
+    // A strict probe (a new run, before its first steady frame) found a hidden mesh ready: it is revealed with the
+    // round when every other pass agrees. Otherwise only a tolerant round could reveal it, and none follows.
+    if (isRevealPending(mesh)) noteRevealProbe(mesh, true);
     noteDrawn(mesh);
     // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
     for (const part of mesh.subMeshes ?? []) {

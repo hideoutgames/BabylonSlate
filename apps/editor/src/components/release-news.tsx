@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { SelectableText } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
@@ -40,7 +40,11 @@ function NoReleaseNotes({ version }: { version: string }) {
   );
 }
 
-/** The current version's notes, embedded at build time: first-launch news, and the account menu's Changelog. */
+/**
+ * The current version's notes, embedded at build time: news on the first
+ * launch after an update, and the account menu's Changelog. A first install
+ * records its version without announcing it.
+ */
 export function ReleaseNews({
   open,
   onOpenChange,
@@ -58,7 +62,16 @@ export function ReleaseNews({
 }) {
   const { settings, hydrated, updateSettings } = useAppSettings();
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const showNews = Boolean(ready && announce && hydrated && current && dismissed !== version && !settings.seenReleaseVersions.includes(version));
+  // No version seen yet means a fresh install, which has nothing to catch up on.
+  const firstLaunch = hydrated && settings.seenReleaseVersions.length === 0;
+  const showNews = Boolean(ready && announce && !firstLaunch && hydrated && current && dismissed !== version && !settings.seenReleaseVersions.includes(version));
+
+  useEffect(() => {
+    if (!announce || !firstLaunch || !version) return;
+    void updateSettings(settings => {
+      if (settings.seenReleaseVersions.length === 0) settings.seenReleaseVersions.push(version);
+    }).catch(error => console.warn("Could not remember the first launch version:", error));
+  }, [announce, firstLaunch, version, updateSettings]);
   const news = showNews && !open;
 
   function close() {

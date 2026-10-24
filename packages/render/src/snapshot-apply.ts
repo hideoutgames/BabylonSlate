@@ -4,6 +4,8 @@ import { createWaterMesh, sampleSceneWaterFrame } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh, sampleCableFrame } from "./cable-mesh";
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
+import { createMirrorSurfaceMesh } from "./mirrors";
+import { parseMirrorProperties } from "@haptic/core";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -630,7 +632,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "2djoystick" || part.meshKind === "2dcontrol" || part.meshKind === "dynamicRuntimeMesh")) return true;
+  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "mirror" || part.meshKind === "2djoystick" || part.meshKind === "2dcontrol" || part.meshKind === "dynamicRuntimeMesh")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -1881,6 +1883,7 @@ export function createPlayMesh(
     if (cable.materialGuid) mesh.material = binding?.resolveMaterial?.(cable.materialGuid, { scene }) ?? null;
     return finishPlayWorldMesh(mesh);
   }
+  if (meshKind === "mirror") return finishPlayWorldMesh(createMirrorSurfaceMesh(scene, name, parseMirrorProperties(illuminationPart?.mirror)));
   if (meshKind === "waterRemoval" && waterRemoval) return createWaterRemovalMesh(scene, name, waterRemoval, { editor: false });
   if (meshKind === "water" && water) {
     const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;

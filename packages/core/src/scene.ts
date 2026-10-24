@@ -398,6 +398,7 @@ function normalizeComponent(
       source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
+      source.classId === MIRROR_CLASS_ID ? { ...parseMirrorProperties(source.properties) } :
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
       source.classId === "ReflectionProbeComponent" ? { ...parseReflectionProbeProperties(source.properties) } :
       source.classId === "DeformerComponent" ? { ...parseDeformerProperties(source.properties) } :
@@ -868,3 +869,4 @@ import { parseOutlineProperties } from "./outline-component";
 import { parseDeformerProperties } from "./deformer-component";
 import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";
 import { parseCableProperties } from "./cable-component";
+import { MIRROR_CLASS_ID, parseMirrorProperties } from "./mirror";

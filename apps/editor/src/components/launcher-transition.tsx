@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { getBuildLabel } from "../lib/build-identity";
 import { brandWordmarkSrc } from "../lib/branding";
+import { bootIntroStart, useBootIntro } from "./boot-intro";
 import loadingStyles from "./launcher-transition.css?inline";
 
 type Target = "home" | "editor";
@@ -23,7 +24,7 @@ type Transition = {
   readyAt: number | null;
   settled: boolean;
   leaving: boolean;
-  /** The first transition continues the boot splash from index.html. */
+  /** The first transition continues the boot intro from index.html. */
   boot: boolean;
 };
 const TransitionContext = createContext<{
@@ -40,6 +41,11 @@ const TransitionContext = createContext<{
   active: false,
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
+
+/** The boot intro (index.html) settles its letters at about 2.2 s and fades
+ * out over about 1.2 s; the project-open card is quicker. */
+const MINIMUM_MS = { boot: 2600, open: 2000 };
+const FADE_FALLBACK_MS = { boot: 1800, open: 650 };
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 function subscribeReducedMotion(update: () => void) {
@@ -144,13 +150,18 @@ export function LauncherTransitionProvider({
       setTransition(null);
       return;
     }
+    // The boot intro started before the bundle ran; read its start late, as
+    // its letters may have started after the provider mounted.
+    const since =
+      (transition.boot && bootIntroStart()) || transition.since;
+    const kind = transition.boot ? "boot" : "open";
     const delay = transition.leaving
       ? // transitionend normally releases the route; this also covers browsers
         // that omit the event, such as a backgrounded webview.
-        650
+        FADE_FALLBACK_MS[kind]
       : Math.max(
           0,
-          2000 - (performance.now() - transition.since),
+          MINIMUM_MS[kind] - (performance.now() - since),
           transition.target === "editor"
             ? 600 -
                 (performance.now() - (transition.readyAt ?? performance.now()))
@@ -170,6 +181,23 @@ export function LauncherTransitionProvider({
     return () => clearTimeout(timer);
   }, [transition, route, reducedMotion]);
   const active = Boolean(transition);
+  const label =
+    transition?.target === "home"
+      ? "Loading Haptic"
+      : `Opening ${transition?.label ?? "Haptic"}`;
+  const releaseBoot = useCallback(
+    () =>
+      setTransition((current) =>
+        current?.boot && current.leaving ? null : current,
+      ),
+    [],
+  );
+  useBootIntro(
+    transition?.boot
+      ? { leaving: transition.leaving, label, status: transition.status }
+      : null,
+    releaseBoot,
+  );
   const value = useMemo(
     () => ({
       begin,
@@ -190,13 +218,13 @@ export function LauncherTransitionProvider({
         {children}
       </div>
       {transition &&
+        !transition.boot &&
         createPortal(
           <>
             <style>{loadingStyles}</style>
             <div
               className="slate-loading"
               data-leaving={transition.leaving}
-              data-boot={transition.boot}
               onTransitionEnd={(event) => {
                 if (
                   event.target !== event.currentTarget ||
@@ -209,11 +237,7 @@ export function LauncherTransitionProvider({
               }}
               role="status"
               aria-live="polite"
-              aria-label={
-                transition.target === "home"
-                  ? "Loading Haptic"
-                  : `Opening ${transition.label}`
-              }
+              aria-label={label}
             >
               <section className="slate-splash">
                 <img

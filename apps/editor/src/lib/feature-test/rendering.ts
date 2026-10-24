@@ -12,6 +12,7 @@ import {
   parseAreaRectLightProperties,
   parseDeformerProperties,
   parseFogVolumeProperties,
+  parseMirrorProperties,
   parseReflectionProbeProperties,
   parseOutlineProperties,
   parseSpringArmProperties,
@@ -56,7 +57,7 @@ import { FEATURE_TEST_CAMERA_TOUR, FEATURE_TEST_MAIN_CAMERA, type FeatureTestZon
 
 /**
  * Rendering area: lights and shadows, effects (fog volume, outline, lattice
- * deformer, 3D text, dynamic runtime mesh, spring arm), render targets, the
+ * deformer, 3D text, dynamic runtime mesh, spring arm), render targets and mirrors, the
  * automatic Model LOD lane, the touring main camera / sky / sun, project
  * render settings, scalability console commands and the `FT_Clustered` scene.
  */
@@ -92,6 +93,8 @@ interface RenderingRefs {
   cameraTour: PlacedClass;
   dynamicMesh: PlacedClass;
   manualCapture: PlacedClass;
+  /** Material override that ripples a Mirror's reflection through a Mirror Reflection node. */
+  mirrorRipple: string;
   /** Mirror-finish surface for the reflection probe booth. */
   chrome: string;
 }
@@ -116,10 +119,13 @@ export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promis
   const { tourPath, cameraTour } = await saveCameraTour(ctx);
   const dynamicMesh = await saveDynamicMesh(ctx);
   const manualCapture = await saveManualCapture(ctx, targets.WorldNormal.renderTarget);
+  const mirrorRipple = (await ctx.createAsset("Material", RENDER_FOLDER, "FT_RenderMirrorRipple", {
+    payload: mirrorRippleMaterial("FT_RenderMirrorRipple"),
+  })).guid;
   await saveScalabilityCommands(ctx);
   await addClusteredScene(ctx);
   const chrome = await ctx.createAsset("Material", RENDER_FOLDER, "FT_RenderChrome", { payload: chromeMaterial("FT_RenderChrome") });
-  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture, chrome: chrome.guid });
+  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture, mirrorRipple, chrome: chrome.guid });
 }
 
 /**
@@ -201,6 +207,56 @@ export function monitorMaterial(name: string, textureGuid: string): Record<strin
     targetNodeId: output.id,
     targetPinId: "baseColor",
   }];
+  return doc as unknown as Record<string, unknown>;
+}
+
+/**
+ * Unlit surface showing a Mirror's reflection through a Mirror Reflection node, its Offset rippled by two drifting
+ * Perlin noises (about 1% of the screen) and tinted cool, as water or warped glass would.
+ */
+export function mirrorRippleMaterial(name: string): Record<string, unknown> {
+  const doc = createDefaultMaterialDocument(name);
+  const output = doc.nodes.find((node) => node.type === "output.surface");
+  if (!output) throw new Error("FeatureTest mirror Material has no surface output.");
+  doc.shadingModel = "unlit";
+  const at = (column: number, row: number) => ({ x: column * 300, y: row * 170 });
+  doc.nodes = [
+    output,
+    { id: "uv", type: "input.uv", position: at(-6, 0), properties: {} },
+    { id: "time", type: "input.time", position: at(-6, 1), properties: {} },
+    { id: "split", type: "vector.split", position: at(-5, 0), properties: {} },
+    { id: "u", type: "math.multiply", position: at(-4, 0), properties: { "default:b": [6] } },
+    { id: "v", type: "math.multiply", position: at(-4, 1), properties: { "default:b": [9] } },
+    { id: "drift", type: "math.multiply", position: at(-4, 2), properties: { "default:b": [0.8] } },
+    { id: "coordsA", type: "vector.combine", position: at(-3, 0), properties: {} },
+    { id: "coordsB", type: "vector.combine", position: at(-3, 1), properties: {} },
+    { id: "noiseA", type: "noise.perlin", position: at(-2, 0), properties: {} },
+    { id: "noiseB", type: "noise.perlin", position: at(-2, 1), properties: {} },
+    { id: "rippleX", type: "math.multiply", position: at(-1, 0), properties: { "default:b": [0.012] } },
+    { id: "rippleY", type: "math.multiply", position: at(-1, 1), properties: { "default:b": [0.012] } },
+    { id: "offset", type: "vector.combine", position: at(0, 0), properties: {} },
+    { id: "reflection", type: "input.mirrorReflection", position: at(1, 0), properties: {} },
+    { id: "tint", type: "math.multiply", position: at(2, 0), properties: { "default:b": [0.75, 0.9, 1] } },
+  ];
+  const wires: [string, string, string, string][] = [
+    ["uv", "uv", "split", "value"],
+    ["split", "x", "u", "a"],
+    ["split", "y", "v", "a"],
+    ["time", "time", "drift", "a"],
+    ["u", "out", "coordsA", "x"], ["v", "out", "coordsA", "y"], ["drift", "out", "coordsA", "z"],
+    ["v", "out", "coordsB", "x"], ["u", "out", "coordsB", "y"], ["drift", "out", "coordsB", "z"],
+    ["coordsA", "xyz", "noiseA", "coordinates"],
+    ["coordsB", "xyz", "noiseB", "coordinates"],
+    ["noiseA", "out", "rippleX", "a"],
+    ["noiseB", "out", "rippleY", "a"],
+    ["rippleX", "out", "offset", "x"], ["rippleY", "out", "offset", "y"],
+    ["offset", "xy", "reflection", "offset"],
+    ["reflection", "color", "tint", "a"],
+    ["tint", "out", output.id, "baseColor"],
+  ];
+  doc.edges = wires.map(([from, fromPin, to, toPin]) => ({
+    id: `${from}:${fromPin}:${to}:${toPin}`, sourceNodeId: from, sourcePinId: fromPin, targetNodeId: to, targetPinId: toPin,
+  }));
   return doc as unknown as Record<string, unknown>;
 }
 
@@ -818,11 +874,24 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   ]));
 }
 
-/** Three captures (one per mode) aimed at a subject group, each shown on its own monitor. */
+/**
+ * Three captures (one per mode) aimed at a subject group, each shown on its own monitor, and two Mirrors flanking
+ * the group: the built-in surface and a rippling Material override.
+ */
 function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void {
   const zone = ctx.zone("renderTargets");
   const add = zoneAdder(ctx, "renderTargets");
   zone.floor();
+
+  // Reflective sides (local -Z) face the subjects across the zone.
+  add(actor("ft-render-mirror", "Mirror", tf(zone.at(-6, 1.5, -5), { rotationDeg: [0, -90, 0] }), [
+    comp("ft-render-mirror-surface", "MirrorComponent", { ...parseMirrorProperties({ width: 4, height: 3 }) }),
+  ]));
+  add(actor("ft-render-mirror-ripple", "Ripple Mirror", tf(zone.at(6, 1.5, -5), { rotationDeg: [0, 90, 0] }), [
+    comp("ft-render-mirror-ripple-surface", "MirrorComponent", {
+      ...parseMirrorProperties({ width: 4, height: 3, resolutionScale: 0.5, materialGuid: refs.mirrorRipple }),
+    }),
+  ]));
 
   add(primitive(CAPTURE_SUBJECT_IDS[0], "Capture Subject Sphere", "sphere", zone.at(-2.5, 0.75, -5), {
     materialGuid: ctx.assets.materials.emissive ?? null,
