@@ -26,7 +26,15 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 
 **Area Light Emission** prepares the Texture for a textured [Rectangular Area Light](../components/area-rect-light.md). Picking the Texture as a light's **Emission Texture** prepares it automatically (the state shows **Preparing**), or choose **Prepare Emission**; **Cancel** stops a preparation you started here. Prepared data is saved with the asset and included in game exports.
 
-A cube Texture has no editable settings. Its Inspector shows the cube's container, encoding, face size and roughness mip levels. A Texture imported from an HDR panorama shows **DDS** and **Linear RGBA16F**. To light a scene with it, set **Environment Source** to **Texture** in the scene's settings and pick it in **Environment Texture**.
+A cube Texture's Inspector shows its container, encoding, face size and roughness mip levels. To light a scene with it, set **Environment Source** to **Texture** in the scene's settings and pick it in **Environment Texture**.
+
+A Texture imported from an HDR panorama shows **DDS** and **Linear RGBA16F** and keeps the panorama, so its **Face Size** stays editable:
+
+| Setting | Description |
+| --- | --- |
+| Face Size | **128 × 128**, **256 × 256** or **512 × 512**. Changing it converts the panorama again behind a progress window; **Cancel** keeps the current cube. Faces are never larger than about a quarter of the panorama's width. |
+
+ENV and DDS cubes, and HDR Textures imported before Haptic kept panoramas, show **Face Size** read-only. Import the `.hdr` again to change one.
 
 ## Related
 

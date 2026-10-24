@@ -1838,12 +1838,12 @@ function ContentBrowserWorkspaceBody({
     ) => {
       if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
       const { signal } = controller;
-      importAbortRef.current = controller;
       const errors: string[] = [];
       const createdGuids: string[] = [];
       let importedCount = 0;
       const incoming = filterHpluginFiles(files);
       if (incoming.length === 0) return;
+      importAbortRef.current = controller;
       const conversion = {
         signal,
         onFile: (name: string) => updateImportProgress(signal, { phase: `Converting ${name}`, completed: 0, total: 1, fraction: null }),
