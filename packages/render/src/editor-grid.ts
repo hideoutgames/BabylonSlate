@@ -34,21 +34,24 @@ const GRID_LEVEL_STYLE = {
   presentPx: 32,
   /** Cells this large draw as major lines. */
   majorPx: 220,
-  minorAlpha: 0.22,
-  majorAlpha: 0.55,
-  minorWidthPx: 1,
-  majorWidthPx: 1.5,
+  minorAlpha: 0.18,
+  majorAlpha: 0.42,
+  /** Widths under a pixel draw one pixel wide at proportionally lower alpha. */
+  minorWidthPx: 0.75,
+  majorWidthPx: 1,
   /** Share of the axis colour mixed into every line running along that axis. */
   axisTint: 0.1,
-  axisWidthPx: 2,
-  axisAlpha: 0.75,
+  axisWidthPx: 1.5,
+  axisAlpha: 0.7,
+  /** 3D: share of their width lines lose between the eye and the distance fade's end. */
+  farThinning: 0.6,
 } as const;
 
 /** Macro levels above the major spacing, each ten times the last. */
 const GRID_MACRO_LEVELS = 4;
 /** 3D: the grid fades out between these multiples of the eye's height over the plane. */
-const GRID_HEIGHT_FADE_START = 60;
-const GRID_HEIGHT_FADE_END = 120;
+const GRID_HEIGHT_FADE_START = 40;
+const GRID_HEIGHT_FADE_END = 100;
 /** 3D: the fade never starts closer than this many major cells, even with the eye on the plane. */
 const GRID_MIN_FADE_CELLS = 24;
 
@@ -160,6 +163,7 @@ function gridShaderConstants(language: "glsl" | "wgsl"): string {
     ["AXIS_TINT", style.axisTint],
     ["AXIS_WIDTH", style.axisWidthPx],
     ["AXIS_ALPHA", style.axisAlpha],
+    ["FAR_THINNING", style.farThinning],
   ];
   return entries
     .map(([name, value]) =>
@@ -199,17 +203,19 @@ uniform fadeCenter: vec2f;
 uniform fadeStart: f32;
 uniform fadeEnd: f32;
 uniform gridVisible: f32;
+uniform distanceThinning: f32;
 ${gridShaderConstants("wgsl")}
 fn over(acc: vec4f, color: vec3f, alpha: f32) -> vec4f {
   return vec4f(color * alpha + acc.rgb * (1.0 - alpha), alpha + acc.a * (1.0 - alpha));
 }
-fn gridLevel(acc: vec4f, uv: vec2f, cellPx: vec2f) -> vec4f {
+fn gridLevel(acc: vec4f, uv: vec2f, cellPx: vec2f, thin: f32) -> vec4f {
   let logCell = log(cellPx);
   let presence = smoothstep(vec2f(LOG_HIDDEN_PX), vec2f(LOG_PRESENT_PX), logCell);
   let emphasis = smoothstep(vec2f(LOG_PRESENT_PX), vec2f(LOG_MAJOR_PX), logCell);
-  let width = mix(vec2f(MINOR_WIDTH), vec2f(MAJOR_WIDTH), emphasis);
+  let width = mix(vec2f(MINOR_WIDTH), vec2f(MAJOR_WIDTH), emphasis) * thin;
+  let drawWidth = max(width, vec2f(1.0));
   let distPx = abs(fract(uv - 0.5) - 0.5) * cellPx;
-  let cover = clamp(width * 0.5 + 0.5 - distPx, vec2f(0.0), vec2f(1.0));
+  let cover = clamp(drawWidth * 0.5 + 0.5 - distPx, vec2f(0.0), vec2f(1.0)) * (width / drawWidth);
   let alpha = cover * presence * mix(vec2f(MINOR_ALPHA), vec2f(MAJOR_ALPHA), emphasis);
   let alongV = mix(mix(uniforms.minorColor, uniforms.majorColor, emphasis.x), uniforms.axisColorV, AXIS_TINT);
   let alongU = mix(mix(uniforms.minorColor, uniforms.majorColor, emphasis.y), uniforms.axisColorU, AXIS_TINT);
@@ -223,21 +229,24 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let dy = dpdy(p);
   let unitsPerPx = max(vec2f(length(vec2f(dx.x, dy.x)), length(vec2f(dx.y, dy.y))), vec2f(0.0000001));
   let major = max(uniforms.spacing, 0.0001);
+  let eyeDistance = length(p - uniforms.fadeCenter);
+  let thin = 1.0 - uniforms.distanceThinning * FAR_THINNING * smoothstep(0.0, uniforms.fadeEnd, eyeDistance);
   var acc = vec4f(0.0);
   if (uniforms.subdivisions > 1.5) {
     let minor = major / uniforms.subdivisions;
-    acc = gridLevel(acc, p / minor, vec2f(minor) / unitsPerPx);
+    acc = gridLevel(acc, p / minor, vec2f(minor) / unitsPerPx, thin);
   }
-  acc = gridLevel(acc, p / major, vec2f(major) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 10.0) + uniforms.macroOffsets0.xy, vec2f(major * 10.0) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 100.0) + uniforms.macroOffsets0.zw, vec2f(major * 100.0) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 1000.0) + uniforms.macroOffsets1.xy, vec2f(major * 1000.0) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 10000.0) + uniforms.macroOffsets1.zw, vec2f(major * 10000.0) / unitsPerPx);
+  acc = gridLevel(acc, p / major, vec2f(major) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 10.0) + uniforms.macroOffsets0.xy, vec2f(major * 10.0) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 100.0) + uniforms.macroOffsets0.zw, vec2f(major * 100.0) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 1000.0) + uniforms.macroOffsets1.xy, vec2f(major * 1000.0) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 10000.0) + uniforms.macroOffsets1.zw, vec2f(major * 10000.0) / unitsPerPx, thin);
+  let axisWidth = max(AXIS_WIDTH * thin, 1.0);
   let axisPx = abs(p - uniforms.axisOrigin) / unitsPerPx;
-  let axisCover = clamp(vec2f(AXIS_WIDTH * 0.5 + 0.5) - axisPx, vec2f(0.0), vec2f(1.0)) * AXIS_ALPHA;
+  let axisCover = clamp(vec2f(axisWidth * 0.5 + 0.5) - axisPx, vec2f(0.0), vec2f(1.0)) * AXIS_ALPHA;
   acc = over(acc, uniforms.axisColorV, axisCover.x);
   acc = over(acc, uniforms.axisColorU, axisCover.y);
-  let fade = 1.0 - smoothstep(uniforms.fadeStart, uniforms.fadeEnd, length(p - uniforms.fadeCenter));
+  let fade = 1.0 - smoothstep(uniforms.fadeStart, uniforms.fadeEnd, eyeDistance);
   let alpha = acc.a * fade * uniforms.gridVisible;
   if (alpha < 0.003) { discard; }
   fragmentOutputs.color = vec4f(acc.rgb / max(acc.a, 0.00001), alpha);
@@ -272,6 +281,7 @@ uniform vec2 fadeCenter;
 uniform float fadeStart;
 uniform float fadeEnd;
 uniform float gridVisible;
+uniform float distanceThinning;
 ${gridShaderConstants("glsl")}
 
 vec4 over(vec4 acc, vec3 color, float alpha) {
@@ -280,13 +290,16 @@ vec4 over(vec4 acc, vec3 color, float alpha) {
 
 // One grid level: per axis, the level fades in and gains emphasis from its
 // on-screen cell size. Lines of constant u run along v, and the reverse.
-vec4 gridLevel(vec4 acc, vec2 uv, vec2 cellPx) {
+// Lines thinner than a pixel draw one pixel wide with their coverage scaled
+// down, so they stay antialiased instead of breaking up.
+vec4 gridLevel(vec4 acc, vec2 uv, vec2 cellPx, float thin) {
   vec2 logCell = log(cellPx);
   vec2 presence = smoothstep(vec2(LOG_HIDDEN_PX), vec2(LOG_PRESENT_PX), logCell);
   vec2 emphasis = smoothstep(vec2(LOG_PRESENT_PX), vec2(LOG_MAJOR_PX), logCell);
-  vec2 width = mix(vec2(MINOR_WIDTH), vec2(MAJOR_WIDTH), emphasis);
+  vec2 width = mix(vec2(MINOR_WIDTH), vec2(MAJOR_WIDTH), emphasis) * thin;
+  vec2 drawWidth = max(width, vec2(1.0));
   vec2 distPx = abs(fract(uv - 0.5) - 0.5) * cellPx;
-  vec2 cover = clamp(width * 0.5 + 0.5 - distPx, 0.0, 1.0);
+  vec2 cover = clamp(drawWidth * 0.5 + 0.5 - distPx, 0.0, 1.0) * (width / drawWidth);
   vec2 alpha = cover * presence * mix(vec2(MINOR_ALPHA), vec2(MAJOR_ALPHA), emphasis);
   vec3 alongV = mix(mix(minorColor, majorColor, emphasis.x), axisColorV, AXIS_TINT);
   vec3 alongU = mix(mix(minorColor, majorColor, emphasis.y), axisColorU, AXIS_TINT);
@@ -300,22 +313,26 @@ void main() {
   vec2 dy = dFdy(p);
   vec2 unitsPerPx = max(vec2(length(vec2(dx.x, dy.x)), length(vec2(dx.y, dy.y))), vec2(0.0000001));
   float major = max(spacing, 0.0001);
+  float eyeDistance = length(p - fadeCenter);
+  // 3D lines thin out with distance from the eye, ahead of the fade.
+  float thin = 1.0 - distanceThinning * FAR_THINNING * smoothstep(0.0, fadeEnd, eyeDistance);
   vec4 acc = vec4(0.0);
   if (subdivisions > 1.5) {
     float minor = major / subdivisions;
-    acc = gridLevel(acc, p / minor, vec2(minor) / unitsPerPx);
+    acc = gridLevel(acc, p / minor, vec2(minor) / unitsPerPx, thin);
   }
-  acc = gridLevel(acc, p / major, vec2(major) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 10.0) + macroOffsets0.xy, vec2(major * 10.0) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 100.0) + macroOffsets0.zw, vec2(major * 100.0) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 1000.0) + macroOffsets1.xy, vec2(major * 1000.0) / unitsPerPx);
-  acc = gridLevel(acc, p / (major * 10000.0) + macroOffsets1.zw, vec2(major * 10000.0) / unitsPerPx);
-  // World axes stay at full strength at every zoom.
+  acc = gridLevel(acc, p / major, vec2(major) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 10.0) + macroOffsets0.xy, vec2(major * 10.0) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 100.0) + macroOffsets0.zw, vec2(major * 100.0) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 1000.0) + macroOffsets1.xy, vec2(major * 1000.0) / unitsPerPx, thin);
+  acc = gridLevel(acc, p / (major * 10000.0) + macroOffsets1.zw, vec2(major * 10000.0) / unitsPerPx, thin);
+  // World axes keep their colour at every zoom and never drop under a pixel.
+  float axisWidth = max(AXIS_WIDTH * thin, 1.0);
   vec2 axisPx = abs(p - axisOrigin) / unitsPerPx;
-  vec2 axisCover = clamp(AXIS_WIDTH * 0.5 + 0.5 - axisPx, 0.0, 1.0) * AXIS_ALPHA;
+  vec2 axisCover = clamp(axisWidth * 0.5 + 0.5 - axisPx, 0.0, 1.0) * AXIS_ALPHA;
   acc = over(acc, axisColorV, axisCover.x);
   acc = over(acc, axisColorU, axisCover.y);
-  float fade = 1.0 - smoothstep(fadeStart, fadeEnd, length(p - fadeCenter));
+  float fade = 1.0 - smoothstep(fadeStart, fadeEnd, eyeDistance);
   float alpha = acc.a * fade * gridVisible;
   if (alpha < 0.003) discard;
   gl_FragColor = vec4(acc.rgb / max(acc.a, 0.00001), alpha);
@@ -449,6 +466,7 @@ export function createEditorGrid(
         "fadeEnd",
         "gridExtent",
         "gridVisible",
+        "distanceThinning",
       ],
       needAlphaBlending: true,
     },
@@ -472,6 +490,8 @@ export function createEditorGrid(
     material.setColor3("axisColorU", sceneColor(GRID_AXIS_X_COLOR));
     material.setColor3("axisColorV", sceneColor(mode === "3d" ? GRID_AXIS_Z_COLOR : GRID_AXIS_Y_COLOR));
     material.setFloat("gridVisible", visible ? 1 : 0);
+    // 2D fades at the frame edge, not with depth, so its lines keep their width.
+    material.setFloat("distanceThinning", mode === "3d" ? 1 : 0);
   };
 
   const applyPlane = () => {

@@ -16,6 +16,7 @@ A progress window shows each file. If some files fail, **Import Partially Comple
 | --- | --- |
 | PNG, JPEG, WebP, GIF | [Texture](../assets/texture.md) |
 | ENV, DDS (prefiltered cube maps) | Environment cube [Texture](../assets/texture.md) for image-based lighting |
+| HDR (equirectangular Radiance panoramas) | Converted on import to an environment cube [Texture](../assets/texture.md) |
 | GLB, glTF | [Model](../assets/model.md), plus its Textures, [Materials](../assets/material.md), [Skeleton](../assets/skeleton.md) and [Animations](../assets/animation.md) |
 | FBX, OBJ (with MTL), STL | Converted on import, then the same as glTF |
 | MP3, WAV, OGG | [Audio](../assets/audio.md) |
@@ -38,6 +39,18 @@ Haptic picks a texture's **Usage** from whole words in its file name. Change it 
 | anything else | Albedo |
 
 Other usages are **Skybox** and **Particle**.
+
+### Environment cubes
+
+ENV and DDS files must already be prefiltered cube maps: Haptic keeps their faces and roughness mips as they are. DDS cubes must be linear RGBA16F or RGBA32F with a full mip chain.
+
+An `.hdr` file is an equirectangular panorama in Radiance RGBE format, as most HDRI sites publish. Haptic converts it once, on import, to a prefiltered RGBA16F DDS cube:
+
+- Faces are up to 256 × 256, about a quarter of the panorama's width.
+- Each mip level holds the reflection for a rougher surface, from mirror-sharp to fully rough.
+- The panorama's centre faces forward (+Z) and its top row is straight up.
+
+Large panoramas can take a few seconds to convert. The game loads the converted cube like any other DDS, so it does no conversion at load. The original `.hdr` is not kept; import it again to change it.
 
 ### Compression
 

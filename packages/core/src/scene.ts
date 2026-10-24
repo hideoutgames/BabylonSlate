@@ -399,6 +399,7 @@ function normalizeComponent(
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
+      source.classId === "ReflectionProbeComponent" ? { ...parseReflectionProbeProperties(source.properties) } :
       source.classId === "DeformerComponent" ? { ...parseDeformerProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
@@ -862,6 +863,7 @@ export function wouldCreateComponentCycle(
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
 import { parseFogVolumeProperties } from "./fog-volume";
+import { parseReflectionProbeProperties } from "./reflection-probe";
 import { parseOutlineProperties } from "./outline-component";
 import { parseDeformerProperties } from "./deformer-component";
 import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";
