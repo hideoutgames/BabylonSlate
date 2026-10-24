@@ -149,11 +149,6 @@ type View = {
 };
 /** How long a view waits before asking the ledger again for a mirror it refused. */
 const VIEW_REFUSAL_RETRY_MS = 1_000;
-/**
- * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
- * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
- * reverted (`restoreAdmission`).
- */
 /** A light near a shadow map, as `nearShadowStarts` predicts its start. */
 export type ShadowStartPrediction = {
   light: Light;
@@ -162,6 +157,11 @@ export type ShadowStartPrediction = {
   /** The holder it would take a map from, whose receivers lose that shadow. */
   displaced: Light | null;
 };
+/**
+ * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
+ * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
+ * reverted (`restoreAdmission`).
+ */
 export type ShadowAdmissionSnapshot = {
   readonly at: number;
   readonly camera: Camera | null;
