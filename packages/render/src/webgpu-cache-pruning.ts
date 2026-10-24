@@ -25,6 +25,21 @@ const BUFFER_ID_START = 2 ** 20;
 const TEXTURE_ID_START = 2 ** 35;
 /** `StatePosition.ShaderStage` in `webgpuCacheRenderPipeline.js`: the tree depth whose keys are `Effect.uniqueId`. */
 const SHADER_STAGE_DEPTH = 11;
+
+/** Render pipelines Babylon's cache still holds for Effects that are not in `live` (released ones), page-wide. */
+export function webGpuPipelinesOutside(live: ReadonlySet<number>): number {
+  const visit = (node: PipelineNode, depth: number): number => {
+    let count = 0;
+    for (const key in node.values) {
+      const child = node.values[key]!;
+      if (depth === SHADER_STAGE_DEPTH) {
+        if (!live.has(Number(key))) count += countPipelines(child);
+      } else count += visit(child, depth + 1);
+    }
+    return count;
+  };
+  return visit(pipelineRoot(), 0);
+}
 /** Released ids that trigger a prune at the next frame end. */
 const PRUNE_THRESHOLD = 256;
 /** Frames after which any pending release is pruned even below the threshold. */

@@ -94,7 +94,8 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     // After the real draws and before the task restores its lights' shadow flags, so warm draws compile the variants
     // the real ones draw with.
     renderer.onAfterRenderingManagerRenderObservable.add(() => {
-      if (this.warmsPipelines) warmRequestedPipelines(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId);
+      if (!this.warmsPipelines) return;
+      warmSafely(scene, () => warmRequestedPipelines(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId));
     });
   }
 
@@ -510,5 +511,23 @@ export class ManagedShadowsTask extends FrameGraphTask {
     this.borrowed = [];
     this.receivers.length = 0;
     super.dispose();
+  }
+}
+
+/** Scenes whose warm draws failed once already: a failure repeats every frame, and is reported once. */
+const warmFailures = new WeakSet<Scene>();
+
+/**
+ * Runs a pass's warm draws, which never end the pass early: Babylon's ObjectRenderer restores nothing when a draw
+ * throws, and the task restores its lights' shadow flags after it, so a light holding a standby map would otherwise
+ * stay unshadowed for good.
+ */
+function warmSafely(scene: Scene, warm: () => void): void {
+  try {
+    warm();
+  } catch (error) {
+    if (warmFailures.has(scene)) return;
+    warmFailures.add(scene);
+    console.warn(`[render] Pipeline warm draws failed: ${String(error)}`);
   }
 }
