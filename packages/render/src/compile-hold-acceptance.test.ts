@@ -720,13 +720,17 @@ describe("compile holds after the first frame", () => {
       .toEqual({ held: 2, expired: { held: 0, cached: 0 }, again: true, reused: true });
   });
 
-  it.each(MODELS)("a spot nearing the shadow budget's cut-off has its receivers' variant compiled before it takes a point's map: %s", async (model) => {
-    // Two local shadow maps, a spot's and a farther point's. A third shadowed light, a spot, first comes within the
-    // prediction margin of the farther holder's ranking distance, then near enough to take its map: a new spot map,
-    // whose receivers' defines the admitted spot map's give, while the point's receivers lose its shadow.
+  it.each((["borrowed", "first of its kind"] as const).flatMap((start) => MODELS.map((model) => [start, model] as const)))(
+    "a spot nearing the shadow budget's cut-off has its variants compiled before it takes a point's map, %s: %s", async (start, model) => {
+    // Two local shadow maps, a farther point's and either a spot's or another point's. A third shadowed light, a spot,
+    // first comes within the prediction margin of the farther holder's ranking distance, then near enough to take its
+    // map: a new spot map, while the point's receivers lose its shadow. Its receivers' defines come from the admitted
+    // spot map, or, with no spot map admitted, from the controller's prediction map, which also gives its casters'
+    // depth variants and never attaches to a light.
     predictAhead = true;
-    const world = playWorld(model, [spot(10, [0, 5, 0], { castShadows: true }), point(11, [3, 4, 4], { castShadows: true }),
-      spot(30, [0, 5, 40], { castShadows: true })]);
+    const world = playWorld(model, [
+      start === "borrowed" ? spot(10, [0, 5, 0], { castShadows: true }) : point(10, [0, 4, 0], { castShadows: true }),
+      point(11, [3, 4, 4], { castShadows: true }), spot(30, [0, 5, 40], { castShadows: true })]);
     updateSceneRenderingSettings(world.handle.scene,
       { shadows: { ...sceneRenderingSettings(world.handle.scene).shadows, localLightMode: "manual", maxLocalLights: 2 } });
     const controller = () => findSceneShadowController(world.handle.scene)!;
@@ -735,6 +739,9 @@ describe("compile holds after the first frame", () => {
     world.place(spot(30, [0, 5, 8], { castShadows: true }));
     for (let index = 0; index < 12; index++) await world.frame();
     const waiting = { lit: lightOf(30).isEnabled(), map: controller().generator(lightOf(30)) !== null, point: controller().generator(lightOf(11)) !== null };
+    const predictionMaps = controller().heldPredictionMaps.length;
+    const attached = world.handle.scene.lights.some((light) => [...(light.getShadowGenerators()?.values() ?? [])]
+      .some((generator) => controller().heldPredictionMaps.includes(generator)));
     const before = world.subjectEffect();
     world.driver.arm();
     world.place(spot(30, [0, 5, 2], { castShadows: true }));
@@ -745,11 +752,12 @@ describe("compile holds after the first frame", () => {
       frames.push(view?.rendered === true);
       if (effect && effect !== before) adoptedAfter = index;
     }
-    expect({ waiting, map: controller().generator(lightOf(30)) !== null, point: controller().generator(lightOf(11)) !== null,
+    expect({ waiting, predictionMaps, attached, map: controller().generator(lightOf(30)) !== null,
+      point: controller().generator(lightOf(11)) !== null, released: controller().heldPredictionMaps.length,
       compiled: realCompiles(world).length, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
       adoptedAtOnce: adoptedAfter === 0 }).toEqual({
-      waiting: { lit: true, map: false, point: true }, map: true, point: false, compiled: 0, drawn: true,
-      pipelines: 0, adoptedAtOnce: true,
+      waiting: { lit: true, map: false, point: true }, predictionMaps: start === "borrowed" ? 0 : 1, attached: false,
+      map: true, point: false, released: 0, compiled: 0, drawn: true, pipelines: 0, adoptedAtOnce: true,
     });
   });
 
@@ -766,6 +774,16 @@ describe("compile holds after the first frame", () => {
     // Two local maps: the spot takes the farther point's, a new spot map whose defines the other spot's give.
     "a spot takes a point's shadow map": {
       actors: () => [spot(10, [0, 5, 0], { castShadows: true }), point(11, [3, 4, 4], { castShadows: true }),
+        spot(30, [0, 5, 40], { castShadows: true })],
+      step: 1.7,
+      frames: 24,
+      configure: (world: PlayWorld) => updateSceneRenderingSettings(world.handle.scene,
+        { shadows: { ...sceneRenderingSettings(world.handle.scene).shadows, localLightMode: "manual", maxLocalLights: 2 } }),
+      prepare: undefined,
+    },
+    // Two point maps: the spot takes the farther one's, the first spot map, whose variants a prediction map gives.
+    "a spot takes a point's shadow map, the first of its kind": {
+      actors: () => [point(10, [0, 4, 0], { castShadows: true }), point(11, [3, 4, 4], { castShadows: true }),
         spot(30, [0, 5, 40], { castShadows: true })],
       step: 1.7,
       frames: 24,
