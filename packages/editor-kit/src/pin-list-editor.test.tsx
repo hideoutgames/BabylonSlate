@@ -235,7 +235,7 @@ describe("PinListEditor", () => {
     ]);
   });
 
-  it("keeps a class constraint when switching an Object pin to Actor", async () => {
+  it("keeps a class constraint when switching an Object pin to Class", async () => {
     const onChange = vi.fn();
     render(
       <PinListEditor
@@ -247,15 +247,15 @@ describe("PinListEditor", () => {
     );
     screen.getByTestId("pin-a-type").click();
     await waitFor(() => {
-      expect(screen.getByTestId("search-item-actor")).toBeTruthy();
+      expect(screen.getByTestId("search-item-class")).toBeTruthy();
     });
-    screen.getByTestId("search-item-actor").click();
+    screen.getByTestId("search-item-class").click();
     expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "a", type: "actor", typeClassId: "Hero" }),
+      expect.objectContaining({ id: "a", type: "class", typeClassId: "Hero" }),
     ]);
   });
 
-  it("shows Class Type for actor pins", async () => {
+  it("shows Class Type for Object pins constrained to Actor", async () => {
     const onChange = vi.fn();
     render(
       <PinListEditor
@@ -263,7 +263,7 @@ describe("PinListEditor", () => {
           {
             id: "a",
             name: "pawn",
-            type: "actor",
+            type: "object",
             direction: "in",
             typeClassId: "Actor",
           },

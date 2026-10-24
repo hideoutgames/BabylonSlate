@@ -472,13 +472,12 @@ describe("addClassMember", () => {
     });
   });
 
-  it("treats single object and actor variables as Validated Get types", () => {
+  it("treats single object variables as Validated Get types", () => {
     expect(isObjectInstanceVariableType("object")).toBe(true);
-    expect(isObjectInstanceVariableType("actor")).toBe(true);
     expect(isObjectInstanceVariableType("bool")).toBe(false);
     expect(isObjectInstanceVariableType("class")).toBe(false);
     expect(isObjectInstanceVariableType("object", "array")).toBe(false);
-    expect(isObjectInstanceVariableType("actor", "map")).toBe(false);
+    expect(isObjectInstanceVariableType("object", "map")).toBe(false);
   });
 
   it("spawns Validated Get onto the event graph for an object variable", () => {

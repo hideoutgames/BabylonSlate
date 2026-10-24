@@ -189,7 +189,7 @@ describe("pinRefusalReason", () => {
     const heroOut: SerializedPin = { ...stringOut, type: { kind: "objectRef", classId: "Hero" } };
     const pawnIn: SerializedPin = { ...stringIn, type: { kind: "objectRef", classId: "Pawn" } };
     expect(pinRefusalReason(heroOut, pawnIn, () => false)).toBe(
-      "Object (Hero) does not connect to Object (Pawn)",
+      "Hero does not connect to Pawn",
     );
     const pointOut: SerializedPin = { ...stringOut, type: { kind: "structRef", guid: "g-1" } };
     expect(pinRefusalReason(pointOut, stringIn, undefined, { "g-1": "Hit Result" })).toBe(
