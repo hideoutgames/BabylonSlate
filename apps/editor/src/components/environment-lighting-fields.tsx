@@ -45,7 +45,7 @@ const fields = [
 ] as const;
 
 export const ENVIRONMENT_LIGHTING_SEARCH_TEXT = [
-  "Environment Lighting Texture IBL",
+  "Environment Lighting Environment Source None Skybox Environment Texture IBL",
   ...fields.map(({ label, description }) => `${label} ${description}`),
 ].join(" ");
 

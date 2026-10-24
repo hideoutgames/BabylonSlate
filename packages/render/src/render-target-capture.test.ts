@@ -84,7 +84,7 @@ it("publishes nothing and keeps a manual request while its draw waits for a comp
   const output = captures.acquireTexture("texture")!.resource;
   captures.request("capture");
   // Inside a deferring view's frame, a draw skipped for a pipeline still compiling.
-  vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: () => 1, waiting: () => true }));
+  vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: () => 1, waiting: () => true, warmed: () => false }));
   captures.render();
   expect(draws).toHaveLength(1);
   expect(output.getSize()).not.toEqual({ width: 16, height: 8 });

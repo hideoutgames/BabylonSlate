@@ -131,6 +131,30 @@ it("shows live project values until a field is overridden, and reset restores in
   expect(bands.value).toBe("5");
 });
 
+it("authors CEL reflections off by default and lets a scene opt in against the project", () => {
+  const changes: CelShadingOverrides[] = [];
+  const view = render(
+    <CelShadingFields project={normalizeCelShadingSettings({})} onChange={(value) => changes.push(value)} />,
+  );
+  const authored = screen.getByRole("switch", { name: "Real-Time Reflections" });
+  expect(authored.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(authored);
+  expect(changes.at(-1)).toMatchObject({ reflectionsEnabled: true, shadowBands: 3 });
+  view.unmount();
+
+  render(<SceneFields />);
+  const scene = screen.getByRole("switch", { name: "Real-Time Reflections" });
+  expect(screen.getByText(/Project Setting: Off\. Lets Real-Time Reflections/)).toBeTruthy();
+  // The scene inherits until overridden.
+  fireEvent.click(scene);
+  expect(scene.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Override Real-Time Reflections" }));
+  fireEvent.click(scene);
+  expect(scene.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Reset Real-Time Reflections To Project Settings" }));
+  expect(scene.getAttribute("aria-checked")).toBe("false");
+});
+
 it("overrides light mixing independently and resets to the current project choice", () => {
   const view = render(<SceneFields />);
   expect(

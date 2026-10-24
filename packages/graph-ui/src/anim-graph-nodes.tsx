@@ -14,6 +14,9 @@ import { Repeat2Icon } from "lucide-react";
 import { cn } from "@haptic/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { animTransitionPath } from "./anim-transition-path";
+import { useNodeBreakpoint } from "./graph-breakpoints";
+import { NodeBreakpointDot } from "./graph-nodes";
+import { useNodeMenu } from "./use-node-menu";
 
 type AnimStateSide = "top" | "right" | "bottom" | "left";
 
@@ -67,16 +70,19 @@ export function AnimStateNode({
     typeof data.title === "string" ? data.title : undefined,
   );
   const connectedSides = useConnectedSides(id).split(" ");
+  const nodeMenu = useNodeMenu(id);
   return (
     <div
       className={cn(
-        "anim-state-node",
+        "anim-state-node group/title",
         selected && "anim-state-node-selected",
         data.entry === true && "anim-state-node-entry",
       )}
       data-testid={`anim-state-node-${id}`}
       data-node-role="anim-state"
+      {...nodeMenu.bind}
     >
+      <NodeBreakpointDot nodeId={id} data={data} className="left-2.5 top-3" />
       {ANIM_STATE_SIDES.map((side) => (
         <span key={side} className="contents">
           <Handle
@@ -118,6 +124,7 @@ export function AnimStateNode({
       {data.entry === true ? (
         <div className="anim-state-node-entry-mark">Entry</div>
       ) : null}
+      {nodeMenu.overlay}
     </div>
   );
 }
@@ -172,6 +179,8 @@ export function AnimTransitionEdge({
     targetPosition,
   });
   const bidirectional = type === "animTransitionBoth";
+  // The host's state for a Both Ways pair, drawn as one edge, covers either direction.
+  const breakpoint = useNodeBreakpoint(id);
   return (
     <>
       <BaseEdge
@@ -194,6 +203,7 @@ export function AnimTransitionEdge({
           }}
           data-testid={`anim-transition-badge-${id}`}
           data-bidirectional={bidirectional ? "true" : undefined}
+          data-breakpoint={breakpoint ?? undefined}
           aria-label="Select Transition"
           onClick={(event) => {
             event.stopPropagation();

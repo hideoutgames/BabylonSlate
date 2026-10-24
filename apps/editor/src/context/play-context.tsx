@@ -1,4 +1,4 @@
-import { DiagnosticResultsProvider } from "./diagnostic-results-context";
+import { DiagnosticResultsProvider, useDiagnosticResultsStore } from "./diagnostic-results-context";
 import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { playAssetCatalog } from "../services/asset-catalog";
@@ -31,12 +31,11 @@ import {
   type CollisionTriangleMesh,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
-import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry } from "@haptic/bridge";
+import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
 import { createFrameFlush } from "../lib/use-debug-console-logs";
-import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
@@ -136,7 +135,7 @@ import {
 import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
-import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
+import { playRegistryViews } from "../lib/play-registry-views";
 import { useAppSettings } from "./app-settings-context";
 import {
   isUsableEngine,
@@ -860,12 +859,19 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Play and Preview Build cover the editor, so its background work waits; a Simulation runs inside it.
-  const gameCoversEditor = playOpen && sessionState.mode !== null && sessionState.mode !== "simulate";
+  /** Editor Play stopped at a breakpoint or an error, its view hidden behind the editor until Resume. */
+  const [playBreak, setPlayBreak] = useState<SessionPauseCause | null>(null);
+  const playStopped = playBreak !== null;
+  // Play and Preview Build cover the editor, so its background work waits; a Simulation runs inside it,
+  // and stopped Play shows it.
+  const gameCoversEditor = playOpen && sessionState.mode !== null && sessionState.mode !== "simulate" && !playStopped;
   useEffect(() => {
     setEditorQuiet(gameCoversEditor);
   }, [gameCoversEditor]);
   useEffect(() => () => setEditorQuiet(false), []);
+  // Stopped Play leaves the editor read-only, as a running Simulation does; breakpoints can still change.
+  const { lockAuthoring } = documents;
+  useEffect(() => (playStopped ? lockAuthoring("Read-only while Play is stopped") : undefined), [lockAuthoring, playStopped]);
 
   useEffect(() => {
     if (projectDocument) return;
@@ -1418,8 +1424,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
-          traceExecution: simulating,
-          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: simulating }),
+          // Editor Play and Simulation compile with the breakpoint check and the graph debugger's probes,
+          // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
+          traceExecution: true,
+          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true }),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
@@ -1619,10 +1627,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
       });
       if (result.lastTrace) {
-        void openRecordedTrace(result.lastTrace);
+        void openRecordedTrace(result.lastTrace, { keep: appSettings.tracesKept });
       }
     },
-    [appendLog, openRecordedTrace, sessionOwner],
+    [appSettings.tracesKept, appendLog, openRecordedTrace, sessionOwner],
   );
 
   // Built after the value below; read when a source is opened, so it is always the latest.
@@ -1636,6 +1644,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+  // The Profiler's Scripts view opens an entry's graph the same way.
+  const diagnosticResults = useDiagnosticResultsStore();
+  useEffect(() => {
+    if (!diagnosticResults) return;
+    diagnosticResults.setSourceOpener(async (location) => {
+      const result = await openSessionSource({ severity: "info", code: "editor.profilerScript", message: "Profiled Script", ...location });
+      return result.opened ? null : result.message;
+    });
+    return () => diagnosticResults.setSourceOpener(null);
+  }, [diagnosticResults, openSessionSource]);
   const value = useMemo<PlayContextValue>(
     () => ({
       sessionState,
@@ -1722,34 +1740,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   // The running game's registry lists: rebuilt when the registry changes, not
   // on every render of this provider, and only while a game is open.
-  const playRegistryViews = useMemo(() => {
+  const registryViews = useMemo(() => {
     if (!playOpen) return null;
     void registryEpoch; // Registry headers mutate without replacing the registry.
-    const assets = assetRegistry?.list() ?? [];
-    return {
-      sceneCatalog: assets
-        .filter((asset) => asset.header.type === "Scene")
-        .map((asset) => ({ guid: asset.header.guid, name: asset.header.name })),
-      classAssetGuids: Object.fromEntries(
-        assets
-          .filter((asset) => asset.header.type === "Class")
-          .map((asset) => [classIdFromClassAsset(asset), asset.header.guid]),
-      ),
-      consoleCommands: assets.flatMap((asset) =>
-        asset.header.consoleCommand
-          ? [{
-              ...asset.header.consoleCommand,
-              classId: classIdFromClassAsset(asset),
-              assetGuid: asset.header.guid,
-              name: asset.header.consoleCommand.name || classIdFromClassAsset(asset).toLowerCase(),
-            }]
-          : [],
-      ),
-      audioAssetGuids: assets
-        .filter((asset) => asset.header.type === "Audio")
-        .map((asset) => asset.header.guid),
-      animClipCatalog: animClipCatalogFromAssets(assets),
-    };
+    return playRegistryViews(assetRegistry?.list() ?? []);
   }, [assetRegistry, playOpen, registryEpoch]);
 
   // Session report rows and a Simulation paused on an error open their source the same way.
@@ -1786,10 +1780,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             saveGame={playSaveGame}
             gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             scenes={playSceneLibrary}
-            sceneCatalog={playRegistryViews?.sceneCatalog}
-            classAssetGuids={playRegistryViews?.classAssetGuids}
-            consoleCommands={playRegistryViews?.consoleCommands}
-            audioAssetGuids={playRegistryViews?.audioAssetGuids}
+            sceneCatalog={registryViews?.sceneCatalog}
+            classAssetGuids={registryViews?.classAssetGuids}
+            consoleCommands={registryViews?.consoleCommands}
+            audioAssetGuids={registryViews?.audioAssetGuids}
             getAssetLoadState={documents.getAssetLoadState}
             getSourceControls={mergedSourceControls}
             acquireSceneSources={acquireSceneSources}
@@ -1824,7 +1818,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             retargetAnimationLoads={playRetargetAnimationLoads}
             loadAudioSourceBytes={playAudioSourceLoader}
             audioLibrary={playAudioLibrary}
-            animClipCatalog={playRegistryViews?.animClipCatalog}
+            animClipCatalog={registryViews?.animClipCatalog}
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
@@ -1833,6 +1827,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             pauseOnPlay={pauseOnPlay}
             pauseOnErrors={simulationDefaultsFromSettings(appSettings.debuggerDefaults).pauseOnErrors}
             // A breakpoint stop opens its node like an error does, but is not an error.
+            onPlayBreak={setPlayBreak}
             onPausedAt={(cause) => void navigateToSessionReportEntry(
               { severity: cause.code === BREAKPOINT_PAUSE_CODE ? "info" : "error", ...cause },
               sessionReportNavigationHost,
@@ -2007,7 +2002,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             registerBeforeStop={registerPreviewBeforeStop}
-            onTrace={(trace) => void openRecordedTrace(trace)}
+            onTrace={(trace) => void openRecordedTrace(trace, { keep: appSettings.tracesKept })}
             onOutputLog={appendLog}
             showStats={overlayStats}
             showConsole={overlayConsole}

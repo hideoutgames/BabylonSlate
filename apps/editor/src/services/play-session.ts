@@ -77,7 +77,7 @@ import {
   type DebugObserveTarget,
   type ScriptBundleEntry,
   type SessionPauseCause,
-  type BreakpointLocation,
+  type Breakpoint,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
@@ -92,12 +92,14 @@ import {
   editorDracoPublicBase,
   editorKtx2PublicBase,
   editorMeshoptPublicBase,
+  editorThirdPartyNoticesUrl,
 } from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   SessionDiagnostics,
   createDiagnosticOperationClient,
   createMessageRateMeter,
+  observeBrowserLongTasks,
   type PerformanceProfile,
   type TracePayload,
 } from "@haptic/debugger";
@@ -272,9 +274,9 @@ export function applyPlayGraphDebugObserve(
 export function applyPlayBreakpoints(
   target: {
     worker?: { postControl: (message: ControlMessage) => void } | null;
-    runtime?: { applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void } | null;
+    runtime?: { applyBreakpoints(breakpoints: readonly Breakpoint[]): void } | null;
   },
-  breakpoints: BreakpointLocation[],
+  breakpoints: Breakpoint[],
 ): void {
   if (target.worker) target.worker.postControl({ type: "setBreakpoints", breakpoints });
   else target.runtime?.applyBreakpoints(breakpoints);
@@ -416,7 +418,6 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   setPauseReason: (reason: import("@haptic/bridge").SessionPauseReason, paused: boolean) => Promise<import("@haptic/bridge").SessionBoundaryResult>;
   setInputMode: (mode: "game" | "edit") => Promise<void>;
-  setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   /**
    * Point the graph debugger at the live instances of `target` (null stops) and follow
    * `instanceId`. The runtime answers with `onDebugRoster` and, for the followed instance
@@ -424,7 +425,7 @@ export interface PlaySession {
    */
   observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
   /** Replace the node breakpoints a Simulation stops at (its scripts check them). */
-  setBreakpoints: (breakpoints: BreakpointLocation[]) => void;
+  setBreakpoints: (breakpoints: Breakpoint[]) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -723,7 +724,7 @@ export function startPlaySession(options: {
   /** Simulation: pause the first time each node reports an error (Engine Settings, Pause On Errors). */
   pauseOnErrors?: boolean;
   /** Simulation: the enabled node breakpoints when it starts; `setBreakpoints` changes them. */
-  breakpoints?: BreakpointLocation[];
+  breakpoints?: Breakpoint[];
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
@@ -751,6 +752,7 @@ export function startPlaySession(options: {
   ) => void;
   onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
   onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
+  onDebugVariables?: (report: Extract<CommandMessage, { type: "debugVariables" }>) => void;
   onBtState?: (state: Extract<CommandMessage, { type: "btState" }>) => void;
 }): PlaySession {
   options = { ...options };
@@ -782,8 +784,6 @@ export function startPlaySession(options: {
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
-  let editorInputSuppressed = false;
-  let editorInputRoutingEnabled = false;
   /** Capture routes exclusively once anything took input away; it must also hear the return. */
   let inputExclusive = false;
   let acknowledgedPaused = false;
@@ -819,9 +819,9 @@ export function startPlaySession(options: {
   });
   const suppressGameInput = () => {
     // A `rendering` hold stops game time only: it never neutralizes held input or exits pointer lock.
-    const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused ||
+    const suppressed = inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused ||
       [...requestedPauses].some((reason) => reason !== "rendering");
-    const routed = options.mode === "simulate" || editorInputRoutingEnabled;
+    const routed = options.mode === "simulate";
     // Ordinary Play keeps shared routing until something actually takes input
     // away; from then on the exclusive capture is told when input returns.
     if (input && (routed || suppressed || inputExclusive)) {
@@ -1120,7 +1120,10 @@ export function startPlaySession(options: {
     });
     if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
   };
-  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: import("@haptic/core").RuntimeAssetSchedulerPriority = "gameplay") => {
+  const prepareSources = async (
+    prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false,
+    priority: import("@haptic/core").RuntimeAssetSchedulerPriority = "gameplay", warm = false,
+  ) => {
     let releaseRender: (() => void) | undefined;
     const scope = { guids: [...(prepared.required ?? [])], ready: false };
     preparedSourceScopes.set(prepared, scope);
@@ -1134,7 +1137,7 @@ export function startPlaySession(options: {
     };
     try {
       signal.throwIfAborted();
-      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, signal, priority });
+      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, warm, signal, priority });
       signal.throwIfAborted();
       await publishSourceBatch(() => prepared.getControls?.() ?? prepared.controls);
       signal.throwIfAborted();
@@ -1229,7 +1232,8 @@ export function startPlaySession(options: {
       onProgress: (progress) => {
         if (preloads.get(preloadId) === request) publishPreloadResult({ preloadId, success: true, progress: Math.min(0.9, progress * 0.9) });
       },
-    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, priority)).then((release) => {
+    // A preload is a latent spawn's (Spawn Actor, a Class load): it resolves with the actor's variants compiled.
+    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, priority, true)).then((release) => {
       if (preloads.get(preloadId) !== request) { release(); return; }
       request.release = release;
       publishAssetStates(assetGuids, "ready");
@@ -1485,6 +1489,7 @@ export function startPlaySession(options: {
     // Debug views are not activity and never reach the renderer.
     if (command.type === "debugRoster") { options.onDebugRoster?.(command); return; }
     if (command.type === "executionTrace") { options.onExecutionTrace?.(command); return; }
+    if (command.type === "debugVariables") { options.onDebugVariables?.(command); return; }
     if (command.type === "btState") { options.onBtState?.(command); return; }
     if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
     if (materialEditHost.receive(command)) return;
@@ -1606,6 +1611,7 @@ export function startPlaySession(options: {
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
     project: options.project,
+    thirdPartyNoticesUrl: editorThirdPartyNoticesUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
@@ -1861,6 +1867,8 @@ export function startPlaySession(options: {
     },
     observeFrames: (listener) => handle.observePerformance(listener),
     observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+    sampleMemory: () => ({ textureBytes: handle.resourceCache.accountedBytes(), geometryBytes: handle.accountedGeometryBytes() }),
+    observeLongTasks: observeBrowserLongTasks,
     runtimeOperation: (request) => diagnosticClient.request(request),
     captureFrame: async (signal) => {
       const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");
@@ -1894,24 +1902,6 @@ export function startPlaySession(options: {
       void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
     },
     setPauseReason,
-    setEditorInputSuppressed: async (suppressed) => {
-      const transition = ++inputTransition;
-      inputTransitionPending = true;
-      editorInputRoutingEnabled = true;
-      editorInputSuppressed = suppressed;
-      input.neutralize();
-      suppressGameInput();
-      try {
-        const result = await boundaryClient.request({ kind: "resetInput" });
-        if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
-      } finally {
-        // A failed reset still ends this transition; the open surface keeps its own hold.
-        if (transition === inputTransition && !stopped) {
-          inputTransitionPending = false;
-          suppressGameInput();
-        }
-      }
-    },
     setInputMode: async (mode) => {
       const transition = ++inputTransition;
       const previous = gameInputMode;

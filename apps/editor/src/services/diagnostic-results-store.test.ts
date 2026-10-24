@@ -1,9 +1,13 @@
 import { expect, it, vi } from "vitest";
 import type { PerformanceProfile } from "@haptic/debugger";
 import type { RenderFrameReport } from "@haptic/render";
-import { DiagnosticResultsStore, type DiagnosticSessionPorts } from "./diagnostic-results-store";
+import { DiagnosticResultsStore, PROFILE_HISTORY_BYTES, PROFILE_HISTORY_COUNT, type DiagnosticSessionPorts } from "./diagnostic-results-store";
 
 const options = { durationMs: 10_000, byteBudget: 16 * 1024 * 1024 };
+/** A recording with what the history reads: its length, frame count and retained bytes. */
+const recording = (durationMs = 1000, retainedBytes = 1024) =>
+  ({ kind: "haptic-performance", durationMs, retainedBytes, frames: { count: 60 } }) as unknown as PerformanceProfile;
+const capture = (renderFrameId = 1) => ({ version: 1, frame: { renderFrameId } }) as unknown as RenderFrameReport;
 function ports(overrides: Partial<DiagnosticSessionPorts> = {}): DiagnosticSessionPorts {
   return { mode: "play", startProfile: vi.fn(async () => {}), stopProfile: vi.fn(async () => null),
     captureFrame: vi.fn(async () => { throw new Error("Unavailable"); }), ...overrides };
@@ -24,13 +28,13 @@ it("opens old results without collecting and enforces Simulation capability in d
 it("keeps the latest recording when a frame is captured, and ignores a previous session's late collection", async () => {
   const store = new DiagnosticResultsStore();
   const first = store.bindSession(ports());
-  const profile = { kind: "haptic-performance" } as PerformanceProfile;
+  const profile = recording();
   first.publishProfile(profile);
   first.release();
   const second = store.bindSession(ports());
-  const report = { version: 1 } as RenderFrameReport;
+  const report = capture();
   second.publishFrame(report);
-  const later = { kind: "haptic-performance", durationMs: 1 } as PerformanceProfile;
+  const later = recording(1);
   first.publishProfile(later);
   first.publishError("late failure");
   expect(store.getSnapshot()).toMatchObject({ error: null, view: "frame", profile, frame: report });
@@ -39,8 +43,8 @@ it("keeps the latest recording when a frame is captured, and ignores a previous 
 
 it("opens a saved frame report beside the recording it does not replace", () => {
   const store = new DiagnosticResultsStore();
-  const profile = { kind: "haptic-performance" } as PerformanceProfile;
-  const report = { version: 1 } as RenderFrameReport;
+  const profile = recording();
+  const report = capture();
   store.importResult({ kind: "profile", profile });
   store.importResult({ kind: "frame", report });
   expect(store.getSnapshot()).toMatchObject({ view: "frame", profile, frame: report });
@@ -56,27 +60,42 @@ it("rejects concurrent operations and restores the idle UI after a transport fai
   lease.publishError("The player disconnected.");
   expect(store.getSnapshot()).toMatchObject({ active: null, busy: false, error: "The player disconnected." });
 });
-it("hands input to the result surface without changing session camera ownership", async () => {
-  const store = new DiagnosticResultsStore();
-  const setSurfaceOpen = vi.fn(async () => {});
-  store.bindSession(ports({ setSurfaceOpen }));
-  store.open(); await Promise.resolve(); store.close();
-  expect(setSurfaceOpen.mock.calls).toEqual([[true], [false]]);
+
+it("keeps the newest recordings within the count and byte limits, and shows any of them", () => {
+  const store = new DiagnosticResultsStore({ now: () => new Date(2026, 9, 23, 10, 4, 31) });
+  const lease = store.bindSession(ports());
+  const profiles = Array.from({ length: PROFILE_HISTORY_COUNT + 1 }, (_, index) => recording(1000 * (index + 1)));
+  for (const profile of profiles) lease.publishProfile(profile);
+  const history = store.getSnapshot().profiles;
+  expect(history.map((entry) => entry.value)).toEqual(profiles.slice(1).reverse());
+  expect(history[0]).toMatchObject({ name: "Recording 6 · 10:04:31", label: "Recording 6 · 10:04:31 · 6.00 s · 60 Frames" });
+  store.show(history[2]!.id);
+  expect(store.getSnapshot().profile).toBe(profiles[3]);
+  // A recording that fills the byte limit leaves only itself.
+  lease.publishProfile(recording(1000, PROFILE_HISTORY_BYTES - 512));
+  expect(store.getSnapshot().profiles).toHaveLength(1);
 });
-it("does not re-suppress input when the dialog closes during a game-input release", async () => {
+
+it("keeps the baseline while new recordings arrive, until it leaves the history", () => {
   const store = new DiagnosticResultsStore();
-  let release!: () => void;
-  const setSurfaceOpen = vi.fn(async () => {});
-  store.bindSession(ports({ releaseInput: () => new Promise<void>(resolve => { release = resolve; }), setSurfaceOpen }));
-  store.open(); store.close(); release();
-  await Promise.resolve();
-  expect(setSurfaceOpen.mock.calls).toEqual([[false]]);
+  const lease = store.bindSession(ports());
+  lease.publishProfile(recording());
+  const baseline = store.getSnapshot().profiles[0]!.id;
+  store.compareWith(baseline);
+  lease.publishProfile(recording(2000));
+  expect(store.getSnapshot().baselineId).toBe(baseline);
+  for (let index = 0; index < PROFILE_HISTORY_COUNT; index++) lease.publishProfile(recording());
+  expect(store.getSnapshot().baselineId).toBeNull();
 });
-it("preserves recording controls when input suppression reports an error", async () => {
+
+it("keeps a recording once when Stop also returns the one it published, and adds an opened file under its name", async () => {
   const store = new DiagnosticResultsStore();
-  store.bindSession(ports({ setSurfaceOpen: async () => { throw new Error("Input boundary failed."); } }));
+  const profile = recording();
+  const lease = store.bindSession(ports({ stopProfile: vi.fn(async () => { lease.publishProfile(profile); return profile; }) }));
   await store.startProfile(options);
-  store.open();
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  expect(store.getSnapshot()).toMatchObject({ active: "profile", busy: false, error: "Input boundary failed." });
+  await store.stopProfile();
+  expect(store.getSnapshot().profiles).toHaveLength(1);
+  store.importResult({ kind: "profile", profile: recording(2500) }, "baseline.babprofile.json");
+  expect(store.getSnapshot().profiles[0]?.label).toBe("baseline.babprofile.json · 2.50 s · 60 Frames");
+  expect(store.getSnapshot().profiles).toHaveLength(2);
 });

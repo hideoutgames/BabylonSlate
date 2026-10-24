@@ -86,7 +86,7 @@ async function streamingProject() {
   }));
 
   const scene = createDefaultScene();
-  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentSource = "none";
   scene.settings.shadowOverrides = { enabled: false };
   scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
   scene.actors[0]!.transform = { ...identitySerializedTransform(), position: [1.5, 1, -15] };

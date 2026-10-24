@@ -162,6 +162,19 @@ export const inputNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "input.vibrateDevice",
+    title: "Vibrate Device",
+    category: "input",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("durationMs", "Duration", "in", FLOAT, "data", true, 100),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.vibrateDevice?.(${ctx.input("durationMs")});`);
+    },
+  },
+  {
     id: "input.getCursorPosition",
     title: "Get Cursor Position",
     category: "input",

@@ -155,7 +155,7 @@ import {
   type GraphCommand,
   type GraphKeybinds,
 } from "./graph-keybinds";
-import { canBreakOnNode, type GraphBreakpoints } from "./graph-breakpoints";
+import { nodeCanBreak, type GraphBreakpoints } from "./graph-breakpoints";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -230,6 +230,11 @@ export interface GraphEditorProps {
   /** Defaults to `!readOnly`. Behaviour trees pass false during Play. */
   nodesDraggable?: boolean;
   toolbarExtra?: ReactNode;
+  /**
+   * Host controls in an island at the bottom centre of the canvas, shown on a read-only canvas too
+   * (the stepping control while a Simulation is paused).
+   */
+  overlay?: ReactNode;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
@@ -713,6 +718,7 @@ function GraphEditorCanvas({
   defaultEdgeOptions = { type: "default" },
   nodesDraggable: nodesDraggableProp,
   toolbarExtra,
+  overlay,
   selectedAttachmentId = null,
   onAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
@@ -2218,7 +2224,8 @@ function GraphEditorCanvas({
         }
         case "toggleBreakpoint": {
           if (!breakpoints) return false;
-          const targets = graphStateRef.current.nodes.filter((node) => node.selected && canBreakOnNode(node.data));
+          const targets = graphStateRef.current.nodes.filter((node) =>
+            node.selected && nodeCanBreak(breakpoints, node.id, node.data));
           for (const node of targets) breakpoints.toggle(node.id);
           return targets.length > 0;
         }
@@ -3071,6 +3078,13 @@ function GraphEditorCanvas({
           />
         </ReactFlow>
         <GraphViewportControls onFitGraph={fitGraph} />
+        {overlay ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center px-14">
+            <div className="pointer-events-auto toolbar-island" data-graph-overlay="" data-testid="graph-overlay">
+              {overlay}
+            </div>
+          </div>
+        ) : null}
         {runTrace ? <GraphRunOverlay root={wrapperRef} trace={runTrace} graph={runGraph} /> : null}
         {notice === null ? null : (
           <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">

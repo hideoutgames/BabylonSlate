@@ -168,6 +168,44 @@ describe("script host runs compiled graphs", () => {
       expect(commands).toContainEqual(expect.objectContaining({ type: "log", message: expected }));
     } finally { runtime.stop(); }
   });
+  it.each([
+    ["reads the game's notices", "https://game.test/legal/THIRD-PARTY-NOTICES.txt", ["Third-party notices"]],
+    ["fails without a notices file", undefined, ["Third-party notices are not available here."]],
+  ])("Get Third-Party Notices %s", async (_label, thirdPartyNoticesUrl, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "notices", kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "notices", "project.getThirdPartyNotices"),
+        node(registry, "ok", "debug.log"),
+        node(registry, "failed", "debug.log"),
+      ],
+      edges: [
+        edge("e-begin", "begin", "execOut", "notices", "execIn"),
+        edge("e-ok", "notices", "completed", "ok", "execIn"),
+        edge("e-failed", "notices", "failed", "failed", "execIn"),
+        edge("v-text", "notices", "notices", "ok", "message"),
+        edge("v-error", "notices", "error", "failed", "message"),
+      ],
+    };
+    const fetchMock = vi.fn(async () => new Response("Third-party notices\n"));
+    vi.stubGlobal("fetch", fetchMock);
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", ...(thirdPartyNoticesUrl ? { thirdPartyNoticesUrl } : {}) }, command => commands.push(command));
+    try {
+      await runtime.loadScripts([toScript(graph, registry, "Notices", "notices")]);
+      runtime.spawnScriptedActor({ classId: "Notices" });
+      runtime.start();
+      runtime.tick();
+      const logs = () => commands.flatMap(command => command.type === "log" ? [command.message.trim()] : []);
+      await vi.waitFor(() => expect(logs()).toEqual(expected));
+      expect(fetchMock).toHaveBeenCalledTimes(thirdPartyNoticesUrl ? 1 : 0);
+    } finally {
+      runtime.stop();
+      vi.unstubAllGlobals();
+    }
+  });
   it("ticks an actor scripted from the node catalog", async () => {
     const registry = createDefaultNodeRegistry();
     const graph = movingActorGraph(registry);

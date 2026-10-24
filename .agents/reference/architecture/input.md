@@ -64,4 +64,5 @@ Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver
 - Play's worker host stamps samples with the latest published snapshot `tickIndex`, never the throttled stats command or wall clock.
 - `InputRingBuffer(512)` in capture and runtime. At capacity it coalesces the oldest continuous sample only when no resolver threshold edge (0 and 0.5) is lost; edges may grow to 4× capacity; releases are never dropped.
 - `setGamepadRumble` clamps intensity to 0..1; Play and player use the pad's `vibrationActuator` `dual-rumble`.
+- `vibrateDevice` clamps its duration to 0..10 000 ms (the browsers' cap) and `create-engine` hands it to `navigator.vibrate` through `applyDeviceVibration` ([`packages/render/src/device-vibration.ts`](../../../packages/render/src/device-vibration.ts)); a missing, refusing or throwing API is ignored. Shipped games are web exports, so iOS (no Vibration API) never vibrates. The Android app declares `VIBRATE` so its WebView can.
 - Input events belong in ticking runtime class graphs, not functions or animation rules.

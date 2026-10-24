@@ -308,6 +308,15 @@
   background: var(--graph-state-selected);
 }
 
+/* A breakpoint rings the badge, so selection and hover still show; hollow-looking while disabled. */
+.anim-transition-badge[data-breakpoint] {
+  box-shadow: 0 0 0 2px var(--graph-canvas), 0 0 0 4px var(--destructive);
+}
+
+.anim-transition-badge[data-breakpoint="disabled"] {
+  box-shadow: 0 0 0 2px var(--graph-canvas), 0 0 0 4px color-mix(in oklch, var(--destructive) 45%, transparent);
+}
+
 :where(.touch-ui) .anim-transition-badge::before {
   inset: -17px;
 }

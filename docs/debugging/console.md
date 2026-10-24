@@ -36,7 +36,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `quality postprocessing` | tier or `reset` | Post-processing quality. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |
 | `renderpath` | `auto`, `forward`, `clusteredForward` or `reset` | Requests a render path for the session. No argument prints the requested and actual path and the GPU backend. |  |
-| `fixedlights` | `on`, `off`, `multiply`, `branch` or `reset` | Turns fixed-shape lighting on or off for the session. With it on, built-in materials compile their shaders once for the scene's lights, so a light turning on or off or changing places does not recompile them. `multiply` and `branch` turn it on and choose how shaders skip unused light slots (`multiply` is the default). No argument prints the current state; Play restores the editor's state when it stops. |  |
+| `fixedlights` | `on`, `off`, `multiply`, `branch` or `reset` | Turns fixed-shape lighting on or off for the session. With it on, built-in materials compile their shaders once for the scene's lights, so a light turning on or off or changing places does not recompile them. When they do recompile (for example for more lights than they were built for), the view keeps its last image until the new shaders are ready instead of drawing the old ones. `multiply` and `branch` turn it on and choose how shaders skip unused light slots (`multiply` is the default). No argument prints the current state; Play restores the editor's state when it stops. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |
 | `quit` |  | Stops the session. Play and Preview Build close and return to the editor; an exported game stops running. |  |
@@ -71,6 +71,11 @@ The game keeps running while the console is open, and pressing the game does not
 | `dumplog` |  | Prints the session log. | Yes |
 | `snapshot start` |  | Starts a trace recording. See [Profiler](profiler.md#trace-recording). | Yes |
 | `snapshot stop` |  | Stops the trace recording. | Yes |
+| `profile start` |  | Starts a performance recording, like **Record Performance** in the [Profiler](profiler.md#record-performance). Console window only. |  |
+| `profile stop` |  | Stops the performance recording and opens its **Summary**. Console window only. |  |
+| `capture frame` |  | Captures the render stages of the next frame, like **Capture Frame**. Console window only. |  |
+
+**Console window only** commands work when you type them in the console window during Play or Preview Build. The editor runs them, so **Execute Console Command** and exported games do not have them.
 
 Actor names must match exactly and belong to one actor; use the GUID when names repeat.
 

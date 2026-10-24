@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   DEFAULT_EDITOR_DROP_DISTANCE,
   DEFAULT_TRACE_BYTE_BUDGET,
+  DEFAULT_TRACES_KEPT,
+  MAX_TRACES_KEPT,
   normalizeProjectAppearance,
 } from "@haptic/core";
 
@@ -162,6 +164,11 @@ export const engineSettingsSchema = z.object({
     // Leave headroom for whole-file JSON and native storage's base64 strings.
     return Math.min(256 * 1024 * 1024, Math.max(1024 * 1024, Math.round(value)));
   }, z.number().int().min(1024 * 1024).max(256 * 1024 * 1024).default(DEFAULT_TRACE_BYTE_BUDGET)),
+  /** Recorded traces kept per project on this device; recording another deletes the oldest beyond it. */
+  tracesKept: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_TRACES_KEPT, Math.max(1, Math.round(value)));
+  }, z.number().int().min(1).max(MAX_TRACES_KEPT).default(DEFAULT_TRACES_KEPT)),
   viewportFrameCap: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_VIEWPORT_FRAME_CAP, Math.max(MIN_VIEWPORT_FRAME_CAP, value));

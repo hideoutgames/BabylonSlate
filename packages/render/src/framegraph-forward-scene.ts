@@ -34,6 +34,8 @@ import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
+import { isRevealPending, revealRound } from "./reveal-pending";
+import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -114,9 +116,16 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
 
 /** Native camera frustum calculation reads the currently bound target's aspect. */
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
+  /** The output list without hidden meshes when culling is off (its output is then the input list itself). */
+  private readonly shown: AbstractMesh[] = [];
+
   override _execute(): void {
     const target = this.camera.outputRenderTarget?.renderTarget;
-    if (!target) return super._execute();
+    if (!target) {
+      super._execute();
+      this.leaveOutHidden();
+      return;
+    }
     const engine = this.camera.getEngine();
     // Every preceding graph render pass restores the backbuffer. Bind only for
     // the official cull task, without clearing or invoking RTT render observers.
@@ -128,6 +137,27 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     } finally {
       engine.restoreDefaultFramebuffer();
     }
+    this.leaveOutHidden();
+  }
+
+  /**
+   * A mesh whose first variant is still compiling (`isRevealPending`) is not drawn in any pass this list feeds (the
+   * object passes and their depth pre-passes, geometry and spatial effects, the water split). The probes walk the
+   * input list, so they still find it and reveal it on its first ready frame.
+   */
+  private leaveOutHidden(): void {
+    const output = this.outputObjectList.meshes;
+    if (!output?.some(isRevealPending)) return;
+    if (output === this.objectList.meshes) {
+      const shown = this.shown;
+      shown.length = 0;
+      for (const mesh of output) if (!isRevealPending(mesh)) shown.push(mesh);
+      this.outputObjectList.meshes = shown;
+      return;
+    }
+    let kept = 0;
+    for (const mesh of output) if (!isRevealPending(mesh)) output[kept++] = mesh;
+    output.length = kept;
   }
 }
 
@@ -195,8 +225,9 @@ export class ForwardSceneFrameGraph {
    * probe again each frame until every swap is drawn (`recheckVariantSwaps`); a probe that tolerates none re-probes.
    */
   private variantSwaps = false;
-  /** Whether the latest scene or graph probe found a swap. */
+  /** Whether the latest scene or graph probe found a swap, and whether it tolerated swaps (read inside its scope). */
   private probeSwapped = false;
+  private probeTolerated = false;
   /** The readiness revision and Engine frame of the last passing probe that tolerated a swap. */
   private swapProbe: { revision: number; frame: number } | undefined;
   /** Only outline membership or style changed; the prepared graph's other tasks stay admitted. */
@@ -480,7 +511,8 @@ export class ForwardSceneFrameGraph {
   private markGraphProbed(): void {
     this.readinessDirtyFlag = false;
     this.variantSwaps = this.probeSwapped;
-    this.swapProbe = this.probeSwapped && variantSwapsTolerated()
+    // A preparation marks its probe after the probe's tolerance scope closed.
+    this.swapProbe = this.probeSwapped && this.probeTolerated
       ? { revision: this.readinessRevision, frame: this.scene.getEngine().frameId }
       : undefined;
     this.outlineDirtyFlag = false;
@@ -659,6 +691,7 @@ export class ForwardSceneFrameGraph {
     if (unavailable) return { path: "frameGraph", reason: unavailable, ready: false };
     this.syncMembership();
     this.syncShadowAdmission(camera);
+    this.restaleChangedShadows();
     this.admittedCamera = camera;
     this.admittedRevision = this.readinessRevision;
     this.admittedChecks = this.strictChecks;
@@ -671,7 +704,6 @@ export class ForwardSceneFrameGraph {
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      this.shadows?.needsPreparation() ||
       this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
@@ -700,8 +732,7 @@ export class ForwardSceneFrameGraph {
     const reason =
       this.unsupported(camera) ??
       this.failure ??
-      (this.shadows?.needsPreparation() ||
-      this.clustered?.needsPreparation(camera)
+      (this.clustered?.needsPreparation(camera)
         ? "Lighting allocation changes require FrameGraph preparation."
         : undefined) ??
       (this.pending ||
@@ -716,6 +747,7 @@ export class ForwardSceneFrameGraph {
     if (reason) return { path: "frameGraph", reason, rendered: false };
 
     const graph = this.graph!;
+    this.restaleChangedShadows();
     this.assignCamera(camera);
     this.syncSceneInputs();
     if (!this.probeDirty()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
@@ -1024,6 +1056,7 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        this.objects.warmsPipelines = !this.auxiliary;
         // Clustered lighting rejects the copy; checked only here, since the
         // graph already re-plans when the cluster target changes.
         const waterScale = waterDemand > 0 ? waterSceneCopyScale(scene, camera) : 0;
@@ -1285,6 +1318,7 @@ export class ForwardSceneFrameGraph {
    */
   private collectingEffects<T>(probe: () => T): T {
     const swaps = variantSwapCount();
+    this.probeTolerated = variantSwapsTolerated();
     try {
       return collectEffectRequests(this.scene.getEngine(), this.requestedEffects, probe);
     } finally {
@@ -1293,8 +1327,16 @@ export class ForwardSceneFrameGraph {
     }
   }
 
+  /**
+   * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first wait
+   * for their pipelines where those are deferred (`variant-pipeline-warmup.ts`), strict ones included.
+   */
+  warmsVariants = false;
+
+  /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    return this.collectingEffects(() => this.probeReady());
+    return withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+      () => revealRound(() => this.collectingEffects(() => this.probeReady())));
   }
 
   private probeReady(): boolean {
@@ -1371,6 +1413,14 @@ export class ForwardSceneFrameGraph {
       else break;
     }
     return ready;
+  }
+
+  /**
+   * A changed shadow set (a map allocated, released or moved, or changed during the last frame) needs no new tasks:
+   * the next probe binds it to the receivers, and a steady frame keeps drawing while a new map's casters compile.
+   */
+  private restaleChangedShadows(): void {
+    if (this.shadows?.needsPreparation()) this.markReadinessDirty();
   }
 
   /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */

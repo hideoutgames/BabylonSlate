@@ -20,7 +20,7 @@ import { normalizeSceneStreamingProperties } from "./scene-streaming";
  * (missing keys normalize to true). `grid.showGrid` is additive (missing keys
  * normalize to true so older scenes keep the editor grid). `showNavmesh` is
  * additive (missing keys normalize to false). Fog color/start/end,
- * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
+ * `environmentTextureGuid`, `environmentSource`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
  * component ids). v4 distinguishes automatic shadow capacity from a saved
  * manual local-light limit. Fog mode/density are additive on v4; missing mode
@@ -28,6 +28,10 @@ import { normalizeSceneStreamingProperties } from "./scene-streaming";
  */
 
 export type ViewportMode = "3d" | "2d";
+
+/** Where image-based lighting comes from. A missing source follows `environmentTextureGuid`. */
+export type EnvironmentSource = "none" | "skybox" | "texture";
+export const ENVIRONMENT_SOURCES: readonly EnvironmentSource[] = ["none", "skybox", "texture"];
 
 export type SceneFogMode = "linear" | "exponential" | "exponentialSquared";
 
@@ -153,7 +157,9 @@ export interface SceneSettings {
   /** Linear fog distances in world units; end must be greater than start. */
   fogStart: number;
   fogEnd: number;
-  /** Optional IBL cube texture asset guid. */
+  /** IBL source: none, the scene's Skybox, or `environmentTextureGuid`. */
+  environmentSource: EnvironmentSource;
+  /** IBL cube texture asset guid; used only when `environmentSource` is `"texture"`, kept otherwise. */
   environmentTextureGuid: string | null;
   environmentLighting?: EnvironmentLightingOverrides;
   /** Default Camera actor id; both ids required to resolve. */
@@ -247,6 +253,7 @@ export function createDefaultSceneSettings(
     fogDensity: 0.01,
     fogStart: 0,
     fogEnd: 100,
+    environmentSource: "none",
     environmentTextureGuid: null,
     environmentLighting: {},
     mainCameraActorId: null,
@@ -392,6 +399,7 @@ function normalizeComponent(
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
+      source.classId === "ReflectionProbeComponent" ? { ...parseReflectionProbeProperties(source.properties) } :
       source.classId === "DeformerComponent" ? { ...parseDeformerProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
@@ -510,6 +518,25 @@ function withResolvedFolderIds(
   );
 }
 
+function normalizeEnvironmentSource(
+  value: unknown,
+  textureGuid: unknown,
+): Pick<SceneSettings, "environmentSource" | "environmentTextureGuid"> {
+  const environmentTextureGuid = asNullableString(textureGuid);
+  const environmentSource = ENVIRONMENT_SOURCES.includes(value as EnvironmentSource)
+    ? (value as EnvironmentSource)
+    : environmentTextureGuid ? "texture" : "none";
+  return { environmentSource, environmentTextureGuid };
+}
+
+/** The environment texture a scene draws with, or null when it uses none or its Skybox. */
+export function sceneEnvironmentTextureGuid(
+  settings: Pick<SceneSettings, "environmentTextureGuid"> & { environmentSource?: EnvironmentSource },
+): string | null {
+  // A source missing from unnormalized data follows the guid, as normalization does.
+  return (settings.environmentSource ?? "texture") === "texture" ? settings.environmentTextureGuid : null;
+}
+
 function asNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
@@ -596,7 +623,7 @@ export function normalizeSceneSettings(
     fogEnabled: source.fogEnabled === true,
     fogColor: asNumberTuple3(source.fogColor, defaults.fogColor),
     ...normalizeSceneFogSettings(source),
-    environmentTextureGuid: asNullableString(source.environmentTextureGuid),
+    ...normalizeEnvironmentSource(source.environmentSource, source.environmentTextureGuid),
     environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
     ...normalizeMainCamera(
       source.mainCameraActorId,
@@ -836,6 +863,7 @@ export function wouldCreateComponentCycle(
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
 import { parseFogVolumeProperties } from "./fog-volume";
+import { parseReflectionProbeProperties } from "./reflection-probe";
 import { parseOutlineProperties } from "./outline-component";
 import { parseDeformerProperties } from "./deformer-component";
 import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";

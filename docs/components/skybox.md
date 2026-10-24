@@ -20,7 +20,7 @@ Select an actor, then choose **Add Component > Rendering > Skybox**. You can als
 - The Skybox follows its actor's position, rotation and scale. Rotate the actor to turn the sky.
 - It always draws behind the scene, even beyond the camera's Far Clip.
 - It cannot be picked in the viewport. Select it in the **Outliner**. The default Skybox is locked, so unlock it first.
-- It is a backdrop only. It does not light the scene, cast shadows or receive fog.
+- It does not cast shadows or receive fog. When the scene's **Environment Source** is **Skybox** (the default in new 3D scenes), it also provides [environment lighting](../graphics/lighting.md#environment-lighting).
 - To cut six face Textures from a single image, use [Skybox Creator](../assets/skybox-creator.md).
 
 ## Related

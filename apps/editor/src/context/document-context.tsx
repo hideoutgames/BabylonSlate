@@ -35,7 +35,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@haptic/core";
-import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
+import { ASSET_DOCUMENT_KINDS, createDocumentRef, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import {
   appendJournalLines,
   discardSealedJournal,
@@ -67,7 +67,10 @@ import {
   type TilemapPayload,
   type TilesetPayload,
   newAssetGuid,
+  listTraceDocuments,
   playerFilesHaveKtx2Transcoder,
+  pruneTraceDocuments,
+  type TraceDocumentEntry,
 } from "@haptic/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -440,8 +443,15 @@ interface DocumentContextValue {
   openDocument: (ref: DocumentRef) => Promise<void>;
   /** Loads a canonical working document without creating or activating a tab. */
   ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
-  /** Spill a finished Play recorder payload and open the read-only Trace tab. */
-  openRecordedTrace: (payload: TracePayload) => Promise<void>;
+  /**
+   * Spill a finished Play recorder payload and open the read-only Trace tab. With `keep`, older traces
+   * beyond that many are then deleted, except ones open in a tab.
+   */
+  openRecordedTrace: (payload: TracePayload, options?: { keep?: number }) => Promise<void>;
+  /** The project's recorded traces, newest first. */
+  listRecentTraces: () => Promise<TraceDocumentEntry[]>;
+  /** Open a recorded trace again in a read-only Trace tab. */
+  openTraceDocument: (path: string) => Promise<void>;
   pendingExclusiveScene: DocumentRef | null;
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
@@ -2815,7 +2825,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const openRecordedTrace = useCallback(
-    async (payload: TracePayload) => {
+    async (payload: TracePayload, options: { keep?: number } = {}) => {
       const guid = projectService.guid;
       if (!guid) return;
       const derived = await ensureDerived();
@@ -2829,6 +2839,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentGuid: newAssetGuid(),
       });
       await finishOpenDocument(spilled.ref);
+      if (options.keep === undefined) return;
+      const open = new Set(
+        [...documentService.getState().openDocuments.values()]
+          .flatMap((document) => (document.ref.kind === "trace" ? [document.ref.path] : [])),
+      );
+      open.add(spilled.path);
+      await pruneTraceDocuments(derived, guid, options.keep, open);
+    },
+    [documentService, ensureDerived, finishOpenDocument, projectService],
+  );
+
+  const listRecentTraces = useCallback(async () => {
+    const guid = projectService.guid;
+    return guid ? listTraceDocuments(await ensureDerived(), guid) : [];
+  }, [ensureDerived, projectService]);
+
+  const openTraceDocument = useCallback(
+    async (path: string) => {
+      // A Trace tab reads its document from the derived storage.
+      projectService.setDerivedStorage(await ensureDerived());
+      await finishOpenDocument(createDocumentRef("trace", path));
     },
     [ensureDerived, finishOpenDocument, projectService],
   );
@@ -3912,6 +3943,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       openDocument,
       ensureAssetDocument,
       openRecordedTrace,
+      listRecentTraces,
+      openTraceDocument,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
@@ -4026,6 +4059,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       openDocument,
       ensureAssetDocument,
       openRecordedTrace,
+      listRecentTraces,
+      openTraceDocument,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,

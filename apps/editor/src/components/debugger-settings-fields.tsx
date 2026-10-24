@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DisclosureSection, NumberField } from "@haptic/editor-kit";
 import type { EngineSettings } from "@haptic/vfs";
+import { MAX_TRACES_KEPT } from "@haptic/core";
 import { Switch } from "@haptic/ui/components/switch";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 
@@ -46,17 +47,17 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         <Switch id="setting-keep-simulation-changes" checked={defaults.keepSimulationChanges}
           onCheckedChange={(keepSimulationChanges) => update({ keepSimulationChanges })} />
       </Field>
+    </FieldSet>
+    <FieldSet>
+      <FieldLegend>Session</FieldLegend>
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-pause-simulation-on-errors">Pause On Errors</FieldLabel>
-          <FieldDescription>Applies to the next Simulation session. The first time a node throws, logs an Error or fails an Assert, the Simulation pauses at the end of that tick and opens the graph at the node. Later errors from the same node only add to its count in the session report.</FieldDescription>
+          <FieldDescription>Applies to the next Play or Simulation session. The first time a node throws, logs an Error or fails an Assert, the game pauses at the end of that tick and the editor opens the graph at the node; Play hides the game until you choose Resume. Later errors from the same node only add to its count in the session report.</FieldDescription>
         </FieldContent>
         <Switch id="setting-pause-simulation-on-errors" checked={defaults.pauseSimulationOnErrors}
           onCheckedChange={(pauseSimulationOnErrors) => update({ pauseSimulationOnErrors })} />
       </Field>
-    </FieldSet>
-    <FieldSet>
-      <FieldLegend>Session</FieldLegend>
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-pause-on-play">Pause On Play</FieldLabel>
@@ -98,6 +99,14 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
           value={Math.round(settings.traceByteBudget / (1024 * 1024))}
           onChange={(mebibytes) => void onChange({ traceByteBudget: Math.round(mebibytes) * 1024 * 1024 })} />
         <FieldDescription>Applies to the next Play or Preview Build session. Bounds serialized trace data, not browser memory. Oldest complete frames are discarded when full; a single oversized frame stops recording and preserves earlier complete frames.</FieldDescription>
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="setting-traces-kept">Traces Kept</FieldLabel>
+        <NumberField id="setting-traces-kept" min={1} max={MAX_TRACES_KEPT} step={1}
+          className="min-h-[var(--chrome-row,28px)]" data-testid="setting-traces-kept"
+          value={settings.tracesKept}
+          onChange={(tracesKept) => void onChange({ tracesKept: Math.round(tracesKept) })} />
+        <FieldDescription>Recorded traces kept for each project on this device; Debug &gt; Recent Traces lists them. Recording another deletes the oldest beyond this number, except traces open in a tab.</FieldDescription>
       </Field>
     </FieldSet>
   </>;

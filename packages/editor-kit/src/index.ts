@@ -170,6 +170,18 @@ export {
   type ValueModeOption,
 } from "./value-mode-field";
 export { CurveField, type CurveFieldProps } from "./curve-field";
+export { TimelineChart, type TimelineChartProps, type TimelineSelection } from "./timeline-chart";
+export {
+  timelineBucket,
+  timelineHit,
+  timelinePeaks,
+  timelineScale,
+  timelineTotals,
+  type TimelineDomain,
+  type TimelineMarker,
+  type TimelineSegment,
+  type TimelineTrack,
+} from "./timeline-chart-model";
 export { GradientField, type GradientFieldProps } from "./gradient-field";
 export {
   sampleCurve,

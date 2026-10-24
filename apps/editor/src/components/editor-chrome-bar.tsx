@@ -89,7 +89,7 @@ import {
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
-import { SimulationToolbarControls } from "./simulation-toolbar-controls";
+import { PlayBreakToolbarControls, SimulationToolbarControls } from "./simulation-toolbar-controls";
 import { GraphDebugInstanceSelect } from "./graph-debug-instance-select";
 import { documentGraphDebugTarget } from "../lib/graph-debug-target";
 import { useValidation } from "../context/validation-context";
@@ -281,6 +281,8 @@ export function EditorChromeBar({
     collectPlayPreviewScripts,
     activateDockPanel,
     getOpenDocuments,
+    listRecentTraces,
+    openTraceDocument,
   } = useDocumentActions();
   // Tabs re-render for opens, closes, moves, labels and dirty flags, not for
   // each content edit.
@@ -327,6 +329,8 @@ export function EditorChromeBar({
   // A running Simulation turns Simulate into Stop with its controls beside it.
   const simulationRunning = sessionState.mode === "simulate" && !sessionState.quarantined;
   const simulationControls = useSimulationControls();
+  // Editor Play stopped at a breakpoint or an error shows the editor with Resume and Stop.
+  const playBreakControls = sessionState.mode === "play" && simulationControls?.mode === "play" ? simulationControls : null;
   const breakpointStop = useBreakpointStop(simulationControls?.stoppedAt);
   const graphDebug = useGraphDebugStore();
   const { errorCount, setDiagnostics } = useValidation();
@@ -369,17 +373,18 @@ export function EditorChromeBar({
   );
   const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
-  // A running Simulation debugs the focused graph against the live objects that run it: a Class's
-  // instances, or the components that run a Behaviour Tree or Animation Graph.
+  // A running Simulation, or stopped Play, debugs the focused graph against the live objects that run
+  // it: a Class's instances, or the components that run a Behaviour Tree or Animation Graph. Play that
+  // runs behind its view observes nothing.
   const activeRef = visibleDocuments.find((doc) => doc.id === activeDocumentId)?.ref;
   const activeRefKind = activeRef?.kind;
   const activeRefPath = activeRef?.path;
   const debugTarget = useMemo(() => {
     void registryEpoch;
-    return simulationRunning && activeRefKind !== undefined && activeRefPath !== undefined
+    return (simulationRunning || playBreakControls) && activeRefKind !== undefined && activeRefPath !== undefined
       ? documentGraphDebugTarget({ kind: activeRefKind, path: activeRefPath }, assetRegistry)
       : null;
-  }, [simulationRunning, activeRefKind, activeRefPath, assetRegistry, registryEpoch]);
+  }, [simulationRunning, playBreakControls, activeRefKind, activeRefPath, assetRegistry, registryEpoch]);
   useEffect(() => {
     graphDebug?.setTarget(debugTarget);
   }, [graphDebug, debugTarget]);
@@ -500,6 +505,12 @@ export function EditorChromeBar({
           setToolsOpen(false);
           setFeatureTestCheckOpen(true);
         } : undefined}
+        listRecentTraces={listRecentTraces}
+        recentTraceLimit={appSettings.tracesKept}
+        onOpenTrace={(path) => {
+          setToolsOpen(false);
+          void openTraceDocument(path);
+        }}
       />
     </DropdownMenu>
   );
@@ -995,6 +1006,24 @@ export function EditorChromeBar({
                   stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
                   onOpenStop={() => {
                     const cause = simulationControls?.stoppedAt;
+                    if (cause) void openSessionSource({ severity: "info", ...cause });
+                  }}
+                />
+                {debugTarget ? (
+                  <ToolbarOverflowItem id="debug-instance">
+                    <GraphDebugInstanceSelect />
+                  </ToolbarOverflowItem>
+                ) : null}
+              </>
+            ) : playBreakControls ? (
+              <>
+                <PlayBreakToolbarControls
+                  controls={playBreakControls}
+                  stopping={sessionState.lifecycle === "stopping"}
+                  onStop={() => { void sessionOwner.stop(); }}
+                  stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
+                  onOpenStop={() => {
+                    const cause = playBreakControls.stoppedAt;
                     if (cause) void openSessionSource({ severity: "info", ...cause });
                   }}
                 />

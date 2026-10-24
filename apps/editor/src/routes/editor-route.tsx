@@ -28,6 +28,7 @@ import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
 import { TagDocumentsProvider } from "../context/tag-documents-provider";
 import { GraphPinDefaultsProvider } from "../context/graph-pin-defaults-provider";
 import { BreakpointsProvider } from "../context/breakpoints-context";
+import { WatchesProvider } from "../context/watches-context";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlayProvider, usePlay } from "../context/play-context";
 import { KeybindProvider } from "../context/keybind-context";
@@ -579,22 +580,24 @@ export default function EditorRoute({
             <GraphPinDefaultsProvider>
               <DocumentValidationProvider>
                 <BreakpointsProvider>
-                  <PlayProvider>
-                    <MaterialRenderControlProvider>
-                      <EditorUtilityRuntime />
-                      <EditorExtensionsRuntime />
-                      <TestAudioHostStats />
-                      <TestParticleHostStats />
-                      <ModelThumbnailCaptureHost />
-                      <ProjectSearchProvider>
-                        <PlayAwareKeybinds>
-                          {gallery
-                            ? <ComponentGallery />
-                            : profileRegion("editor-layout", <EditorLayout />)}
-                        </PlayAwareKeybinds>
-                      </ProjectSearchProvider>
-                    </MaterialRenderControlProvider>
-                  </PlayProvider>
+                  <WatchesProvider>
+                    <PlayProvider>
+                      <MaterialRenderControlProvider>
+                        <EditorUtilityRuntime />
+                        <EditorExtensionsRuntime />
+                        <TestAudioHostStats />
+                        <TestParticleHostStats />
+                        <ModelThumbnailCaptureHost />
+                        <ProjectSearchProvider>
+                          <PlayAwareKeybinds>
+                            {gallery
+                              ? <ComponentGallery />
+                              : profileRegion("editor-layout", <EditorLayout />)}
+                          </PlayAwareKeybinds>
+                        </ProjectSearchProvider>
+                      </MaterialRenderControlProvider>
+                    </PlayProvider>
+                  </WatchesProvider>
                 </BreakpointsProvider>
               </DocumentValidationProvider>
             </GraphPinDefaultsProvider>

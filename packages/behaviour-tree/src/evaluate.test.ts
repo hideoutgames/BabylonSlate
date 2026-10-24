@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { types } from "node:util";
 import {
   createDefaultBehaviourTree,
   evaluateBehaviourTree,
@@ -1418,5 +1419,86 @@ describe("per-tick decorator scans", () => {
       return reads;
     };
     expect(decoratorReadsPerTick(400)).toBe(decoratorReadsPerTick(8));
+  });
+});
+
+describe("evaluation breakpoints", () => {
+  function breakpointsOn(...ids: string[]) {
+    const hits: string[] = [];
+    return {
+      hits,
+      breakpoints: {
+        has: (id: string) => ids.includes(id),
+        hit: (id: string, event: "started" | "failed") => hits.push(`${id} ${event}`),
+      },
+    };
+  }
+
+  it("reports a node with a breakpoint when it starts and when it fails, but not when it resumes", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 100 };
+    const doc = tree([
+      node("root", "selector", "bt.composite.selector", ["no", "seq"]),
+      node("no", "task", "bt.task.fail"),
+      node("seq", "sequence", "bt.composite.sequence", ["wait"]),
+      wait,
+    ], "root");
+    const first = breakpointsOn("no", "seq", "wait");
+    const running = evaluateBehaviourTree(doc, null, 0.05, { breakpoints: first.breakpoints });
+    expect(first.hits).toEqual(["no started", "no failed", "seq started", "wait started"]);
+
+    const second = breakpointsOn("no", "seq", "wait");
+    evaluateBehaviourTree(doc, running, 0.01, { breakpoints: second.breakpoints });
+    expect(second.hits).toEqual([]);
+  });
+
+  it("reports failures from a decorator, a Time Limit and an abort", () => {
+    const blocked = node("blocked", "task", "bt.task.succeed");
+    blocked.decorators.push({
+      id: "need", classId: "bt.decorator.blackboardIsSet", abortMode: "none", observedKeys: ["flag"], properties: { key: "flag" },
+    });
+    const decorated = breakpointsOn("blocked");
+    evaluateBehaviourTree(tree([node("root", "sequence", "bt.composite.sequence", ["blocked"]), blocked], "root"), null, 1 / 60, {
+      blackboard: {}, breakpoints: decorated.breakpoints,
+    });
+    expect(decorated.hits).toEqual(["blocked failed"]);
+
+    const limited = node("wait", "task", "bt.task.wait");
+    limited.properties = { durationMs: 10_000 };
+    limited.decorators.push({
+      id: "limit", classId: "bt.decorator.timeLimit", abortMode: "none", observedKeys: [], properties: { durationMs: 80 },
+    });
+    const limitDoc = tree([node("root", "sequence", "bt.composite.sequence", ["wait"]), limited], "root");
+    const timed = breakpointsOn("wait");
+    const started = evaluateBehaviourTree(limitDoc, null, 0.05, { breakpoints: timed.breakpoints });
+    expect(timed.hits).toEqual(["wait started"]);
+    evaluateBehaviourTree(limitDoc, started, 0.05, { breakpoints: timed.breakpoints });
+    expect(timed.hits).toEqual(["wait started", "wait failed"]);
+
+    const guarded = node("wait", "task", "bt.task.wait");
+    guarded.properties = { durationMs: 10_000 };
+    guarded.decorators.push({
+      id: "alive", classId: "bt.decorator.blackboardIsSet", abortMode: "self", observedKeys: ["ok"], properties: { key: "ok" },
+    });
+    const guardDoc = tree([node("root", "sequence", "bt.composite.sequence", ["wait"]), guarded], "root");
+    const running = evaluateBehaviourTree(guardDoc, null, 0.05, { blackboard: { ok: true } });
+    const aborted = breakpointsOn("wait");
+    evaluateBehaviourTree(guardDoc, running, 0.05, { blackboard: {}, breakpoints: aborted.breakpoints });
+    expect(aborted.hits).toEqual(["wait failed"]);
+  });
+
+  it("reports each run of a node that fails every time, and keeps the reporting out of the state", () => {
+    const leaf = node("leaf", "task", "bt.task.fail");
+    leaf.decorators.push({
+      id: "loop", classId: "bt.decorator.loop", abortMode: "none", observedKeys: [], properties: { numLoops: 2 },
+    });
+    const doc = tree([node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf], "root");
+    const { hits, breakpoints } = breakpointsOn("leaf");
+    const first = evaluateBehaviourTree(doc, null, 1 / 60, { breakpoints });
+    const second = evaluateBehaviourTree(doc, first, 1 / 60, { breakpoints });
+    // Two Loop runs a pass.
+    expect(hits).toEqual(Array.from({ length: 8 }, (_, index) => index % 2 === 0 ? "leaf started" : "leaf failed"));
+    expect(second.lastResults).toEqual({ root: "failure", leaf: "failure" });
+    expect(types.isProxy(second.lastResults)).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { applyGamepadRumble } from "./gamepad-rumble";
+import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
@@ -25,12 +26,14 @@ import { configureCutoutSorting, configureEditorRenderingGroups } from "./sortin
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
+import type { Node as BabylonNode } from "@babylonjs/core";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type ReflectionProbeBinding, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -55,10 +58,12 @@ import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
-import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
+import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
+import { warmSpawnables } from "./spawnable-warm";
+import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
-import type { AbstractEngine, BaseTexture, Camera, EngineView } from "@babylonjs/core";
+import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineView, Material } from "@babylonjs/core";
 import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
@@ -406,8 +411,17 @@ export interface EngineHandle {
    */
   replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => string[];
   /** Retain prepared source maps until the consuming runtime instance is retired. */
-  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
+  /**
+   * `prepare` loads the sources' textures, Materials and models before resolving; `warm` (a latent spawn's preload:
+   * Spawn Actor, a Class load) then also compiles them against the current lighting (`warmSpawnables`). A scene's
+   * sources leave `warm` off: its load compiles once its lighting is final.
+   */
+  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; warm?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
+  /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
+  spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
+  /** Play's last load rehearsal of its light changes (`createLoadRehearsal`), once it has ended. */
+  loadRehearsalStats: () => LoadRehearsalReport | null;
   /** Release startup source ownership after its actors have retired. */
   releaseInitialSources: () => void;
   /** Refresh owned library unions without resetting live mixer session settings. */
@@ -1034,13 +1048,30 @@ function initializeEngine(
     errorsCleared: boolean;
     /** WebGPU render pipelines the latest submitted draw created; they build inside its GPU completion. */
     pipelines: number;
+    /** Restarts the loading deadline (progress that is not a compile: a rehearsal step). */
+    restart?: () => void;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
+  /**
+   * Play's load rehearsal of its light changes (`load-rehearsal.ts`), run in the world presentation's loading frames
+   * before its first presented frame; its report once it ends.
+   */
+  let loadRehearsal: LoadRehearsal | null = null;
+  let loadRehearsalReport: LoadRehearsalReport | null = null;
+  const endLoadRehearsal = () => {
+    if (!loadRehearsal) return;
+    loadRehearsal.cancel();
+    // Its Effects go with its load: Play keeps one Scene across loads, which would otherwise keep every level's.
+    loadRehearsal.release();
+    loadRehearsalReport = loadRehearsal.report();
+    loadRehearsal = null;
+  };
   const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
   const cancelPresentation = (error: Error, key?: string) => {
     for (const [id, pending] of pendingPresentations) {
       if (key !== undefined && id !== key) continue;
+      if (id === "world") endLoadRehearsal();
       pendingPresentations.delete(id);
       clearTimeout(pending.timer);
       pending.submission?.cancel();
@@ -1830,6 +1861,39 @@ function initializeEngine(
     upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
   };
+  // Play reflection probes: authored per slot, static actors from the authored play scene.
+  const runtimeProbes = new Map<number, { actorId: string; bindings: ReflectionProbeBinding[] }>();
+  const runtimeProbeActorBySlot = new Map<number, string>();
+  let playStaticActors = new Set<string>();
+  let probeRoots: { renderId: number; slots: Map<BabylonNode, number> } | null = null;
+  const playProbeStatic = (mesh: BabylonNode): boolean => {
+    // Captures ask once per mesh; map the slot roots once per frame.
+    if (probeRoots?.renderId !== scene.getRenderId()) {
+      probeRoots = { renderId: scene.getRenderId(), slots: new Map([...binding.meshes].map(([slot, root]) => [root as BabylonNode, slot])) };
+    }
+    for (let node: BabylonNode | null = mesh; node; node = node.parent) {
+      const slot = probeRoots.slots.get(node);
+      if (slot === undefined) continue;
+      const actorGuid = binding.meshSorting.get(slot)?.actorGuid;
+      return !!actorGuid && playStaticActors.has(actorGuid);
+    }
+    return false;
+  };
+  const refreshRuntimeReflectionProbes = (slotId: number) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = runtimeProbes.get(slotId);
+    const previous = runtimeProbeActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      findSceneReflectionProbes(scene)?.remove(previous);
+      runtimeProbeActorBySlot.delete(slotId);
+    }
+    if (!authored || !authored.bindings.length || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    const probes = sceneReflectionProbes(scene);
+    probes.setStaticPredicate(playProbeStatic);
+    probes.upsert(authored.actorId, root, authored.bindings);
+    runtimeProbeActorBySlot.set(slotId, authored.actorId);
+  };
   const refreshRuntimeOutline = (slotId: number) => {
     if (options.editor) return;
     const root = binding.meshes.get(slotId);
@@ -1851,6 +1915,7 @@ function initializeEngine(
     refreshRuntimeDeformers(slotId);
     refreshRuntimeOutline(slotId);
     refreshRuntimeFogVolumes(slotId);
+    refreshRuntimeReflectionProbes(slotId);
   };
 
   let lastSceneAssetGuid: string | undefined;
@@ -2689,8 +2754,40 @@ function initializeEngine(
     assert();
     return { target: target!, assert };
   };
+  let spawnableWarm: { materials: number; models: number; ms: number } | null = null;
+  /**
+   * Play's load compiles what it may spawn before its first frame (`warmSpawnables`), against the Scene's final
+   * lighting: every Material document and model its sources hold, the Classes, Prefabs and spawnable actors of its
+   * required closure included. A model that cannot load here fails when it spawns, as before.
+   */
+  const warmPlaySpawnables = async (assertCurrent: () => void) => {
+    const started = performance.now();
+    const materials: Material[] = [];
+    // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh.
+    for (const [guid, document] of materialDocuments) {
+      if (document.domain !== "surface") continue;
+      const material = binding.resolveMaterial?.(guid);
+      if (material) materials.push(material);
+    }
+    const leases: { release(): void }[] = [];
+    const containers: AssetContainer[] = [];
+    try {
+      const packed = packedSlimProof(binding);
+      await Promise.all([...binding.modelSources ?? []].map(async ([guid, source]) => {
+        const lease = acquireGlbContainer(scene, guid, source, binding.modelPayloads?.get(guid), packed);
+        leases.push(lease);
+        try { containers.push(await lease.load); } catch { /* it fails when it spawns */ }
+      }));
+      assertCurrent();
+      await warmSpawnables(scene, { materials, containers }, assertCurrent);
+      spawnableWarm = { materials: materials.length, models: containers.length, ms: performance.now() - started };
+    } finally {
+      for (const lease of leases) lease.release();
+    }
+  };
   const presentationReady = (pending: PendingPresentation) => {
     try {
+      if (!pending.owner && loadRehearsal && !loadRehearsal.done) loadRehearsal.check();
       pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;
     } catch (error) {
@@ -2919,6 +3016,15 @@ function initializeEngine(
         }
         if (pending.rendered || pending.submission) {
           if (draw() && pending.rendered) frameOwners.set(key, pending);
+          return;
+        }
+        if (key === "world" && loadRehearsal && !loadRehearsal.done) {
+          // Drawn is enough: variants its post-draw probe requests draw in a later rehearsal frame.
+          loadRehearsal.frame(() => worldRenderer.render(true).rendered);
+          // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
+          engine.clear(scene.clearColor, true, true, true);
+          pending.restart?.();
+          if (loadRehearsal.done) loadRehearsalReport = loadRehearsal.report();
           return;
         }
         pending.copied = false;
@@ -3655,6 +3761,7 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "setGamepadRumble") applyGamepadRumble(command);
+      if (command.type === "vibrateDevice") applyDeviceVibration(command);
       if (command.type === "requestDeviceMotion") options.onDeviceMotionRequest?.();
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
@@ -3720,6 +3827,8 @@ function initializeEngine(
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
         worldRenderer.invalidate();
+        // A presented load's rehearsal ends here: the next level keeps none of its Effects.
+        endLoadRehearsal();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
       // A failed load never reaches the warm-up that ends its hold.
@@ -3815,6 +3924,12 @@ function initializeEngine(
         }
         scheduler.invalidate("asset");
       }
+      if (command.type === "setReflectionProbes") {
+        if (command.probes.length) runtimeProbes.set(command.slotId, { actorId: command.actorId, bindings: command.probes });
+        else runtimeProbes.delete(command.slotId);
+        refreshRuntimeReflectionProbes(command.slotId);
+      }
+      if (command.type === "recaptureReflectionProbes") findSceneReflectionProbes(scene)?.markDirty(true);
       if (command.type === "setFogVolumes") {
         appliedSnapshotIdentity = null;
         binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
@@ -4294,6 +4409,8 @@ function initializeEngine(
               await lease.ready;
             });
           }
+          const spawnableMaterials: Material[] = [];
+          const spawnableContainers: AssetContainer[] = [];
           for (const [guid, document] of prepared.materialDocuments ?? []) {
             check();
             await nativePreparation.schedule({ label: `Material ${guid}`, signal: preparation.signal,
@@ -4306,6 +4423,7 @@ function initializeEngine(
               if (diagnostics.some((entry) => entry.severity === "error"))
                 throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
               compiledMaterialGuids.add(guid);
+              if (document.domain === "surface") spawnableMaterials.push(material.material);
             });
           }
           for (const [guid, source] of prepared.assets?.modelSources ?? []) {
@@ -4315,9 +4433,13 @@ function initializeEngine(
               texturesByMaterialGuid: binding.materialTextureGuids ?? new Map(), compiledMaterialGuids,
             }, preparation.priority);
             nativeReleases.push(() => lease.release());
-            await lease.load;
+            spawnableContainers.push(await lease.load);
             await lease.lods();
           }
+          // What a latent spawn (Spawn Actor, a Class load) prepared compiles now, against the current lighting,
+          // so it resolves with the actor's variants ready; anything this misses is hidden per mesh until it compiles.
+          if (options.playMode && preparation.warm)
+            await warmSpawnables(scene, { materials: spawnableMaterials, containers: spawnableContainers }, check);
           if (prepared.audioLibrary?.audio.size && audioService)
             nativeReleases.push(await audioService.preload([...prepared.audioLibrary.audio.keys()], preparation.priority));
           check();
@@ -4334,12 +4456,18 @@ function initializeEngine(
       }
     },
     nativePreparationStats: () => nativePreparation.snapshot(),
+    spawnableWarmStats: () => spawnableWarm,
+    loadRehearsalStats: () => loadRehearsalReport ?? (loadRehearsal?.done ? loadRehearsal.report() : null),
     releaseInitialSources,
     setSourceLibraries: (libraries) => {
       if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
       if (libraries.particleLibrary) particleService?.setLibrary(libraries.particleLibrary);
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
+      if (!options.editor) {
+        playStaticActors = reflectionProbeStaticActors(sceneData.actors);
+        findSceneReflectionProbes(scene)?.markDirty(true);
+      }
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       outlineHost.refreshSettings();
       applySerializedSceneEnvironment(scene, sceneData, {
@@ -4423,11 +4551,19 @@ function initializeEngine(
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
       await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);
       scope.assert();
+      if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
       freezeLibraryMaterials();
       outlineHost.refreshSettings();
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
       else await worldRenderer.prepare(scope.assert);
       scope.assert();
+      // Play rehearses its light changes in the world presentation's loading frames, before the first presented one.
+      if (!owner && options.playMode) {
+        endLoadRehearsal();
+        loadRehearsalReport = null;
+        // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
+        loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing());
+      }
     },
     whenMaterialTexturesReady: async (owner) => {
       const scope = loadingScope(owner);
@@ -4480,7 +4616,13 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 });
+      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
+      pending.restart = () => {
+        if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
+        clearTimeout(pending.timer);
+        pending.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+      };
+      pendingPresentations.set(key, pending);
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),

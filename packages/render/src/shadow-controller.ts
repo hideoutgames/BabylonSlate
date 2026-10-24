@@ -62,6 +62,8 @@ import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
+import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -147,6 +149,16 @@ type View = {
 };
 /** How long a view waits before asking the ledger again for a mirror it refused. */
 const VIEW_REFUSAL_RETRY_MS = 1_000;
+/**
+ * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
+ * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
+ * reverted (`restoreAdmission`).
+ */
+export type ShadowAdmissionSnapshot = {
+  readonly at: number;
+  readonly camera: Camera | null;
+  readonly maps: ReadonlyMap<Light, { readonly standby: boolean; readonly admittedAt: number }>;
+};
 /** A view's claim on its own sun maps. */
 export type ViewShadows = {
   /** Disposes the view's maps; settles once their ledger charge is released. Idempotent. */
@@ -323,8 +335,10 @@ export class SceneShadowController {
   private removedSinceScan = 0;
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
+  /** History the sync `restoreAdmission` runs ranks by, instead of its own. */
+  private restoring: ShadowAdmissionSnapshot | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
-  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; guard: boolean; view: boolean }>();
+  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; view: boolean }>();
   /** Views with their own sun maps, by camera. */
   private readonly views = new Map<Camera, View>();
   /** Effective settings of the last sync, which views mirror. */
@@ -404,8 +418,20 @@ export class SceneShadowController {
       this.cameraPass = false;
       this.refreshShadowMaps();
     });
+    // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
+    // with it: a local light's only when the mesh is within its range, a sun's always.
+    const unwatchReveals = onMeshRevealed(scene, (mesh) => {
+      if (!this.meshes.has(mesh)) return;
+      this.forEachGenerator((generator) => {
+        const light = generator.getLight();
+        if (!(light instanceof DirectionalLight) && "range" in light && Number.isFinite(light.range) &&
+          !casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number)) return;
+        generator.getShadowMap()?.resetRefreshCounter();
+      });
+    });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
+      unwatchReveals();
       // Their owners still await the ledger releases through their own claims.
       for (const view of [...this.views.values()]) void this.releaseView(view).catch(() => {});
       for (const entry of this.entries.values()) entry.generator?.dispose();
@@ -478,6 +504,28 @@ export class SceneShadowController {
     this.pending.add(mesh);
     for (const child of mesh.getChildMeshes()) this.pending.add(child);
   }
+  /** The history the next sync ranks by: its camera, and each light holding a map (admitted or standby) and since when. */
+  snapshotAdmission(): ShadowAdmissionSnapshot {
+    const maps = new Map<Light, { standby: boolean; admittedAt: number }>();
+    for (const entry of this.entries.values())
+      if (entry.generator) maps.set(entry.light, { standby: entry.standby, admittedAt: entry.admittedAt });
+    return { at: performance.now(), camera: this.selectionCamera, maps };
+  }
+  /**
+   * Admits now as a sync at `snapshot.at` would have, by its history rather than by the maps changes since moved: its
+   * camera, its holders as the incumbents (each admitted map's distance bonus, and residency as of then), standby maps
+   * kept only for lights that held one then, and the holders' admission times given back. Applied to the inputs
+   * `snapshot` was taken with, the maps go back to the lights that held them, so a change tried and reverted leaves
+   * admission as it found it, and later syncs carry on from there.
+   */
+  restoreAdmission(snapshot: ShadowAdmissionSnapshot): void {
+    this.restoring = snapshot;
+    try {
+      this.sync("admission");
+    } finally {
+      this.restoring = null;
+    }
+  }
   /** The admitted map; standby maps are neither rendered nor admitted. */
   generator(light: Light): ShadowGenerator | null {
     const entry = this.entries.get(light);
@@ -487,6 +535,7 @@ export class SceneShadowController {
   boundGenerator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
+
   /**
    * Gives `camera` (a Full Quality capture's) its own sun maps: each admitted
    * sun map is mirrored with the same kind, size, cascades and settings, keyed
@@ -566,6 +615,10 @@ export class SceneShadowController {
   /** Authored request, independent of admission, visibility and global shadow enablement. */
   requestsShadow(light: Light): boolean {
     return this.entries.get(light)?.requested ?? false;
+  }
+  /** Authored shadow priority (`register`'s). */
+  shadowPriority(light: Light): number {
+    return this.entries.get(light)?.priority ?? 0;
   }
   limits(): string[] {
     const limits = new Set<string>();
@@ -705,9 +758,11 @@ export class SceneShadowController {
     );
     const camera = scene.activeCamera;
     camera?.getViewMatrix();
-    const cameraChanged = camera !== this.selectionCamera;
+    const restoring = this.restoring;
+    this.restoring = null;
+    const cameraChanged = camera !== (restoring ? restoring.camera : this.selectionCamera);
     this.selectionCamera = camera;
-    const selectionTime = performance.now();
+    const selectionTime = restoring ? restoring.at : performance.now();
     const allocationRequestKey = (entry: Entry) =>
       JSON.stringify([
         entry.light instanceof DirectionalLight
@@ -771,9 +826,16 @@ export class SceneShadowController {
     // Nearest relevant lights win independently of brightness. A short minimum
     // residency and squared-distance bonus stabilize camera boundaries without
     // preventing an authored-priority change or a newly possessed camera.
-    const incumbent = (entry: Entry) => Boolean(entry.generator && !entry.standby && !cameraChanged);
+    // A restored history ranks by the maps its snapshot held, not the ones a reverted change moved.
+    const held = (entry: Entry) => restoring
+      ? restoring.maps.get(entry.light)
+      : entry.generator ? entry : undefined;
+    const incumbent = (entry: Entry) => {
+      const map = held(entry);
+      return Boolean(map && !map.standby && !cameraChanged);
+    };
     const resident = (entry: Entry) => incumbent(entry) &&
-      selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS;
+      selectionTime - held(entry)!.admittedAt < SHADOW_MIN_RESIDENCY_MS;
     const distance = (entry: Entry) =>
       entry.distanceSquared / (incumbent(entry) ? 1.15 : 1);
     candidates.sort(
@@ -1012,6 +1074,8 @@ export class SceneShadowController {
         isForwardLightExcluded(entry.light);
       if (
         clustered ||
+        // A map a reverted change created or moved keeps no standby the restored history did not have.
+        (restoring && !restoring.maps.has(entry.light)) ||
         (entry.status !== "outside-relevant-area" &&
           entry.status !== "budget-limited" &&
           !forwardLimited) ||
@@ -1030,7 +1094,7 @@ export class SceneShadowController {
       entry.standby = true;
       entry.effectiveBias.length = 0;
       generator.setDarkness(NEUTRAL_DARKNESS);
-      this.slots.get(generator)!.guard = false;
+      setAwaitingFirstDraw(generator, false);
       // A continuous caster would otherwise keep redrawing the neutral map.
       const map = generator.getShadowMap();
       if (map && map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE)
@@ -1089,6 +1153,8 @@ export class SceneShadowController {
         try {
           const generator = this.createGenerator(entry, mapSize, settings, null, casterBounds);
           entry.generator = generator;
+          // Receivers may bind the new map before its first draw (a view keeps drawing while its casters compile).
+          this.neutralUntilRendered(generator);
           markSceneReadinessDirty(scene);
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
@@ -1155,6 +1221,12 @@ export class SceneShadowController {
       if (!entry.standby) live.passes += passes;
     }
     reserveSceneShadows(scene, live);
+    // The restored holders' residency runs from their own admission, not from a move back.
+    if (restoring)
+      for (const entry of this.entries.values()) {
+        const map = entry.generator && restoring.maps.get(entry.light);
+        if (map) entry.admittedAt = map.admittedAt;
+      }
     for (const entry of this.entries.values())
       if (entry.generator && !entry.standby) {
         fitLocalShadowDepth(entry.generator.getLight(), scene.activeCamera);
@@ -1202,7 +1274,7 @@ export class SceneShadowController {
         : directionalLight
           ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
           : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
-    const slot = { entry, guard: false, view: view !== null };
+    const slot = { entry, view: view !== null };
     this.slots.set(generator, slot);
     if (generator instanceof CascadedShadowGenerator) {
       generator.numCascades = settings.cascades;
@@ -1327,9 +1399,9 @@ export class SceneShadowController {
     map?.onAfterRenderObservable.add((face) => {
       if (!clearedForDraw) return;
       clearedForDraw = false;
-      // A moved or resumed map samples neutrally until its last face is redrawn.
-      if (slot.guard && face === (map.isCube ? 5 : 0)) {
-        slot.guard = false;
+      // A new, moved or resumed map samples neutrally until its last face is drawn.
+      if (awaitsFirstDraw(generator) && face === (map.isCube ? 5 : 0)) {
+        setAwaitingFirstDraw(generator, false);
         if (!slot.entry.standby) generator.setDarkness(0);
       }
       // Effective bias reports the scene view's maps.
@@ -1360,14 +1432,14 @@ export class SceneShadowController {
         this.spatial.queryPlanes(activePlanes, casters);
         // The index never plane-culls deforming casters. A local map ends
         // at its light's range, so anything that cannot reach it draws nothing.
+        // A mesh a world view does not draw yet casts nothing either.
         const light = generator.getLight();
-        if (!directionalLight && "range" in light && Number.isFinite(light.range)) {
-          const position = (light as LocalShadowLight).getAbsolutePosition();
-          let kept = 0;
-          for (const mesh of casters)
-            if (casterWithinShadowRange(mesh, position, light.range)) casters[kept++] = mesh;
-          casters.length = kept;
-        }
+        const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
+        const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
+        let kept = 0;
+        for (const mesh of casters)
+          if (!isRevealPending(mesh) && (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
+        casters.length = kept;
         return casters;
       };
     generator.customAllowRendering = (part) => {
@@ -1617,10 +1689,10 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) if (entry.generator) return true;
     return false;
   }
-  /** Keep a moved or resumed map from sampling stale depth before it redraws. */
+  /** Keep a new, moved or resumed map from sampling empty or stale depth before it draws. */
   private neutralUntilRendered(generator: ShadowGenerator): void {
     generator.setDarkness(NEUTRAL_DARKNESS);
-    this.slots.get(generator)!.guard = true;
+    setAwaitingFirstDraw(generator, true);
     generator.getShadowMap()?.resetRefreshCounter();
   }
   private applySettings(

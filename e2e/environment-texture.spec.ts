@@ -10,7 +10,10 @@ import {
   readHassetHeader,
 } from "../packages/assets/src/hasset";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { buildFloatDdsCubeFixture } from "../packages/test-kit/src/environment-fixtures";
+import {
+  buildFloatDdsCubeFixture,
+  buildRadianceHdrFixture,
+} from "../packages/test-kit/src/environment-fixtures";
 import { MAIN_SCENE_FILE } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
@@ -79,11 +82,14 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
   });
   await page.goto("/__test_identity");
   const evidence = [];
-  for (const container of ["dds", "env"] as const) {
+  // HDR converts at import to a prefiltered RGBA16F DDS cube with 2×2 faces.
+  for (const container of ["dds", "env", "hdr"] as const) {
     const source =
       container === "dds"
         ? buildFloatDdsCubeFixture({ color: [0, 1, 0, 1] })
-        : await greenEnv(page);
+        : container === "hdr"
+          ? buildRadianceHdrFixture({ width: 8, height: 4, color: () => [0, 1, 0] })
+          : await greenEnv(page);
     const [imported] = await importByExtension(`Studio.${container}`, source, {
       fileName: `Studio.${container}`,
       existingGuids: new Set(),
@@ -104,6 +110,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     const decoded = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
     const scene = decoded.payload;
     const settings = scene.settings as Record<string, unknown>;
+    settings.environmentSource = "texture";
     settings.environmentTextureGuid = imported!.guid;
     settings.environmentColor = [0, 0, 0];
     files.set(

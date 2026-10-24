@@ -69,7 +69,8 @@ import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { playConsoleCommands } from "../lib/play-console";
-import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
+import { nextPlayInspectorOpen, profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
+import { runProfilerConsoleCommand, withProfilerHelp } from "../lib/profiler-console";
 import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
 import {
   applyPlayPreviewCanvasLayout,
@@ -207,18 +208,34 @@ export interface PlayOverlayProps {
     >
   >;
   pauseOnPlay?: boolean;
-  /** Simulation: pause the first time each node reports an error. */
+  /** Pause the first time each node reports an error. */
   pauseOnErrors?: boolean;
-  /** A Simulation paused itself, on an error or at a breakpoint: show where. */
+  /** The session paused itself, on an error or at a breakpoint: show where. */
   onPausedAt?: (cause: SessionPauseCause) => void;
+  /**
+   * Editor Play stopped at a breakpoint or an error and hid its view behind the editor (the cause),
+   * or returned to the game (null). The session stays, paused, while hidden.
+   */
+  onPlayBreak?: (cause: SessionPauseCause | null) => void;
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
-/** The previous array when a poll found nothing new, so identical values do not re-render the overlay. */
-function keepIfEqual<T>(previous: readonly T[], next: T[]): T[] {
-  return previous.length === next.length && previous.every((value, index) => Object.is(value, next[index]))
-    ? (previous as T[])
-    : next;
+/**
+ * Tracks what a poll last set, so it sets state only for values that changed. Setting state to an
+ * unchanged value can still re-render the whole overlay before React skips its children, and the
+ * poll runs five times a second. Arrays compare by their items.
+ */
+function polledValues() {
+  const last = new Map<string, unknown>();
+  return <T,>(key: string, value: T, set: (value: T) => void) => {
+    const previous = last.get(key);
+    const same = last.has(key) && (Array.isArray(value) && Array.isArray(previous)
+      ? previous.length === value.length && previous.every((item, index) => Object.is(item, value[index]))
+      : Object.is(previous, value));
+    if (same) return;
+    last.set(key, value);
+    set(value);
+  };
 }
 
 function emptyPlayResult(): PlaySessionResult {
@@ -319,6 +336,7 @@ function PlayOverlayView({
   pauseOnPlay = false,
   pauseOnErrors = false,
   onPausedAt,
+  onPlayBreak,
   onClose,
 }: PlayOverlayProps) {
   const { appendLog, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
@@ -369,8 +387,12 @@ function PlayOverlayView({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
-  /** The breakpoint the Simulation stopped at, until it resumes. */
+  /** The breakpoint the session stopped at, until it resumes. */
   const [stoppedAt, setStoppedAt] = useState<SessionPauseCause | null>(null);
+  /** Editor Play stopped at a breakpoint or an error: its view hides until Resume. */
+  const [playBreak, setPlayBreak] = useState<SessionPauseCause | null>(null);
+  /** The running session, for the graph debugger's requests. */
+  const [graphDebugSession, setGraphDebugSession] = useState<PlaySession | null>(null);
   const [pausePending, setPausePending] = useState(false);
   const [inputMode, setInputMode] = useState<"game" | "edit">("game");
   const [inputPending, setInputPending] = useState(false);
@@ -470,7 +492,11 @@ function PlayOverlayView({
       if (!result.success) { setControlError(result.reason ?? "Pause could not reach a completed runtime boundary."); return; }
       userPausedRef.current = result.pauseReasons.includes("user");
       setPaused(result.paused);
-      if (!result.paused) setStoppedAt(null);
+      if (!result.paused) {
+        setStoppedAt(null);
+        // Play shows its view again; the canvas takes game input once it is laid out (see below).
+        setPlayBreak(null);
+      }
       if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
       if (result.paused) session.requestPausedRedraw();
       // Pause keeps Simulation's input mode; resumed game input returns to the canvas.
@@ -499,11 +525,12 @@ function PlayOverlayView({
     }).finally(() => { if (sessionRef.current === session) setStepPending(false); });
   };
 
-  // The global toolbar presents Simulation's Pause, Step, Stop and input mode.
+  // The global toolbar presents Simulation's Pause, Step, Stop and input mode, and stopped Play's Resume.
   const simulationKeepChanges = simulationSession?.keepChanges ?? false;
   const simulationControls = useMemo(
-    () => simulating
+    () => simulating || playBreak
       ? {
+          mode: simulating ? "simulate" as const : "play" as const,
           paused,
           pausePending,
           stepPending,
@@ -516,13 +543,38 @@ function PlayOverlayView({
           setInputMode: (mode: "game" | "edit") => changeInputModeRef.current(mode),
         }
       : null,
-    [simulating, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges, stoppedAt],
+    [simulating, playBreak, paused, pausePending, stepPending, inputMode, inputPending, simulationKeepChanges, stoppedAt],
   );
-  // While a Simulation is paused, its graphs keep what ran last lit.
+  // While a Simulation, or Play at a stop, is paused, its graphs keep what ran last lit.
+  const debuggingPaused = paused && (simulating || playBreak !== null);
   useEffect(() => {
-    if (simulating) graphDebug?.setHeld(paused);
-  }, [graphDebug, paused, simulating]);
+    graphDebug?.setHeld(debuggingPaused);
+  }, [graphDebug, debuggingPaused]);
   usePublishSimulationControls(simulationControls);
+  const onPlayBreakRef = useRef(onPlayBreak);
+  onPlayBreakRef.current = onPlayBreak;
+  const playBreakShownRef = useRef(false);
+  useEffect(() => {
+    onPlayBreakRef.current?.(playBreak);
+    if (playBreak) { playBreakShownRef.current = true; return; }
+    if (!playBreakShownRef.current) return;
+    playBreakShownRef.current = false;
+    // Back from a stop, shown again (the overlay's resize observer lays the view out): game input returns to the canvas.
+    canvasRef.current?.focus({ preventScroll: true });
+  }, [playBreak]);
+  useEffect(() => () => onPlayBreakRef.current?.(null), []);
+  // A Simulation, and Play while it is stopped, ask the runtime to watch the focused graph's instances.
+  // Play that runs behind its view watches nothing.
+  const graphDebugging = simulating || playBreak !== null;
+  useEffect(() => {
+    if (!graphDebug || !graphDebugSession || !graphDebugging) return;
+    const unsubscribe = graphDebug.subscribeRequest((request) => graphDebugSession.observeGraphDebug(request.target, request.instanceId));
+    return () => {
+      unsubscribe();
+      // Back in the game: stop watching.
+      if (!simulating) graphDebugSession.observeGraphDebug(null, null);
+    };
+  }, [graphDebug, graphDebugSession, graphDebugging, simulating]);
 
   useEffect(() => {
     if (!simulating) return;
@@ -855,20 +907,25 @@ function PlayOverlayView({
           audioReverbBytes: audioReverbBytesRef.current,
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
-          pauseOnErrors: simulating && initialPauseOnErrorsRef.current,
-          breakpoints: simulating ? breakpointStore?.enabledLocations() : undefined,
+          pauseOnErrors: initialPauseOnErrorsRef.current,
+          breakpoints: breakpointStore?.enabledBreakpoints(),
           onSceneLoading: setSceneLoading,
           onSceneLoadFailed: () => setSceneLoadFailed(true),
           onSessionPaused: (next, cause) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
-            if (!next) setStoppedAt(null);
-            if (!simulating || !cause) return;
+            if (!next) {
+              setStoppedAt(null);
+              setPlayBreak(null);
+            }
+            if (!cause) return;
             if (cause.code === BREAKPOINT_PAUSE_CODE) {
               setStoppedAt(cause);
               // The graph shows the object that stopped: its path and values from its next tick on.
               if (cause.instanceId) graphDebug?.follow(cause.instanceId);
             }
+            // Play hides its view and shows the editor at the stop; the session stays, paused.
+            if (!simulating) setPlayBreak(cause);
             // The runtime paused itself on an error or at a breakpoint: take the user pause through
             // the session boundary so Resume and Step treat it like Pause, then show where it stopped.
             pauseRef.current("user", true);
@@ -907,10 +964,11 @@ function PlayOverlayView({
             if (enabled) setConsoleOpen(false);
           },
           onBehaviourTreeSnapshot: setTrees,
-          // Only a Simulation debugs graphs; the store reads these off the render path.
-          onBtState: simulating ? (state) => graphDebug?.receiveBtState(state) : undefined,
-          onDebugRoster: simulating ? (roster) => graphDebug?.receiveRoster(roster) : undefined,
-          onExecutionTrace: simulating ? (trace) => graphDebug?.receiveTrace(trace) : undefined,
+          // The store reads these off the render path; Play observes nothing until it stops.
+          onBtState: (state) => graphDebug?.receiveBtState(state),
+          onDebugRoster: (roster) => graphDebug?.receiveRoster(roster),
+          onExecutionTrace: (trace) => graphDebug?.receiveTrace(trace),
+          onDebugVariables: (report) => graphDebug?.receiveVariables(report),
           onRenderOutputChanged: (settings) => {
             runtimeRenderRef.current = settings;
             liveSizeRef.current = null;
@@ -937,14 +995,9 @@ function PlayOverlayView({
         return;
       }
       sessionRef.current = session;
-      // The graph debugger asks the runtime to watch the focused graph's instances.
-      const unsubscribeGraphDebug = simulating
-        ? graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId))
-        : undefined;
-      // Breakpoints set, removed or switched off while the Simulation runs apply from its next run of the node.
-      const unsubscribeBreakpoints = simulating
-        ? breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledLocations()))
-        : undefined;
+      setGraphDebugSession(session);
+      // Breakpoints set, removed or switched off while the session runs apply from its next run of the node.
+      const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledBreakpoints()));
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -957,8 +1010,6 @@ function PlayOverlayView({
         stopProfile: () => session.diagnostics.stopProfile(),
         captureFrame: () => session.diagnostics.captureFrame(),
         stopSession: () => sessionOwner && sessionTicket ? sessionOwner.stop(sessionTicket) : finishSessionRef.current(),
-        releaseInput: () => { if (simulating) changeInputModeRef.current("edit"); },
-        setSurfaceOpen: (open) => session.setEditorInputSuppressed(open),
       });
       diagnosticDetachRef.current = diagnosticLease?.release ?? null;
       if (simulating && inspectionStore) {
@@ -1038,31 +1089,30 @@ function PlayOverlayView({
       const detachLifecycle = attachLifecyclePause((hidden) => {
         pauseRef.current("lifecycle", hidden);
       });
+      const update = polledValues();
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;
         if (testMode) {
-          setMoveX(current?.lastMoveX() ?? null);
-          const nextGuids = [...(current?.spawnedActorGuids() ?? [])];
-          setActorGuids((previous) => keepIfEqual(previous, nextGuids));
-          const nextYs = (current?.lastActorPositions() ?? []).map((entry) => entry.y);
-          setActorYs((previous) => keepIfEqual(previous, nextYs));
+          update("moveX", current?.lastMoveX() ?? null, setMoveX);
+          update("guids", [...(current?.spawnedActorGuids() ?? [])], setActorGuids);
+          update("ys", (current?.lastActorPositions() ?? []).map((entry) => entry.y), setActorYs);
         }
-        setAudioQueued(audioStats.queued);
-        setAudioUnlocked(audioStats.unlocked);
+        update("audioQueued", audioStats.queued, setAudioQueued);
+        update("audioUnlocked", audioStats.unlocked, setAudioUnlocked);
         if (current) {
           // Rendering diagnostics scan the Scene's meshes and lights, and the first read keeps
           // frame-phase timing on. Only the Stats HUD and the lights debug overlay show them.
           const lights = current.handle.lightsDebugEnabled();
-          setLightsDebug(lights);
+          update("lights", lights, setLightsDebug);
           if (statsVisibleRef.current || lights) setRendering(current.handle.renderDiagnostics());
           if (testMode) {
-            setPostProcessPasses(current.handle.postProcessPassCount());
-            setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+            update("passes", current.handle.postProcessPassCount(), setPostProcessPasses);
+            update("materials", current.handle.assignedMaterialGuids().join(","), setAssignedMaterials);
           }
-          setFreeCamEnabled(current.handle.isFreeCamEnabled());
+          update("freeCam", current.handle.isFreeCamEnabled(), setFreeCamEnabled);
           // Only the Stats HUD shows these; skip their reads while it is hidden.
           if (statsVisibleRef.current) {
-            setMemoryBytes(current.accountedBytes());
+            update("memory", current.accountedBytes(), setMemoryBytes);
             if (!hostMemoryInFlight.current) {
               hostMemoryInFlight.current = true;
               void getHostMemoryStats()
@@ -1072,12 +1122,12 @@ function PlayOverlayView({
                   hostMemoryInFlight.current = false;
                 });
             }
-            setGeometryBytes(current.handle.accountedGeometryBytes());
+            update("geometry", current.handle.accountedGeometryBytes(), setGeometryBytes);
             const counts = current.liveObjectCounts();
-            setMeshCount(counts.meshes);
-            setTextureCount(counts.textures);
-            setDraws(current.drawCalls());
-            setBridgeRate(current.bridgeMessagesPerSec());
+            update("meshes", counts.meshes, setMeshCount);
+            update("textures", counts.textures, setTextureCount);
+            update("draws", current.drawCalls(), setDraws);
+            update("bridgeRate", current.bridgeMessagesPerSec(), setBridgeRate);
           }
         }
       }, 200);
@@ -1094,12 +1144,10 @@ function PlayOverlayView({
         resizeObserver.disconnect();
         window.clearInterval(movePoll);
         detachLifecycle();
-        unsubscribeGraphDebug?.();
+        setGraphDebugSession(null);
         unsubscribeBreakpoints?.();
-        if (simulating) {
-          graphDebug?.setHeld(false);
-          graphDebug?.setTarget(null);
-        }
+        graphDebug?.setHeld(false);
+        graphDebug?.setTarget(null);
         finishSessionRef.current();
       };
     });
@@ -1130,6 +1178,10 @@ function PlayOverlayView({
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
+        /** Play's load-time warm-up of what it may spawn. */
+        spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
+        /** Play's load rehearsal of its light changes. */
+        loadRehearsal: () => ReturnType<PlaySession["handle"]["loadRehearsalStats"]>;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1147,6 +1199,8 @@ function PlayOverlayView({
       },
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
+      spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
+      loadRehearsal: () => sessionRef.current?.handle.loadRehearsalStats() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
@@ -1234,9 +1288,12 @@ function PlayOverlayView({
         playPreview.followSystem
           ? "bg-background"
           : "items-center justify-center bg-black",
+        // Stopped Play stays mounted, paused and sized, behind the editor.
+        playBreak && "hidden",
       )}
       data-testid="play-overlay"
       data-mode={simulating ? "simulate" : "play"}
+      data-play-break={playBreak ? "" : undefined}
       data-scene-guid={sceneAssetGuid ?? ""}
       data-post-process-passes={testMode ? String(postProcessPasses) : undefined}
       data-assigned-materials={testMode ? assignedMaterials : undefined}
@@ -1366,14 +1423,22 @@ function PlayOverlayView({
         sceneAssetGuid={sceneAssetGuid}
         scene={scene}
         scenes={scenes}
-        onExecute={(line) =>
-          sessionRef.current?.executeConsoleCommand(
+        onExecute={async (line) => {
+          // Profiler commands run here, where the Profiler records; every other line goes to the game.
+          const profiler = await runProfilerConsoleCommand(
+            line,
+            diagnosticStore,
+            () => profileDefaultsFromSettings(localEngineSettings.debuggerDefaults),
+          );
+          if (profiler) return profiler;
+          const result = await (sessionRef.current?.executeConsoleCommand(
             applyInspectSelectionToConsoleLine(
               line,
               inspectSelectionRef.current,
             ),
-          ) ?? Promise.resolve({ success: false, output: "not playing" })
-        }
+          ) ?? Promise.resolve({ success: false, output: "not playing" }));
+          return withProfilerHelp(line, result);
+        }}
       />
       <DebugBehaviourTreeDialog
         open={treeOpen}

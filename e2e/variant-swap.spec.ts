@@ -17,7 +17,9 @@ test("a world view draws each Material's previous Effect with the changed lights
   await testInfo.attach("variant-swap-proof", { body: JSON.stringify(result), contentType: "application/json" });
   expect(errors).toEqual([]);
   const materials = ["native pbr", "native standard", "cel source:CEL", "graph"];
-  expect(result.steps.map((step) => step.name)).toEqual(["a spot gives way to a point", "the sun is removed", "a spot stops casting shadows"]);
+  expect(result.steps.map((step) => step.name)).toEqual([
+    "a spot gives way to a point", "the sun is removed", "a spot stops casting shadows", "a point light stops casting shadows",
+  ]);
   for (const step of result.steps) {
     // Each Material drew its previous Effect in every steady frame while its new variant was held back, with no GL
     // error, then drew the new variant once released.
@@ -27,7 +29,49 @@ test("a world view draws each Material's previous Effect with the changed lights
     expect(step.adopted.sort(), step.name).toEqual([...materials].sort());
     expect(step.litPixels, step.name).toBeGreaterThan(400);
   }
-  // The previous Effect's spot slot, with no spot left, binds an empty spot: the frame is the sun and the near point
-  // alone, as a fresh draw of those lights shows it (float rounding only).
-  expect(result.referenceDifference).toBeLessThanOrEqual(2);
+  // Each previous Effect drew what its reference shows (float rounding only). With no spot left, the spot slot binds
+  // an empty spot: the frame is the sun and the near point alone. A light that stopped casting shadows still lights
+  // through its map's placeholder, which reads as an empty map: the frame is the new variant's.
+  expect(Object.fromEntries(result.steps.flatMap((step) =>
+    step.referenceDifference === undefined ? [] : [[step.name, step.referenceDifference <= 2]]))).toEqual({
+    "a spot gives way to a point": true, "a spot stops casting shadows": true, "a point light stops casting shadows": true,
+  });
+  // A light starts casting shadows: no frame held, each Material drew its previous Effect, then its shadowed variant
+  // sampled the new map before the map ever drew and read it as lit (the frame unchanged), and once the casters linked
+  // the map drew and the boxes' shadows darkened the floors (sharp shadows: a few pixels at this size).
+  expect(result.shadowGains.map((gain) => gain.name)).toEqual(["a spot starts casting shadows", "a point light starts casting shadows"]);
+  for (const gain of result.shadowGains) {
+    expect({
+      held: gain.drawn.held, previous: gain.drawn.previous, adopted: [...gain.adopted].sort(), casters: gain.casters > 0,
+      mapDrawn: gain.mapDrawn, unchangedWhileHeld: gain.heldDifference <= 2, litBeforeFirstDraw: gain.neutralDifference <= 2,
+      shadowed: gain.shadowPixels > 8, glErrors: gain.glErrors,
+    }, JSON.stringify(gain)).toEqual({
+      held: 0, previous: 3, adopted: [...materials].sort(), casters: true,
+      mapDrawn: true, unchangedWhileHeld: true, litBeforeFirstDraw: true, shadowed: true, glErrors: [],
+    });
+  }
+  // An actor spawns with a variant nothing compiled: every frame draws, the box shows nowhere while its variant
+  // compiles (the frame is the one before the spawn: no colour, depth or shadow of it), then it appears.
+  const spawn = result.spawn;
+  expect({
+    drawn: spawn.frames.drawn, compiling: spawn.compiling, unchangedWhileHidden: spawn.hiddenDifference <= 2,
+    appeared: spawn.appeared > 20, glErrors: spawn.glErrors,
+  }, JSON.stringify(spawn)).toEqual({ drawn: 3, compiling: true, unchangedWhileHidden: true, appeared: true, glErrors: [] });
+  // An actor spawns with a Material the load warmed on a staged box, since disposed: no program links on the real
+  // context and the box draws in its first frame.
+  const warm = result.warmSpawn;
+  expect({ staged: warm.staged, links: warm.links, drawn: warm.drawn, appeared: warm.appeared > 20, glErrors: warm.glErrors },
+    JSON.stringify(warm)).toEqual({ staged: 0, links: 0, drawn: true, appeared: true, glErrors: [] });
+  // A load that rehearsed its lights' changes (each drawn once behind the loading screen) links no program when a point
+  // switches off or a spot starts casting shadows, and never holds.
+  const rehearsed = result.rehearsed;
+  expect({
+    rehearsed: rehearsed.report.steps > 0 && rehearsed.report.timedOut.length === 0, compiled: rehearsed.report.variants > 0,
+    pointOff: { links: rehearsed.pointOff.links, held: rehearsed.pointOff.held, changed: rehearsed.pointOff.changed },
+    spotShadows: { links: rehearsed.spotShadows.links, held: rehearsed.spotShadows.held, changed: rehearsed.spotShadows.changed },
+    glErrors: rehearsed.glErrors,
+  }, JSON.stringify(rehearsed)).toEqual({
+    rehearsed: true, compiled: true,
+    pointOff: { links: 0, held: 0, changed: true }, spotShadows: { links: 0, held: 0, changed: true }, glErrors: [],
+  });
 });

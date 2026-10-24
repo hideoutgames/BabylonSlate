@@ -2179,6 +2179,7 @@ export class ProjectService {
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
     if (kind === "blank") {
       scene.actors = [];
+      scene.settings.environmentSource = "none";
       scene.settings.mainCameraActorId = null;
       scene.settings.mainCameraComponentId = null;
     }

@@ -38,7 +38,7 @@ import {
   type EditorSceneLoadOptions,
 } from "@haptic/render";
 import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
-import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@haptic/core";
+import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -378,7 +378,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     scene?.settings.celShading,
     scene?.settings.shadowOverrides,
     scene?.settings.environmentLighting,
-    scene?.settings.environmentTextureGuid,
+    scene?.settings.environmentSource === "skybox" ? "skybox" : scene ? sceneEnvironmentTextureGuid(scene.settings) : null,
   );
   const environmentSettingsKey = JSON.stringify(projectDocument?.settings.render.environmentLighting ?? {});
   const environmentSettingsRef = useRef(projectDocument?.settings.render.environmentLighting);

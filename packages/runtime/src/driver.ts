@@ -32,7 +32,7 @@ import {
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
   type DebugObserveTarget,
-  type BreakpointLocation,
+  type Breakpoint,
   BREAKPOINT_PAUSE_CODE,
 } from "@haptic/bridge";
 import { debugInstanceLabel, ScriptDebugObserver } from "./script-debug";
@@ -158,7 +158,7 @@ function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tileset
 }
 
 /** The graph debugger's views: editor-bound, not scene state, so they stay out of the command revision a final capture compares. */
-const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "btState"]);
+const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "debugVariables", "btState"]);
 
 /** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
 function createClassRegistry(): ClassRegistry {
@@ -259,7 +259,7 @@ class InProcessRuntime implements RuntimeDriver {
   /** Simulation's Pause On Errors, and the error sources (as the session report groups them) that already paused it. */
   private readonly pauseOnErrors: boolean;
   private readonly pausedErrorSources = new Set<string>();
-  /** Node breakpoints (Simulation), and whether one already stopped this tick: the first hit is the one shown. */
+  /** Node breakpoints (Simulation and editor Play), and whether one already stopped this tick: the first hit is the one shown. */
   private readonly breakpoints = new ScriptBreakpoints((hit) => this.breakpointHit(hit));
   private breakpointReported = false;
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
@@ -715,6 +715,7 @@ class InProcessRuntime implements RuntimeDriver {
       playAnimationOwns: (slotId) => this.behaviourTrees.playAnimationOwns(slotId),
       scripts: () => this.scriptHost,
       setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
+      breakpoints: () => this.breakpoints,
       emit: (command) => this.emit(command),
     });
   }
@@ -735,6 +736,7 @@ class InProcessRuntime implements RuntimeDriver {
       setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
       actorName: (actor) => this.debugActorName(actor),
       recordDiagnostic: (diagnostic) => this.recordDiagnostic(diagnostic),
+      breakpoints: () => this.breakpoints,
       emit: (command) => this.emit(command),
     }, nowMs);
   }
@@ -1024,6 +1026,7 @@ class InProcessRuntime implements RuntimeDriver {
       }),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
       emit: (command) => this.emit(command),
+      meterScripts: (meter) => this.scriptHost.setCostMeter(meter),
     }, {
       dt: this.dt,
       seed: this.seed,
@@ -1129,6 +1132,21 @@ class InProcessRuntime implements RuntimeDriver {
   private createScriptHost(options: RuntimeDriverOptions, registry: ClassRegistry): ScriptHost {
     const projectName = options.project?.name ?? "";
     const projectVersion = options.project?.version ?? "";
+    const noticesUrl = options.thirdPartyNoticesUrl;
+    let notices: Promise<string> | null = null;
+    const getThirdPartyNotices = noticesUrl
+      ? (): Promise<string> => {
+          // One read per session; a failed read is retried on the next call.
+          notices ??= fetch(noticesUrl).then(async (response) => {
+            if (!response.ok) throw new Error(`Third-party notices could not be read (HTTP ${response.status}).`);
+            return response.text();
+          });
+          return notices.catch((error: unknown) => {
+            notices = null;
+            throw error;
+          });
+        }
+      : undefined;
     const emit = (command: CommandMessage): void => this.emit(command);
     const frameId = (): number => this.frameId;
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
@@ -1245,6 +1263,7 @@ class InProcessRuntime implements RuntimeDriver {
       waitForSimulation: (owner) => this.waits.continueSimulation(owner) ?? Promise.resolve(),
       getProjectName: () => projectName,
       getProjectVersion: () => projectVersion,
+      ...(getThirdPartyNotices ? { getThirdPartyNotices } : {}),
       setWorldGravity: (gravity) => {
         this.setWorldGravity(gravity);
       },
@@ -1417,7 +1436,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptDebug.observe(target, instanceId);
   }
 
-  applyBreakpoints(breakpoints: readonly BreakpointLocation[]): void {
+  applyBreakpoints(breakpoints: readonly Breakpoint[]): void {
     if (this.stopped) return;
     this.breakpoints.set(breakpoints);
   }
@@ -2197,7 +2216,7 @@ class InProcessRuntime implements RuntimeDriver {
    * A node with a breakpoint ran: the session pauses (at the end of the tick when one is running) and
    * tells the editor where and on which object. Later hits in the same tick are not reported.
    */
-  private breakpointHit({ assetGuid, graphId, nodeId, entryNodeId, instance }: BreakpointHit): void {
+  private breakpointHit({ assetGuid, graphId, nodeId, entryNodeId, instance, owner, event }: BreakpointHit): void {
     if (this.stopped || this.breakpointReported) return;
     this.breakpointReported = true;
     this.pause();
@@ -2208,7 +2227,8 @@ class InProcessRuntime implements RuntimeDriver {
       graphId,
       nodeId,
       ...(entryNodeId ? { entryNodeId } : {}),
-      ...(instance ? { instanceId: instance.guid, instanceLabel: debugInstanceLabel(instance) } : {}),
+      ...(instance ? { instanceId: instance.guid, instanceLabel: debugInstanceLabel(owner ?? instance) } : {}),
+      ...(event ? { breakpointEvent: event } : {}),
     } });
   }
 

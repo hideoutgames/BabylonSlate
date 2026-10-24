@@ -223,4 +223,13 @@ describe("navigateToSessionReportEntry", () => {
     );
     expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset animationObject");
   });
+
+  it("shows the State Machine for a state or transition breakpoint", async () => {
+    const { host, calls } = fakeHost();
+    await navigateToSessionReportEntry(
+      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "idle", graphId: "state-machine" }),
+      host,
+    );
+    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset stateMachine");
+  });
 });

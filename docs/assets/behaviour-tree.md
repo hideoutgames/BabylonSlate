@@ -19,6 +19,8 @@ Double-tap a Behaviour Tree to open it.
 
 Start a Simulation with the tree open and pick an actor in **Debug Instance**. The nodes the tree works on light up, and each node shows **Running**, **Success** or **Failure**. See [Watch a graph run](../debugging/index.md#behaviour-trees).
 
+To stop the game when a node starts or fails, choose **Add Breakpoint** from the node's menu. **Edit Breakpoint…** makes it stop only on a given hit. See [Breakpoints](../debugging/index.md#breakpoints).
+
 ## Settings
 
 | Setting | Description |

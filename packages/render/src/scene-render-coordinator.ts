@@ -197,6 +197,8 @@ export class SceneRenderCoordinator {
     this.deferredSince = undefined;
     this.compileHold = undefined;
     this.compileHoldReleased = false;
+    // A new run (a switched scene loading) asks strictly again until it draws steady frames.
+    this.graph.warmsVariants = false;
     this.graph.invalidate();
   }
 
@@ -205,6 +207,10 @@ export class SceneRenderCoordinator {
    * with a fresh deadline while the owner stays current. Asset arrival during a
    * load (for example an Area Light's emission texture) invalidates the graph;
    * only the owner's own cancellation or disposal ends the preparation.
+   * `tolerateVariantSwaps`: probe as the view's steady frames do. A caller joins a preparation already running for the
+   * same generation whatever its tolerance: a strict owner that joins a tolerant one still sees a swap in its strict
+   * `isReady()` and presentation checks, and steady frames that join an owner's strict one wait for it, as for the new
+   * resources (casters, targets) such a preparation also waits for.
    */
   prepare(
     assertCurrent: () => void = () => {},
@@ -331,6 +337,11 @@ export class SceneRenderCoordinator {
     return promise;
   }
 
+  /** A preparation is running (a latched failure is not one: it retries only when the view draws again). */
+  get preparing(): boolean {
+    return this.pending !== undefined;
+  }
+
   /** No preparation is running and none has failed. Only then can an edit that
    * leaves every readiness input alone skip `invalidate()`: nothing is waiting
    * for a restart, and no latched failure needs the retry an invalidation grants. */
@@ -399,7 +410,7 @@ export class SceneRenderCoordinator {
     // Steady frames of a world view keep drawing a Material's previous Effect while its changed variant compiles
     // (a light switched off, a shadow lost, a grown light capacity) instead of holding the image; a frame that
     // validates a presentation waits for every requested variant.
-    const tolerate = !validatePresentation && this.deferPipelines && !this.auxiliaryCamera && sceneBindsPreviousEffects(this.scene);
+    const tolerate = !validatePresentation && this.toleratesVariantSwaps();
     if (tolerate) this.graph.recheckVariantSwaps();
     return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation));
   }
@@ -422,10 +433,11 @@ export class SceneRenderCoordinator {
     // decision. The scene observer covers direct/native Scene.render callers.
     flushSceneCables(this.scene);
     flushDynamicRuntimeMeshes(this.scene);
-    // A swapping Material may bind placeholders for maps its previous Effect samples; allocate them before the passes.
-    if (this.graph.variantSwapsPending && variantSwapsTolerated()) preparePreviousEffectBindings(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
+    // A swapping Material may bind placeholders for maps its previous Effect samples: allocate them before the passes,
+    // after the probe that may have found the swap first (a light Forward admission excluded this frame).
+    if (this.graph.variantSwapsPending && variantSwapsTolerated()) preparePreviousEffectBindings(this.scene);
     // Like a scene that is not ready yet, a frame that skipped draws for
     // pipelines still compiling draws nothing until they exist.
     if (this.deferral?.waiting())
@@ -453,6 +465,8 @@ export class SceneRenderCoordinator {
     // image as an unready scene does; a skipped draw for any other reason does not.
     if (result.rendered === false && !status.ready) this.compileHold = this.holdsForCompiles(holding, status);
     if (result.rendered !== false) this.compileHoldReleased = false;
+    // From its first steady frame, the view's new variants wait for their pipelines where those are deferred.
+    if (result.rendered !== false && variantSwapsTolerated()) this.graph.warmsVariants = true;
     if (result.rendered !== false && this.editorOverlay) {
       const capture = activeRenderFrameCapture(this.scene.getEngine());
       if (capture) capture.stage(this.scene, { name: "Viewport editor overlay", kind: "overlay" },
@@ -477,6 +491,11 @@ export class SceneRenderCoordinator {
     this.graph.dispose();
   }
 
+  /** Whether the view's steady frames draw a Material's previous Effect while its changed variant compiles. */
+  private toleratesVariantSwaps(): boolean {
+    return this.deferPipelines && !this.auxiliaryCamera && sceneBindsPreviousEffects(this.scene);
+  }
+
   /** The view's camera: an auxiliary view's own, otherwise the scene's active camera. */
   private camera(): Camera | null {
     return this.auxiliaryCamera ?? this.scene.activeCamera;
@@ -493,8 +512,12 @@ export class SceneRenderCoordinator {
       this.graph.clearFailure();
     }
     const generation = this.generation;
-    // A steady frame's preparation probes as that frame does.
-    void this.prepare(undefined, { tolerateVariantSwaps: variantSwapsTolerated() }).catch((error: unknown) => {
+    // Nothing awaits this preparation; the view's steady frames draw once it is done. It probes as they do, whoever
+    // asked (Play's end-of-frame readiness question is strict): a strict one would hold them until every swapped
+    // variant compiled. A strict question asks again once it is done. Until the view draws steady frames (loading,
+    // its load rehearsal and first presentation), what draws next is a strict frame, so it probes strictly.
+    const tolerate = this.toleratesVariantSwaps() && this.graph.warmsVariants;
+    void this.prepare(undefined, { tolerateVariantSwaps: tolerate }).catch((error: unknown) => {
       if (this.disposed || generation !== this.generation) return;
       this.failure = error;
       this.failedAt = performance.now();

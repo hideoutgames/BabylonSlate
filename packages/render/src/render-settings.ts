@@ -82,6 +82,12 @@ type SceneRendering = {
   effectsKey: string;
   /** Renderable chain for the live settings; null means no owned passes. */
   effectsPlan: SceneEffectsPlan | null;
+  /**
+   * CEL surfaces write reflectivity for the geometry pass: CEL mode with Real-Time Reflections in the plan. Graph
+   * Materials connect their reflectivity inputs only while it is set, so a flat CEL frame binds nothing extra.
+   */
+  celReflections: boolean;
+  /** Called when `mode` or `celReflections` changes, after the plan is current. */
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -142,6 +148,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
+      celReflections: false,
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -192,15 +199,19 @@ export function updateSceneRenderingSettings(
     ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
   });
   state.effects = normalizeRenderEffectsSettings(resolved.effects);
-  if (mode !== state.mode) {
-    state.mode = mode;
-    for (const listener of state.listeners) listener(mode);
-  }
+  const modeChanged = mode !== state.mode;
+  state.mode = mode;
   // A newly requested LUT publishes asynchronously and replans once ready.
   state.colorGrading.sync(
     state.effectsEnabled && state.effects.colorGrading.enabled ? state.effects.colorGrading.lutTextureGuid : null,
   );
   replanSceneEffects(state);
+  // Fog Volumes and the LUT, which replan elsewhere, never change whether reflections run.
+  const celReflections = mode === "cel" && state.effectsPlan?.reflections != null;
+  if (modeChanged || celReflections !== state.celReflections) {
+    state.celReflections = celReflections;
+    for (const listener of state.listeners) listener(mode);
+  }
   syncImageProcessingMode(scene, state);
 }
 
@@ -209,6 +220,7 @@ function replanSceneEffects(state: SceneRendering): void {
     fogVolumesPresent: state.fogVolumesPresent,
     colorGradingTexture: state.colorGradingTexture,
     allowed: state.effectAllowances,
+    celReflections: state.cel.reflectionsEnabled,
   };
   state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
@@ -220,9 +232,10 @@ export function sceneEffectsQualityLimits(scene: Scene): string[] {
   if (!state.effectsEnabled) return [];
   const { effects, effectAllowances: allowed } = state;
   const pbr = state.mode === "pbr";
+  const reflections = pbr || state.cel.reflectionsEnabled;
   const skipped = [
     pbr && effects.ambientOcclusion.enabled && !allowed.ambientOcclusion ? "ambient occlusion" : null,
-    pbr && effects.reflections.enabled && !allowed.reflections ? "reflections" : null,
+    reflections && effects.reflections.enabled && !allowed.reflections ? "reflections" : null,
     effects.volumetricLighting.enabled && !allowed.volumetricLighting ? "scene-wide volumetric lighting" : null,
   ].filter((name): name is string => name !== null);
   return skipped.length ? [`post processing quality skips ${skipped.join(", ")}`] : [];

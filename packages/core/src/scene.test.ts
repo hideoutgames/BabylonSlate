@@ -8,6 +8,7 @@ import {
   folderSubtree,
   nextFolderId,
   normalizeScene,
+  sceneEnvironmentTextureGuid,
   normalizeTransform,
   wouldCreateComponentCycle,
   wouldCreateCycle,
@@ -317,8 +318,24 @@ describe("scene schema", () => {
     expect(settings.fogStart).toBe(0);
     expect(settings.fogEnd).toBe(100);
     expect(settings.environmentTextureGuid).toBeNull();
+    expect(settings.environmentSource).toBe("none");
     expect(settings.mainCameraActorId).toBeNull();
     expect(settings.mainCameraComponentId).toBeNull();
+  });
+
+  it("keeps a chosen environment source and its kept texture, and rejects unknown sources", () => {
+    const skybox = normalizeScene({ settings: { environmentSource: "skybox", environmentTextureGuid: "env-1" } }).settings;
+    expect(skybox.environmentSource).toBe("skybox");
+    expect(skybox.environmentTextureGuid).toBe("env-1");
+    expect(sceneEnvironmentTextureGuid(skybox)).toBeNull();
+    const unknown = normalizeScene({ settings: { environmentSource: "probe", environmentTextureGuid: "env-1" } }).settings;
+    expect(unknown.environmentSource).toBe("texture");
+    expect(sceneEnvironmentTextureGuid(unknown)).toBe("env-1");
+  });
+
+  it("lights new 3D scenes from their Skybox and leaves 2D scenes unlit", () => {
+    expect(createDefaultScene("3d").settings.environmentSource).toBe("skybox");
+    expect(createDefaultScene("2d").settings.environmentSource).toBe("none");
   });
 
   it("keeps authored fog, IBL, and Default Camera ids", () => {
@@ -339,6 +356,8 @@ describe("scene schema", () => {
     expect(settings.fogStart).toBe(4);
     expect(settings.fogEnd).toBe(40);
     expect(settings.environmentTextureGuid).toBe("env-1");
+    // Scenes saved before Environment Source keep lighting from their texture.
+    expect(settings.environmentSource).toBe("texture");
     expect(settings.mainCameraActorId).toBe("cam-actor");
     expect(settings.mainCameraComponentId).toBe("cam-comp");
   });

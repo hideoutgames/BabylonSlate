@@ -11,6 +11,7 @@ import {
   type BehaviourTreeDocument,
   type BlackboardDocument,
   type BlackboardValues,
+  type BtEvalBreakpoints,
   type BtEvalState,
   type BtEvalTrace,
   type BtResult,
@@ -27,6 +28,7 @@ import type { RuntimeDiagnostic } from "./diagnostics";
 import { copyPlainData, samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
@@ -59,6 +61,8 @@ interface BehaviourTreeRuntimeHost {
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
   actorName(actor: Actor): string;
   recordDiagnostic(diagnostic: RuntimeDiagnostic): void;
+  /** The session's node breakpoints, trees' included. */
+  breakpoints(): ScriptBreakpoints;
   emit(command: CommandMessage): void;
 }
 
@@ -624,6 +628,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const next = evaluateBehaviourTree(document, previous, dtSeconds, {
       seed: this.host.seed(),
       trace: followed ? this.followedTrace(guid) : undefined,
+      breakpoints: this.treeBreakpoints(guid, component, actor),
       blackboard,
       host: {
         tick: (node, board, dtSeconds, memory) =>
@@ -658,6 +663,16 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.nodeId = null;
     this.assetGuid = null;
     if (followed) this.publishState(slotId, next);
+  }
+
+  /** The tree's breakpoints as `component` evaluates it, or undefined when it has none. */
+  private treeBreakpoints(treeGuid: string, component: ActorComponent, actor: Actor): BtEvalBreakpoints | undefined {
+    const breakpoints = this.host.breakpoints().graph(treeGuid, BT_DEBUG_GRAPH_ID);
+    if (!breakpoints) return undefined;
+    return {
+      has: (nodeId) => breakpoints.has(nodeId),
+      hit: (nodeId, event) => breakpoints.hit(nodeId, "", component, { owner: actor, event }),
+    };
   }
 
   /**

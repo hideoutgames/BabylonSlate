@@ -2,6 +2,7 @@ import type { Scene } from "@babylonjs/core";
 import { PickingInfo } from "@babylonjs/core";
 import { EDITOR_ACTOR_MESH_PREFIX } from "./scene-loader";
 import { gpuPickMesh } from "./gpu-object-id-picker";
+import { isRevealPending } from "./reveal-pending";
 
 /** Resolve an imported part through its named actor ancestor. */
 export function actorMeshName(mesh: { name: string; parent: unknown }): string {
@@ -36,7 +37,9 @@ export function pickAtCanvas(
       }
     }
   }
-  const pick = scene.pick(canvasX, canvasY, undefined, false);
+  // Babylon's default predicate, without a mesh a world view does not draw yet.
+  const pick = scene.pick(canvasX, canvasY, (mesh) =>
+    mesh.isPickable && mesh.isVisible && mesh.isReady() && mesh.isEnabled() && !isRevealPending(mesh), false);
   if (!pick?.hit || !pick.pickedMesh) {
     return null;
   }

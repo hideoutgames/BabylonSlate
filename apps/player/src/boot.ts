@@ -1,5 +1,5 @@
 import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
-import { createSaveGameStorage } from "@haptic/vfs";
+import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
@@ -498,6 +498,7 @@ function initializePlayer(
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
+    thirdPartyNoticesUrl: new URL("legal/THIRD-PARTY-NOTICES.txt", document.baseURI).href,
     saveGame: manifest.saveGame,
     type: "load" as const,
     sceneAssetGuid: startup,
@@ -889,7 +890,8 @@ function initializePlayer(
       let releaseRender: (() => void) | undefined;
       try {
         request.controller.signal.throwIfAborted();
-        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal, priority });
+        // A preload is a latent spawn's (Spawn Actor, a Class load): it resolves with the actor's variants compiled.
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, warm: true, signal: request.controller.signal, priority });
         request.controller.signal.throwIfAborted();
         request.release = () => { releaseRender?.(); source.release(); };
         clearResourceFailures(requiredGameAssets(manifest, ids));
@@ -1241,6 +1243,7 @@ function initializePlayer(
         },
         observeFrames: (listener) => handle.observePerformance(listener),
         observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+        sampleMemory: () => ({ textureBytes: handle.resourceCache.accountedBytes(), geometryBytes: handle.accountedGeometryBytes() }),
         setEditorInputSuppressed,
         captureFrame: async (signal) => {
           const cancel = () => handle.cancelFrameCapture("Preview frame capture was cancelled.");

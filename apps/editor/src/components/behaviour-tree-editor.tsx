@@ -67,6 +67,7 @@ import {
   type PropertyRow,
   type Vector3Value,
 } from "@haptic/editor-kit";
+import { BT_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import { GraphEditor, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
 import { defaultJsValue } from "@haptic/scripting";
 import { Button } from "@haptic/ui/components/button";
@@ -84,6 +85,11 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
+import { useBreakpointStore } from "../context/breakpoints-context";
+import { useKeybindChord } from "../context/keybind-context";
+import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
+import { sessionReportNodeTitle } from "../lib/session-report-locations";
 import { useBehaviourTreeRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 
@@ -168,10 +174,12 @@ function useBehaviourTreeDocument() {
   );
   // The tree's guid names it to the running game; a Simulation's live node status and Blackboard are its.
   const documentPath = entry?.ref.path;
-  const treeGuid = useMemo(() => {
+  const treeAsset = useMemo(() => {
     void registryEpoch;
-    return documentPath ? assetRegistry?.getByPath(documentPath)?.header.guid : undefined;
+    return documentPath ? assetRegistry?.getByPath(documentPath)?.header : undefined;
   }, [assetRegistry, registryEpoch, documentPath]);
+  const treeGuid = treeAsset?.guid;
+  const treeName = treeAsset?.name ?? doc.name;
   // Registry headers mutate without replacing the registry; the epoch tracks them.
   const { assets, parentOf, paletteNodes, decoratorCatalog, serviceCatalog } = useMemo(() => {
     void registryEpoch;
@@ -332,6 +340,7 @@ function useBehaviourTreeDocument() {
     commit,
     play,
     treeGuid,
+    treeName,
     initialGraph,
     paletteNodes,
     decoratorCatalog,
@@ -357,6 +366,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     commit,
     play,
     treeGuid,
+    treeName,
     initialGraph,
     paletteNodes,
     diagnostics,
@@ -402,6 +412,24 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   });
   const rootId = doc.rootId;
 
+  // Breakpoints use the session's terms: the tree's guid and its graph id. Every node, the root
+  // included, runs, so any can have one.
+  const breakpointStore = useBreakpointStore();
+  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
+  const breakpointLabel = useCallback((nodeId: string) => ({
+    className: treeName,
+    graphName: "Behaviour Tree",
+    nodeTitle: sessionReportNodeTitle("BehaviourTree", latest.current.doc, nodeId) ?? nodeId,
+  }), [treeName]);
+  const breakpoints = useMemo(
+    () => breakpointStore && treeGuid
+      ? breakpointStore.graphView(treeGuid, BT_DEBUG_GRAPH_ID, breakpointLabel, () => true)
+      : undefined,
+    [breakpointLabel, breakpointStore, treeGuid],
+  );
+
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+
   const nodeMenu = useCallback(
     (nodeId: string): NestedMenuItem[] => [
       {
@@ -446,9 +474,25 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           if (selectedId === nodeId) setSelectedId(doc.rootId);
         },
       },
+      ...(breakpointStore && treeGuid
+        ? [
+            { type: "separator" as const, id: "breakpoint-separator" },
+            ...breakpointMenuItems(
+              breakpointStore,
+              { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
+              () => breakpointLabel(nodeId),
+              toggleBreakpointChord,
+              () => editBreakpoint({
+                location: { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
+                nodeTitle: breakpointLabel(nodeId).nodeTitle,
+                pins: null,
+              }),
+            ),
+          ]
+        : []),
     ],
-    // The root is the only document fact baked into the items.
-    [rootId, setAttachmentCatalog, setSelectedId],
+    // The root is the only document fact baked into the items; the tree node menu builds them when it opens.
+    [breakpointLabel, breakpointStore, editBreakpoint, rootId, setAttachmentCatalog, setSelectedId, toggleBreakpointChord, treeGuid],
   );
 
   const attachmentMenu = useCallback(
@@ -614,6 +658,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           commitPositionsOnDragEnd
           readOnly={play.playing}
           runTrace={runTrace}
+          breakpoints={breakpoints}
           paletteNodes={paletteNodes}
           diagnostics={diagnostics}
           focusedNodeId={play.focusedNodeId ?? focusedNodeId ?? undefined}
@@ -630,6 +675,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           onChange={onChange}
         />
       </div>
+      {breakpointSettingsDialog}
     </PanelFrame>
   );
 }

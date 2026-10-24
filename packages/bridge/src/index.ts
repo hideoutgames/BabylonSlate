@@ -34,6 +34,10 @@ export {
   type GameSessionMode,
   type SessionPauseReason,
   type SessionPauseCause,
+  type Breakpoint,
+  type BreakpointCondition,
+  type BreakpointConditionOp,
+  type BreakpointEvent,
   type BreakpointLocation,
   BREAKPOINT_PAUSE_CODE,
   type SessionBoundaryRequest,
@@ -46,6 +50,7 @@ export {
   type DebugNavAgent,
   type DebugBehaviourTree,
   type DebugGraphTrace,
+  type DebugStep,
   type DebugInstance,
   type DebugObserveTarget,
   type DebugDrawCommand,
@@ -71,7 +76,7 @@ export { dispatchCommandBatch } from "./command-batch";
 
 export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapability, RuntimePropertyDescriptor, RuntimeIdentityRow, RuntimeIdentityCursor, RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorPayload, RuntimeInspectorResult } from "./runtime-inspector";
 
-export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceTickChunk } from "./diagnostic-operation";
+export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceScriptEntry, PerformanceTickChunk } from "./diagnostic-operation";
 
 export type { RuntimeMaterialEditPreparation, RuntimeMaterialEditResponse } from "./runtime-material-edit";
 

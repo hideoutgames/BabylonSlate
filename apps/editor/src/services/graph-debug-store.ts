@@ -1,4 +1,4 @@
-import { sameDebugObserveTarget, type DebugGraphTrace, type DebugInstance, type DebugObserveTarget } from "@haptic/bridge";
+import { sameDebugObserveTarget, type DebugGraphTrace, type DebugInstance, type DebugObserveTarget, type DebugStep } from "@haptic/bridge";
 import { btNodeStatuses, type BtNodeStatus } from "@haptic/behaviour-tree";
 
 /** What the editor asks the running Simulation to watch. */
@@ -33,6 +33,36 @@ export type GraphDebugBtState = {
   blackboard: Readonly<Record<string, unknown>>;
 };
 
+/** Where the stepping control stands: one recorded visit of the followed instance. */
+export type GraphDebugStepPosition = {
+  tickIndex: number;
+  /** The visit's place in its tick, from 0. */
+  step: number;
+  /** The visits recorded in the tick. */
+  stepCount: number;
+  /** The tick's visits past the runtime's limit were not recorded. */
+  truncated: boolean;
+  /** The newest visit recorded: Forward from here runs another tick. */
+  newest: boolean;
+  /** The oldest visit kept: there is nothing to step back to. */
+  oldest: boolean;
+  assetGuid: string;
+  graphId: string;
+  nodeId: string;
+};
+
+/** Ticks of visits kept for the stepping control, and the display text they may hold in all (about 2 MB). */
+export const STEP_HISTORY_TICKS = 8;
+const STEP_HISTORY_CHARS = 1_000_000;
+
+type StepTick = {
+  tickIndex: number;
+  graphs: ReadonlyArray<{ assetGuid: string; graphId: string }>;
+  steps: readonly DebugStep[];
+  truncated: boolean;
+  chars: number;
+};
+
 const EMPTY: GraphDebugSnapshot = { target: null, instances: null, selectedId: null };
 
 function valueKey(assetGuid: string, graphId: string, nodeId: string, pinId: string, direction: "in" | "out"): string {
@@ -47,6 +77,10 @@ function valueKey(assetGuid: string, graphId: string, nodeId: string, pinId: str
  *   `subscribe` / `getSnapshot` (the toolbar's instance select).
  * - Execution traces go straight to `subscribeTrace` listeners, which draw into the DOM
  *   themselves (graph canvases), and the latest value of each pin stays readable through `value`.
+ *   The followed instance's variables stay readable through `variable`; `subscribeValues` hears
+ *   about both (the Watches window).
+ * - While paused, the stepping control reviews the visits of the last few ticks (`stepBack`,
+ *   `stepForward`): `value` then answers as of that visit, and trace listeners get the path up to it.
  * - A followed Behaviour Tree's `btState` becomes each node's status and the Blackboard's
  *   values. A node subscribes to its own status (`subscribeStatus`), so a change renders that
  *   node alone; the Blackboard panel subscribes to the values.
@@ -63,6 +97,8 @@ export class GraphDebugStore {
   /** The user chose None: a new spawn no longer takes over. */
   private chosenNone = false;
   private values = new Map<string, string>();
+  private variables = new Map<string, string>();
+  private readonly valueListeners = new Set<() => void>();
   /** The followed Behaviour Tree's node statuses, and the Blackboard it last reported. */
   private statuses = new Map<string, BtNodeStatus>();
   private blackboardValues: Readonly<Record<string, unknown>> | null = null;
@@ -76,6 +112,13 @@ export class GraphDebugStore {
   private readonly holdListeners = new Set<(held: boolean) => void>();
   /** An object to follow as soon as a roster lists it (the one a breakpoint stopped on). */
   private pendingFollow: string | null = null;
+  /** The followed instance's recent ticks of visits, oldest first, and the one under review. */
+  private stepTicks: StepTick[] = [];
+  private review: { tick: number; step: number } | null = null;
+  /** Pin texts as of the reviewed visit; null shows the live ones. */
+  private reviewValues: Map<string, string> | null = null;
+  /** Forward ran a tick: review its first visit when its trace arrives. */
+  private continueNext = false;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -99,7 +142,80 @@ export class GraphDebugStore {
 
   /** The latest text of one pin of the followed instance, or undefined before a node has run. */
   value(assetGuid: string, graphId: string, nodeId: string, pinId: string, direction: "in" | "out"): string | undefined {
-    return this.values.get(valueKey(assetGuid, graphId, nodeId, pinId, direction));
+    return (this.reviewValues ?? this.values).get(valueKey(assetGuid, graphId, nodeId, pinId, direction));
+  }
+
+  /** The visit under review, or null while showing the live run. */
+  stepPosition(): GraphDebugStepPosition | null {
+    const review = this.review;
+    const tick = review && this.stepTicks[review.tick];
+    const step = review && tick?.steps[review.step];
+    if (!review || !tick || !step) return null;
+    const graph = tick.graphs[step[0]]!;
+    return {
+      tickIndex: tick.tickIndex,
+      step: review.step,
+      stepCount: tick.steps.length,
+      truncated: tick.truncated,
+      newest: review.tick === this.stepTicks.length - 1 && review.step === tick.steps.length - 1,
+      oldest: review.tick === 0 && review.step === 0,
+      assetGuid: graph.assetGuid,
+      graphId: graph.graphId,
+      nodeId: step[1],
+    };
+  }
+
+  /** Whether any visits are recorded to review (none until the followed object's first traced tick). */
+  hasRecordedSteps(): boolean {
+    return this.stepTicks.length > 0;
+  }
+
+  /** Reviews the visit before this one, or the newest one recorded; false when there is none earlier. */
+  stepBack(): boolean {
+    const newest = this.stepTicks.length - 1;
+    if (newest < 0) return false;
+    let { tick, step } = this.review ?? { tick: newest, step: this.stepTicks[newest]!.steps.length };
+    step -= 1;
+    if (step < 0) {
+      if (tick === 0) return false;
+      tick -= 1;
+      step = this.stepTicks[tick]!.steps.length - 1;
+    }
+    this.moveTo({ tick, step });
+    return true;
+  }
+
+  /** Reviews the next visit; `atNewest` when none is recorded yet, so another tick must run. */
+  stepForward(): "moved" | "atNewest" {
+    if (!this.review) return "atNewest";
+    let { tick, step } = this.review;
+    step += 1;
+    if (step >= this.stepTicks[tick]!.steps.length) {
+      if (tick === this.stepTicks.length - 1) return "atNewest";
+      tick += 1;
+      step = 0;
+    }
+    this.moveTo({ tick, step });
+    return "moved";
+  }
+
+  /** Forward from the newest visit: the next trace's first visit is reviewed when it arrives. */
+  continueIntoNextTick(): void {
+    this.continueNext = true;
+  }
+
+  /** The latest text of the followed instance's variable `name`, or undefined before the runtime reported it. */
+  variable(name: string): string | undefined {
+    return this.variables.get(name);
+  }
+
+  /**
+   * Calls `listener` after a trace or a variables report of the followed instance arrives, and when the values
+   * are forgotten. At most once per tick while a Simulation runs: the listener must compare before it renders.
+   */
+  subscribeValues(listener: () => void): () => void {
+    this.valueListeners.add(listener);
+    return () => { this.valueListeners.delete(listener); };
   }
 
   /** The status of a node of the followed instance of the Behaviour Tree `assetGuid`, or undefined before it has one. */
@@ -152,6 +268,7 @@ export class GraphDebugStore {
   setHeld(held: boolean): void {
     if (held === this.held) return;
     this.held = held;
+    if (!held) this.endReview();
     for (const listener of [...this.holdListeners]) listener(held);
   }
 
@@ -200,8 +317,18 @@ export class GraphDebugStore {
     this.changed(moved);
   }
 
-  /** The runtime's `executionTrace`. Traces of an instance no longer followed are dropped. */
-  receiveTrace(message: { target: DebugObserveTarget; instanceId: string; tickIndex: number; graphs: readonly DebugGraphTrace[] }): void {
+  /**
+   * The runtime's `executionTrace`. Traces of an instance no longer followed are dropped. A tick that ran
+   * ends a review, unless Forward ran it: then its first visit is reviewed.
+   */
+  receiveTrace(message: {
+    target: DebugObserveTarget;
+    instanceId: string;
+    tickIndex: number;
+    graphs: readonly DebugGraphTrace[];
+    steps?: readonly DebugStep[];
+    stepsTruncated?: boolean;
+  }): void {
     const { target, selectedId } = this.snapshot;
     if (!sameDebugObserveTarget(message.target, target) || message.instanceId !== selectedId) return;
     for (const graph of message.graphs) {
@@ -209,8 +336,24 @@ export class GraphDebugStore {
         this.values.set(valueKey(graph.assetGuid, graph.graphId, nodeId, pinId, direction), text);
       }
     }
+    const steps = message.steps ?? [];
+    if (steps.length > 0) this.keepSteps(message.tickIndex, message.graphs, steps, message.stepsTruncated === true);
     const trace: GraphDebugTrace = { instanceId: message.instanceId, tickIndex: message.tickIndex, graphs: message.graphs };
     for (const listener of [...this.traceListeners]) listener(trace);
+    const continuing = this.continueNext;
+    this.continueNext = false;
+    this.review = null;
+    this.reviewValues = null;
+    if (continuing && steps.length > 0) this.moveTo({ tick: this.stepTicks.length - 1, step: 0 });
+    else this.notifyValues();
+  }
+
+  /** The runtime's `debugVariables`. A report of an instance no longer followed is dropped. */
+  receiveVariables(message: { target: DebugObserveTarget; instanceId: string; tickIndex: number; values: ReadonlyArray<readonly [string, string]> }): void {
+    const { target, selectedId } = this.snapshot;
+    if (!sameDebugObserveTarget(message.target, target) || message.instanceId !== selectedId) return;
+    for (const [name, text] of message.values) this.variables.set(name, text);
+    this.notifyValues();
   }
 
   /** The `btState` of the followed Behaviour Tree. A message of an instance no longer followed is dropped. */
@@ -233,13 +376,84 @@ export class GraphDebugStore {
    */
   private clearLive(): void {
     if (this.held) for (const listener of [...this.holdListeners]) { listener(false); listener(true); }
+    this.stepTicks = [];
+    this.review = null;
+    this.reviewValues = null;
+    this.continueNext = false;
     const had = [...this.statuses.keys()];
     const hadBlackboard = this.blackboardValues !== null;
+    const hadValues = this.values.size > 0 || this.variables.size > 0;
     this.values = new Map();
+    this.variables = new Map();
     this.statuses = new Map();
     this.blackboardValues = null;
     this.notifyStatuses(had);
     if (hadBlackboard) for (const listener of [...this.blackboardListeners]) listener();
+    if (hadValues) this.notifyValues();
+  }
+
+  private notifyValues(): void {
+    for (const listener of [...this.valueListeners]) listener();
+  }
+
+  /** Keeps a tick's visits, dropping the oldest ticks past the count or text budget (the newest always stays). */
+  private keepSteps(tickIndex: number, graphs: readonly DebugGraphTrace[], steps: readonly DebugStep[], truncated: boolean): void {
+    let chars = 0;
+    for (const [, nodeId, via, values] of steps) {
+      chars += nodeId.length + (via?.length ?? 0);
+      for (const [valueNode, pinId, , text] of values) chars += valueNode.length + pinId.length + text.length;
+    }
+    this.stepTicks.push({ tickIndex, graphs: graphs.map(({ assetGuid, graphId }) => ({ assetGuid, graphId })), steps, truncated, chars });
+    let total = this.stepTicks.reduce((sum, tick) => sum + tick.chars, 0);
+    while (this.stepTicks.length > 1 && (this.stepTicks.length > STEP_HISTORY_TICKS || total > STEP_HISTORY_CHARS)) {
+      total -= this.stepTicks.shift()!.chars;
+    }
+  }
+
+  /** Reviews one recorded visit: pin texts as of it, and the tick's path up to it for the canvases. */
+  private moveTo(position: { tick: number; step: number }): void {
+    this.review = position;
+    const values = new Map<string, string>();
+    for (let index = 0; index <= position.tick; index++) {
+      const { graphs, steps } = this.stepTicks[index]!;
+      const last = index === position.tick ? position.step : steps.length - 1;
+      for (let step = 0; step <= last; step++) {
+        const [graphIndex, , , stepValues] = steps[step]!;
+        const graph = graphs[graphIndex]!;
+        for (const [nodeId, pinId, direction, text] of stepValues) {
+          values.set(valueKey(graph.assetGuid, graph.graphId, nodeId, pinId, direction), text);
+        }
+      }
+    }
+    this.reviewValues = values;
+    // The canvases let the path they hold go, then hold the one up to this visit.
+    if (this.held) for (const listener of [...this.holdListeners]) { listener(false); listener(true); }
+    const tick = this.stepTicks[position.tick]!;
+    const paths = new Map<number, { nodes: Set<string>; edges: Set<string> }>();
+    for (const [graphIndex, nodeId, via] of tick.steps.slice(0, position.step + 1)) {
+      let path = paths.get(graphIndex);
+      if (!path) paths.set(graphIndex, path = { nodes: new Set(), edges: new Set() });
+      path.nodes.add(nodeId);
+      if (via !== null) path.edges.add(via);
+    }
+    const trace: GraphDebugTrace = {
+      instanceId: this.snapshot.selectedId ?? "",
+      tickIndex: tick.tickIndex,
+      graphs: [...paths].map(([graphIndex, { nodes, edges }]) => ({
+        ...tick.graphs[graphIndex]!, nodes: [...nodes], edges: [...edges], values: [],
+      })),
+    };
+    for (const listener of [...this.traceListeners]) listener(trace);
+    this.notifyValues();
+  }
+
+  /** Back to the live run: the canvases keep what the last tick ran. */
+  private endReview(): void {
+    this.continueNext = false;
+    if (!this.review) return;
+    this.review = null;
+    this.reviewValues = null;
+    this.notifyValues();
   }
 
   private notifyStatuses(nodeIds: readonly string[]): void {

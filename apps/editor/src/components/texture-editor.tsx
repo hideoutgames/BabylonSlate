@@ -424,7 +424,7 @@ export function TextureDetails({
       <div className="flex flex-col" data-testid="texture-details">
         <Alert className="m-2 w-auto">
           <AlertTitle>Environment Cube</AlertTitle>
-          <AlertDescription>Assign this texture in Scene Defaults → Environment Texture. The source and authored roughness mips are retained. DDS cubes must be authored as prefiltered; importing does not generate filtering.</AlertDescription>
+          <AlertDescription>To use it, set the scene's Environment Source to Texture and pick it in Environment Texture. ENV and DDS files keep their authored roughness mips, so they must be prefiltered. HDR panoramas are converted to a prefiltered DDS cube on import.</AlertDescription>
         </Alert>
         <PropertyGrid title="Cube" rows={rows} />
       </div>

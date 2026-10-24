@@ -65,9 +65,9 @@ export interface PlayAssetSourceHost {
   documentOverrides?: ReadonlyMap<string, PlayDocumentOverride>;
   createScope: (owner: string) => AssetLoadScope;
   /**
-   * `compile` carries the graph debugger's execution probes (a Simulation). Compiled scripts stay
-   * cached after a session ends, so they are keyed on this: Play must never be handed a
-   * Simulation's probes, nor a Simulation Play's scripts.
+   * `compile` carries the breakpoint check and the graph debugger's execution probes (editor Play and
+   * Simulation). Compiled scripts stay cached after a session ends, so they are keyed on this: a host
+   * that compiles without them is never handed scripts that have them, nor the other way round.
    */
   traceExecution?: boolean;
   compile: (required: ReadonlySet<string>) => Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;

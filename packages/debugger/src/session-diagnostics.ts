@@ -1,7 +1,12 @@
-import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample, type PerformanceGpuSample,
-  type PerformanceIdentity, type PerformanceProfile, type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
+import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample,
+  type PerformanceGpuSample, type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile, type PerformanceScriptEntry,
+  type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
+import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 
 const TICK_ROW_WIDTH = PERFORMANCE_TICK_COLUMNS.length;
+const SCRIPT_ROW_WIDTH = PERFORMANCE_SCRIPT_COLUMNS.length;
+/** The runtime delivers a chunk before its script rows outgrow this. */
+const MAX_CHUNK_SCRIPT_ROWS = 4096;
 
 export type DiagnosticOperationRequest = {
   kind: "profile" | "frame"; action: "start" | "stop"; recordingId: string;
@@ -15,6 +20,10 @@ export type SessionDiagnosticPorts<FrameReport> = {
   observeGpuTiming?: (consume: (sample: PerformanceGpuSample) => void, onError: (error: unknown) => void) => {
     status: "unpaired" | "unavailable"; reason?: string; release(): void;
   };
+  /** The host's accounted texture and geometry bytes, sampled at the stats rate while recording. */
+  sampleMemory?: () => { textureBytes: number; geometryBytes: number };
+  /** Main-thread long tasks as the browser reports them; null where it does not (Safari). */
+  observeLongTasks?: (consume: (task: PerformanceLongTaskSample) => void) => (() => void) | null;
   /** Correlated runtime admission. Stop flushes accepted ticks before resolving. */
   runtimeOperation: (request: DiagnosticOperationRequest) => Promise<DiagnosticOperationResult>;
   captureFrame: (signal: AbortSignal) => Promise<FrameReport>;
@@ -25,6 +34,7 @@ type Operation = {
   kind: "profile" | "frame"; id: string; abort: AbortController;
   admission: Promise<DiagnosticOperationResult>; stopping?: Promise<PerformanceProfile | null>;
   recorder?: PerformanceRecorder; releaseFrames?: () => void; releaseGpu?: () => void;
+  releaseLongTasks?: () => void; memoryTimer?: ReturnType<typeof setInterval>;
   timer?: ReturnType<typeof setTimeout>; deadline?: number; sequence: number;
   droppedRecords: number;
 };
@@ -70,8 +80,23 @@ export class SessionDiagnostics<FrameReport> {
           enabledDiagnostics: gpu?.status === "unpaired" ? [...identity.enabledDiagnostics, "gpu-timing"] : identity.enabledDiagnostics };
       }
       if (state.stopping) throw new Error("GPU timing could not start.");
+      // A sample that throws is invalid and ends the recording, as a frame's does.
+      const admit = (record: () => void) => {
+        if (state.stopping || this.operation !== state || !state.recorder) return;
+        try { record(); } catch { void this.finish(state, "error"); }
+      };
+      state.releaseLongTasks = this.ports.observeLongTasks?.((task) => admit(() => recorder.recordLongTask(task))) ?? undefined;
+      const sampleMemory = this.ports.sampleMemory;
+      // The profile names what this host could record, so the Profiler can say what is missing.
+      identity = { ...identity, enabledDiagnostics: [...identity.enabledDiagnostics,
+        ...(sampleMemory ? ["memory"] : []), ...(state.releaseLongTasks ? ["long-tasks"] : [])] };
       recorder.start(identity, options);
       state.recorder = recorder;
+      if (sampleMemory) {
+        const sample = () => admit(() => recorder.recordMemory({ sampledAtMs: this.now(), ...sampleMemory() }));
+        sample();
+        state.memoryTimer = setInterval(sample, STATS_COMMAND_INTERVAL_MS);
+      }
       state.deadline = this.now() + (options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
       state.releaseFrames = this.ports.observeFrames((sample) => {
         if (state.stopping || this.operation !== state) return;
@@ -94,12 +119,17 @@ export class SessionDiagnostics<FrameReport> {
   }
 
   /** Reliable ordered chunks; gaps fail the capture rather than inventing ticks. */
-  receiveTicks(message: { recordingId: string; sequence: number; rows: Float64Array; droppedRecords?: number }): boolean {
+  receiveTicks(message: { recordingId: string; sequence: number; rows: Float64Array; droppedRecords?: number;
+    scripts?: Float64Array; scriptEntries?: readonly PerformanceScriptEntry[] }): boolean {
     const state = this.operation;
     if (!state || state.kind !== "profile" || state.id !== message.recordingId || !state.recorder) return false;
+    const scripts = message.scripts;
     if (!Number.isSafeInteger(message.sequence) || message.sequence !== state.sequence ||
       !(message.rows instanceof Float64Array) || (!message.rows.length && !message.droppedRecords) ||
       message.rows.length % TICK_ROW_WIDTH || message.rows.length > 256 * TICK_ROW_WIDTH ||
+      (scripts !== undefined && (!(scripts instanceof Float64Array) || scripts.length % SCRIPT_ROW_WIDTH ||
+        scripts.length > MAX_CHUNK_SCRIPT_ROWS * SCRIPT_ROW_WIDTH)) ||
+      (message.scriptEntries !== undefined && !Array.isArray(message.scriptEntries)) ||
       (message.droppedRecords !== undefined && (!Number.isSafeInteger(message.droppedRecords) || message.droppedRecords < 0))) {
       void this.finish(state, "error");
       return false;
@@ -108,12 +138,20 @@ export class SessionDiagnostics<FrameReport> {
     if (Number.isSafeInteger(message.droppedRecords) && message.droppedRecords! >= 0)
       state.droppedRecords += message.droppedRecords!;
     try {
+      // A tick's script rows are kept only with the tick.
+      const kept = new Set<number>();
       for (let index = 0; index < message.rows.length; index += TICK_ROW_WIDTH) {
         // A budget stop counts its rejected row; the rest of the chunk is dropped too.
         if (!state.recorder.recording) { state.droppedRecords += (message.rows.length - index) / TICK_ROW_WIDTH; break; }
         const sample = {} as PerformanceTickSample;
         PERFORMANCE_TICK_COLUMNS.forEach((column, offset) => { sample[column] = message.rows[index + offset]!; });
-        state.recorder.recordTick(sample, { drain: true });
+        if (state.recorder.recordTick(sample, { drain: true })) kept.add(sample.tickId);
+      }
+      if (message.scriptEntries?.length) state.recorder.recordScriptEntries(message.scriptEntries, { drain: true });
+      if (scripts) for (let index = 0; index < scripts.length && state.recorder.recording; index += SCRIPT_ROW_WIDTH) {
+        if (!kept.has(scripts[index]!)) continue;
+        state.recorder.recordScript({ tickId: scripts[index]!, entry: scripts[index + 1]!, calls: scripts[index + 2]!, totalMs: scripts[index + 3]! },
+          { drain: true });
       }
       return true;
     } catch { void this.finish(state, "error"); return false; }
@@ -165,6 +203,9 @@ export class SessionDiagnostics<FrameReport> {
     state.releaseFrames = undefined;
     state.releaseGpu?.();
     state.releaseGpu = undefined;
+    state.releaseLongTasks?.();
+    state.releaseLongTasks = undefined;
+    if (state.memoryTimer !== undefined) clearInterval(state.memoryTimer);
     state.stopping = (async () => {
       await state.admission;
       const released = await this.request({ kind: state.kind, action: "stop", recordingId: state.id });

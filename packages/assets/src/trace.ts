@@ -67,6 +67,60 @@ export async function writeTraceDocument(
   return path;
 }
 
+/** A recorded trace in the project's derived data. */
+export type TraceDocumentEntry = {
+  path: string;
+  fileName: string;
+  /** When it was recorded, from the editor's `session-<ms>` name, else the file's time; null when neither is known. */
+  recordedAt: number | null;
+  /** Bytes on disk, where the storage reports it. */
+  size: number | null;
+};
+
+/** The project's recorded traces, newest first. */
+export async function listTraceDocuments(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<TraceDocumentEntry[]> {
+  const dir = tracesDir(projectGuid);
+  if (!(await derivedStorage.exists(dir))) return [];
+  return (await derivedStorage.readdir(dir))
+    .filter((entry) => !entry.isDir && isTracePath(entry.name))
+    .map((entry) => {
+      const named = /^session-(\d+)\.htrace$/.exec(entry.name);
+      return {
+        path: `${dir}/${entry.name}`,
+        fileName: entry.name,
+        recordedAt: named ? Number(named[1]) : (entry.mtime ?? null),
+        size: entry.size ?? null,
+      };
+    })
+    .sort((a, b) => (b.recordedAt ?? -Infinity) - (a.recordedAt ?? -Infinity) || b.fileName.localeCompare(a.fileName));
+}
+
+/**
+ * Deletes the project's oldest traces beyond `keep`, except the paths in `inUse` (open in a tab), and
+ * returns the deleted paths. A trace that cannot be deleted is left for the next pass.
+ */
+export async function pruneTraceDocuments(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+  keep: number,
+  inUse: ReadonlySet<string> = new Set(),
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const entry of (await listTraceDocuments(derivedStorage, projectGuid)).slice(Math.max(0, keep))) {
+    if (inUse.has(entry.path)) continue;
+    try {
+      await derivedStorage.remove(entry.path);
+      removed.push(entry.path);
+    } catch {
+      // Removed meanwhile, or locked: the next recording tries again.
+    }
+  }
+  return removed;
+}
+
 export async function readTraceDocument(
   derivedStorage: ProjectStorage,
   path: string,

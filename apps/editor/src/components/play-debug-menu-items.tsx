@@ -1,3 +1,6 @@
+import { useState } from "react";
+import type { TraceDocumentEntry } from "@haptic/assets";
+import { DEFAULT_TRACES_KEPT } from "@haptic/core";
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -13,6 +16,7 @@ import {
 } from "@haptic/ui/components/dropdown-menu";
 import {
   ClipboardCheckIcon,
+  HistoryIcon,
   LayersIcon,
   MonitorPlayIcon,
   PackageIcon,
@@ -42,7 +46,46 @@ export type PlayDebugMenuItemsProps = {
   onPlayFromSceneChange: (checked: boolean) => void;
   /** Shown for Feature Test projects only. */
   onRunFeatureTestCheck?: () => void;
+  /** The project's recorded traces, newest first; with `onOpenTrace`, shows Recent Traces. */
+  listRecentTraces?: () => Promise<readonly TraceDocumentEntry[]>;
+  onOpenTrace?: (path: string) => void;
+  /** How many traces Recent Traces lists: the Traces Kept setting. */
+  recentTraceLimit?: number;
 };
+
+const traceTime = (entry: TraceDocumentEntry) => entry.recordedAt === null ? entry.fileName : new Date(entry.recordedAt).toLocaleString(undefined, {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
+});
+
+/** The newest recorded traces, read again each time the submenu opens. */
+function RecentTracesSubmenu({ list, onOpen, limit }: {
+  list: () => Promise<readonly TraceDocumentEntry[]>;
+  onOpen: (path: string) => void;
+  limit: number;
+}) {
+  const [traces, setTraces] = useState<readonly TraceDocumentEntry[] | null>(null);
+  return (
+    <DropdownMenuSub onOpenChange={(open) => {
+      if (!open) return;
+      setTraces(null);
+      void list().then((entries) => setTraces(entries.slice(0, limit)), () => setTraces([]));
+    }}>
+      <DropdownMenuSubTrigger data-testid="recent-traces-submenu">
+        <HistoryIcon />
+        Recent Traces
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-80 w-max min-w-48 overflow-y-auto whitespace-nowrap">
+        {traces === null ? <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
+          : traces.length === 0 ? <DropdownMenuItem disabled>No Recorded Traces</DropdownMenuItem>
+            : traces.map((trace) => (
+              <DropdownMenuItem key={trace.path} data-testid="recent-trace" onClick={() => onOpen(trace.path)}>
+                {traceTime(trace)}
+              </DropdownMenuItem>
+            ))}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
 
 /** The Debug menu next to Play: what Play starts, how it starts, and the in-game overlays. */
 export function PlayDebugMenuItems({
@@ -63,6 +106,9 @@ export function PlayDebugMenuItems({
   onPauseOnPlayChange,
   onPlayFromSceneChange,
   onRunFeatureTestCheck,
+  listRecentTraces,
+  onOpenTrace,
+  recentTraceLimit = DEFAULT_TRACES_KEPT,
 }: PlayDebugMenuItemsProps) {
   return (
     <DropdownMenuContent align="center" className="w-max min-w-52 whitespace-nowrap">
@@ -146,6 +192,7 @@ export function PlayDebugMenuItems({
           </DropdownMenuCheckboxItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
+      {listRecentTraces && onOpenTrace ? <RecentTracesSubmenu list={listRecentTraces} onOpen={onOpenTrace} limit={recentTraceLimit} /> : null}
       {onRunFeatureTestCheck ? (
         <DropdownMenuItem
           data-testid="feature-test-check-open"

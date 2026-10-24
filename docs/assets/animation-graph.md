@@ -50,6 +50,8 @@ Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule graphs rea
 
 Start a Simulation with the graph open and pick an actor in **Debug Instance**. In **State Machine** mode the states the graph plays light up, and a transition lights up when it is taken. **Animation Object** mode lights up the nodes that run, like a Class. See [Watch a graph run](../debugging/index.md#watch-a-graph-run).
 
+To stop the game when the graph enters a state, choose **Add Breakpoint** from the state's menu. To stop it when a transition is taken, select the transition or its state and choose **Add Breakpoint** in **Details**; a Both Ways transition also has **Add Reverse Breakpoint**. **Edit Breakpoint…** makes one stop only on a given hit. See [Breakpoints](../debugging/index.md#breakpoints).
+
 ## Notes
 
 - Add an [Animation Graph component](../components/animation-graph.md) to an actor to run the graph.

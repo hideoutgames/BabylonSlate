@@ -4,6 +4,7 @@ import {
   deformerBindings,
   DEFORMER_PROPERTY_KEYS,
   fogVolumeBindings,
+  reflectionProbeBindings,
   isInteractiveUIControl2DClass,
   isOverlayLayoutClass,
   isUIControl2DClass,
@@ -148,6 +149,28 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     if (volumes.length) this.state.fogVolumeSlots.add(slotId); else this.state.fogVolumeSlots.delete(slotId);
   }
 
+  emitActorReflectionProbes(actor: Actor, slotId: number): void {
+    const hasProbe = !actor.sceneLayerId && actor.components.some((component) =>
+      !component.destroyed && component.classId === "ReflectionProbeComponent");
+    if (!hasProbe && !this.state.reflectionProbeSlots.has(slotId)) return;
+    const probes = hasProbe ? reflectionProbeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
+      const { position, rotation, scale } = component.transform;
+      const size = component.getVariable("size");
+      return {
+        id: component.guid, classId: component.classId, parentId: component.parentId,
+        properties: component.classId === "ReflectionProbeComponent" ? {
+          enabled: component.getVariable("enabled"), size: size == null ? undefined : rgbTuple(size),
+          resolution: component.getVariable("resolution"),
+        } : {},
+        transform: { position: [position.x, position.y, position.z] as [number, number, number],
+          rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number],
+          scale: [scale.x, scale.y, scale.z] as [number, number, number] },
+      };
+    })) : [];
+    this.host.emit({ type: "setReflectionProbes", slotId, actorId: actor.guid, probes });
+    if (probes.length) this.state.reflectionProbeSlots.add(slotId); else this.state.reflectionProbeSlots.delete(slotId);
+  }
+
   private cameraAssignPayload(
     actor: Actor,
     camera: ActorComponent,
@@ -196,6 +219,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorOutlines(actor, slotId);
     this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
+    this.emitActorReflectionProbes(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.state.areaLightSlots.has(slotId)) {
     const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
@@ -376,7 +400,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         meshKind: "rigidbody",
         parts: [playMeshPartOf(rigid)],
       });
-    } else if (this.state.fogVolumeSlots.has(slotId)) {
+    } else if (this.state.fogVolumeSlots.has(slotId) || this.state.reflectionProbeSlots.has(slotId)) {
       this.host.emit({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: null });
     }
   }

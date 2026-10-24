@@ -40,7 +40,7 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
   const scene = createDefaultScene();
   scene.settings.grid.showGrid = false;
   scene.settings.environmentColor = [0, 0, 0];
-  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentSource = "none";
   scene.actors = [createActor("gizmo-box", "Gizmo Box", { components: [createMeshComponent("gizmo-mesh", "box")] })];
   await setPreviewScene(page, scene);
   await page.getByTestId("tree-row-actor:gizmo-box").click();

@@ -114,8 +114,19 @@ export type BtEvalTrace = {
   link(parentId: string, childId: string): void;
 };
 
+/**
+ * Node breakpoints, for an editor session that stops on them. The evaluator reports a node that has one
+ * when it starts (it opens past its decorators: a new run, or a Loop's next one) and whenever it fails:
+ * its own result, a decorator, a Time Limit or an abort.
+ */
+export type BtEvalBreakpoints = {
+  has(nodeId: string): boolean;
+  hit(nodeId: string, event: "started" | "failed"): void;
+};
+
 export type EvaluateBehaviourTreeOptions = {
   trace?: BtEvalTrace;
+  breakpoints?: BtEvalBreakpoints;
   host?: BtTaskHost;
   serviceHost?: BtServiceHost;
   decoratorHost?: BtDecoratorHost;

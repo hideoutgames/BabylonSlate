@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DebugGraphTrace, DebugInstance, DebugObserveTarget } from "@haptic/bridge";
-import { GraphDebugStore, type GraphDebugRequest } from "./graph-debug-store";
+import type { DebugGraphTrace, DebugInstance, DebugObserveTarget, DebugStep } from "@haptic/bridge";
+import { GraphDebugStore, STEP_HISTORY_TICKS, type GraphDebugRequest, type GraphDebugTrace } from "./graph-debug-store";
 
 const DOOR: DebugObserveTarget = { kind: "class", classId: "Door" };
 const WINDOW: DebugObserveTarget = { kind: "class", classId: "Window" };
@@ -182,6 +182,134 @@ describe("GraphDebugStore traces", () => {
     store.receiveTrace({ target: DOOR, instanceId: "a", tickIndex: 1, graphs: [graphTrace([["n", "p", "in", "1"]])] });
     store.select("b");
     expect(store.value("Door.class", "event-graph", "n", "p", "in")).toBeUndefined();
+  });
+});
+
+describe("GraphDebugStore variables", () => {
+  it("keeps the followed instance's variable texts and tells value listeners about them and traces", () => {
+    const { store } = observed();
+    store.receiveRoster(roster([actor("a"), actor("b")], [], true));
+    const changed = vi.fn();
+    store.subscribeValues(changed);
+    store.receiveVariables({ target: DOOR, instanceId: "a", tickIndex: 1, values: [["gold", "3"], ["owner", "Mira"]] });
+    store.receiveVariables({ target: DOOR, instanceId: "a", tickIndex: 2, values: [["gold", "7"]] });
+    expect(store.variable("gold")).toBe("7");
+    expect(store.variable("owner")).toBe("Mira");
+    store.receiveTrace({ target: DOOR, instanceId: "a", tickIndex: 3, graphs: [graphTrace([["n", "p", "in", "1"]])] });
+    expect(changed).toHaveBeenCalledTimes(3);
+
+    // Another instance's report is dropped, and following it forgets the old texts.
+    store.receiveVariables({ target: DOOR, instanceId: "b", tickIndex: 3, values: [["gold", "0"]] });
+    expect(store.variable("gold")).toBe("7");
+    store.select("b");
+    expect(store.variable("gold")).toBeUndefined();
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("GraphDebugStore stepping", () => {
+  /** A tick in which `a` produced `x` and then, over wire `e1`, `b` read `y`. */
+  const tick = (tickIndex: number, x: string, y: string, extra: DebugStep[] = []) => ({
+    target: DOOR, instanceId: "a", tickIndex,
+    graphs: [graphTrace([["a", "x", "out", x], ["b", "y", "in", y]], ["a", "b"])],
+    steps: [[0, "a", null, [["a", "x", "out", x]]], [0, "b", "e1", [["b", "y", "in", y]]], ...extra] as DebugStep[],
+  });
+  const value = (store: GraphDebugStore, nodeId: string, pinId: string, direction: "in" | "out") =>
+    store.value("Door.class", "event-graph", nodeId, pinId, direction);
+
+  function stepping() {
+    const { store } = observed();
+    store.receiveRoster(roster([actor("a")], [], true));
+    store.receiveTrace(tick(1, "1", "1"));
+    store.receiveTrace(tick(2, "2", "1"));
+    store.setHeld(true);
+    return store;
+  }
+
+  it("walks back through the recorded steps of earlier ticks, with the values pins had at each", () => {
+    const store = stepping();
+    expect(store.stepPosition()).toBeNull();
+    expect(store.stepBack()).toBe(true);
+    expect(store.stepPosition()).toMatchObject({ tickIndex: 2, step: 1, stepCount: 2, newest: true, nodeId: "b", graphId: "event-graph" });
+    expect(value(store, "a", "x", "out")).toBe("2");
+    expect(store.stepBack()).toBe(true);
+    expect(store.stepPosition()).toMatchObject({ tickIndex: 2, step: 0, newest: false, nodeId: "a" });
+    // Tick 2 has not read `y` yet: it holds what tick 1 read.
+    expect(value(store, "b", "y", "in")).toBe("1");
+    expect(store.stepBack()).toBe(true);
+    expect(store.stepBack()).toBe(true);
+    expect(store.stepPosition()).toMatchObject({ tickIndex: 1, step: 0 });
+    expect(value(store, "a", "x", "out")).toBe("1");
+    expect(value(store, "b", "y", "in")).toBeUndefined();
+    expect(store.stepBack()).toBe(false);
+
+    expect(store.stepForward()).toBe("moved");
+    expect(store.stepForward()).toBe("moved");
+    expect(store.stepForward()).toBe("moved");
+    expect(store.stepPosition()).toMatchObject({ tickIndex: 2, step: 1 });
+    expect(store.stepForward()).toBe("atNewest");
+  });
+
+  it("lights the path up to the step and tells value readers, keeping the canvas held", () => {
+    const store = stepping();
+    const traces: GraphDebugTrace[] = [];
+    const holds: boolean[] = [];
+    const changed = vi.fn();
+    store.subscribeTrace((trace) => traces.push(trace));
+    store.subscribeHold((held) => holds.push(held));
+    store.subscribeValues(changed);
+    store.stepBack();
+    store.stepBack();
+    expect(traces.map((trace) => trace.graphs.map((graph) => [graph.nodes, graph.edges]))).toEqual([
+      [[["a", "b"], ["e1"]]],
+      [[["a"], []]],
+    ]);
+    // The canvas lets the earlier path go and holds the new one.
+    expect(holds).toEqual([true, false, true, false, true]);
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues Forward past the newest step into the next tick's first step", () => {
+    const store = stepping();
+    store.stepBack();
+    store.continueIntoNextTick();
+    store.receiveTrace(tick(3, "3", "1"));
+    expect(store.stepPosition()).toMatchObject({ tickIndex: 3, step: 0, nodeId: "a" });
+    expect(value(store, "a", "x", "out")).toBe("3");
+  });
+
+  it("leaves the review for live values when the Simulation resumes, a tick runs or another object is followed", () => {
+    const store = stepping();
+    store.stepBack();
+    store.stepBack();
+    store.setHeld(false);
+    expect(store.stepPosition()).toBeNull();
+    expect(value(store, "a", "x", "out")).toBe("2");
+
+    store.setHeld(true);
+    store.stepBack();
+    store.receiveTrace(tick(3, "3", "1"));
+    expect(store.stepPosition()).toBeNull();
+
+    store.stepBack();
+    store.receiveRoster(roster([actor("c")]));
+    store.select("c");
+    expect(store.stepPosition()).toBeNull();
+    expect(store.stepBack()).toBe(false);
+  });
+
+  it("keeps only the most recent ticks of steps, and says when a tick's steps were cut short", () => {
+    const { store } = observed();
+    store.receiveRoster(roster([actor("a")], [], true));
+    for (let index = 1; index <= STEP_HISTORY_TICKS + 2; index++) store.receiveTrace(tick(index, String(index), "1"));
+    store.receiveTrace({ ...tick(STEP_HISTORY_TICKS + 3, "x", "1"), stepsTruncated: true });
+    store.setHeld(true);
+    expect(store.stepBack()).toBe(true);
+    expect(store.stepPosition()).toMatchObject({ truncated: true });
+    let moves = 1;
+    while (store.stepBack()) moves++;
+    expect(moves).toBe(STEP_HISTORY_TICKS * 2);
+    expect(store.stepPosition()).toMatchObject({ tickIndex: 4, step: 0 });
   });
 });
 

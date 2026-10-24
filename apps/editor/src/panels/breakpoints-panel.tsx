@@ -17,6 +17,7 @@ import { useBreakpointStore } from "../context/breakpoints-context";
 import { useKeybindChord } from "../context/keybind-context";
 import { usePlay } from "../context/play-context";
 import { IconActionButton } from "../components/icon-action-button";
+import { describeBreakpointSettings } from "../lib/breakpoint-settings";
 import type { BreakpointEntry } from "../services/breakpoint-store";
 
 const NO_BREAKPOINTS: readonly BreakpointEntry[] = [];
@@ -24,7 +25,7 @@ const unsubscribed = () => () => {};
 const noBreakpoints = () => NO_BREAKPOINTS;
 
 /**
- * Every node breakpoint of the project, including those in Classes that are not open: switch one
+ * Every node breakpoint of the project, including those in assets that are not open: switch one
  * on or off, remove it, or open its node. Set them from a node's menu or the Toggle Breakpoint key.
  */
 export function BreakpointsPanel() {
@@ -57,9 +58,10 @@ export function BreakpointsPanel() {
         <Empty>
           <EmptyTitle>No Breakpoints</EmptyTitle>
           <EmptyDescription>
-            Add one from a node&apos;s menu in a Class graph
+            Add one from a node&apos;s menu in a Class graph, a Behaviour Tree or a State Machine
             {toggleChord ? <>, or select the node and press <ShortcutKeys chord={toggleChord} /></> : null}.
-            A Simulation stops at the end of the tick that runs it.
+            A Simulation or Play stops at the end of the tick that reaches it. Edit Breakpoint in the same menu
+            adds a condition or a hit count.
           </EmptyDescription>
         </Empty>
       ) : (
@@ -67,7 +69,8 @@ export function BreakpointsPanel() {
           <WindowedList itemCount={breakpoints.length} rowHeight={touch ? WINDOWED_LIST_TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT}>
             {(index) => {
               const entry = breakpoints[index]!;
-              const { className, graphName, nodeTitle } = entry.label;
+              const { className, graphName, nodeTitle, pinName } = entry.label;
+              const settings = describeBreakpointSettings(entry, pinName);
               return (
                 <div className="flex h-full items-center gap-1 border-b border-border px-2" data-testid="breakpoint-row">
                   <Checkbox
@@ -79,7 +82,7 @@ export function BreakpointsPanel() {
                     variant="ghost"
                     size="touch"
                     className="min-w-0 flex-1 justify-start gap-2 px-1.5 font-normal"
-                    title={`${className} › ${graphName} › ${nodeTitle}`}
+                    title={`${className} › ${graphName} › ${nodeTitle}${settings ? ` (${settings})` : ""}`}
                     onClick={() => void openSessionSource({
                       severity: "info",
                       code: BREAKPOINT_PAUSE_CODE,
@@ -90,6 +93,7 @@ export function BreakpointsPanel() {
                     })}
                   >
                     <span className="truncate">{nodeTitle}</span>
+                    {settings ? <span className="max-w-48 shrink-0 truncate text-xs" data-testid="breakpoint-row-settings">{settings}</span> : null}
                     <span className="truncate text-xs text-muted-foreground">{className} › {graphName}</span>
                   </Button>
                   <IconActionButton

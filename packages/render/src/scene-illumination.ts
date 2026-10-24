@@ -1,5 +1,6 @@
 import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
+import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
 import {
@@ -27,6 +28,8 @@ import {
   identitySerializedTransform,
   areaRectLightBindings,
   normalizeSceneFogSettings,
+  sceneEnvironmentTextureGuid,
+  REFLECTION_PROBE_CLASS_ID,
 } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
@@ -544,7 +547,9 @@ export function applySceneEnvironment(
     scene.fogEnabled = false;
   }
   updateSceneRenderingSettings(scene, undefined, undefined, undefined, settings.environmentLighting ?? {});
-  applyEnvironmentLighting(scene, settings.environmentTextureGuid, options.assets);
+  applyEnvironmentLighting(scene, sceneEnvironmentTextureGuid(settings), options.assets, {
+    skybox: settings.environmentSource === "skybox",
+  });
   setSceneEffectsAssets(scene, options.assets);
 }
 
@@ -587,6 +592,9 @@ export function* syncAuthoredIlluminationSteps(
   const captures = sceneRenderTargetCaptures(scene);
   captures.setAssets(options.assets?.renderTargets, options.assets?.renderTargetTextures);
   captures.syncAuthored(sceneData);
+  // A controller exists only while some document had a probe; others pay nothing.
+  if (findSceneReflectionProbes(scene) || sceneData.actors.some((actor) => actor.components.some((component) => component.classId === REFLECTION_PROBE_CLASS_ID)))
+    sceneReflectionProbes(scene).syncAuthored(sceneData);
   applySceneEnvironment(scene, sceneData, {
     applyClearColor: options.applyClearColor,
     assets: options.assets,

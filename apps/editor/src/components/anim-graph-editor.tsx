@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
@@ -52,6 +52,7 @@ import {
   animGraphEdgeTypes,
   animGraphNodeTypes,
 } from "@haptic/graph-ui";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import {
   useActiveDocumentState,
@@ -77,6 +78,12 @@ import {
   validateSerializedGraph,
 } from "../services/graph-validation";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
+import { useBreakpointStore } from "../context/breakpoints-context";
+import { useKeybindChord } from "../context/keybind-context";
+import { breakpointMenuItems } from "../lib/breakpoint-menu";
+import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
+import { stateMachineBreakpointView } from "../lib/state-machine-breakpoints";
+import type { BreakpointEntry, BreakpointStore } from "../services/breakpoint-store";
 import { IconActionButton } from "./icon-action-button";
 import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useDataCatalog } from "../lib/use-data-catalog";
@@ -271,11 +278,74 @@ function useAnimGraphDocument() {
   };
   // The graph's guid names it to the running game; a Simulation's live State Machine is reported under it.
   const documentPath = entry?.ref.path;
-  const graphGuid = useMemo(() => {
+  const graphHeader = useMemo(() => {
     void registryEpoch;
-    return documentPath ? assetRegistry?.getByPath(documentPath)?.header.guid : undefined;
+    return documentPath ? assetRegistry?.getByPath(documentPath)?.header : undefined;
   }, [assetRegistry, registryEpoch, documentPath]);
-  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid };
+  const graphGuid = graphHeader?.guid;
+  const assetName = graphHeader?.name ?? doc.name;
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid, assetName };
+}
+
+/** A state's or transition's breakpoint, named as the State Machine shows it. */
+function stateMachineBreakpointLabel(
+  doc: AnimGraphDocument,
+  id: string,
+  assetName: string,
+): BreakpointEntry["label"] {
+  const state = doc.states.find((row) => row.id === id);
+  const transition = state ? undefined : doc.transitions.find((row) => row.id === id);
+  return {
+    className: assetName,
+    graphName: "State Machine",
+    nodeTitle: state?.name ?? (transition ? transitionLabel(doc, transition) : id),
+  };
+}
+
+/**
+ * Adds or removes the breakpoint of one direction of a transition, and edits its hit count once set; the
+ * Breakpoints window disables it.
+ */
+function TransitionBreakpointButton({
+  store,
+  location,
+  label,
+  reverse,
+}: {
+  store: BreakpointStore;
+  location: BreakpointLocation;
+  label: () => BreakpointEntry["label"];
+  reverse: boolean;
+}) {
+  const set = useSyncExternalStore(store.subscribe, () => store.get(location) !== undefined);
+  const { edit, dialog } = useBreakpointSettingsEditor(store);
+  const which = reverse ? " Reverse" : "";
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid={`anim-graph-breakpoint-${location.nodeId}`}
+        aria-pressed={set}
+        onClick={() => (set ? store.remove(location) : store.toggle(location, label()))}
+      >
+        {`${set ? "Remove" : "Add"}${which} Breakpoint`}
+      </Button>
+      {set ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid={`anim-graph-edit-breakpoint-${location.nodeId}`}
+          onClick={() => edit({ location, nodeTitle: label().nodeTitle, pins: null })}
+        >
+          {`Edit${which} Breakpoint…`}
+        </Button>
+      ) : null}
+      {dialog}
+    </>
+  );
 }
 
 function AnimGraphVariablesList({
@@ -443,7 +513,7 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, latestDoc, commit, documentId, catalog, graphGuid } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName } = useAnimGraphDocument();
   // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its transitions.
   const runTrace = useAnimStateMachineRunTrace(graphGuid);
   const {
@@ -471,6 +541,40 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     ruleSurface,
   );
   const { setDiagnostics, diagnostics, focusDiagnostic } = useValidation();
+  // Breakpoints use the session's terms: the graph's guid and the State Machine's graph id.
+  const breakpointStore = useBreakpointStore();
+  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
+  const latestDocRef = useRef(latestDoc);
+  latestDocRef.current = latestDoc;
+  const breakpointLabel = useCallback(
+    (id: string) => stateMachineBreakpointLabel(latestDocRef.current(), id, assetName),
+    [assetName],
+  );
+  const breakpoints = useMemo(
+    () => breakpointStore && graphGuid
+      ? stateMachineBreakpointView(breakpointStore, graphGuid, breakpointLabel, () => latestDocRef.current())
+      : undefined,
+    [breakpointLabel, breakpointStore, graphGuid],
+  );
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+  const stateMenu = useCallback(
+    (nodeId: string) => {
+      if (!breakpointStore || !graphGuid) return [];
+      const location = { assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId };
+      return breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord,
+        () => editBreakpoint({ location, nodeTitle: breakpointLabel(nodeId).nodeTitle, pins: null }));
+    },
+    [breakpointLabel, breakpointStore, editBreakpoint, graphGuid, toggleBreakpointChord],
+  );
+  // A stop at a transition (from a breakpoint or the Breakpoints window) selects it, so Details show it.
+  const focusTransition =
+    focusDiagnostic?.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID && focusDiagnostic.assetGuid === graphGuid
+      ? doc.transitions.find((row) => row.id === focusDiagnostic.nodeId)
+      : undefined;
+  const focusTransitionId = focusTransition?.id;
+  useEffect(() => {
+    if (focusTransitionId) setSelectedTransitionId(focusTransitionId);
+  }, [focusTransitionId, setSelectedTransitionId]);
   const { settings: appSettings } = useAppSettings();
   const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [rulePaletteOpen, setRulePaletteOpen] = useState(false);
@@ -652,6 +756,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
         <GraphEditor
           initialGraph={initialGraph}
           runTrace={runTrace}
+          breakpoints={breakpoints}
+          contextMenuItemsForNode={stateMenu}
           commitPositionsOnDragEnd
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}
@@ -664,7 +770,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           }}
           diagnostics={graphDiagnostics}
           selectedNodeId={selectedId ?? undefined}
-          focusedNodeId={focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
+          focusedNodeId={focusTransition?.fromStateId ?? focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
           connectEndMode="zone-add-node"
           connectionMode="loose"
           uniqueDirectedPairOnConnect
@@ -694,6 +800,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           }}
         />
       </div>
+      {breakpointSettingsDialog}
     </PanelFrame>
   );
 }
@@ -767,7 +874,8 @@ function transitionPropertyRows(
 }
 
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
-  const { doc, commit, assetRegistry, catalog } = useAnimGraphDocument();
+  const { doc, commit, assetRegistry, catalog, graphGuid, assetName } = useAnimGraphDocument();
+  const breakpointStore = useBreakpointStore();
   const {
     selectedId,
     selectedTransitionId,
@@ -1029,6 +1137,17 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                     Open Reverse Rule
                   </Button>
                 ) : null}
+                {breakpointStore && graphGuid
+                  ? [block.openRuleId, block.reverseRuleId].map((id, index) => id ? (
+                      <TransitionBreakpointButton
+                        key={id}
+                        store={breakpointStore}
+                        location={{ assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId: id }}
+                        label={() => stateMachineBreakpointLabel(doc, id, assetName)}
+                        reverse={index === 1}
+                      />
+                    ) : null)
+                  : null}
               </div>
             </div>
           ))}

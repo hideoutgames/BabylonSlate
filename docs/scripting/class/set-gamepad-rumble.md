@@ -25,3 +25,4 @@ Vibrates a gamepad for a set time.
 
 - An intensity or duration of 0 stops the vibration.
 - Gamepads without vibration, and indexes that are negative or not whole numbers, are ignored.
+- To vibrate the phone or tablet itself, use [Vibrate Device](vibrate-device.md).

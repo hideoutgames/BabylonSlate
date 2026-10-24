@@ -14,7 +14,7 @@ export {
   createCommandRegistry,
   type CreateCommandRegistryOptions,
 } from "./registry";
-export { CORE_COMMAND_NAMES, DEBUG_COMMAND_NAMES, MAX_TIME_DILATION, isReservedConsoleCommandName } from "./commands";
+export { CORE_COMMAND_NAMES, DEBUG_COMMAND_NAMES, EDITOR_COMMAND_NAMES, MAX_TIME_DILATION, isReservedConsoleCommandName } from "./commands";
 export { tokenize, tokenizeCommand, parseCommandArgs, matchCommandName, type CommandToken } from "./parser";
 export {
   warnDebugTierConsoleCommands,
@@ -72,5 +72,6 @@ export {
   type TraceRecorderOptions,
 } from "./trace-recorder";
 export * from "./performance-recorder";
+export * from "./long-tasks";
 export * from "./session-diagnostics";
 export * from "./diagnostic-operation-client";

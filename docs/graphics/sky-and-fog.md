@@ -18,7 +18,7 @@ New 3D scenes include a locked **Skybox** actor that shows the engine's default 
 - The Skybox follows its actor's position, rotation and scale. Rotate the actor to turn the sky.
 - It always draws behind the scene, even beyond the camera's **Far Clip**.
 - It cannot be picked in the viewport; select it in the **Outliner**. The default Skybox is locked, so unlock it there before you edit it.
-- It does not receive fog, cast shadows or light the scene. For sky lighting, use [environment lighting](lighting.md#environment-lighting).
+- It does not receive fog or cast shadows. With the scene's **Environment Source** set to **Skybox**, the default in new 3D scenes, it also lights and reflects in surfaces. See [environment lighting](lighting.md#environment-lighting).
 
 See [Skybox](../components/skybox.md) for the full component reference.
 

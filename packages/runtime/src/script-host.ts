@@ -3,6 +3,7 @@ import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName,
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import type { ScriptDebugTrace } from "./script-debug";
 import type { ScriptBreakpoints } from "./script-breakpoints";
+import type { ScriptCostMeter } from "./script-cost-meter";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
 import { emptyWaterSample, idleDeviceMotion, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@haptic/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@haptic/core";
@@ -123,6 +124,8 @@ export interface ScriptHostServices {
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
   getProjectVersion?(): string;
+  /** The game's third-party notices text; rejects when the host has none or cannot read them. */
+  getThirdPartyNotices?(): Promise<string>;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
   interfaceRegistry?: InterfaceRegistry;
   /** Live-object `ctx.isA` uses ClassRegistry ancestry, not string equality. */
@@ -313,6 +316,7 @@ export interface ScriptHostServices {
   getRenderTargetMode?(guid: string): RenderTargetMode;
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;
+  recaptureReflectionProbes?(): void;
   updateIllumination?(target: unknown): void;
   paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
   uiControlFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): boolean;
@@ -584,6 +588,8 @@ export interface ScriptContext {
   getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
+  /** Get Third-Party Notices: the notices text, or an error message when they cannot be read. */
+  getThirdPartyNotices(): Promise<{ success: boolean; text: string; errorMessage: string }>;
   getSceneReference(): Scene | null;
   /** Live subsystem whose class isA `classId`, or null (`Get <Subsystem>`). */
   getSubsystem(classId: string): BObject | null;
@@ -632,6 +638,7 @@ export interface ScriptContext {
     intensity: number,
     durationMs: number,
   ): void;
+  vibrateDevice?(durationMs: number): void;
   gamepadConnections?: ReadonlyArray<{
     gamepadIndex: number;
     connected: boolean;
@@ -745,6 +752,8 @@ export interface ScriptContext {
   getRenderTargetMode(guid: string | null): RenderTargetMode;
   getRenderTargetTextureTarget(guid: string | null): string | null;
   captureRenderTarget(target: unknown): void;
+  /** Recapture every reflection probe once the play world settles. */
+  recaptureReflectionProbes(): void;
   getRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty): unknown;
   setRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty, value: unknown): void;
   getCameraFieldOfView(target: unknown): number;
@@ -842,14 +851,14 @@ export type HostContextKey =
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
-  | "getProjectVersion" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
+  | "getProjectVersion" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
   | "setSceneLayerCameraLocation" | "addSceneLayerCameraOffset" | "getSceneLayerCameraLocation" | "setSceneLayerCameraRotation"
   | "getSceneLayerCameraRotation" | "setSceneLayerCameraZoom" | "getSceneLayerCameraZoom" | "getOwningSceneLayer"
   | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"
-  | "getRenderTargetTextureTarget" | "captureRenderTarget" | "getRenderTargetCaptureProperty"
+  | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
   | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"
   | "isPathValid" | "getClosestNavigablePoint" | "getRandomPointInRadius" | "addObstacle" | "removeObstacle";
@@ -896,6 +905,7 @@ export class ScriptHost {
   private debugObject: BObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
   private breakpoints: ScriptBreakpoints | null = null;
+  private costMeter: ScriptCostMeter | null = null;
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
@@ -919,6 +929,11 @@ export class ScriptHost {
   /** The breakpoints every run checks; null, or an empty set, checks none. */
   setBreakpoints(breakpoints: ScriptBreakpoints | null): void {
     this.breakpoints = breakpoints;
+  }
+
+  /** Times every entry point call while a profile records; null times none. */
+  setCostMeter(meter: ScriptCostMeter | null): void {
+    this.costMeter = meter;
   }
 
   /** The driver installs persistence before authored Init/Begin Play hooks run. */
@@ -1192,6 +1207,18 @@ export class ScriptHost {
     }
   }
 
+  /** `invokeOwned` for a compiled entry point, which the cost meter times while a profile records. */
+  private invokeEntry<T>(owner: BObject | null, script: CompiledScript, exportName: string, invoke: () => T): T {
+    const meter = this.costMeter;
+    if (meter === null) return this.invokeOwned(owner, invoke);
+    meter.enter(script, exportName);
+    try {
+      return this.invokeOwned(owner, invoke);
+    } finally {
+      meter.exit();
+    }
+  }
+
   /** Fire a compiled entry point (Begin Play, Tick, or a custom event name). */
   invokeEvent(
     classId: string,
@@ -1261,7 +1288,7 @@ export class ScriptHost {
       loaded[0]!.script.assetGuid,
     );
     try {
-      const result = this.invokeOwned(self, () => (evaluate as (context: ScriptContext) => unknown)(ctx));
+      const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", () => (evaluate as (context: ScriptContext) => unknown)(ctx));
       if (!result || typeof result !== "object") return undefined;
       const row = result as { enter?: unknown; exit?: unknown };
       return {
@@ -1351,7 +1378,7 @@ export class ScriptHost {
       entry.script.assetGuid,
     );
     try {
-      const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+      const result = this.invokeEntry(object, entry.script, exportName, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
       if (result instanceof Promise) {
         // Call Interface is not latent: a latent implementation's outputs are the pin defaults.
         void result.catch((error) => this.reportLatentError(error, object));
@@ -1408,7 +1435,7 @@ export class ScriptHost {
           entry.script.assetGuid,
         );
         try {
-          const result = this.invokeOwned(self, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+          const result = this.invokeEntry(self, entry.script, point.name, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
           if (result instanceof Promise) {
             const key = latentKey ?? `${entry.script.assetGuid}:${point.name}`;
             if (self) this.markPending(self, key);
@@ -1712,6 +1739,16 @@ export class ScriptHost {
       getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
       getProjectName: () => services.getProjectName?.() ?? "",
       getProjectVersion: () => services.getProjectVersion?.() ?? "",
+      getThirdPartyNotices: async () => {
+        if (!services.getThirdPartyNotices) {
+          return { success: false, text: "", errorMessage: "Third-party notices are not available here." };
+        }
+        try {
+          return { success: true, text: await services.getThirdPartyNotices(), errorMessage: "" };
+        } catch (error) {
+          return { success: false, text: "", errorMessage: error instanceof Error ? error.message : String(error) };
+        }
+      },
       getSubsystem: (classId) => {
         const id = typeof classId === "string" ? classId.trim() : "";
         return id ? (services.getSubsystem?.(id) ?? null) : null;
@@ -1809,6 +1846,7 @@ export class ScriptHost {
         const component = captureComponent(target);
         if (component?.owner && this.canInvokeOwner(component)) services.captureRenderTarget?.(component.owner);
       },
+      recaptureReflectionProbes: () => services.recaptureReflectionProbes?.(),
       getRenderTargetCaptureProperty: (target, key) => {
         const component = captureComponent(target);
         if (!component || !this.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];
@@ -2290,7 +2328,7 @@ export class ScriptHost {
               entry.script.assetGuid,
             );
             try {
-              const value = this.invokeOwned(receiver, () => (fn as (ctx: ScriptContext) => unknown)(nested));
+              const value = this.invokeEntry(receiver, entry.script, functionName, () => (fn as (ctx: ScriptContext) => unknown)(nested));
               if (value instanceof Promise) {
                 const previous = result;
                 return value.then(
@@ -2335,6 +2373,7 @@ export class ScriptHost {
       context.setGamepadRumble = (gamepadIndex, intensity, durationMs) => {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       };
+      context.vibrateDevice = (durationMs) => tick?.vibrateDevice?.(durationMs);
       context.gamepadConnections = tick?.gamepadConnections ?? [];
       context.sampleWater = (position, waterActor) => {
         if (waterActor?.destroyed) return { ...emptyWaterSample(), actor: null };
