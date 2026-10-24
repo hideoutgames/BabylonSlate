@@ -30,9 +30,15 @@ const lightMixingLabels = {
   blend: "Blend",
 } as const;
 
-type SwitchKey = "outlinesEnabled" | "outlineDistanceFadeEnabled" | "specularEnabled" | "reflectionsEnabled";
-const isSwitch = (key: keyof CelShadingSettings): key is SwitchKey =>
-  key === "outlinesEnabled" || key === "outlineDistanceFadeEnabled" || key === "specularEnabled" || key === "reflectionsEnabled";
+const switchKeys = [
+  "outlinesEnabled",
+  "outlineDistanceFadeEnabled",
+  "specularEnabled",
+  "reflectionsEnabled",
+  "reflectionTexturesEnabled",
+] as const;
+type SwitchKey = (typeof switchKeys)[number];
+const isSwitch = (key: keyof CelShadingSettings): key is SwitchKey => (switchKeys as readonly string[]).includes(key);
 
 const fields: {
   key: keyof CelShadingSettings;
@@ -116,6 +122,12 @@ const fields: {
     label: "Real-Time Reflections",
     description:
       "Lets Real-Time Reflections from Post Processing draw on CEL surfaces. Off keeps CEL flat.",
+  },
+  {
+    key: "reflectionTexturesEnabled",
+    label: "Reflection Textures",
+    description:
+      "CEL reflections also read metalness, roughness and specular maps. Off reads material values only.",
   },
 ];
 

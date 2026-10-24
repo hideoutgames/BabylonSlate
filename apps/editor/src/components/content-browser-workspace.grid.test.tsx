@@ -858,6 +858,51 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(assets).toHaveLength(1);
   });
 
+  it("shows each file's import progress and cancels the import, removing the assets it made", async () => {
+    const assets: IndexedAsset[] = [];
+    installRegistry(assets);
+    let slowSignal: AbortSignal | undefined;
+    let reportProgress!: (fraction: number) => void;
+    const importFile = vi.fn(async (_root: string, _folder: string, name: string, _bytes: Uint8Array, options?: { signal?: AbortSignal; onProgress?: (fraction: number) => void }) => {
+      if (name === "first.png") {
+        const asset = texture(0);
+        assets.push(asset);
+        return [asset];
+      }
+      slowSignal = options?.signal;
+      reportProgress = options!.onProgress!;
+      return new Promise<IndexedAsset[]>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal!.reason));
+      });
+    });
+    const deleteAsset = vi.fn(async () => {});
+    docs.assetRegistry = { ...(docs.assetRegistry as object), importFile, deleteAsset };
+    render(<ContentBrowserWorkspace />);
+    const files = ["first.png", "Sky.hdr"].map((name) => {
+      const file = new File([new Uint8Array([1])], name);
+      Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([1]).buffer });
+      return file;
+    });
+    fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files } });
+
+    const progress = await screen.findByTestId("importing-overlay");
+    await waitFor(() => expect(slowSignal).toBeDefined());
+    expect(within(progress).getByTestId("importing-count").textContent).toBe("2 / 2");
+    expect(within(progress).getByText("Sky.hdr")).toBeTruthy();
+    act(() => reportProgress(0.5));
+    // One file done and half of the second.
+    expect(within(progress).getByTestId("importing-progress").getAttribute("aria-valuenow")).toBe("75");
+
+    fireEvent.click(within(progress).getByTestId("importing-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("importing-overlay")).toBeNull());
+    expect(slowSignal?.aborted).toBe(true);
+    expect(deleteAsset).toHaveBeenCalledWith("tex-0");
+    // A cancel is not a failure.
+    expect(screen.queryByText("Import Failed")).toBeNull();
+    expect(screen.queryByText("Import Partially Completed")).toBeNull();
+    expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
+  });
+
   it("opens the connected reference graph focused on the target and navigates to a selected asset", async () => {
     const asset = texture(0);
     const dependency = texture(1);

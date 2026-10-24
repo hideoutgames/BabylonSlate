@@ -36,7 +36,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", "medium"), number("meshDensity", 0.75),
     number("contactResolution", 256), bool("refraction", true), number("refractionScale", 0.5),
     choice("reflections", "WaterReflectionMode", "sky"), number("reflectionSteps", 8), number("planarScale", 0.5),
-    bool("fft", false), number("fftSize", 64), number("fftCascades", 1)]),
+    number("fftSize", 128), number("fftCascades", 3)]),
   define("PostProcessingQuality", [number("resolutionScale", 0.75)]),
   define("LightingQuality", [choice("localLightMode", "LightBudgetMode", "auto"), number("maxLocalLights", 16)]),
   define("ShadowQuality", [bool("enabled", true), number("distance", 200), number("fadeFraction", 0.1), number("mapSize", 2048),

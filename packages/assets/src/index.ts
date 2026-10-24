@@ -74,6 +74,15 @@ export * from "./trace";
 export * from "./unique-names";
 export * from "./worker-encode";
 export * from "./environment-texture";
+export {
+  DEFAULT_HDR_ENVIRONMENT_FACE_SIZE,
+  HDR_ENVIRONMENT_FACE_SIZES,
+  HDR_SOURCE_CHUNK_ID,
+  hdrEnvironmentFaceSize,
+  normalizeHdrEnvironmentFaceSize,
+  type HdrEnvironmentConverter,
+  type HdrEnvironmentFaceSize,
+} from "./hdr-environment";
 
 export { materialParameterTextureAssetGuids } from "./material-parameter-textures";
 export * from "./area-emission";

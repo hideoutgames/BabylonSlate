@@ -247,11 +247,13 @@ for (const backend of ["webgl2"] as const) {
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
     expect(result.reflectionCaptures).toHaveLength(1);
-    for (const { pbr, celDefault, cel, celNative, unlitStandard } of result.reflectionCaptures) {
+    for (const { pbr, celDefault, cel, celNative, celTexturedFactors, celTextured, unlitStandard } of result.reflectionCaptures) {
       expect(reflected(pbr.off, pbr.on), "a PBR graph mirror reflects").toBeGreaterThan(20);
       expect(pixelDifference(celDefault.off, celDefault.on), "CEL stays flat by default").toBeLessThan(0.5);
       expect(reflected(cel.off, cel.on), "an opted-in CEL graph mirror reflects").toBeGreaterThan(20);
       expect(reflected(celNative.off, celNative.on), "a native metal reflects through the CEL adapter").toBeGreaterThan(20);
+      expect(reflected(celTexturedFactors.off, celTexturedFactors.on), "CEL reads factors only by default").toBe(0);
+      expect(reflected(celTextured.off, celTextured.on), "Reflection Textures read a metallic-roughness map").toBeGreaterThan(20);
       expect(reflected(unlitStandard.off, unlitStandard.on), "an unlit Standard surface never reflects").toBe(0);
       expect(pixelDifference(unlitStandard.off, unlitStandard.on), "unlit Standard color is unchanged").toBeLessThan(0.5);
     }

@@ -22,7 +22,7 @@ describe("Water world caching", () => {
     lake.attachComponent(component);
     const actors = [lake, new Actor({ guid: "bystander", classId: "Actor" })], tick = 1 / 60;
     const water = new WaterWorld();
-    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     normalize.mockClear(); compose.mockClear();
     const found = (time = 0, actorId: string | null = null) => water.query(actors, time, { x: 4, y: -1, z: 0 }, actorId).found;
     expect(found()).toBe(true);
@@ -50,7 +50,7 @@ describe("Water world caching", () => {
     const lake = new Actor({ guid: "lake", classId: "Actor" });
     lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 10, length: 2 } }));
     const actors = [lake], water = new WaterWorld(), point = { x: 4, y: -1, z: 0 };
-    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     water.update(actors, 0);
     expect(water.sample(point).found).toBe(true);
     // Turned a quarter, the long lake no longer reaches x = 4; the step keeps sampling what it evaluated.
@@ -65,7 +65,7 @@ describe("Water world caching", () => {
   it("follows water attached to and destroyed in the world it is bound to", () => {
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const water = new WaterWorld((actors) => actors === world.getActors() ? world : null);
-    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     const point = { x: 4, y: -1, z: 0 };
     const lake = world.spawnActorNow(new Actor({ guid: "lake", classId: "Actor" }));
     const evaluate = (time: number) => { water.update(world.getActors(), time); return water.sample(point).found; };
@@ -80,7 +80,7 @@ describe("Water world caching", () => {
   it("places a parented water through the world's guid registry without indexing its other actors", () => {
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const water = new WaterWorld((actors) => actors === world.getActors() ? world : null);
-    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     let guidReads = 0;
     for (let index = 0; index < 20; index++) {
       const bystander = world.spawnActorNow(new Actor({ guid: `bystander-${index}`, classId: "Actor" }));

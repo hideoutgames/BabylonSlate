@@ -333,7 +333,7 @@ describe("SettingsModal project authoring", () => {
     ["shadow distance", /Shadow Distance/, "Shadows", "project-shadow-distance"],
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
-    ["fft ocean", /Water FFT Ocean Detail/, "Scalability", "quality-water-fft"],
+    ["fft size", /Water FFT Size/, "Scalability", "quality-water-fft-size"],
     ["allow reflections", /Allow Reflections/, "Scalability", "quality-postprocessing-reflections"],
     ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
     ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],

@@ -269,21 +269,107 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     cost: 0,
   },
   {
-    // Opt-in GPU displacement for Custom Material water: the water mesh keeps a static rest grid and the graph applies
-    // the waves (Offset into World Position Offset, Normal into Normal).
+    // The FFT ocean for Custom Material water: the water mesh keeps a static rest grid and the graph applies the waves
+    // (Offset into World Position Offset); Normal, Wave Height, Crest Foam and Subsurface are per pixel where the fragment
+    // reads them.
     type: "input.waterWaves",
     title: "Water Waves",
     category: "Input",
-    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "gpu"],
+    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "fft", "whitecap", "foam", "normal", "subsurface", "scattering"],
     domains: ["surface"],
     inputs: [],
     outputs: [
       { id: "offset", name: "Offset", type: VEC3 },
       { id: "height", name: "Wave Height", type: FLOAT },
       { id: "normal", name: "Normal", type: VEC3 },
+      { id: "crestFoam", name: "Crest Foam", type: FLOAT },
+      { id: "subsurface", name: "Subsurface", type: FLOAT },
       { id: "time", name: "Simulation Time", type: FLOAT },
     ],
     cost: 8,
+  },
+  {
+    // The water nodes shade Custom Material water as built-in water does; on other meshes they output neutral values.
+    type: "input.waterColors",
+    title: "Water Colors",
+    category: "Input",
+    searchAliases: ["water", "color", "shallow", "deep", "foam", "opacity", "tint", "light", "brightness"],
+    domains: ["surface"],
+    stages: ["fragment"],
+    inputs: [],
+    outputs: [
+      { id: "shallowColor", name: "Shallow Color", type: VEC3, colorHint: true },
+      { id: "deepColor", name: "Deep Color", type: VEC3, colorHint: true },
+      { id: "foamColor", name: "Foam Color", type: VEC3, colorHint: true },
+      { id: "opacity", name: "Opacity", type: FLOAT },
+      { id: "sceneLight", name: "Scene Light", type: FLOAT },
+    ],
+    cost: 0,
+  },
+  {
+    type: "input.waterFoam",
+    title: "Water Foam",
+    category: "Input",
+    searchAliases: ["water", "foam", "whitecap", "shore", "shoreline", "contact", "ocean"],
+    domains: ["surface"],
+    stages: ["fragment"],
+    inputs: [],
+    outputs: [
+      { id: "foam", name: "Foam", type: FLOAT },
+      { id: "crestFoam", name: "Crest Foam", type: FLOAT },
+      { id: "shoreFoam", name: "Shore Foam", type: FLOAT },
+      { id: "contactFoam", name: "Contact Foam", type: FLOAT },
+    ],
+    cost: 6,
+  },
+  {
+    type: "input.waterDepthFade",
+    title: "Water Depth Fade",
+    category: "Input",
+    searchAliases: ["water", "depth", "fade", "shallow", "shoreline", "absorption", "soft", "transmittance", "clear"],
+    domains: ["surface"],
+    stages: ["fragment"],
+    inputs: [{ id: "distance", name: "Distance", type: FLOAT }],
+    outputs: [
+      { id: "depth", name: "Depth", type: FLOAT },
+      { id: "fade", name: "Fade", type: FLOAT },
+      { id: "transmittance", name: "Transmittance", type: VEC3 },
+    ],
+    cost: 4,
+  },
+  {
+    type: "input.waterSceneColor",
+    title: "Water Scene Color",
+    category: "Input",
+    searchAliases: ["water", "scene", "refraction", "behind", "underwater", "background", "screen"],
+    domains: ["surface"],
+    stages: ["fragment"],
+    inputs: [
+      { id: "normal", name: "Normal", type: VEC3 },
+      { id: "refraction", name: "Refraction", type: FLOAT },
+    ],
+    outputs: [
+      { id: "color", name: "Color", type: VEC3, colorHint: true },
+      { id: "available", name: "Available", type: FLOAT },
+    ],
+    cost: 6,
+  },
+  {
+    type: "input.waterReflection",
+    title: "Water Reflection",
+    category: "Input",
+    searchAliases: ["water", "reflection", "sky", "environment", "fresnel", "mirror", "ssr"],
+    domains: ["surface"],
+    stages: ["fragment"],
+    inputs: [
+      { id: "normal", name: "Normal", type: VEC3 },
+      { id: "roughness", name: "Roughness", type: FLOAT },
+    ],
+    outputs: [
+      { id: "color", name: "Color", type: VEC3, colorHint: true },
+      { id: "fresnel", name: "Fresnel", type: FLOAT },
+    ],
+    cost: 10,
   },
   {
     type: "input.vertexColor",

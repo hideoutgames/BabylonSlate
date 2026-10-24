@@ -13,8 +13,14 @@ import { decodeRadianceHdr, readRadianceHeader, type RadianceImage } from "./rad
  * prefiltered DDS CubeTexture samples with.
  */
 
-/** Babylon's ENV standard; image-based lighting gains nothing from larger faces. */
-export const HDR_ENVIRONMENT_MAX_FACE_SIZE = 256;
+/** Face Size choices for a Texture converted from an HDR panorama. */
+export const HDR_ENVIRONMENT_FACE_SIZES = [128, 256, 512] as const;
+export type HdrEnvironmentFaceSize = (typeof HDR_ENVIRONMENT_FACE_SIZES)[number];
+/** Babylon's ENV standard; image-based lighting rarely gains from larger faces. */
+export const DEFAULT_HDR_ENVIRONMENT_FACE_SIZE: HdrEnvironmentFaceSize = 256;
+/** Chunk keeping the imported `.hdr` beside the converted cube, so it can be converted again. */
+export const HDR_SOURCE_CHUNK_ID = "hdr";
+export const HDR_SOURCE_MIME = "image/vnd.radiance";
 const LOD_GENERATION_SCALE = 0.8;
 /** Babylon's realtime "high" quality, for the sharpest mip where texels are most numerous. */
 const BASE_SAMPLE_COUNT = 64;
@@ -25,11 +31,34 @@ const HALF_MAX = 65504;
 
 export type CubeFaces = Float32Array[];
 
-/** Power-of-two face size nearest a quarter of the panorama width, capped. */
-export function hdrEnvironmentFaceSize(panoramaWidth: number): number {
-  const quarter = Math.max(2, panoramaWidth / 4);
-  return Math.min(HDR_ENVIRONMENT_MAX_FACE_SIZE, 2 ** Math.round(Math.log2(quarter)));
+/** A stored or requested Face Size; anything else (older assets have none) is the default. */
+export function normalizeHdrEnvironmentFaceSize(value: unknown): HdrEnvironmentFaceSize {
+  return HDR_ENVIRONMENT_FACE_SIZES.find((size) => size === value) ?? DEFAULT_HDR_ENVIRONMENT_FACE_SIZE;
 }
+
+/**
+ * Power-of-two face size nearest a quarter of the panorama width, capped at
+ * `maxFaceSize`, so a larger setting never upscales a small panorama.
+ */
+export function hdrEnvironmentFaceSize(panoramaWidth: number, maxFaceSize: number = DEFAULT_HDR_ENVIRONMENT_FACE_SIZE): number {
+  const quarter = Math.max(2, panoramaWidth / 4);
+  return Math.min(maxFaceSize, 2 ** Math.round(Math.log2(quarter)));
+}
+
+export interface HdrEnvironmentConversionOptions {
+  /** Largest face edge; defaults to `DEFAULT_HDR_ENVIRONMENT_FACE_SIZE`. */
+  faceSize?: number;
+  /** Checked between scanlines; an abort rejects with the signal's reason. */
+  signal?: AbortSignal;
+  /** Fraction of the conversion done, from 0 to 1. */
+  onProgress?: (fraction: number) => void;
+}
+
+/** Converts a `.hdr` panorama to a prefiltered DDS cube, in-process or on the import worker. */
+export type HdrEnvironmentConverter = (
+  bytes: Uint8Array,
+  options: HdrEnvironmentConversionOptions & { faceSize: number },
+) => Promise<Uint8Array>;
 
 /** World direction of a texel centre on a WebGL cube face. */
 export function cubeTexelDirection(face: number, size: number, x: number, y: number): [number, number, number] {
@@ -258,11 +287,20 @@ function filterRow(
 /**
  * GGX-prefiltered radiance for every mip of a cube, sampled from the
  * box-filtered `source` chain. Yields between scanlines so a long import keeps
- * the editor responsive.
+ * the editor responsive, checking `signal` each time; `onProgress` reports the
+ * fraction of filtering work done.
  */
-export async function prefilterCubeRadiance(source: CubeFaces[], size: number): Promise<CubeFaces[]> {
+export async function prefilterCubeRadiance(
+  source: CubeFaces[],
+  size: number,
+  options: Pick<HdrEnvironmentConversionOptions, "signal" | "onProgress"> = {},
+): Promise<CubeFaces[]> {
+  const { signal, onProgress } = options;
   const levels: CubeFaces[] = [source[0]!];
   const sourceLevels = source.length - 1;
+  let totalWork = 0;
+  for (let level = 1, edge = size / 2; edge >= 1; level++, edge /= 2) totalWork += 6 * edge * edge * sampleCount(level);
+  let work = 0;
   let lastYield = performance.now();
   for (let level = 1, edge = size / 2; edge >= 1; level++, edge /= 2) {
     const alpha = 2 ** (level / LOD_GENERATION_SCALE) / size;
@@ -272,10 +310,13 @@ export async function prefilterCubeRadiance(source: CubeFaces[], size: number): 
       const pixels = new Float32Array(edge * edge * 3);
       for (let y = 0; y < edge; y++) {
         if (performance.now() - lastYield > YIELD_INTERVAL_MS) {
+          onProgress?.(work / totalWork);
           await nextTask();
+          signal?.throwIfAborted();
           lastYield = performance.now();
         }
         filterRow(source, size, table, total, face, edge, y, pixels);
+        work += edge * sampleCount(level);
       }
       faces.push(pixels);
     }
@@ -345,15 +386,36 @@ export function encodeHalfFloatDdsCube(levels: CubeFaces[], size: number): Uint8
   return bytes;
 }
 
+/** Shares of the progress bar before and after GGX filtering, which is most of the work. */
+const DECODED_PROGRESS = 0.05;
+const PROJECTED_PROGRESS = 0.1;
+const FILTERED_PROGRESS = 0.95;
+
 /** Equirectangular Radiance HDR to a prefiltered RGBA16F DDS environment cube. */
-export async function convertRadianceHdrToEnvironmentDds(bytes: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
+export async function convertRadianceHdrToEnvironmentDds(
+  bytes: Uint8Array,
+  options: HdrEnvironmentConversionOptions = {},
+): Promise<Uint8Array<ArrayBuffer>> {
+  const { signal, onProgress } = options;
+  signal?.throwIfAborted();
   const { width } = readRadianceHeader(bytes);
-  const size = hdrEnvironmentFaceSize(width);
+  const size = hdrEnvironmentFaceSize(width, options.faceSize);
+  onProgress?.(0);
   // Keep about two panorama pixels per face texel; finer detail is filtered away.
   const panorama = decodeRadianceHdr(bytes, Math.max(1, Math.floor(width / (8 * size))));
+  onProgress?.(DECODED_PROGRESS);
   await nextTask();
+  signal?.throwIfAborted();
   const base = equirectangularToCube(panorama, size);
+  onProgress?.(PROJECTED_PROGRESS);
   await nextTask();
-  const levels = await prefilterCubeRadiance(cubeMipChain(base, size), size);
-  return encodeHalfFloatDdsCube(levels, size);
+  signal?.throwIfAborted();
+  const levels = await prefilterCubeRadiance(cubeMipChain(base, size), size, {
+    signal,
+    onProgress: onProgress && ((fraction) => onProgress(PROJECTED_PROGRESS + fraction * (FILTERED_PROGRESS - PROJECTED_PROGRESS))),
+  });
+  onProgress?.(FILTERED_PROGRESS);
+  const dds = encodeHalfFloatDdsCube(levels, size);
+  onProgress?.(1);
+  return dds;
 }

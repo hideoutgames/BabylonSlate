@@ -76,6 +76,7 @@ import {
   verifyChunksBeforeWrite,
   audioReverbChunk,
   isCarriedChunk,
+  isEnvironmentTexturePayload,
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
@@ -142,6 +143,7 @@ import {
   type PluginImportPlan,
 } from "@haptic/assets";
 import { processAreaEmissionInWorker } from "@haptic/assets/area-emission-client";
+import { convertHdrEnvironmentOffMainThread, runImportOffMainThread } from "@haptic/assets/import-worker-client";
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
@@ -261,6 +263,17 @@ function headerMetaForSave(
   return undefined;
 }
 
+/** Environment cube fields the registry rewrites when a Face Size change converts the `.hdr` again. */
+const ENVIRONMENT_TEXTURE_STATE_KEYS = [
+  "container",
+  "encoding",
+  "width",
+  "height",
+  "mipLevels",
+  "hasIrradiance",
+  "hdrFaceSize",
+] as const;
+
 /** Texture payload fields owned by the registry's encode queue, not the document. */
 const TEXTURE_ENCODE_STATE_KEYS = [
   "compressionState",
@@ -283,7 +296,10 @@ function withSavedTextureEncodeState(
   saved: Record<string, unknown>,
 ): Record<string, unknown> {
   const next = { ...content };
-  for (const key of TEXTURE_ENCODE_STATE_KEYS) {
+  const keys = isEnvironmentTexturePayload(saved)
+    ? [...TEXTURE_ENCODE_STATE_KEYS, ...ENVIRONMENT_TEXTURE_STATE_KEYS]
+    : TEXTURE_ENCODE_STATE_KEYS;
+  for (const key of keys) {
     if (key in saved) next[key] = saved[key];
     else delete next[key];
   }
@@ -1043,6 +1059,29 @@ export class ProjectService {
     }
   }
 
+  /**
+   * Convert an environment Texture's kept `.hdr` again at another Face Size,
+   * on the import worker. Resolves false when nothing was written.
+   */
+  async reconvertHdrEnvironment(guid: string, faceSize: number, options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {}): Promise<boolean> {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("Open a project before converting environment textures.");
+    options.signal?.throwIfAborted();
+    const controller = new AbortController();
+    const cancel = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    // Closing the project cancels it with the emission jobs.
+    this.emissionJobs.add(controller);
+    try {
+      const written = await registry.reconvertHdrEnvironment(guid, faceSize, convertHdrEnvironmentOffMainThread, { ...options, signal: controller.signal });
+      if (written && this.assetRegistry === registry) this.emitRegistryChange();
+      return written;
+    } finally {
+      this.emissionJobs.delete(controller);
+      options.signal?.removeEventListener("abort", cancel);
+    }
+  }
+
   private cancelEmissionJobs(): void {
     for (const job of this.emissionJobs) job.abort(new Error("Area emission processing cancelled because the project closed."));
     this.emissionJobs.clear();
@@ -1661,6 +1700,7 @@ export class ProjectService {
       blobs: this.blobs,
       alignmentRequeues: this.alignmentRequeues,
       generationClock: this.registryClock,
+      runImport: runImportOffMainThread,
     });
     registry.setEncodePipeline(this.encodeQueue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,

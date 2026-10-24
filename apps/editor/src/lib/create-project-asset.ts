@@ -4,7 +4,7 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@haptic/assets";
-import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle, WaterStylizedLook } from "@haptic/core";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode } from "@haptic/core";
 import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@haptic/scripting";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
 import {
@@ -39,9 +39,9 @@ export async function createProjectAsset(options: {
   type: CreatableAssetType;
   name: string;
   parentClass?: string | null;
-  waterStyle?: WaterStyle;
-  waterStylizedLook?: WaterStylizedLook;
   materialDomain?: MaterialDomain;
+  /** A new Surface Material starts as the starter Water Material (built-in water's look, wired from the water nodes). */
+  waterMaterial?: boolean;
   /** Use the live Definition catalog so unsaved field edits supply defaults. */
   defaultDefinitionGuid?: string | null;
   typeSchemas?: TypeSchemas;
@@ -89,9 +89,8 @@ export async function createProjectAsset(options: {
     parentClass,
     parentOf: options.classParentOf,
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
-    waterStyle: options.waterStyle,
-    waterStylizedLook: options.waterStylizedLook,
     materialDomain: options.materialDomain,
+    waterMaterial: options.waterMaterial,
     defaultDefinitionGuid,
     dataDefinition,
     dataTree: options.dataTree,
@@ -263,6 +262,7 @@ export async function createPickerAsset(options: {
   name?: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
+  waterMaterial?: boolean;
   defaultDefinitionGuid?: string | null;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
@@ -300,6 +300,7 @@ export async function createPickerAsset(options: {
     name,
     parentClass,
     materialDomain: options.materialDomain,
+    waterMaterial: options.waterMaterial,
     defaultDefinitionGuid: options.defaultDefinitionGuid,
     typeSchemas: type === "DataDefinition" || type === "DataTree"
       ? typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: options.openDocuments }))

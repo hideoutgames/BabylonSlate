@@ -1,6 +1,11 @@
 import { readEnvironmentTextureInfo } from "../environment-texture";
 import { newAssetGuid } from "../guid";
-import { convertRadianceHdrToEnvironmentDds } from "../hdr-environment";
+import {
+  convertRadianceHdrToEnvironmentDds,
+  HDR_SOURCE_CHUNK_ID,
+  HDR_SOURCE_MIME,
+  normalizeHdrEnvironmentFaceSize,
+} from "../hdr-environment";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 
@@ -42,11 +47,22 @@ export async function importEnvironmentTexture(
 
 /**
  * Convert an equirectangular Radiance HDR to a prefiltered float DDS cube at
- * import, so the stored Texture loads like any imported DDS environment.
+ * import, so the stored Texture loads like any imported DDS environment. The
+ * `.hdr` stays in its own chunk, which nothing loads at runtime, so a Face
+ * Size change can convert it again.
  */
 export async function importRadianceEnvironmentTexture(
   bytes: Uint8Array,
   options: ImportOptions,
 ): Promise<ImportResult[]> {
-  return [environmentTextureResult(await convertRadianceHdrToEnvironmentDds(bytes), options.fileName)];
+  const faceSize = normalizeHdrEnvironmentFaceSize(options.hdrFaceSize);
+  const dds = await convertRadianceHdrToEnvironmentDds(bytes, {
+    faceSize,
+    signal: options.signal,
+    onProgress: options.onProgress,
+  });
+  const result = environmentTextureResult(dds, options.fileName);
+  result.payload.hdrFaceSize = faceSize;
+  result.chunks.push({ id: HDR_SOURCE_CHUNK_ID, kind: HDR_SOURCE_CHUNK_ID, mime: HDR_SOURCE_MIME, data: bytes });
+  return [result];
 }

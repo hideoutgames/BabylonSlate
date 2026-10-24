@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { identityTransform } from "./math-rng";
 import {
-  createDefaultWaterDefinition, createWaterWaveOutput, invertWaterWaves, normalizeWaterBody, sampleWaterSurface, waterBankGain, waterWaveSet,
+  createDefaultWaterDefinition, createWaterWaveOutput, invertWaterWaves, normalizeWaterBody, sampleWaterSurface, waterBankGain,
   type WaterBodyProperties, type WaterDefinition, type WaterKind,
 } from "./water";
 import { createWaterBlendSample, evaluateWaterBlend, sampleWaterBlend, WaterBlendIndex, type WaterBlendBody } from "./water-blend";
 import { DEFAULT_WATER_BLEND_DISTANCE, normalizeWaterBlendDistance } from "./water-settings";
 import { normalizeRenderProjectSettings } from "./project";
+import { waterSpectrum } from "./water-spectrum";
 
-const calm = { ...createDefaultWaterDefinition(), waveHeight: 0 };
+const calm = { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 };
 const body = (kind: WaterKind, props: Record<string, unknown>, x = 0, y = 0, z = 0, definition: WaterDefinition = calm): WaterBlendBody => {
   const transform = identityTransform();
   transform.position = { x, y, z };
@@ -40,7 +41,7 @@ describe("Water Blend Distance setting", () => {
  * body has no water.
  */
 function perStepBlendHeight(index: WaterBlendIndex, self: number, position: { x: number; y: number; z: number }, time: number): number | null {
-  const me = index.bodies[self]!, set = waterWaveSet(me.definition), scale = me.referenceScale;
+  const me = index.bodies[self]!, spectrum = waterSpectrum(me.definition), scale = me.referenceScale;
   const sample = createWaterBlendSample(), fade = new Float64Array(2), wave = createWaterWaveOutput();
   const gainAt = (x: number, z: number) => {
     if (!evaluateWaterBlend(index, self, x, position.y, z, sample)) return 0;
@@ -48,7 +49,7 @@ function perStepBlendHeight(index: WaterBlendIndex, self: number, position: { x:
     return fade[0]! * sample.offsetScale;
   };
   const h = 0.05;
-  invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, {
+  invertWaterWaves(spectrum, position.x, position.z, time, wave, scale, {
     sample(x, z, out) {
       out[0] = gainAt(x, z);
       out[1] = (gainAt(x + h, z) - gainAt(x - h, z)) / (2 * h);
@@ -153,6 +154,20 @@ describe("Water blend surface", () => {
     expect([a.heightScale, b.heightScale, a.offsetScale, b.offsetScale].map((v) => Math.abs(v) < 1e-9)).toEqual([true, true, true, true]);
     evaluateWaterBlend(index, 0, -2, 0, 0, a);
     expect(a.heightScale).toBe(1);
+  });
+
+  it("rounds the corner where a lake meets an ocean's edge into a smooth shoreline, with no cliff where either fades", () => {
+    const index = new WaterBlendIndex();
+    index.update([body("ocean", { width: 400, length: 300 }, 0, 0, -150), body("lake", { width: 60, length: 54 }, 0, 0, 22)], 8);
+    const s = createWaterBlendSample(), h = 0.05;
+    const union = (x: number, z: number) => evaluateWaterBlend(index, 1, x, 0, z, s, true) ? s.union : NaN;
+    let steepest = 0;
+    for (let x = -34; x <= -14; x += 0.25) for (let z = -2; z <= 10; z += 0.25) {
+      // Near the shoreline the union is as gentle as a distance: a steeper one draws the corner as a stepped tab.
+      if (!(Math.abs(union(x, z)) < 1)) continue;
+      steepest = Math.max(steepest, Math.hypot((union(x + h, z) - union(x - h, z)) / (2 * h), (union(x, z + h) - union(x, z - h)) / (2 * h)));
+    }
+    expect(steepest).toBeLessThan(1.1);
   });
 
   it("fills a gap narrower than the distance with water, and leaves it dry when blending is off", () => {

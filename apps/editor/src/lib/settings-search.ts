@@ -122,7 +122,6 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Water Reflections Sky Only Screen Space Planar", "quality-water-reflections"],
   ["rendering", "Water Reflection Steps", "quality-water-reflection-steps"],
   ["rendering", "Water Planar Resolution Reflection", "quality-water-planar-scale"],
-  ["rendering", "Water FFT Ocean Detail", "quality-water-fft"],
   ["rendering", "Water FFT Size", "quality-water-fft-size"],
   ["rendering", "Water FFT Cascades", "quality-water-fft-cascades"],
   ["rendering", "Post Processing Resolution Scale", "quality-postprocessing-scale"],
@@ -209,6 +208,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["viewport", "Hardware Scaling Level", "setting-hardware-scale"],
   ["viewport", "Post-Processing", "setting-post-processing"],
   ["assets", "Model Import Default Scale", "setting-model-import-scale"],
+  ["assets", "HDR Import Face Size", "setting-hdr-import-face-size"],
   ["assets", "Editor Texture LOD", "setting-editor-texture-lod"],
   [
     "assets",

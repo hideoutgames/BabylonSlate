@@ -17,13 +17,19 @@ import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
 import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
-import { isEnvironmentTexturePayload } from "./environment-texture";
+import { isEnvironmentTexturePayload, readEnvironmentTextureInfo } from "./environment-texture";
+import {
+  HDR_SOURCE_CHUNK_ID,
+  normalizeHdrEnvironmentFaceSize,
+  type HdrEnvironmentConverter,
+} from "./hdr-environment";
 import {
   applyImportGuidRemap,
   importByExtension,
   remapImportResultGuids,
   type ImportOptions,
   type ImportResult,
+  type ImportRunner,
 } from "./importers";
 import { replaceClassAssetReferences, type ClassAssetReplacement } from "./class-asset-refs";
 import type { DataDefinitionFieldsResolver } from "./data-asset-refs";
@@ -164,6 +170,23 @@ export interface AssetRegistryOptions {
    * registry and one on the next skip each other's Texture.
    */
   alignmentRequeues?: Set<string>;
+  /**
+   * Runs each file's importer for `importFile`; defaults to
+   * `importByExtension`. The editor passes one that imports slow, pure-CPU
+   * formats on a Web Worker.
+   */
+  runImport?: ImportRunner;
+}
+
+/** Progress and cancellation for one `importFile` or HDR reconversion. */
+export interface AssetImportControl {
+  /**
+   * Abort before or during the conversion writes nothing; an abort that lands
+   * while the file's assets are written deletes the ones already made.
+   */
+  signal?: AbortSignal;
+  /** Fraction of the file's conversion done, from 0 to 1. */
+  onProgress?: (fraction: number) => void;
 }
 
 const BLOBS_DIR_NAME = ".blobs";
@@ -219,6 +242,7 @@ export class AssetRegistry {
    */
   private readonly alignmentRequeues: Set<string>;
   private readonly clock: RegistryGenerationClock;
+  private readonly runImport: ImportRunner;
   /** Class alias index of the catalog as of `generation`; dropped when any index change advances it. */
   private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
   /** Symbolic inbound references of the catalog as of `generation`; dropped like `classAliasMemo`. */
@@ -231,6 +255,7 @@ export class AssetRegistry {
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
     this.alignmentRequeues = options.alignmentRequeues ?? new Set();
     this.clock = options.generationClock ?? new RegistryGenerationClock();
+    this.runImport = options.runImport ?? importByExtension;
   }
 
   /**
@@ -1416,12 +1441,16 @@ export class AssetRegistry {
     folderRelative: string,
     fileName: string,
     bytes: Uint8Array,
-    extras?: {
+    extras?: AssetImportControl & {
       modelImportScale?: number;
       sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
       attachToGuid?: string;
+      /** Largest cube face for an `.hdr` panorama (128, 256 or 512). */
+      hdrFaceSize?: number;
     },
   ): Promise<IndexedAsset[]> {
+    const signal = extras?.signal;
+    signal?.throwIfAborted();
     this.assertWritable(this.getRootOrThrow(rootId));
     const options: ImportOptions = {
       fileName,
@@ -1430,8 +1459,13 @@ export class AssetRegistry {
       modelImportScale: extras?.modelImportScale,
       sidecars: extras?.sidecars,
       attachToGuid: extras?.attachToGuid,
+      hdrFaceSize: extras?.hdrFaceSize,
+      signal,
+      onProgress: extras?.onProgress,
     };
-    const rawResults = await importByExtension(fileName, bytes, options);
+    const rawResults = await this.runImport(fileName, bytes, options);
+    // Nothing is written for an import cancelled during its conversion.
+    signal?.throwIfAborted();
     const results = remapImportResultGuids(rawResults, options.existingGuids).map(
       (result) =>
         extras?.attachToGuid
@@ -1439,21 +1473,68 @@ export class AssetRegistry {
           : result,
     );
 
-    const created: IndexedAsset[] = [];
-    for (const result of results) {
-      if (result.attachToGuid) {
-        await this.attachToExistingAsset(result.attachToGuid, result);
-        continue;
+    const created: Array<{ asset: IndexedAsset; result: ImportResult }> = [];
+    try {
+      for (const result of results) {
+        if (result.attachToGuid) {
+          await this.attachToExistingAsset(result.attachToGuid, result);
+          continue;
+        }
+        const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.hasset`);
+        created.push({ asset: await this.createAsset(rootId, relativePath, result), result });
+        signal?.throwIfAborted();
       }
-      const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.hasset`);
-      const asset = await this.createAsset(rootId, relativePath, result);
-      created.push(asset);
+    } catch (error) {
+      // A file imports whole or not at all: a cancel or failure partway removes its assets.
+      for (const { asset } of created.reverse()) {
+        try { await this.deleteAsset(asset.header.guid); } catch { /* Already gone or unwritable; the import still fails. */ }
+      }
+      throw error;
+    }
+    for (const { asset, result } of created) {
       await this.maybeWriteThumbnail(asset, result);
       await this.maybeEnqueueTextureEncode(asset);
     }
+    const assets = created.map(({ asset }) => asset);
     // After every result is indexed, so a bundled Tileset counts.
-    await this.alignCreatedTextures(created);
-    return created;
+    await this.alignCreatedTextures(assets);
+    return assets;
+  }
+
+  /**
+   * Convert an environment Texture's kept `.hdr` again with another Face
+   * Size, replacing its cube. Resolves false when nothing was written (the
+   * Texture is read-only, gone, or its `.hdr` changed meanwhile). Throws when
+   * it keeps no `.hdr` (imported before sources were kept, or from DDS/ENV).
+   */
+  async reconvertHdrEnvironment(
+    guid: string,
+    faceSize: number,
+    convert: HdrEnvironmentConverter,
+    control: AssetImportControl = {},
+  ): Promise<boolean> {
+    const { signal, onProgress } = control;
+    signal?.throwIfAborted();
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.placeholder || asset.header.type !== "Texture" || !isEnvironmentTexturePayload(asset.header.payload)) {
+      throw new Error("Face Size applies only to environment cube Textures.");
+    }
+    this.assertWritable(this.getRootOrThrow(asset.rootId));
+    const sourceEntry = asset.header.chunks.find((chunk) => chunk.id === HDR_SOURCE_CHUNK_ID);
+    if (!sourceEntry) throw new Error("This Texture does not keep its .hdr file. Import the .hdr again to change its Face Size.");
+    const size = normalizeHdrEnvironmentFaceSize(faceSize);
+    const source = await this.readChunk(guid, sourceEntry.id, undefined, { signal });
+    const dds = await convert(source, { faceSize: size, signal, onProgress });
+    signal?.throwIfAborted();
+    const info = readEnvironmentTextureInfo(dds);
+    const sourceMime = asset.header.chunks.find((chunk) => chunk.id === "source")?.mime ?? "image/vnd-ms.dds";
+    return this.withAssetWrite(guid, () => this.rewriteTexture(guid, async (header, chunks, current) => {
+      // Converted from this `.hdr` only: a newer import or copy over the file keeps its own cube.
+      if (current.chunks.find((chunk) => chunk.id === HDR_SOURCE_CHUNK_ID)?.sha256 !== sourceEntry.sha256) return null;
+      chunks.set("source", { id: "source", kind: "source", mime: sourceMime, data: dds });
+      header.payload = { ...header.payload, ...info, hdrFaceSize: size };
+      return { header, chunks };
+    }, () => signal?.throwIfAborted(), () => false));
   }
 
   /**

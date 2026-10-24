@@ -82,6 +82,7 @@ export * from "./collision-presets";
 export * from "./value-units";
 export * from "./movement";
 export * from "./water";
+export * from "./water-spectrum";
 export * from "./water-blend";
 export * from "./water-settings";
 export * from "./water-removal";

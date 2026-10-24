@@ -53,22 +53,21 @@ function tap(path: string) {
 }
 
 describe("ContentBrowserNewAssetDialog", () => {
-  it("lets a Water asset choose Stylized rendering before creation", () => {
-    const onWaterStyleChange = vi.fn();
-    const { onCreate } = renderDialog({ type: "Water", name: "Lagoon", waterStyle: "realistic", onWaterStyleChange });
-    fireEvent.click(screen.getByRole("button", { name: "Stylized" }));
-    expect(onWaterStyleChange).toHaveBeenCalledWith("stylized");
+  it("creates a Water asset without a style to choose", () => {
+    const { onCreate } = renderDialog({ type: "Water", name: "Lagoon" });
+    expect(screen.queryByRole("group", { name: "Water Style" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
-  it("offers the Painted or Toon look only for Stylized Water", () => {
-    const onWaterStylizedLookChange = vi.fn();
-    renderDialog({ type: "Water", name: "Lagoon", waterStyle: "realistic", onWaterStylizedLookChange });
-    expect(screen.queryByRole("button", { name: "Toon" })).toBeNull();
+  it("lets a Material start as the water Material", () => {
+    const onWaterStarterChange = vi.fn();
+    renderDialog({ type: "Material", name: "Sea", waterStarter: false, onWaterStarterChange });
+    fireEvent.click(screen.getByRole("button", { name: "Water" }));
+    expect(onWaterStarterChange).toHaveBeenLastCalledWith(true);
     cleanup();
-    renderDialog({ type: "Water", name: "Lagoon", waterStyle: "stylized", onWaterStylizedLookChange });
-    fireEvent.click(screen.getByRole("button", { name: "Toon" }));
-    expect(onWaterStylizedLookChange).toHaveBeenCalledWith("toon");
+    renderDialog({ type: "Material", name: "Sea", waterStarter: true, onWaterStarterChange });
+    fireEvent.click(screen.getByRole("button", { name: "Empty" }));
+    expect(onWaterStarterChange).toHaveBeenLastCalledWith(false);
   });
   afterEach(() => {
     cleanup();

@@ -53,6 +53,7 @@ export {
   type MaterialTextureBinding,
 } from "./lower";
 export { materialPlanIsLit, materialSamplerBudgetDiagnostics, materialSamplerSources } from "./sampler-budget";
+export { createWaterMaterialDocument } from "./water-materials";
 export { createTypeResolver, type TypeResolver } from "./resolve";
 export {
   hydrateMaterialGraphForEditor,
