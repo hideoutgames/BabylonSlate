@@ -1044,10 +1044,10 @@ function cutSource(wgsl: boolean): string {
     ? `var ${name}: vec4f = textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, ${uv}, 0.0);`
     : `vec4 ${name} = texture2DLodEXT(slateWaterFieldSampler, ${uv}, 0.0);`;
   const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
-  const blended = (name: string, i: number) => Array.from({ length: BLEND_PARTNERS }, (_, k) =>
+  const blended = (i: number) => Array.from({ length: BLEND_PARTNERS }, (_, k) =>
     ` + U.${BLEND_COLOR_UNIFORMS[k * COLOR_UNIFORMS.length + i]} * swBlendShares[${k}]`).join("");
   const colors = (blend: boolean) => COLOR_UNIFORMS.map((name, i) =>
-    `vec4 ${COLOR_LOCALS[i]} = ${blend ? `U.${name} * (1.0 - swBlendShares.x - swBlendShares.y - swBlendShares.z)${blended(name, i)}` : `U.${name}`};`).join("\n");
+    `vec4 ${COLOR_LOCALS[i]} = ${blend ? `U.${name} * (1.0 - swBlendShares.x - swBlendShares.y - swBlendShares.z)${blended(i)}` : `U.${name}`};`).join("\n");
   return `
 // Large-world rendering makes vPositionW eye-relative; rebuild the absolute world position.
 vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
