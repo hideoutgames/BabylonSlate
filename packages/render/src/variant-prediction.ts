@@ -17,7 +17,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { withSceneReadinessState, withSceneSignalsHeld } from "./scene-readiness-signal";
 import { findSceneShadowController, type SceneShadowController, type ShadowStartPrediction } from "./shadow-controller";
 import { awaitsFirstDraw } from "./shadow-first-draw";
-import { copyDefines, settleWarmedEffect, withPredictedEffects } from "./variant-pipeline-warmup";
+import { copyDefines, notePredictedPipelines, withPredictedEffects, withRealPassInstances } from "./variant-pipeline-warmup";
 import { beginPipelineDeferral, deferredPipelineCount, pipelinesDeferred, releaseWarmPipelines } from "./webgpu-pipeline-deferral";
 
 /**
@@ -65,7 +65,10 @@ type Prediction = {
   pipelines: Map<Effect, Set<object>>;
   /** Every receiver's warm draws found their pipelines, and its Effects are settled. */
   warm: boolean;
-  /** The controller's prediction map a first shadow start of its kind borrows. */
+  /**
+   * The controller's prediction map a first shadow start of its kind borrows (its receivers' defines and casters' depth
+   * variants), or, on WebGPU, one standing in for a standby map in the warm render of its casters' depth pipelines.
+   */
   map?: ShadowGenerator;
   /** It prepared a map's casters' depth variants. */
   casters?: boolean;
@@ -89,6 +92,8 @@ type PredictedDraw = {
   instanced: boolean;
   lights: Light[];
   maps: ReadonlyMap<Light, ShadowGenerator | null>;
+  /** Its lights that bind a map (shadowed when the probe ran, as once admitted). */
+  shadowed: Light[];
 };
 
 type PredictionState = {
@@ -257,8 +262,9 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   }
   releaseUnusedPredictionMaps(scene, controller, state);
   releaseWarmPipelinesOfReleasedEffects(engine, state, now);
-  // WebGPU: a first shadow start of a kind renders its prediction map once its variants are compiled (every draw
-  // skipped), so its casters' depth pipelines exist before the real map's first draw needs them.
+  // WebGPU: a first shadow start of a kind, or an admission bringing a standby map back, renders its prediction map
+  // once its variants are compiled (every draw skipped), so its casters' depth pipelines exist before the real map's
+  // first draw needs them.
   for (const prediction of state.predictions.values())
     if (prediction.scene === scene && prediction.complete && prediction.map && !prediction.mapWarm && prediction.fulfilled === undefined)
       warmPredictionMap(scene, prediction, state);
@@ -286,8 +292,14 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   const start = shadows.find((candidate) => candidate.light === light);
   // Anything pending applies first, as it would at the next frame: the held what-if refreshes no Material.
   if (target.admission === "forward") syncSceneLighting(scene);
-  const run = (plan: Probe) =>
-    withPredictedEffects(engine, () => withSceneReadinessState(scene, () => probe(scene, target, passes, state, plan, controller)));
+  const run = (plan: Probe) => {
+    // WebGPU: a standby map's casters draw again with its admission, and only a draw creates their depth pipelines. The
+    // controller's prediction map of the light's kind stands in for it in a warm render: it has the current settings,
+    // as a standby map has, so its format and its casters' depth variants are the standby map's.
+    if (plan.casters && !target.map && pipelinesDeferred(engine))
+      target.map = keepingWrapperMarks(scene, () => controller?.predictionMap(light) ?? null) ?? undefined;
+    return withPredictedEffects(engine, () => withSceneReadinessState(scene, () => probe(scene, target, passes, state, plan, controller)));
+  };
   target.complete = withSceneSignalsHeld(scene, () => target.admission === "forward"
     ? whatIfAdmitted(scene, light, (before) => run({
       receivers: (mesh) => {
@@ -480,6 +492,9 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
   if (controller) for (const light of scene.lights)
     if (light !== prediction.light && !objectMaps.has(light) && light.isEnabled() && controller.boundGenerator(light) &&
       !controller.generator(light)) objectMaps.set(light, null);
+  // A Forward admission's light binds the standby map that comes back with it (named, so warm draws bind it too).
+  const own = objectMaps.has(prediction.light) ? null : standbyMap(controller, prediction.light);
+  if (own) objectMaps.set(prediction.light, own);
   const prepare = (pass: number, ready: () => void) => {
     const count = Object.keys(effects).length;
     engine.currentRenderPassId = pass;
@@ -507,8 +522,12 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
             wrapper.defines = copyDefines(defines);
             // As the admission marks receivers: their light defines, and only those, prepare again.
             wrapper.defines.markAsLightDirty();
-            if (pass.admittedMapsOnly && mesh instanceof Mesh)
-              prediction.receivers.push({ mesh, subMesh, real: pass.id, pass: id, instanced: useInstances, lights: mesh.lightSources.slice(), maps: objectMaps });
+            if (pass.admittedMapsOnly && mesh instanceof Mesh) {
+              const lights = mesh.lightSources.slice();
+              const shadowed = lights.filter((light) => light.shadowEnabled &&
+                (objectMaps.has(light) ? objectMaps.get(light) != null : light.getShadowGenerator() != null));
+              prediction.receivers.push({ mesh, subMesh, real: pass.id, pass: id, instanced: useInstances, lights, maps: objectMaps, shadowed });
+            }
             const ready = withShadowGenerators(pass.admittedMapsOnly ? objectMaps : plan.maps,
               () => prepare(id, () => material.isReadyForSubMesh(mesh, subMesh, useInstances)));
             if (!ready) return false;
@@ -520,6 +539,9 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
     // prediction map standing in for the first map of a kind).
     const generator = plan.casters;
     if (generator) prediction.casters = true;
+    // A map just built (a prediction map) imports its depth shaders first, and until then prepares no caster: the
+    // probe finishes in a later frame.
+    if (generator && !(generator as unknown as { _shadersLoaded: boolean })._shadersLoaded) return false;
     for (const mesh of generator?.getShadowMap()?.renderList ?? []) {
       if (mesh instanceof InstancedMesh || mesh.isDisposed() || !mesh.subMeshes?.length) continue;
       const { plain, instanced } = mesh instanceof Mesh ? drawnMaterialVariants(mesh) : { plain: true, instanced: false };
@@ -546,12 +568,14 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
 
 /**
  * Inside a world view's main object pass, after its real draws and before it restores its lights' shadow flags
- * (WebGPU): draws each receiver of the scene's complete predictions again under its prediction pass, with the lights
- * and maps the prediction saw substituted, inside a warm deferral scope, so the predicted variants' render pipelines
- * are created ahead with the real pass's target and state. Every warm draw is skipped before it creates a bind group
- * (the pipeline lookup comes first); its uniform writes go to buffers Babylon renews when updated again in a frame, and
- * to the predicted Effect's own draw wrappers, so no presented draw sees them. A prediction whose warm draws all found
- * their pipelines settles its Effects, so its admission draws them at once.
+ * (WebGPU): draws each receiver of the scene's complete predictions again under its prediction pass, with the lights,
+ * maps and shadow flags the prediction saw substituted and the real pass's instance data, inside a warm deferral
+ * scope, so the predicted variants' render pipelines are created ahead with the real pass's target and state. Every
+ * warm draw is skipped before it creates a bind group (the pipeline lookup comes first); its uniform writes go to
+ * buffers Babylon renews when updated again in a frame, and to the predicted Effect's own draw wrappers, so no
+ * presented draw sees them. A prediction whose warm draws all found their pipelines notes its Effects: the admission's
+ * frame checks them against its own state before its real draws, and draws them at once when they match
+ * (`admitPredictedVariants`).
  */
 export function warmPredictedPipelines(scene: Scene, objectPass: number, depthPrePass: number): void {
   const engine = scene.getEngine();
@@ -575,11 +599,11 @@ export function warmPredictedPipelines(scene: Scene, objectPass: number, depthPr
           warm = false;
           break;
         }
-        if (result !== "warm") warm = false;
+        if (result === "cold") warm = false;
       }
       if (!warm) continue;
       prediction.warm = true;
-      for (const effect of prediction.pipelines.keys()) settleWarmedEffect(engine, effect);
+      for (const effect of prediction.pipelines.keys()) notePredictedPipelines(engine, effect);
     }
   } finally {
     engine.currentRenderPassId = current;
@@ -591,19 +615,22 @@ export function warmPredictedPipelines(scene: Scene, objectPass: number, depthPr
 
 /**
  * One skipped draw of a predicted receiver: "warm" once it found its pipeline, "cold" while its pipeline is being
- * created (or the mesh draws with other instancing now), "stale" when its wrapper no longer holds the predicted variant.
+ * created, "skip" when the mesh draws with the other instancing now (the prediction's other draw of it stands for
+ * the admission), "stale" when its wrapper no longer holds the predicted variant.
  */
-function warmDraw(engine: AbstractEngine, prediction: Prediction, draw: PredictedDraw, depthPrePass: boolean): "warm" | "cold" | "stale" {
+function warmDraw(engine: AbstractEngine, prediction: Prediction, draw: PredictedDraw, depthPrePass: boolean): "warm" | "cold" | "skip" | "stale" {
   const state = states.get(engine)!;
   const { mesh, subMesh } = draw;
   if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible) return "cold";
   const wrapper = subMesh._getDrawWrapper(draw.pass);
   const effect = wrapper?.effect;
   if (!effect || !(wrapper.defines instanceof MaterialDefines)) return "stale";
-  // The variant the mesh draws now: a pass prepared for the other instancing would ask for another Effect.
+  // The variant the mesh draws now, read in the real pass (a previous warm draw left its own pass current): a pass
+  // prepared for the other instancing would ask for another Effect.
+  engine.currentRenderPassId = draw.real;
   const batch = (mesh as unknown as { _getInstancesRenderList(id: number): { hardwareInstancedRendering: boolean[] } })._getInstancesRenderList(subMesh._id);
   const instanced = !!batch.hardwareInstancedRendering[subMesh._id] || mesh.hasThinInstances;
-  if (instanced !== draw.instanced) return "cold";
+  if (instanced !== draw.instanced) return "skip";
   const material = subMesh.getMaterial();
   if (!material) return "cold";
   const scope = beginPipelineDeferral(engine, (pass) => pass === draw.pass, { warm: true });
@@ -614,12 +641,19 @@ function warmDraw(engine: AbstractEngine, prediction: Prediction, draw: Predicte
   const started = deferredPipelineCount(engine);
   const lights = (mesh as unknown as { _lightSources: Light[] })._lightSources;
   (mesh as unknown as { _lightSources: Light[] })._lightSources = draw.lights;
+  // The object pass leaves a light whose map is not admitted unshadowed (its flag off) until it ends, so a light that
+  // binds a map once admitted reads as shadowed, as it did in the probe: its map's depth texture is bound, which keys
+  // the pipeline. The private field, not the setter, which would mark every receiver light-dirty.
+  const flags = draw.shadowed.map((light) => [light, (light as unknown as { _shadowEnabled: boolean })._shadowEnabled] as const);
+  for (const [light] of flags) (light as unknown as { _shadowEnabled: boolean })._shadowEnabled = true;
   engine.currentRenderPassId = draw.pass;
   engine.setColorWrite(!depthPrePass);
   engine.setAlphaMode(Constants.ALPHA_DISABLE);
   try {
-    withShadowGenerators(draw.maps, () => subMesh.render(!depthPrePass && material.needAlphaBlendingForMesh(mesh)));
+    withShadowGenerators(draw.maps, () => withRealPassInstances(mesh, draw.real, draw.pass,
+      () => subMesh.render(!depthPrePass && material.needAlphaBlendingForMesh(mesh))));
   } finally {
+    for (const [light, enabled] of flags) (light as unknown as { _shadowEnabled: boolean })._shadowEnabled = enabled;
     (mesh as unknown as { _lightSources: Light[] })._lightSources = lights;
     scope.close();
   }
@@ -637,8 +671,8 @@ function warmDraw(engine: AbstractEngine, prediction: Prediction, draw: Predicte
 }
 
 /**
- * WebGPU: renders a first-of-kind prediction's map outside the frame, inside a warm deferral scope that admits only
- * the map's own render passes: every caster draw is skipped, and a missing depth pipeline starts creating
+ * WebGPU: renders a prediction's prediction map outside the frame, inside a warm deferral scope that admits only
+ * the map's own render passes: every listed caster's draw is skipped, and a missing depth pipeline starts creating
  * asynchronously, with the shadow pass's target state (a map's format, not its size, keys the pipeline). The map is
  * attached to no light and its output is never sampled.
  */
@@ -650,10 +684,19 @@ function warmPredictionMap(scene: Scene, prediction: Prediction, state: Predicti
   const scope = beginPipelineDeferral(engine, (pass) => passes.has(pass), { warm: true });
   if (!scope) return;
   const started = deferredPipelineCount(engine);
+  // Every caster the probe prepared draws: the map's own culling follows its light where it is now, short of the
+  // admission, and would leave out casters the real map draws once the light is admitted.
+  const generator = prediction.map!;
+  const list = map.getCustomRenderList;
+  const allow = generator.customAllowRendering;
+  map.getCustomRenderList = () => map.renderList;
+  generator.customAllowRendering = () => true;
   try {
     // The view's camera, matrices, scene UBO, pass, viewport and colour write come back after the map's pass.
     withSceneReadinessState(scene, () => map.render());
   } finally {
+    map.getCustomRenderList = list;
+    generator.customAllowRendering = allow;
     scope.close();
   }
   state.pipelineBudget -= Math.max(0, deferredPipelineCount(engine) - started);

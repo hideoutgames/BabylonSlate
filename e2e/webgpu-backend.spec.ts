@@ -206,34 +206,39 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     spotShadows: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
   });
   // A light that waits within reach of an admission has the Effects it asks for compiled ahead and their render
-  // pipelines created by warm draws: a spot entering the Forward budget, one taking a point's shadow map and one taking
-  // the first spot map (its variants and caster pipelines from a prediction map) compile no Effect, create no pipeline
-  // and hold no frame when admitted, and draw their new variants in its own frame. Jumping straight in, the same
-  // admissions compile their Effects then (the first spot map creating a shadow pass pipeline synchronously). A
-  // prediction left to expire leaves no pipeline behind.
+  // pipelines created by warm draws: a spot entering the Forward budget (and a shadowed one, whose standby map comes
+  // back with it), one taking a point's shadow map and one taking the first spot map (its variants and caster
+  // pipelines from a prediction map) compile no Effect, create no pipeline and hold no frame when admitted, its new
+  // map's first draw included, and draw their new variants in its own frame. Jumping straight in, the same admissions
+  // compile their Effects then (the first spot map creating a shadow pass pipeline synchronously). A prediction left
+  // to expire leaves no pipeline behind.
   const predicted = result.predictedAdmissions!;
   const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
     admitted: admission.admitted, done: admission.done, effects: admission.effectsAtAdmission, held: admission.held,
     late: admission.lateFrames, ...admission.pipelines,
   });
   expect({
-    forward: outcome(predicted.forward.approached), shadow: outcome(predicted.shadow.approached),
-    first: outcome(predicted.first.approached),
+    forward: outcome(predicted.forward.approached), standby: outcome(predicted.standby.approached),
+    shadow: outcome(predicted.shadow.approached), first: outcome(predicted.first.approached),
     aheadForward: predicted.forward.approached.effectsAhead > 0 && predicted.forward.approached.pipelinesAhead > 0,
+    aheadStandby: predicted.standby.approached.effectsAhead > 0 && predicted.standby.approached.pipelinesAhead > 0,
+    jumpedStandby: predicted.standby.jumped.admitted && predicted.standby.jumped.effectsAtAdmission > 0,
     aheadShadow: predicted.shadow.approached.effectsAhead > 0 && predicted.shadow.approached.pipelinesAhead > 0,
     jumpedForward: predicted.forward.jumped.admitted && predicted.forward.jumped.effectsAtAdmission > 0,
     jumpedShadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.effectsAtAdmission > 0,
     aheadFirst: predicted.first.approached.effectsAhead > 0 && predicted.first.approached.pipelinesAhead > 0,
     jumpedFirst: predicted.first.jumped.admitted && predicted.first.jumped.effectsAtAdmission > 0 &&
       predicted.first.jumped.pipelines.synchronous > 0,
-    expired: { forward: predicted.forward.expired.pipelinesLeft, shadow: predicted.shadow.expired.pipelinesLeft,
-      first: predicted.first.expired.pipelinesLeft },
+    expired: { forward: predicted.forward.expired.pipelinesLeft, standby: predicted.standby.expired.pipelinesLeft,
+      shadow: predicted.shadow.expired.pipelinesLeft, first: predicted.first.expired.pipelinesLeft },
   }, JSON.stringify(predicted)).toEqual({
     forward: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
+    standby: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
     shadow: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
     first: { admitted: true, done: true, effects: 0, held: 0, late: 0, synchronous: 0, asynchronous: 0 },
-    aheadForward: true, aheadShadow: true, jumpedForward: true, jumpedShadow: true, aheadFirst: true, jumpedFirst: true,
-    expired: { forward: 0, shadow: 0, first: 0 },
+    aheadForward: true, aheadStandby: true, jumpedStandby: true, aheadShadow: true, jumpedForward: true,
+    jumpedShadow: true, aheadFirst: true, jumpedFirst: true,
+    expired: { forward: 0, standby: 0, shadow: 0, first: 0 },
   });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);

@@ -42,6 +42,7 @@ import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Step = {
@@ -510,7 +511,7 @@ type Admission = {
   admitted: boolean;
   /** Programs linked while the light waited within reach of the admission, before it. */
   linksAhead: number;
-  /** Programs linked from the change that admits it until every Material drew its new variant. */
+  /** Programs linked from the change that admits it until every Material drew its new variant and a new map drew. */
   linksAtAdmission: number;
   /** Steady frames after that change in which some Material still drew its previous variant. */
   lateFrames: number;
@@ -584,6 +585,17 @@ async function predictedAdmissions() {
           if (!view.frame(true)) held++;
           else if (drawn().some((effect, slot) => effect === before[slot])) lateFrames++;
           else break;
+          await pause();
+        }
+        // A map the admission starts links its casters' depth programs when it first draws, which can come after the
+        // Materials' new variants.
+        const map = shadows ? findSceneShadowController(view.scene)?.generator(spot) : null;
+        for (let index = 0; index < 30 && map && awaitsFirstDraw(map); index++) {
+          view.frame(true);
+          await pause();
+        }
+        for (let index = 0; index < 4; index++) {
+          view.frame(true);
           await pause();
         }
         return {

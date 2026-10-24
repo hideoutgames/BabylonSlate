@@ -606,10 +606,11 @@ export class SceneShadowController {
       .map(({ light, borrowed, firstOfKind, displaced }) => ({ light, borrowed, firstOfKind, displaced }));
   }
   /**
-   * A map of `light`'s kind (spot or point) for a variant prediction of a first shadow start of that kind: built as an
-   * admitted map is, with the current settings, at `PREDICTION_MAP_SIZE`, listing the scene's casters, and taken off
-   * the light at once, so no receiver binds it, no admission counts it and it never renders a frame. One per kind,
-   * aimed at the light it predicts. Its bytes join the scene's shadow reservation only while room remains after the
+   * A map of `light`'s kind (spot or point) for a variant prediction of a first shadow start of that kind, or, on
+   * WebGPU, of an admission bringing a standby map back (whose casters' depth pipelines its warm render creates): built
+   * as an admitted map is, with the current settings, at `PREDICTION_MAP_SIZE`, listing the scene's casters, and taken
+   * off the light at once (a map the light holds stays attached), so no receiver binds it, no admission counts it and
+   * it never renders a frame. One per kind, aimed at the light it predicts. Its bytes join the scene's shadow reservation only while room remains after the
    * real maps, which release it when they need that room. Null when shadows are off or there is no room.
    */
   predictionMap(light: Light): ShadowGenerator | null {
@@ -639,6 +640,9 @@ export class SceneShadowController {
       const scene = this.scene as unknown as { _blockEntityCollection: boolean };
       const blocked = scene._blockEntityCollection;
       scene._blockEntityCollection = true;
+      // A light holding a standby map keeps it: a new generator replaces its light's map for the same camera key.
+      const attached = light._shadowGenerators;
+      const holding = attached ? [...attached] : [];
       let generator: ShadowGenerator;
       try {
         generator = this.createGenerator(entry, PREDICTION_MAP_SIZE, settings, null, undefined);
@@ -647,6 +651,10 @@ export class SceneShadowController {
       }
       this.slots.delete(generator);
       detachShadowGenerator(generator);
+      if (attached && holding.length) {
+        light._shadowGenerators = attached;
+        for (const [camera, owner] of holding) attached.set(camera, owner);
+      }
       setAwaitingFirstDraw(generator, false);
       held = { generator, key, bytes };
       this.predictionMaps.set(kind, held);

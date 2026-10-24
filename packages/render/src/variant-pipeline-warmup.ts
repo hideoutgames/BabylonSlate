@@ -38,7 +38,13 @@ import { variantSwapsTolerated } from "./variant-swaps";
  * caster's depth variant, a geometry pass's variant, or one whose view stopped warming) becomes admissible as it is,
  * and waits as it did before.
  */
-type ColdEntry = { usedAt: number; base: () => boolean; warmed: boolean };
+type ColdEntry = {
+  usedAt: number;
+  base: () => boolean;
+  warmed: boolean;
+  /** A predicted variant whose warm draws created its pipelines ahead: admitted at once if the real state finds them. */
+  predicted: boolean;
+};
 
 /** A cold Effect no warm draw used for this long becomes admissible as it is (a view that warms one draws it every frame). */
 export const UNUSED_WARM_MS = 500;
@@ -65,6 +71,8 @@ type WarmupState = {
   warming: boolean;
   /** Inside a variant prediction (`withPredictedEffects`): the Effects it creates are known, never cold. */
   predicting: boolean;
+  /** Predicted Effects whose pipelines a prediction's warm draws created (`notePredictedPipelines`). */
+  predictedWarm: WeakSet<Effect>;
   /** Meshes the current round's probes asked to warm. */
   requests: Set<AbstractMesh>;
   /** Whether a mesh's last warm draws all found their pipelines. */
@@ -108,7 +116,7 @@ function install(engine: AbstractEngine): WarmupState {
   const compiled = (engine as unknown as { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
   const state: WarmupState = {
     cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false,
-    requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(), predicting: false,
+    requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(), predicting: false, predictedWarm: new WeakSet(),
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
   if (!warmedPasses.has(engine)) warmedPasses.set(engine, new Map());
@@ -151,7 +159,7 @@ function makeCold(state: WarmupState, effect: Effect): void {
   const base = effect.isReady.bind(effect);
   const engine = effect.getEngine();
   const passes = warmedPasses.get(engine)!;
-  state.cold.set(effect, { usedAt: performance.now(), base, warmed: false });
+  state.cold.set(effect, { usedAt: performance.now(), base, warmed: false, predicted: state.predictedWarm.has(effect) });
   effect.isReady = () => base() && (state.warming || !state.cold.has(effect) || !passes.has(engine.currentRenderPassId));
 }
 
@@ -253,9 +261,55 @@ function warmPassId(engine: AbstractEngine, state: WarmupState, renderPassId: nu
  * `depthPrePassId`), so their pipelines exist before a real draw needs them.
  */
 export function warmRequestedPipelines(scene: Scene, renderPassId: number, depthPrePassId?: number): void {
-  const engine = scene.getEngine();
-  const state = states.get(engine);
+  const state = states.get(scene.getEngine());
   if (!state?.requests.size) return;
+  warmRequested(scene, state, renderPassId, depthPrePassId);
+}
+
+/**
+ * The main object pass of a world view, inside its target and before its real draws (WebGPU): a predicted variant
+ * whose warm draws created its pipelines ahead (`variant-prediction.ts`) is checked against the real pass's state, its
+ * lights and maps as admitted: the meshes the round asked to warm draw under their warm passes, and each predicted cold
+ * Effect whose every draw found its pipeline is admitted at once, outside the first-draw budget (its pipelines exist,
+ * so its first draw creates none). One whose draws missed stays cold, those draws having started the pipelines it
+ * lacks: its Materials keep drawing their previous Effects until it warms, as without the prediction, and no frame waits.
+ */
+export function admitPredictedVariants(scene: Scene, renderPassId: number, depthPrePassId?: number): void {
+  const state = states.get(scene.getEngine());
+  if (!state?.requests.size) return;
+  let predicted = false;
+  for (const entry of state.cold.values()) if (entry.predicted) predicted = true;
+  if (!predicted) return;
+  const admitted = new Set<Effect>();
+  for (const [effect, warm] of warmRequested(scene, state, renderPassId, depthPrePassId)) {
+    const entry = state.cold.get(effect);
+    if (!entry?.predicted) continue;
+    entry.predicted = false;
+    if (!warm) continue;
+    warmUp(state, effect);
+    admitted.add(effect);
+  }
+  if (!admitted.size) return;
+  // The round's probes left these meshes' real defines unprocessed (keeping the previous Effect) and memoized for this
+  // render: forgetting the memos has their real draws prepare again, and take the admitted variant.
+  for (const real of depthPrePassId === undefined ? [renderPassId] : [renderPassId, depthPrePassId]) {
+    const warmPass = state.warmPasses.get(real);
+    if (warmPass === undefined) continue;
+    for (const mesh of state.requests)
+      for (const subMesh of mesh.subMeshes ?? []) {
+        const effect = subMesh._getDrawWrapper(warmPass)?.effect;
+        const wrapper = subMesh._getDrawWrapper(real);
+        if (!effect || !admitted.has(effect) || !wrapper || !(wrapper.defines instanceof MaterialDefines)) continue;
+        (wrapper.defines as unknown as { _renderId: number })._renderId = -1;
+        // A frozen Material answers from this memo first; a mesh with frozen instances draws only on it, so it keeps it.
+        if (!(mesh as unknown as { _instanceDataStorage?: { isFrozen?: boolean } })._instanceDataStorage?.isFrozen) wrapper._wasPreviouslyReady = false;
+      }
+  }
+}
+
+/** Draws the round's requested meshes of `scene` under their warm passes; each Effect drawn, and whether it warmed. */
+function warmRequested(scene: Scene, state: WarmupState, renderPassId: number, depthPrePassId?: number): Map<Effect, boolean> {
+  const engine = scene.getEngine();
   const effects = new Map<Effect, boolean>();
   const pass = engine.currentRenderPassId;
   const alpha = Math.max(0, engine.getAlphaMode());
@@ -286,6 +340,7 @@ export function warmRequestedPipelines(scene: Scene, renderPassId: number, depth
     entry.usedAt = performance.now();
     if (warm) entry.warmed = true;
   }
+  return effects;
 }
 
 /**
@@ -310,7 +365,7 @@ function warmDraw(
   state.warming = true;
   let drawn: number;
   try {
-    subMesh.render(blended);
+    withRealPassInstances(subMesh.getMesh(), realPass, warmPass, () => subMesh.render(blended));
   } finally {
     state.warming = false;
     drawn = scope.close();
@@ -341,14 +396,44 @@ export function withPredictedEffects<T>(engine: AbstractEngine, predict: () => T
 
 /**
  * A predicted Effect whose pipelines warm draws created under the real pass's state (`variant-prediction.ts`): the
- * admission that asks for it draws it at once, never cold.
+ * admission that asks for it finds it cold like any new variant, and `admitPredictedVariants` admits it in that
+ * frame, before the real draws, once draws with the admission's own state find its pipelines.
  */
-export function settleWarmedEffect(engine: AbstractEngine, effect: Effect): void {
+export function notePredictedPipelines(engine: AbstractEngine, effect: Effect): void {
   let state = states.get(engine);
   if (!state) states.set(engine, (state = install(engine)));
-  warmUp(state, effect);
-  state.settled.add(effect);
-  state.known.add(effect);
+  state.predictedWarm.add(effect);
+}
+
+type InstanceStorage = {
+  useMonoDataStorageRenderPass: boolean;
+  renderPasses: Record<number, unknown>;
+};
+
+/**
+ * Runs `draw` (a draw of `mesh` under `pass`, standing in for `realPass`) with the real pass's instance data. On
+ * WebGPU Babylon keeps a mesh's visible instances, and their buffers, per render pass, and only the real pass's
+ * active-mesh evaluation fills them: under another pass id a mesh with instances would find none, draw plain and ask
+ * for its plain variant. Thin instances keep one storage for every pass.
+ */
+export function withRealPassInstances<T>(mesh: AbstractMesh, realPass: number, pass: number, draw: () => T): T {
+  const storage = (mesh as unknown as { _instanceDataStorage?: InstanceStorage })._instanceDataStorage;
+  const buffers = (mesh as unknown as { _userInstancedBuffersStorage?: { renderPasses?: Record<number, unknown> } })._userInstancedBuffersStorage;
+  if (!storage || storage.useMonoDataStorageRenderPass || !storage.renderPasses?.[realPass] || pass === realPass) return draw();
+  const previous = storage.renderPasses[pass];
+  const previousBuffers = buffers?.renderPasses?.[pass];
+  storage.renderPasses[pass] = storage.renderPasses[realPass];
+  if (buffers?.renderPasses?.[realPass]) buffers.renderPasses[pass] = buffers.renderPasses[realPass];
+  try {
+    return draw();
+  } finally {
+    if (previous === undefined) delete storage.renderPasses[pass];
+    else storage.renderPasses[pass] = previous;
+    if (buffers?.renderPasses) {
+      if (previousBuffers === undefined) delete buffers.renderPasses[pass];
+      else buffers.renderPasses[pass] = previousBuffers;
+    }
+  }
 }
 
 /**
