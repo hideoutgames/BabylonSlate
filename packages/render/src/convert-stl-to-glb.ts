@@ -1,4 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ModelBatchConversionOptions } from "./convert-fbx-to-glb";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { STLFileLoader } from "@babylonjs/loaders/STL/stlFileLoader";
@@ -35,7 +36,7 @@ export async function convertStlToGlb(
 /** Convert STL files in a picker batch to GLB; leave other files as-is. */
 export async function convertStlImportBatch(
   files: Array<{ name: string; bytes: Uint8Array }>,
-  options: { engine?: AbstractEngine } = {},
+  options: ModelBatchConversionOptions & { engine?: AbstractEngine } = {},
 ): Promise<{
   files: Array<{ name: string; bytes: Uint8Array }>;
   errors: string[];
@@ -48,10 +49,13 @@ export async function convertStlImportBatch(
       rest.push(file);
       continue;
     }
+    // Between files only: the conversion runs on the main thread's Engine and cannot stop partway.
+    options.signal?.throwIfAborted();
+    options.onFile?.(file.name);
     try {
       converted.push({
         name: file.name.replace(STL_EXTENSION, ".glb"),
-        bytes: await convertStlToGlb(file.bytes, options),
+        bytes: await convertStlToGlb(file.bytes, { engine: options.engine }),
       });
     } catch (err) {
       errors.push(

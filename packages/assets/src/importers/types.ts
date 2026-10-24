@@ -40,9 +40,26 @@ export interface ImportOptions {
    * (`Textures/colormap.png`). Keys may be the glTF URI or a basename.
    */
   sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
+  /** Largest cube face edge for an `.hdr` panorama (128, 256 or 512; default 256). */
+  hdrFaceSize?: number;
+  /** Aborts a slow conversion; the importer rejects with the signal's reason. */
+  signal?: AbortSignal;
+  /** Fraction of this file's import done, from 0 to 1, for importers that can tell. */
+  onProgress?: (fraction: number) => void;
 }
 
 export type Importer = (
+  bytes: Uint8Array,
+  options: ImportOptions,
+) => Promise<ImportResult[]>;
+
+/**
+ * Runs the importer for a file name. The registry defaults to
+ * `importByExtension`; the editor passes one that moves slow, pure-CPU
+ * importers to a Web Worker (`import-worker-client.ts`).
+ */
+export type ImportRunner = (
+  fileName: string,
   bytes: Uint8Array,
   options: ImportOptions,
 ) => Promise<ImportResult[]>;

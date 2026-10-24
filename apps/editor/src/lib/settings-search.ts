@@ -209,6 +209,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["viewport", "Hardware Scaling Level", "setting-hardware-scale"],
   ["viewport", "Post-Processing", "setting-post-processing"],
   ["assets", "Model Import Default Scale", "setting-model-import-scale"],
+  ["assets", "HDR Import Face Size", "setting-hdr-import-face-size"],
   ["assets", "Editor Texture LOD", "setting-editor-texture-lod"],
   [
     "assets",

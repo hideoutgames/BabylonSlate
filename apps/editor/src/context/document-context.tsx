@@ -331,6 +331,8 @@ interface DocumentContextValue {
   writeProjectDerivedText: (projectGuid: string, name: string, text: string) => Promise<void>;
   retryFailedTextureEncoding: () => Promise<number>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
+  /** Converts an environment Texture's kept `.hdr` again at another Face Size; false when nothing was written. */
+  reconvertHdrEnvironment: ProjectService["reconvertHdrEnvironment"];
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@haptic/assets").AreaEmissionPixels>>;
   retryTextureEncoding: (
     guid: string,
@@ -1672,6 +1674,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const prepareAreaEmission = useCallback<ProjectService["prepareAreaEmission"]>(async (guid, options) => {
     await projectService.prepareAreaEmission(guid, options);
     bump();
+  }, [bump, projectService]);
+
+  // Rewrites the Texture file, so a written conversion locks it like a re-encode.
+  const reconvertHdrEnvironment = useCallback<ProjectService["reconvertHdrEnvironment"]>(async (guid, faceSize, options) => {
+    const written = await requeueWithEditLock(
+      sourceControlRef.current,
+      projectService.registry?.getByGuid(guid)?.path,
+      () => projectService.reconvertHdrEnvironment(guid, faceSize, options),
+    );
+    bump();
+    return written;
   }, [bump, projectService]);
 
   const onSessionDiagnostic = useCallback(
@@ -3914,6 +3927,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       writeProjectDerivedText,
       retryFailedTextureEncoding,
       prepareAreaEmission,
+      reconvertHdrEnvironment,
       collectPlayAreaEmissions,
       retryTextureEncoding,
       textureAlignmentStale,
@@ -4030,6 +4044,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       writeProjectDerivedText,
       retryFailedTextureEncoding,
       prepareAreaEmission,
+      reconvertHdrEnvironment,
       collectPlayAreaEmissions,
       retryTextureEncoding,
       textureAlignmentStale,
