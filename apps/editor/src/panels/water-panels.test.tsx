@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import { createDefaultWaterDefinition, normalizeWaterDefinition } from "@haptic/core";
+import { AssetCreateProvider, AssetOpenProvider, type AssetCreateApi } from "@haptic/editor-kit";
 import { WaterDetailsPanel } from "./water-panels";
 
 if (typeof window !== "undefined") {
@@ -33,7 +34,7 @@ vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "water:assets/Lake.water.hasset" }),
 }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
-  openDocuments: [{ id: "water:assets/Lake.water.hasset", content: harness.content }],
+  openDocuments: [{ id: "water:assets/Lake.water.hasset", ref: { kind: "water", path: "assets/Lake.water.hasset", label: "Lake" }, content: harness.content }],
   assetRegistry: { list: () => [] },
   applyAssetDocumentChange: async (
     _id: string,
@@ -49,7 +50,7 @@ afterEach(() => {
   cleanup();
 });
 
-function renderWithHistory(definition: unknown = createDefaultWaterDefinition("realistic")) {
+function renderWithHistory(definition: unknown = createDefaultWaterDefinition(), create?: AssetCreateApi, open?: (guid: string) => void) {
   const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 10_000_000 });
   const initial = normalizeWaterDefinition(definition) as unknown as Record<string, unknown>;
   harness.content = initial;
@@ -66,7 +67,9 @@ function renderWithHistory(definition: unknown = createDefaultWaterDefinition("r
     rerender = () => setVersion((version) => version + 1);
     return <WaterDetailsPanel {...({} as IDockviewPanelProps)} />;
   }
-  render(<Host />);
+  render(create
+    ? <AssetCreateProvider value={create}><AssetOpenProvider value={{ canOpen: () => true, openAsset: open ?? (() => {}) }}><Host /></AssetOpenProvider></AssetCreateProvider>
+    : <Host />);
   return {
     initial,
     stack,
@@ -98,32 +101,25 @@ describe("WaterDetailsPanel", () => {
     expect(history.read().opacity).toBe(before.opacity);
   });
 
-  it("enables the Ocean Spectrum inputs only for that Wave Model and stores Object Reflections", async () => {
+  it("edits the wind sea and swell lengths apart from their heights, over a puddle's ripples to an ocean's swell", () => {
     const history = renderWithHistory();
-    const seed = () => screen.getByTestId("property-water-waveSeed") as HTMLInputElement;
-    expect(seed().disabled).toBe(true);
-    expect((screen.getByTestId("property-water-steepness") as HTMLInputElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId("property-water-waveModel"));
-    const ocean = await screen.findByRole("option", { name: "Ocean Spectrum" });
-    fireEvent.pointerDown(ocean);
-    fireEvent.click(ocean);
-    await waitFor(() => expect(history.read().waveModel).toBe("ocean"));
-    expect(seed().disabled).toBe(false);
+    for (const key of ["style", "waveModel", "choppiness", "rippleScale", "stylizedLook", "colorBands", "sparkles"]) expect(screen.queryByTestId(`property-water-${key}`), key).toBeNull();
+    fireEvent.change(screen.getByTestId("property-water-swellLength"), { target: { value: "1500" } });
+    fireEvent.change(screen.getByTestId("property-water-waveLength"), { target: { value: "0.3" } });
+    expect(history.read()).toMatchObject({ swellLength: 1500, waveLength: 0.3, waveHeight: createDefaultWaterDefinition().waveHeight });
     fireEvent.click(screen.getByTestId("property-water-objectReflections"));
-    expect(history.read()).toMatchObject({ waveModel: "ocean", objectReflections: false });
+    expect(history.read().objectReflections).toBe(!createDefaultWaterDefinition().objectReflections);
   });
 
-  it("offers Stylized Look only for Stylized water and keeps colors and waves when it switches", async () => {
-    renderWithHistory();
-    expect(screen.queryByTestId("property-water-stylizedLook")).toBeNull();
-    cleanup();
-    const history = renderWithHistory({ ...createDefaultWaterDefinition("stylized"), shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
-    fireEvent.click(screen.getByTestId("property-water-stylizedLook"));
-    const toon = await screen.findByRole("option", { name: "Toon" });
-    fireEvent.pointerDown(toon);
-    fireEvent.click(toon);
-    await waitFor(() => expect(history.read().stylizedLook).toBe("toon"));
-    expect(history.read()).toMatchObject({ style: "stylized", shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
+  it("makes built-in water an editable Custom Material and opens it", async () => {
+    const createAsset = vi.fn(async () => "sea-material"), openAsset = vi.fn();
+    const history = renderWithHistory(createDefaultWaterDefinition(), { canCreate: (type) => type === "Material", typeLabel: (type) => type, createAsset }, openAsset);
+    fireEvent.click(screen.getByTestId("water-edit-as-material"));
+    await waitFor(() => expect(history.read().materialGuid).toBe("sea-material"));
+    expect(createAsset).toHaveBeenCalledWith(expect.objectContaining({ type: "Material", name: "Lake Material", waterMaterial: true }));
+    expect(openAsset).toHaveBeenCalledWith("sea-material");
+    // A Water with a Custom Material edits that Material instead.
+    expect(screen.queryByTestId("water-edit-as-material")).toBeNull();
   });
 
   it("records a color picker drag as one undo step", () => {

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@haptic/assets";
 import { AssetRegistry, createDefaultMigrationRegistry, encodeAssetDocument, projectContentRoot } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { createSceneStreamingActor } from "@haptic/core";
+import { createDefaultWaterDefinition, createSceneStreamingActor } from "@haptic/core";
 import { mergeEngineTypeSchemas } from "@haptic/scripting";
+import { createDefaultMaterialDocument, createWaterMaterialDocument } from "@haptic/shader-graph";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -2361,14 +2362,18 @@ describe("runWithContentBrowserImportBusy", () => {
 
 
 describe("Water asset authoring", () => {
-  it("persists the chosen preset and its custom material dependency", () => {
-    const result = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "water", parentClass: null, waterStyle: "stylized" });
-    expect(result.payload).toMatchObject({ style: "stylized", stylizedLook: "painted", colorBands: 0 });
-    // The Toon look seeds its own defaults: hard Color Bands.
-    const toon = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "toon", parentClass: null, waterStyle: "stylized", waterStylizedLook: "toon" });
-    expect(toon.payload).toMatchObject({ style: "stylized", stylizedLook: "toon", colorBands: 3 });
+  it("persists the defaults and its custom material dependency", () => {
+    const result = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "water", parentClass: null });
+    expect(result.payload).toEqual(createDefaultWaterDefinition());
     expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
     expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
+  });
+
+  it("starts a Surface Material as the starter water Material, and other domains as usual", () => {
+    const water = buildNewAssetResult({ type: "Material", name: "Sea", guid: "sea", parentClass: null, waterMaterial: true });
+    expect(water.payload).toEqual(createWaterMaterialDocument("Sea"));
+    const particle = buildNewAssetResult({ type: "Material", name: "Spark", guid: "spark", parentClass: null, materialDomain: "particle", waterMaterial: true });
+    expect(particle.payload).toEqual(createDefaultMaterialDocument("Spark", "particle"));
   });
 });
 

@@ -59,7 +59,7 @@ export type WaterReflectionMode = "sky" | "screenSpace" | "planar";
 export const WATER_REFLECTION_MODES: readonly WaterReflectionMode[] = ["sky", "screenSpace", "planar"];
 /**
  * Render-only water cost caps. Physics never reads these: buoyancy and surface
- * queries sample the same analytic waves on every tier and device.
+ * queries sample the same waves on every tier and device.
  */
 export interface WaterQuality extends QualitySelection {
   /** SLATE_WATER_QUALITY 0..3 (shader terms per tier). */
@@ -77,9 +77,7 @@ export interface WaterQuality extends QualitySelection {
   reflectionSteps: number;
   /** Planar reflection target scale. */
   planarScale: number;
-  /** GPU FFT detail band (render-only). */
-  fft: boolean;
-  /** FFT grid size per cascade: 64, 128 or 256. */
+  /** FFT ocean grid size per cascade: 64, 128 or 256 (render-only detail; physics reads its own grid). */
   fftSize: number;
   fftCascades: number;
 }
@@ -99,7 +97,7 @@ export type WaterQualityField = Exclude<keyof WaterQuality, keyof QualitySelecti
 // A Record keeps the list complete when WaterQuality gains a field.
 const WATER_QUALITY_FIELD_SET: Record<WaterQualityField, true> = {
   shadingDetail: true, meshDensity: true, contactResolution: true, refraction: true, refractionScale: true,
-  reflections: true, reflectionSteps: true, planarScale: true, fft: true, fftSize: true, fftCascades: true,
+  reflections: true, reflectionSteps: true, planarScale: true, fftSize: true, fftCascades: true,
 };
 /** Every value field, in display order; also the console names for `quality water <field> <value>`. */
 export const WATER_QUALITY_FIELDS = Object.keys(WATER_QUALITY_FIELD_SET) as readonly WaterQualityField[];
@@ -119,8 +117,7 @@ export function parseWaterQualitySetting(field: string, value: string): Partial<
       return mode ? { reflections: mode } : undefined;
     }
     case "refraction":
-    case "fft":
-      return lower === "on" || lower === "off" ? { [field]: lower === "on" } : undefined;
+      return lower === "on" || lower === "off" ? { refraction: lower === "on" } : undefined;
     case "meshDensity":
       return within(WATER_MESH_DENSITY_MIN, WATER_MESH_DENSITY_MAX) ? { meshDensity: numeric } : undefined;
     case "contactResolution":
@@ -194,7 +191,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
       refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
+      planarScale: 0.5, fftSize: 64, fftCascades: 2,
     },
     postprocessing: { resolutionScale: 0.5, ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
@@ -206,7 +203,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
+      planarScale: 0.5, fftSize: 128, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 0.75, ambientOcclusion: true, reflections: false, volumetricLighting: false },
   },
@@ -218,7 +215,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
       refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
-      planarScale: 0.5, fft: true, fftSize: 128, fftCascades: 2,
+      planarScale: 0.5, fftSize: 256, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
@@ -230,7 +227,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "ultra", meshDensity: 1.5, contactResolution: 1024,
       refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
-      planarScale: 0.75, fft: true, fftSize: 256, fftCascades: 3,
+      planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
@@ -378,7 +375,7 @@ function normalizeWaterQuality(source: Partial<WaterQuality> | undefined): Water
     const value = source?.[key];
     return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : tier[key];
   };
-  const flag = (key: "refraction" | "fft") =>
+  const flag = (key: "refraction") =>
     typeof source?.[key] === "boolean" ? source[key] : tier[key];
   return {
     ...selection(source),
@@ -394,7 +391,6 @@ function normalizeWaterQuality(source: Partial<WaterQuality> | undefined): Water
       : tier.reflections,
     reflectionSteps: Math.round(number("reflectionSteps", WATER_REFLECTION_STEPS_MIN, WATER_REFLECTION_STEPS_MAX)),
     planarScale: number("planarScale", WATER_TARGET_SCALE_MIN, WATER_TARGET_SCALE_MAX),
-    fft: flag("fft"),
     fftSize: snapWaterFftSize(number("fftSize", WATER_FFT_SIZES[0], WATER_FFT_SIZES[WATER_FFT_SIZES.length - 1]!)),
     fftCascades: Math.round(number("fftCascades", WATER_FFT_CASCADES_MIN, WATER_FFT_CASCADES_MAX)),
   };

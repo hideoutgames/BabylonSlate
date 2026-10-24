@@ -1,4 +1,4 @@
-import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle, type WaterStylizedLook } from "@haptic/core";
+import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph } from "@haptic/core";
 import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@haptic/core";
 import type { ImportResult, IndexedAsset } from "@haptic/assets";
 import {
@@ -57,6 +57,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createDefaultMaterialInstanceDocument,
+  createWaterMaterialDocument,
   materialDependencies,
   materialInstanceDependencies,
   normalizeMaterialDocument,
@@ -1591,9 +1592,6 @@ export function defaultParentClassForType(
 }
 
 export function buildNewAssetResult(options: {
-  waterStyle?: WaterStyle;
-  /** Stylized Water's look; its defaults seed the new asset. Realistic ignores it. */
-  waterStylizedLook?: WaterStylizedLook;
   type: CreatableAssetType;
   name: string;
   guid: string;
@@ -1602,6 +1600,8 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@haptic/core").SerializedGraph>;
   /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
   materialDomain?: MaterialDomain;
+  /** A new Surface Material starts as the starter Water Material (built-in water's look, wired from the water nodes). */
+  waterMaterial?: boolean;
   defaultDefinitionGuid?: string | null;
   dataDefinition?: DataDefinitionAsset;
   dataTree?: DataTreeAsset;
@@ -1619,7 +1619,7 @@ export function buildNewAssetResult(options: {
   }
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
-  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle, options.waterStylizedLook) as unknown as Record<string, unknown>);
+  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition() as unknown as Record<string, unknown>);
   if (type === "Prefab") {
     const result = documentAsset(type, name, guid, { components: defaultPrefabComponents(options.viewportMode) });
     result.dependencies = assetHeaderDependencies(type, result.payload);
@@ -1743,10 +1743,11 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Material") {
-    const payload = createDefaultMaterialDocument(
+    const water = options.waterMaterial === true && (options.materialDomain ?? "surface") === "surface";
+    const payload = (water ? createWaterMaterialDocument(name) : createDefaultMaterialDocument(
       name,
       options.materialDomain,
-    ) as unknown as Record<string, unknown>;
+    )) as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
   }
 

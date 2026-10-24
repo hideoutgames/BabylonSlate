@@ -45,6 +45,7 @@ export function AssetCreateDocumentsProvider({
       name?: string;
       parentClass?: string;
       materialDomain?: MaterialDomain;
+      waterMaterial?: boolean;
       defaultDefinitionGuid?: string | null;
       ownerPath?: string | null;
     }) => {
@@ -65,6 +66,7 @@ export function AssetCreateDocumentsProvider({
         name: request.name,
         parentClass: request.parentClass,
         materialDomain: request.materialDomain,
+        waterMaterial: request.waterMaterial,
         defaultDefinitionGuid: request.defaultDefinitionGuid,
       });
       // The mounted registry indexed the new asset on write; a full remount

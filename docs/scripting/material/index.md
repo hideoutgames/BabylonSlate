@@ -32,7 +32,12 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Vertex Position (Local)](vertex-position-local.md) | Returns the vertex position in the mesh's local space, including morph target changes. |
 | [View Direction](view-direction.md) | Returns the direction from the surface point toward the camera, scaled to a length of 1. |
 | [Water Surface](water-surface.md) | Returns water data for the current point: wave height, bank distance, depth, time and flow. |
-| [Water Waves](water-waves.md) | Calculates animated wave displacement on the GPU, returning offset, height, normal and time for a water surface. |
+| [Water Colors](water-colors.md) | Returns the Water asset's colours and opacity, so a Custom Material follows the asset's **Inspector**, and how strongly the scene lights them. |
+| [Water Depth Fade](water-depth-fade.md) | Returns how deep the water is below this point, a fade that rises from 0 at the waterline to 1 in deep water, and how much of what lies below shows through. |
+| [Water Foam](water-foam.md) | Returns the foam built-in water draws, as masks from 0 to 1: whitecaps, shorelines and foam around objects. |
+| [Water Reflection](water-reflection.md) | Returns what the water mirrors at this point, and how strongly it reflects. |
+| [Water Scene Color](water-scene-color.md) | Returns the scene behind the water at this point, bent by the waves as built-in Refraction bends it. |
+| [Water Waves](water-waves.md) | Returns the water asset's simulated ocean at this point: the wave offset, height, normal, breaking-crest foam and the sunlight glowing through the crests. |
 | [World Normal](world-normal.md) | Returns the surface normal in world space. |
 | [World Position](world-position.md) | Returns the position of the surface point in world space, in metres. |
 | [World Tangent](world-tangent.md) | Returns the surface tangent direction in world space, scaled to a length of 1. |

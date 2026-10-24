@@ -5,18 +5,22 @@ import {
 } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
-  normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
-  waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
+  normalizeWaterDefinition, sameWaterColors, WATER_BLEND_COLOR_PARTNERS, waterBankFadeLength, waterBlendReach, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
+  waterMovesSideways, waterRiverCentreline, waterSpectrum, waterWaveEnvelope,
   type Transform, type WaterBlendBody, type WaterBodyProperties, type WaterDefinition,
 } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin, WaterVertexWaves } from "./water-material";
+import {
+  applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin,
+  WaterVertexWaves,
+} from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
+import { materialSceneCopyUse, materialUsesWaterFields, setMeshWaterNodeSurface, type WaterNodeSurface } from "./water-node-blocks";
 import { materialHasWaterWaves } from "./water-waves-block";
 
 /**
@@ -86,13 +90,19 @@ type Surface = {
   layoutColumns: number;
   /** Sub-meshes whose culling bounds were last padded (shadow partitioning may replace them later). */
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
+  /** The culling bounds' padding is stale (a wave or blend change): `updateBounds` re-pads at the next placement. */
+  boundsDirty: boolean;
   /**
-   * The vertex shader adds the FFT detail band's displacement (GPU path, band compiled in): finite bodies pad their
-   * bounds by its horizontal bound too. `boundsDirty` re-pads at the next placement when this changes.
+   * What `copyIntents` counts for this surface (`COPY_REFRACTS`, `COPY_REFLECTS`): its scene-copy use while it is enabled,
+   * itself and through its ancestors; 0 otherwise.
    */
-  fftDisplaced: boolean; boundsDirty: boolean;
-  /** Counted in `copyIntents`: a built-in surface that is enabled, itself and through its ancestors. */
-  copyCounted: boolean;
+  copyCounted: number;
+  /**
+   * Custom Material water: what its graph's water nodes read (`setMeshWaterNodeSurface`), and its scene-copy use
+   * (`materialSceneCopyUse`, by its graph alone). Null and 0 for built-in water.
+   */
+  nodes: WaterNodeSurface | null;
+  nodeCopyUse: number;
   /** Whether the mesh was enabled (with its ancestors) when the water update last saw it; null before the first update. */
   seenEnabled: boolean | null;
   /** Process-unique id: blending orders and identifies surfaces by it. */
@@ -104,10 +114,11 @@ type Surface = {
   /** Blending with neighbours (`syncSceneBlend`), or null while it blends with nothing. */
   blend: SurfaceBlend | null;
   /**
-   * Per vertex while blending: (swell height scale, Gerstner offset scale, ownership margin, partner-colour share) as
-   * the `slateWaterBlend` attribute, and the blended union bank distance, depth, current (x, y, z) and world rest height.
+   * Per vertex while blending: (swell height scale, Gerstner offset scale, ownership margin, colour share of partner 0)
+   * as the `slateWaterBlend` attribute, the colour shares of partners 1 and 2 (`slateWaterBlendColors`), and the
+   * blended union bank distance, depth, current (x, y, z) and world rest height.
    */
-  blendData: Float32Array; blendRest: Float32Array;
+  blendData: Float32Array; blendColors: Float32Array; blendRest: Float32Array;
   /** Bumped by in-place body and asset edits: neighbours rebuild their blend data. */
   blendRevision: number;
   /** World matrix and enabled state the blend pass last saw. */
@@ -123,22 +134,26 @@ type Surface = {
   stage: BlendRebuild | null;
 };
 /** Per-vertex arrays (and rest extents) of a blend write: the surface's own, or a budgeted rebuild's staging copies. */
-type RestBuffers = Pick<Surface, "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendRest" | "restMin" | "restMax">;
-type RestArray = "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendRest";
+type RestBuffers = Pick<Surface, "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendColors" | "blendRest" | "restMin" | "restMax">;
+type RestArray = "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendColors" | "blendRest";
 /** `RestBuffers`' arrays with their floats per vertex. */
 const REST_ARRAYS: ReadonlyArray<readonly [RestArray, number]> = [
-  ["base", 3], ["worldBase", 3], ["normals", 3], ["baseNormals", 3], ["data", 4], ["flow", 3], ["bankGradient", 2], ["blendData", 4], ["blendRest", 6],
+  ["base", 3], ["worldBase", 3], ["normals", 3], ["baseNormals", 3], ["data", 4], ["flow", 3], ["bankGradient", 2], ["blendData", 4], ["blendColors", 2],
+  ["blendRest", 6],
 ];
 type StageBuffers = RestBuffers & { metres: Float32Array };
 /**
  * What `blendRange` reads and accumulates: the neighbour index it evaluates (the scene's, or a rebuild's frozen copy), the
- * body's world matrix, the neighbours' world bounds, and per write the extremes a finished write applies to the surface.
+ * body's world matrix, the neighbours' world bounds, per write the extremes a finished write applies to the surface, and
+ * the colour partners: neighbours coloured unlike this body, those coloured alike sharing a slot, by body index (`slots`)
+ * and per slot (`partners`, one body of each).
  */
 type BlendInputs = {
   index: WaterBlendIndex; distance: number; self: number; world: Matrix; inverse: Matrix;
   near: Float64Array[]; lift: Vector3;
-  ranged: boolean; varies: boolean; highest: number; partners: Map<number, number>;
+  ranged: boolean; varies: boolean; highest: number; slots: Map<number, number>; partners: number[];
 };
+
 const KERNEL = 0, FIT = 1, LANDED = 2;
 /**
  * A moved blending body's periodic blend refresh, spread over frames (`advanceBlendRebuild`). It evaluates a frozen copy
@@ -176,7 +191,11 @@ type SurfaceBlend = {
   restVaries: boolean;
   /** The largest swell height scale over the grid (a calmer body takes a rougher neighbour's waves near the seam). */
   heightScale: number;
+  /** The definitions of the colour partners, by slot (`WATER_BLEND_COLOR_PARTNERS`; null where a slot is empty). */
+  partners: (WaterDefinition | null)[];
 };
+/** No colour partners: a surface that blends with nothing coloured unlike it. */
+const NO_PARTNERS: readonly (WaterDefinition | null)[] = Object.freeze([null, null, null]);
 /**
  * One scene's blending: its index of enabled surfaces and the distance it was built for. `waiting` is set while a
  * moved surface's neighbours keep their previous blend data (`WATER_BLEND_REFRESH_MS`).
@@ -335,9 +354,9 @@ export function updateSceneWater(scene: Scene, early = false): void {
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
     surface.field?.update();
     surface.contacts?.update(now);
-    // Visible built-in water asks for its FFT detail band (it is already known to be drawn or in view); the
-    // simulations run once below, after every request.
-    if (surface.plugin) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
+    // Visible water a spectrum displaces asks for it (it is already known to be drawn or in view); the simulations run
+    // once below, after every request.
+    if (surface.plugin || surface.waves) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
   }
   updateSceneWaterFft(scene, time);
 }
@@ -416,7 +435,11 @@ function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
   for (const s of entries) {
     const self = members.indexOf(s), neighbours = self < 0 ? [] : index.neighbours(self);
     if (!neighbours.length) {
-      if (s.blend) { s.blend = null; s.version++; if (s.plugin) { s.plugin.blend = false; s.plugin.partner = null; } }
+      if (s.blend) {
+        s.blend = null; s.version++;
+        if (s.plugin) { s.plugin.blend = false; s.plugin.partners = NO_PARTNERS; }
+        if (s.nodes) s.nodes.partners = NO_PARTNERS;
+      }
       s.stage = null;
       continue;
     }
@@ -448,7 +471,7 @@ function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
       continue;
     }
     if (stage) stage.active = false;
-    s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1 };
+    s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1, partners: [null, null, null] };
     s.version++;
     if (s.plugin) s.plugin.blend = true;
   }
@@ -493,6 +516,13 @@ function axis(min: number, max: number, spacing: number, camera: number, budget:
  * finite volumes' cells per side, and river rows along and columns across the stream.
  */
 export const WATER_GLOBAL_CELL_BUDGET = 192;
+/**
+ * A spectrum Ocean's cells per side (`oceanBudget`): its FFT waves need dense geometry near the camera, so like Global
+ * Water its grid is graded around the camera (dense middle half, cubic outer cells reaching its fixed edges).
+ */
+export const WATER_OCEAN_CELL_BUDGET = 256;
+/** A spectrum Ocean rebuilds its graded grid when the camera moves this share of the dense region's width. */
+const OCEAN_RECENTRE_SHARE = 0.125;
 export const WATER_FINITE_CELL_BUDGET = 160;
 export const WATER_RIVER_ROW_BUDGET = 512;
 export const WATER_RIVER_COLUMN_BUDGET = 64;
@@ -501,6 +531,12 @@ export const WATER_RIVER_COLUMN_BUDGET = 64;
 function globalBudget(resolution: number): number {
   const cells = Math.round(resolution);
   return Math.min(WATER_GLOBAL_CELL_BUDGET, Math.max(32, cells + cells % 2));
+}
+
+/** Spectrum Ocean cells per side for an effective resolution: twice it, even, between 64 and the Ocean cap. */
+function oceanBudget(resolution: number): number {
+  const cells = Math.round(resolution * 2);
+  return Math.min(WATER_OCEAN_CELL_BUDGET, Math.max(64, cells + cells % 2));
 }
 
 /** Cells along one axis of a finite volume: world-sized and fixed, never camera-dependent. */
@@ -562,8 +598,7 @@ function cameraWorld(camera: Camera, local: Vector3, out: Vector3): Vector3 {
 
 /**
  * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes;
- * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials. A material that
- * now samples the FFT detail band (or stops) in its vertex shader re-pads the culling bounds.
+ * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials.
  */
 function syncQuality(s: Surface): void {
   const scene = s.mesh.getScene(), revision = sceneWaterQualityRevision(scene);
@@ -572,7 +607,6 @@ function syncQuality(s: Surface): void {
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;
   if (density !== s.density) { s.density = density; s.version++; }
-  if (s.fftDisplaced !== (s.gpu && (s.plugin?.fftVertexCascades ?? 0) > 0)) s.boundsDirty = true;
 }
 
 const UNCHANGED = 0, RECENTRED = 1, REBUILT = 2;
@@ -591,10 +625,21 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
   const sx = Math.hypot(m[0]!, m[1]!, m[2]!), sz = Math.hypot(m[8]!, m[9]!, m[10]!);
   // Water Mesh Density scales Surface Resolution; the cell caps bound the result.
   const resolution = body.resolution * s.density;
-  const step = Math.max(0.025, water.waveLength / 12 * 48 / resolution);
-  const budget = body.kind === "global" ? globalBudget(resolution) : 0;
+  // The vertex stage reads each cascade at the mip its spacing resolves, so the spacing follows the wind sea's
+  // wavelength only loosely (a twentieth of it, within a few centimetres and metres).
+  const step = Math.min(3, Math.max(0.2, water.waveLength / 20)) * 96 / resolution;
+  const graded = body.kind === "ocean";
+  const budget = body.kind === "global" ? globalBudget(resolution) : graded ? oceanBudget(resolution) : 0;
   let cx = 0, cz = 0, extent = 0;
-  if (body.kind === "global") {
+  if (graded) {
+    // The dense cells follow the camera (or an orbit camera's target), snapped to a fraction of their width so moving
+    // within it never rebuilds the grid.
+    const camera = mesh.getScene().activeCamera;
+    const point = camera ? cameraWorld(camera, camera instanceof ArcRotateCamera ? camera.target : camera.position, eye) : eye.setAll(0);
+    const local = Vector3.TransformCoordinatesToRef(point, inverse, eye);
+    const snap = denseCells(budget) * step * OCEAN_RECENTRE_SHARE;
+    cx = Math.round(local.x * sx / snap) * snap / sx; cz = Math.round(local.z * sz / snap) * snap / sz;
+  } else if (body.kind === "global") {
     const camera = mesh.getScene().activeCamera;
     const local = Vector3.TransformCoordinatesToRef(camera ? cameraWorld(camera, camera.position, eye) : eye.setAll(0), inverse, eye);
     // An orbiting camera looks at its target: shift the dense cells toward it (up to most of their half width), so
@@ -636,6 +681,10 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
     const columns = Math.min(WATER_RIVER_COLUMN_BUDGET, Math.max(4, Math.ceil(widest / step / 2) * 2));
     xs = Array.from({ length: columns + 1 }, (_, i) => i / columns * 2 - 1);
     zs = strip.map((_, i) => i);
+  } else if (graded) {
+    // World-sized dense cells around the camera, graded out to the Ocean's fixed edges.
+    xs = axis(-body.width / 2 - ex, body.width / 2 + ex, step / sx, cx, budget);
+    zs = axis(-body.length / 2 - ez, body.length / 2 + ez, step / sz, cz, budget);
   } else {
     xs = uniformAxis(-body.width / 2 - ex, body.width / 2 + ex, (body.width + 2 * ex) * sx, step);
     zs = uniformAxis(-body.length / 2 - ez, body.length / 2 + ez, (body.length + 2 * ez) * sz, step);
@@ -684,12 +733,6 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
       Math.hypot(worldBase[a]! - worldBase[above]!, worldBase[a + 2]! - worldBase[above + 2]!),
     );
   }
-  // The finest spacing decides whether the vertex stage can resolve any of the FFT detail band (a recentre keeps it).
-  if (s.plugin) {
-    let finest = Infinity;
-    for (let index = 0; index < s.spacing.length; index++) finest = Math.min(finest, s.spacing[index]!);
-    s.plugin.meshSpacing = finest;
-  }
   writeRestPositions(s, 0, count);
   const indices: number[] = [], uvs: number[] = [];
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
@@ -708,10 +751,12 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
   mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
   mesh.setVerticesData("slateWaterOffset", s.offsets, true, 2);
   if (s.blend) {
-    s.blendData = new Float32Array(count * 4); s.blendRest = new Float32Array(count * 6);
+    s.blendData = new Float32Array(count * 4); s.blendColors = new Float32Array(count * 2); s.blendRest = new Float32Array(count * 6);
     mesh.setVerticesData("slateWaterBlend", s.blendData, true, 4);
+    mesh.setVerticesData("slateWaterBlendColors", s.blendColors, true, 2);
   } else if (mesh.isVerticesDataPresent("slateWaterBlend")) {
     mesh.removeVerticesData("slateWaterBlend");
+    mesh.removeVerticesData("slateWaterBlendColors");
   }
   return REBUILT;
 }
@@ -741,7 +786,7 @@ const blendSample = createWaterBlendSample(), blendPoint = new Vector3();
 
 const createBlendInputs = (): BlendInputs => ({
   index: null as unknown as WaterBlendIndex, distance: 0, self: 0, world: Matrix.Identity(), inverse: Matrix.Identity(),
-  near: [], lift: new Vector3(), ranged: false, varies: false, highest: 1, partners: new Map(),
+  near: [], lift: new Vector3(), ranged: false, varies: false, highest: 1, slots: new Map(), partners: [],
 });
 
 /** Points `inputs` at a neighbour index, the body `self` in it and the world matrix the body is evaluated at. */
@@ -769,12 +814,12 @@ function inBlendReach(bounds: readonly Float64Array[], reach: number, x: number,
 
 /**
  * Blended rest data of a blending surface's grid (`evaluateWaterBlend` at each vertex's world rest point): lifts the rest
- * grid to the blended rest height and fills `blendData` (the vertex attribute) and `blendRest` (union bank distance,
- * depth, current and world rest height, which `placeRestData` uploads), then the rest extents. Picks the partner whose
- * colours the most vertices mix toward. On change only: a rebuilt grid, a rotated or scaled volume, or a recentred
+ * grid to the blended rest height and fills `blendData` and `blendColors` (the vertex attributes) and `blendRest` (union
+ * bank distance, depth, current and world rest height, which `placeRestData` uploads), then the rest extents. Each vertex
+ * mixes toward every colour partner by its colour share. On change only: a rebuilt grid, a rotated or scaled volume, or a recentred
  * Global grid. With a vertex range (`first` to `end`), only those vertices are rewritten (Global Water's rows near a
  * neighbour, `placeGlobalBlend`): the rest extents then cover open water's plane and the range, and the height scale
- * and partner come from the range alone (open water outside it has neither).
+ * comes from the range alone (open water outside it has none).
  */
 function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end = s.base.length / 3): void {
   const state = sceneBlends.get(s.mesh.getScene()), blend = s.blend;
@@ -785,10 +830,22 @@ function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end =
   finishBlend(s, inputs);
 }
 
-/** Starts a write of `b`: a range leaves open water's plane (local y = 0) everywhere else. */
+/**
+ * Starts a write of `b`: a range leaves open water's plane (local y = 0) everywhere else. The colour partners are this
+ * body's neighbours coloured unlike it, in index order, alike-coloured ones sharing a slot; past
+ * `WATER_BLEND_COLOR_PARTNERS` further colours keep this body's own.
+ */
 function beginBlend(inputs: BlendInputs, b: RestBuffers, ranged: boolean): void {
   inputs.ranged = ranged; inputs.varies = false; inputs.highest = 1;
-  inputs.partners.clear();
+  const { index, self, slots, partners } = inputs, list = index.neighbours(self);
+  slots.clear(); partners.length = 0;
+  for (let n = 0; n < list.length; n++) {
+    const j = list[n]!;
+    if (index.colorsMatch(self, n)) continue;
+    let slot = partners.findIndex((k) => sameWaterColors(index.bodies[k]!.definition, index.bodies[j]!.definition));
+    if (slot < 0 && partners.length < WATER_BLEND_COLOR_PARTNERS) slot = partners.push(j) - 1;
+    if (slot >= 0) slots.set(j, slot);
+  }
   Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inputs.inverse, inputs.lift);
   if (ranged) { b.restMin.y = 0; b.restMax.y = 0; }
   else { b.restMin.setAll(Infinity); b.restMax.setAll(-Infinity); }
@@ -796,13 +853,14 @@ function beginBlend(inputs: BlendInputs, b: RestBuffers, ranged: boolean): void 
 
 /** The kernel over vertices [first, end) of `b`, which may be called again for further ranges of one write. */
 function blendRange(inputs: BlendInputs, s: Surface, b: RestBuffers, first: number, end: number): void {
-  const base = b.base, data = b.blendData, rest = b.blendRest, sample = blendSample, partners = inputs.partners, lift = inputs.lift;
+  const base = b.base, data = b.blendData, colors = b.blendColors, rest = b.blendRest, sample = blendSample, slots = inputs.slots, lift = inputs.lift;
   const world = inputs.world, index = inputs.index, self = inputs.self, near = inputs.near, ranged = inputs.ranged;
   // Vertices beyond every neighbour's reach keep the body's own rest data (most of a Global grid): no kernel call.
-  const reach = inputs.distance / 2;
+  const reach = waterBlendReach(inputs.distance);
   const open = s.body.kind === "global";
   for (let v = first; v < end; v++) {
-    const i = v * 3, d = v * 4, r = v * 6;
+    const i = v * 3, d = v * 4, c = v * 2, r = v * 6;
+    colors[c] = 0; colors[c + 1] = 0;
     // The own rest height first (a recentred Global grid keeps the previous lift; its own plane is at 0).
     base[i + 1] = open ? 0 : waterFootprint(s.body, base[i]!, base[i + 2]!).height;
     Vector3.TransformCoordinatesFromFloatsToRef(base[i]!, base[i + 1]!, base[i + 2]!, world, blendPoint);
@@ -810,14 +868,22 @@ function blendRange(inputs: BlendInputs, s: Surface, b: RestBuffers, first: numb
       // NaN marks the body's own rest data for `placeRestData`.
       data[d] = 1; data[d + 1] = 1; data[d + 2] = 1; data[d + 3] = 0;
       rest[r] = NaN; rest[r + 5] = blendPoint.y;
-    } else if (evaluateWaterBlend(index, self, blendPoint.x, blendPoint.y, blendPoint.z, sample)) {
+    } else if (evaluateWaterBlend(index, self, blendPoint.x, blendPoint.y, blendPoint.z, sample, true)) {
+      // Past this body's reach (its grid's outer vertices) it owns nothing but takes the neighbours' surface, so the
+      // shoreline and ownership interpolate toward their true values instead of stepping along the grid.
       const blendLift = sample.restHeight - sample.ownRestHeight;
       if (Math.abs(blendLift) > 1e-4) inputs.varies = true;
       base[i] = base[i]! + lift.x * blendLift; base[i + 1] = base[i + 1]! + lift.y * blendLift; base[i + 2] = base[i + 2]! + lift.z * blendLift;
-      data[d] = sample.heightScale; data[d + 1] = sample.offsetScale; data[d + 2] = sample.margin; data[d + 3] = sample.foreign;
+      data[d] = sample.heightScale; data[d + 1] = sample.offsetScale; data[d + 2] = sample.margin; data[d + 3] = 0;
+      // Each colour partner's share (the participants are in the index's scratch until the next evaluation).
+      const p = index.scratch;
+      for (let a = 1; a < sample.participants; a++) {
+        const slot = p.colors[a] ? -1 : slots.get(p.index[a]!) ?? -1;
+        if (slot === 0) data[d + 3] += p.colorWeight[a]!;
+        else if (slot > 0) colors[c + slot - 1] += p.colorWeight[a]!;
+      }
       rest[r] = Math.max(-1e4, Math.min(1e4, sample.union)); rest[r + 1] = sample.depth;
       rest[r + 2] = sample.flowX; rest[r + 3] = sample.flowY; rest[r + 4] = sample.flowZ; rest[r + 5] = sample.restHeight;
-      if (sample.partner >= 0) partners.set(sample.partner, (partners.get(sample.partner) ?? 0) + sample.foreign);
     } else {
       // No water of this body here: outside the union and owned by nobody, so the fragment discards.
       data[d] = 0; data[d + 1] = 0; data[d + 2] = -1; data[d + 3] = 0;
@@ -839,9 +905,13 @@ function finishBlend(s: Surface, inputs: BlendInputs): void {
   if (!blend) return;
   blend.restVaries = inputs.varies;
   blend.heightScale = inputs.highest;
-  let partner = -1, most = 0;
-  for (const [index, weight] of inputs.partners) if (weight > most) { most = weight; partner = index; }
-  if (s.plugin) s.plugin.partner = partner >= 0 ? inputs.index.bodies[partner]!.definition : null;
+  const partners = blend.partners;
+  for (let k = 0; k < WATER_BLEND_COLOR_PARTNERS; k++) {
+    const j = inputs.partners[k];
+    partners[k] = j === undefined ? null : inputs.index.bodies[j]!.definition;
+  }
+  if (s.plugin) s.plugin.partners = partners;
+  if (s.nodes) s.nodes.partners = partners;
 }
 
 /**
@@ -895,15 +965,11 @@ const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vecto
  */
 function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boolean): void {
   s.boundsDirty = false;
-  s.fftDisplaced = s.gpu && (s.plugin?.fftVertexCascades ?? 0) > 0;
   if (!s.base.length) return;
   // A blending surface can take a rougher neighbour's waves near the seam: pad by its largest swell scale.
   const blendScale = s.blend ? s.blend.heightScale * (s.plugin?.waveScale ?? s.body.waveScale) : s.body.waveScale;
   const vertical = waterWaveEnvelope(s.water, blendScale);
-  // The FFT detail band's horizontal displacement (λ = Steepness at most) stays within λ · its 4σ height; the vertical
-  // envelope already includes the band.
-  const detail = s.fftDisplaced ? s.water.steepness * waterWaveSet(s.water).detailHeight * s.water.detailWaves * Math.abs(s.body.waveScale) : 0;
-  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, blendScale) + detail;
+  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, blendScale);
   const m = inverse.m;
   boundsPad.set(
     Math.abs(m[0]!) * horizontal + Math.abs(m[4]!) * vertical + Math.abs(m[8]!) * horizontal,
@@ -1046,7 +1112,10 @@ function placeRestData(s: Surface): void {
 function uploadRestData(s: Surface, blended: boolean): void {
   s.mesh.updateVerticesData("slateWaterFlow", s.flow);
   s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
-  if (blended) s.mesh.updateVerticesData("slateWaterBlend", s.blendData);
+  if (blended) {
+    s.mesh.updateVerticesData("slateWaterBlend", s.blendData);
+    s.mesh.updateVerticesData("slateWaterBlendColors", s.blendColors);
+  }
   if (s.gpu) {
     // A static rest grid: the vertex shader adds every displacement and computes its own offsets.
     if (!s.offsetsZero) { s.offsets.fill(0); s.offsetsZero = true; s.mesh.updateVerticesData("slateWaterOffset", s.offsets); }
@@ -1068,7 +1137,7 @@ const globalFlow = new Vector3(), globalNormal = new Vector3(), rowStart = new V
 function globalReachRows(s: Surface, inputs: BlendInputs, out: Int32Array): void {
   out[0] = 1; out[1] = 0;
   const base = s.base, stride = s.layoutColumns + 1, rows = base.length / 3 / stride - 1, world = inputs.world;
-  const reach = inputs.distance / 2, near = inputs.near;
+  const reach = waterBlendReach(inputs.distance), near = inputs.near;
   let first = rows + 1, last = -1;
   for (let row = 0; row <= rows; row++) {
     const a = row * stride * 3, b = (row * stride + stride - 1) * 3;
@@ -1140,6 +1209,7 @@ function uploadGlobalRows(s: Surface, begin: number, end: number): void {
   uploadVertexRange(s.mesh, "slateWaterFlow", s.flow, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterBaseNormal", s.baseNormals, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterBlend", s.blendData, 4, begin, end);
+  uploadVertexRange(s.mesh, "slateWaterBlendColors", s.blendColors, 2, begin, end);
 }
 
 /**
@@ -1179,7 +1249,8 @@ function createStageBuffers(count: number): StageBuffers {
   return {
     base: new Float32Array(count * 3), worldBase: new Float32Array(count * 3), normals: new Float32Array(count * 3),
     baseNormals: new Float32Array(count * 3), data: new Float32Array(count * 4), flow: new Float32Array(count * 3),
-    bankGradient: new Float32Array(count * 2), blendData: new Float32Array(count * 4), blendRest: new Float32Array(count * 6),
+    bankGradient: new Float32Array(count * 2), blendData: new Float32Array(count * 4), blendColors: new Float32Array(count * 2),
+    blendRest: new Float32Array(count * 6),
     restMin: new Vector3(), restMax: new Vector3(), metres: new Float32Array(count),
   };
 }
@@ -1353,16 +1424,16 @@ function animateSurface(s: Surface, time: number): void {
   Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inverse, up);
   Vector3.TransformNormalFromFloatsToRef(1, 0, 0, inverse, across);
   Vector3.TransformNormalFromFloatsToRef(0, 0, 1, inverse, along);
-  const set = waterWaveSet(s.water), scale = s.plugin?.waveScale ?? s.body.waveScale, o = waveOut, blend = s.blend ? s.blendData : null;
+  const spectrum = waterSpectrum(s.water), scale = s.plugin?.waveScale ?? s.body.waveScale, o = waveOut, blend = s.blend ? s.blendData : null;
   // Finite bodies fade the horizontal offset to zero at their banks, exactly as queries do (`waterBankGain`).
-  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterWaveQ(set, scale) > 0;
+  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterMovesSideways(spectrum, scale);
   for (let i = 0; i < s.base.length; i += 3) {
     const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
     const d = i / 3 * 4, v = i / 3 * 2;
     // Forward evaluation at this vertex's world rest point: the mesh never inverts, queries do.
     // Blending scales the swell height and the Gerstner offset (and its fade length) by the vertex's blend data.
     const heightScale = blend ? blend[d]! : 1, offsetScale = blend ? blend[d + 1]! : 1;
-    evaluateWaterVertex(set, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.spacing[i / 3]!, scale, s.data[d + 1]!, fadeLength * offsetScale, s.bankGradient[v]!, s.bankGradient[v + 1]!, o);
+    evaluateWaterVertex(spectrum, s.worldBase[i]!, s.worldBase[i + 2]!, time, scale, s.data[d + 1]!, fadeLength * offsetScale, s.bankGradient[v]!, s.bankGradient[v + 1]!, o);
     const height = o[0]! * heightScale, offsetX = o[1]! * offsetScale, offsetZ = o[2]! * offsetScale;
     s.offsets[v] = offsetX; s.offsets[v + 1] = offsetZ;
     s.positions[i] = x + up.x * height + across.x * offsetX + along.x * offsetZ;
@@ -1414,32 +1485,44 @@ function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number
 const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9 || s.blend?.restVaries === true;
 
 /**
- * Whether any live built-in water in `scene` (a custom material has no WaterMaterialPlugin) has an asset that samples
- * the scene copy under the given device-effective features: Refraction above zero while refraction runs, or Object
- * Reflections while a screen-space march runs. The scene-level form of `waterMeshSamplesSceneCopy`; O(1).
+ * Whether any live water in `scene` samples the scene copy under the given device-effective features (`copyUse`):
+ * refraction-style reads while refraction runs, or object reflections while a screen-space march runs. The scene-level
+ * form of `waterMeshSamplesSceneCopy`; O(1).
  */
 export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, screenSpace: boolean): boolean {
   const intents = copyIntents.get(scene);
   return intents !== undefined && ((refraction && intents.refracting > 0) || (screenSpace && intents.reflecting > 0));
 }
 
+const COPY_REFRACTS = 1, COPY_REFLECTS = 2;
 /**
- * Counts a built-in surface's copy intent only while it is enabled, itself and through its ancestors (a deactivated
- * actor disables its children without notifying them, so the water update checks every frame: O(1), no allocation).
- * Disabled water therefore keeps no copy, own pair or ledger charge planned; enabling it re-plans the view's graph.
+ * A surface's scene-copy use: built-in water's asset (Refraction above 0, Object Reflections), a Custom Material's water
+ * nodes (Water Scene Color and Water Depth Fade refract; Water Reflection marches with the asset's Object Reflections).
  */
-function syncCopyIntent(scene: Scene, s: Surface): void {
-  const counted = s.plugin !== null && !s.mesh.isDisposed() && s.mesh.isEnabled();
-  if (counted === s.copyCounted) return;
-  s.copyCounted = counted;
-  countCopyIntent(scene, s.water, counted ? 1 : -1);
+function copyUse(s: Surface): number {
+  if (!s.plugin) return s.nodeCopyUse & (COPY_REFRACTS | (s.water.objectReflections ? COPY_REFLECTS : 0));
+  return (s.water.refraction > 0 ? COPY_REFRACTS : 0) | (s.water.objectReflections ? COPY_REFLECTS : 0);
 }
 
-function countCopyIntent(scene: Scene, water: WaterDefinition, delta: 1 | -1): void {
+/**
+ * Counts a surface's copy intent only while it is enabled, itself and through its ancestors (a deactivated actor
+ * disables its children without notifying them, so the water update checks every frame: O(1), no allocation), and
+ * follows an asset or Custom Material edit. Disabled water therefore keeps no copy, own pair or ledger charge planned;
+ * enabling it re-plans the view's graph.
+ */
+function syncCopyIntent(scene: Scene, s: Surface): void {
+  const counted = !s.mesh.isDisposed() && s.mesh.isEnabled() ? copyUse(s) : 0;
+  if (counted === s.copyCounted) return;
+  countCopyIntent(scene, s.copyCounted, -1);
+  countCopyIntent(scene, counted, 1);
+  s.copyCounted = counted;
+}
+
+function countCopyIntent(scene: Scene, use: number, delta: 1 | -1): void {
   let intents = copyIntents.get(scene);
   if (!intents) { intents = { refracting: 0, reflecting: 0 }; copyIntents.set(scene, intents); }
-  if (water.refraction > 0) intents.refracting = Math.max(0, intents.refracting + delta);
-  if (water.objectReflections) intents.reflecting = Math.max(0, intents.reflecting + delta);
+  if (use & COPY_REFRACTS) intents.refracting = Math.max(0, intents.refracting + delta);
+  if (use & COPY_REFLECTS) intents.reflecting = Math.max(0, intents.reflecting + delta);
 }
 
 /**
@@ -1452,14 +1535,17 @@ export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
 }
 
 /**
- * Whether `mesh` is built-in water whose asset can sample the view's scene copy: Refraction above zero while
- * refraction runs, or Object Reflections while a screen-space march runs. A per-frame check: no allocation.
+ * Whether `mesh` is water that can sample the view's scene copy: built-in water whose asset has Refraction above zero
+ * while refraction runs, or Object Reflections while a screen-space march runs, or alpha-blended Custom Material water
+ * whose water nodes read the copy (`copyUse`; an opaque Material draws before the copy exists). A per-frame check: no
+ * allocation.
  */
 export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolean, screenSpace: boolean): boolean {
   if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
   const surface = surfaceByMesh.get(mesh);
-  if (!surface?.plugin) return false;
-  return (refraction && surface.water.refraction > 0) || (screenSpace && surface.water.objectReflections);
+  if (!surface || (!surface.plugin && (!surface.nodeCopyUse || !mesh.material?.needAlphaBlendingForMesh(mesh)))) return false;
+  const use = copyUse(surface);
+  return (refraction && (use & COPY_REFRACTS) !== 0) || (screenSpace && (use & COPY_REFLECTS) !== 0);
 }
 
 /** The live body of a built water mesh, or null for other meshes. */
@@ -1543,6 +1629,51 @@ function syncCustomMaterial(s: Surface): void {
   if (s.plugin || s.mesh.material === s.material) return;
   s.material = s.mesh.material;
   setSurfaceGpu(s, materialHasWaterWaves(s.material));
+  syncNodeSurface(s);
+}
+
+/**
+ * What a Custom Material's water nodes read follows its graph: its scene-copy use, and the terrain and contact fields,
+ * built the first time a graph reads them (Water Foam, Water Depth Fade) and kept for the surface's life.
+ */
+function syncNodeSurface(s: Surface): void {
+  if (!s.nodes) return;
+  const use = materialSceneCopyUse(s.material);
+  s.nodeCopyUse = (use.refraction ? COPY_REFRACTS : 0) | (use.reflection ? COPY_REFLECTS : 0);
+  if (!s.field && materialUsesWaterFields(s.material)) attachFields(s);
+  s.nodes.field = s.field;
+  s.nodes.contacts = s.contacts;
+}
+
+/** Builds the surface's terrain and contact fields (built-in water always has them; see `syncNodeSurface`). */
+function attachFields(surface: Surface): void {
+  const { mesh, water, body, plugin } = surface, scene = mesh.getScene();
+  const fieldSurface: WaterFieldSurface = {
+    mesh, unbounded: body.kind === "global",
+    // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
+    get contactRange() { return contactRange(water); },
+    // The envelope bounds |H| exactly; the margin keeps the outermost contact layers off the clamp.
+    get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
+    // Contact Resolution caps the contact texture's cells per side; a change rebuilds it.
+    get contactCells() { return sceneWaterQualityDeviceClamp(scene).quality.contactResolution; },
+    // A blending surface discards the water a neighbour owns (the share margin is negative there), and what lies
+    // beyond the blended shoreline: contacts in either are never seen. A point the blend cannot place counts as drawn.
+    get drawStamp() { return sceneBlends.get(scene)?.index.revision ?? 0; },
+    draws: (x, z) => {
+      const state = surface.blend ? sceneBlends.get(scene) : undefined;
+      if (!state || !surface.blend) return true;
+      return !evaluateWaterBlend(state.index, surface.blend.self, x, surface.world.m[13]!, z, fieldSample) || (fieldSample.margin >= 0 && fieldSample.union >= 0);
+    },
+    surfaceY: (x, z) => waterSurfaceY(surface, x, z),
+    get restVaries() { return restVaries(surface); },
+    restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
+  };
+  const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
+  surface.field = field; surface.contacts = contacts;
+  if (plugin) { plugin.field = field; plugin.contacts = contacts; }
+  field.update(true);
+  contacts.update(performance.now(), true);
+  mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
 }
 
 /**
@@ -1555,18 +1686,17 @@ function syncCustomMaterial(s: Surface): void {
  * bounds for the new wave envelopes, refreshes the contact range of both fields and resamples CPU vertices, also under a
  * paused clock. A Wave Length edit changes the grid step, so the placement below builds a new rest grid in place
  * (Global Water too). The scene's water clock keeps running. Returns false, changing nothing, for other meshes and for
- * edits that need a rebuild: Style compiles into the shader and Custom Material replaces it.
+ * edits that need a rebuild: Custom Material replaces the shader.
  */
 export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   const surface = surfaceByMesh.get(mesh);
   if (!surface) return false;
   const water = surface.water, next = normalizeWaterDefinition(input);
-  if (next.style !== water.style || next.materialGuid !== water.materialGuid) return false;
+  if (next.materialGuid !== water.materialGuid) return false;
   const scene = mesh.getScene(), range = contactRange(water);
-  // The copy intent counts this surface by its asset's Refraction and Object Reflections.
-  if (surface.copyCounted) countCopyIntent(scene, water, -1);
   Object.assign(water, next);
-  if (surface.copyCounted) countCopyIntent(scene, water, 1);
+  // The copy intent counts this surface by its asset's Refraction and Object Reflections.
+  syncCopyIntent(scene, surface);
   if (surface.plugin && mesh.material instanceof PBRMaterial) {
     applyWaterMaterialScalars(mesh.material, water);
     surface.plugin.definitionChanged();
@@ -1640,12 +1770,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
     plugin.gpuWaves = true;
-    // Unlit Stylized water never samples a reflection.
-    if (water.style !== "stylized") {
-      let reflection = reflections.get(scene);
-      if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
-      reflection.add(material);
-    }
+    let reflection = reflections.get(scene);
+    if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
+    reflection.add(material);
     mesh.material = material;
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
@@ -1657,8 +1784,8 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
-    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
-    copyCounted: false, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
+    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
+    copyCounted: 0, nodes: null, nodeCopyUse: 0, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendColors: empty, blendRest: empty, blendRevision: 0,
     blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
   let entries = surfaces.get(scene);
@@ -1676,37 +1803,15 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.onDisposeObservable.addOnce(() => {
     entries.delete(surface);
     markBlendDirty(surface);
-    if (surface.copyCounted) countCopyIntent(scene, water, -1);
-    surface.copyCounted = false;
+    countCopyIntent(scene, surface.copyCounted, -1);
+    surface.copyCounted = 0;
   });
   refreshSurface(surface, sceneWaterTime(scene));
-  if (plugin) {
-    const fieldSurface: WaterFieldSurface = {
-      mesh, unbounded: body.kind === "global",
-      // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
-      get contactRange() { return contactRange(water); },
-      // The envelope bounds |H| exactly; the margin keeps the outermost contact layers off the clamp.
-      get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
-      // Contact Resolution caps the contact texture's cells per side; a change rebuilds it.
-      get contactCells() { return sceneWaterQualityDeviceClamp(scene).quality.contactResolution; },
-      // A blending surface discards the water a neighbour owns (the share margin is negative there), and what lies
-      // beyond the blended shoreline: contacts in either are never seen. A point the blend cannot place counts as drawn.
-      get drawStamp() { return sceneBlends.get(scene)?.index.revision ?? 0; },
-      draws: (x, z) => {
-        const state = surface.blend ? sceneBlends.get(scene) : undefined;
-        if (!state || !surface.blend) return true;
-        return !evaluateWaterBlend(state.index, surface.blend.self, x, surface.world.m[13]!, z, fieldSample) || (fieldSample.margin >= 0 && fieldSample.union >= 0);
-      },
-      surfaceY: (x, z) => waterSurfaceY(surface, x, z),
-      get restVaries() { return restVaries(surface); },
-      restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
-    };
-    const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
-    surface.field = field; surface.contacts = contacts;
-    plugin.field = field; plugin.contacts = contacts;
-    field.update(true);
-    contacts.update(performance.now(), true);
-    mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
+  if (plugin) attachFields(surface);
+  else {
+    surface.nodes = { water, field: null, contacts: null, partners: NO_PARTNERS };
+    setMeshWaterNodeSurface(mesh, surface.nodes);
+    syncNodeSurface(surface);
   }
   return mesh;
 }

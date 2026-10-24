@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, RawTexture, Scene, StandardMaterial, Vector3, type PBRMaterial, type SubMesh, type UniformBuffer } from "@babylonjs/core";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
-import { WATER_SWELL_WARP_TERMS, WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
+import { RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
@@ -149,7 +149,7 @@ it("releases the authored coverage variants of pruned and disposed mask programs
   }
 });
 
-it("displaces built-in GPU water in the mask with the material's swell for the frame, and never displaces CPU water twice", async () => {
+it("displaces built-in GPU water in the mask with the material's waves for the frame, and never displaces CPU water twice", async () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 6, -12), scene);
@@ -157,7 +157,7 @@ it("displaces built-in GPU water in the mask with the material's swell for the f
   scene.activeCamera = camera;
   setSceneWaterTime(scene, 2.5);
   const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 }),
-    { ...createDefaultWaterDefinition(), waveModel: "ocean", choppiness: 0.4 });
+    { ...createDefaultWaterDefinition(), steepness: 0.2 });
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   view.setContribution("lake", { kind: "component", targets: [{ key: "lake", meshes: [lake] }], color: [1, 0, 0], width: 1 });
   registerSharedOutlineShaders();
@@ -184,12 +184,8 @@ it("displaces built-in GPU water in the mask with the material's swell for the f
     const plugin = (lake.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
     const material = new Map<string, number[]>();
     plugin.hardBindForSubMesh({ updateFloat4: (name: string, ...values: number[]) => material.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer, scene);
-    for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++)
-      for (const name of [`slateWaterSwellDir${i}`, `slateWaterSwellAmp${i}`]) expect(bound.get(name), name).toEqual(material.get(name));
-    // The swell's warp too: the mask displaces the same warped surface.
-    for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) expect(bound.get(`slateWaterSwellWarp${t}`), `warp ${t}`).toEqual(material.get(`slateWaterSwellWarp${t}`));
+    for (const name of ["slateWaterFft", "slateWaterFftCascade0", "slateWaterGridOffset"]) expect(bound.get(name), name).toEqual(material.get(name));
     expect(bound.get("slateWaterSwellInfo")![0]).toBe(material.get("slateWaterSwellInfo")![0]);
-    expect(bound.get("slateWaterShape")![0]).toBe(material.get("slateWaterShape")![0]);
     // CPU-path water uploads displaced vertices: its mask program must draw them as they are.
     setWaterGpuWaves(lake, false);
     render();
@@ -232,7 +228,7 @@ it("scales a blending water surface's displacement in the mask by its per-vertex
   }
 });
 
-it("adds the FFT detail band's displacement in the mask from the band the water material binds", async () => {
+it("displaces water in the mask with the spectrum the water material binds, whose draws alone keep it running", async () => {
   const engine = new NullEngine();
   Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
   const scene = new Scene(engine);
@@ -262,10 +258,10 @@ it("adds the FFT detail band's displacement in the mask from the band the water 
     await vi.waitFor(() => expect(material.isReadyForSubMesh(lake, subMesh)).toBe(true));
     expect(objects.isReadyForRendering(80, 64)).toBe(true);
     render();
-    // A grid fine enough to resolve High's first cascade: the mask compiles the material's vertex cascades, and its
-    // draws alone keep the band running.
-    expect(program().defines).toContain("#define SLATE_WATER_FFT_VERTEX 2");
-    await vi.waitFor(() => { render(); expect(waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready)).toBe(true); });
+    // The mask compiles the material's cascades, and its draws alone keep the spectrum running.
+    expect(program().defines).toContain(`#define SLATE_WATER_FFT ${RENDER_QUALITY_PROFILES.high.water.fftCascades}`);
+    // High's 256² × 3 spectrum is drawn in dozens of budgeted steps first.
+    await vi.waitFor(() => { render(); expect(waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready)).toBe(true); }, { timeout: 10_000 });
     const bound = new Map<string, number[]>(), textures = new Map<string, unknown>(), effect = program().effect!;
     vi.spyOn(effect, "setFloat4").mockImplementation((name: string, x: number, y: number, z: number, w: number) => { bound.set(name, [x, y, z, w]); return effect; });
     vi.spyOn(effect, "setTexture").mockImplementation((name: string, texture) => { textures.set(name, texture); });
@@ -273,8 +269,7 @@ it("adds the FFT detail band's displacement in the mask from the band the water 
     const plugin = material.pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
     const drawn = new Map<string, number[]>();
     plugin.hardBindForSubMesh({ updateFloat4: (name: string, ...values: number[]) => drawn.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer, scene, engine, subMesh);
-    // The same band, gain, λ and world-anchored cascades with their filter frequencies as the material's own vertex
-    // shader (the view footprint follows each pass's own target).
+    // The same spectrum, Wave Scale, λ and world-anchored cascades as the material's own vertex shader.
     expect(textures.get(WATER_FFT_SAMPLER)).toBe(waterFftForSurface(scene, plugin.water)!.texture);
     expect(bound.get("slateWaterFft")!.slice(0, 2)).toEqual(drawn.get("slateWaterFft")!.slice(0, 2));
     expect(bound.get("slateWaterFft")![0]).toBeCloseTo(0.8, 6);

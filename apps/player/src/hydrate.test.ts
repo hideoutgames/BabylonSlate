@@ -205,7 +205,7 @@ describe("packedContentFromGame", () => {
           ),
         },
         {
-          guid: "water-1", type: "Water", sceneGuid: "scene-1", bytes: encoder.encode(JSON.stringify({ ...createDefaultWaterDefinition("stylized"), waveHeight: 1.2 })),
+          guid: "water-1", type: "Water", sceneGuid: "scene-1", bytes: encoder.encode(JSON.stringify({ ...createDefaultWaterDefinition(), waveHeight: 1.2 })),
         },
         {
           guid: "tilemap-1",
@@ -272,9 +272,9 @@ describe("packedContentFromGame", () => {
     expect(content.sortingLayers).toEqual(["Default", "Props", "Characters"]);
     expect(content.pixelPerfect).toBe(false);
     expect(content).not.toHaveProperty("userInterfaces");
-    expect(content.waterPayloads.get("water-1")).toMatchObject({ style: "stylized", waveHeight: 1.2 });
+    expect(content.waterPayloads.get("water-1")).toMatchObject({ waveHeight: 1.2 });
     const controls = packedPlayControls(content);
-    expect(controls.find((entry) => entry.type === "loadWater")).toMatchObject({ waters: [{ guid: "water-1", document: { style: "stylized", waveHeight: 1.2 } }] });
+    expect(controls.find((entry) => entry.type === "loadWater")).toMatchObject({ waters: [{ guid: "water-1", document: { waveHeight: 1.2 } }] });
     expect(controls.some((entry) => entry.type === "loadSprites")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadTilemaps")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);

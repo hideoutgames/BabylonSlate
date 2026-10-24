@@ -417,8 +417,7 @@ function ContentBrowserWorkspaceBody({
   const [newAssetFolder, setNewAssetFolder] = useState(ASSETS_ROOT);
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
-  const [newWaterStyle, setNewWaterStyle] = useState<import("@haptic/core").WaterStyle>("realistic");
-  const [newWaterLook, setNewWaterLook] = useState<import("@haptic/core").WaterStylizedLook>("painted");
+  const [newWaterStarter, setNewWaterStarter] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
     done: number;
@@ -2622,8 +2621,7 @@ function ContentBrowserWorkspaceBody({
         type,
         name,
         parentClass: type === "Class" ? newAssetParent : null,
-        waterStyle: newWaterStyle,
-        waterStylizedLook: newWaterLook,
+        waterMaterial: type === "Material" && newWaterStarter ? true : undefined,
         defaultDefinitionGuid: newDataDefinition,
         typeSchemas: type === "DataDefinition" || type === "DataTree" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
@@ -2667,8 +2665,7 @@ function ContentBrowserWorkspaceBody({
     newAssetParent,
     newDataDefinition,
     newDataTypes,
-    newWaterStyle,
-    newWaterLook,
+    newWaterStarter,
     newAssetType,
     getOpenDocuments,
     noteAssetsCreated,
@@ -3197,10 +3194,8 @@ function ContentBrowserWorkspaceBody({
         name={newAssetName}
         onNameChange={setNewAssetName}
         parentClass={newAssetParent}
-        waterStyle={newWaterStyle}
-        onWaterStyleChange={setNewWaterStyle}
-        waterStylizedLook={newWaterLook}
-        onWaterStylizedLookChange={setNewWaterLook}
+        waterStarter={newWaterStarter}
+        onWaterStarterChange={setNewWaterStarter}
         definitionGuid={newDataDefinition}
         onDefinitionGuidChange={setNewDataDefinition}
         definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}

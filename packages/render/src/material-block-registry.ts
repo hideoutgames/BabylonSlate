@@ -6,6 +6,7 @@ import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import type { WaterWavesBlock } from "./water-waves-block";
+import { WaterColorsBlock, WaterDepthFadeBlock, WaterFoamBlock, WaterReflectionBlock, WaterSceneColorBlock } from "./water-node-blocks";
 import {
   AddBlock,
   ArcTan2Block,
@@ -105,6 +106,7 @@ export interface MaterialPlumbing {
   /** Offset used only to restore authored world-space graph input semantics. */
   worldOrigin?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
+  viewProjection?: NodeMaterialConnectionPoint;
   /** Vector 3 for graph pins. */
   worldNormal?: NodeMaterialConnectionPoint;
   /** Vector 4 for Babylon blocks that register a Vector 4 normal. */
@@ -627,7 +629,46 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     // The compiler creates the one block, at the rest world position, before any node is realized.
     const block = plumbing.waterWaves;
     if (!block) throw new Error("Water Waves is only available in a Surface material");
-    return { blocks: [], inputs: {}, outputs: { offset: block.offset, height: block.height, normal: block.normal, time: block.time } };
+    return { blocks: [], inputs: {}, outputs: { offset: block.offset, height: block.height, normal: block.normal, crestFoam: block.crestFoam, subsurface: block.subsurface, time: block.time } };
+  },
+  // The water nodes read the graph's Water Waves block per pixel where there is one: Wave Height and Crest Foam, and its
+  // Normal for an unconnected Normal pin.
+  "input.waterColors": ({ name }) => {
+    const block = new WaterColorsBlock(name);
+    return { blocks: [block], inputs: {}, outputs: { shallowColor: block.shallowColor, deepColor: block.deepColor, foamColor: block.foamColor, opacity: block.opacity, sceneLight: block.sceneLight } };
+  },
+  "input.waterFoam": ({ name, plumbing }) => {
+    const block = new WaterFoamBlock(name);
+    plumbing.worldPosition?.connectTo(block.worldPosition);
+    plumbing.waterWaves?.height.connectTo(block.waveHeight);
+    plumbing.waterWaves?.crestFoam.connectTo(block.crestFoam);
+    plumbing.waterWaves?.edgeTurbulence.connectTo(block.edgeTurbulence);
+    return { blocks: [block], inputs: {}, outputs: { foam: block.foam, crestFoam: block.crest, shoreFoam: block.shore, contactFoam: block.contact } };
+  },
+  "input.waterDepthFade": ({ name, plumbing }) => {
+    const block = new WaterDepthFadeBlock(name);
+    plumbing.worldPosition?.connectTo(block.worldPosition);
+    plumbing.cameraPosition?.connectTo(block.cameraPosition);
+    plumbing.view?.connectTo(block.view);
+    plumbing.waterWaves?.height.connectTo(block.waveHeight);
+    plumbing.waterWaves?.normal.connectTo(block.waveNormal);
+    return { blocks: [block], inputs: { distance: block.distance }, outputs: { depth: block.depth, fade: block.fade, transmittance: block.transmittance } };
+  },
+  "input.waterSceneColor": ({ name, plumbing, operation }) => {
+    const block = new WaterSceneColorBlock(name);
+    plumbing.worldPosition?.connectTo(block.worldPosition);
+    plumbing.view?.connectTo(block.view);
+    if (!operation.inputs.normal) plumbing.waterWaves?.normal.connectTo(block.waveNormal);
+    return { blocks: [block], inputs: { normal: block.normal, refraction: block.refraction }, outputs: { color: block.color, available: block.available } };
+  },
+  "input.waterReflection": ({ name, plumbing, operation }) => {
+    const block = new WaterReflectionBlock(name);
+    plumbing.worldPosition?.connectTo(block.worldPosition);
+    plumbing.cameraPosition?.connectTo(block.cameraPosition);
+    plumbing.view?.connectTo(block.view);
+    plumbing.viewProjection?.connectTo(block.viewProjection);
+    if (!operation.inputs.normal) plumbing.waterWaves?.normal.connectTo(block.waveNormal);
+    return { blocks: [block], inputs: { normal: block.normal, roughness: block.roughness }, outputs: { color: block.color, fresnel: block.fresnel } };
   },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition

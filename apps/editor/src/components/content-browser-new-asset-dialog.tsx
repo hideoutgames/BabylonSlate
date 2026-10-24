@@ -1,5 +1,4 @@
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
-import type { WaterStyle, WaterStylizedLook } from "@haptic/core";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ChevronRightIcon, FolderIcon } from "lucide-react";
 import type { FolderNode } from "@haptic/assets";
@@ -26,6 +25,7 @@ import {
 } from "@haptic/ui/components/dialog";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -58,11 +58,9 @@ export interface ContentBrowserNewAssetDialogProps {
   onNameChange: (name: string) => void;
   parentClass: string;
   onParentClassChange: (parentClass: string) => void;
-  waterStyle?: WaterStyle;
-  onWaterStyleChange?: (style: WaterStyle) => void;
-  /** Stylized Water's look, shown while Stylized is chosen. */
-  waterStylizedLook?: WaterStylizedLook;
-  onWaterStylizedLookChange?: (look: WaterStylizedLook) => void;
+  /** A new Material's starter graph: empty, or built-in water's look for a Water asset's Custom Material. */
+  waterStarter?: boolean;
+  onWaterStarterChange?: (water: boolean) => void;
   definitionGuid?: string | null;
   onDefinitionGuidChange?: (guid: string | null) => void;
   definitionAssets?: readonly { guid: string; name: string; type: string }[];
@@ -199,10 +197,8 @@ export function ContentBrowserNewAssetDialog({
   onNameChange,
   parentClass,
   onParentClassChange,
-  waterStyle = "realistic",
-  onWaterStyleChange,
-  waterStylizedLook = "painted",
-  onWaterStylizedLookChange,
+  waterStarter = false,
+  onWaterStarterChange,
   definitionGuid = null,
   onDefinitionGuidChange,
   definitionAssets = [],
@@ -321,22 +317,15 @@ export function ContentBrowserNewAssetDialog({
                 ) : null}
               </Field>
             </FieldGroup>
-            {type === "Water" ? (
+            {type === "Material" ? (
               <FieldGroup>
-                <Field><FieldLabel>Water Style</FieldLabel>
-                  <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
-                    <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
-                    <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
+                <Field><FieldLabel>Starter</FieldLabel>
+                  <ToggleGroup value={[waterStarter ? "water" : "empty"]} onValueChange={(values) => { const value = values[0]; if (value === "empty" || value === "water") onWaterStarterChange?.(value === "water"); }} variant="outline" size="sm" aria-label="Starter">
+                    <ToggleGroupItem value="empty">Empty</ToggleGroupItem>
+                    <ToggleGroupItem value="water">Water</ToggleGroupItem>
                   </ToggleGroup>
+                  {waterStarter ? <FieldDescription>Built-in water's look, to edit and use as a Water asset's Custom Material.</FieldDescription> : null}
                 </Field>
-                {waterStyle === "stylized" ? (
-                  <Field><FieldLabel>Stylized Look</FieldLabel>
-                    <ToggleGroup value={[waterStylizedLook]} onValueChange={(values) => { const value = values[0]; if (value === "painted" || value === "toon") onWaterStylizedLookChange?.(value); }} variant="outline" size="sm" aria-label="Stylized Look">
-                      <ToggleGroupItem value="painted">Painted</ToggleGroupItem>
-                      <ToggleGroupItem value="toon">Toon</ToggleGroupItem>
-                    </ToggleGroup>
-                  </Field>
-                ) : null}
               </FieldGroup>
             ) : null}
             {isData ? (

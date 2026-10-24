@@ -4,7 +4,7 @@ Water bodies draw animated water surfaces with waves, foam, reflections and refr
 
 ## Create water
 
-1. In the **Content Browser**, create a [Water](../assets/water.md) asset. Choose a **Water Style**: **Realistic**, or **Stylized** with a **Painted** or **Toon** look.
+1. In the **Content Browser**, create a [Water](../assets/water.md) asset.
 2. Open it to tune colours, waves, foam and reflections in **Preview** and the **Inspector**.
 3. Drag the asset from **Place Actors** into a 3D scene to create a lake, or add a water component and pick the asset in its **Water** field.
 
@@ -41,6 +41,10 @@ Waves, foam and currents are measured in world metres, so scaling a water body d
 
 Water bodies closer than **Project Settings > Rendering > Water > Water Blend Distance** merge into one surface, for example where a river meets a lake. This affects rendering and water queries. Set it to 0 to turn blending off.
 
+- Where bodies meet, the shoreline rounds the corner between them, and gaps narrower than half the distance fill with water.
+- Bodies with different Water assets fade from one colour to the other over about twice the distance. A body can fade toward up to three differently coloured neighbours, each where it meets that neighbour.
+- Custom Material water fades the same way through [Water Colors](../scripting/material/water-colors.md).
+
 ## Floating objects
 
 Add [Water Buoyancy](../components/water-buoyancy.md) to a 3D actor to make it float. It also works as the actor's physics body if the actor has no Rigid Body.
@@ -64,18 +68,41 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Water Reflections** | Sky Only | Sky Only | Screen Space | Planar |
-| **FFT Ocean Detail** | Off | Off | On | On |
 
 - **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
 - **Refraction Resolution** sets the scene copy's scale, shared with Screen Space reflections.
 - **Water Reflections**: **Sky Only** reflects the environment, **Screen Space** also reflects visible objects, and **Planar** mirrors flat water and uses Screen Space elsewhere. **Reflection Steps** and **Planar Resolution** tune them.
-- **FFT Size** and **FFT Cascades** add fine wave detail when **FFT Ocean Detail** is on.
+- Water simulates its waves on the GPU on every level: **FFT Size** and **FFT Cascades** set how much short-wave detail it draws. Devices without float render targets draw the water flat.
+- Floating objects and queries follow the larger waves; the shortest rendered ripples are visual only.
 
 A Water asset reflects scene objects only when its **Object Reflections** is on.
 
 ## Custom water Materials
 
-Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work. In the Material, [Water Surface](../scripting/material/water-surface.md) gives wave height, depth and flow, and [Water Waves](../scripting/material/water-waves.md) gives the wave offset and normal for World Position Offset and Normal.
+Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work.
+
+To edit the built-in look, choose **Edit As Material** in the Water asset's Inspector. It creates a Material that closely matches the built-in water, built from the water nodes, sets it as the **Custom Material** and opens it. You can also start one with **New Asset > Rendering > Material** and the **Water** starter, or **Create New** in the **Custom Material** picker.
+
+The water Material moves with the asset's waves and takes its colours on every kind of water body, so the Water asset's settings still apply. It is Translucent and built from every water node:
+
+- Deep Color, with the sunlight through the crests (Water Waves **Subsurface**) in Shallow Color, lit by the scene (Water Colors **Scene Light**).
+- In shallow water, what lies below, by the water's [Transmittance](../scripting/material/water-depth-fade.md): clear in the shallows, tinted toward the deep water's colour with depth.
+- Reflections, mixed in by their Fresnel.
+- Foam in Foam Color, lit by the scene.
+
+It is an ordinary Material graph, so you can change any step, for example for stylized water.
+
+| Node | Gives |
+| --- | --- |
+| [Water Waves](../scripting/material/water-waves.md) | The simulated ocean: the wave offset for World Position Offset, the normal, height, crest foam and subsurface light. |
+| [Water Colors](../scripting/material/water-colors.md) | The asset's Shallow, Deep and Foam Color and Opacity. |
+| [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, a fade from the waterline into deep water, and how much light the water lets through. |
+| [Water Scene Color](../scripting/material/water-scene-color.md) | The scene behind the water, bent by the waves. |
+| [Water Reflection](../scripting/material/water-reflection.md) | The reflected sky and scene objects, and the Fresnel amount. |
+| [Water Foam](../scripting/material/water-foam.md) | Whitecap, shoreline and contact foam. |
+| [Water Surface](../scripting/material/water-surface.md) | Bank distance, body depth and flow. |
+
+Without a Water Waves node, the waves still move the mesh but the Material gets no per-pixel wave normal. Water Scene Color and object reflections need a Translucent Material and work in scene viewports and Play.
 
 ## From scripts
 
