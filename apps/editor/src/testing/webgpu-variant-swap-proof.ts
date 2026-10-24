@@ -36,6 +36,8 @@ import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { PREDICTION_EXPIRY_MS } from "../../../../packages/render/src/variant-prediction";
+import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
 
 /** Pipelines the device created while a step ran. */
 type PipelineCounts = { synchronous: number; asynchronous: number };
@@ -81,6 +83,10 @@ type PredictedAdmission = {
   effectsAtAdmission: number;
   /** Render pipelines the device created meanwhile. */
   pipelines: PipelineCounts;
+  /** Render pipelines created while the light waited within reach, by the prediction's warm draws. */
+  pipelinesAhead: number;
+  /** Pipelines Babylon's cache holds now beyond those it held before the approach. */
+  pipelinesLeft: number;
   /** Steady frames after that change in which some floor still drew its previous variant. */
   lateFrames: number;
   held: number;
@@ -93,11 +99,12 @@ type PredictedAdmission = {
  * A light comes within reach of an admission and then into it, approaching (it waits within the prediction margin
  * first) or jumping straight in: a spot the Forward budget (two local lights) leaves out takes a point's place, and a
  * shadowed spot takes a farther point's shadow map (two local maps, the other a spot's). Approached, the admission's
- * Effects were compiled ahead; its render pipelines are still created at the admission, while previous variants draw.
+ * Effects were compiled ahead and their render pipelines created by warm draws; a prediction left to expire gives its
+ * pipelines back.
  */
 export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
   let variant = 0;
-  const run = async (admission: "forward" | "shadow", approach: boolean): Promise<PredictedAdmission> => {
+  const run = async (admission: "forward" | "shadow", approach: boolean, expire = false): Promise<PredictedAdmission> => {
     const shadows = admission === "shadow";
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -183,12 +190,28 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
       for (let index = 0; index < 4; index++) await frame();
       let effectsAhead = 0;
+      let pipelinesAhead = 0;
+      const cachedPipelines = WebGPUCacheRenderPipelineTree.GetNodeCounts().pipelineCount;
       if (approach) {
         // Within the prediction margin of the cut-off (the farther local light's ranking distance), still left out.
         const known = new Set(cache());
+        counts.synchronous = counts.asynchronous = 0;
         spot.position.set(0, 3.2, shadows ? 6 : 1);
         for (let index = 0; index < 12; index++) await frame();
         effectsAhead = compiledSince(known);
+        pipelinesAhead = counts.synchronous + counts.asynchronous;
+      }
+      if (expire) {
+        // Out of the margin past the prediction's expiry: its Effects and their warm pipelines go.
+        spot.position.set(0, 3.2, 24);
+        const start = performance.now();
+        while (performance.now() - start < PREDICTION_EXPIRY_MS + 500) await frame();
+        for (let index = 0; index < 4; index++) await frame();
+        return {
+          admitted: admitted(), effectsAhead, effectsAtAdmission: 0, pipelines: { ...counts }, pipelinesAhead,
+          pipelinesLeft: WebGPUCacheRenderPipelineTree.GetNodeCounts().pipelineCount - cachedPipelines,
+          lateFrames: 0, held: 0, heldBecause: [], done: true,
+        };
       }
       if (admitted()) throw new Error(`The ${admission} admission came before the change.`);
       reasons.clear();
@@ -205,7 +228,8 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         else done = true;
       }
       return {
-        admitted: admitted(), effectsAhead, effectsAtAdmission: compiledSince(known), pipelines: { ...counts }, lateFrames, held,
+        admitted: admitted(), effectsAhead, effectsAtAdmission: compiledSince(known), pipelines: { ...counts }, pipelinesAhead,
+        pipelinesLeft: WebGPUCacheRenderPipelineTree.GetNodeCounts().pipelineCount - cachedPipelines, lateFrames, held,
         heldBecause: [...reasons], done,
       };
     } finally {
@@ -216,8 +240,8 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     }
   };
   return {
-    forward: { approached: await run("forward", true), jumped: await run("forward", false) },
-    shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
+    forward: { approached: await run("forward", true), jumped: await run("forward", false), expired: await run("forward", true, true) },
+    shadow: { approached: await run("shadow", true), jumped: await run("shadow", false), expired: await run("shadow", true, true) },
   };
 }
 
