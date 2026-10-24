@@ -97,6 +97,17 @@ describe("convertFbxImportBatch", () => {
     expect(result.files.map((entry) => entry.name)).toEqual(["good.glb"]);
   });
 
+  it("stops at once when cancelled, ending the worker without converting the rest", async () => {
+    const controller = new AbortController();
+    const pending = convertFbxImportBatch([file("a.fbx"), file("b.fbx")], { signal: controller.signal });
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0]!.terminated).toBe(true);
+    expect(FakeWorker.instances[0]!.posted.filter(({ message }) => message.type === "convert")).toHaveLength(1);
+  });
+
   it("replaces a crashed worker, sending the sidecars to its successor", async () => {
     FakeWorker.outcomes = ["crash", "ok"];
     const albedo = file("albedo.png", new Uint8Array([9]));

@@ -29,8 +29,10 @@ import {
   applyOwnAssetWrite,
   classifyExternalChanges,
   snapshotIndexedMtimes,
+  readEnvironmentTextureInfo,
   type EncodeFn,
 } from "@haptic/assets";
+import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import {
   AREA_EMISSION_CHUNK_KIND,
   AREA_EMISSION_EDGE,
@@ -820,6 +822,21 @@ describe("project documents as .hasset", () => {
     });
     expect(saved.header.payload).not.toHaveProperty("encodeError");
     expect(saved.chunks.get(committed)).toEqual(ktx2);
+  });
+
+  it("keeps a cube converted again at a new Face Size while the Texture was open when saving it", async () => {
+    const { storage, service } = await scaffolded();
+    const registry = service.registry!;
+    const [sky] = await registry.importFile("project", "", "Sky.hdr", buildRadianceHdrFixture({ width: 64, height: 32, color: () => [1, 1, 1] }), { hdrFaceSize: 128 });
+    const opened = (await service.loadDocument("texture", sky!.path)) as Record<string, unknown>;
+    await registry.reconvertHdrEnvironment(sky!.header.guid, 512, async () => buildFloatDdsCubeFixture({ size: 4, halfFloat: true }));
+
+    // The tab still holds the 16 × 16 cube it opened with.
+    await service.saveDocument("texture", sky!.path, { ...opened });
+
+    const saved = await decodeHasset(await storage.readBinary(sky!.path));
+    expect(saved.header.payload).toMatchObject({ hdrFaceSize: 512, width: 4, height: 4, mipLevels: 3 });
+    expect(readEnvironmentTextureInfo(saved.chunks.get("source")!)).toMatchObject({ width: 4 });
   });
 
   it("keeps a Tileset's texture at its own size, even when picked mid-encode, and pads it again once no atlas uses it", async () => {
