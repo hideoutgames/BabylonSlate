@@ -890,6 +890,62 @@ describe("compile holds after the first frame", () => {
     expect({ moreThanHeld: near > PREDICTIONS_MAX, toggles, removals }).toEqual({ moreThanHeld: true, toggles: 0, removals: 0 });
   });
 
+  it("predictions settle while the fourth and fifth lights near the cut-off trade places every frame", async () => {
+    // The thirteen-point ring: the fifth candidate moves 1% either side of the fourth's distance each frame, so the two
+    // trade ranks. Neither prediction is dropped for the other while both stay near.
+    predictAhead = true;
+    const ring = (index: number): Vec3 => [Math.cos(index) * 6, 2.5 + (index % 3) * 0.1, Math.sin(index) * 6];
+    const world = playWorld("sync", Array.from({ length: 13 }, (_, index) => point(100 + index, ring(index))));
+    await settle(world);
+    for (let index = 0; index < 20; index++) await world.frame();
+    const near = nearForwardAdmissions(world.handle.scene, 1.5);
+    const camera = world.handle.scene.activeCamera!.globalPosition.clone();
+    const fourth = Vector3.Distance(near[3]!.getAbsolutePosition(), camera);
+    const fifth = near[4]!;
+    const slot = Number(fifth.name.slice(AUTHORED_LIGHT_PREFIX.length));
+    const direction = fifth.getAbsolutePosition().subtract(camera).normalize();
+    let removals = 0;
+    const remove = SubMesh.prototype._removeDrawWrapper;
+    SubMesh.prototype._removeDrawWrapper = function (this: SubMesh, ...args: Parameters<typeof remove>) {
+      removals++;
+      return remove.apply(this, args);
+    };
+    cleanups.push(() => { SubMesh.prototype._removeDrawWrapper = remove; });
+    const ranks: string[] = [];
+    for (let index = 0; index < 20; index++) {
+      const target = camera.add(direction.scale(fourth * (index % 2 ? 1.01 : 0.99)));
+      world.place(point(slot, [target.x, target.y, target.z]));
+      await world.frame();
+      ranks.push(nearForwardAdmissions(world.handle.scene, 1.5).slice(0, PREDICTIONS_MAX).includes(fifth) ? "in" : "out");
+    }
+    expect({ traded: ranks.includes("in") && ranks.includes("out"), removals }).toEqual({ traded: true, removals: 0 });
+  });
+
+  it("a light switched off during a frame a prediction runs in still refreshes a frozen Material", async () => {
+    // Switched off inside the frame's render, after its lighting sync, while a spot waits within the margin: a frozen
+    // Material keeps its cached readiness until the lighting refreshes it. The prediction's held what-if refreshes no
+    // Material, so the plain sync before it must, or the subject would keep its stale variant.
+    const run = async (predict: boolean) => {
+      for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+      if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
+      predictAhead = predict;
+      const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
+      const world = playWorld("sync", [...points, spot(30, [0, 5, 40])]);
+      await settle(world);
+      world.handle.scene.getMeshByName("actor-2")!.subMeshes[0]!.getMaterial()!.freeze();
+      const switched = world.handle.scene.lights.find((light) => light.name === `${AUTHORED_LIGHT_PREFIX}11`)!;
+      world.handle.scene.onAfterRenderObservable.addOnce(() => setAuthoredLightEnabled(switched, false));
+      world.place(spot(30, [0, 5, 3]));
+      for (let index = 0; index < 4; index++) await world.frame();
+      // The freed slot then admits the spot the prediction was made for.
+      const admitted = !isForwardLightExcluded(world.handle.scene.lights.find((light) => light.name === `${AUTHORED_LIGHT_PREFIX}30`)!);
+      return { admitted, drawn: world.subjectEffect()?.defines ?? null };
+    };
+    const baseline = await run(false);
+    const predicted = await run(true);
+    expect({ admitted: predicted.admitted, same: predicted.drawn === baseline.drawn }).toEqual({ admitted: true, same: true });
+  });
+
   it("predicted variants still adopt at most FIRST_DRAWS_PER_FRAME new variants per frame", async () => {
     // Six barrels with Materials of their own: a spot the prediction compiled ahead for comes into the Forward budget,
     // and each Material asks for its variant at once. The first draws still spread over frames (on iPad WebKit WebGL2
