@@ -25,7 +25,7 @@ import {
   normalizeEnvironmentLightingSettings,
   normalizeRenderingQuality,
 } from "@haptic/core";
-import { CelMaterial, celSourceReflectivity } from "./cel-material";
+import { CelMaterial, celSourceReflectivity, celSourceReflectivityMap } from "./cel-material";
 import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings } from "./render-settings";
@@ -177,6 +177,117 @@ describe("native CEL render mode", () => {
     native.syncSource();
     native.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
     expect(bound("slateCelReflectivity")).toEqual([0, 0, 0, 0]);
+  });
+
+  it("reads a source's reflectivity map with the channel conventions its own Material uses in PBR", () => {
+    const scene = host();
+    const texture = () => RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);
+    // The geometry pass's mapped write for one texel and a linear base color (cel-material.ts, `SPECULAR`).
+    const read = (source: PBRMaterial | StandardMaterial, texel: number[], base = 0.5) => {
+      const map = celSourceReflectivityMap(source, false);
+      if (!map) throw new Error(`${source.name} has no map`);
+      const sample = texel.map((value, index) => (index < 3 && map.metal[3] ? value ** 2.2 : value));
+      const dot = (a: number[], b: number[]) => a.reduce((sum, value, index) => sum + value * b[index]!, 0);
+      const metal = map.reflectivity[3] * dot(sample.slice(0, 3), map.metal.slice(0, 3));
+      const gloss = Math.min(1, Math.max(0, map.terms[2] + map.terms[3] * (dot(sample, map.gloss) + map.terms[1])));
+      const f0 = [0, 1, 2].map((index) => {
+        const nonMetal = map.reflectivity[index]! * (map.terms[0] ? sample[index]! : 1);
+        return nonMetal + (base - nonMetal) * metal;
+      });
+      return { f0, metal, gloss };
+    };
+    const close = (actual: ReturnType<typeof read>, expected: ReturnType<typeof read>) => {
+      expect(actual.metal).toBeCloseTo(expected.metal, 3);
+      expect(actual.gloss).toBeCloseTo(expected.gloss, 3);
+      expected.f0.forEach((value, index) => expect(actual.f0[index]).toBeCloseTo(value, 3));
+    };
+    // glTF metallic-roughness (ORM): occlusion red, roughness green, metalness blue, scaled by the factors.
+    const orm = new PBRMaterial("orm", scene);
+    Object.assign(orm, { metallic: 0.5, roughness: 1, metallicTexture: texture() });
+    Object.assign(orm, { useRoughnessFromMetallicTextureAlpha: false, useRoughnessFromMetallicTextureGreen: true });
+    orm.useMetallnessFromMetallicTextureBlue = true;
+    close(read(orm, [0.1, 0.2, 1, 1]), { f0: [0.27, 0.27, 0.27], metal: 0.5, gloss: 0.8 });
+    // Babylon's defaults: metalness red, roughness alpha.
+    const packed = new PBRMaterial("packed", scene);
+    Object.assign(packed, { metallic: 1, roughness: 1, metallicTexture: texture() });
+    close(read(packed, [1, 0, 0, 0.25]), { f0: [0.5, 0.5, 0.5], metal: 1, gloss: 0.75 });
+    // Neither roughness channel: the factor alone.
+    packed.useRoughnessFromMetallicTextureAlpha = false;
+    packed.roughness = 0.3;
+    close(read(packed, [0, 1, 1, 0]), { f0: [0.04, 0.04, 0.04], metal: 0, gloss: 0.7 });
+    // A metallic texture alone selects the metallic workflow, as Babylon does.
+    const textureOnly = new PBRMaterial("textureOnly", scene);
+    textureOnly.metallicTexture = texture();
+    close(read(textureOnly, [1, 0, 0, 0]), { f0: [0.5, 0.5, 0.5], metal: 1, gloss: 1 });
+    expect(celSourceReflectivity(textureOnly, false).slice(0, 4)).toEqual([0.04, 0.04, 0.04, 0]);
+    // Specular-glossiness: the sRGB map tints the reflectivity color, its alpha scales the microsurface.
+    const glossy = new PBRMaterial("glossy", scene);
+    Object.assign(glossy, { reflectivityColor: new Color3(1, 0.5, 0.25), microSurface: 0.8, reflectivityTexture: texture() });
+    glossy.useMicroSurfaceFromReflectivityMapAlpha = true;
+    close(read(glossy, [1, 1, 1, 0.5]), { f0: [1, 0.5, 0.25], metal: 0, gloss: 0.4 });
+    // Standard: the linearized specular map, its alpha the glossiness.
+    const standard = new StandardMaterial("standard", scene);
+    standard.specularTexture = texture();
+    close(read(standard, [0.5, 0.5, 0.5, 0.75]), { f0: [0.2176, 0.2176, 0.2176], metal: 0, gloss: 0.75 });
+    // Unlit sources and sources without a map read none.
+    expect(celSourceReflectivityMap(orm, true)).toBeNull();
+    expect(celSourceReflectivityMap(standard, true)).toBeNull();
+    expect(celSourceReflectivityMap(new PBRMaterial("flat", scene), false)).toBeNull();
+    expect(celSourceReflectivityMap(new StandardMaterial("plain", scene), false)).toBeNull();
+  });
+
+  it("binds a source's map only while CEL reflections run with Reflection Textures on", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const source = new PBRMaterial("orm", scene);
+    const orm = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);
+    // NullEngine never uploads, so the map would hold compilation back.
+    orm.getInternalTexture()!.isReady = true;
+    Object.assign(source, { metallic: 1, roughness: 1, metallicTexture: orm });
+    Object.assign(source, { useRoughnessFromMetallicTextureAlpha: false, useRoughnessFromMetallicTextureGreen: true });
+    source.useMetallnessFromMetallicTextureBlue = true;
+    const native = new CelMaterial(source, scene);
+    const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
+    mesh.material = native;
+    const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
+    const quality = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } });
+    const frame = async (cel: Parameters<typeof normalizeCelShadingSettings>[0]) => {
+      setSceneRenderSettings(scene, { mode: "cel", effects, quality, cel: normalizeCelShadingSettings(cel) });
+      // A new frame: readiness is cached per render id.
+      scene.incrementRenderId();
+      await native.forceCompilationAsync(mesh);
+      const subMesh = mesh.subMeshes[0]!;
+      expect(native.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      const uniforms = vi.spyOn(subMesh.effect!, "setFloat4");
+      native.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+      const bound = (name: string) => uniforms.mock.calls.filter(([uniform]) => uniform === name).at(-1)?.slice(1);
+      return { defines: subMesh.effect!.defines, bound, texture: native.specularTexture };
+    };
+    const map = ["slateCelReflectivityMetal", "slateCelReflectivityGloss", "slateCelReflectivityMap"];
+    // Factors only by default: a textured metalness reads as non-metal, with nothing extra bound or compiled.
+    const factors = await frame({ reflectionsEnabled: true });
+    expect(factors.texture).toBeNull();
+    expect(factors.defines).not.toMatch(/#define SPECULAR\n/);
+    expect(factors.bound("slateCelReflectivity")).toEqual([0.04, 0.04, 0.04, 0]);
+    for (const name of map) expect(factors.bound(name)).toBeUndefined();
+    const textured = await frame({ reflectionsEnabled: true, reflectionTexturesEnabled: true });
+    expect(textured.texture).toBe(source.metallicTexture);
+    expect(textured.defines).toMatch(/#define SPECULAR\n/);
+    expect(textured.bound("slateCelReflectivity")).toEqual([0.04, 0.04, 0.04, 1]);
+    expect(textured.bound("slateCelReflectivityMetal")).toEqual([0, 0, 1, 0]);
+    expect(textured.bound("slateCelReflectivityGloss")).toEqual([0, 1, 0, 0]);
+    // Without CEL reflections running the opt-in binds nothing: the variant is the flat-factor one.
+    const flat = await frame({ reflectionsEnabled: false, reflectionTexturesEnabled: true });
+    expect(flat.texture).toBeNull();
+    expect(flat.defines).toBe(factors.defines);
+    for (const name of map) expect(flat.bound(name)).toBeUndefined();
+    // A frozen adapter, ready in its flat variant, still follows the setting.
+    native.freeze();
+    await frame({ reflectionsEnabled: false, reflectionTexturesEnabled: true });
+    expect((await frame({ reflectionsEnabled: true, reflectionTexturesEnabled: true })).defines).toBe(textured.defines);
+    source.unlit = true;
+    native.syncSource();
+    expect(native.specularTexture).toBeNull();
   });
 
   it("adapts imported slots and late meshes, preserving textures, alpha and PBR restoration", () => {
