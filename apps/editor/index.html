@@ -32,7 +32,7 @@
         --hi-amber: 255 179 0;
         --hi-red: 255 68 0;
         --hi-magenta: 188 44 98;
-        --hi-ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --hi-ease: cubic-bezier(0.22, 0.8, 0.28, 1);
         --hi-wordmark-width: clamp(220px, 46vw, 720px);
         /* The edge band: a hard bright line, then a short falloff. */
         --hi-line: 2px;
@@ -52,7 +52,7 @@
         background: #000;
         color: #fff;
         opacity: 1;
-        transition: opacity 460ms cubic-bezier(0.4, 0, 0.2, 1) 140ms;
+        transition: opacity 1000ms cubic-bezier(0.3, 0, 0.2, 1) 220ms;
         font:
           400 11px "Onest Variable",
           system-ui,
@@ -91,7 +91,7 @@
           rgb(var(--hi-red))
         );
         opacity: 0.5;
-        animation: haptic-intro-band 1.4s ease-out 650ms backwards;
+        animation: haptic-intro-band 1.8s ease-out 850ms backwards;
       }
       /* Light sources travelling the edges. The first two ignite at the bottom
        * and race up either side to meet at the top, then keep flowing around
@@ -116,7 +116,7 @@
         mix-blend-mode: plus-lighter;
         will-change: transform;
         animation:
-          haptic-intro-fade 900ms ease-out 800ms backwards,
+          haptic-intro-fade 1200ms ease-out 1000ms backwards,
           haptic-intro-flow var(--lap) linear var(--phase) infinite
             var(--way, normal);
       }
@@ -124,17 +124,17 @@
         --size: 44vmin;
         --color: var(--hi-amber);
         animation:
-          haptic-intro-fade 160ms ease-out 100ms backwards,
-          haptic-intro-ignite-right 900ms linear 100ms both,
-          haptic-intro-flow 10s linear 1000ms infinite reverse;
+          haptic-intro-fade 220ms ease-out 150ms backwards,
+          haptic-intro-ignite-right 1150ms linear 150ms both,
+          haptic-intro-flow 10s linear 1300ms infinite reverse;
       }
       .haptic-intro-blob:nth-child(3) {
         --size: 44vmin;
         --color: var(--hi-red);
         animation:
-          haptic-intro-fade 160ms ease-out 100ms backwards,
-          haptic-intro-ignite-left 900ms linear 100ms both,
-          haptic-intro-flow 11s linear 1000ms infinite;
+          haptic-intro-fade 220ms ease-out 150ms backwards,
+          haptic-intro-ignite-left 1150ms linear 150ms both,
+          haptic-intro-flow 11s linear 1300ms infinite;
       }
       .haptic-intro-blob:nth-child(4) {
         --size: 56vmin;
@@ -175,7 +175,7 @@
         opacity: 0;
       }
       .haptic-intro[data-leaving="true"] .haptic-intro-flare {
-        animation: haptic-intro-flare 600ms ease-out both;
+        animation: haptic-intro-flare 1100ms ease-out both;
       }
       .haptic-intro-glow {
         position: absolute;
@@ -192,10 +192,10 @@
           transparent
         );
         opacity: 0.8;
-        animation: haptic-intro-fade 1.4s ease-out 250ms backwards;
+        animation: haptic-intro-fade 1.8s ease-out 300ms backwards;
       }
       .haptic-intro[data-leaving="true"] .haptic-intro-glow {
-        animation: haptic-intro-glow-flare 600ms ease-out both;
+        animation: haptic-intro-glow-flare 1100ms ease-out both;
       }
       /* The wordmark artwork, cut into one slice per letter. The letters rise
        * out of the baseline while amber and red silhouettes of each one close
@@ -209,13 +209,13 @@
         aspect-ratio: 1119 / 257;
         clip-path: inset(-60% -40% 0);
         transition:
-          scale 600ms cubic-bezier(0.22, 1, 0.36, 1),
-          opacity 360ms cubic-bezier(0.4, 0, 0.2, 1) 140ms;
+          scale 1300ms cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 800ms cubic-bezier(0.3, 0, 0.2, 1) 220ms;
       }
       /* The wordmark pushes forward and dissolves a little ahead of the
        * screen, so it never lies over the revealed editor. */
       .haptic-intro[data-leaving="true"] .haptic-intro-wordmark {
-        scale: 1.03;
+        scale: 1.05;
         opacity: 0;
       }
       /* Until the artwork can paint (data-wait), the letters hold their first
@@ -235,8 +235,8 @@
       .haptic-intro-letter {
         visibility: hidden;
         animation:
-          haptic-intro-show 1750ms step-end 0ms,
-          haptic-intro-rise 850ms var(--hi-ease) calc(300ms + var(--i) * 65ms)
+          haptic-intro-show 2150ms step-end 0ms,
+          haptic-intro-rise 1100ms var(--hi-ease) calc(400ms + var(--i) * 85ms)
             backwards;
       }
       .haptic-intro-letter:nth-of-type(1) { --i: 0; --cut-left: 0%; --cut-right: 77.48%; }
@@ -250,8 +250,8 @@
       }
       .haptic-intro-echo {
         opacity: 0;
-        animation: haptic-intro-converge 1100ms var(--hi-ease)
-          calc(300ms + var(--i) * 65ms) backwards;
+        animation: haptic-intro-converge 1300ms var(--hi-ease)
+          calc(400ms + var(--i) * 85ms) backwards;
       }
       .haptic-intro-echo-red {
         --spread: 1.34;
@@ -262,31 +262,31 @@
         filter: url(#haptic-intro-amber);
       }
       .haptic-intro-whole {
-        animation: haptic-intro-hide 1750ms step-end 0ms;
+        animation: haptic-intro-hide 2150ms step-end 0ms;
       }
       .haptic-intro-grain {
         position: absolute;
         inset: 0;
         background: var(--grain) 0 0 / var(--hi-grain-size) repeat;
         /* Heavier towards the edges, where the light is. */
-        -webkit-mask: radial-gradient(farthest-corner, rgb(0 0 0 / 30%) 45%, #000 95%);
-        mask: radial-gradient(farthest-corner, rgb(0 0 0 / 30%) 45%, #000 95%);
-        animation: haptic-intro-fade 900ms ease-out 150ms backwards;
+        -webkit-mask: radial-gradient(farthest-corner, rgb(0 0 0 / 22%) 45%, #000 95%);
+        mask: radial-gradient(farthest-corner, rgb(0 0 0 / 22%) 45%, #000 95%);
+        animation: haptic-intro-fade 1200ms ease-out 200ms backwards;
       }
       .haptic-intro-grain-light {
         --grain: var(--hi-grain-light);
-        opacity: 0.3;
+        opacity: 0.14;
         mix-blend-mode: screen;
         mix-blend-mode: plus-lighter;
       }
       .haptic-intro-grain-dark {
         --grain: var(--hi-grain-dark);
-        opacity: 0.6;
+        opacity: 0.3;
         mix-blend-mode: multiply;
       }
       .haptic-intro-grain-mid {
         --grain: var(--hi-grain-mid);
-        opacity: 0.4;
+        opacity: 0.2;
         mix-blend-mode: overlay;
       }
       .haptic-intro-build {
@@ -297,7 +297,7 @@
         color: rgb(255 255 255 / 38%);
         letter-spacing: 0.02em;
         text-align: center;
-        animation: haptic-intro-fade 700ms ease-out 1200ms backwards;
+        animation: haptic-intro-fade 800ms ease-out 1500ms backwards;
       }
       .haptic-intro-status {
         position: absolute;
@@ -374,15 +374,15 @@
         }
       }
       @keyframes haptic-intro-flare {
-        30% {
-          opacity: 1;
+        35% {
+          opacity: 0.85;
         }
         100% {
-          opacity: 0.5;
+          opacity: 0.4;
         }
       }
       @keyframes haptic-intro-glow-flare {
-        30%,
+        35%,
         100% {
           opacity: 1;
         }

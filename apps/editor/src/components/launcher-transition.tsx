@@ -42,6 +42,11 @@ const TransitionContext = createContext<{
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
 
+/** The boot intro (index.html) settles its letters at about 2.2 s and fades
+ * out over about 1.2 s; the project-open card is quicker. */
+const MINIMUM_MS = { boot: 2600, open: 2000 };
+const FADE_FALLBACK_MS = { boot: 1800, open: 650 };
+
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 function subscribeReducedMotion(update: () => void) {
   const query = window.matchMedia(REDUCED_MOTION_QUERY);
@@ -149,13 +154,14 @@ export function LauncherTransitionProvider({
     // its letters may have started after the provider mounted.
     const since =
       (transition.boot && bootIntroStart()) || transition.since;
+    const kind = transition.boot ? "boot" : "open";
     const delay = transition.leaving
       ? // transitionend normally releases the route; this also covers browsers
         // that omit the event, such as a backgrounded webview.
-        650
+        FADE_FALLBACK_MS[kind]
       : Math.max(
           0,
-          2000 - (performance.now() - since),
+          MINIMUM_MS[kind] - (performance.now() - since),
           transition.target === "editor"
             ? 600 -
                 (performance.now() - (transition.readyAt ?? performance.now()))

@@ -100,7 +100,7 @@ describe("Launcher Transition", () => {
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
 
-    advance(1999);
+    advance(2599);
     expect(screen.getByRole("status")).toBeTruthy();
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
@@ -112,7 +112,7 @@ describe("Launcher Transition", () => {
   it("does not reveal a reduced-motion route until its content is ready", () => {
     reducedMotion = true;
     const launcher = renderTransition();
-    advance(2500);
+    advance(3000);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
     act(() => launcher.controls().ready("home"));
@@ -128,7 +128,7 @@ describe("Launcher Transition", () => {
 
     finishTransition(overlay);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
-    advance(2000);
+    advance(2600);
     finishTransition(overlay.firstElementChild!);
     finishTransition(overlay, "transform");
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
@@ -142,10 +142,10 @@ describe("Launcher Transition", () => {
   it("releases the route if the browser never reports fade completion", () => {
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
-    advance(2000);
+    advance(2600);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
-    advance(650);
+    advance(1800);
     expect(screen.queryByRole("status")).toBeNull();
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
   });
@@ -153,7 +153,7 @@ describe("Launcher Transition", () => {
   it("enables the visible route when reduced motion is turned on during its fade", () => {
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
-    advance(2000);
+    advance(2600);
     advance(100);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
@@ -182,8 +182,8 @@ describe("Launcher Transition", () => {
   it("restores the home route when opening a project is cancelled", () => {
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
-    advance(2000);
-    advance(650);
+    advance(2600);
+    advance(1800);
 
     act(() => launcher.controls().begin("Cancelled Project"));
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
