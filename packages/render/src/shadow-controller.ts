@@ -154,11 +154,22 @@ const VIEW_REFUSAL_RETRY_MS = 1_000;
  * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
  * reverted (`restoreAdmission`).
  */
+/**
+ * A prediction map's size (decision 6): a map's format, filter and kind shape the variants it compiles and the
+ * pipelines it warms, never its size.
+ */
+export const PREDICTION_MAP_SIZE = 64;
+
 /** A light near a shadow map, as `nearShadowStarts` predicts its start. */
 export type ShadowStartPrediction = {
   light: Light;
-  /** An admitted map of its kind whose defines its own would give receivers; null when it holds a standby map. */
+  /**
+   * An admitted map of its kind whose defines its own would give receivers; null when it holds a standby map, or when
+   * no admitted map shares its kind (`firstOfKind`: `predictionMap` stands in).
+   */
   borrowed: ShadowGenerator | null;
+  /** No map of its kind is admitted: its start would build the first. */
+  firstOfKind: boolean;
   /** The holder it would take a map from, whose receivers lose that shadow. */
   displaced: Light | null;
 };
@@ -349,6 +360,10 @@ export class SceneShadowController {
   private restoring: ShadowAdmissionSnapshot | null = null;
   /** The effective settings the last sync admitted by. */
   private planSettings: ShadowSettings | null = null;
+  /** The real maps' cost the last sync reserved. */
+  private reserved: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+  /** Prediction maps by light kind (`predictionMap`), with the settings they were built with and their bytes. */
+  private readonly predictionMaps = new Map<string, { generator: ShadowGenerator; key: string; bytes: number }>();
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; view: boolean }>();
   /** Views with their own sun maps, by camera. */
@@ -447,6 +462,8 @@ export class SceneShadowController {
       // Their owners still await the ledger releases through their own claims.
       for (const view of [...this.views.values()]) void this.releaseView(view).catch(() => {});
       for (const entry of this.entries.values()) entry.generator?.dispose();
+      for (const held of this.predictionMaps.values()) held.generator.dispose();
+      this.predictionMaps.clear();
       this.entries.clear();
       this.meshes.clear();
       this.pending.clear();
@@ -549,7 +566,7 @@ export class SceneShadowController {
    * bonus included) at no lower priority. Each names the map whose defines its admission gives its receivers (its own
    * standby map, `borrowed` null; or an admitted map of its kind with these settings) and the holder it would take a
    * map from. A light that would take a map from a holder of its kind is left out (the map moves, and the exchange
-   * keeps every receiver's defines), and so is one no admitted map shares a kind with.
+   * keeps every receiver's defines); one no admitted map shares a kind with is `firstOfKind`.
    */
   nearShadowStarts(margin: number): ShadowStartPrediction[] {
     const settings = this.planSettings;
@@ -579,11 +596,80 @@ export class SceneShadowController {
       }
       const borrowed = entry.generator ? null : holders.find((holder) => holder !== displaced && kind(holder) === kind(entry) &&
         JSON.stringify(holder.settings) === key && (holder.generator!.getShadowMap()?.renderList?.length ?? 0) > 0)?.generator;
-      if (borrowed === undefined) continue;
-      starts.push({ light: entry.light, borrowed, displaced: displaced?.light ?? null, distanceSquared: entry.distanceSquared });
+      starts.push({
+        light: entry.light, borrowed: borrowed ?? null, firstOfKind: borrowed === undefined,
+        displaced: displaced?.light ?? null, distanceSquared: entry.distanceSquared,
+      });
     }
     return starts.sort((a, b) => a.distanceSquared - b.distanceSquared)
-      .map(({ light, borrowed, displaced }) => ({ light, borrowed, displaced }));
+      .map(({ light, borrowed, firstOfKind, displaced }) => ({ light, borrowed, firstOfKind, displaced }));
+  }
+  /**
+   * A map of `light`'s kind (spot or point) for a variant prediction of a first shadow start of that kind: built as an
+   * admitted map is, with the current settings, at `PREDICTION_MAP_SIZE`, listing the scene's casters, and taken off
+   * the light at once, so no receiver binds it, no admission counts it and it never renders a frame. One per kind,
+   * aimed at the light it predicts. Its bytes join the scene's shadow reservation only while room remains after the
+   * real maps, which release it when they need that room. Null when shadows are off or there is no room.
+   */
+  predictionMap(light: Light): ShadowGenerator | null {
+    const settings = this.planSettings;
+    if (!settings?.enabled || !(light instanceof SpotLight || light instanceof PointLight)) return null;
+    const kind = `${light.getClassName()}:${light.needCube()}`;
+    const key = JSON.stringify(settings);
+    let held = this.predictionMaps.get(kind);
+    if (held && held.key !== key) {
+      const stale = held.generator;
+      this.releasePredictionMaps((other) => other === stale);
+      held = undefined;
+    }
+    if (!held) {
+      const engine = this.scene.getEngine();
+      const bytes = (light.needCube() ? 6 : 1) * PREDICTION_MAP_SIZE ** 2 * shadowBytesPerTexel(engine);
+      const room = Math.min(SHADOW_CAPACITY_PROFILES[settings.profile].byteBudget,
+        ENGINE_SHADOW_BUDGET.bytes - otherShadowReservations(this.scene).bytes, availableSceneShadowBytes(this.scene));
+      if (this.reserved.bytes + this.predictionBytes() + bytes > room) return null;
+      const entry: Entry = {
+        light, requested: true, priority: 0, generator: null, key: null, settings, mapSize: PREDICTION_MAP_SIZE,
+        reason: null, failedKey: "", recovery: null, resetAllocation: false, status: "disabled", standby: false,
+        admittedAt: -Infinity, distanceSquared: 0, effectiveBias: [],
+      };
+      const generator = this.createGenerator(entry, PREDICTION_MAP_SIZE, settings, null, undefined);
+      this.slots.delete(generator);
+      detachShadowGenerator(generator);
+      setAwaitingFirstDraw(generator, false);
+      held = { generator, key, bytes };
+      this.predictionMaps.set(kind, held);
+      this.reservePredictionMaps();
+    }
+    // Aimed at the light it predicts (its casters' culling and projection), and listing the casters as they are now.
+    aimShadowGenerator(held.generator, light);
+    const map = held.generator.getShadowMap();
+    if (map) map.renderList = Array.from(this.meshes);
+    return held.generator;
+  }
+  /** Disposes the prediction maps `release` picks (all by default), and gives their bytes back. */
+  releasePredictionMaps(release: (map: ShadowGenerator) => boolean = () => true): void {
+    let released = false;
+    for (const [kind, held] of this.predictionMaps) {
+      if (!release(held.generator)) continue;
+      this.predictionMaps.delete(kind);
+      held.generator.dispose();
+      released = true;
+    }
+    if (released) this.reservePredictionMaps();
+  }
+  /** The prediction maps held now. */
+  get heldPredictionMaps(): readonly ShadowGenerator[] {
+    return [...this.predictionMaps.values()].map((held) => held.generator);
+  }
+  private predictionBytes(): number {
+    let bytes = 0;
+    for (const held of this.predictionMaps.values()) bytes += held.bytes;
+    return bytes;
+  }
+  /** The real maps' reservation, as the last sync made it, with the prediction maps' bytes. */
+  private reservePredictionMaps(): void {
+    reserveSceneShadows(this.scene, { ...this.reserved, bytes: this.reserved.bytes + this.predictionBytes() });
   }
   /** Admitted or standby map still attached to the light, which receivers bind. */
   boundGenerator(light: Light): ShadowGenerator | null {
@@ -1160,11 +1246,17 @@ export class SceneShadowController {
         map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     }
     this.yieldViewMaps(admitted.bytes + standby.bytes);
-    reserveSceneShadows(scene, {
-      bytes: admitted.bytes + standby.bytes,
-      passes: admitted.passes,
-      samplers: admitted.samplers + standby.samplers,
+    this.reserved = { bytes: admitted.bytes + standby.bytes, passes: admitted.passes, samplers: admitted.samplers + standby.samplers };
+    // Prediction maps keep only room the real maps leave, and go with the settings they were built with.
+    const currentSettings = settingsKey();
+    let predicted = 0;
+    this.releasePredictionMaps((map) => {
+      const held = [...this.predictionMaps.values()].find((entry) => entry.generator === map)!;
+      if (held.key !== currentSettings || this.reserved.bytes + predicted + held.bytes > standbyBudget) return true;
+      predicted += held.bytes;
+      return false;
     });
+    this.reservePredictionMaps();
     // One scene-wide light invalidation covers every retained generator's defines.
     let materialsDirty = false;
     for (const entry of this.entries.values()) {
@@ -1776,6 +1868,27 @@ export class SceneShadowController {
 }
 
 /** Internal renderer lookup; observing a scene never installs a second owner. */
+/** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
+function detachShadowGenerator(generator: ShadowGenerator): void {
+  const light = generator.getLight();
+  const generators = light._shadowGenerators;
+  if (!generators) return;
+  for (const [camera, attached] of generators) if (attached === generator) generators.delete(camera);
+  if (!generators.size) light._shadowGenerators = null;
+}
+
+/** Aims a detached map at `light` (its projection and caster culling) without attaching it. */
+function aimShadowGenerator(generator: ShadowGenerator, light: Light): void {
+  const target = generator as unknown as {
+    _light: Light; _currentRenderId: number; _cachedPosition: Vector3; _cachedDirection: Vector3;
+  };
+  if (target._light === light) return;
+  target._light = light;
+  target._currentRenderId = -1;
+  target._cachedPosition.setAll(Number.MAX_VALUE);
+  target._cachedDirection.setAll(Number.MAX_VALUE);
+}
+
 export function findSceneShadowController(scene: Scene): SceneShadowController | undefined {
   return controllers.get(scene);
 }
