@@ -18,173 +18,567 @@
       // Haptic is dark only.
       document.documentElement.classList.add("dark");
     </script>
+    <style>
+      /* The boot intro. This page paints it outside #root before any bundle
+       * runs; LauncherTransitionProvider then drives the same element
+       * (useBootIntro) and removes it, so it never restarts mid-flight.
+       * Everything that moves animates only transform or opacity, which the
+       * compositor keeps smooth while the bundle evaluates. */
+      html:has(.haptic-intro),
+      html:has(.haptic-intro) body {
+        background: #000;
+      }
+      .haptic-intro {
+        --hi-amber: 255 179 0;
+        --hi-red: 255 68 0;
+        --hi-magenta: 188 44 98;
+        --hi-ease: cubic-bezier(0.22, 0.8, 0.28, 1);
+        --hi-wordmark-width: clamp(220px, 46vw, 720px);
+        /* The edge band: a hard bright line, then a short falloff. */
+        --hi-line: 2px;
+        --hi-fall: clamp(44px, 9vmin, 112px);
+        --hi-side: #000 0 var(--hi-line), rgb(0 0 0 / 42%) var(--hi-line),
+          rgb(0 0 0 / 16%) calc(var(--hi-fall) * 0.4), transparent var(--hi-fall);
+        --hi-frame: linear-gradient(to bottom, var(--hi-side)) top / 100% var(--hi-fall) no-repeat,
+          linear-gradient(to top, var(--hi-side)) bottom / 100% var(--hi-fall) no-repeat,
+          linear-gradient(to right, var(--hi-side)) left / var(--hi-fall) 100% no-repeat,
+          linear-gradient(to left, var(--hi-side)) right / var(--hi-fall) 100% no-repeat;
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: #000;
+        color: #fff;
+        opacity: 1;
+        transition: opacity 1000ms cubic-bezier(0.3, 0, 0.2, 1) 220ms;
+        font:
+          400 11px "Onest Variable",
+          system-ui,
+          sans-serif;
+        cursor: progress;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .haptic-intro[data-leaving="true"] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .haptic-intro-edge {
+        position: absolute;
+        inset: 0;
+        isolation: isolate;
+        -webkit-mask: var(--hi-frame);
+        mask: var(--hi-frame);
+      }
+      .haptic-intro-band,
+      .haptic-intro-flare {
+        position: absolute;
+        inset: 0;
+      }
+      .haptic-intro-band {
+        background: conic-gradient(
+          from 160deg,
+          rgb(var(--hi-red)),
+          rgb(var(--hi-amber)) 12%,
+          #2a0802 24%,
+          rgb(var(--hi-magenta)) 37%,
+          rgb(var(--hi-red)) 49%,
+          #1a0508 61%,
+          rgb(var(--hi-amber)) 74%,
+          rgb(var(--hi-magenta)) 87%,
+          rgb(var(--hi-red))
+        );
+        opacity: 0.5;
+        animation: haptic-intro-band 1.8s ease-out 850ms backwards;
+      }
+      /* Light sources travelling the edges. The first two ignite at the bottom
+       * and race up either side to meet at the top, then keep flowing around
+       * the screen; the rest fade in already on their way. */
+      .haptic-intro-blob {
+        --size: 48vmin;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: var(--size);
+        height: var(--size);
+        margin: calc(var(--size) / -2) 0 0 calc(var(--size) / -2);
+        border-radius: 50%;
+        background: radial-gradient(
+          closest-side,
+          rgb(255 238 214),
+          rgb(var(--color)) 22%,
+          rgb(var(--color) / 50%) 55%,
+          transparent
+        );
+        mix-blend-mode: screen;
+        mix-blend-mode: plus-lighter;
+        will-change: transform;
+        animation:
+          haptic-intro-fade 1200ms ease-out 1000ms backwards,
+          haptic-intro-flow var(--lap) linear var(--phase) infinite
+            var(--way, normal);
+      }
+      .haptic-intro-blob:nth-child(2) {
+        --size: 44vmin;
+        --color: var(--hi-amber);
+        animation:
+          haptic-intro-fade 220ms ease-out 150ms backwards,
+          haptic-intro-ignite-right 1150ms linear 150ms both,
+          haptic-intro-flow 10s linear 1300ms infinite reverse;
+      }
+      .haptic-intro-blob:nth-child(3) {
+        --size: 44vmin;
+        --color: var(--hi-red);
+        animation:
+          haptic-intro-fade 220ms ease-out 150ms backwards,
+          haptic-intro-ignite-left 1150ms linear 150ms both,
+          haptic-intro-flow 11s linear 1300ms infinite;
+      }
+      .haptic-intro-blob:nth-child(4) {
+        --size: 56vmin;
+        --color: var(--hi-magenta);
+        --lap: 13s;
+        --phase: -4.1s;
+      }
+      .haptic-intro-blob:nth-child(5) {
+        --size: 38vmin;
+        --color: var(--hi-amber);
+        --lap: 16s;
+        --phase: -11s;
+        --way: reverse;
+      }
+      .haptic-intro-blob:nth-child(6) {
+        --size: 50vmin;
+        --color: var(--hi-red);
+        --lap: 19s;
+        --phase: -7s;
+      }
+      .haptic-intro-blob:nth-child(7) {
+        --size: 34vmin;
+        --color: 255 122 40;
+        --lap: 11s;
+        --phase: -2.5s;
+        --way: reverse;
+      }
+      .haptic-intro-flare {
+        background: conic-gradient(
+          from 90deg,
+          #ffd9a0,
+          rgb(var(--hi-amber)),
+          #ff7a2a,
+          #ffe2b8,
+          rgb(var(--hi-red)),
+          #ffd9a0
+        );
+        opacity: 0;
+      }
+      .haptic-intro[data-leaving="true"] .haptic-intro-flare {
+        animation: haptic-intro-flare 1100ms ease-out both;
+      }
+      .haptic-intro-glow {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: calc(var(--hi-wordmark-width) * 1.7);
+        height: calc(var(--hi-wordmark-width) * 0.8);
+        translate: -50% -50%;
+        background: radial-gradient(
+          closest-side,
+          rgb(214 96 34 / 34%),
+          rgb(214 80 50 / 16%) 40%,
+          rgb(188 44 98 / 5%) 72%,
+          transparent
+        );
+        opacity: 0.8;
+        animation: haptic-intro-fade 1.8s ease-out 300ms backwards;
+      }
+      .haptic-intro[data-leaving="true"] .haptic-intro-glow {
+        animation: haptic-intro-glow-flare 1100ms ease-out both;
+      }
+      /* The wordmark artwork, cut into one slice per letter. The letters rise
+       * out of the baseline while amber and red silhouettes of each one close
+       * in from wide and fade into the fringes baked into the artwork; then the
+       * whole image takes over, so the resting frame is the artwork itself.
+       * Every layer is an <img>, not a CSS url(): a CSS image only becomes
+       * paintable after a main-thread task, which waits for the bundle. */
+      .haptic-intro-wordmark {
+        position: relative;
+        width: var(--hi-wordmark-width);
+        aspect-ratio: 1119 / 257;
+        clip-path: inset(-60% -40% 0);
+        transition:
+          scale 1300ms cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 800ms cubic-bezier(0.3, 0, 0.2, 1) 220ms;
+      }
+      /* The wordmark pushes forward and dissolves a little ahead of the
+       * screen, so it never lies over the revealed editor. */
+      .haptic-intro[data-leaving="true"] .haptic-intro-wordmark {
+        scale: 1.05;
+        opacity: 0;
+      }
+      /* Until the artwork can paint (data-wait), the letters hold their first
+       * frame instead of rising invisibly; the edges play on regardless. */
+      .haptic-intro[data-wait] .haptic-intro-wordmark,
+      .haptic-intro[data-wait] .haptic-intro-wordmark * {
+        animation-play-state: paused;
+      }
+      .haptic-intro-letter,
+      .haptic-intro-letter > img,
+      .haptic-intro-whole {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .haptic-intro-letter {
+        visibility: hidden;
+        animation:
+          haptic-intro-show 2150ms step-end 0ms,
+          haptic-intro-rise 1100ms var(--hi-ease) calc(400ms + var(--i) * 85ms)
+            backwards;
+      }
+      .haptic-intro-letter:nth-of-type(1) { --i: 0; --cut-left: 0%; --cut-right: 77.48%; }
+      .haptic-intro-letter:nth-of-type(2) { --i: 1; --cut-left: 22.52%; --cut-right: 58.62%; }
+      .haptic-intro-letter:nth-of-type(3) { --i: 2; --cut-left: 41.38%; --cut-right: 40.21%; }
+      .haptic-intro-letter:nth-of-type(4) { --i: 3; --cut-left: 59.79%; --cut-right: 24.22%; }
+      .haptic-intro-letter:nth-of-type(5) { --i: 4; --cut-left: 75.78%; --cut-right: 16.53%; }
+      .haptic-intro-letter:nth-of-type(6) { --i: 5; --cut-left: 83.47%; --cut-right: 0%; }
+      .haptic-intro-letter > img {
+        clip-path: inset(-20% var(--cut-right) -20% var(--cut-left));
+      }
+      .haptic-intro-echo {
+        opacity: 0;
+        animation: haptic-intro-converge 1300ms var(--hi-ease)
+          calc(400ms + var(--i) * 85ms) backwards;
+      }
+      .haptic-intro-echo-red {
+        --spread: 1.34;
+        filter: url(#haptic-intro-red);
+      }
+      .haptic-intro-echo-amber {
+        --spread: 1.2;
+        filter: url(#haptic-intro-amber);
+      }
+      .haptic-intro-whole {
+        animation: haptic-intro-hide 2150ms step-end 0ms;
+      }
+      .haptic-intro-grain {
+        position: absolute;
+        inset: 0;
+        background: var(--grain) 0 0 / var(--hi-grain-size) repeat;
+        /* Heavier towards the edges, where the light is. */
+        -webkit-mask: radial-gradient(farthest-corner, rgb(0 0 0 / 22%) 45%, #000 95%);
+        mask: radial-gradient(farthest-corner, rgb(0 0 0 / 22%) 45%, #000 95%);
+        animation: haptic-intro-fade 1200ms ease-out 200ms backwards;
+      }
+      .haptic-intro-grain-light {
+        --grain: var(--hi-grain-light);
+        opacity: 0.14;
+        mix-blend-mode: screen;
+        mix-blend-mode: plus-lighter;
+      }
+      .haptic-intro-grain-dark {
+        --grain: var(--hi-grain-dark);
+        opacity: 0.3;
+        mix-blend-mode: multiply;
+      }
+      .haptic-intro-grain-mid {
+        --grain: var(--hi-grain-mid);
+        opacity: 0.2;
+        mix-blend-mode: overlay;
+      }
+      .haptic-intro-build {
+        position: absolute;
+        right: 0;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + var(--hi-fall) + 8px);
+        left: 0;
+        color: rgb(255 255 255 / 38%);
+        letter-spacing: 0.02em;
+        text-align: center;
+        animation: haptic-intro-fade 800ms ease-out 1500ms backwards;
+      }
+      .haptic-intro-status {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      @keyframes haptic-intro-fade {
+        from {
+          opacity: 0;
+        }
+      }
+      @keyframes haptic-intro-band {
+        0% {
+          opacity: 0;
+        }
+        40% {
+          opacity: 0.95;
+        }
+      }
+      @keyframes haptic-intro-ignite-right {
+        0% {
+          transform: translate(50vw, 100vh);
+          animation-timing-function: cubic-bezier(0.6, 0, 0.75, 0.8);
+        }
+        28% {
+          transform: translate(100vw, 100vh);
+          animation-timing-function: linear;
+        }
+        72% {
+          transform: translate(100vw, 0);
+          animation-timing-function: cubic-bezier(0.25, 0.2, 0.3, 1);
+        }
+        100% {
+          transform: translate(50vw, 0);
+        }
+      }
+      @keyframes haptic-intro-ignite-left {
+        0% {
+          transform: translate(50vw, 100vh);
+          animation-timing-function: cubic-bezier(0.6, 0, 0.75, 0.8);
+        }
+        28% {
+          transform: translate(0, 100vh);
+          animation-timing-function: linear;
+        }
+        72% {
+          transform: translate(0, 0);
+          animation-timing-function: cubic-bezier(0.25, 0.2, 0.3, 1);
+        }
+        100% {
+          transform: translate(50vw, 0);
+        }
+      }
+      /* One clockwise lap from the top centre; reverse runs it anticlockwise. */
+      @keyframes haptic-intro-flow {
+        0%,
+        100% {
+          transform: translate(50vw, 0);
+        }
+        15% {
+          transform: translate(100vw, 0);
+        }
+        35% {
+          transform: translate(100vw, 100vh);
+        }
+        65% {
+          transform: translate(0, 100vh);
+        }
+        85% {
+          transform: translate(0, 0);
+        }
+      }
+      @keyframes haptic-intro-flare {
+        35% {
+          opacity: 0.85;
+        }
+        100% {
+          opacity: 0.4;
+        }
+      }
+      @keyframes haptic-intro-glow-flare {
+        35%,
+        100% {
+          opacity: 1;
+        }
+      }
+      @keyframes haptic-intro-show {
+        from,
+        to {
+          visibility: visible;
+        }
+      }
+      @keyframes haptic-intro-hide {
+        from,
+        to {
+          visibility: hidden;
+        }
+      }
+      @keyframes haptic-intro-rise {
+        0% {
+          opacity: 0;
+          transform: translateY(115%);
+        }
+        30% {
+          opacity: 1;
+        }
+      }
+      @keyframes haptic-intro-converge {
+        0% {
+          opacity: 1;
+          transform: scaleX(var(--spread));
+        }
+        55% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+          transform: scaleX(1);
+        }
+      }
+      /* Without animations every layer shows its resting state. */
+      @media (prefers-reduced-motion: reduce) {
+        .haptic-intro,
+        .haptic-intro * {
+          animation: none !important;
+          transition: none !important;
+        }
+        .haptic-intro-blob {
+          display: none;
+        }
+      }
+      @media (forced-colors: active) {
+        .haptic-intro-edge,
+        .haptic-intro-glow,
+        .haptic-intro-grain {
+          display: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root">
-      <style>
-        body:has(#slate-boot) {
-          background: oklch(0.12 0.004 75);
-        }
-        #slate-boot {
-          position: fixed;
-          inset: 0;
-          z-index: 1000;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr);
-          place-items: center;
-          padding: 16px;
-          background: oklch(0.125 0.004 75);
-          color: oklch(0.97 0.002 85);
-          will-change: opacity;
-          opacity: 1;
-          transition: opacity 500ms cubic-bezier(0.22, 0.61, 0.36, 1);
-          font:
-            400 12px "Onest Variable",
-            system-ui,
-            sans-serif;
-        }
-        #slate-boot[data-leaving="true"] {
-          opacity: 0;
-          pointer-events: none;
-        }
-        /* A flat splash card: the wordmark on top, then the progress line with the
-         * status and build under it. */
-        .slate-splash {
-          box-sizing: border-box;
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          width: min(460px, 100%);
-          aspect-ratio: 2 / 1;
-          padding: 28px 28px 26px;
-          overflow: hidden;
-          border: 1px solid oklch(1 0 0 / 8%);
-          border-radius: 16px;
-          background: oklch(0.175 0.004 75);
-          transition: transform 500ms cubic-bezier(0.22, 0.61, 0.36, 1);
-          animation: slate-splash-in 500ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-        }
-        #slate-boot[data-leaving="true"] .slate-splash {
-          transform: scale(0.98);
-        }
-        .slate-splash-wordmark {
-          align-self: flex-start;
-          width: auto;
-          height: 34px;
-          aspect-ratio: 1119 / 257;
-          object-fit: contain;
-        }
-        .slate-splash-bottom {
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-          min-width: 0;
-        }
-        .slate-splash-footer {
-          display: flex;
-          align-items: baseline;
-          justify-content: space-between;
-          gap: 16px;
-          min-width: 0;
-        }
-        .slate-splash-text {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          min-width: 0;
-        }
-        .slate-loading-label {
-          min-width: 0;
-          overflow: hidden;
-          font-size: 13px;
-          font-weight: 500;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .slate-splash-status {
-          color: oklch(0.97 0.002 85 / 60%);
-          font-size: 12px;
-        }
-        .slate-splash-version {
-          flex-shrink: 0;
-          color: oklch(0.97 0.002 85 / 40%);
-          font-size: 11px;
-        }
-        .slate-loading-track {
-          position: relative;
-          display: block;
-          height: 2px;
-          overflow: hidden;
-          border-radius: 2px;
-          background: oklch(1 0 0 / 10%);
-        }
-        .slate-loading-track > span {
-          position: absolute;
-          inset: 0 auto 0 0;
-          width: 35%;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            oklch(0.83 0.16 75) 35%,
-            oklch(0.66 0.21 32) 70%,
-            transparent
-          );
-          will-change: transform;
-          animation: slate-load-travel 1.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-        }
-        .slate-loading-track[data-ready="true"] > span {
-          width: 100%;
-          background: oklch(0.97 0.002 85);
-          animation: slate-load-fill 400ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-        }
-        @keyframes slate-splash-in {
-          from {
-            opacity: 0;
-            transform: translateY(8px) scale(0.98);
-          }
-        }
-        @keyframes slate-load-travel {
-          from {
-            transform: translateX(-100%);
-          }
-          to {
-            transform: translateX(290%);
-          }
-        }
-        @keyframes slate-load-fill {
-          from {
-            transform: scaleX(0);
-            transform-origin: left;
-          }
-          to {
-            transform-origin: left;
-          }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          #slate-boot,
-          #slate-boot * {
-            animation: none;
-            transition: none;
-          }
+    <div
+      id="haptic-intro"
+      class="slate-loading haptic-intro"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading Haptic"
+    >
+      <div class="haptic-intro-edge" aria-hidden="true">
+        <span class="haptic-intro-band"></span>
+        <span class="haptic-intro-blob"></span>
+        <span class="haptic-intro-blob"></span>
+        <span class="haptic-intro-blob"></span>
+        <span class="haptic-intro-blob"></span>
+        <span class="haptic-intro-blob"></span>
+        <span class="haptic-intro-blob"></span>
+        <span class="haptic-intro-flare"></span>
+      </div>
+      <div class="haptic-intro-glow" aria-hidden="true"></div>
+      <div class="haptic-intro-wordmark" aria-hidden="true">
+        <img
+          class="haptic-intro-whole"
+          src="/branding/HapticWordmark-DarkMode.png"
+          alt=""
+          fetchpriority="high"
+        />
+        <span class="haptic-intro-letter">
+          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
+        </span>
+        <span class="haptic-intro-letter">
+          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
+        </span>
+        <span class="haptic-intro-letter">
+          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
+        </span>
+        <span class="haptic-intro-letter">
+          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
+        </span>
+        <span class="haptic-intro-letter">
+          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
+        </span>
+        <span class="haptic-intro-letter">
+          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
+        </span>
+      </div>
+      <div class="haptic-intro-grain haptic-intro-grain-light" aria-hidden="true"></div>
+      <div class="haptic-intro-grain haptic-intro-grain-dark" aria-hidden="true"></div>
+      <div class="haptic-intro-grain haptic-intro-grain-mid" aria-hidden="true"></div>
+      <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+        <filter id="haptic-intro-red" color-interpolation-filters="sRGB">
+          <feFlood flood-color="#ff4400" />
+          <feComposite in2="SourceAlpha" operator="in" />
+          <feGaussianBlur stdDeviation="1.4" />
+        </filter>
+        <filter id="haptic-intro-amber" color-interpolation-filters="sRGB">
+          <feFlood flood-color="#ffb300" />
+          <feComposite in2="SourceAlpha" operator="in" />
+          <feGaussianBlur stdDeviation="1.4" />
+        </filter>
+      </svg>
+      <span class="haptic-intro-build">__SLATE_BUILD_LABEL__</span>
+      <span class="haptic-intro-status">Loading application</span>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var intro = document.getElementById("haptic-intro");
+        if (!intro) return;
+        // The timeline starts with the first frame, and the launcher counts its
+        // minimum time from data-start. If the wordmark is not loaded yet (a
+        // cold start), only the letters wait for it; its load event can be
+        // queued behind the bundle, which the edges keep covering meanwhile.
+        intro.setAttribute("data-start", String(performance.now()));
+        var wordmark = intro.querySelector(".haptic-intro-whole");
+        if (!wordmark.complete) {
+          intro.setAttribute("data-wait", "");
+          var release = function () {
+            if (!intro.hasAttribute("data-wait")) return;
+            intro.removeAttribute("data-wait");
+            intro.setAttribute("data-start", String(performance.now()));
+          };
+          wordmark.addEventListener("load", release);
+          wordmark.addEventListener("error", release);
         }
 
-      </style>
-      <div id="slate-boot" role="status" aria-label="Loading Haptic">
-        <section class="slate-splash">
-          <img class="slate-splash-wordmark" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <div class="slate-splash-bottom">
-            <span class="slate-loading-track" aria-hidden="true"><span></span></span>
-            <div class="slate-splash-footer">
-              <div class="slate-splash-text">
-                <span class="slate-splash-status">Loading application</span>
-              </div>
-              <span class="slate-splash-version">__SLATE_BUILD_LABEL__</span>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
+        // Procedural film grain, baked once (no image asset) into data URLs,
+        // which are ready for the first paint like the wordmark. One gaussian
+        // sample per pixel: positive values light a white tile (plus-lighter),
+        // negative ones darken a black tile (multiply), and a grey tile adds
+        // contrast to mid-tones (overlay).
+        try {
+          var size = 256;
+          var tones = ["light", "dark", "mid"];
+          var canvases = tones.map(function () {
+            var canvas = document.createElement("canvas");
+            canvas.width = canvas.height = size;
+            return canvas;
+          });
+          var images = canvases.map(function (canvas) {
+            return canvas.getContext("2d").createImageData(size, size);
+          });
+          var light = images[0].data;
+          var dark = images[1].data;
+          var mid = images[2].data;
+          for (var i = 0; i < light.length; i += 4) {
+            var g =
+              Math.sqrt(-2 * Math.log(1 - Math.random())) *
+              Math.cos(6.283185307 * Math.random());
+            light[i] = light[i + 1] = light[i + 2] = 255;
+            if (g > 0) light[i + 3] = Math.min(255, g * 96);
+            else dark[i + 3] = Math.min(255, -g * 96);
+            mid[i] = mid[i + 1] = mid[i + 2] = Math.max(0, Math.min(255, 128 + g * 64));
+            mid[i + 3] = 255;
+          }
+          var dpr = Math.min(window.devicePixelRatio || 1, 3);
+          intro.style.setProperty("--hi-grain-size", size / dpr + "px");
+          tones.forEach(function (tone, index) {
+            canvases[index].getContext("2d").putImageData(images[index], 0, 0);
+            intro.style.setProperty(
+              "--hi-grain-" + tone,
+              'url("' + canvases[index].toDataURL("image/png") + '")',
+            );
+          });
+        } catch (error) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
