@@ -52,7 +52,7 @@ Signing in does not sync projects. Projects stay where you saved them.
 
 The desktop app can download new releases and install them when you quit: on Windows, on Linux when you run the AppImage, and with signed macOS builds. Turn this on or off with **Automatic Updates** in **Engine Settings > About** or in **Manage Account > Application** on the Homepage. It is on by default.
 
-The first time you open a new version, Haptic shows its changes in a window titled with the build, such as **Release 1.0.2**. To read them again, choose **Changelog** in the account menu. Release notes are included in the app, so they work offline.
+The first time you open Haptic after an update, it shows the new version's changes in a window titled with the build, such as **Release 1.0.2**; a fresh install opens straight to the Homepage. To read the changes again, choose **Changelog** in the account menu. Release notes are included in the app, so they work offline.
 
 ## Next steps
 

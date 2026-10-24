@@ -1,20 +1,34 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import declared from "../release/version.json" with { type: "json" };
 import changelog from "../release/changelog.json" with { type: "json" };
 
-test("release news survives reload and the account menu reopens it offline", async ({ page }) => {
+const seenVersions = (page: Page) =>
+  page.evaluate(() => JSON.parse(localStorage.getItem("haptic:engine-settings") ?? "{}").seenReleaseVersions);
+
+test("release news waits for an update, survives reload and the account menu reopens it offline", async ({ page }) => {
   // Exercise the real web launch, including Pages' QA storage configuration.
   await page.goto("/");
-  // News waits for the loading screen so it never opens behind it.
   await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
   // Both views are titled with the build name; data-mode tells them apart.
   const news = page.locator('[data-testid="release-news"][data-mode="news"]');
+  // A fresh install records its version instead of announcing it.
+  await expect.poll(() => seenVersions(page)).toEqual([declared.version]);
+  await expect(news).toHaveCount(0);
+
+  // The first launch after an update announces the new version.
+  await page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem("haptic:engine-settings") ?? "{}");
+    localStorage.setItem("haptic:engine-settings", JSON.stringify({ ...settings, seenReleaseVersions: ["0.0.0"] }));
+  });
+  await page.reload();
+  // News waits for the loading screen so it never opens behind it.
+  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
   await expect(news).toBeVisible();
   await expect(page.getByRole("dialog", { name: `Development ${declared.version}` })).toBeVisible();
   const notes = changelog.releases.find(release => release.version === declared.version)!;
   await expect(news).toContainText(notes.changes[0]);
   await news.getByRole("button", { name: "Done", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("haptic:engine-settings") ?? "{}").seenReleaseVersions)).toContain(declared.version);
+  await expect.poll(() => seenVersions(page)).toContain(declared.version);
 
   await page.reload();
   await expect(page.getByTestId("homepage")).toBeVisible();
