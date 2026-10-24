@@ -193,7 +193,8 @@ describe("Water surfaces", () => {
     expect(sample.velocity.x).toBeCloseTo(current.x + out[9]!, 6);
     expect(sample.velocity.z).toBeCloseTo(current.z + out[10]!, 6);
   });
-  it("keeps every sampled wave inside the vertical and horizontal envelopes", () => {
+  // Samples four seas at three scales densely: under coverage instrumentation that outlasts the default 5 s.
+  it("keeps every sampled wave inside the vertical and horizontal envelopes", { timeout: 30_000 }, () => {
     const out = createWaterWaveOutput();
     for (const water of [realistic, { ...realistic, waveHeight: 0.4, waveLength: 22, detailWaves: 0 }, storm, { ...storm, peakSharpness: 7 }]) {
       for (const scale of [0.35, 1, 3]) {

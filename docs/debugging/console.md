@@ -79,7 +79,7 @@ The game keeps running while the console is open, and pressing the game does not
 
 Actor names must match exactly and belong to one actor; use the GUID when names repeat.
 
-**Water settings** for `quality water`: `shadingDetail` (`low` to `ultra`), `meshDensity` (0.5 to 1.5), `contactResolution` (256 to 1024), `refraction` (`on`/`off`), `refractionScale` (0.25 to 1), `reflections` (`sky`, `screenSpace` or `planar`), `reflectionSteps` (4 to 32), `planarScale` (0.25 to 1), `fft` (`on`/`off`), `fftSize` (64, 128 or 256) and `fftCascades` (1 to 3). For example: `quality water reflections planar`.
+**Water settings** for `quality water`: `shadingDetail` (`low` to `ultra`), `meshDensity` (0.5 to 1.5), `contactResolution` (256 to 1024), `refraction` (`on`/`off`), `refractionScale` (0.25 to 1), `reflections` (`sky`, `screenSpace` or `planar`), `reflectionSteps` (4 to 32), `planarScale` (0.25 to 1), `fftSize` (64, 128 or 256) and `fftCascades` (1 to 3). For example: `quality water reflections planar`.
 
 ## Your own commands
 

@@ -4,7 +4,9 @@ import { ClassRegistry, World } from "@haptic/object-model";
 import { createPhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
-describe("Water buoyancy with native collision response", () => {
+// Each case steps a physics world against the full wave spectrum for seconds of simulated time: under coverage
+// instrumentation that outlasts the default 5 s.
+describe("Water buoyancy with native collision response", { timeout: 30_000 }, () => {
   it("uses explicit cubic metres for carrying capacity, live edits and scale", async () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
