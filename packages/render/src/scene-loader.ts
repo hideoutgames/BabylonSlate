@@ -8,7 +8,7 @@ import { createSplineMesh } from "./spline-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { bindEditorCable, configureCableMesh, createCableMesh, findEditorCableMesh, hasEditorCableMeshes, pruneEditorCables, updateCablePreview } from "./cable-mesh";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
-import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
+import { createFogVolumeGuide, createReflectionProbeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import { MIRROR_CLASS_ID, parseMirrorProperties } from "@haptic/core";
 import { createMirrorSurfaceMesh } from "./mirrors";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
@@ -24,6 +24,8 @@ import {
   identitySerializedTransform,
   isSceneLayerAnchorActor,
   fogVolumeBindings,
+  reflectionProbeBindings,
+  parseReflectionProbeProperties,
   parseFogVolumeProperties,
   overlayPanelDestFromScale,
   parseOverlayPanelProperties,
@@ -276,6 +278,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "BlockingVolumeComponent",
   "WaterRemovalVolumeComponent",
   "FogVolumeComponent",
+  "ReflectionProbeComponent",
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
@@ -511,7 +514,7 @@ export function needsOriginRoot(
     visuals.some((component) => component.classId === "CableComponent" || component.classId === MIRROR_CLASS_ID) ||
     visuals.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
-    visuals.some((component) => component.classId === "FogVolumeComponent") ||
+    visuals.some((component) => component.classId === "FogVolumeComponent" || component.classId === "ReflectionProbeComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
@@ -555,6 +558,7 @@ function componentVisualKind(
     const volume = parseFogVolumeProperties(component.properties);
     return `fogVolume:${volume.shape}:${volume.size.join(",")}`;
   }
+  if (component.classId === "ReflectionProbeComponent") return `reflectionProbe:${parseReflectionProbeProperties(component.properties).size.join(",")}`;
   if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
   if (component.classId === "FoliageComponent") return `foliage:${foliagePropertiesFingerprint(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
   if (component.classId === "MeshComponent") {
@@ -856,6 +860,7 @@ function createComponentMesh(
   }
   if (component.classId === "WaterRemovalVolumeComponent") return createWaterRemovalMesh(scene, name, component.properties, { editor: true });
   if (component.classId === "FogVolumeComponent") return createFogVolumeGuide(scene, name, component.properties);
+  if (component.classId === "ReflectionProbeComponent") return createReflectionProbeGuide(scene, name, component.properties);
   if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
   if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);
   if (component.classId === "SpriteComponent") {
@@ -1180,7 +1185,8 @@ function createActorOriginHierarchy(
       mesh.isPickable = visualIsPickable(mesh, actor.locked);
       meshes.set(component.id, mesh);
     }
-    const fogBindings = new Map(fogVolumeBindings(actor.components).map((binding) => [binding.id, binding]));
+    const fogBindings = new Map<string, { transforms: SerializedTransform[]; error?: string }>(
+    [...fogVolumeBindings(actor.components), ...reflectionProbeBindings(actor.components)].map((binding) => [binding.id, binding]));
     for (const component of visuals) {
       const mesh = meshes.get(component.id);
       if (!mesh) continue;
@@ -1441,7 +1447,8 @@ export function applyComponentChildTransforms(
   actor: SerializedActor,
 ): void {
   if (!isEditorActorOrigin(mesh)) return;
-  const fogBindings = new Map(fogVolumeBindings(actor.components).map((binding) => [binding.id, binding]));
+  const fogBindings = new Map<string, { transforms: SerializedTransform[]; error?: string }>(
+    [...fogVolumeBindings(actor.components), ...reflectionProbeBindings(actor.components)].map((binding) => [binding.id, binding]));
   for (const component of visualComponentsOf(actor)) {
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);

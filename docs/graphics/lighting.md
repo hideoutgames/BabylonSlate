@@ -80,7 +80,18 @@ For **Texture**, import a prefiltered environment cube as a `.env` or `.dds` fil
 | **Environment Rotation** | Rotation around world Y, in degrees. |
 | **CEL Environment Strength** | CEL only. Adds diffuse environment light to the bands. Default 0. |
 
+Inside rooms and caves, add [Reflection Probes](#reflection-probes) so surfaces stop reflecting the outdoor sky.
+
 Project defaults are in **Project Settings > Rendering > Environment Lighting**. In a scene, choose **Override** on a field to change it there, or **Reset To Project** to follow the project again.
+
+## Reflection probes
+
+Environment lighting comes from one sky, so indoor surfaces reflect the outdoors. A [Reflection Probe](../components/reflection-probe.md) captures the static scene around it and lights the surfaces inside its box instead.
+
+1. Open **Place Actors > Environment > Reflection Probe** and drop it in the middle of a room.
+2. Set its **Size** to cover the room. Surfaces inside reflect the room, lined up with its walls.
+
+Probes recapture on their own after you stop editing. They light and reflect only through image-based lighting, so the same **Image-Based Lighting** and **Environment Intensity** settings apply.
 
 ## CEL shading
 

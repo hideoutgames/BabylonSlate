@@ -62,7 +62,7 @@ interface RenderTargetHostDeps {
 
 /** Script render target calls: asset modes and on-demand capture. */
 export function createRenderTargetHostBindings(deps: RenderTargetHostDeps): Pick<ScriptHostServices,
-  "getRenderTargetMode" | "getRenderTargetTextureTarget" | "captureRenderTarget"> {
+  "getRenderTargetMode" | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes"> {
   return {
     getRenderTargetMode: (guid) => normalizeRenderTargetPayload(
       deps.renderTargets.get(guid) ?? null,
@@ -74,6 +74,7 @@ export function createRenderTargetHostBindings(deps: RenderTargetHostDeps): Pick
       if (!(target instanceof Actor) || !deps.canRun(target) || !captureComponent(target)) return;
       deps.emit({ type: "captureRenderTarget", actorGuid: target.guid });
     },
+    recaptureReflectionProbes: () => deps.emit({ type: "recaptureReflectionProbes" }),
   };
 }
 

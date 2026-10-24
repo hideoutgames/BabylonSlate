@@ -316,6 +316,7 @@ export interface ScriptHostServices {
   getRenderTargetMode?(guid: string): RenderTargetMode;
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;
+  recaptureReflectionProbes?(): void;
   updateIllumination?(target: unknown): void;
   paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
   uiControlFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): boolean;
@@ -751,6 +752,8 @@ export interface ScriptContext {
   getRenderTargetMode(guid: string | null): RenderTargetMode;
   getRenderTargetTextureTarget(guid: string | null): string | null;
   captureRenderTarget(target: unknown): void;
+  /** Recapture every reflection probe once the play world settles. */
+  recaptureReflectionProbes(): void;
   getRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty): unknown;
   setRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty, value: unknown): void;
   getCameraFieldOfView(target: unknown): number;
@@ -855,7 +858,7 @@ export type HostContextKey =
   | "setSceneLayerCameraLocation" | "addSceneLayerCameraOffset" | "getSceneLayerCameraLocation" | "setSceneLayerCameraRotation"
   | "getSceneLayerCameraRotation" | "setSceneLayerCameraZoom" | "getSceneLayerCameraZoom" | "getOwningSceneLayer"
   | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"
-  | "getRenderTargetTextureTarget" | "captureRenderTarget" | "getRenderTargetCaptureProperty"
+  | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
   | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"
   | "isPathValid" | "getClosestNavigablePoint" | "getRandomPointInRadius" | "addObstacle" | "removeObstacle";
@@ -1843,6 +1846,7 @@ export class ScriptHost {
         const component = captureComponent(target);
         if (component?.owner && this.canInvokeOwner(component)) services.captureRenderTarget?.(component.owner);
       },
+      recaptureReflectionProbes: () => services.recaptureReflectionProbes?.(),
       getRenderTargetCaptureProperty: (target, key) => {
         const component = captureComponent(target);
         if (!component || !this.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];

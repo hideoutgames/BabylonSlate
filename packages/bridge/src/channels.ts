@@ -590,6 +590,9 @@ export type CommandMessage =
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@haptic/core").OutlineBinding[] }
   | { type: "setActorDeformers"; slotId: number; actorId: string; revision: number; deformers: import("@haptic/core").DeformerBinding[] }
   | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@haptic/core").FogVolumeBinding[] }
+  | { type: "setReflectionProbes"; slotId: number; actorId: string; probes: import("@haptic/core").ReflectionProbeBinding[] }
+  /** Recapture every reflection probe of the play world once its scene settles. */
+  | { type: "recaptureReflectionProbes" }
   | { type: "setAreaLights"; slotId: number; lights: import("@haptic/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {

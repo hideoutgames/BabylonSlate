@@ -42,6 +42,7 @@ export type PlaceActorKind =
   | { type: "skybox" }
   | { type: "fog-volume" }
   | { type: "mirror" }
+  | { type: "reflection-probe" }
   | { type: "text3d" }
   | { type: "cable" }
   | { type: "scene-streaming" }
@@ -138,6 +139,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Fog Volume",
     category: "Environment",
     kind: { type: "fog-volume" },
+  },
+  {
+    id: "reflection-probe",
+    title: "Reflection Probe",
+    category: "Environment",
+    kind: { type: "reflection-probe" },
   },
   {
     id: "text3d",
@@ -257,6 +264,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "cable" &&
         item.kind.type !== "scene-streaming" &&
         item.kind.type !== "fog-volume" &&
+        item.kind.type !== "reflection-probe" &&
         item.kind.type !== "render-target-capture",
     ),
     ...OVERLAY_PLACE_ACTORS,
@@ -274,6 +282,7 @@ export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
   "camera",
   "skybox",
   "fog-volume",
+  "reflection-probe",
   "water-lake",
   "audio",
   "particle",
@@ -487,6 +496,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "mirror") {
     return resolveTypeVisual({ classId: "MirrorComponent", family: "class" });
   }
+  if (kind.type === "reflection-probe") {
+    return resolveTypeVisual({ classId: "ReflectionProbeComponent", family: "class" });
+  }
   if (kind.type === "text3d") {
     return resolveTypeVisual({ classId: "Text3DComponent", family: "class" });
   }
@@ -638,6 +650,16 @@ export function spawnPlacedActor(
         id: `${id}-mirror`,
         classId: "MirrorComponent",
         properties: defaultPropertiesFor("MirrorComponent"),
+      }],
+    }));
+  }
+  if (kind.type === "reflection-probe") {
+    return finish(createActor(id, "Reflection Probe", {
+      transform,
+      components: [{
+        id: `${id}-probe`,
+        classId: "ReflectionProbeComponent",
+        properties: defaultPropertiesFor("ReflectionProbeComponent"),
       }],
     }));
   }

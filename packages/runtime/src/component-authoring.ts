@@ -16,6 +16,7 @@ import {
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
   parseMirrorProperties,
+  parseReflectionProbeProperties,
   parseOutlineProperties,
   parseDeformerProperties,
   parseRagdollProperties,
@@ -118,6 +119,8 @@ export function defaultComponentAuthoringProperties(
       return { ...parseFogVolumeProperties({}) };
     case "MirrorComponent":
       return { ...parseMirrorProperties({}) };
+    case "ReflectionProbeComponent":
+      return { ...parseReflectionProbeProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
     case "DeformerComponent":

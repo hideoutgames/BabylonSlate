@@ -65,6 +65,13 @@ export const renderTargetNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => ctx.emit(`ctx.captureRenderTarget(${ctx.input("Capture")});`),
   },
+  {
+    id: "render.recaptureReflectionProbes",
+    title: "Recapture Reflection Probes",
+    category: "render",
+    pins: () => [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC)],
+    codegen: (ctx) => ctx.emit("ctx.recaptureReflectionProbes();"),
+  },
   ...propertyNodes("RenderTarget", "Render Target", "renderTargetGuid", assetRef("RenderTarget")),
   ...propertyNodes("Enabled", "Enabled", "enabled", BOOL),
   ...propertyNodes("EveryFrame", "Every Frame", "captureEveryFrame", BOOL),

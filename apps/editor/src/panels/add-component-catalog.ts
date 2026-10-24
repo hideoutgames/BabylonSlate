@@ -83,6 +83,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("AreaRectLightComponent", "Rectangular Area Light", "Unshadowed rectangular emitter; illuminates through walls", "Rendering"),
   engineComponent("FogVolumeComponent", "Fog Volume", "Local box or sphere of volumetric fog with soft edges", "Rendering"),
   engineComponent("MirrorComponent", "Mirror", "Flat surface showing the scene reflected from the current view", "Rendering"),
+  engineComponent("ReflectionProbeComponent", "Reflection Probe", "Captures static surroundings so surfaces inside its box reflect them", "Rendering"),
   engineComponent("OutlineComponent", "Outline", "Actor silhouette with independent color, width and visibility", "Rendering"),
   engineComponent("DeformerComponent", "Deformer", "Runtime lattice deformation of a mesh or model after material offsets", "Rendering"),
   engineComponent(
