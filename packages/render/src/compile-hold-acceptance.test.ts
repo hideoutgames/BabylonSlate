@@ -672,6 +672,35 @@ describe("compile holds after the first frame", () => {
     });
   });
 
+  it("a prediction that never comes true expires and gives back its passes and Effects", async () => {
+    // The spot waits within the margin, then leaves it for longer than the expiry: its prediction's draw wrappers and
+    // the Effects only they held go, and the next prediction reuses its render pass ids.
+    predictAhead = true;
+    const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
+    const world = playWorld("sync", [...points, spot(30, [0, 5, 40])]);
+    await settle(world);
+    const cached = (world.engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+    /** The Effects draw wrappers under a prediction's render passes hold. */
+    const predicted = () => new Set(world.handle.scene.meshes.flatMap((mesh) => (mesh.subMeshes ?? []).flatMap((subMesh) =>
+      (subMesh as unknown as { _drawWrappers: ({ effect?: Effect | null } | undefined)[] })._drawWrappers.flatMap((wrapper, pass) =>
+        wrapper?.effect && world.engine.getRenderPassNames()[pass]?.startsWith("prediction") ? [wrapper.effect] : []))));
+    const approach = async () => {
+      world.place(spot(30, [0, 5, 3]));
+      for (let index = 0; index < 12; index++) await world.frame();
+    };
+    await approach();
+    const held = predicted();
+    const passes = world.engine.getRenderPassNames().length;
+    world.place(spot(30, [0, 5, 40]));
+    frameMs = 1_000;
+    for (let index = 0; index < 7; index++) await world.frame();
+    frameMs = FRAME_MS;
+    const expired = { held: predicted().size, cached: Object.values(cached).filter((effect) => held.has(effect)).length };
+    await approach();
+    expect({ held: held.size, expired, again: predicted().size > 0, reused: world.engine.getRenderPassNames().length === passes })
+      .toEqual({ held: 2, expired: { held: 0, cached: 0 }, again: true, reused: true });
+  });
+
   it.each(MODELS)("a spot nearing the shadow budget's cut-off has its receivers' variant compiled before it takes a point's map: %s", async (model) => {
     // Two local shadow maps, a spot's and a farther point's. A third shadowed light, a spot, first comes within the
     // prediction margin of the farther holder's ranking distance, then near enough to take its map: a new spot map,
@@ -711,7 +740,7 @@ describe("compile holds after the first frame", () => {
         spot(30, [0, 5, 40], { castShadows: true })],
       step: 2.5,
       configure: undefined,
-      // Without prediction its admission's frame still draws the previous variant (the standby map has not drawn).
+      // Without prediction its admission's frame still draws the previous variant.
       lagsWithout: 1,
     },
     // Two local maps: the spot takes the farther point's, a new spot map whose defines the other spot's give.

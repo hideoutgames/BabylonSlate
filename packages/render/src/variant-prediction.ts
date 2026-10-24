@@ -46,11 +46,27 @@ type Prediction = {
   context: string;
   /** One render pass id per real pass and instancing, whose draw wrappers hold the predicted Effects. */
   passes: Map<string, number>;
+  /**
+   * Draw wrappers already prepared, each once: preparing one again with the same defines takes another reference to
+   * its cached Effect (Babylon's `createEffect` counts each request), which its one disposal would never give back.
+   */
+  prepared: WeakSet<object>;
   complete: boolean;
   lastNear: number;
 };
 
-type PredictionState = { frame: number; budget: number; predictions: Map<Light, Prediction> };
+type PredictionState = {
+  frame: number;
+  budget: number;
+  predictions: Map<Light, Prediction>;
+  /**
+   * Render pass ids dropped predictions gave back, for the next to reuse: Babylon numbers pass ids from one counter it
+   * never rewinds, and every submesh's draw wrapper list grows to the highest id it was prepared under.
+   */
+  free: number[];
+  /** Scenes whose disposal drops their predictions. */
+  watched: WeakSet<Scene>;
+};
 
 /** What one prediction prepares: its receivers, the maps they bind meanwhile, and the casters of a map that returns. */
 type Probe = {
@@ -66,7 +82,7 @@ const states = new WeakMap<AbstractEngine, PredictionState>();
 function stateFor(engine: AbstractEngine): PredictionState {
   let state = states.get(engine);
   if (!state) {
-    state = { frame: -1, budget: 0, predictions: new Map() };
+    state = { frame: -1, budget: 0, predictions: new Map(), free: [], watched: new WeakSet() };
     states.set(engine, state);
     const created = state;
     engine.onDisposeObservable.addOnce(() => created.predictions.clear());
@@ -78,15 +94,24 @@ function stateFor(engine: AbstractEngine): PredictionState {
   return state;
 }
 
-/** Releases a prediction's render passes: their draw wrappers go, and with them the references to its Effects. */
+/**
+ * Gives back a prediction's render passes: their draw wrappers go, and with them the references to its Effects, and
+ * the ids return to the pool.
+ */
 function drop(state: PredictionState, prediction: Prediction): void {
   state.predictions.delete(prediction.light);
   const engine = prediction.scene.getEngine();
   if (engine.isDisposed) return;
   const passes = [...prediction.passes.values()];
   prediction.passes.clear();
-  // Released after the frame: a pass id released mid-frame would take its draw wrappers from under a running pass.
-  engine.onEndFrameObservable.addOnce(() => { if (!engine.isDisposed) for (const pass of passes) engine.releaseRenderPassId(pass); });
+  // After the frame, when no pass draws: the wrappers and their Effect references go at once.
+  engine.onEndFrameObservable.addOnce(() => {
+    if (engine.isDisposed) return;
+    for (const scene of engine.scenes)
+      for (const mesh of scene.meshes)
+        for (const subMesh of mesh.subMeshes ?? []) for (const pass of passes) subMesh._removeDrawWrapper(pass, true, true);
+    state.free.push(...passes);
+  });
 }
 
 function contextOf(scene: Scene, controller: SceneShadowController | null): string {
@@ -123,6 +148,12 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   const shadows = controller?.nearShadowStarts(PREDICTION_MARGIN) ?? [];
   const near = new Set<Light>([...forward, ...shadows.map((start) => start.light)]);
   const context = contextOf(scene, controller);
+  if (!state.watched.has(scene)) {
+    state.watched.add(scene);
+    scene.onDisposeObservable.addOnce(() => {
+      for (const prediction of [...state.predictions.values()]) if (prediction.scene === scene) drop(state, prediction);
+    });
+  }
   for (const prediction of [...state.predictions.values()]) {
     if (prediction.scene !== scene) continue;
     if (prediction.light.isDisposed() || cameTrue(prediction, controller) || prediction.context !== context) {
@@ -143,7 +174,7 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
       if (oldest) drop(state, oldest);
     }
     prediction = { scene, light, admission: forward.includes(light) ? "forward" : "shadow", context, passes: new Map(),
-      complete: false, lastNear: now };
+      prepared: new WeakSet(), complete: false, lastNear: now };
     state.predictions.set(light, prediction);
   }
   const target = prediction;
@@ -205,11 +236,13 @@ function whatIfAdmitted(scene: Scene, light: Light, probe: (before: Map<object, 
   }
 }
 
-/** The prediction's render pass for `key`, created on first use. */
-function predictionPass(engine: AbstractEngine, prediction: Prediction, key: string, name: string): number {
+/** The prediction's render pass for `key`, taken on first use (from the pool, or a new id). */
+function predictionPass(engine: AbstractEngine, state: PredictionState, prediction: Prediction, key: string, name: string): number {
   let pass = prediction.passes.get(key);
   if (pass === undefined) {
-    pass = engine.createRenderPassId(`prediction ${name}`);
+    pass = state.free.pop();
+    if (pass === undefined) pass = engine.createRenderPassId(`prediction ${name}`);
+    else engine.getRenderPassNames()[pass] = `prediction ${name}`;
     prediction.passes.set(key, pass);
   }
   return pass;
@@ -262,9 +295,11 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
           if (!(defines instanceof MaterialDefines)) continue;
           for (const useInstances of [false, true]) {
             if (useInstances ? !instanced : !plain) continue;
-            const id = predictionPass(engine, prediction, `${pass.id}:${useInstances ? 1 : 0}`, engine.getRenderPassNames()[pass.id] ?? `${pass.id}`);
+            const id = predictionPass(engine, state, prediction, `${pass.id}:${useInstances ? 1 : 0}`, engine.getRenderPassNames()[pass.id] ?? `${pass.id}`);
             const wrapper = subMesh._getDrawWrapper(id, true)!;
-            if (!(wrapper.defines instanceof MaterialDefines)) wrapper.defines = copyDefines(defines);
+            if (prediction.prepared.has(wrapper)) continue;
+            prediction.prepared.add(wrapper);
+            wrapper.defines = copyDefines(defines);
             // As the admission marks receivers: their light defines, and only those, prepare again.
             wrapper.defines.markAsLightDirty();
             const ready = withShadowGenerators(pass.admittedMapsOnly ? objectMaps : plan.maps,
@@ -285,7 +320,10 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
         const transparent = material.needAlphaBlendingForMesh(subMesh.getRenderingMesh());
         for (const useInstances of [false, true]) {
           if (useInstances ? !instanced : !plain) continue;
-          const id = predictionPass(engine, prediction, `depth:${useInstances ? 1 : 0}`, "shadow depth");
+          const id = predictionPass(engine, state, prediction, `depth:${useInstances ? 1 : 0}`, "shadow depth");
+          const wrapper = subMesh._getDrawWrapper(id, true)!;
+          if (prediction.prepared.has(wrapper)) continue;
+          prediction.prepared.add(wrapper);
           if (!prepare(id, () => generator!.isReady(subMesh, useInstances, transparent))) return false;
         }
       }
