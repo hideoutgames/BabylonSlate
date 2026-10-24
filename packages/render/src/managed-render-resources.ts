@@ -5,9 +5,10 @@ export const MANAGED_RENDER_BYTE_LIMIT = 512 * 1024 ** 2;
 /**
  * `shadow` holds per-view shadow maps (a Full Quality capture's own sun maps);
  * a scene view's maps reserve through reserveManagedShadowBytes instead.
+ * `environment` holds filtered image-based lighting cubes.
  */
 export type ManagedRenderCategory =
-  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water" | "shadow";
+  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water" | "shadow" | "environment";
 export type ManagedRenderResource = {
   handle: object;
   bytes: number;
@@ -22,6 +23,7 @@ const categories: readonly ManagedRenderCategory[] = [
   "areaLight",
   "water",
   "shadow",
+  "environment",
 ];
 type ResourceEntry = {
   bytes: number;
@@ -80,6 +82,7 @@ export function managedRenderReservations(engine: AbstractEngine) {
     areaLight: 0,
     water: 0,
     shadow: 0,
+    environment: 0,
   };
   let sharedBytes = 0;
   for (const resource of value.resources.values()) {
