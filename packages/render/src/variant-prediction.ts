@@ -195,6 +195,18 @@ function cameTrue(prediction: Prediction, controller: SceneShadowController | nu
 }
 
 /**
+ * Drops every prediction of `scene` and disposes its prediction maps: a new world load (Play keeps one Scene across
+ * its loads) keeps nothing the previous level predicted.
+ */
+export function releaseLightPredictions(scene: Scene): void {
+  const state = states.get(scene.getEngine());
+  if (state) for (const prediction of [...state.predictions.values()]) if (prediction.scene === scene) drop(state, prediction);
+  const controller = findSceneShadowController(scene);
+  if (controller?.heldPredictionMaps.length)
+    withSceneSignalsHeld(scene, () => keepingWrapperMarks(scene, () => controller.releasePredictionMaps()));
+}
+
+/**
  * After a world view's drawn steady frame, outside its graph render (`passes`: the passes it prepares receivers in).
  * Compiles ahead, within the Engine frame's budget, the variants the nearest light about to be admitted (by the
  * Forward budget, or to a shadow map) would ask for, and drops predictions that came true or went stale. It never

@@ -71,11 +71,13 @@ import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-s
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
-import { findSceneShadowController } from "./shadow-controller";
+import { findSceneShadowController, PREDICTION_MAP_SIZE } from "./shadow-controller";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
-import { PREDICTIONS_MAX } from "./variant-prediction";
+import { PREDICTIONS_MAX, releaseLightPredictions } from "./variant-prediction";
+import { managedRenderReservations } from "./managed-render-resources";
+import { shadowBytesPerTexel } from "./shadow-admission";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -764,6 +766,37 @@ describe("compile holds after the first frame", () => {
       adoptedAtOnce: adoptedAfter === 0 }).toEqual({
       waiting: { lit: true, map: false, point: true }, predictionMaps: start === "borrowed" ? 0 : 1, attached: false,
       map: true, point: false, released: 0, compiled: 0, drawn: true, pipelines: 0, adoptedAtOnce: true,
+    });
+  });
+
+  it("a prediction map serves its kind's first starts, reserves its bytes, attaches to no light and goes with a load", async () => {
+    // Two point maps; two shadowed spots wait within the margin of the farther point's ranking distance. No spot map
+    // is admitted, so both are first starts of their kind, and one prediction map of that kind serves both.
+    predictAhead = true;
+    const world = playWorld("sync", [point(10, [0, 4, 0], { castShadows: true }), point(11, [3, 4, 4], { castShadows: true }),
+      spot(30, [0, 5, 40], { castShadows: true }), spot(31, [2, 5, 40], { castShadows: true })]);
+    updateSceneRenderingSettings(world.handle.scene,
+      { shadows: { ...sceneRenderingSettings(world.handle.scene).shadows, localLightMode: "manual", maxLocalLights: 2 } });
+    const controller = () => findSceneShadowController(world.handle.scene)!;
+    await settle(world);
+    const reserved = () => managedRenderReservations(world.engine).shadowBytes;
+    const before = reserved();
+    world.place(spot(30, [0, 5, 8], { castShadows: true }));
+    world.place(spot(31, [1, 5, 8.5], { castShadows: true }));
+    for (let index = 0; index < 16; index++) await world.frame();
+    const maps = controller().heldPredictionMaps;
+    const held = {
+      maps: maps.length,
+      bytes: reserved() - before,
+      attached: world.handle.scene.lights.some((light) => [...(light.getShadowGenerators()?.values() ?? [])]
+        .some((generator) => maps.includes(generator as ShadowGenerator))),
+      listed: maps.some((map) => world.handle.scene.textures.includes(map.getShadowMap()!)),
+      realMaps: world.handle.scene.lights.filter((light) => controller().generator(light)).length,
+    };
+    releaseLightPredictions(world.handle.scene);
+    expect({ held, afterLoad: { maps: controller().heldPredictionMaps.length, bytes: reserved() - before } }).toEqual({
+      held: { maps: 1, bytes: PREDICTION_MAP_SIZE ** 2 * shadowBytesPerTexel(world.engine), attached: false, listed: false, realMaps: 2 },
+      afterLoad: { maps: 0, bytes: 0 },
     });
   });
 

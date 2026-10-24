@@ -1382,7 +1382,9 @@ export class SceneShadowController {
         (cascaded ? 4 : passes) * entry.mapSize ** 2 * bytesPerTexel;
       if (!entry.standby) live.passes += passes;
     }
-    reserveSceneShadows(scene, live);
+    // With the prediction maps' bytes (they draw no pass a frame shows).
+    this.reserved = { ...live };
+    this.reservePredictionMaps();
     // The restored holders' residency runs from their own admission, not from a move back.
     if (restoring)
       for (const entry of this.entries.values()) {
