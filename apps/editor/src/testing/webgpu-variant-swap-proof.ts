@@ -38,7 +38,8 @@ import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-ill
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { existingShadowSamplerPlaceholders } from "../../../../packages/render/src/shadow-sampler-placeholders";
-import { pruneWebGpuCachesNow } from "../../../../packages/render/src/webgpu-cache-pruning";
+import { pruneWebGpuCachesNow, webGpuPipelinesOutside } from "../../../../packages/render/src/webgpu-cache-pruning";
+import { deferredPipelineCount } from "../../../../packages/render/src/webgpu-pipeline-deferral";
 import { PREDICTION_EXPIRY_MS } from "../../../../packages/render/src/variant-prediction";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
 
@@ -88,7 +89,10 @@ type PredictedAdmission = {
   pipelines: PipelineCounts;
   /** Render pipelines created while the light waited within reach, by the prediction's warm draws. */
   pipelinesAhead: number;
-  /** Pipelines Babylon's cache holds now beyond those it held before the approach. */
+  /**
+   * Pipelines Babylon's cache holds now beyond those it held before the approach; for a prediction left to expire, the
+   * pipelines it still holds for Effects released since (none should be left).
+   */
   pipelinesLeft: number;
   /** Steady frames after that change in which some floor still drew its previous variant. */
   lateFrames: number;
@@ -228,7 +232,10 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         const known = new Set(cache());
         counts.synchronous = counts.asynchronous = 0;
         spot.position.set(0, 3.2, shadows ? 6 : 1);
-        for (let index = 0; index < 12; index++) await frame();
+        // Long enough for the warm draws' asynchronous pipelines too (the software adapter can take longer than
+        // twelve frames), then two frames for warm draws to find them.
+        for (let index = 0; index < 300 && (index < 12 || deferredPipelineCount(engine) > 0); index++) await frame();
+        for (let index = 0; index < 2; index++) await frame();
         effectsAhead = compiledSince(known);
         pipelinesAhead = counts.synchronous + counts.asynchronous;
       }
@@ -240,7 +247,7 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         for (let index = 0; index < 4; index++) await frame();
         return {
           admitted: admitted(), effectsAhead, effectsAtAdmission: 0, pipelines: { ...counts }, pipelinesAhead,
-          pipelinesLeft: WebGPUCacheRenderPipelineTree.GetNodeCounts().pipelineCount - cachedPipelines,
+          pipelinesLeft: webGpuPipelinesOutside(new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).map((effect) => effect.uniqueId))),
           lateFrames: 0, held: 0, heldBecause: [], done: true,
         };
       }
