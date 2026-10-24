@@ -940,13 +940,13 @@ describe("compile holds after the first frame", () => {
     }, counts).toEqual({ atAdmission: 0, ahead: true, addedProbes: false });
   });
 
-  it("predictions settle with more lights near the Forward budget's cut-off than they hold", async () => {
+  it.each(["sync", "webgpu"] as const)("predictions settle with more lights near the Forward budget's cut-off than they hold: %s", async (model) => {
     // Thirteen points at nearly one distance from the camera: those past the budget all sit within the margin, more
     // than PREDICTIONS_MAX of them. With the camera still, prediction work ends after its first frames: no what-if
     // admission toggles a light and no prediction's draw wrappers are dropped.
     predictAhead = true;
     const lights = Array.from({ length: 13 }, (_, index) => point(100 + index, [Math.cos(index) * 6, 2.5 + (index % 3) * 0.1, Math.sin(index) * 6]));
-    const world = playWorld("sync", [...lights]);
+    const world = playWorld(model, [...lights]);
     await settle(world);
     const near = nearForwardAdmissions(world.handle.scene, 1.5).length;
     for (let index = 0; index < 20; index++) await world.frame();
@@ -967,12 +967,12 @@ describe("compile holds after the first frame", () => {
     expect({ moreThanHeld: near > PREDICTIONS_MAX, toggles, removals }).toEqual({ moreThanHeld: true, toggles: 0, removals: 0 });
   });
 
-  it("predictions settle while the fourth and fifth lights near the cut-off trade places every frame", async () => {
+  it.each(["sync", "webgpu"] as const)("predictions settle while the fourth and fifth lights near the cut-off trade places every frame: %s", async (model) => {
     // The thirteen-point ring: the fifth candidate moves 1% either side of the fourth's distance each frame, so the two
     // trade ranks. Neither prediction is dropped for the other while both stay near.
     predictAhead = true;
     const ring = (index: number): Vec3 => [Math.cos(index) * 6, 2.5 + (index % 3) * 0.1, Math.sin(index) * 6];
-    const world = playWorld("sync", Array.from({ length: 13 }, (_, index) => point(100 + index, ring(index))));
+    const world = playWorld(model, Array.from({ length: 13 }, (_, index) => point(100 + index, ring(index))));
     await settle(world);
     for (let index = 0; index < 20; index++) await world.frame();
     const near = nearForwardAdmissions(world.handle.scene, 1.5);
@@ -1023,16 +1023,17 @@ describe("compile holds after the first frame", () => {
     expect({ admitted: predicted.admitted, same: predicted.drawn === baseline.drawn }).toEqual({ admitted: true, same: true });
   });
 
-  it("predicted variants still adopt at most FIRST_DRAWS_PER_FRAME new variants per frame", async () => {
+  it.each(["sync", "webgpu"] as const)("predicted variants adopt within FIRST_DRAWS_PER_FRAME on WebGL2, and at once once warmed on WebGPU: %s", async (model) => {
     // Six barrels with Materials of their own: a spot the prediction compiled ahead for comes into the Forward budget,
-    // and each Material asks for its variant at once. The first draws still spread over frames (on iPad WebKit WebGL2
-    // a program's first draw is the stall), with nothing left to compile.
+    // and each Material asks for its variant at once. On WebGL2 the first draws still spread over frames (on iPad
+    // WebKit a program's first draw is the stall), with nothing left to compile. On WebGPU the budget spreads pipeline
+    // creation, and warm draws created the pipelines ahead, so all six adopt in the admission's frame.
     const guids = ["surface-a", "surface-b", "surface-c", "surface-d", "surface-e", "surface-f"];
     const barrels: Actor[] = guids.map((_, index) =>
       ({ slotId: 50 + index, guid: `barrel-${index}`, position: [-5 + index * 2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } }));
     const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
     predictAhead = true;
-    const world = playWorld("sync", [...points, spot(30, [0, 5, 40]), ...barrels], guids);
+    const world = playWorld(model, [...points, spot(30, [0, 5, 40]), ...barrels], guids);
     guids.forEach((guid, index) => world.handle.applyCommand({ type: "assignMaterial", slotId: 50 + index, materialAssetGuid: guid }));
     await settle(world);
     world.place(spot(30, [0, 5, 3]));
@@ -1050,8 +1051,9 @@ describe("compile holds after the first frame", () => {
       perFrame.push(next.filter((effect, at) => effect !== current[at]).length);
       current = next;
     }
-    expect({ compiled: realCompiles(world).length, most: Math.max(...perFrame), all: current.every((effect, at) => effect !== start[at]) },
-      JSON.stringify(perFrame)).toEqual({ compiled: 0, most: FIRST_DRAWS_PER_FRAME, all: true });
+    expect({ compiled: realCompiles(world).length, pipelines: world.driver.pipelines.size, most: Math.max(...perFrame),
+      all: current.every((effect, at) => effect !== start[at]) }, JSON.stringify(perFrame))
+      .toEqual({ compiled: 0, pipelines: 0, most: model === "sync" ? FIRST_DRAWS_PER_FRAME : barrels.length, all: true });
   });
 
   it.each(MODELS)("an area light's emission texture arrives: %s", async (model) => {
