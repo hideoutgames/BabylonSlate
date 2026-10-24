@@ -146,6 +146,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
+    if (message.text().startsWith("PROBE")) process.stdout.write(`${message.text()}\n`);
     if (
       isGpuFailure(message.type(), message.text())
     )

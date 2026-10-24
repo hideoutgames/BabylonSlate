@@ -21,7 +21,7 @@ import {
   type Effect,
   type Light,
   type Material,
-  type Mesh,
+  Mesh,
   type ShadowGenerator,
 } from "@babylonjs/core";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
@@ -36,6 +36,7 @@ import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { deferredPipelineCount } from "../../../../packages/render/src/webgpu-pipeline-deferral";
 
 /** Pipelines the device created while a step ran. */
 type PipelineCounts = { synchronous: number; asynchronous: number };
@@ -97,8 +98,9 @@ type PredictedAdmission = {
  */
 export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
   let variant = 0;
-  const run = async (admission: "forward" | "shadow", approach: boolean): Promise<PredictedAdmission> => {
+  const run = async (admission: "forward" | "shadow", approach: boolean, first = false, instancedReceiver = false, unculled = false): Promise<PredictedAdmission> => {
     const shadows = admission === "shadow";
+    const runStart = performance.now();
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
     const camera = new FreeCamera("camera", new Vector3(0, 4.5, -7.5), scene);
@@ -120,6 +122,9 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     pbr.enableSpecularAntiAliasing = (variant & 1) !== 0;
     pbr.forceNormalForward = (variant & 2) !== 0;
     pbr.useSpecularOverAlpha = (variant & 4) === 0;
+    pbr.useRadianceOverAlpha = (variant & 8) === 0;
+    pbr.backFaceCulling = !unculled;
+    pbr.twoSidedLighting = unculled;
     const floors = [pbr, pbr].map((material, index) => {
       const floor = MeshBuilder.CreateGround(`floor-${index}`, { width: 1.9, height: 6 }, scene);
       floor.position.x = -1 + index * 2;
@@ -131,9 +136,10 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       box.receiveShadows = true;
       return floor;
     });
+    if (instancedReceiver) (scene.getMeshByName("box-0") as Mesh).createInstance("box-0-instance").position.set(-1, 0.4, 1.4);
     const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), scene);
     authored(sun, [1, 0.95, 0.85], 0.4);
-    const near = shadows
+    const near = shadows && !first
       ? new SpotLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene)
       : new PointLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(-0.6, 1.6, -1.2), scene);
     authored(near, [0.3, 0.4, 1], 0.9, shadows);
@@ -150,9 +156,26 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       counts.synchronous++;
       return createRenderPipeline.call(this, descriptor);
     };
+    const asyncLog: string[] = [];
     device.createRenderPipelineAsync = function (descriptor) {
       counts.asynchronous++;
-      return createRenderPipelineAsync.call(this, descriptor);
+      const t0 = performance.now();
+      const label = `${(globalThis as unknown as { __probeMesh?: string }).__probeMesh}@${engine.getRenderPassNames()[engine.currentRenderPassId]}:vb${[...((descriptor as { vertex: { buffers?: Iterable<unknown> } }).vertex.buffers ?? [])].length}:f${engine.frameId}`;
+      const promise = createRenderPipelineAsync.call(this, descriptor);
+      promise.then(() => asyncLog.push(`${label} ok ${Math.round(performance.now() - t0)}ms`), (error: unknown) => asyncLog.push(`${label} fail ${String(error)}`));
+      return promise;
+    };
+    device.createRenderPipeline = function (descriptor) {
+      counts.synchronous++;
+      const t0 = performance.now();
+      const pipeline = createRenderPipeline.call(this, descriptor);
+      asyncLog.push(`SYNC ${(globalThis as unknown as { __probeMesh?: string }).__probeMesh}@${engine.getRenderPassNames()[engine.currentRenderPassId]}:vb${[...((descriptor as { vertex: { buffers?: Iterable<unknown> } }).vertex.buffers ?? [])].length}:f${engine.frameId} at ${Math.round(t0 - runStart)}ms took ${Math.round(performance.now() - t0)}ms`);
+      return pipeline;
+    };
+    const meshRender = Mesh.prototype.render;
+    Mesh.prototype.render = function (this: Mesh, ...args: Parameters<typeof meshRender>) {
+      (globalThis as unknown as { __probeMesh?: string }).__probeMesh = this.name;
+      return meshRender.apply(this, args);
     };
     // Effects compiled since `known` was taken (new Engine cache entries; a released map's entries leave meanwhile).
     const cache = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects);
@@ -180,8 +203,13 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     };
     try {
       await coordinator.prepare();
-      for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
+      let attempts = 0;
+      for (; attempts < 300; attempts++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
       for (let index = 0; index < 4; index++) await frame();
+      let settleFrames = 0;
+      for (; settleFrames < 900 && deferredPipelineCount(engine) > 0; settleFrames++) await frame();
+      for (let index = 0; index < 4; index++) await frame();
+      console.log(`PROBE-IH setup variant=${variant} attempts=${attempts} settleFrames=${settleFrames} pending=${deferredPipelineCount(engine)} at ${Math.round(performance.now() - runStart)}ms`);
       let effectsAhead = 0;
       if (approach) {
         // Within the prediction margin of the cut-off (the farther local light's ranking distance), still left out.
@@ -199,11 +227,17 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
       let lateFrames = 0;
       let held = 0;
       let done = false;
+      const changeAt = performance.now();
+      asyncLog.push(`CHANGE f${engine.frameId}`);
+      let heldMs = 0;
       for (let index = 0; index < 300 && !done; index++) {
-        if (!(await frame())) held++;
+        const t = performance.now();
+        if (!(await frame())) { held++; heldMs += performance.now() - t; }
         else if (drawn().some((effect, slot) => effect === before[slot])) lateFrames++;
         else done = true;
       }
+      console.log(`PROBE-IH ${admission} first=${first} instanced=${instancedReceiver} held=${held} heldMs=${Math.round(heldMs)} totalMs=${Math.round(performance.now() - changeAt)} late=${lateFrames} done=${done} sync=${counts.synchronous} async=${counts.asynchronous} reasons=${[...reasons].join("|")}`);
+      for (const line of asyncLog) console.log(`PROBE-IH   ${line}`);
       return {
         admitted: admitted(), effectsAhead, effectsAtAdmission: compiledSince(known), pipelines: { ...counts }, lateFrames, held,
         heldBecause: [...reasons], done,
@@ -211,10 +245,16 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     } finally {
       device.createRenderPipeline = createRenderPipeline;
       device.createRenderPipelineAsync = createRenderPipelineAsync;
+      Mesh.prototype.render = meshRender;
       coordinator.dispose();
       scene.dispose();
     }
   };
+  await run("shadow", false, true, true, true);
+  await run("shadow", false, true, false, true);
+  await run("shadow", false, true, true, false);
+  await run("shadow", false, false, true, true);
+  await run("shadow", false, true, true, true);
   return {
     forward: { approached: await run("forward", true), jumped: await run("forward", false) },
     shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
