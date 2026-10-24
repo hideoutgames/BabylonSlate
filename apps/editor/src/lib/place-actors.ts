@@ -41,6 +41,7 @@ export type PlaceActorKind =
   | { type: "render-target-capture" }
   | { type: "skybox" }
   | { type: "fog-volume" }
+  | { type: "mirror" }
   | { type: "reflection-probe" }
   | { type: "text3d" }
   | { type: "cable" }
@@ -97,6 +98,7 @@ const LIGHTS = ["point", "directional", "spot"] as const;
 
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   { id: "sprite", title: "Sprite", category: "Rendering", kind: { type: "sprite" } },
+  { id: "mirror", title: "Mirror", category: "Rendering", kind: { type: "mirror" } },
   { id: "cable", title: "Cable", category: "Environment", kind: { type: "cable" } },
   { id: "render-target-capture", title: "Render Target Capture", category: "Camera", kind: { type: "render-target-capture" } },
   ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
@@ -491,6 +493,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "fog-volume") {
     return resolveTypeVisual({ classId: "FogVolumeComponent", family: "class" });
   }
+  if (kind.type === "mirror") {
+    return resolveTypeVisual({ classId: "MirrorComponent", family: "class" });
+  }
   if (kind.type === "reflection-probe") {
     return resolveTypeVisual({ classId: "ReflectionProbeComponent", family: "class" });
   }
@@ -635,6 +640,16 @@ export function spawnPlacedActor(
         id: `${id}-fog`,
         classId: "FogVolumeComponent",
         properties: defaultPropertiesFor("FogVolumeComponent"),
+      }],
+    }));
+  }
+  if (kind.type === "mirror") {
+    return finish(createActor(id, "Mirror", {
+      transform,
+      components: [{
+        id: `${id}-mirror`,
+        classId: "MirrorComponent",
+        properties: defaultPropertiesFor("MirrorComponent"),
       }],
     }));
   }

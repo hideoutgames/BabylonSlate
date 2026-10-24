@@ -24,6 +24,7 @@ A component gives an actor one ability: drawing a mesh, simulating a body, casti
 | [Sprite](sprite.md) | Draws a 2D image from a Sprite asset. |
 | [Tilemap](tilemap.md) | Draws a grid of tiles from a Tilemap asset, with optional collision. |
 | [Render Target Capture](render-target-capture.md) | Renders the scene into a Render Target, for monitors, mirrors and minimaps. |
+| [Mirror](mirror.md) | A flat surface that shows the scene reflected from the current camera. |
 | [Light](light.md) | A point, spot or directional light. |
 | [Rectangular Area Light](area-rect-light.md) | A rectangular light for windows, screens and light panels. |
 | [Hemispheric Fill Light](hemispheric-fill-light.md) | Soft fill light with one colour from above and another from below. |

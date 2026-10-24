@@ -18,6 +18,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "LightComponent", placement: "world" },
   { classId: "AreaRectLightComponent", placement: "world" },
   { classId: "FogVolumeComponent", placement: "world" },
+  { classId: "MirrorComponent", placement: "world" },
   { classId: "ReflectionProbeComponent", placement: "world" },
   { classId: "OutlineComponent", placement: "world" },
   { classId: "DeformerComponent", placement: "world" },

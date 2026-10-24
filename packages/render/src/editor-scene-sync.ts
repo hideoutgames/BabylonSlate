@@ -1089,7 +1089,7 @@ export class EditorSceneSync {
     root: Mesh,
   ): void {
     for (const component of actor.components) {
-      if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
+      if (component.classId !== "MeshComponent" && component.classId !== "CableComponent" && component.classId !== "MirrorComponent") continue;
       if (meshKindOf(component) === "pivot") continue;
       if (authoredMaterialGuid(component.properties.materialGuid)) continue;
       const visual = visualForMeshComponent(root, actor.id, component.id);
@@ -1129,7 +1129,7 @@ export class EditorSceneSync {
         }
         continue;
       }
-      if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
+      if (component.classId !== "MeshComponent" && component.classId !== "CableComponent" && component.classId !== "MirrorComponent") continue;
       if (meshKindOf(component) === "pivot") continue;
       const visual = visualForMeshComponent(root, actor.id, component.id);
       if (!visual) continue;

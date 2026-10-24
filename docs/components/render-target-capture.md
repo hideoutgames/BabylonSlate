@@ -25,6 +25,7 @@ Select an actor, then choose **Add Component > Camera > Render Target Capture**.
 - World scenes only.
 - The capture looks along its actor's forward (+Z) axis. It never becomes the player's camera.
 - A Render Target Texture asset lets a Material show the captured image.
+- For a flat mirror that reflects from the player's own view, use a [Mirror](mirror.md) instead.
 - Capturing every frame draws the scene a second time each frame. For images that rarely change, turn it off and call [Capture Render Target](../scripting/class/capture-render-target.md).
 - Full Quality also draws its own sun shadow maps, water and screen effects for the capture and keeps its own GPU images: keep its Render Target at 512 × 512 or smaller. See [Render targets](../graphics/render-targets.md#quality) for what each quality draws.
 

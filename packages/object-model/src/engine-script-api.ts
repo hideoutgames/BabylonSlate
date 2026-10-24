@@ -685,6 +685,17 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "MirrorComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Width", typeId: "float", propertyKey: "width" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Resolution Scale", typeId: "float", propertyKey: "resolutionScale" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
+      { name: "Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+    ],
+  },
+  {
     classId: "ReflectionProbeComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
