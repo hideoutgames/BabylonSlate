@@ -72,13 +72,12 @@ function transform<T>(
       references.add(match.guid);
       if (!replace) return current;
       if (match.replacement) return byGuid ? match.replacement.guid : match.replacement.classId;
-      if (key === "parentClass") return "BObject";
+      if (key === "parentClass") return "Object";
       if (key === "classId" && owner) {
         if (Array.isArray(owner.components)) return "Actor";
         if (owner.properties && typeof owner.properties === "object") return "ActorComponent";
-        if (owner.kind === "actorRef") return "Actor";
         if (owner.kind === "componentRef") return "ActorComponent";
-        if (owner.kind === "classRef" || owner.kind === "objectRef") return "BObject";
+        if (owner.kind === "classRef" || owner.kind === "objectRef") return "Object";
       }
       return null;
     }

@@ -20,7 +20,6 @@ import {
   RESOLVING_WILDCARD,
   STRING,
   BOXED_WILDCARD,
-  actorRef,
   arrayOf,
   assetRef,
   classRef,
@@ -245,7 +244,7 @@ describe("validateGraphs", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
             pin("classId", "classId", "in", classRef("Actor")),
-            pin("out", "out", "out", actorRef("Actor")),
+            pin("out", "out", "out", objectRef("Actor")),
           ],
           properties: {},
         },
@@ -415,7 +414,7 @@ describe("validateGraphs", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
             pin("classId", "classId", "in", classRef("Actor")),
-            pin("out", "out", "out", actorRef("Actor")),
+            pin("out", "out", "out", objectRef("Actor")),
           ],
           properties: { "default:classId": "Pawn" },
         },
@@ -933,7 +932,7 @@ describe("validateGraphs", () => {
     const diags = validateGraphs([graph], {
       assetGuid: "a",
       classId: "Hero",
-      knownClassIds: new Set(["Hero", "Actor", "BObject"]),
+      knownClassIds: new Set(["Hero", "Actor", "Object"]),
       members: [
         {
           id: "var-1",
@@ -1261,7 +1260,7 @@ describe("validateGraphs", () => {
 
   it("errors when an interface implementation pin is a Map where the method takes an Array", () => {
     const signature = (container: "array" | "map") => [
-      { name: "targets", typeId: "actorRef", direction: "in" as const, container },
+      { name: "targets", typeId: "object", typeClassId: "Actor", direction: "in" as const, container },
     ];
     const diags = validateGraphs([createEmptyLogicGraph("g")], {
       assetGuid: "a",

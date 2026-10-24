@@ -408,10 +408,9 @@ function catalogPinDefault(
   return catalogPin?.defaultValue;
 }
 
-/** Object and Actor reference inputs are the only pins that read Self or act as a node's subject. */
+/** Object reference inputs are the only pins that read Self or act as a node's subject. */
 function isObjectReferenceInput(pin: GraphPin): boolean {
-  return pin.direction === "in" && pin.kind === "data" &&
-    (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
+  return pin.direction === "in" && pin.kind === "data" && pin.type.kind === "objectRef";
 }
 
 /**

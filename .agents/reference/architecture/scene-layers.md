@@ -35,7 +35,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 
 ## Object model and placement
 
-- `SceneLayer` extends `BObject`; `SceneLayerActor` extends `Actor`. Overlay actors live in the same `World`, tagged `sceneLayerId`, so graphs and Get All Actors see them. Change Scene must not destroy them.
+- `SceneLayer` extends `Object`; `SceneLayerActor` extends `Actor`. Overlay actors live in the same `World`, tagged `sceneLayerId`, so graphs and Get All Actors see them. Change Scene must not destroy them.
 - Instance actor guids are `<layer guid>:<authored id>` with references remapped ([object-model.md](object-model.md#guids-and-identity)); component ids stay authored. Repeated actor ids fail to load.
 - Every `2D*` component is overlay-only (`SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS`); world-only components (Landscape, Foliage, water, Skybox, cameras, lights, fog, streaming, Movement, buoyancy …) are stripped from layers and refused at runtime. `ENGINE_COMPONENT_DESCRIPTORS` decides placement for Add Component, Place Actors, serialization and instantiation.
 - Spawn Actor and world instantiation never create `SceneLayerActor`. World Place Actors uses `overlay: false` and never lists overlay stamps.

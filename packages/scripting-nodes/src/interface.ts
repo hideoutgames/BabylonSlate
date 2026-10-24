@@ -23,7 +23,7 @@ function signaturePins(properties: Record<string, unknown>) {
   const classId =
     typeof properties.classId === "string" && properties.classId.trim()
       ? properties.classId.trim()
-      : "BObject";
+      : "Object";
   const rows = memberPinRows(properties).filter(isCallInterfaceMethodPin);
   const execPins = rows.flatMap((row) => {
     if (row.typeId !== "exec") return [];

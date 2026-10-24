@@ -1,8 +1,8 @@
-import type { BObject } from "@haptic/object-model";
+import type { EngineObject } from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
-type DelayWaiter = { remaining: number; resolve: () => void; owner?: BObject | null };
+type DelayWaiter = { remaining: number; resolve: () => void; owner?: EngineObject | null };
 
 /** Script `Delay` timers, counted in simulation time while their owner may run. */
 export class LatentDelays implements RuntimeSubsystem {
@@ -12,7 +12,7 @@ export class LatentDelays implements RuntimeSubsystem {
 
   constructor(admission: Pick<OwnerAdmission, "canRunActions">) { this.admission = admission; }
 
-  add(seconds: unknown, resolve: () => void, owner?: BObject | null): void {
+  add(seconds: unknown, resolve: () => void, owner?: EngineObject | null): void {
     this.waiters.push({ remaining: Math.max(0, Number(seconds) || 0), resolve, owner });
   }
 

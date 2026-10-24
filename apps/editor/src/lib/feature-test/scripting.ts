@@ -48,7 +48,7 @@ import { FEATURE_TEST_TAGS } from "./settings";
 
 /**
  * Visual scripting and object model area: every scripting engine base class
- * (BObject, Actor, ActorComponent, Game Instance, both subsystems, Function
+ * (Object, Actor, ActorComponent, Game Instance, both subsystems, Function
  * Library, Editor Function Library, Debug Command, Editor Utility Object,
  * Scene Streaming Actor), Enum / Structure / Script Interface / Data
  * Definition / Data Tree / Save Game / Input assets, a Prefab and the
@@ -417,8 +417,8 @@ function delay(id: string, x: number, y: number, seconds: number): GraphNode {
   return gNode(id, "timers.delay", x, y, { "default:duration": seconds });
 }
 
-function cast(id: string, x: number, y: number, classId: string, resultKind: "actorRef" | "objectRef"): GraphNode {
-  return gNode(id, "casting.cast", x, y, { "default:class": classId, resultKind });
+function cast(id: string, x: number, y: number, classId: string): GraphNode {
+  return gNode(id, "casting.cast", x, y, { "default:class": classId });
 }
 
 /** Get Variable on another object (Target wired). */
@@ -621,9 +621,9 @@ async function saveScoreSubsystem(ctx: FeatureTestContext): Promise<void> {
   await saveClass(ctx, CLASS.scoreSubsystem, "GameSubsystem", graph);
 }
 
-/** BObject: a variable and a function; referenced as a Class variable by the Game Instance. */
+/** Object: a variable and a function; referenced as a Class variable by the Game Instance. */
 async function saveDataObject(ctx: FeatureTestContext): Promise<void> {
-  const note = varMember("ft-script-var-note", "Note", "string", "FeatureTest BObject");
+  const note = varMember("ft-script-var-note", "Note", "string", "FeatureTest Object");
   const describe = fnMember("ft-script-fn-describe-object", "DescribeObject", [
     { name: "Text", typeId: "string", direction: "out" },
   ]);
@@ -636,7 +636,7 @@ async function saveDataObject(ctx: FeatureTestContext): Promise<void> {
       }),
     },
   });
-  await saveClass(ctx, CLASS.dataObject, "BObject", graph);
+  await saveClass(ctx, CLASS.dataObject, "Object", graph);
 }
 
 /** Actor Component: Begin Play print and a per-tick counter on every Spinner. */
@@ -906,7 +906,7 @@ async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
       getVar("get-spawned", spawnedActors, 0, 160),
       gNode("next-spawned", "math.add_int", 220, 160, { "default:b": 1 }),
       setVar("set-spawned", spawnedActors, 440, 0),
-      cast("as-spawned", 680, 0, CLASS.spawned, "actorRef"),
+      cast("as-spawned", 680, 0, CLASS.spawned),
       gNode("spawned-branch", "flow.branch", 920, 0),
       gNode("spawned-name", "actor.getName", 920, 180),
       format("spawned-text", 1140, 180, "Spawned {name}"),
@@ -1010,7 +1010,7 @@ async function saveInterfaceProbe(
       gNode("describe-fast", "interface.call", 460, 0, describeCall(types.describable)),
       gNode("describe-base", "interface.call", 700, 0, describeCall(types.describable)),
       gNode("game-instance", "gameInstance.get", 700, 220),
-      cast("as-game-instance", 940, 0, CLASS.gameInstance, "objectRef"),
+      cast("as-game-instance", 940, 0, CLASS.gameInstance),
       getVarOn("get-booted", GI_BOOTED, CLASS.gameInstance, 1180, 220),
       gNode("assert-booted", "debug.assert", 1180, 0, { "default:message": "Game Instance did not run On Init before Begin Play" }),
       getVarOn("get-object-class", GI_OBJECT_CLASS, CLASS.gameInstance, 1180, 340),
@@ -1226,7 +1226,7 @@ async function saveStreamLoader(ctx: FeatureTestContext): Promise<PlacedClass> {
       gNode("begin", "flow.event.beginPlay", 0, 0),
       delay("settle", 220, 0, STREAM_DELAY_SECONDS),
       gNode("self", "actor.getSelf", 220, 180),
-      cast("as-streaming", 460, 0, "SceneStreamingActor", "actorRef"),
+      cast("as-streaming", 460, 0, "SceneStreamingActor"),
       gNode("load", "sceneStreaming.loadSceneAsync", 700, 0),
       gNode("scene-name", "sceneStreaming.getTargetSceneName", 700, 200),
       format("loading-text", 940, 200, "Streaming {scene}"),
@@ -1270,7 +1270,7 @@ async function saveStatsCommand(ctx: FeatureTestContext): Promise<void> {
       gWire("stats-text", "out", "report", "output"),
     ],
   });
-  await saveClass(ctx, CLASS.statsCommand, "BDebugCommand", graph);
+  await saveClass(ctx, CLASS.statsCommand, "DebugCommand", graph);
 }
 
 /** `ft_spawn [count]`: For Loop of Spawn Actor in a 10 × 10 grid, stacked in layers. */
@@ -1325,7 +1325,7 @@ async function saveSpawnCommand(ctx: FeatureTestContext): Promise<void> {
       gWire("done-text", "out", "report", "output"),
     ],
   });
-  await saveClass(ctx, CLASS.spawnCommand, "BDebugCommand", graph);
+  await saveClass(ctx, CLASS.spawnCommand, "DebugCommand", graph);
 }
 
 /** `ft_stream`: toggles the Stream Loader's room (Load / Unload Scene Async). */
@@ -1334,7 +1334,7 @@ async function saveStreamCommand(ctx: FeatureTestContext): Promise<void> {
     nodes: [
       commandRun("ft_stream", "Toggle the streamed FT_StreamedRoom"),
       gNode("find-loader", "actor.getOfClass", 0, 200, { "default:classId": CLASS.streamLoader }),
-      cast("as-streaming", 240, 0, "SceneStreamingActor", "actorRef"),
+      cast("as-streaming", 240, 0, "SceneStreamingActor"),
       gNode("found-branch", "flow.branch", 480, 0),
       gNode("is-loaded", "sceneStreaming.isSceneLoaded", 480, 200),
       gNode("loaded-branch", "flow.branch", 720, 0),
@@ -1361,7 +1361,7 @@ async function saveStreamCommand(ctx: FeatureTestContext): Promise<void> {
       gExec("load", "report-load"),
     ],
   });
-  await saveClass(ctx, CLASS.streamCommand, "BDebugCommand", graph);
+  await saveClass(ctx, CLASS.streamCommand, "DebugCommand", graph);
 }
 
 /** Editor Function Library (authored only) and the registered Editor Utility Object. */

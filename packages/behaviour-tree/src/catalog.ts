@@ -159,7 +159,7 @@ export function propertyFieldsForClassId(
     case "bt.task.moveToBlackboardKey":
       return [
         field("key", "Blackboard Key", "blackboardKey", "key", {
-          blackboardKeyKinds: ["vec2", "vec3", "objectRef", "actorRef"],
+          blackboardKeyKinds: ["vec2", "vec3", "objectRef"],
         }),
         field("acceptRadius", "Accept Radius", "number", "acceptRadius", { min: 0 }),
       ];

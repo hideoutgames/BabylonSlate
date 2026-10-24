@@ -31,7 +31,7 @@ describe("Tween compilation", () => {
   it("captures the referenced object once, passes defaults and waits before Completed", async () => {
     const registry = createDefaultNodeRegistry();
     registry.register({ id: "test.target", title: "Target", category: "test", pure: true,
-      pins: () => [pin("out", "Out", "out", objectRef("BObject"))],
+      pins: () => [pin("out", "Out", "out", objectRef("Object"))],
       codegen: () => ({ out: "ctx.nextTarget()" }) });
     const graph = floatGraph(registry, { implicitSelf: false });
     graph.nodes.push(node(registry, "owner", "test.target"));

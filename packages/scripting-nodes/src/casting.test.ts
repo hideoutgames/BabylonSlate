@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
-  actorRef,
   BOOL,
   classRef,
   COLOR,
@@ -65,12 +64,12 @@ describe("casting nodes", () => {
         expect.objectContaining({
           id: "object",
           direction: "in",
-          type: objectRef("BObject"),
+          type: objectRef("Object"),
         }),
         expect.objectContaining({
           id: "class",
           direction: "in",
-          type: classRef("BObject"),
+          type: classRef("Object"),
         }),
         expect.objectContaining({
           id: "success",
@@ -80,33 +79,19 @@ describe("casting nodes", () => {
         expect.objectContaining({
           id: "result",
           direction: "out",
-          type: objectRef("BObject"),
+          type: objectRef("Object"),
         }),
       ]),
     );
     expect(def?.pure).not.toBe(true);
   });
 
-  it("types Result as an actor ref when the default class is Actor", () => {
+  it("types Result as an object reference to the default class", () => {
     const def = castingNodes.find((entry) => entry.id === "casting.cast")!;
-    const pins = def.pins({
-      "default:class": "Actor",
-      resultKind: "actorRef",
-    });
-    expect(pins.find((pin) => pin.id === "result")?.type).toEqual(
-      actorRef("Actor"),
-    );
-  });
-
-  it("types Result as an object ref for non-Actor classes", () => {
-    const def = castingNodes.find((entry) => entry.id === "casting.cast")!;
-    const pins = def.pins({
-      "default:class": "GameInstance",
-      resultKind: "objectRef",
-    });
-    expect(pins.find((pin) => pin.id === "result")?.type).toEqual(
-      objectRef("GameInstance"),
-    );
+    for (const classId of ["Actor", "GameInstance"]) {
+      const pins = def.pins({ "default:class": classId });
+      expect(pins.find((pin) => pin.id === "result")?.type).toEqual(objectRef(classId));
+    }
   });
 
   it("compiles Cast through ctx.isA, reads Object once, and returns the instance or null", () => {
@@ -294,11 +279,10 @@ describe("wildcard conversions", () => {
     ).toMatchObject({ success: true, value: 3, typeOf: "float" });
     const hero = { classId: "Hero" };
     expect(
-      convert(blackboard(), wildcardConverterNodeId(actorRef("Actor")), {
+      convert(blackboard(), wildcardConverterNodeId(objectRef("Object")), {
         blackboard: { slot: hero },
-        actorClassIds: ["Hero"],
       }),
-    ).toMatchObject({ success: true, value: hero, typeOf: "actorRef:Hero" });
+    ).toMatchObject({ success: true, value: hero, typeOf: "objectRef:Hero" });
   });
 
   it("converts an untyped { x, y, z, w } value to Quat and Color, but not a boxed Vec4", () => {

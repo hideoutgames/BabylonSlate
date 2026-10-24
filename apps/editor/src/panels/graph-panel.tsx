@@ -134,7 +134,7 @@ export function GraphPanel(
   }, [assetRegistry, registryEpoch, doc?.ref.path]);
   const parentClass =
     indexed?.header.parentClass ??
-    (doc?.ref.kind === "anim-graph" ? "BObject" : null);
+    (doc?.ref.kind === "anim-graph" ? "Object" : null);
   const {
     parentOf,
     otherClassGraphs,

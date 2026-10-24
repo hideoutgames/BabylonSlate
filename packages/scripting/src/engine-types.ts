@@ -167,7 +167,7 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Hit", typeId: "bool" },
       { name: "Location", typeId: "vec3" },
       { name: "Normal", typeId: "vec3" },
-      { name: "Actor", typeId: "actor" },
+      { name: "Actor", typeId: "object", typeClassId: "Actor" },
       { name: "Distance", typeId: "float" },
     ],
   },

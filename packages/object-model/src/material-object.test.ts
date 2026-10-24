@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent, BObject, Scene, SceneLayer, getPostProcessMaterialObject } from "./objects";
+import { Actor, ActorComponent, EngineObject, Scene, SceneLayer, getPostProcessMaterialObject } from "./objects";
 import { ClassRegistry } from "./class-registry";
 import { engineScriptApiFor } from "./engine-script-api";
 
@@ -50,7 +50,7 @@ describe.each(["MeshComponent", "DynamicRuntimeMeshComponent"])("%s Material Obj
       typeId: "asset",
       typeClassId: "Material",
     });
-    expect(new ClassRegistry().isA("MaterialObject", "BObject")).toBe(true);
+    expect(new ClassRegistry().isA("MaterialObject", "Object")).toBe(true);
   });
 
   it("keeps the same reference until reassignment and cannot be overwritten", () => {
@@ -60,7 +60,7 @@ describe.each(["MeshComponent", "DynamicRuntimeMeshComponent"])("%s Material Obj
     expect(mesh.getVariable("materialObject")).toBeNull();
     mesh.setVariable("materialGuid", "mat-a");
     const first = mesh.getVariable("materialObject");
-    expect(first).toBeInstanceOf(BObject);
+    expect(first).toBeInstanceOf(EngineObject);
     expect(first).toMatchObject({
       classId: "MaterialObject",
       materialAssetGuid: "mat-a",

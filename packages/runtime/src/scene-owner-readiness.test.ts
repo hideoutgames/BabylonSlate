@@ -3,7 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshCom
 import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
-import { BObject, dispatchInterface } from "@haptic/object-model";
+import { EngineObject, dispatchInterface } from "@haptic/object-model";
 
 function script(classId: string, parentClassId: string): CompiledScript {
   return { assetGuid: `${classId}-script`, classId, parentClassId, anchors: [],
@@ -170,7 +170,7 @@ describe("scene owner readiness", () => {
       cooperativeSceneLoading: true, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([callable("WorldActor", "Actor"), callable("LayerActor", "SceneLayerActor"),
-        callable("OwnedComponent", "ActorComponent"), callable("Utility", "BObject"), giScript]);
+        callable("OwnedComponent", "ActorComponent"), callable("Utility", "Object"), giScript]);
       runtime.beginPlayLoading();
       await runtime.realizePlayWorld();
       const world = runtime.getWorld();
@@ -188,7 +188,7 @@ describe("scene owner readiness", () => {
       const gi = world.gameInstance!;
       gi.setVariable("targets", [actor, logic, ownedActor, globalActor]);
       gi.setVariable("text", text);
-      gi.setVariable("generic", new BObject({ classId: "Utility" }));
+      gi.setVariable("generic", new EngineObject({ classId: "Utility" }));
       runtime.tick();
       const unavailable = { iface: { value: -1, available: false }, fn: {} };
       const available = { iface: { value: 7, available: false }, fn: { value: 7 } };

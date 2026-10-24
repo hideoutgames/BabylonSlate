@@ -209,7 +209,9 @@ describe("pinTypeDisplayName", () => {
     expect(
       pinTypeDisplayName({ kind: "map", key: { kind: "string" }, value: { kind: "float" } }),
     ).toBe("String to Float Map");
-    expect(pinTypeDisplayName({ kind: "actorRef", classId: "" })).toBe("Actor");
+    expect(pinTypeDisplayName({ kind: "objectRef", classId: "" })).toBe("Object");
+    expect(pinTypeDisplayName({ kind: "objectRef", classId: "Door" })).toBe("Door");
+    expect(pinTypeDisplayName({ kind: "classRef", classId: "Door" })).toBe("Class (Door)");
     expect(pinTypeDisplayName({ kind: "assetRef", assetType: "Texture" })).toBe("Texture");
     expect(pinTypeDisplayName({ kind: "structRef", guid: "engine:TagContainer" })).toBe("TagContainer");
     expect(pinTypeDisplayName({ kind: "boxedWildcard" })).toBe("Wildcard");
@@ -828,10 +830,10 @@ describe("filterPaletteForPin", () => {
     const hierarchy = {
       isSubclassOf(child: string, parent: string) {
         if (child === parent) return true;
-        if (child === "Hero" && (parent === "Actor" || parent === "BObject")) {
+        if (child === "Hero" && (parent === "Actor" || parent === "Object")) {
           return true;
         }
-        if (child === "Actor" && parent === "BObject") return true;
+        if (child === "Actor" && parent === "Object") return true;
         return false;
       },
     };
@@ -865,7 +867,7 @@ describe("filterPaletteForPin", () => {
       name: "Object",
       kind: "data",
       direction: "in",
-      type: { kind: "objectRef", classId: "BObject" },
+      type: { kind: "objectRef", classId: "Object" },
     };
     const asHero: SerializedPin = {
       id: "as",

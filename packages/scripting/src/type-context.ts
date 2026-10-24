@@ -56,22 +56,6 @@ export type ParentFunctionSignature = {
   }>;
 };
 
-/** True when a class should use actorRef rather than objectRef. */
-export function isActorClassId(
-  classId: string,
-  hierarchy?: ClassHierarchy,
-): boolean {
-  if (classId === "Actor") return true;
-  return hierarchy?.isSubclassOf(classId, "Actor") ?? false;
-}
-
-export function resultKindForClassId(
-  classId: string,
-  hierarchy?: ClassHierarchy,
-): "actorRef" | "objectRef" {
-  return isActorClassId(classId, hierarchy) ? "actorRef" : "objectRef";
-}
-
 export type TypeContext = {
   assetGuid: string;
   hierarchy?: ClassHierarchy;

@@ -1,5 +1,5 @@
 import { formatValue, serializeTransform } from "@haptic/core";
-import { BObject } from "./objects";
+import { EngineObject } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
 
@@ -69,16 +69,16 @@ function classVariableTypes(
   return Object.keys(types).length > 0 ? types : undefined;
 }
 
-/** JSON-safe inspect values: primitives stay; BObject → guid/classId; cycles stringify. */
+/** JSON-safe inspect values: primitives stay; Object → guid/classId; cycles stringify. */
 export function sanitizeInspectValue(value: unknown): unknown {
   if (value === undefined) return null;
-  if (value instanceof BObject) {
+  if (value instanceof EngineObject) {
     return { guid: value.guid, classId: value.classId };
   }
   try {
     return JSON.parse(
       JSON.stringify(value, (_key, current) => {
-        if (current instanceof BObject) {
+        if (current instanceof EngineObject) {
           return { guid: current.guid, classId: current.classId };
         }
         if (
@@ -171,7 +171,7 @@ function firstSpawnedCycleMember(
 }
 
 function rootObjectNode(
-  object: BObject,
+  object: EngineObject,
   kind: "gameInstance" | "subsystem",
   world: World,
 ): DebugInspectNode {

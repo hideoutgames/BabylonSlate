@@ -7,7 +7,7 @@ export type ClearDeletedAssetRefsResult<T> = {
 };
 
 /** Engine default when a Class's parent asset is deleted. */
-export const DELETED_CLASS_PARENT_FALLBACK = "BObject";
+export const DELETED_CLASS_PARENT_FALLBACK = "Object";
 
 function isDeletedAssetRef(
   value: string,

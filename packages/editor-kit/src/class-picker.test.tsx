@@ -54,7 +54,7 @@ describe("ClassPicker", () => {
             id: "Weather",
             name: "Weather",
             group: "Project",
-            ancestry: ["Weather", "SceneSubsystem", "Subsystem", "BObject"],
+            ancestry: ["Weather", "SceneSubsystem", "Subsystem", "Object"],
           },
           { id: "Loose", name: "Loose", group: "Project" },
           { id: "GameSubsystem", name: "GameSubsystem", group: "Engine" },

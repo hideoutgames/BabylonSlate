@@ -1,4 +1,4 @@
-import type { BObject } from "@haptic/object-model";
+import type { EngineObject } from "@haptic/object-model";
 import type { LatentDelays } from "./latent-delays";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenRuntime } from "./tween-runtime";
@@ -8,7 +8,7 @@ interface TimingHostDeps {
   delays: Pick<LatentDelays, "add">;
   stopped(): boolean;
   /** Pending while a session boundary holds the owner's continuation. */
-  continueSimulation(owner: BObject | null): Promise<void> | undefined;
+  continueSimulation(owner: EngineObject | null): Promise<void> | undefined;
 }
 
 /** Script latent timing: tweens and Delay. Both resume through the session boundary. */

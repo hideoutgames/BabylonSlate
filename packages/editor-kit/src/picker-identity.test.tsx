@@ -22,10 +22,10 @@ describe("classRowIdentity", () => {
       displayType: "Class",
       visual: { classId: "Hero", family: "class" },
     });
-    expect(classRowIdentity(undefined, "BObject")).toEqual({
-      displayLabel: "BObject",
+    expect(classRowIdentity(undefined, "Object")).toEqual({
+      displayLabel: "Object",
       displayType: "Class",
-      visual: { classId: "BObject", family: "class" },
+      visual: { classId: "Object", family: "class" },
     });
     expect(classRowIdentity(undefined)).toEqual({});
   });

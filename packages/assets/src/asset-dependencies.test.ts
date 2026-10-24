@@ -319,7 +319,7 @@ describe("typed asset dependencies", () => {
       nodes: [{ id: "run", type: "flow.event.commandRun", data: {
         commandName: "heal", description: "Restore health", parameters: [{ name: "amount", type: "int" }],
       } }], edges: [],
-    } }, { parentClass: "BDebugCommand" });
+    } }, { parentClass: "DebugCommand" });
     const header = readHassetHeader(command);
     expect(header.consoleCommand).toEqual({ name: "heal", description: "Restore health", category: "game", parameters: [{ name: "amount", type: "int" }] });
     const scene = collectAssetDependencyMetadata("Scene", { actors: [{ classId: "CustomActor", components: [] }] });

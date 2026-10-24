@@ -1,6 +1,6 @@
 import { normalizeScene } from "@haptic/core";
 import type { MaterialParameterValue, SceneSettings, SerializedActor, SerializedComponent, SerializedScene, SerializedTransform, Transform } from "@haptic/core";
-import { Actor, ActorComponent, BObject, engineScriptApiFor, sceneActorProvenance, sceneComponentProvenance, type VariableDef, type World } from "@haptic/object-model";
+import { Actor, ActorComponent, EngineObject, engineScriptApiFor, sceneActorProvenance, sceneComponentProvenance, type VariableDef, type World } from "@haptic/object-model";
 import { defaultComponentAuthoringProperties } from "./component-authoring";
 
 export interface SimulationCaptureIdentity {
@@ -101,7 +101,7 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
     const instance = input.independentInstances?.[0];
     if (instance) fail("ownership", instance.id, `Keep cannot retain an independent ${instance.kind === "layer" ? "SceneLayer" : "streamed Scene"} instance.`);
     const budget = new Budget(input.maxBytes ?? 16 * 1024 * 1024, input.maxNodes ?? 250_000);
-    const references = new Map<BObject, Reference>();
+    const references = new Map<EngineObject, Reference>();
     const live: Actor[] = [];
     const byGuid = new Map<string, Actor>();
     const beforeById = new Map<string, SerializedActor>();
@@ -159,7 +159,7 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         budget.add(stringBytes(reference.actorId) + (reference.componentId ? stringBytes(reference.componentId) : 0) + 64, path);
         return { $sceneValue: "reference", ...reference };
       }
-      if (value instanceof BObject || typeof value !== "object") fail("resource", path, "The value has no editable scene representation.");
+      if (value instanceof EngineObject || typeof value !== "object") fail("resource", path, "The value has no editable scene representation.");
       if (ancestors.has(value)) fail("value", path, "Cyclic authorable data cannot be retained.");
       ancestors.add(value);
       try {
@@ -241,13 +241,13 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         if (["string", "class", "asset"].includes(field.type) && typeof value !== "string") fail("value", path, "A reflected identity or text variable has an invalid value.");
         if (field.type === "asset" && typeof value === "string" && value && !input.assetExists(value)) fail("resource", path, `Asset ${value} is not available to the authored scene.`);
         if (field.type === "class" && typeof value === "string" && value && !input.world.classRegistry.has(value)) fail("resource", path, `Class ${value} has no authored schema.`);
-        if (field.type === "object" && field.typeClassId && value instanceof BObject && !input.world.classRegistry.isA(value.classId, field.typeClassId)) fail("reference", path, "The object reference has the wrong Class.");
+        if (field.type === "object" && field.typeClassId && value instanceof EngineObject && !input.world.classRegistry.isA(value.classId, field.typeClassId)) fail("reference", path, "The object reference has the wrong Class.");
         if (field.type === "object" && !(value instanceof Actor) && !(value instanceof ActorComponent)) fail("resource", path, "Only scene Actor and Component object references can be retained.");
       }
       return encode(value, path);
     };
 
-    const fieldsFor = (object: BObject, base: Record<string, unknown>): Map<string, Field> => {
+    const fieldsFor = (object: EngineObject, base: Record<string, unknown>): Map<string, Field> => {
       const fields = new Map<string, Field>(Object.keys(base).map((name) => [name, { type: "data", defaultValue: base[name] }]));
       for (const classId of [...input.world.classRegistry.ancestry(object.classId)].reverse()) {
         for (const variable of engineScriptApiFor(classId)?.variables ?? []) {
@@ -268,11 +268,11 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         if (!entry || typeof entry !== "object" || Object.hasOwn(entry, "$sceneValue")) return entry;
         if (Array.isArray(entry)) return entry.map((item, index) => remap(item, `${path}[${index}]`));
         const row = entry as Record<string, unknown>;
-        const typedReference = typeof row.classId === "string" || row.kind === "actorRef" || row.kind === "objectRef";
+        const typedReference = typeof row.classId === "string" || row.kind === "objectRef";
         return Object.fromEntries(Object.entries(row).map(([key, item]) => {
           const typedId = typedReference && (key === "guid" || key === "id");
           const componentId = /Component(?:Id|Guid)$/.test(key) || key === "componentId" || key === "componentGuid"
-            || (typedId && row.kind !== "actorRef" && typeof row.classId === "string" && row.classId.endsWith("Component"));
+            || (typedId && typeof row.classId === "string" && row.classId.endsWith("Component"));
           const actorId = /Actor(?:Id|Guid)$/.test(key) || key === "actorId" || key === "actorGuid" || typedId;
           if ((componentId || actorId) && typeof item === "string" && item) {
             const mapped = componentId ? componentIds.get(item) : actorIds.get(item);
@@ -288,7 +288,7 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
       };
       return remap(value, actor.guid) as Record<string, unknown>;
     };
-    const properties = (object: BObject, base: Record<string, unknown>, defaults: Record<string, unknown>, path: string): Record<string, unknown> => {
+    const properties = (object: EngineObject, base: Record<string, unknown>, defaults: Record<string, unknown>, path: string): Record<string, unknown> => {
       const result: Record<string, unknown> = {};
       const fields = fieldsFor(object, { ...defaults, ...base });
       const inheritedDefaults = new Set(input.world.classRegistry.inheritedVariables(object.classId).map(variable => variable.name));

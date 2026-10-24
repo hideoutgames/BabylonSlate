@@ -1,7 +1,7 @@
 import { BT_DEBUG_GRAPH_ID, type CommandMessage, type DebugBehaviourTree } from "@haptic/bridge";
 import { eulerDegreesToQuaternion } from "@haptic/core";
 import type { TraceBtState } from "@haptic/debugger";
-import type { Actor, ActorComponent, BObject, World } from "@haptic/object-model";
+import type { Actor, ActorComponent, EngineObject, World } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
@@ -684,7 +684,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
    * blank until the next change; what was published for an earlier follow is forgotten, so a new
    * one is sent fresh state.
    */
-  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
+  setDebugTrace(object: EngineObject | null, sink: ScriptDebugTrace | null): void {
     const component = object?.classId === "BehaviourTreeComponent" ? object as ActorComponent : null;
     this.debugComponent = sink ? component : null;
     this.debugSink = this.debugComponent ? sink : null;

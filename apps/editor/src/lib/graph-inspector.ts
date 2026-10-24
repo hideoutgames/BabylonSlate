@@ -520,7 +520,6 @@ export function variableDefaultPropertyRows(
   if (options?.container === "array" || options?.container === "map") return [];
   if (
     typeId === "object" ||
-    typeId === "actor" ||
     typeId === "wildcard" ||
     (typeId === "class" && !options?.onPickClass)
   ) {

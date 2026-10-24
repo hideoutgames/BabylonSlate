@@ -35,7 +35,6 @@ export type PinDefaultPreview =
         | "classRef"
         | "assetRef"
         | "objectRef"
-        | "actorRef"
         | "structRef";
       text: string;
       /**
@@ -139,8 +138,7 @@ function pinConstraintPreview(
 ): PinDefaultPreview | null {
   const type = pin.type;
   switch (type.kind) {
-    case "objectRef":
-    case "actorRef": {
+    case "objectRef": {
       const classId =
         typeof type.classId === "string" ? type.classId.trim() : "";
       return { kind: type.kind, text: classId, placeholder: true };

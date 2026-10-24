@@ -87,7 +87,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             id: "var-actor",
             kind: "variable",
             name: "Pawn",
-            typeId: "actor",
+            typeId: "object",
             typeClassId: "Actor",
           },
           {

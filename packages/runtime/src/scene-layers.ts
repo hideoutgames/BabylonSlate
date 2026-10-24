@@ -1,6 +1,6 @@
 import type { CommandMessage } from "@haptic/bridge";
 import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, updateSceneLayerCamera, type SceneLayerCamera, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
-import { hydrateScenePropertyReferences, type Actor, type BObject, type SceneLayer, type World } from "@haptic/object-model";
+import { hydrateScenePropertyReferences, type Actor, type EngineObject, type SceneLayer, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
 import { callerSceneLayerId } from "./runtime-host-physics";
@@ -55,7 +55,7 @@ interface SceneLayersHost {
   /** Script-created layers prepare their asset on demand first. */
   demandAssets(): boolean;
   assetPreloads(): Pick<RuntimeAssetPreloads, "acquire" | "transferOwner" | "release" | "releaseOwner">;
-  continueSimulation(owner: BObject | null): Promise<void> | undefined;
+  continueSimulation(owner: EngineObject | null): Promise<void> | undefined;
   /** A layer instance with Enable Physics gets its own physics world with its gravity. */
   addLayerPhysics(
     layerGuid: string,
@@ -153,7 +153,7 @@ export class SceneLayers implements RuntimeSubsystem {
     }
   }
 
-  async createAsync(assetGuid: string, zOrder: number, owner: BObject | null): Promise<SceneLayer | null> {
+  async createAsync(assetGuid: string, zOrder: number, owner: EngineObject | null): Promise<SceneLayer | null> {
     if (this.host.stopped() || owner?.destroyed) throw sceneRealizationCancelled();
     const preloads = this.host.assetPreloads();
     const preload = this.host.demandAssets()
@@ -354,7 +354,7 @@ export class SceneLayers implements RuntimeSubsystem {
   }
 
   /** The live layer instance whose actor (or actor's component) this is; null for world actors. */
-  owning(object: BObject | null | undefined): SceneLayer | null {
+  owning(object: EngineObject | null | undefined): SceneLayer | null {
     const layerGuid = callerSceneLayerId(object);
     return layerGuid ? this.host.world().findSceneLayer(layerGuid) ?? null : null;
   }

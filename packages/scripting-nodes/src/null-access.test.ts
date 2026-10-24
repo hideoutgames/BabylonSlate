@@ -219,7 +219,7 @@ describe("inputs where null is a legitimate value", () => {
   it("Set Variable stores an empty value without an error", () => {
     const { logged, calls } = runGraph(
       [node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "set", "variables.set", { variableName: "Rival", typeId: "actor", classId: "Hero", implicitSelf: true })],
+        node(registry, "set", "variables.set", { variableName: "Rival", typeId: "object", classId: "Hero", implicitSelf: true })],
       [edge("begin", "execOut", "set", "execIn")],
     );
     expect(calls).toEqual([["setVariable", "Rival", null]]);

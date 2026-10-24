@@ -59,11 +59,11 @@ describe("DebugInspectDialog", () => {
     const live: DebugInspectSnapshot = {
       tickIndex: 4,
       nodes: [
-        { ...snapshot.nodes[0]!, classId: "MyGame", ancestry: ["MyGame", "GameInstance", "BObject"] },
-        { ...snapshot.nodes[1]!, classId: "Hero", ancestry: ["Hero", "Actor", "BObject"] },
+        { ...snapshot.nodes[0]!, classId: "MyGame", ancestry: ["MyGame", "GameInstance", "Object"] },
+        { ...snapshot.nodes[1]!, classId: "Hero", ancestry: ["Hero", "Actor", "Object"] },
         {
           id: "health", kind: "component", label: "RegenHealth", classId: "RegenHealth",
-          ancestry: ["RegenHealth", "Health", "ActorComponent", "BObject"], parentId: "hero", variables: {},
+          ancestry: ["RegenHealth", "Health", "ActorComponent", "Object"], parentId: "hero", variables: {},
         },
       ],
     };

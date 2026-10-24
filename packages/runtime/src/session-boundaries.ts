@@ -4,7 +4,7 @@ import {
   Actor,
   attachSerializedComponents,
   createActorFromSerialized,
-  type BObject,
+  type EngineObject,
   type SceneActorHooks,
   type World,
 } from "@haptic/object-model";
@@ -180,7 +180,7 @@ export class SessionBoundaries {
       resetState: () => state.reset(),
       onGameLoaded: (info) => {
         this.pendingGameLoaded = () => {
-          const owners: Array<BObject | null> = [world.gameInstance, world.currentScene,
+          const owners: Array<EngineObject | null> = [world.gameInstance, world.currentScene,
             ...world.getGameSubsystems(), ...world.getSceneSubsystems(),
             ...world.getActors().flatMap((actor) => [actor, ...actor.components])];
           for (const owner of owners) {
@@ -195,7 +195,7 @@ export class SessionBoundaries {
     return service;
   }
 
-  registerSaveActor(actor: BObject, persistentId?: string): void {
+  registerSaveActor(actor: EngineObject, persistentId?: string): void {
     if (!this.saveGameWorld) throw new SaveGameError("unavailable", "Select a default Save Game definition in Project Settings.");
     if (!(actor instanceof Actor) || actor.world !== this.host.world() || actor.destroyed) {
       throw new SaveGameError("invalid", "Register a live actor from this game session.");

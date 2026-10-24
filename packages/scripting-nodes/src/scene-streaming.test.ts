@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  actorRef,
+  objectRef,
   compileGraph,
   EXEC,
   pin,
@@ -24,7 +24,7 @@ function graphFor(method: string, result?: PinType) {
   const registry = createDefaultNodeRegistry();
   registry.register({
     id: "test.target", title: "Target", category: "test", pure: true,
-    pins: () => [pin("out", "Out", "out", actorRef("SceneStreamingActor"))],
+    pins: () => [pin("out", "Out", "out", objectRef("SceneStreamingActor"))],
     codegen: () => ({ out: "ctx.target" }),
   });
   registry.register({
@@ -101,11 +101,11 @@ describe("Scene Streaming Actor nodes", () => {
       expect.objectContaining({ code: "pin.missing_input", severity: "error", nodeId: "stream", pinId: "target" }),
     ]));
     graph.edges.push(edge("target", "out", "stream", "target"));
-    graph.nodes.find((entry) => entry.id === "target")!.pins[0]!.type = actorRef("Actor");
+    graph.nodes.find((entry) => entry.id === "target")!.pins[0]!.type = objectRef("Actor");
     expect(validateGraphs([graph], { assetGuid: "asset" }, { registry })).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "type.mismatch", nodeId: "stream", pinId: "target" }),
     ]));
-    graph.nodes.find((entry) => entry.id === "target")!.pins[0]!.type = actorRef("SceneStreamingActor");
+    graph.nodes.find((entry) => entry.id === "target")!.pins[0]!.type = objectRef("SceneStreamingActor");
     expect(validateGraphs([graph], { assetGuid: "asset" }, { registry }).filter((entry) => entry.severity === "error")).toEqual([]);
   });
 });

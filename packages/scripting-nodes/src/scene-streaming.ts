@@ -1,5 +1,5 @@
 import {
-  actorRef,
+  objectRef,
   BOOL,
   ENGINE_SCENE_STREAMING_STATE_ENUM_ID,
   enumRef,
@@ -12,7 +12,7 @@ import {
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
-const TARGET = actorRef("SceneStreamingActor");
+const TARGET = objectRef("SceneStreamingActor");
 
 function query(method: string, title: string, result: PinType, description: string): NodeDefinition {
   return {

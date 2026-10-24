@@ -46,7 +46,7 @@ describe("actor nodes", () => {
           id: "target",
           name: "Object",
           direction: "in",
-          type: objectRef("BObject"),
+          type: objectRef("Object"),
         }),
       ]),
     );

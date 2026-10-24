@@ -34,7 +34,7 @@ describe("Data graph integration", () => {
 
   it("offers pure typed Definition nodes in transition rules without editor actions", () => {
     const rules = scriptPaletteNodes(createDefaultNodeRegistry(), {
-      parentClass: "BObject", animationGraphHost: "rule",
+      parentClass: "Object", animationGraphHost: "rule",
       dataDefinitions: [{ guid: "weapon", ...structures.weapon! }],
       enums: [{ guid: "quality", name: "Quality", members: [{ name: "Common", value: 0 }] }],
     });

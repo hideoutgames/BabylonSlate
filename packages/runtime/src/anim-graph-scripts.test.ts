@@ -128,7 +128,7 @@ function toAnimObjectScript(
     source: compiled.source,
     anchors: compiled.anchors,
     entryPoints: compiled.entryPoints,
-    parentClassId: "BObject",
+    parentClassId: "Object",
   };
 }
 
@@ -147,7 +147,7 @@ function toRuleScript(
     source: compiled.source,
     anchors: compiled.anchors,
     entryPoints: compiled.entryPoints,
-    parentClassId: "BObject",
+    parentClassId: "Object",
   };
 }
 
@@ -220,7 +220,7 @@ describe("runtime AnimationGraph scripts", () => {
     await runtime.loadScripts([{
       assetGuid: "assets/Loco.anim.hasset",
       classId: animGraphScriptClassId("graph-1"),
-      parentClassId: "BObject",
+      parentClassId: "Object",
       anchors: [],
       source: 'export function update(ctx) { ctx.executeConsoleCommand("quit"); }',
       entryPoints: [{ name: "update", event: "onUpdateAnimation", isAsync: false }],

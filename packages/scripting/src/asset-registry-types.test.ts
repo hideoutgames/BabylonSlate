@@ -22,8 +22,8 @@ describe("Asset Registry engine types", () => {
       ["Path", { kind: "string" }],
       ["Folder", { kind: "string" }],
       ["Type", enumRef("engine:AssetType")],
-      ["Class", classRef("BObject")],
-      ["ParentClass", classRef("BObject")],
+      ["Class", classRef("Object")],
+      ["ParentClass", classRef("Object")],
     ]);
   });
 
@@ -40,7 +40,7 @@ describe("Asset Registry engine types", () => {
       arrayOf({ kind: "string" }),
       { kind: "bool" },
       arrayOf(enumRef("engine:AssetType")),
-      arrayOf(classRef("BObject")),
+      arrayOf(classRef("Object")),
       { kind: "bool" },
       { kind: "string" },
     ]);

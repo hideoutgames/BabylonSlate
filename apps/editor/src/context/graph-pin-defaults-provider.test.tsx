@@ -12,7 +12,7 @@ afterEach(cleanup);
 
 const assets = [
   { path: "assets/Hero.class.hasset", header: { guid: "hero", type: "Class", name: "Hero", parentClass: "Actor" } },
-  { path: "assets/Service.class.hasset", header: { guid: "service", type: "Class", name: "Service", parentClass: "BObject" } },
+  { path: "assets/Service.class.hasset", header: { guid: "service", type: "Class", name: "Service", parentClass: "Object" } },
   { path: "assets/Brick.texture.hasset", header: { guid: "brick", type: "Texture", name: "Brick" } },
   { path: "assets/BrickSound.audio.hasset", header: { guid: "sound", type: "Audio", name: "Brick Sound" } },
   { path: "assets/Tool.class.hasset", header: { guid: "tool", type: "Class", name: "Tool", parentClass: "EditorUtilityObject" } },
@@ -32,7 +32,7 @@ const catalogs: GraphPinDefaultCatalogs = {
   assets,
   pickerAssets: assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })),
   assetEntries: assets.map((asset) => ({ id: asset.header.guid, name: asset.header.name, type: asset.header.type })),
-  classEntries: subclassClassEntries("BObject", assets),
+  classEntries: subclassClassEntries("Object", assets),
   parentOf: classParentLookup(assets),
   enumMembers: { mood: ["Ready", "inMotion"] },
   materialDocuments: [],
@@ -153,7 +153,7 @@ describe("project-backed inline pin defaults", () => {
   });
 
   it("uses the owning editor graph's class access for a general Class pin", () => {
-    const input = request({ kind: "classRef", classId: "BObject" }, "BObject");
+    const input = request({ kind: "classRef", classId: "Object" }, "Object");
     render(<GraphPinDefaultEditor request={input} catalogs={catalogs} editorGraph />);
     fireEvent.click(screen.getByRole("button", { name: "Value" }));
     fireEvent.click(screen.getByTestId("search-item-Tool"));

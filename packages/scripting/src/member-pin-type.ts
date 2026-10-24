@@ -13,7 +13,6 @@ import {
   VEC2,
   VEC3,
   VEC4,
-  actorRef,
   arrayOf,
   assetRef,
   classRef,
@@ -21,10 +20,8 @@ import {
   mapOf,
   objectRef,
   structRef,
-  type ClassHierarchy,
   type PinType,
 } from "./types";
-import { resultKindForClassId } from "./type-context";
 
 function trimmedOrEmpty(value?: string): string {
   return value?.trim() ?? "";
@@ -32,7 +29,7 @@ function trimmedOrEmpty(value?: string): string {
 
 function constraintClassId(typeClassId?: string): string {
   const trimmed = trimmedOrEmpty(typeClassId);
-  return trimmed ? trimmed : "BObject";
+  return trimmed ? trimmed : "Object";
 }
 
 export type VariableContainer = "single" | "array" | "map";
@@ -47,13 +44,12 @@ export type VariableTypeSpec = {
   container?: VariableContainer | string;
   keyTypeId?: string;
   keyTypeClassId?: string;
-  hierarchy?: ClassHierarchy;
 };
 
 /** Picker ids `pinTypeForMember` maps; it reads any other id as Float. */
 const MEMBER_TYPE_IDS = new Set([
   "exec", "bool", "int", "tag", "float", "string", "vec2", "vec3", "vec4",
-  "rotator", "quat", "color", "transform", "object", "actor", "class",
+  "rotator", "quat", "color", "transform", "object", "class",
   "asset", "struct", "enum", "wildcard",
 ]);
 
@@ -69,7 +65,6 @@ export function isMemberTypeId(typeId: string): boolean {
 export function pinTypeForMember(
   typeId: string | undefined,
   typeClassId?: string,
-  hierarchy?: ClassHierarchy,
 ): PinType {
   switch (typeId) {
     case "exec":
@@ -98,14 +93,8 @@ export function pinTypeForMember(
       return COLOR;
     case "transform":
       return TRANSFORM;
-    case "object": {
-      const classId = constraintClassId(typeClassId);
-      return resultKindForClassId(classId, hierarchy) === "actorRef"
-        ? actorRef(classId)
-        : objectRef(classId);
-    }
-    case "actor":
-      return actorRef(trimmedOrEmpty(typeClassId) || "Actor");
+    case "object":
+      return objectRef(constraintClassId(typeClassId));
     case "class":
       return classRef(constraintClassId(typeClassId));
     case "asset":
@@ -123,16 +112,12 @@ export function pinTypeForMember(
 
 /** Wrap a member value type with Single / Array / Map. */
 export function pinTypeForVariable(spec: VariableTypeSpec): PinType {
-  const inner = pinTypeForMember(spec.typeId, spec.typeClassId, spec.hierarchy);
+  const inner = pinTypeForMember(spec.typeId, spec.typeClassId);
   const container = normalizeVariableContainer(spec.container);
   if (container === "array") return arrayOf(inner);
   if (container === "map") {
     return mapOf(
-      pinTypeForMember(
-        spec.keyTypeId ?? "string",
-        spec.keyTypeClassId,
-        spec.hierarchy,
-      ),
+      pinTypeForMember(spec.keyTypeId ?? "string", spec.keyTypeClassId),
       inner,
     );
   }
@@ -142,7 +127,6 @@ export function pinTypeForVariable(spec: VariableTypeSpec): PinType {
 export function keepsTypeClassId(typeId: string | undefined): boolean {
   return (
     typeId === "object" ||
-    typeId === "actor" ||
     typeId === "class" ||
     typeId === "asset" ||
     typeId === "struct" ||
@@ -155,7 +139,7 @@ export function isStructOrEnumTypeId(typeId: string | undefined): boolean {
 }
 
 export function isClassConstraintTypeId(typeId: string | undefined): boolean {
-  return typeId === "object" || typeId === "actor" || typeId === "class";
+  return typeId === "object" || typeId === "class";
 }
 
 /** Map a live pin type back to a PinTypePicker id (unwraps one Array/Map level). */
@@ -182,8 +166,6 @@ export function typeIdFromPinType(type: PinType): string {
       return type.kind;
     case "objectRef":
       return "object";
-    case "actorRef":
-      return "actor";
     case "classRef":
       return "class";
     case "assetRef":
@@ -207,7 +189,6 @@ export function typeClassIdFromPinType(type: PinType): string | undefined {
     case "map":
       return typeClassIdFromPinType(type.value);
     case "objectRef":
-    case "actorRef":
     case "classRef":
       return type.classId || undefined;
     case "assetRef":

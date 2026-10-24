@@ -20,7 +20,6 @@ export type PrimitivePinType =
 export type PinType =
   | PrimitivePinType
   | { kind: "objectRef"; classId: string }
-  | { kind: "actorRef"; classId: string }
   | { kind: "classRef"; classId: string }
   | { kind: "assetRef"; assetType: string }
   | { kind: "structRef"; guid: string }
@@ -54,10 +53,6 @@ export function objectRef(classId: string): PinType {
   return { kind: "objectRef", classId };
 }
 
-export function actorRef(classId: string): PinType {
-  return { kind: "actorRef", classId };
-}
-
 /** Class value constrained to subclasses of `classId` — not a live instance. */
 export function classRef(classId: string): PinType {
   return { kind: "classRef", classId };
@@ -88,7 +83,6 @@ export function pinTypeEquals(a: PinType, b: PinType): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
     case "objectRef":
-    case "actorRef":
     case "classRef":
       return a.classId === (b as typeof a).classId;
     case "assetRef":
@@ -164,17 +158,8 @@ export function isAssignable(
     );
   }
 
-  if (
-    (from.kind === "objectRef" || from.kind === "actorRef") &&
-    (to.kind === "objectRef" || to.kind === "actorRef")
-  ) {
-    if (from.kind === "objectRef" && to.kind === "actorRef") return false;
-    if (
-      to.kind === "objectRef" &&
-      (to.classId === "BObject" || to.classId.trim() === "")
-    ) {
-      return true;
-    }
+  if (from.kind === "objectRef" && to.kind === "objectRef") {
+    if (to.classId === "Object" || to.classId.trim() === "") return true;
     if (from.classId === to.classId) return true;
     return options.hierarchy?.isSubclassOf(from.classId, to.classId) ?? false;
   }
@@ -235,7 +220,6 @@ export function defaultValueLiteral(type: PinType): string {
     case "boxedWildcard":
       return '{ tag: "null", value: null }';
     case "objectRef":
-    case "actorRef":
     case "delegate":
     case "exec":
     case "resolvingWildcard":
@@ -255,8 +239,6 @@ export function pinTypeTag(type: PinType): string {
   switch (type.kind) {
     case "objectRef":
       return `objectRef:${type.classId}`;
-    case "actorRef":
-      return `actorRef:${type.classId}`;
     case "classRef":
       return `classRef:${type.classId}`;
     case "assetRef":
@@ -288,6 +270,5 @@ export const CONCRETE_WILDCARD_TARGETS: readonly PinType[] = [
   QUAT,
   TRANSFORM,
   COLOR,
-  objectRef("BObject"),
-  actorRef("Actor"),
+  objectRef("Object"),
 ];

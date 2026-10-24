@@ -315,7 +315,6 @@ const PIN_TYPE_LABEL: Record<string, string> = {
   color: "Color",
   transform: "Transform",
   objectRef: "Object",
-  actorRef: "Actor",
   classRef: "Class",
   assetRef: "Asset",
   structRef: "Structure",
@@ -332,7 +331,7 @@ function pinTypeText(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/^engine:/, "") : "";
 }
 
-/** The type as a player of the editor reads it: `Float`, `Vector 3`, `Actor (Door)`. */
+/** The type as a player of the editor reads it: `Float`, `Vector 3`, `Door`, `Class (Door)`. */
 export function pinTypeDisplayName(
   type: PinTypeLike,
   names?: PinTypeNames,
@@ -343,7 +342,7 @@ export function pinTypeDisplayName(
     case "map":
       return `${pinTypeDisplayName(type.key as PinTypeLike, names)} to ${pinTypeDisplayName(type.value as PinTypeLike, names)} Map`;
     case "objectRef":
-    case "actorRef":
+      return pinTypeText(type.classId) || PIN_TYPE_LABEL.objectRef!;
     case "classRef": {
       const classId = pinTypeText(type.classId);
       return classId ? `${PIN_TYPE_LABEL[type.kind]} (${classId})` : PIN_TYPE_LABEL[type.kind]!;

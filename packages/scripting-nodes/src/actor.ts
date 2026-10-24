@@ -2,7 +2,6 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  actorRef,
   classRef,
   objectRef,
   BOOL,
@@ -18,7 +17,7 @@ export const actorNodes: NodeDefinition[] = [
     title: "Get Self",
     category: "actor",
     pure: true,
-    pins: () => [pin("out", "out", "out", actorRef("Actor"))],
+    pins: () => [pin("out", "out", "out", objectRef("Actor"))],
     codegen: () => ({ out: `ctx.self` }),
   },
   {
@@ -40,7 +39,7 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      subject(pin("target", "target", "in", actorRef("Actor"))),
+      subject(pin("target", "target", "in", objectRef("Actor"))),
       pin("out", "out", "out", STRING),
     ],
     codegen: (ctx) => ({
@@ -53,7 +52,7 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      pin("target", "Object", "in", objectRef("BObject")),
+      pin("target", "Object", "in", objectRef("Object")),
       pin("out", "out", "out", BOOL),
     ],
     codegen: (ctx) => ({ out: `(${ctx.input("target")} != null)` }),
@@ -68,7 +67,7 @@ export const actorNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       pin("classId", "classId", "in", classRef("Actor")),
       pin("transform", "Transform", "in", TRANSFORM, "data", true),
-      pin("out", "out", "out", actorRef("Actor")),
+      pin("out", "out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => {
       const out = ctx.output("out");
@@ -84,7 +83,7 @@ export const actorNodes: NodeDefinition[] = [
     pure: true,
     pins: () => [
       pin("classId", "Class", "in", classRef("Actor")),
-      pin("out", "Out", "out", arrayOf(actorRef("Actor"))),
+      pin("out", "Out", "out", arrayOf(objectRef("Actor"))),
     ],
     codegen: (ctx) => ({
       out: `ctx.getAllActorsOfClass(${ctx.input("classId")})`,
@@ -97,7 +96,7 @@ export const actorNodes: NodeDefinition[] = [
     pure: true,
     pins: () => [
       pin("classId", "Class", "in", classRef("Actor")),
-      pin("out", "Out", "out", actorRef("Actor")),
+      pin("out", "Out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => ({
       out: `ctx.getActorOfClass(${ctx.input("classId")})`,
@@ -110,8 +109,8 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", actorRef("Actor"))),
-      pin("parent", "Parent", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      pin("parent", "Parent", "in", objectRef("Actor")),
     ],
     codegen: (ctx) => {
       ctx.emit(
@@ -127,7 +126,7 @@ export const actorNodes: NodeDefinition[] = [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
       selfActorPin("actor", "Actor"),
-      subject(pin("target", "Target", "in", actorRef("Actor"))),
+      subject(pin("target", "Target", "in", objectRef("Actor"))),
       pin("boneName", "Bone Name", "in", STRING),
     ],
     codegen: (ctx) => {
@@ -141,7 +140,7 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", actorRef("Actor"))),
+      subject(pin("target", "Target", "in", objectRef("Actor"))),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.detachActor(${ctx.input("target")});`);
@@ -153,8 +152,8 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", actorRef("Actor"))),
-      pin("out", "Out", "out", actorRef("Actor")),
+      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      pin("out", "Out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => ({
       out: `ctx.getParent(${ctx.input("target")})`,
@@ -167,8 +166,8 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", actorRef("Actor"))),
-      pin("owner", "Owner", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      pin("owner", "Owner", "in", objectRef("Actor")),
     ],
     codegen: (ctx) => {
       ctx.emit(
@@ -182,8 +181,8 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", actorRef("Actor"))),
-      pin("out", "Out", "out", actorRef("Actor")),
+      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      pin("out", "Out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => ({
       out: `ctx.getOwner(${ctx.input("target")})`,

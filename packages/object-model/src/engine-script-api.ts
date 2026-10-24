@@ -393,7 +393,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
       { name: "Capture Every Frame", typeId: "bool", propertyKey: "captureEveryFrame" },
       { name: "Capture Only Actors", typeId: "bool", propertyKey: "captureOnlyActors" },
-      { name: "Capture Actors", typeId: "actor", typeClassId: "Actor", container: "array", propertyKey: "actorIds" },
+      { name: "Capture Actors", typeId: "object", typeClassId: "Actor", container: "array", propertyKey: "actorIds" },
       { name: "Field Of View", typeId: "float", propertyKey: "fieldOfView" },
       { name: "Near Clip", typeId: "float", propertyKey: "nearClip" },
       { name: "Far Clip", typeId: "float", propertyKey: "farClip" },

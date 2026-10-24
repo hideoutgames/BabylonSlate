@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ClassRegistry } from "./class-registry";
-import { Actor, BObject, GameInstance } from "./objects";
+import { Actor, EngineObject, GameInstance } from "./objects";
 import { World } from "./world";
 import {
   createDebugInspectSnapshot,
@@ -79,7 +79,7 @@ describe("createDebugInspectSnapshot", () => {
       label: "GameInstance",
       classId: "GameInstance",
       parentId: null,
-      ancestry: ["GameInstance", "BObject"],
+      ancestry: ["GameInstance", "Object"],
       variables: { score: 3 },
     });
     expect(snapshot.nodes[1]).toMatchObject({
@@ -87,7 +87,7 @@ describe("createDebugInspectSnapshot", () => {
       label: "Hero",
       classId: "Actor",
       parentId: null,
-      ancestry: ["Actor", "BObject"],
+      ancestry: ["Actor", "Object"],
       variables: { health: 10, name: "Hero", parentId: null },
     });
     expect(snapshot.nodes[1]?.transform?.position).toEqual([0, 0, 0]);
@@ -96,7 +96,7 @@ describe("createDebugInspectSnapshot", () => {
       label: "MeshComponent",
       classId: "MeshComponent",
       parentId: "hero",
-      ancestry: ["MeshComponent", "ActorComponent", "BObject"],
+      ancestry: ["MeshComponent", "ActorComponent", "Object"],
       variables: { meshKind: "box" },
     });
     expect(snapshot.nodes[3]).toMatchObject({
@@ -152,9 +152,9 @@ describe("createDebugInspectSnapshot", () => {
     const node = snapshot.nodes.find((entry) => entry.id === "hero");
     expect(node?.variableTypes?.health).toBe("float");
     expect(node?.variableTypes?.name).toBeUndefined();
-    expect(node?.ancestry).toEqual(["Hero", "Actor", "BObject"]);
+    expect(node?.ancestry).toEqual(["Hero", "Actor", "Object"]);
     expect(snapshot.nodes.find((entry) => entry.id === "health")?.ancestry).toEqual([
-      "RegenHealth", "Health", "ActorComponent", "BObject",
+      "RegenHealth", "Health", "ActorComponent", "Object",
     ]);
   });
 
@@ -178,7 +178,7 @@ describe("createDebugInspectSnapshot", () => {
     ]);
     expect(nodes[1]).toMatchObject({
       label: "Inventory",
-      ancestry: ["Inventory", "GameSubsystem", "Subsystem", "BObject"],
+      ancestry: ["Inventory", "GameSubsystem", "Subsystem", "Object"],
       variables: { slots: 4 },
       variableTypes: { slots: "int" },
     });
@@ -198,7 +198,7 @@ describe("createDebugInspectSnapshot", () => {
 
   it("sanitizes object references and circular values", () => {
     const world = createInspectWorld();
-    const other = new BObject({ classId: "Actor", guid: "other" });
+    const other = new EngineObject({ classId: "Actor", guid: "other" });
     const cycle: Record<string, unknown> = { n: 1 };
     cycle.self = cycle;
     const actor = world.createActor({
@@ -235,7 +235,7 @@ describe("sanitizeInspectValue", () => {
     expect(sanitizeInspectValue(new Map())).toEqual({});
   });
 
-  it("keeps primitives and converts BObject refs", () => {
+  it("keeps primitives and converts Object refs", () => {
     expect(sanitizeInspectValue(7)).toBe(7);
     expect(sanitizeInspectValue("ok")).toBe("ok");
     expect(sanitizeInspectValue(true)).toBe(true);

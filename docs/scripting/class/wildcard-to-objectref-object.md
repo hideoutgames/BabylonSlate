@@ -1,8 +1,8 @@
 ---
-node: wildcard.to_objectRef_BObject
+node: wildcard.to_objectRef_Object
 ---
 
-# Wildcard To objectRef:BObject
+# Wildcard To objectRef:Object
 
 Converts an Any value to an Object Reference and reports whether it worked.
 
@@ -25,4 +25,5 @@ Converts an Any value to an Object Reference and reports whether it worked.
 ## Notes
 
 - Succeeds for a reference to any object, including actors. An empty reference fails.
+- To get an actor of a particular class, follow it with [Cast To](cast-to.md).
 - When the value has a different type, **Success** is false and **Value** is **Fallback**.

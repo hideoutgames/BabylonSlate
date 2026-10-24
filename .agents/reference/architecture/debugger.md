@@ -28,7 +28,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 
 - `createCommandRegistry({ includeDebug })`. Core commands always register; debug implementations register only with `includeDebug: true`, but debug names are still recognized so a release build reports "not available in this build" instead of "unknown command".
 - Names live in `CORE_COMMAND_NAMES` / `DEBUG_COMMAND_NAMES` ([`commands.ts`](../../../packages/debugger/src/commands.ts)). Editor Play and Preview Build include debug; release exports pass `includeDebugCommands: manifest.bundleDebugger`.
-- User `BDebugCommand` classes register as core, so they ship in every export.
+- User `DebugCommand` classes register as core, so they ship in every export.
 - `warnDebugTierConsoleCommands` warns when an `ExecuteConsoleCommand` literal names a debug command; connected pins are not flagged.
 
 ## Parser
@@ -58,7 +58,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 ## Inspect protocol
 
 - `{ type: "inspect" }` control → `{ type: "inspectSnapshot" }` command ([bridge.md](bridge.md)). Overlay polls ~5 Hz only while the Inspector or console is open, skips while a request is in flight (abandoned after 3 s), and drops equal snapshots in `inspect-world-store.ts`.
-- Snapshot order: Game Instance, subsystems, actors parent-before-child, components. Values are JSON-safe: `BObject` → `{ guid, classId }`, cycles → `formatValue()`; recording a reference never traverses its World.
+- Snapshot order: Game Instance, subsystems, actors parent-before-child, components. Values are JSON-safe: an `EngineObject` → `{ guid, classId }`, cycles → `formatValue()`; recording a reference never traverses its World.
 
 ## Trace recorder
 

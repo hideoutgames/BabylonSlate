@@ -95,7 +95,7 @@ describe("saved asset thumbnail revisions", () => {
   it("captures actor classes while leaving ordinary classes as icons", async () => {
     const revisions = createAssetThumbnailRevisionIndex([
       asset("actor", "Class", { parentClass: "Actor" }),
-      asset("object", "Class", { parentClass: "BObject" }),
+      asset("object", "Class", { parentClass: "Object" }),
       asset("component", "Class", { parentClass: "MeshComponent" }),
     ]);
     expect(await revisions.cacheKey("actor")).not.toBeNull();

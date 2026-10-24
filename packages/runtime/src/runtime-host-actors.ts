@@ -4,7 +4,7 @@ import {
   isLockedEngineClassId,
   isSceneLayerExclusiveComponent,
   type Actor,
-  type BObject,
+  type EngineObject,
   type World,
 } from "@haptic/object-model";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
@@ -24,9 +24,9 @@ interface ActorHostDeps {
   /** The host prepares class assets on demand, so spawns must wait for them. */
   demandAssetCatalog: boolean;
   assetPreloads: Pick<RuntimeAssetPreloads, "acquire" | "release" | "transferOwner" | "getState">;
-  spawn(options: { classId: string; transform?: Transform; streamOwner?: BObject | null }): Actor | null;
+  spawn(options: { classId: string; transform?: Transform; streamOwner?: EngineObject | null }): Actor | null;
   /** Pending while a session boundary holds the owner's continuation. */
-  continueSimulation(owner: BObject | null): Promise<void> | undefined;
+  continueSimulation(owner: EngineObject | null): Promise<void> | undefined;
   slot(actor: Actor): number | undefined;
   emit(command: CommandMessage): void;
 }

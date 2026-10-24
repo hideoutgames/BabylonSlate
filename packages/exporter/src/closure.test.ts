@@ -33,7 +33,7 @@ describe("collectExportReachability", () => {
   it("includes registered debug commands and their deferred resources without requiring scene references", () => {
     const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null,
       assets: [asset({ guid: "scene", name: "Scene", type: "Scene" }),
-        asset({ guid: "command", name: "Teleport", type: "Class", parentClass: "BDebugCommand", dependencies: ["later"],
+        asset({ guid: "command", name: "Teleport", type: "Class", parentClass: "DebugCommand", dependencies: ["later"],
           consoleCommand: { name: "teleport", category: "game", description: "", parameters: [] } }),
         asset({ guid: "later", name: "Later", type: "Scene" })],
       sceneByGuid: () => null, graphByGuid: () => null,
@@ -418,7 +418,7 @@ describe("collectExportReachability", () => {
         if (id === "MyGame") return "GameInstance";
         if (id === "Hero") return "Actor";
         if (id === "LevelTools") return "EditorUtilityObject";
-        if (id === "EditorUtilityObject") return "BObject";
+        if (id === "EditorUtilityObject") return "Object";
         return null;
       },
       sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
@@ -1278,7 +1278,7 @@ describe("collectExportReachability subsystem roots", () => {
       { guid: "weather", name: "WeatherSubsystem", parentClass: "SceneSubsystem" },
       { guid: "enemy-base", name: "EnemyBase", parentClass: "Actor" },
       { guid: "enemy", name: "Enemy", parentClass: "EnemyBase" },
-      { guid: "helper", name: "Helper", parentClass: "BObject" },
+      { guid: "helper", name: "Helper", parentClass: "Object" },
     ]);
     expect(result).toMatchObject({ ok: true, value: { guids: ["save", "scene", "weather"] } });
   });
@@ -1393,7 +1393,7 @@ describe("collectHeaderReachability", () => {
     withPath("assets/Jump.inputaction.hasset", { guid: "jump", name: "Jump", type: "InputAction" }),
     withPath("assets/Save.class.hasset", { guid: "save", name: "Save", type: "Class", parentClass: "GameSubsystem", dependencies: ["save-tex"] }),
     withPath("assets/Save.texture.hasset", { guid: "save-tex", name: "SaveTex", type: "Texture" }),
-    withPath("assets/Cmd.class.hasset", { guid: "cmd", name: "Cmd", type: "Class", parentClass: "BDebugCommand", dependencies: ["cmd-tex"] }),
+    withPath("assets/Cmd.class.hasset", { guid: "cmd", name: "Cmd", type: "Class", parentClass: "DebugCommand", dependencies: ["cmd-tex"] }),
     withPath("assets/Cmd.texture.hasset", { guid: "cmd-tex", name: "CmdTex", type: "Texture" }),
     withPath("assets/Pack/Crate.class.hasset", { guid: "crate", name: "Crate", type: "Class", parentClass: "Actor", dependencies: ["crate-tex"] }),
     withPath("assets/Pack/Crate.texture.hasset", { guid: "crate-tex", name: "CrateTex", type: "Texture" }),

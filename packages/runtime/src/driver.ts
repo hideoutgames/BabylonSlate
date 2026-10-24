@@ -43,7 +43,7 @@ import {
   createActorFromSerialized,
   createDebugInspectSnapshot,
   Actor,
-  BObject,
+  EngineObject,
   SceneLayer,
   type DebugInspectSnapshot,
 } from "@haptic/object-model";
@@ -1150,8 +1150,8 @@ class InProcessRuntime implements RuntimeDriver {
     const emit = (command: CommandMessage): void => this.emit(command);
     const frameId = (): number => this.frameId;
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
-    const canRun = (owner: BObject): boolean => this.admission.canRun(owner);
-    const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.waits.continueSimulation(owner);
+    const canRun = (owner: EngineObject): boolean => this.admission.canRun(owner);
+    const continueSimulation = (owner: EngineObject | null): Promise<void> | undefined => this.waits.continueSimulation(owner);
     const assetCatalog = new RuntimeAssetCatalog(options.assetCatalog);
     return new ScriptHost({
       data: this.dataCatalog,
@@ -1586,7 +1586,7 @@ class InProcessRuntime implements RuntimeDriver {
   invokeScriptEvent(
     classId: string,
     event: string,
-    self?: BObject | null,
+    self?: EngineObject | null,
     args?: Record<string, unknown>,
   ): void {
     this.scriptHost.invokeEvent(classId, event, self ?? null, args ?? {});
@@ -1802,7 +1802,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   getSaveGameService(): SaveGameService | undefined { return this.boundaries.saveGameService; }
 
-  registerSaveActor(actor: BObject, persistentId?: string): void {
+  registerSaveActor(actor: EngineObject, persistentId?: string): void {
     this.boundaries.registerSaveActor(actor, persistentId);
   }
 

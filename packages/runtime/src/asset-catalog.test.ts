@@ -116,11 +116,11 @@ describe("RuntimeAssetCatalog", () => {
     const classes = (id: string, subclasses = true) =>
       catalog.getAssetsByClass(id, subclasses, "", true).map((asset) => asset.Class);
     expect(classes("Rifle")).toEqual(["Rifle", "Sniper"]);
-    // Sniper -> Rifle -> Weapon -> Actor -> BObject. Gem is a plugin Class, so its Path sorts last.
+    // Sniper -> Rifle -> Weapon -> Actor -> Object. Gem is a plugin Class, so its Path sorts last.
     expect(classes("Weapon")).toEqual(["Rifle", "Sniper", "Weapon", "Gem"]);
     expect(classes("Actor")).toEqual(["Pickup", "Rifle", "Sniper", "Weapon", "Gem"]);
     expect(classes("ActorComponent")).toEqual(["Hud"]);
-    expect(classes("BObject")).toEqual(["Pickup", "Hud", "Rifle", "Sniper", "Weapon", "Gem"]);
+    expect(classes("Object")).toEqual(["Pickup", "Hud", "Rifle", "Sniper", "Weapon", "Gem"]);
   });
 
   it("matches only the Class itself without Include Subclasses", () => {
@@ -146,7 +146,7 @@ describe("RuntimeAssetCatalog", () => {
     ]);
     expect(loop.getAssetsByClass("A", true, "", true).map((asset) => asset.Class)).toEqual(["A", "B"]);
     expect(loop.getAssetsByClass("Gone", true, "", true).map((asset) => asset.Class)).toEqual(["C"]);
-    expect(loop.getAssetsByClass("BObject", true, "", true).map((asset) => asset.Class)).toEqual([]);
+    expect(loop.getAssetsByClass("Object", true, "", true).map((asset) => asset.Class)).toEqual([]);
   });
 
   it("combines every Find Assets constraint", () => {

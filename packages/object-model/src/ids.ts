@@ -17,7 +17,7 @@ export const SCENE_SUBSYSTEM_CLASS_ID = "SceneSubsystem";
 
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
-  "BObject",
+  "Object",
   "MaterialObject",
   "Actor",
   "RenderTargetCapture",
@@ -32,7 +32,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   "FunctionLibrary",
-  "BDebugCommand",
+  "DebugCommand",
   "EditorUtilityObject",
   "EditorFunctionLibrary",
   "BTTask",

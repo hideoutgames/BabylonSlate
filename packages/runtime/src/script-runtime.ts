@@ -6,7 +6,7 @@ import {
   isLockedEngineClassId,
   hydrateClassVariableValue,
   type Actor,
-  type BObject,
+  type EngineObject,
   type ClassKind,
   type GameSubsystemHooks,
   type SceneSubsystem,
@@ -44,13 +44,13 @@ interface ScriptRuntimeHost {
 
 /** Hooks both `GameInstanceHooks` and `GameSubsystemHooks` accept. */
 type GameLifecycleHooks = {
-  onCreation: (self: BObject) => void;
-  onTick: (self: BObject, ctx: TickContext) => void;
-  onGameEnd: (self: BObject) => void;
-  onSceneStartLoading: (self: BObject, sceneName: string) => void;
-  onSceneFinishLoading: (self: BObject, sceneName: string) => void;
-  onFirstSceneLoaded: (self: BObject, sceneName: string) => void;
-  onSceneExit: (self: BObject, sceneName: string) => void;
+  onCreation: (self: EngineObject) => void;
+  onTick: (self: EngineObject, ctx: TickContext) => void;
+  onGameEnd: (self: EngineObject) => void;
+  onSceneStartLoading: (self: EngineObject, sceneName: string) => void;
+  onSceneFinishLoading: (self: EngineObject, sceneName: string) => void;
+  onFirstSceneLoaded: (self: EngineObject, sceneName: string) => void;
+  onSceneExit: (self: EngineObject, sceneName: string) => void;
 };
 
 /**
@@ -161,13 +161,13 @@ export class ScriptRuntime {
   }
 
   /** Every live object that can own script handlers. */
-  private liveScriptOwners(): BObject[] {
+  private liveScriptOwners(): EngineObject[] {
     const world = this.host.world();
     const actors = world.getActors();
-    const owners: Array<BObject | null> = [world.gameInstance, world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
+    const owners: Array<EngineObject | null> = [world.gameInstance, world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
       ...world.getSceneLayers(), ...world.getGameSubsystems(), ...world.getSceneSubsystems(),
       ...this.host.streams().scenes()];
-    return owners.filter((owner): owner is BObject => !!owner && !owner.destroyed);
+    return owners.filter((owner): owner is EngineObject => !!owner && !owner.destroyed);
   }
 
   /** Stop: unregister the script classes (children first) and forget their sources. */
@@ -320,7 +320,7 @@ export class ScriptRuntime {
    * lifecycle.
    */
   private gameLifecycleHooks(classId: string): GameLifecycleHooks {
-    const sceneEvent = (event: string) => (self: BObject, sceneName: string) => {
+    const sceneEvent = (event: string) => (self: EngineObject, sceneName: string) => {
       this.admission.run(self, () => this.admission.guard(() => this.host.scriptHost().invokeEvent(classId, event, self, { sceneName })));
     };
     return {

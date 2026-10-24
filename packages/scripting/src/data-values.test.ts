@@ -145,7 +145,7 @@ describe("authored Data Tree entries", () => {
       { name: "Health", typeId: "int" },
       { name: "Texture", typeId: "asset", typeClassId: "Texture" },
       { name: "Sound", typeId: "asset", typeClassId: "Audio" },
-      { name: "Target", typeId: "actor" },
+      { name: "Target", typeId: "object" },
     ];
     const schemas = schemasFor(fields);
     schemas.enums = { team: { name: "Team", members: [{ name: "Blue", value: 1 }] } };

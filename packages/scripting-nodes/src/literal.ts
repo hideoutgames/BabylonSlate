@@ -60,7 +60,7 @@ export const literalNodes: NodeDefinition[] = [
   makeLiteral("literal.makeInt", "Make Int", INT),
   makeLiteral("literal.makeFloat", "Make Float", FLOAT),
   makeLiteral("literal.makeString", "Make String", STRING),
-  makeLiteral("literal.makeClass", "Make Class", classRef("BObject")),
+  makeLiteral("literal.makeClass", "Make Class", classRef("Object")),
   makeLiteral("literal.makeAsset", "Make Asset", assetRef("")),
   makeLiteral("literal.makeQuat", "Make Quaternion", QUAT),
   toStringNode("literal.toStringBool", "To String (Bool)", BOOL),

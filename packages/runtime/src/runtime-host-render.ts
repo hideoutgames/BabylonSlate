@@ -12,7 +12,7 @@ import {
   Actor,
   ActorComponent,
   getPostProcessMaterialObject,
-  type BObject,
+  type EngineObject,
   type MaterialInstanceObject,
 } from "@haptic/object-model";
 import { captureComponent } from "./render-targets";
@@ -56,7 +56,7 @@ interface RenderTargetHostDeps {
   renderTargets: ReadonlyMap<string, RenderTargetPayload>;
   /** Authored Render Target Texture assets by guid. */
   renderTargetTextures: ReadonlyMap<string, RenderTargetTexturePayload>;
-  canRun(owner: BObject): boolean;
+  canRun(owner: EngineObject): boolean;
   emit(command: CommandMessage): void;
 }
 
@@ -79,7 +79,7 @@ export function createRenderTargetHostBindings(deps: RenderTargetHostDeps): Pick
 }
 
 interface MaterialHostDeps {
-  canRun(owner: BObject): boolean;
+  canRun(owner: EngineObject): boolean;
   materialParameters: Pick<RuntimeMaterialParameters, "hasPostProcessDefinition" | "get" | "resetValue">;
   /** Apply a parameter value; false when it was rejected. */
   setMaterialParameter(material: MaterialInstanceObject, name: string, parameter: MaterialParameterValue): boolean;

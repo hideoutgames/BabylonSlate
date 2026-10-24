@@ -51,7 +51,7 @@ function targetPins(properties: Record<string, unknown>) {
   const classId =
     typeof properties.classId === "string" && properties.classId.trim()
       ? properties.classId.trim()
-      : "BObject";
+      : "Object";
   return [subject(pin("target", "target", "in", objectRef(classId)))];
 }
 

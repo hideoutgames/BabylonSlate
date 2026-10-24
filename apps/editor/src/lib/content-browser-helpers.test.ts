@@ -1108,13 +1108,13 @@ describe("content-browser-helpers", () => {
     const visual = visualForIndexedAsset(hero, parentOf);
     expect(visual.colorVar).toBe("var(--asset-animation)");
     expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
-    expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "BObject" }).icon);
+    expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "Object" }).icon);
   });
 
   it("parents Scene:{guid} types under engine Scene", () => {
     const parentOf = classParentLookup([]);
     expect(parentOf("Scene:scene-1")).toBe("Scene");
-    expect(parentOf("Scene")).toBe("BObject");
+    expect(parentOf("Scene")).toBe("Object");
   });
 
   it("looks up Class parents by class id only, keeping the first Class for a shared id as the Parent Class tree does", () => {
@@ -1127,7 +1127,7 @@ describe("content-browser-helpers", () => {
     const parentOf = classParentLookup(assets);
     expect(parentOf("Rain_Weather")).toBe("Actor");
     // A display name is not a class id, so it never replaces an engine class's parent.
-    expect(parentOf("Actor")).toBe("BObject");
+    expect(parentOf("Actor")).toBe("Object");
     expect(buildParentClassTreeRows(assets).find((row) => row.id === "Rain_Weather")?.parentClassId).toBe("Actor");
   });
 
@@ -1182,12 +1182,12 @@ describe("content-browser-helpers", () => {
   });
 
   it("excludes SceneLayer descendants from Class creation", () => {
-    const parentOf = (id: string) => id === "Overlay" ? "SceneLayer" : id === "SceneLayer" ? "BObject" : null;
+    const parentOf = (id: string) => id === "Overlay" ? "SceneLayer" : id === "SceneLayer" ? "Object" : null;
     expect(buildParentClassTreeRows([{ header: { type: "Class", name: "Overlay", parentClass: "SceneLayer" } }]).map((row) => row.id)).not.toContain("Overlay");
     expect(() => buildNewAssetResult({ type: "Class", name: "Child", guid: "child", parentClass: "Overlay", parentOf })).toThrow("Scene Layer");
   });
 
-  it("offers the subsystem bases under BObject and never the hidden Subsystem base", () => {
+  it("offers the subsystem bases under Object and never the hidden Subsystem base", () => {
     const rows = buildParentClassTreeRows([
       {
         path: "assets/Inventory.class.hasset",
@@ -1209,7 +1209,7 @@ describe("content-browser-helpers", () => {
     expect(ids.indexOf("Inventory")).toBe(ids.indexOf("GameSubsystem") + 1);
     expect(
       buildParentClassTreeRows([], { search: "subsystem" }).map((row) => row.id),
-    ).toEqual(["BObject", "GameSubsystem", "SceneSubsystem"]);
+    ).toEqual(["Object", "GameSubsystem", "SceneSubsystem"]);
   });
 
   it.each(["GameSubsystem", "Subsystem", "SceneSubsystem", "Actor"])(
@@ -1283,7 +1283,7 @@ describe("content-browser-helpers", () => {
       { search: "hero" },
     );
     expect(filtered.map((row) => row.id)).toEqual(
-      expect.arrayContaining(["BObject", "Actor", "Hero"]),
+      expect.arrayContaining(["Object", "Actor", "Hero"]),
     );
     expect(filtered.some((row) => row.id === "GameInstance")).toBe(false);
   });
@@ -1622,7 +1622,7 @@ describe("content-browser-helpers", () => {
       type: "Class",
       name: "GameStats",
       path: "assets/GameStats.class.hasset",
-      parentClass: "BObject",
+      parentClass: "Object",
     });
     const meshComp = asset({
       type: "Class",
@@ -1640,7 +1640,7 @@ describe("content-browser-helpers", () => {
     expect(classDocumentShowsPrefab("Actor", parentOf)).toBe(true);
     expect(classDocumentShowsPrefab("MyHero", parentOf)).toBe(true);
     expect(classDocumentShowsPrefab("Boss", parentOf)).toBe(true);
-    expect(classDocumentShowsPrefab("BObject", parentOf)).toBe(false);
+    expect(classDocumentShowsPrefab("Object", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("GameStats", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("ActorComponent", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("MyMesh", parentOf)).toBe(false);

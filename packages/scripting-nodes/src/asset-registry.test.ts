@@ -38,8 +38,8 @@ const PARENT_OF: Record<string, string> = {
   Sniper: "Rifle",
   Rifle: "Weapon",
   Weapon: "Actor",
-  Actor: "BObject",
-  Inventory: "BObject",
+  Actor: "Object",
+  Inventory: "Object",
 };
 const hierarchy: ClassHierarchy = {
   isSubclassOf(child, parent) {
@@ -56,8 +56,8 @@ describe("Get Assets By Class", () => {
 
   it("types Classes from the picked Class, as Cast types its result", () => {
     expect(classesPin({ "default:class": "Rifle" }).type).toEqual(arrayOf(classRef("Rifle")));
-    expect(classesPin({}).type).toEqual(arrayOf(classRef("BObject")));
-    expect(def.pins({ "default:class": "Rifle" }).find((pin) => pin.id === "class")!.type).toEqual(classRef("BObject"));
+    expect(classesPin({}).type).toEqual(arrayOf(classRef("Object")));
+    expect(def.pins({ "default:class": "Rifle" }).find((pin) => pin.id === "class")!.type).toEqual(classRef("Object"));
   });
 
   function spawnGraph(properties: Record<string, unknown>): LogicGraph {

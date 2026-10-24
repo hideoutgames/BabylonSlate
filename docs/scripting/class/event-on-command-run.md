@@ -23,5 +23,5 @@ Runs when the command it defines is entered in the console.
 
 ## Notes
 
-- Use it in a BDebugCommand class to create your own console command.
+- Use it in a DebugCommand class to create your own console command.
 - Each parameter becomes an output. Integer and Boolean parameters keep their type, String and Enum parameters arrive as strings, and any other type is a Float.
