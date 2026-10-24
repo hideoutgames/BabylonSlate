@@ -685,6 +685,14 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "ReflectionProbeComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Size", typeId: "vec3", propertyKey: "size" },
+      { name: "Resolution", typeId: "int", propertyKey: "resolution" },
+    ],
+  },
+  {
     classId: "AreaRectLightComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
