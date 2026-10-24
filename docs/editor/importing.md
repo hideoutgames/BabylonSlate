@@ -8,7 +8,9 @@ Bring images, models, sounds and fonts into your project. Each file becomes one 
 2. Choose **Import** (<kbd>Alt</kbd>+<kbd>I</kbd>).
 3. Pick one or more files. Pick a model's companion files at the same time (for example a `.gltf` with its `.bin` and textures, or an `.obj` with its `.mtl`).
 
-A progress window shows each file. If some files fail, **Import Partially Completed** lists the errors; the rest are imported.
+The **Importing** window shows each file and how far along it is. Slow conversions, such as HDR panoramas and large models, run in the background so the editor stays responsive. **Cancel** stops the import and removes the assets it already made, so the folder is left as it was.
+
+If some files fail, **Import Partially Completed** lists the errors; the rest are imported. A file that fails leaves none of its assets behind.
 
 ## Supported formats
 
@@ -44,13 +46,13 @@ Other usages are **Skybox** and **Particle**.
 
 ENV and DDS files must already be prefiltered cube maps: Haptic keeps their faces and roughness mips as they are. DDS cubes must be linear RGBA16F or RGBA32F with a full mip chain.
 
-An `.hdr` file is an equirectangular panorama in Radiance RGBE format, as most HDRI sites publish. Haptic converts it once, on import, to a prefiltered RGBA16F DDS cube:
+An `.hdr` file is an equirectangular panorama in Radiance RGBE format, as most HDRI sites publish. Haptic converts it on import to a prefiltered RGBA16F DDS cube:
 
-- Faces are up to 256 × 256, about a quarter of the panorama's width.
+- Faces are up to **Engine Settings > Assets > HDR Import Face Size** (**128 × 128**, **256 × 256** or **512 × 512**; 256 by default), and never larger than about a quarter of the panorama's width.
 - Each mip level holds the reflection for a rougher surface, from mirror-sharp to fully rough.
 - The panorama's centre faces forward (+Z) and its top row is straight up.
 
-Large panoramas can take a few seconds to convert. The game loads the converted cube like any other DDS, so it does no conversion at load. The original `.hdr` is not kept; import it again to change it.
+Large panoramas can take a few seconds to convert, and 512 takes about four times as long as 256. The game loads the converted cube like any other DDS, so it does no conversion at load. The Texture keeps the `.hdr` (it is not included in exported games), so you can change its **Face Size** later in its **Inspector**. See [Texture](../assets/texture.md).
 
 ### Compression
 
@@ -67,6 +69,7 @@ The **Compression** section shows the current state. If compression fails, the I
 ## Models
 
 - **Engine Settings > Assets > Model Import Default Scale** sets the scale given to newly imported models. It does not change models you already imported.
+- GLB, glTF and FBX files are processed in the background, and **Cancel** stops them at once. An OBJ or STL file that is already converting finishes first, then the import stops.
 - Pick a glTF's texture files in the same import as the model. A texture file you leave out is skipped: the model still imports, its materials use their plain colours, and **Import Partially Completed** lists the missing files.
 - Open the Model to check its preview and colliders. See [Model](../assets/model.md) and [Models](../graphics/models.md).
 

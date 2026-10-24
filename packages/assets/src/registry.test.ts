@@ -550,6 +550,43 @@ describe("AssetRegistry", () => {
     expect(remounted.list({ type: "Model" }).length).toBeGreaterThanOrEqual(1);
   });
 
+  it("removes a file's assets already written when its import is cancelled partway", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const controller = new AbortController();
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const writeBinary = storage.writeBinary.bind(storage);
+    // The cancel lands after the GLB's first asset file is written.
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      await writeBinary(path, bytes);
+      if (path.endsWith(".hasset")) controller.abort();
+    });
+
+    await expect(registry.importFile("project", "", "crate.glb", buildMinimalGlbFixture(), { signal: controller.signal }))
+      .rejects.toMatchObject({ name: "AbortError" });
+
+    expect(registry.list()).toEqual([]);
+    expect((await storage.readdir("assets")).filter((entry) => entry.name.endsWith(".hasset"))).toEqual([]);
+  });
+
+  it("writes nothing for an import cancelled during its conversion", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const controller = new AbortController();
+    const registry = new AssetRegistry(storage, {
+      runImport: async (fileName, bytes, options) => {
+        controller.abort();
+        return (await import("./importers")).importByExtension(fileName, bytes, options);
+      },
+    });
+    await registry.mountRoot(projectContentRoot());
+
+    await expect(registry.importFile("project", "", "crate.glb", buildMinimalGlbFixture(), { signal: controller.signal }))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(registry.list()).toEqual([]);
+  });
+
   it("embeds importFile sidecars onto a Kenney-style GLB and enqueues encode", async () => {
     const png = Uint8Array.from([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,

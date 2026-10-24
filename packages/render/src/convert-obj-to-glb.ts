@@ -1,4 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ModelBatchConversionOptions } from "./convert-fbx-to-glb";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { FilesInputStore } from "@babylonjs/core/Misc/filesInputStore";
 import { Scene } from "@babylonjs/core/scene";
@@ -160,7 +161,7 @@ export function glbFileNameFromObj(objName: string): string {
 /** Convert OBJ files in a picker batch to GLB; leave unrelated files as-is. */
 export async function convertObjImportBatch(
   files: Array<{ name: string; bytes: Uint8Array }>,
-  options: { engine?: AbstractEngine } = {},
+  options: ModelBatchConversionOptions & { engine?: AbstractEngine } = {},
 ): Promise<{
   files: Array<{ name: string; bytes: Uint8Array }>;
   errors: string[];
@@ -169,6 +170,9 @@ export async function convertObjImportBatch(
   const converted: Array<{ name: string; bytes: Uint8Array }> = [];
   const errors: string[] = [];
   for (const { obj, sidecars } of objs) {
+    // Between files only: the conversion runs on the main thread's Engine and cannot stop partway.
+    options.signal?.throwIfAborted();
+    options.onFile?.(obj.name);
     try {
       const glb = await convertObjToGlb(obj.bytes, {
         engine: options.engine,

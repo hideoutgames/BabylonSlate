@@ -1,16 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
+import { describe, expect, it, vi } from "vitest";
+import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { projectContentRoot } from "./content-root";
 import { isEnvironmentTexturePayload, readEnvironmentTextureInfo } from "./environment-texture";
 import { decodeHasset } from "./hasset";
 import {
+  convertRadianceHdrToEnvironmentDds,
   cubeMipChain,
   cubeTexelDirection,
   equirectangularToCube,
   hdrEnvironmentFaceSize,
+  normalizeHdrEnvironmentFaceSize,
   prefilterCubeRadiance,
   type CubeFaces,
+  type HdrEnvironmentConverter,
 } from "./hdr-environment";
 import { decodeRadianceHdr } from "./radiance-hdr";
 import { AssetRegistry } from "./registry";
@@ -180,16 +183,26 @@ describe("GGX radiance prefiltering", () => {
   });
 });
 
+async function mountRegistry(): Promise<{ storage: MemoryStorageAdapter; registry: AssetRegistry }> {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("Environment.hproject");
+  const registry = new AssetRegistry(storage);
+  await registry.mountRoot(projectContentRoot());
+  return { storage, registry };
+}
+
 describe("HDR environment import", () => {
-  it("sizes faces from a quarter of the panorama width, capped at 256", () => {
-    expect([8, 60, 1000, 2048, 8192].map(hdrEnvironmentFaceSize)).toEqual([2, 16, 256, 256, 256]);
+  it("sizes faces from a quarter of the panorama width, capped at the Face Size and never upscaled", () => {
+    const sizes = (faceSize?: number) => [8, 60, 1000, 2048, 8192].map((width) => hdrEnvironmentFaceSize(width, faceSize));
+    expect(sizes()).toEqual([2, 16, 256, 256, 256]);
+    expect(sizes(128)).toEqual([2, 16, 128, 128, 128]);
+    expect(sizes(512)).toEqual([2, 16, 256, 512, 512]);
+    // Older Textures store no Face Size; they were converted at 256.
+    expect([undefined, 128, 512, 1024, "512"].map(normalizeHdrEnvironmentFaceSize)).toEqual([256, 128, 512, 256, 256]);
   });
 
   it("imports a panorama as a prefiltered RGBA16F DDS cube that registers as an environment Texture", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Environment.hproject");
-    const registry = new AssetRegistry(storage);
-    await registry.mountRoot(projectContentRoot());
+    const { storage, registry } = await mountRegistry();
     // +X half-space green, the rest dim blue: 64 wide gives 16×16 faces.
     const source = buildRadianceHdrFixture({
       width: 64,
@@ -209,12 +222,73 @@ describe("HDR environment import", () => {
       mipLevels: 5,
       prefiltered: true,
       hasIrradiance: false,
+      hdrFaceSize: 256,
     });
     expect(isEnvironmentTexturePayload(asset!.header.payload)).toBe(true);
-    const dds = (await decodeHasset(await storage.readBinary(asset!.path))).chunks.get("source")!;
+    const chunks = (await decodeHasset(await storage.readBinary(asset!.path))).chunks;
+    const dds = chunks.get("source")!;
     expect(readEnvironmentTextureInfo(dds)).toMatchObject({ container: "dds", width: 16, mipLevels: 5 });
     // Faces upload in +X, -X, +Y, -Y, +Z, -Z order.
     expect(ddsFirstTexel(dds, 0)).toEqual([0, 2, 0]);
     expect(ddsFirstTexel(dds, 1)).toEqual([0, 0, 0.5]);
+    // The panorama is kept as imported, so a Face Size change can convert it again.
+    expect(chunks.get("hdr")).toEqual(source);
+  });
+
+  it("converts at the requested Face Size and reports progress up to completion", async () => {
+    const source = buildRadianceHdrFixture({ width: 1024, height: 512, color: () => [1, 1, 1], runLength: true });
+    const progress: number[] = [];
+    const dds = await convertRadianceHdrToEnvironmentDds(source, { faceSize: 128, onProgress: (fraction) => progress.push(fraction) });
+    expect(readEnvironmentTextureInfo(dds)).toMatchObject({ width: 128, mipLevels: 8 });
+    expect(progress[0]).toBe(0);
+    expect(progress.at(-1)).toBe(1);
+    expect(progress.every((fraction, index) => index === 0 || fraction >= progress[index - 1]!)).toBe(true);
+  });
+
+  it("stops a conversion when its signal aborts and writes no Texture", async () => {
+    const { registry } = await mountRegistry();
+    const controller = new AbortController();
+    const source = buildRadianceHdrFixture({ width: 64, height: 32, color: () => [1, 1, 1] });
+    await expect(registry.importFile("project", "", "Sky.hdr", source, {
+      signal: controller.signal,
+      // Cancel as the conversion reports its first progress.
+      onProgress: () => controller.abort(),
+    })).rejects.toMatchObject({ name: "AbortError" });
+    expect(registry.list()).toEqual([]);
+  });
+
+  it("converts the kept panorama again at another Face Size", async () => {
+    const { storage, registry } = await mountRegistry();
+    const source = buildRadianceHdrFixture({ width: 64, height: 32, color: () => [0, 1, 0] });
+    const [asset] = await registry.importFile("project", "", "Sky.hdr", source, { hdrFaceSize: 128 });
+    expect(asset!.header.payload.hdrFaceSize).toBe(128);
+    const cube = buildFloatDdsCubeFixture({ size: 4, halfFloat: true });
+    const convert = vi.fn<HdrEnvironmentConverter>(async () => cube);
+
+    expect(await registry.reconvertHdrEnvironment(asset!.header.guid, 512, convert)).toBe(true);
+
+    expect(convert).toHaveBeenCalledWith(source, expect.objectContaining({ faceSize: 512 }));
+    const header = registry.getByGuid(asset!.header.guid)!.header;
+    expect(header.payload).toMatchObject({ hdrFaceSize: 512, width: 4, height: 4, mipLevels: 3, usage: "skybox" });
+    const chunks = (await decodeHasset(await storage.readBinary(asset!.path))).chunks;
+    expect(chunks.get("source")).toEqual(cube);
+    expect(chunks.get("hdr")).toEqual(source);
+  });
+
+  it("refuses a Face Size change for a cube with no kept panorama and leaves a cancelled one unchanged", async () => {
+    const { registry } = await mountRegistry();
+    const [dds] = await registry.importFile("project", "", "Studio.dds", buildFloatDdsCubeFixture({ halfFloat: true }));
+    const convert = vi.fn<HdrEnvironmentConverter>(async () => buildFloatDdsCubeFixture({ size: 4, halfFloat: true }));
+    await expect(registry.reconvertHdrEnvironment(dds!.header.guid, 512, convert)).rejects.toThrow(/Import the \.hdr again/);
+
+    const [hdr] = await registry.importFile("project", "", "Sky.hdr", buildRadianceHdrFixture({ width: 64, height: 32, color: () => [1, 1, 1] }));
+    const controller = new AbortController();
+    convert.mockImplementationOnce(async () => {
+      controller.abort();
+      return buildFloatDdsCubeFixture({ size: 4, halfFloat: true });
+    });
+    await expect(registry.reconvertHdrEnvironment(hdr!.header.guid, 512, convert, { signal: controller.signal }))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(registry.getByGuid(hdr!.header.guid)!.header.payload).toMatchObject({ hdrFaceSize: 256, width: 16 });
   });
 });

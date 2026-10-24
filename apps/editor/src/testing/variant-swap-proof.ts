@@ -36,11 +36,12 @@ import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-erro
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { CelMaterial } from "../../../../packages/render/src/cel-material";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
-import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
+import { isForwardLightExcluded, setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
+import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Step = {
@@ -503,6 +504,104 @@ async function rehearsedChanges() {
   }
 }
 
+/** An admission a light's approach brings: what it linked and how long the previous variants drew. */
+type Admission = {
+  /** The light was admitted (the Forward budget's, or a shadow map's) by the last frame. */
+  admitted: boolean;
+  /** Programs linked while the light waited within reach of the admission, before it. */
+  linksAhead: number;
+  /** Programs linked from the change that admits it until every Material drew its new variant. */
+  linksAtAdmission: number;
+  /** Steady frames after that change in which some Material still drew its previous variant. */
+  lateFrames: number;
+  held: number;
+  glErrors: string[];
+};
+
+/**
+ * A light comes within reach of an admission and then into it, approaching (it waits within the prediction margin
+ * first) or jumping straight in: a spot the Forward budget (two local lights) leaves out takes a point's place, and a
+ * shadowed spot takes a farther point's shadow map (two local maps, the other a spot's). Approached, the admission's
+ * variants were compiled ahead, so it links no program; jumping in, the same admission links them.
+ */
+async function predictedAdmissions() {
+  const run = async (admission: "forward" | "shadow", approach: boolean): Promise<Admission> => {
+    const view = await worldView();
+    try {
+      setSceneRenderSettings(view.scene, {
+        mode: "pbr",
+        quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: admission === "forward" ? 2 : 16 } }),
+        shadows: normalizeShadowSettings({ cascades: 1, localLightMode: "manual", maxLocalLights: 2 }),
+      });
+      const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), view.scene);
+      authored(sun, [1, 0.95, 0.85], 0.4);
+      const shadows = admission === "shadow";
+      const near = shadows
+        ? new SpotLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene)
+        : new PointLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(-0.6, 1.6, -1.2), view.scene);
+      authored(near, [0.3, 0.4, 1], 0.9, shadows);
+      const far = new PointLight(`${AUTHORED_LIGHT_PREFIX}far`, shadows ? new Vector3(1.5, 1.8, 3) : new Vector3(1.4, 1.2, -1.5), view.scene);
+      authored(far, [1, 0.8, 0.2], 0.9, shadows);
+      const spot = new SpotLight(`${AUTHORED_LIGHT_PREFIX}spot`, new Vector3(0, 3.2, 24), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
+      authored(spot, [0.9, 0.85, 0.7], 1.4, shadows);
+      await view.coordinator.prepare();
+      await view.settle();
+      for (let index = 0; index < 4; index++) view.frame(true);
+      const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+      const pass = () => view.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+      const floors = view.scene.meshes.filter((mesh) => mesh.name.startsWith("floor-"));
+      const drawn = () => floors.map((mesh) => mesh.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
+      const admitted = () => shadows
+        ? findSceneShadowController(view.scene)?.generator(spot) != null && findSceneShadowController(view.scene)?.generator(far) == null
+        : !isForwardLightExcluded(spot);
+      const gl = (view.engine as unknown as { _gl: WebGL2RenderingContext })._gl;
+      const linkProgram = gl.linkProgram;
+      let links = 0;
+      gl.linkProgram = function countedLinkProgram(this: WebGL2RenderingContext, program: WebGLProgram) {
+        links++;
+        return linkProgram.call(this, program);
+      };
+      const errorsBefore = glErrorTraceEntries().length;
+      try {
+        let linksAhead = 0;
+        if (approach) {
+          // Within the prediction margin of the cut-off (the farther local light's ranking distance), still left out.
+          spot.position.set(0, 3.2, shadows ? 6 : 1);
+          for (let index = 0; index < 12; index++) {
+            view.frame(true);
+            await pause();
+          }
+          linksAhead = links;
+        }
+        if (admitted()) throw new Error(`The ${admission} admission came before the change.`);
+        links = 0;
+        const before = drawn();
+        spot.position.set(0, 3.2, shadows ? 0 : -4.5);
+        let lateFrames = 0;
+        let held = 0;
+        for (let index = 0; index < 30; index++) {
+          if (!view.frame(true)) held++;
+          else if (drawn().some((effect, slot) => effect === before[slot])) lateFrames++;
+          else break;
+          await pause();
+        }
+        return {
+          admitted: admitted(), linksAhead, linksAtAdmission: links, lateFrames, held,
+          glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
+        };
+      } finally {
+        gl.linkProgram = linkProgram;
+      }
+    } finally {
+      view.dispose();
+    }
+  };
+  return {
+    forward: { approached: await run("forward", true), jumped: await run("forward", false) },
+    shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
+  };
+}
+
 export async function runVariantSwapProof() {
   const untrace = installGlErrorTrace();
   try {
@@ -564,7 +663,10 @@ export async function runVariantSwapProof() {
         return { light: point, castShadows: (enabled) => authored(point, [1, 0.8, 0.5], 1.4, enabled) };
       }),
     ];
-    return { steps, shadowGains, spawn: await spawnReveal(), warmSpawn: await warmSpawn(), rehearsed: await rehearsedChanges() };
+    return {
+      steps, shadowGains, spawn: await spawnReveal(), warmSpawn: await warmSpawn(), rehearsed: await rehearsedChanges(),
+      predicted: await predictedAdmissions(),
+    };
   } finally {
     untrace();
   }

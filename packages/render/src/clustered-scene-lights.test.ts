@@ -35,6 +35,7 @@ import {
   normalizeShadowSettings,
 } from "@haptic/core";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
+import { withSceneSignalsHeld } from "./scene-readiness-signal";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
@@ -624,6 +625,20 @@ describe("explicit clustered light ownership", () => {
     expect(controller.generator(spot)).toBeNull();
     expect(owner.status().clustered).toBe(1);
     expect(mesh.lightSources).not.toContain(spot);
+    owner.dispose();
+  });
+
+  it("leaves the shadow maps alone while a variant prediction's what-if holds the scene's signals", () => {
+    // A what-if admission is given back before any frame draws it: shadow maps that followed it would move, then
+    // move back neutral and with their residency restarted.
+    const { scene } = fixture();
+    const owner = new ClusteredSceneLights(scene, scene.lights.slice());
+    const sync = vi.spyOn(sceneShadowController(scene), "sync");
+    syncSceneLighting(scene);
+    const outside = sync.mock.calls.length;
+    sync.mockClear();
+    withSceneSignalsHeld(scene, () => syncSceneLighting(scene));
+    expect({ outside: outside > 0, held: sync.mock.calls.length }).toEqual({ outside: true, held: 0 });
     owner.dispose();
   });
 

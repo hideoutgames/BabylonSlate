@@ -31,6 +31,14 @@ import {
   FieldSet,
 } from "@haptic/ui/components/field";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@haptic/ui/components/select";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -38,6 +46,12 @@ import {
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
+
+const HDR_FACE_SIZE_ITEMS = ([128, 256, 512] as const).map((size) => ({
+  size,
+  value: String(size),
+  label: `${size} × ${size}`,
+}));
 import {
   focusKeepCandidates,
   type FocusDocumentKind,
@@ -406,6 +420,40 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>Applies to new imports only.</FieldDescription>
+          </Field>
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-hdr-import-face-size">
+              HDR Import Face Size
+            </FieldLabel>
+            <Select
+              items={HDR_FACE_SIZE_ITEMS}
+              value={String(settings.hdrImportFaceSize)}
+              onValueChange={(value) => {
+                const hdrImportFaceSize = HDR_FACE_SIZE_ITEMS.find((item) => item.value === value)?.size;
+                if (hdrImportFaceSize) void onChange({ hdrImportFaceSize });
+              }}
+            >
+              <SelectTrigger
+                id="setting-hdr-import-face-size"
+                size="sm"
+                className="w-full"
+                data-testid="setting-hdr-import-face-size"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {HDR_FACE_SIZE_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Largest cube face for new .hdr imports. Change an imported Texture in its Inspector.
+            </FieldDescription>
           </Field>
           <Field orientation="horizontal" className="settings-field">
             <FieldContent>
