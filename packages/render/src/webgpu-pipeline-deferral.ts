@@ -46,6 +46,8 @@ type Scope = {
   hits: number;
   /** The pending pipelines its skipped draws wait for. */
   nodes: Set<CacheNode>;
+  /** Warm scopes: the cache nodes its draws looked up (found or started), each one Effect's pipeline for one state. */
+  tokens: Set<CacheNode>;
 };
 
 type DeferralState = {
@@ -124,6 +126,7 @@ function install(engine: AbstractEngine): DeferralState {
       }
       if (!state.pending.has(node)) defer(this, node, effect, topology, sampleCount);
       scope.nodes.add(node);
+      scope.tokens.add(node);
       throw DEFERRED;
     }
     if (!scope || this.disabled || !node || target._snapshotRendering.record || state.synchronous.has(node))
@@ -153,6 +156,7 @@ function install(engine: AbstractEngine): DeferralState {
     scope.skipped += 1;
     lookup.apply(this, args);
     scope.hits += 1;
+    if (this._parameter.token) scope.tokens.add(this._parameter.token);
     throw DEFERRED;
   };
   target._draw = function (this: DrawEngine, ...args) {
@@ -183,6 +187,8 @@ export type PipelineDeferral = {
   waiting(): boolean;
   /** A warm scope: some draw looked its pipeline up, and every one found it. */
   warmed(): boolean;
+  /** A warm scope: the pipeline-cache nodes its draws looked up, for `releaseWarmPipelines`. */
+  pipelineNodes?(): readonly object[];
 };
 
 /**
@@ -220,7 +226,9 @@ export function beginPipelineDeferral(
   states.set(engine, state);
   const scopes = state.scopes;
   const warm = options.warm === true;
-  const scope: Scope = { allows, startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0, lookups: 0, hits: 0, nodes: new Set() };
+  const scope: Scope = {
+    allows, startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0, lookups: 0, hits: 0, nodes: new Set(), tokens: new Set(),
+  };
   scopes.push(scope);
   let closed = false;
   return {
@@ -242,7 +250,22 @@ export function beginPipelineDeferral(
       return false;
     },
     warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
+    pipelineNodes: () => [...scope.tokens],
   };
+}
+
+/**
+ * Drops the pipelines warm draws created (or are creating) at `nodes`, cache nodes of Effects since released: Babylon's
+ * pipeline cache is a tree it never prunes, keyed by each Effect's unique id, so a released Effect's pipelines would
+ * stay referenced for the page's lifetime.
+ */
+export function releaseWarmPipelines(engine: AbstractEngine, nodes: Iterable<object>): void {
+  const state = states.get(engine);
+  for (const node of nodes as Iterable<CacheNode>) {
+    // A creation still in flight finds its node gone and keeps nothing.
+    state?.pending.delete(node);
+    node.pipeline = undefined;
+  }
 }
 
 /**

@@ -338,6 +338,18 @@ export function withPredictedEffects<T>(engine: AbstractEngine, predict: () => T
 }
 
 /**
+ * A predicted Effect whose pipelines warm draws created under the real pass's state (`variant-prediction.ts`): the
+ * admission that asks for it draws it at once, never cold.
+ */
+export function settleWarmedEffect(engine: AbstractEngine, effect: Effect): void {
+  let state = states.get(engine);
+  if (!state) states.set(engine, (state = install(engine)));
+  warmUp(state, effect);
+  state.settled.add(effect);
+  state.known.add(effect);
+}
+
+/**
  * `source` as a separate defines object: the same class, own properties in the same order, the same define list
  * (`_keys`, which only `rebuild` refreshes) and the same text, marked unprocessed so a preparation builds its Effect.
  */

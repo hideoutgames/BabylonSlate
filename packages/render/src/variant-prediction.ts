@@ -1,5 +1,6 @@
 import {
-  InstancedMesh, MaterialDefines, Mesh, type AbstractEngine, type AbstractMesh, type Effect, type Light, type Scene, type ShadowGenerator,
+  Constants, InstancedMesh, MaterialDefines, Mesh, type AbstractEngine, type AbstractMesh, type Effect, type Light, type Scene,
+  type ShadowGenerator, type SubMesh,
 } from "@babylonjs/core";
 import { drawnMaterialVariants } from "./drawn-variants";
 import { fixedShapeLightingActive } from "./fixed-light-admission";
@@ -14,7 +15,8 @@ import {
 import { syncSceneLighting } from "./scene-lighting";
 import { withSceneReadinessState, withSceneSignalsHeld } from "./scene-readiness-signal";
 import { findSceneShadowController, type SceneShadowController, type ShadowStartPrediction } from "./shadow-controller";
-import { copyDefines, withPredictedEffects } from "./variant-pipeline-warmup";
+import { copyDefines, settleWarmedEffect, withPredictedEffects } from "./variant-pipeline-warmup";
+import { beginPipelineDeferral, deferredPipelineCount, pipelinesDeferred, releaseWarmPipelines } from "./webgpu-pipeline-deferral";
 
 /**
  * Variant prediction (decision 6): a light within this distance ratio of an admission (the Forward budget's cut-off,
@@ -29,6 +31,8 @@ export const PREDICTION_MARGIN = 1.5;
 const PREDICTION_PROMOTION = 4;
 /** New Effects predictions compile per Engine frame (`engine.frameId`), shared by every view on it. */
 export const PREDICTED_COMPILES_PER_FRAME = 2;
+/** Render pipelines prediction warm draws start creating per Engine frame (WebGPU), shared by every view on it. */
+export const PREDICTED_PIPELINES_PER_FRAME = 2;
 /** Predictions held at once; a new one drops the least recently near. */
 export const PREDICTIONS_MAX = 4;
 /** A prediction whose light has stayed outside the margin this long is dropped, and its Effects released. */
@@ -51,13 +55,35 @@ type Prediction = {
    * its cached Effect (Babylon's `createEffect` counts each request), which its one disposal would never give back.
    */
   prepared: WeakSet<object>;
+  /** Receivers its object passes would draw, for the warm draws that create their pipelines (WebGPU). */
+  receivers: PredictedDraw[];
+  /** Pipeline-cache nodes its warm draws looked up, by Effect: released with an Effect nothing else holds. */
+  pipelines: Map<Effect, Set<object>>;
+  /** Every receiver's warm draws found their pipelines, and its Effects are settled. */
+  warm: boolean;
   complete: boolean;
   lastNear: number;
+};
+
+/**
+ * One receiver draw an admission would make: the real pass, the prediction pass whose wrapper holds the variant, the
+ * instancing it was prepared for, and the lights and maps it binds (what the probe saw, the what-if's included).
+ */
+type PredictedDraw = {
+  mesh: Mesh;
+  subMesh: SubMesh;
+  real: number;
+  pass: number;
+  instanced: boolean;
+  lights: Light[];
+  maps: ReadonlyMap<Light, ShadowGenerator | null>;
 };
 
 type PredictionState = {
   frame: number;
   budget: number;
+  /** Pipelines warm draws may still start in this Engine frame. */
+  pipelineBudget: number;
   predictions: Map<Light, Prediction>;
   /**
    * Render pass ids dropped predictions gave back, for the next to reuse: Babylon numbers pass ids from one counter it
@@ -82,7 +108,7 @@ const states = new WeakMap<AbstractEngine, PredictionState>();
 function stateFor(engine: AbstractEngine): PredictionState {
   let state = states.get(engine);
   if (!state) {
-    state = { frame: -1, budget: 0, predictions: new Map(), free: [], watched: new WeakSet() };
+    state = { frame: -1, budget: 0, pipelineBudget: 0, predictions: new Map(), free: [], watched: new WeakSet() };
     states.set(engine, state);
     const created = state;
     engine.onDisposeObservable.addOnce(() => created.predictions.clear());
@@ -90,6 +116,7 @@ function stateFor(engine: AbstractEngine): PredictionState {
   if (state.frame !== engine.frameId) {
     state.frame = engine.frameId;
     state.budget = PREDICTED_COMPILES_PER_FRAME;
+    state.pipelineBudget = PREDICTED_PIPELINES_PER_FRAME;
   }
   return state;
 }
@@ -104,6 +131,9 @@ function drop(state: PredictionState, prediction: Prediction): void {
   if (engine.isDisposed) return;
   const passes = [...prediction.passes.values()];
   prediction.passes.clear();
+  prediction.receivers.length = 0;
+  const pipelines = [...prediction.pipelines];
+  prediction.pipelines.clear();
   // After the frame, when no pass draws: the wrappers and their Effect references go at once.
   engine.onEndFrameObservable.addOnce(() => {
     if (engine.isDisposed) return;
@@ -111,6 +141,9 @@ function drop(state: PredictionState, prediction: Prediction): void {
       for (const mesh of scene.meshes)
         for (const subMesh of mesh.subMeshes ?? []) for (const pass of passes) subMesh._removeDrawWrapper(pass, true, true);
     state.free.push(...passes);
+    // An Effect that left the cache (only the prediction held it) takes the pipelines its warm draws created along.
+    const cached = new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+    for (const [effect, nodes] of pipelines) if (!cached.has(effect)) releaseWarmPipelines(engine, nodes);
   });
 }
 
@@ -174,7 +207,7 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
       if (oldest) drop(state, oldest);
     }
     prediction = { scene, light, admission: forward.includes(light) ? "forward" : "shadow", context, passes: new Map(),
-      prepared: new WeakSet(), complete: false, lastNear: now };
+      prepared: new WeakSet(), receivers: [], pipelines: new Map(), warm: false, complete: false, lastNear: now };
     state.predictions.set(light, prediction);
   }
   const target = prediction;
@@ -302,6 +335,8 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
             wrapper.defines = copyDefines(defines);
             // As the admission marks receivers: their light defines, and only those, prepare again.
             wrapper.defines.markAsLightDirty();
+            if (pass.admittedMapsOnly && mesh instanceof Mesh)
+              prediction.receivers.push({ mesh, subMesh, real: pass.id, pass: id, instanced: useInstances, lights: mesh.lightSources.slice(), maps: objectMaps });
             const ready = withShadowGenerators(pass.admittedMapsOnly ? objectMaps : plan.maps,
               () => prepare(id, () => material.isReadyForSubMesh(mesh, subMesh, useInstances)));
             if (!ready) return false;
@@ -334,3 +369,96 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
     scene.resetCachedMaterial();
   }
 }
+
+/**
+ * Inside a world view's main object pass, after its real draws and before it restores its lights' shadow flags
+ * (WebGPU): draws each receiver of the scene's complete predictions again under its prediction pass, with the lights
+ * and maps the prediction saw substituted, inside a warm deferral scope, so the predicted variants' render pipelines
+ * are created ahead with the real pass's target and state. Every warm draw is skipped before it creates a bind group
+ * (the pipeline lookup comes first); its uniform writes go to buffers Babylon renews when updated again in a frame, and
+ * to the predicted Effect's own draw wrappers, so no presented draw sees them. A prediction whose warm draws all found
+ * their pipelines settles its Effects, so its admission draws them at once.
+ */
+export function warmPredictedPipelines(scene: Scene, objectPass: number, depthPrePass: number): void {
+  const engine = scene.getEngine();
+  if (!pipelinesDeferred(engine)) return;
+  const state = states.get(engine);
+  if (!state?.predictions.size) return;
+  stateFor(engine);
+  const current = engine.currentRenderPassId;
+  const alpha = Math.max(0, engine.getAlphaMode());
+  const colour = engine.getColorWrite();
+  try {
+    for (const prediction of [...state.predictions.values()]) {
+      if (prediction.scene !== scene || !prediction.complete || prediction.warm) continue;
+      let warm = true;
+      for (const draw of prediction.receivers) {
+        if (draw.real !== objectPass && draw.real !== depthPrePass) continue;
+        if (state.pipelineBudget <= 0) return;
+        const result = warmDraw(engine, prediction, draw, draw.real === depthPrePass);
+        if (result === "stale") {
+          drop(state, prediction);
+          warm = false;
+          break;
+        }
+        if (result !== "warm") warm = false;
+      }
+      if (!warm) continue;
+      prediction.warm = true;
+      for (const effect of prediction.pipelines.keys()) settleWarmedEffect(engine, effect);
+    }
+  } finally {
+    engine.currentRenderPassId = current;
+    engine.setAlphaMode(alpha);
+    engine.setColorWrite(colour);
+    scene.resetCachedMaterial();
+  }
+}
+
+/**
+ * One skipped draw of a predicted receiver: "warm" once it found its pipeline, "cold" while its pipeline is being
+ * created (or the mesh draws with other instancing now), "stale" when its wrapper no longer holds the predicted variant.
+ */
+function warmDraw(engine: AbstractEngine, prediction: Prediction, draw: PredictedDraw, depthPrePass: boolean): "warm" | "cold" | "stale" {
+  const state = states.get(engine)!;
+  const { mesh, subMesh } = draw;
+  if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible) return "cold";
+  const wrapper = subMesh._getDrawWrapper(draw.pass);
+  const effect = wrapper?.effect;
+  if (!effect || !(wrapper.defines instanceof MaterialDefines)) return "stale";
+  // The variant the mesh draws now: a pass prepared for the other instancing would ask for another Effect.
+  const batch = (mesh as unknown as { _getInstancesRenderList(id: number): { hardwareInstancedRendering: boolean[] } })._getInstancesRenderList(subMesh._id);
+  const instanced = !!batch.hardwareInstancedRendering[subMesh._id] || mesh.hasThinInstances;
+  if (instanced !== draw.instanced) return "cold";
+  const material = subMesh.getMaterial();
+  if (!material) return "cold";
+  const scope = beginPipelineDeferral(engine, (pass) => pass === draw.pass, { warm: true });
+  if (!scope) return "warm";
+  // Its defines hold the predicted variant: lighting syncs since (the what-if's own restore among them) marked every
+  // wrapper of the Material light-dirty, which would prepare the current lights' variant instead.
+  wrapper.defines.markAsProcessed();
+  const started = deferredPipelineCount(engine);
+  const lights = (mesh as unknown as { _lightSources: Light[] })._lightSources;
+  (mesh as unknown as { _lightSources: Light[] })._lightSources = draw.lights;
+  engine.currentRenderPassId = draw.pass;
+  engine.setColorWrite(!depthPrePass);
+  engine.setAlphaMode(Constants.ALPHA_DISABLE);
+  try {
+    withShadowGenerators(draw.maps, () => subMesh.render(!depthPrePass && material.needAlphaBlendingForMesh(mesh)));
+  } finally {
+    (mesh as unknown as { _lightSources: Light[] })._lightSources = lights;
+    scope.close();
+  }
+  state.pipelineBudget -= Math.max(0, deferredPipelineCount(engine) - started);
+  if (wrapper.effect !== effect) {
+    // The draw prepared another variant: give back the reference it took, keep the predicted one, and start afresh.
+    wrapper.effect?.dispose();
+    wrapper.setEffect(effect, wrapper.defines);
+    return "stale";
+  }
+  let nodes = prediction.pipelines.get(effect);
+  if (!nodes) prediction.pipelines.set(effect, (nodes = new Set()));
+  for (const node of scope.pipelineNodes?.() ?? []) nodes.add(node);
+  return scope.warmed() ? "warm" : "cold";
+}
+

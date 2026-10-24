@@ -19,6 +19,7 @@ import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRevealPending } from "./reveal-pending";
 import { registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
+import { warmPredictedPipelines } from "./variant-prediction";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
 import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
@@ -94,7 +95,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     // After the real draws and before the task restores its lights' shadow flags, so warm draws compile the variants
     // the real ones draw with.
     renderer.onAfterRenderingManagerRenderObservable.add(() => {
-      if (this.warmsPipelines) warmRequestedPipelines(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId);
+      if (!this.warmsPipelines) return;
+      const pass = scene.getEngine().currentRenderPassId;
+      warmRequestedPipelines(scene, pass, this.depthPrePass.renderPassId);
+      // Then the variants predictions compiled for lights about to be admitted, with their lights substituted.
+      warmPredictedPipelines(scene, pass, this.depthPrePass.renderPassId);
     });
   }
 
