@@ -104,8 +104,8 @@ type PredictedAdmission = {
  */
 export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
   let variant = 0;
-  const run = async (admission: "forward" | "shadow", approach: boolean, expire = false): Promise<PredictedAdmission> => {
-    const shadows = admission === "shadow";
+  const run = async (admission: "forward" | "shadow" | "first", approach: boolean, expire = false): Promise<PredictedAdmission> => {
+    const shadows = admission !== "forward";
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
     const camera = new FreeCamera("camera", new Vector3(0, 4.5, -7.5), scene);
@@ -127,6 +127,11 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     pbr.enableSpecularAntiAliasing = (variant & 1) !== 0;
     pbr.forceNormalForward = (variant & 2) !== 0;
     pbr.useSpecularOverAlpha = (variant & 4) === 0;
+    // The first spot map's runs draw their casters with no face culling, a shadow pass state no earlier run used,
+    // so its caster depth pipelines are new too.
+    const unculled = admission === "first";
+    pbr.backFaceCulling = !unculled;
+    pbr.twoSidedLighting = unculled;
     const floors = [pbr, pbr].map((material, index) => {
       const floor = MeshBuilder.CreateGround(`floor-${index}`, { width: 1.9, height: 6 }, scene);
       floor.position.x = -1 + index * 2;
@@ -140,7 +145,8 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
     });
     const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), scene);
     authored(sun, [1, 0.95, 0.85], 0.4);
-    const near = shadows
+    // The first spot map: the nearer holder is a point too.
+    const near = admission === "shadow"
       ? new SpotLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene)
       : new PointLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(-0.6, 1.6, -1.2), scene);
     authored(near, [0.3, 0.4, 1], 0.9, shadows);
@@ -242,6 +248,7 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
   return {
     forward: { approached: await run("forward", true), jumped: await run("forward", false), expired: await run("forward", true, true) },
     shadow: { approached: await run("shadow", true), jumped: await run("shadow", false), expired: await run("shadow", true, true) },
+    first: { approached: await run("first", true), jumped: await run("first", false), expired: await run("first", true, true) },
   };
 }
 

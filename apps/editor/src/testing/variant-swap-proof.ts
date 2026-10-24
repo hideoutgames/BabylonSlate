@@ -525,7 +525,7 @@ type Admission = {
  * variants were compiled ahead, so it links no program; jumping in, the same admission links them.
  */
 async function predictedAdmissions() {
-  const run = async (admission: "forward" | "shadow", approach: boolean): Promise<Admission> => {
+  const run = async (admission: "forward" | "shadow" | "first", approach: boolean): Promise<Admission> => {
     const view = await worldView();
     try {
       setSceneRenderSettings(view.scene, {
@@ -535,8 +535,9 @@ async function predictedAdmissions() {
       });
       const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), view.scene);
       authored(sun, [1, 0.95, 0.85], 0.4);
-      const shadows = admission === "shadow";
-      const near = shadows
+      const shadows = admission !== "forward";
+      // The first spot map: the nearer holder is a point too.
+      const near = admission === "shadow"
         ? new SpotLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene)
         : new PointLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(-0.6, 1.6, -1.2), view.scene);
       authored(near, [0.3, 0.4, 1], 0.9, shadows);
@@ -599,6 +600,7 @@ async function predictedAdmissions() {
   return {
     forward: { approached: await run("forward", true), jumped: await run("forward", false) },
     shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
+    first: { approached: await run("first", true), jumped: await run("first", false) },
   };
 }
 
