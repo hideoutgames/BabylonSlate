@@ -514,8 +514,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
   }
 }
 
-/** Scenes whose warm draws failed once already: a failure repeats every frame, and is reported once. */
-const warmFailures = new WeakSet<Scene>();
+/** Warm draw failures already reported, by scene: a failure repeats every frame, and each distinct one is reported once. */
+const warmFailures = new WeakMap<Scene, Set<string>>();
 
 /**
  * Runs a pass's warm draws, which never end the pass early: Babylon's ObjectRenderer restores nothing when a draw
@@ -526,8 +526,11 @@ function warmSafely(scene: Scene, warm: () => void): void {
   try {
     warm();
   } catch (error) {
-    if (warmFailures.has(scene)) return;
-    warmFailures.add(scene);
-    console.warn(`[render] Pipeline warm draws failed: ${String(error)}`);
+    const message = String(error);
+    let reported = warmFailures.get(scene);
+    if (!reported) warmFailures.set(scene, (reported = new Set()));
+    if (reported.has(message)) return;
+    reported.add(message);
+    console.warn(`[render] Pipeline warm draws failed: ${message}`);
   }
 }

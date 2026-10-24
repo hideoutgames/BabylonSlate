@@ -42,6 +42,7 @@ import {
   PBRMaterial,
   PointLight,
   Scene,
+  ShadowGenerator,
   SpotLight,
   StandardMaterial,
   SubMesh,
@@ -49,7 +50,6 @@ import {
   Vector3,
   type AbstractEngine,
   type Effect,
-  type ShadowGenerator,
 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_VISIBLE,
@@ -75,7 +75,7 @@ import { findSceneShadowController, PREDICTION_MAP_SIZE } from "./shadow-control
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
-import { PREDICTIONS_MAX, releaseLightPredictions } from "./variant-prediction";
+import { PREDICTIONS_MAX } from "./variant-prediction";
 import { managedRenderReservations } from "./managed-render-resources";
 import { shadowBytesPerTexel } from "./shadow-admission";
 import { isSceneGameTimePaused } from "./scene-game-time";
@@ -860,11 +860,76 @@ describe("compile holds after the first frame", () => {
       listed: maps.some((map) => world.handle.scene.textures.includes(map.getShadowMap()!)),
       realMaps: world.handle.scene.lights.filter((light) => controller().generator(light)).length,
     };
-    releaseLightPredictions(world.handle.scene);
+    world.handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 1_000 });
     expect({ held, afterLoad: { maps: controller().heldPredictionMaps.length, bytes: reserved() - before } }).toEqual({
       held: { maps: 1, bytes: PREDICTION_MAP_SIZE ** 2 * shadowBytesPerTexel(world.engine), attached: false, listed: false, realMaps: 2 },
       afterLoad: { maps: 0, bytes: 0 },
     });
+  });
+
+  /** The first spot map's setup: two point maps, and a shadowed spot that waits within the margin of the farther one. */
+  async function firstSpotMapWorld(model: Model) {
+    predictAhead = true;
+    const world = playWorld(model, [point(10, [0, 4, 0], { castShadows: true }), point(11, [3, 4, 4], { castShadows: true }),
+      spot(30, [0, 5, 40], { castShadows: true })]);
+    updateSceneRenderingSettings(world.handle.scene,
+      { shadows: { ...sceneRenderingSettings(world.handle.scene).shadows, localLightMode: "manual", maxLocalLights: 2 } });
+    await settle(world);
+    return {
+      world,
+      controller: () => findSceneShadowController(world.handle.scene)!,
+      spotLight: () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}30`)!,
+    };
+  }
+
+  it("a prediction map whose render throws throws nothing out of a frame, is reported once and is not rendered again", async () => {
+    // WebGPU: the prediction map's warm render runs after the view's graph render, inside the frame.
+    const { world, controller } = await firstSpotMapWorld("webgpu");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    cleanups.push(() => warn.mockRestore());
+    world.place(spot(30, [0, 5, 8], { castShadows: true }));
+    let thrown = 0;
+    let escaped = 0;
+    const drawn: boolean[] = [];
+    for (let index = 0; index < 16; index++) {
+      const map = controller().heldPredictionMaps[0]?.getShadowMap();
+      if (map && !Object.prototype.hasOwnProperty.call(map, "render"))
+        map.render = () => { thrown++; throw new Error("injected prediction map render failure"); };
+      try {
+        const { view } = await world.frame();
+        drawn.push(view?.rendered === true);
+      } catch {
+        escaped++;
+      }
+    }
+    const reports = warn.mock.calls.filter(([message]) => String(message).includes("Prediction map render failed")).length;
+    expect({ thrown, escaped, drawn: drawn.every(Boolean), reports }).toEqual({ thrown: 1, escaped: 0, drawn: true, reports: 1 });
+  });
+
+  it("a prediction map whose depth shaders load late still gives its casters' depth variants", async () => {
+    // A map just built imports its depth shaders first, and until then prepares no caster: the probe waits for them
+    // (here held back for a few frames), so the first spot map's admission compiles nothing.
+    const { world, controller, spotLight } = await firstSpotMapWorld("sync");
+    const prototype = ShadowGenerator.prototype as unknown as { _initShaderSourceAsync(...args: unknown[]): Promise<void> };
+    const initShaders = prototype._initShaderSourceAsync;
+    let load!: () => void;
+    const loaded = new Promise<void>((resolve) => { load = resolve; });
+    prototype._initShaderSourceAsync = async function (this: ShadowGenerator, ...args: unknown[]) {
+      await loaded;
+      return initShaders.apply(this, args);
+    };
+    cleanups.push(() => { prototype._initShaderSourceAsync = initShaders; });
+    world.place(spot(30, [0, 5, 8], { castShadows: true }));
+    for (let index = 0; index < 6; index++) await world.frame();
+    const map = controller().heldPredictionMaps[0];
+    const waited = !!map && !(map as unknown as { _shadersLoaded: boolean })._shadersLoaded;
+    load();
+    for (let index = 0; index < 12; index++) await world.frame();
+    world.driver.arm();
+    world.place(spot(30, [0, 5, 2], { castShadows: true }));
+    for (let index = 0; index < 14; index++) await world.frame();
+    expect({ waited, map: controller().generator(spotLight()) !== null, compiled: realCompiles(world).length })
+      .toEqual({ waited: true, map: true, compiled: 0 });
   });
 
   const approaches = {
