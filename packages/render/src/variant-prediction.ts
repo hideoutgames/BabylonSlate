@@ -203,8 +203,9 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   }
   releaseUnusedPredictionMaps(scene, controller, state);
   if (state.budget <= 0) return;
-  // The nearest PREDICTIONS_MAX candidates only, and a prediction for one of them is never dropped for another: with
-  // more lights near than predictions held, a static scene settles instead of predicting them in turn for good.
+  // The nearest PREDICTIONS_MAX candidates only. A full set makes room only by dropping a prediction of this scene
+  // whose light has left the margin, never one still near (two near lights trading ranks would otherwise drop and
+  // rebuild each other's predictions every frame) nor another view's.
   const candidates = [...near].slice(0, PREDICTIONS_MAX);
   const light = candidates.find((candidate) => !state.predictions.get(candidate)?.complete);
   if (!light) return;
@@ -213,7 +214,7 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
     if (state.predictions.size >= PREDICTIONS_MAX) {
       let oldest: Prediction | undefined;
       for (const other of state.predictions.values())
-        if (!candidates.includes(other.light) && (!oldest || other.lastNear < oldest.lastNear)) oldest = other;
+        if (other.scene === scene && !near.has(other.light) && (!oldest || other.lastNear < oldest.lastNear)) oldest = other;
       if (!oldest) return;
       drop(state, oldest);
     }
