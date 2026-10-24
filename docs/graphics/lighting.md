@@ -80,7 +80,18 @@ For **Texture**, import a prefiltered environment cube as a `.env` or `.dds` fil
 | **Environment Rotation** | Rotation around world Y, in degrees. |
 | **CEL Environment Strength** | CEL only. Adds diffuse environment light to the bands. Default 0. |
 
+Inside rooms and caves, add [Reflection Probes](#reflection-probes) so surfaces stop reflecting the outdoor sky.
+
 Project defaults are in **Project Settings > Rendering > Environment Lighting**. In a scene, choose **Override** on a field to change it there, or **Reset To Project** to follow the project again.
+
+## Reflection probes
+
+Environment lighting comes from one sky, so indoor surfaces reflect the outdoors. A [Reflection Probe](../components/reflection-probe.md) captures the static scene around it and lights the surfaces inside its box instead.
+
+1. Open **Place Actors > Environment > Reflection Probe** and drop it in the middle of a room.
+2. Set its **Size** to cover the room. Surfaces inside reflect the room, lined up with its walls.
+
+Probes recapture on their own after you stop editing. They light and reflect only through image-based lighting, so the same **Image-Based Lighting** and **Environment Intensity** settings apply.
 
 ## CEL shading
 
@@ -97,10 +108,11 @@ When **Render Mode** is **CEL**, **Project Settings > Rendering > CEL Shading** 
 | **Outlines**, **Outline Color**, **Outline Width** | On, near black, 1 px | Silhouette outlines on eligible geometry. |
 | **Outline Distance Fade**, **Outline Fade Start**, **Outline Fade End** | Off, 50, 100 | Shrinks outlines with camera distance. |
 | **Real-Time Reflections** | Off | Lets [Real-Time Reflections](post-processing.md#project-effects) draw on CEL surfaces. Off keeps CEL flat. |
+| **Reflection Textures** | Off | CEL reflections also read imported models' metalness, roughness and specular textures. Off reads their values only. |
 
 Bands and shadow edges are always hard steps. For per-actor outlines, use the [Outline](../components/outline.md) component; see [Geometry](geometry.md#outlines).
 
-With **Real-Time Reflections** on, and the effect on in **Post Processing**, CEL surfaces reflect as their Materials do in PBR: metal and smooth surfaces reflect, unlit surfaces never do. Imported models reflect from their metal and roughness values; a model whose metalness comes from a texture does not reflect in CEL.
+With **Real-Time Reflections** on, and the effect on in **Post Processing**, CEL surfaces reflect as their Materials do in PBR: metal and smooth surfaces reflect, unlit surfaces never do. Imported models reflect from their metal and roughness values; a model whose metalness comes from a texture does not reflect in CEL unless **Reflection Textures** is on. With it on, CEL reads the model's metallic-roughness texture (including packed occlusion-roughness-metallic textures), specular-glossiness texture or specular map with the same texture coordinates and tiling as in PBR. The extra texture reads happen only for those models and only while CEL reflections run. Graph Materials always reflect from their own **Metallic** and **Roughness** inputs, whether those come from values or textures, so the setting does not change them.
 
 ## Control lights from scripts
 

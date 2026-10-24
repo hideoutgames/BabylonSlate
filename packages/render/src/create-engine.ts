@@ -26,12 +26,14 @@ import { configureCutoutSorting, configureEditorRenderingGroups } from "./sortin
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
+import type { Node as BabylonNode } from "@babylonjs/core";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type ReflectionProbeBinding, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -1859,6 +1861,39 @@ function initializeEngine(
     upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
   };
+  // Play reflection probes: authored per slot, static actors from the authored play scene.
+  const runtimeProbes = new Map<number, { actorId: string; bindings: ReflectionProbeBinding[] }>();
+  const runtimeProbeActorBySlot = new Map<number, string>();
+  let playStaticActors = new Set<string>();
+  let probeRoots: { renderId: number; slots: Map<BabylonNode, number> } | null = null;
+  const playProbeStatic = (mesh: BabylonNode): boolean => {
+    // Captures ask once per mesh; map the slot roots once per frame.
+    if (probeRoots?.renderId !== scene.getRenderId()) {
+      probeRoots = { renderId: scene.getRenderId(), slots: new Map([...binding.meshes].map(([slot, root]) => [root as BabylonNode, slot])) };
+    }
+    for (let node: BabylonNode | null = mesh; node; node = node.parent) {
+      const slot = probeRoots.slots.get(node);
+      if (slot === undefined) continue;
+      const actorGuid = binding.meshSorting.get(slot)?.actorGuid;
+      return !!actorGuid && playStaticActors.has(actorGuid);
+    }
+    return false;
+  };
+  const refreshRuntimeReflectionProbes = (slotId: number) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = runtimeProbes.get(slotId);
+    const previous = runtimeProbeActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      findSceneReflectionProbes(scene)?.remove(previous);
+      runtimeProbeActorBySlot.delete(slotId);
+    }
+    if (!authored || !authored.bindings.length || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    const probes = sceneReflectionProbes(scene);
+    probes.setStaticPredicate(playProbeStatic);
+    probes.upsert(authored.actorId, root, authored.bindings);
+    runtimeProbeActorBySlot.set(slotId, authored.actorId);
+  };
   const refreshRuntimeOutline = (slotId: number) => {
     if (options.editor) return;
     const root = binding.meshes.get(slotId);
@@ -1880,6 +1915,7 @@ function initializeEngine(
     refreshRuntimeDeformers(slotId);
     refreshRuntimeOutline(slotId);
     refreshRuntimeFogVolumes(slotId);
+    refreshRuntimeReflectionProbes(slotId);
   };
 
   let lastSceneAssetGuid: string | undefined;
@@ -3888,6 +3924,12 @@ function initializeEngine(
         }
         scheduler.invalidate("asset");
       }
+      if (command.type === "setReflectionProbes") {
+        if (command.probes.length) runtimeProbes.set(command.slotId, { actorId: command.actorId, bindings: command.probes });
+        else runtimeProbes.delete(command.slotId);
+        refreshRuntimeReflectionProbes(command.slotId);
+      }
+      if (command.type === "recaptureReflectionProbes") findSceneReflectionProbes(scene)?.markDirty(true);
       if (command.type === "setFogVolumes") {
         appliedSnapshotIdentity = null;
         binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
@@ -4422,6 +4464,10 @@ function initializeEngine(
       if (libraries.particleLibrary) particleService?.setLibrary(libraries.particleLibrary);
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
+      if (!options.editor) {
+        playStaticActors = reflectionProbeStaticActors(sceneData.actors);
+        findSceneReflectionProbes(scene)?.markDirty(true);
+      }
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       outlineHost.refreshSettings();
       applySerializedSceneEnvironment(scene, sceneData, {

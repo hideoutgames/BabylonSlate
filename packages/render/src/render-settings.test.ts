@@ -234,3 +234,27 @@ it("tells CEL surfaces once per change whether reflections run, after the plan i
   expect(state.celReflections).toBe(false);
   expect(sceneEffectsQualityLimits(scene)).toEqual([]);
 });
+
+it("applies CEL Reflection Textures only while CEL reflections run", () => {
+  const scene = fixture();
+  const state = sceneRenderingSettings(scene);
+  let changes = 0;
+  state.listeners.add(() => changes++);
+  const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
+  const cel = normalizeCelShadingSettings({ reflectionsEnabled: true, reflectionTexturesEnabled: true });
+  state.qualityOverrides = qualityPresetPatch("high");
+  updateSceneRenderingSettings(scene, { mode: "cel", cel, effects });
+  expect([state.celReflectionTextures, changes]).toEqual([true, 1]);
+  // A scene override of the textures alone is its own change; reflections keep running.
+  updateSceneRenderingSettings(scene, undefined, { reflectionTexturesEnabled: false });
+  expect([state.celReflections, state.celReflectionTextures, changes]).toEqual([true, false, 2]);
+  updateSceneRenderingSettings(scene, undefined, {});
+  expect(state.celReflectionTextures).toBe(true);
+  // A quality tier that skips reflections, or no project effect, leaves nothing to texture.
+  state.qualityOverrides = qualityPresetPatch("medium");
+  updateSceneRenderingSettings(scene);
+  expect(state.celReflectionTextures).toBe(false);
+  state.qualityOverrides = qualityPresetPatch("high");
+  updateSceneRenderingSettings(scene, { mode: "cel", cel, effects: DEFAULT_RENDER_EFFECTS });
+  expect(state.celReflectionTextures).toBe(false);
+});

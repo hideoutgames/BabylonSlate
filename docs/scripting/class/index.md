@@ -615,6 +615,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Capture Render Target](capture-render-target.md) | Requests one capture from a Render Target Capture actor. |
+| [Recapture Reflection Probes](recapture-reflection-probes.md) | Recaptures every Reflection Probe in the play world. |
 | [Get Capture Actors](get-capture-actors.md) | Returns the list of actors that a capture is limited to. |
 | [Get Capture Enabled](get-capture-enabled.md) | Returns whether a Render Target Capture actor is allowed to capture. |
 | [Get Capture Every Frame](get-capture-every-frame.md) | Returns whether a Render Target Capture actor updates every frame. |

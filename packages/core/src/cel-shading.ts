@@ -22,6 +22,11 @@ export interface CelShadingSettings {
   outlineFadeEnd: number;
   /** Lets the project's Real-Time Reflections draw on CEL surfaces; off keeps CEL flat. */
   reflectionsEnabled: boolean;
+  /**
+   * CEL reflections also read the source's metalness, roughness and specular maps; off uses its factors only. Applies
+   * only while CEL reflections run.
+   */
+  reflectionTexturesEnabled: boolean;
 }
 
 /** Missing scene keys inherit independently, including after project edits. */
@@ -43,6 +48,7 @@ export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   outlineFadeStart: 50,
   outlineFadeEnd: 100,
   reflectionsEnabled: false,
+  reflectionTexturesEnabled: false,
 };
 
 export const CEL_SHADING_LIMITS = {
@@ -74,6 +80,8 @@ export function normalizeCelShadingOverrides(
     result.specularEnabled = source.specularEnabled;
   if (typeof source.reflectionsEnabled === "boolean")
     result.reflectionsEnabled = source.reflectionsEnabled;
+  if (typeof source.reflectionTexturesEnabled === "boolean")
+    result.reflectionTexturesEnabled = source.reflectionTexturesEnabled;
   for (const key of Object.keys(
     CEL_SHADING_LIMITS,
   ) as (keyof typeof CEL_SHADING_LIMITS)[]) {

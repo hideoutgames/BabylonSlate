@@ -140,6 +140,11 @@ it("authors CEL reflections off by default and lets a scene opt in against the p
   expect(authored.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(authored);
   expect(changes.at(-1)).toMatchObject({ reflectionsEnabled: true, shadowBands: 3 });
+  // Reflections read material values only until Reflection Textures opt in.
+  const textures = screen.getByRole("switch", { name: "Reflection Textures" });
+  expect(textures.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(textures);
+  expect(changes.at(-1)).toMatchObject({ reflectionTexturesEnabled: true });
   view.unmount();
 
   render(<SceneFields />);
