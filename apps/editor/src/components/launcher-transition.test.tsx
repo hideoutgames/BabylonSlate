@@ -17,6 +17,11 @@ let motionQuery: MediaQueryList;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.stubGlobal("__HAPTIC_BUILD_LABEL__", "0.0.1 Development Build");
+  // The boot intro index.html paints outside React for the first transition.
+  document.body.insertAdjacentHTML(
+    "afterbegin",
+    '<div id="haptic-intro" class="slate-loading" role="status"><span class="haptic-intro-status"></span></div>',
+  );
   reducedMotion = false;
   motionQuery = Object.assign(new EventTarget(), {
     get matches() {
@@ -44,6 +49,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.getElementById("haptic-intro")?.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -123,7 +129,7 @@ describe("Launcher Transition", () => {
     finishTransition(overlay);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
     advance(2000);
-    finishTransition(overlay.querySelector("section")!);
+    finishTransition(overlay.firstElementChild!);
     finishTransition(overlay, "transform");
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 

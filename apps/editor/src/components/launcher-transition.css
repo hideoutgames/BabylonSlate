@@ -1,5 +1,5 @@
-/* Keep in sync with the boot splash in apps/editor/index.html. Literal values
- * mirror the editor tokens because the boot copy renders before globals.css. */
+/* The card shown while a project opens; app boot uses the intro in
+ * apps/editor/index.html instead. Literal values mirror the editor tokens. */
 .slate-loading {
   position: fixed;
   inset: 0;
@@ -112,10 +112,6 @@
   width: 100%;
   background: oklch(0.97 0.002 85);
   animation: slate-load-fill 400ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-/* The React copy replaces the boot copy; skip the entrance. */
-.slate-loading[data-boot="true"] .slate-splash {
-  animation: none;
 }
 @keyframes slate-splash-in {
   from {
