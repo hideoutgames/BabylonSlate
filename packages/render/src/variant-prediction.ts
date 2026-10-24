@@ -3,6 +3,7 @@ import {
   type ShadowGenerator, type SubMesh,
 } from "@babylonjs/core";
 import { drawnMaterialVariants } from "./drawn-variants";
+import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import { fixedShapeLightingActive } from "./fixed-light-admission";
 import { restoreSceneLightOrder } from "./forward-light-slots";
 import {
@@ -61,6 +62,8 @@ type Prediction = {
   pipelines: Map<Effect, Set<object>>;
   /** Every receiver's warm draws found their pipelines, and its Effects are settled. */
   warm: boolean;
+  /** The controller's prediction map a first shadow start of its kind borrows. */
+  map?: ShadowGenerator;
   complete: boolean;
   lastNear: number;
 };
@@ -177,7 +180,9 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   const state = stateFor(engine);
   const controller = findSceneShadowController(scene) ?? null;
   const now = performance.now();
-  const forward = nearForwardAdmissions(scene, PREDICTION_MARGIN);
+  // Clustered Forward keeps a selection history of its own, which a what-if admission would move and not give back;
+  // its admissions mostly move lights into clusters, which compile nothing. Its shadow starts are still predicted.
+  const forward = hasClusteredLightPolicy(scene) ? [] : nearForwardAdmissions(scene, PREDICTION_MARGIN);
   const shadows = controller?.nearShadowStarts(PREDICTION_MARGIN) ?? [];
   const near = new Set<Light>([...forward, ...shadows.map((start) => start.light)]);
   const context = contextOf(scene, controller);
@@ -196,15 +201,21 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
     if (near.has(prediction.light)) prediction.lastNear = now;
     else if (now - prediction.lastNear >= PREDICTION_EXPIRY_MS) drop(state, prediction);
   }
+  releaseUnusedPredictionMaps(scene, controller, state);
   if (state.budget <= 0) return;
-  const light = [...near].find((candidate) => !state.predictions.get(candidate)?.complete);
+  // The nearest PREDICTIONS_MAX candidates only, and a prediction for one of them is never dropped for another: with
+  // more lights near than predictions held, a static scene settles instead of predicting them in turn for good.
+  const candidates = [...near].slice(0, PREDICTIONS_MAX);
+  const light = candidates.find((candidate) => !state.predictions.get(candidate)?.complete);
   if (!light) return;
   let prediction = state.predictions.get(light);
   if (!prediction) {
     if (state.predictions.size >= PREDICTIONS_MAX) {
       let oldest: Prediction | undefined;
-      for (const other of state.predictions.values()) if (!oldest || other.lastNear < oldest.lastNear) oldest = other;
-      if (oldest) drop(state, oldest);
+      for (const other of state.predictions.values())
+        if (!candidates.includes(other.light) && (!oldest || other.lastNear < oldest.lastNear)) oldest = other;
+      if (!oldest) return;
+      drop(state, oldest);
     }
     prediction = { scene, light, admission: forward.includes(light) ? "forward" : "shadow", context, passes: new Map(),
       prepared: new WeakSet(), receivers: [], pipelines: new Map(), warm: false, complete: false, lastNear: now };
@@ -212,6 +223,8 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   }
   const target = prediction;
   const start = shadows.find((candidate) => candidate.light === light);
+  // Anything pending applies first, as it would at the next frame: the held what-if refreshes no Material.
+  if (target.admission === "forward") syncSceneLighting(scene);
   const run = (plan: Probe) =>
     withPredictedEffects(engine, () => withSceneReadinessState(scene, () => probe(scene, target, passes, state, plan, controller)));
   target.complete = withSceneSignalsHeld(scene, () => target.admission === "forward"
@@ -224,7 +237,31 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
       maps: new Map(),
       casters: standbyMap(controller, light),
     }))
-    : start ? run(shadowStart(controller, start)) : true);
+    : start ? shadowProbe(controller, start, target, run) : true);
+  releaseUnusedPredictionMaps(scene, controller, state);
+}
+
+/** A prediction map goes with the last prediction it served (an expired, dropped or evicted one). */
+function releaseUnusedPredictionMaps(scene: Scene, controller: SceneShadowController | null, state: PredictionState): void {
+  if (!controller?.heldPredictionMaps.length) return;
+  const unused = (map: ShadowGenerator) => ![...state.predictions.values()].some((other) => other.map === map);
+  if (!controller.heldPredictionMaps.some(unused)) return;
+  // Disposing a map marks its light's receivers light-dirty, though none of them bound this one.
+  keepingWrapperMarks(scene, () => controller.releasePredictionMaps(unused));
+}
+
+/**
+ * Probes a shadow start; a first start of its kind borrows the controller's prediction map of that kind, and is left
+ * out (complete, with nothing to predict) when there is no room for one.
+ */
+function shadowProbe(controller: SceneShadowController | null, start: ShadowStartPrediction, prediction: Prediction,
+  run: (plan: Probe) => boolean): boolean {
+  if (!start.firstOfKind) return run(shadowStart(controller, start, null));
+  // Building a map marks its light's receivers light-dirty; this one is taken off the light at once.
+  const map = keepingWrapperMarks(prediction.scene, () => controller?.predictionMap(start.light) ?? null);
+  if (!map) return true;
+  prediction.map = map;
+  return run(shadowStart(controller, start, map));
 }
 
 /** The standby map `light` holds, which comes back with its admission. */
@@ -236,15 +273,17 @@ function standbyMap(controller: SceneShadowController | null, light: Light): Sha
  * A shadow start for a light already lit: its receivers bind a map of its kind (its own standby one, or a borrowed
  * admitted one with the same defines), and the holder it displaces binds none.
  */
-function shadowStart(controller: SceneShadowController | null, start: ShadowStartPrediction): Probe {
+function shadowStart(controller: SceneShadowController | null, start: ShadowStartPrediction, map: ShadowGenerator | null): Probe {
   const maps = new Map<Light, ShadowGenerator | null>();
-  if (start.borrowed) maps.set(start.light, start.borrowed);
+  const borrowed = start.borrowed ?? map;
+  if (borrowed) maps.set(start.light, borrowed);
   if (start.displaced) maps.set(start.displaced, null);
   const lit = [start.light, ...(start.displaced ? [start.displaced] : [])];
   return {
     receivers: (mesh) => mesh.receiveShadows && lit.some((light) => mesh.lightSources.includes(light)),
     maps,
-    casters: standbyMap(controller, start.light),
+    // The first map of a kind: its casters' depth variants come from the prediction map, as a new map's would.
+    casters: map ?? standbyMap(controller, start.light),
   };
 }
 
@@ -259,13 +298,85 @@ function whatIfAdmitted(scene: Scene, light: Light, probe: (before: Map<object, 
   const order = [...scene.lights];
   const before = new Map<object, readonly Light[]>();
   for (const mesh of scene.meshes) if (!(mesh instanceof InstancedMesh)) before.set(mesh, mesh.lightSources.slice());
+  const marks = wrapperMarks(scene);
   try {
     withForwardAdmissionPromotion(light, PREDICTION_PROMOTION, () => syncSceneLighting(scene));
     return isForwardLightExcluded(light) ? true : probe(before);
   } finally {
     restoreForwardLightSelection(scene, selection);
     syncSceneLighting(scene);
-    restoreSceneLightOrder(scene, order);
+    // The lighting sync then takes the restored order as its own, or the next frame's would refresh every receiver.
+    if (restoreSceneLightOrder(scene, order)) syncSceneLighting(scene);
+    restoreWrapperMarks(marks, before);
+  }
+}
+
+/** Runs `change`, which leaves every receiver's lights as they were, and gives back the draw wrappers' marks. */
+function keepingWrapperMarks<T>(scene: Scene, change: () => T): T {
+  const before = new Map<object, readonly Light[]>();
+  for (const mesh of scene.meshes) if (!(mesh instanceof InstancedMesh)) before.set(mesh, mesh.lightSources.slice());
+  const marks = wrapperMarks(scene);
+  try {
+    return change();
+  } finally {
+    restoreWrapperMarks(marks, before);
+  }
+}
+
+type WrapperMark = {
+  mesh: AbstractMesh;
+  wrapper: { _wasPreviouslyReady: boolean; _wasPreviouslyUsingInstances: boolean | null; defines: unknown };
+  ready: boolean;
+  instances: boolean | null;
+  dirty: boolean;
+  lightsDirty: boolean;
+  lightsDisposed: boolean;
+};
+
+type DefinesMarks = { _isDirty: boolean; _areLightsDirty: boolean; _areLightsDisposed: boolean };
+
+/**
+ * Every draw wrapper's readiness memo and its defines' light marks, which Babylon's light toggles (each receiver's
+ * light resync marks its defines light-dirty) would otherwise leave set on the real passes' wrappers.
+ */
+function wrapperMarks(scene: Scene): WrapperMark[] {
+  const marks: WrapperMark[] = [];
+  for (const mesh of scene.meshes)
+    for (const subMesh of mesh.subMeshes ?? [])
+      for (const wrapper of (subMesh as unknown as { _drawWrappers: (WrapperMark["wrapper"] | undefined)[] })._drawWrappers) {
+        if (!wrapper) continue;
+        const defines = wrapper.defines instanceof MaterialDefines ? wrapper.defines as unknown as DefinesMarks : undefined;
+        marks.push({
+          mesh, wrapper, ready: wrapper._wasPreviouslyReady, instances: wrapper._wasPreviouslyUsingInstances,
+          dirty: defines?._isDirty ?? false, lightsDirty: defines?._areLightsDirty ?? false,
+          lightsDisposed: defines?._areLightsDisposed ?? false,
+        });
+      }
+  return marks;
+}
+
+/**
+ * Gives back the marks a what-if found, on the receivers whose lights it gave back in the same order (the others keep
+ * theirs, and prepare again).
+ */
+function restoreWrapperMarks(marks: readonly WrapperMark[], before: ReadonlyMap<object, readonly Light[]>): void {
+  const restored = new Map<AbstractMesh, boolean>();
+  for (const mark of marks) {
+    let same = restored.get(mark.mesh);
+    if (same === undefined) {
+      const previous = before.get(mark.mesh);
+      const lights = mark.mesh.lightSources;
+      same = !!previous && previous.length === lights.length && previous.every((source, index) => source === lights[index]);
+      restored.set(mark.mesh, same);
+    }
+    if (!same) continue;
+    mark.wrapper._wasPreviouslyReady = mark.ready;
+    mark.wrapper._wasPreviouslyUsingInstances = mark.instances;
+    if (!(mark.wrapper.defines instanceof MaterialDefines)) continue;
+    const defines = mark.wrapper.defines as unknown as DefinesMarks;
+    defines._isDirty = mark.dirty;
+    defines._areLightsDirty = mark.lightsDirty;
+    defines._areLightsDisposed = mark.lightsDisposed;
   }
 }
 

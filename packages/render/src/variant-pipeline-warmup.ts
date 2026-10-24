@@ -114,10 +114,11 @@ function install(engine: AbstractEngine): WarmupState {
   if (!warmedPasses.has(engine)) warmedPasses.set(engine, new Map());
   target.createEffect = function (this: EffectEngine, ...args: unknown[]) {
     const effect = create.apply(this, args);
+    // A prediction compiles ahead what an admission will ask for, and leaves its first draw to the admission: that
+    // finds it new, linked, and admits it within the frame's first-draw budget.
+    if (state.predicting) return effect;
     const known = state.known.has(effect);
     state.known.add(effect);
-    // A prediction compiles ahead what an admission will ask for; the admission's own request finds it known.
-    if (state.predicting) return effect;
     if ((state.marking === 0 && !variantSwapsTolerated()) || state.cold.has(effect) || state.settled.has(effect)) return effect;
     // WebGPU: a variant no draw has drawn with has no pipeline yet (a new one, or one only a probe pass compiled).
     // WebGL2: a new variant has not been drawn either.
@@ -321,9 +322,10 @@ function warmDraw(
 }
 
 /**
- * Runs `predict` (a variant prediction's probes, `variant-prediction.ts`) so the Effects it creates are known to the
- * first-draw budget rather than cold: on WebGL2 the admission that later asks for one finds it linked and draws it at
- * once; on WebGPU it still waits for its pipeline, which only a draw creates.
+ * Runs `predict` (a variant prediction's probes, `variant-prediction.ts`): the Effects it creates are neither cold nor
+ * known, so the admission that later asks for one finds it new and, on WebGL2, linked: it draws within the frame's
+ * first-draw budget (`FIRST_DRAWS_PER_FRAME`) with no compile to wait for; on WebGPU it still waits for its pipeline,
+ * which only a draw creates.
  */
 export function withPredictedEffects<T>(engine: AbstractEngine, predict: () => T): T {
   let state = states.get(engine);

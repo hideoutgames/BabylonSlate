@@ -150,11 +150,6 @@ type View = {
 /** How long a view waits before asking the ledger again for a mirror it refused. */
 const VIEW_REFUSAL_RETRY_MS = 1_000;
 /**
- * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
- * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
- * reverted (`restoreAdmission`).
- */
-/**
  * A prediction map's size (decision 6): a map's format, filter and kind shape the variants it compiles and the
  * pipelines it warms, never its size.
  */
@@ -173,6 +168,11 @@ export type ShadowStartPrediction = {
   /** The holder it would take a map from, whose receivers lose that shadow. */
   displaced: Light | null;
 };
+/**
+ * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
+ * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
+ * reverted (`restoreAdmission`).
+ */
 export type ShadowAdmissionSnapshot = {
   readonly at: number;
   readonly camera: Camera | null;
@@ -388,6 +388,7 @@ export class SceneShadowController {
     this.scene = scene;
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
+      this.releasePredictionMaps();
       for (const entry of this.entries.values()) {
         entry.failedKey = "";
         entry.recovery = null;
@@ -633,7 +634,17 @@ export class SceneShadowController {
         reason: null, failedKey: "", recovery: null, resetAllocation: false, status: "disabled", standby: false,
         admittedAt: -Infinity, distanceSquared: 0, effectiveBias: [],
       };
-      const generator = this.createGenerator(entry, PREDICTION_MAP_SIZE, settings, null, undefined);
+      // Kept out of the scene's texture list as well as off the light: views count the scene's textures, and one
+      // added would ask each for a strict readiness probe. A lost context releases it (`restored` below).
+      const scene = this.scene as unknown as { _blockEntityCollection: boolean };
+      const blocked = scene._blockEntityCollection;
+      scene._blockEntityCollection = true;
+      let generator: ShadowGenerator;
+      try {
+        generator = this.createGenerator(entry, PREDICTION_MAP_SIZE, settings, null, undefined);
+      } finally {
+        scene._blockEntityCollection = blocked;
+      }
       this.slots.delete(generator);
       detachShadowGenerator(generator);
       setAwaitingFirstDraw(generator, false);

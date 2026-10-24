@@ -44,9 +44,9 @@ export interface LoadRehearsalReport {
    * "starting state" when the starting state never settled. */
   timedOut: string[];
   /**
-   * Changes whose revert could not give a light back the shadow map it held: a standby map the change released (a
-   * standby map comes only from a map that lost its admission, so nothing rebuilds it). The scene then presents without
-   * it, until that light is admitted again.
+   * Changes after whose revert a light that held a shadow map (admitted or standby) holds none: most often a standby map
+   * the change released (a standby map comes only from a map that lost its admission, so nothing rebuilds it), or a map
+   * the restore could not allocate again. The scene then presents without it, until that light is admitted again.
    */
   unrestored: string[];
   /** Effects the rehearsal compiled (new entries in the Engine's cache). */
@@ -152,7 +152,7 @@ function restoreAdmission(scene: Scene, snapshot: AdmissionSnapshot): boolean {
   if (snapshot.shadows) shadows?.restoreAdmission(snapshot.shadows);
   syncSceneLighting(scene);
   restoreSceneLightOrder(scene, snapshot.lights);
-  // Every light that held a map holds one again, unless the step released a standby map.
+  // Every light that held a map holds one again, unless the step released a standby map or a reallocation failed.
   for (const light of snapshot.shadows?.maps.keys() ?? []) if (!shadows?.boundGenerator(light)) return false;
   return true;
 }

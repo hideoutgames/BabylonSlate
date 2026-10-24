@@ -10,7 +10,7 @@ import {
   syncClusteredLightPolicy,
 } from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-readiness-signal";
+import { markSceneReadinessDirty, notifySceneReceiversChanged, sceneSignalsHeld } from "./scene-readiness-signal";
 import {
   takeShadowReceiverHandoffs,
   type ShadowReceiverHandoff,
@@ -332,6 +332,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // retired) leave a program that failed to link failing, so they must not end the Material library's latch.
     const receiversChanged = changed || capacity !== lightCapacity;
     lightCapacity = capacity;
+    // A variant prediction's what-if admission, given back before any frame draws it, refreshes no Material: its
+    // probes prepare copies of the receivers' defines themselves.
+    if (sceneSignalsHeld(scene)) return;
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
     try {

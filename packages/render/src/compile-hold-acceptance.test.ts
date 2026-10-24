@@ -37,10 +37,13 @@ import {
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
+  Light,
+  Material,
   PBRMaterial,
   PointLight,
   Scene,
   StandardMaterial,
+  SubMesh,
   UniversalCamera,
   Vector3,
   type AbstractEngine,
@@ -61,7 +64,7 @@ import { createEngine } from "./create-engine";
 import { effectLightSeats } from "./fixed-light-binding";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
-import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
+import { isForwardLightExcluded, nearForwardAdmissions, setAuthoredLightEnabled } from "./light-policy";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
@@ -71,6 +74,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
+import { PREDICTIONS_MAX } from "./variant-prediction";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -567,6 +571,21 @@ const spot = (slotId: number, position: Vec3, properties: Partial<PlayLightPrope
 const MODELS: readonly Model[] = ["sync", "parallel", "webgpu"];
 
 /** The view keeps drawing, raises no hold and pauses nothing; the subject drew its previous Effect while the new one compiled. */
+/**
+ * Effects the driver compiled since it was armed that a real pass draws or probes with (not only a prediction's own
+ * passes: a later prediction for another light compiles ahead too).
+ */
+function realCompiles(world: PlayWorld): Effect[] {
+  const names = world.engine.getRenderPassNames();
+  const held = new Set<Effect>();
+  for (const mesh of world.handle.scene.meshes)
+    for (const subMesh of mesh.subMeshes ?? [])
+      (subMesh as unknown as { _drawWrappers: ({ effect?: Effect | null } | undefined)[] })._drawWrappers.forEach((wrapper, pass) => {
+        if (wrapper?.effect && !names[pass]?.startsWith("prediction")) held.add(wrapper.effect);
+      });
+  return world.driver.created.filter((effect) => held.has(effect));
+}
+
 function expectSwapped(record: CauseRecord, model: Model): void {
   const detail = JSON.stringify(record);
   // The cause really compiled a lit variant, so the states below mean something.
@@ -666,7 +685,7 @@ describe("compile holds after the first frame", () => {
     }
     // Admitted in the change's own frame, with an Effect compiled ahead and, on WebGPU, its pipeline created ahead by
     // warm draws in the object pass.
-    expect({ limited, admitted: !isForwardLightExcluded(spotLight()), compiled: world.driver.created.length,
+    expect({ limited, admitted: !isForwardLightExcluded(spotLight()), compiled: realCompiles(world).length,
       pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean), adoptedAtOnce: adoptedAfter === 0 }).toEqual({
       limited: true, admitted: true, compiled: 0, pipelines: 0, drawn: true, adoptedAtOnce: true,
     });
@@ -727,7 +746,7 @@ describe("compile holds after the first frame", () => {
       if (effect && effect !== before) adoptedAfter = index;
     }
     expect({ waiting, map: controller().generator(lightOf(30)) !== null, point: controller().generator(lightOf(11)) !== null,
-      compiled: world.driver.created.length, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
+      compiled: realCompiles(world).length, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
       adoptedAtOnce: adoptedAfter === 0 }).toEqual({
       waiting: { lit: true, map: false, point: true }, map: true, point: false, compiled: 0, drawn: true,
       pipelines: 0, adoptedAtOnce: true,
@@ -742,8 +761,7 @@ describe("compile holds after the first frame", () => {
       step: 1.7,
       frames: 30,
       configure: undefined,
-      // Frames whose subject still draws its previous variant without prediction (the admission's own).
-      lagsWithout: { sync: 1, webgpu: 1 },
+      prepare: undefined,
     },
     // Two local maps: the spot takes the farther point's, a new spot map whose defines the other spot's give.
     "a spot takes a point's shadow map": {
@@ -751,18 +769,32 @@ describe("compile holds after the first frame", () => {
         spot(30, [0, 5, 40], { castShadows: true })],
       step: 1.7,
       frames: 24,
-      lagsWithout: { sync: 0, webgpu: 1 },
       configure: (world: PlayWorld) => updateSceneRenderingSettings(world.handle.scene,
         { shadows: { ...sceneRenderingSettings(world.handle.scene).shadows, localLightMode: "manual", maxLocalLights: 2 } }),
+      prepare: undefined,
+    },
+    // A same-kind exchange first leaves the points out of creation order; the spot's what-if admission changes the
+    // kind mix, which puts the lights in canonical order, and its give-back must put the exchanged order back.
+    "a spot nears the Forward budget after a point exchange": {
+      actors: () => [...Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2])),
+        point(18, [0, 2.5, 60]), spot(30, [0, 5, 40], { castShadows: true })],
+      step: 1.7,
+      frames: 30,
+      configure: undefined,
+      prepare: async (world: PlayWorld) => {
+        world.place(point(10, [-7, 2.5, 60]));
+        world.place(point(18, [-7, 2.5, -2]));
+        for (let index = 0; index < 4; index++) await world.frame();
+      },
     },
   } as const;
 
   it.each((Object.keys(approaches) as (keyof typeof approaches)[]).flatMap((name) => (["sync", "webgpu"] as const).map((model) => [name, model] as const)))(
     "a prediction never changes what a frame admits, draws or probes while %s: %s", async (name, model) => {
-    // Frame by frame, with and without prediction, while a spot approaches the camera: which lights are lit, which hold
-    // shadow maps (and each light's generators, with their casters), the variant the subject's draw wrapper asks for and
-    // the one it draws, whether the frame drew and the strict readiness probes so far. Under the WebGPU model the
-    // prediction's warm draws run inside the object pass.
+    // Frame by frame, with and without prediction, while a spot approaches the camera: the lights in scene order, which
+    // are lit and which hold shadow maps (and each light's generators, with their casters), the variant the subject's
+    // draw wrapper asks for and the one it draws, whether the frame drew, the real draw wrappers' readiness memos and
+    // light marks going into it, the variants adopted in it and the strict readiness probes so far.
     const scenario = approaches[name];
     const approach = async (predict: boolean) => {
       for (const cleanup of cleanups.splice(0).reverse()) cleanup();
@@ -772,14 +804,35 @@ describe("compile holds after the first frame", () => {
       scenario.configure?.(world);
       const controller = () => findSceneShadowController(world.handle.scene)!;
       await settle(world);
+      await scenario.prepare?.(world);
       const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+      /** The real main-pass draw wrappers, with the Effect each holds. */
+      const real = () => world.handle.scene.meshes.flatMap((mesh) => (mesh.subMeshes ?? []).flatMap((subMesh) => {
+        const wrapper = subMesh._getDrawWrapper(pass()) as unknown as
+          { effect?: Effect | null; _wasPreviouslyReady?: boolean; defines?: { _areLightsDirty?: boolean; _isDirty?: boolean } } | undefined;
+        return wrapper?.effect ? [{ name: mesh.name, wrapper }] : [];
+      }));
       const states: unknown[] = [];
       const drawn: (string | null)[] = [];
+      const wrapperMarks: string[][] = [];
+      const adopted: number[] = [];
       const compiled: number[] = [];
       const checks: number[] = [];
       const effects = (world.engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+      let previous = new Map(real().map(({ name, wrapper }) => [name, wrapper.effect]));
+      // Materials refreshed per frame: a what-if refreshes none.
+      let refreshed = 0;
+      const markDirty = Material.prototype.markDirty;
+      Material.prototype.markDirty = function (this: Material, ...args: Parameters<typeof markDirty>) {
+        refreshed++;
+        return markDirty.apply(this, args);
+      };
+      cleanups.push(() => { Material.prototype.markDirty = markDirty; });
       for (let index = 0; index < scenario.frames; index++) {
+        const refreshedBefore = refreshed;
         world.place(spot(30, [0, 5, 40 - index * scenario.step], { castShadows: true }));
+        const marks = real().filter(({ wrapper }) => !wrapper._wasPreviouslyReady || wrapper.defines?._areLightsDirty || wrapper.defines?._isDirty)
+          .map(({ name }) => name).sort();
         const { view, effect } = await world.frame();
         const subject = world.handle.scene.getMeshByName("actor-2")!.subMeshes[0]!;
         states.push({
@@ -789,36 +842,103 @@ describe("compile holds after the first frame", () => {
             .map((generator) => generator.getShadowMap()?.renderList?.map((mesh) => mesh.name).sort().join("+") ?? null)),
           requested: subject._getDrawWrapper(pass())?.defines?.toString() ?? null,
           rendered: view?.rendered === true,
+          refreshed: refreshed - refreshedBefore,
         });
+        wrapperMarks.push(marks);
         drawn.push(effect?.defines ?? null);
+        const current = new Map(real().map(({ name, wrapper }) => [name, wrapper.effect]));
+        adopted.push([...current].filter(([key, held]) => previous.has(key) && previous.get(key) !== held).length);
+        previous = current;
         compiled.push(Object.keys(effects).length);
         checks.push(view?.checks ?? -1);
       }
-      return { states, drawn, compiled, checks };
+      return { states, drawn, wrapperMarks, adopted, compiled, checks };
     };
     const baseline = await approach(false);
     const predicted = await approach(true);
     expect(predicted.states).toEqual(baseline.states);
-    // What a frame draws differs only where the run without prediction still drew the previous variant, which the
-    // prediction lets the admission's own frame replace with the one it asks for (the synchronous compile otherwise
-    // draws its new variant at once).
+    // What a frame draws differs only where the run without prediction still drew the previous variant, never later
+    // than without it, and its first draws keep to the per-frame budget.
     const requested = (state: unknown) => (state as { requested: string | null }).requested;
-    const lagged = baseline.drawn.flatMap((defines, index) => defines === requested(baseline.states[index]) ? [] : [index]);
+    const lagged = (run: typeof baseline) => run.drawn.filter((defines, index) => defines !== requested(run.states[index])).length;
+    const counts = JSON.stringify({ baseline: baseline.compiled, predicted: predicted.compiled, baselineChecks: baseline.checks,
+      predictedChecks: predicted.checks, baselineAdopted: baseline.adopted, predictedAdopted: predicted.adopted });
     expect({
       sameOrAdopted: predicted.drawn.every((defines, index) => defines === baseline.drawn[index] || defines === requested(predicted.states[index])),
-      laggedWithout: lagged.length,
-      laggedWith: predicted.drawn.some((defines, index) => defines !== requested(predicted.states[index])),
-    }).toEqual({ sameOrAdopted: true, laggedWithout: scenario.lagsWithout[model], laggedWith: false });
+      notLater: lagged(predicted) <= lagged(baseline),
+      firstDraws: Math.max(...predicted.adopted) <= FIRST_DRAWS_PER_FRAME,
+      adoptedAlike: predicted.adopted.reduce((sum, count) => sum + count, 0) === baseline.adopted.reduce((sum, count) => sum + count, 0),
+    }, counts).toEqual({ sameOrAdopted: true, notLater: true, firstDraws: true, adoptedAlike: true });
     // The admission frame compiles nothing with prediction: what it asks for was compiled on earlier frames.
     const admitted = baseline.compiled.findIndex((count, index) => index > 0 && count > baseline.compiled[index - 1]!);
-    const counts = JSON.stringify({ baseline: baseline.compiled, predicted: predicted.compiled, baselineChecks: baseline.checks, predictedChecks: predicted.checks });
     expect(admitted, counts).toBeGreaterThan(0);
+    // Until then the real draw wrappers go into each frame with the readiness memos and light marks they would have
+    // without prediction (an earlier adoption leaves them ready sooner afterwards).
+    expect(predicted.wrapperMarks.slice(0, admitted + 1)).toEqual(baseline.wrapperMarks.slice(0, admitted + 1));
     expect({
       atAdmission: predicted.compiled[admitted]! - predicted.compiled[admitted - 1]!,
       ahead: predicted.compiled[admitted - 1]! > baseline.compiled[admitted - 1]!,
       // Its what-if admission, given back before any frame draws it, never asks a frame for a strict readiness probe.
       addedProbes: predicted.checks.some((count, index) => count > baseline.checks[index]!),
     }, counts).toEqual({ atAdmission: 0, ahead: true, addedProbes: false });
+  });
+
+  it("predictions settle with more lights near the Forward budget's cut-off than they hold", async () => {
+    // Thirteen points at nearly one distance from the camera: those past the budget all sit within the margin, more
+    // than PREDICTIONS_MAX of them. With the camera still, prediction work ends after its first frames: no what-if
+    // admission toggles a light and no prediction's draw wrappers are dropped.
+    predictAhead = true;
+    const lights = Array.from({ length: 13 }, (_, index) => point(100 + index, [Math.cos(index) * 6, 2.5 + (index % 3) * 0.1, Math.sin(index) * 6]));
+    const world = playWorld("sync", [...lights]);
+    await settle(world);
+    const near = nearForwardAdmissions(world.handle.scene, 1.5).length;
+    for (let index = 0; index < 20; index++) await world.frame();
+    let toggles = 0;
+    let removals = 0;
+    const setEnabled = Light.prototype.setEnabled;
+    Light.prototype.setEnabled = function (this: Light, ...args: Parameters<typeof setEnabled>) {
+      toggles++;
+      return setEnabled.apply(this, args);
+    };
+    const remove = SubMesh.prototype._removeDrawWrapper;
+    SubMesh.prototype._removeDrawWrapper = function (this: SubMesh, ...args: Parameters<typeof remove>) {
+      removals++;
+      return remove.apply(this, args);
+    };
+    cleanups.push(() => { SubMesh.prototype._removeDrawWrapper = remove; Light.prototype.setEnabled = setEnabled; });
+    for (let index = 0; index < 20; index++) await world.frame();
+    expect({ moreThanHeld: near > PREDICTIONS_MAX, toggles, removals }).toEqual({ moreThanHeld: true, toggles: 0, removals: 0 });
+  });
+
+  it("predicted variants still adopt at most FIRST_DRAWS_PER_FRAME new variants per frame", async () => {
+    // Six barrels with Materials of their own: a spot the prediction compiled ahead for comes into the Forward budget,
+    // and each Material asks for its variant at once. The first draws still spread over frames (on iPad WebKit WebGL2
+    // a program's first draw is the stall), with nothing left to compile.
+    const guids = ["surface-a", "surface-b", "surface-c", "surface-d", "surface-e", "surface-f"];
+    const barrels: Actor[] = guids.map((_, index) =>
+      ({ slotId: 50 + index, guid: `barrel-${index}`, position: [-5 + index * 2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } }));
+    const points = Array.from({ length: 8 }, (_, index) => point(10 + index, [-7 + index * 2, 2.5, -2]));
+    predictAhead = true;
+    const world = playWorld("sync", [...points, spot(30, [0, 5, 40]), ...barrels], guids);
+    guids.forEach((guid, index) => world.handle.applyCommand({ type: "assignMaterial", slotId: 50 + index, materialAssetGuid: guid }));
+    await settle(world);
+    world.place(spot(30, [0, 5, 3]));
+    for (let index = 0; index < 40; index++) await world.frame();
+    const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+    const effects = () => barrels.map((actor) => world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
+    let current = effects();
+    const start = current;
+    world.driver.arm();
+    world.place(spot(30, [0, 5, -8]));
+    const perFrame: number[] = [];
+    for (let index = 0; index < 10; index++) {
+      await world.frame();
+      const next = effects();
+      perFrame.push(next.filter((effect, at) => effect !== current[at]).length);
+      current = next;
+    }
+    expect({ compiled: realCompiles(world).length, most: Math.max(...perFrame), all: current.every((effect, at) => effect !== start[at]) },
+      JSON.stringify(perFrame)).toEqual({ compiled: 0, most: FIRST_DRAWS_PER_FRAME, all: true });
   });
 
   it.each(MODELS)("an area light's emission texture arrives: %s", async (model) => {
