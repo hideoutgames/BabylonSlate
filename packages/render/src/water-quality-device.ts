@@ -21,6 +21,11 @@ export interface WaterQualityDeviceClamp {
    * the half-float scene copy the march samples; such water reflects the sky.
    */
   readonly screenSpaceFallback: boolean;
+  /**
+   * The device can run the FFT ocean (its spectrum and work atlases are float render targets). False draws every water
+   * body flat; physics keeps its waves.
+   */
+  readonly spectrum: boolean;
   /** One reason per clamped feature, reported by Play readback. Empty when nothing was clamped. */
   readonly limits: readonly string[];
 }
@@ -39,10 +44,8 @@ export function clampWaterQualityToDevice(
   const limits: string[] = [];
   let effective = quality;
   let screenSpaceFallback = quality.reflections === "planar";
-  if (quality.fft && !caps.textureFloatRender) {
-    effective = { ...effective, fft: false };
-    limits.push("FFT Ocean Detail needs float render targets; water keeps its analytic waves.");
-  }
+  const spectrum = caps.textureFloatRender;
+  if (!spectrum) limits.push("The FFT ocean needs float render targets; water draws flat (floating objects keep their waves).");
   // The scene copy that Refraction and the screen-space march sample is RGBA16F.
   if (!caps.textureHalfFloatRender) {
     if (quality.refraction) {
@@ -64,5 +67,5 @@ export function clampWaterQualityToDevice(
       limits.push("Planar water reflections fall back to Sky Only on non-flat water without half-float render targets.");
     }
   }
-  return { quality: effective, screenSpaceFallback, limits };
+  return { quality: effective, screenSpaceFallback, spectrum, limits };
 }

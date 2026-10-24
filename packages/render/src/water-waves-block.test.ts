@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FreeCamera, Matrix, MeshBuilder, NullEngine, Scene, ShaderLanguage, Vector3, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterVertex, normalizeWaterBody, RENDER_QUALITY_PROFILES, waterBankFadeLength, waterEulerianGradient,
-  waterWaveSet, type WaterDefinition,
+  createDefaultWaterDefinition, createWaterWaveOutput, normalizeWaterBody, RENDER_QUALITY_PROFILES, WATER_FFT_CASCADES_MAX, waterBankGain,
+  waterEulerianGradient, waterSpectrum,
 } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { acquireAuthoredMaterialVariant, compileMaterialPlan } from "./material-compiler";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { WATER_SWELL_UNIFORMS, WaterVertexWaves, waterWaveBlockSource } from "./water-material";
+import { waterFftCycle, waterFftSynthesize, waterSpectrumInitial, waterSpectrumLayout } from "./water-fft-spectrum";
+import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { materialHasWaterWaves } from "./water-waves-block";
 
@@ -30,6 +31,7 @@ function wavesDocument(withSurface = false): MaterialDocument {
   wire("waves", "offset", "worldPositionOffset");
   wire("waves", "normal", "normal");
   wire("waves", "height", "roughness");
+  wire("waves", "crestFoam", "emissive");
   if (!withSurface) { wire("waves", "time", "metallic"); return doc; }
   doc.nodes.push({ id: "surface", type: "input.waterSurface", position: { x: 0, y: 0 }, properties: {} });
   wire("surface", "waveHeight", "metallic");
@@ -54,12 +56,13 @@ async function programFor(material: NodeMaterial, mesh: AbstractMesh) {
 }
 
 /** Whether `line` is declared in the `#ifdef define` block of generated shader text. */
+/** Whether `line` sits in an `#ifdef define` block, or an `#if condition` block when `define` is a condition. */
 function declaredUnder(source: string, define: string, line: string): boolean {
-  return [...source.matchAll(/#ifdef (\w+)\s([\s\S]*?)#endif/g)].some((block) => block[1] === define && block[2]!.includes(line));
+  return [...source.matchAll(/#if(?:def)? ([^\n]+)\n([\s\S]*?)#endif/g)].some((block) => block[1] === define && block[2]!.includes(line));
 }
 
 describe("Water Waves node", () => {
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("declares the swell's inputs once and displaces the rest point in the vertex stage of language %s", async (language) => {
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("declares its inputs once per stage, displaces in the vertex stage and shades per pixel in language %s", async (language) => {
     const wgsl = language === ShaderLanguage.WGSL, scene = host(wgsl);
     const result = compile(scene, wavesDocument());
     expect(await result.ready).toEqual([]);
@@ -67,89 +70,67 @@ describe("Water Waves node", () => {
     // The fragment program declares the vertex program's uniforms too, so each is declared once per stage.
     const [vertex = "", fragment = ""] = source.split("// Fragment shader");
     const uniform = (name: string) => wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`;
-    for (const name of [...WATER_SWELL_UNIFORMS, "slateWaterClock"]) {
+    for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM]) {
       expect(vertex.split(uniform(name)).length - 1, name).toBe(1);
       expect(fragment.split(uniform(name)).length - 1, name).toBe(1);
     }
+    expect(fragment.split(uniform(WATER_NODE_FOAM_UNIFORM)).length - 1).toBe(1);
     const attribute = (name: string, components: number) => wgsl ? `attribute ${name}: vec${components}f;` : `attribute vec${components} ${name};`;
-    for (const [name, components, define] of [["slateWaterData", 4, "SLATE_WATER_SURFACE"], ["slateWaterBaseNormal", 3, "SLATE_WATER_SURFACE"], ["slateWaterBlend", 4, "SLATE_WATER_BLEND"]] as const) {
+    for (const [name, components, define] of [["slateWaterData", 4, "SLATE_WATER_SURFACE"], ["slateWaterBaseNormal", 3, "SLATE_WATER_SURFACE"], ["slateWaterBlend", 4, "defined(SLATE_WATER_BLEND) || defined(SLATE_WATER_NODE_BLEND)"]] as const) {
       expect(declaredUnder(source, define, attribute(name, components)), name).toBe(true);
       expect(source.split(attribute(name, components)).length - 1, name).toBe(1);
     }
+    // The spectrum's sampler in both stages, its foam in the fragment only, and no source prefix left unbound.
+    expect(vertex).toContain("slateWaterFftSampler");
+    expect(vertex).not.toContain("slateWaterFoamSampler");
+    expect(fragment).toContain("slateWaterFoamSampler");
+    expect(source).not.toMatch(/\b[UAOS]\.slate|\bIN\./);
     expect(source).toContain("#ifdef SLATE_WATER_GPU_WAVES");
-    // Built-in water's detail band (a sampler read) is not part of the node, and no source prefix is left unbound.
-    expect(source).not.toMatch(/FFT|\b[UAOS]\.slate/);
     if (wgsl) {
       expect(source).toContain("vertexInputs.slateWaterData.x");
-      expect(source).toContain("uniforms.slateWaterSwellDir0");
+      expect(source).toContain("uniforms.slateWaterFft");
       // Every GLSL declaration was translated.
       expect(source).not.toMatch(/^\s*(float|vec[234]) \w+ =/m);
       expect(source).toMatch(/var swvNormal: vec3f = normalize\(vec3f\(/);
     } else {
       expect(source).toMatch(/vec3 swvNormal = normalize\(vec3\(/);
+      expect(source).toMatch(/uniform highp sampler2DArray slateWaterFftSampler;/);
     }
   });
 
-  it("evaluates in the vertex shader to the kernel the CPU mesh uses: displaced point, height and Eulerian normal", () => {
-    const scene = host(), ground = MeshBuilder.CreateGround("ground", {}, scene);
-    const water: WaterDefinition = { ...createDefaultWaterDefinition(), steepness: 0.85, choppiness: 0.6 };
-    const body = normalizeWaterBody({ width: 90, length: 90, waveScale: 1 }, "ocean");
-    const waves = new WaterVertexWaves(water, body);
-    const fadeLength = waterBankFadeLength(water, body.waveScale);
-    expect(fadeLength).toBeGreaterThan(0.1);
-    for (const time of [0, 3.7, 1234.5]) for (const spacing of [0.2, 2.5]) {
-      waves.time = time;
-      // Far inside the banks the gain is 1; inside the fade band only the displaced point and height are compared.
-      for (const [x, z, bank] of [[1.3, -2.1, 30], [14.2, 7.7, 25], [-9.9, 3.3, 20], [41.5, 0.5, fadeLength / 2]] as const) {
-        const shader = shaderSample(waves, scene, ground, x, z, spacing, bank);
-        const out = createWaterWaveOutput();
-        evaluateWaterVertex(waterWaveSet(water), x, z, time, spacing, body.waveScale, bank, fadeLength, 0, 0, out);
-        const label = `t=${time} spacing=${spacing} at ${x}, ${z}`;
-        // Half a millimetre: the uniforms are float32, and phases ride on wavenumbers of several radians a metre.
-        expect(shader.position[0], label).toBeCloseTo(x + out[1]!, 3);
-        expect(shader.position[1], label).toBeCloseTo(out[0]!, 3);
-        expect(shader.position[2], label).toBeCloseTo(z + out[2]!, 3);
-        expect(shader.height, label).toBeCloseTo(out[0]!, 3);
-        if (bank < fadeLength) continue;
-        // The CPU mesh's normal: J⁻ᵀ(∇rest + ∇₀H) of the same evaluation, on a level rest grid.
-        const slope = new Float64Array(2);
-        waterEulerianGradient(out, out[3]!, out[4]!, slope);
-        const n = Math.hypot(slope[0]!, 1, slope[1]!);
-        expect(shader.normal[0], label).toBeCloseTo(-slope[0]! / n, 3);
-        expect(shader.normal[1], label).toBeCloseTo(1 / n, 3);
-        expect(shader.normal[2], label).toBeCloseTo(-slope[1]! / n, 3);
-      }
+  it("displaces the rest point by the spectrum at Wave Scale, λ and the bank fade, with the surface's normal", () => {
+    const water = { ...createDefaultWaterDefinition(), steepness: 0.4 }, spectrum = waterSpectrum(water), size = 16;
+    const layout = waterSpectrumLayout(spectrum, size, 1), layers = waterFftSynthesize(waterSpectrumInitial(spectrum, layout), layout, waterFftCycle(3.7, layout.timeScale));
+    const patch = layout.patchSizes[0]!, scale = 0.8, lambda = spectrum.choppiness, fade = 6;
+    for (const [i, j, bank] of [[3, 5, 30], [11, 2, 30], [7, 13, fade / 2]] as const) {
+      // A rest point on texel (i, j)'s centre of the unturned first cascade, a whole patch from the origin.
+      const x = (i + size) * patch / size, z = (j - size) * patch / size;
+      const shader = shaderSample(layers, size, { scale, lambda, patch, fade }, x, z, patch / size, bank);
+      const o = (j * size + i) * 4, a = layers[0]!, b = layers[1]!, gain = new Float64Array(2);
+      waterBankGain(bank, fade, gain);
+      const label = `texel ${i}, ${j}`;
+      expect(shader.height, label).toBeCloseTo(a[o + 1]! * scale, 6);
+      expect(shader.position[0], label).toBeCloseTo(x + a[o]! * scale * lambda * gain[0]!, 5);
+      expect(shader.position[1], label).toBeCloseTo(a[o + 1]! * scale, 6);
+      expect(shader.position[2], label).toBeCloseTo(z + a[o + 2]! * scale * lambda * gain[0]!, 5);
+      // FFT-Ocean's normal, J⁻ᵀ∇H of the displaced surface, as core takes it.
+      const shear = scale * lambda * gain[0]!, wave = createWaterWaveOutput(), slope = new Float64Array(2);
+      wave[5] = 1 + b[o + 2]! * shear; wave[6] = a[o + 3]! * shear; wave[13] = a[o + 3]! * shear; wave[7] = 1 + b[o + 3]! * shear;
+      waterEulerianGradient(wave, b[o]! * scale, b[o + 1]! * scale, slope);
+      const n = Math.hypot(slope[0]!, 1, slope[1]!);
+      expect(shader.normal.map((value) => Number(value.toFixed(5))), label).toEqual([-slope[0]! / n, 1 / n, -slope[1]! / n].map((value) => Number(value.toFixed(5))));
     }
-  });
-
-  it("folds the rest slope of a tilted grid into the normal, as the CPU mesh does", () => {
-    const scene = host(), ground = MeshBuilder.CreateGround("ground", {}, scene);
-    const water: WaterDefinition = { ...createDefaultWaterDefinition(), steepness: 0.5 };
-    const body = normalizeWaterBody({ width: 90, length: 90 }, "ocean");
-    const waves = new WaterVertexWaves(water, body);
-    waves.time = 2.2;
-    const slopeX = 0.2, slopeZ = -0.1, base = [-slopeX, 1, -slopeZ].map((value) => value / Math.hypot(slopeX, 1, slopeZ));
-    const shader = shaderSample(waves, scene, ground, 3.1, 4.7, 0.2, 30, base);
-    const out = createWaterWaveOutput();
-    evaluateWaterVertex(waterWaveSet(water), 3.1, 4.7, 2.2, 0.2, body.waveScale, 30, 0, 0, 0, out);
-    const slope = new Float64Array(2);
-    waterEulerianGradient(out, out[3]! + slopeX, out[4]! + slopeZ, slope);
-    const n = Math.hypot(slope[0]!, 1, slope[1]!);
-    expect(shader.normal[0]).toBeCloseTo(-slope[0]! / n, 3);
-    expect(shader.normal[2]).toBeCloseTo(-slope[1]! / n, 3);
   });
 
   it("computes the same arithmetic in WGSL as in GLSL", () => {
-    const scene = host(), ground = MeshBuilder.CreateGround("ground", {}, scene);
-    const water: WaterDefinition = { ...createDefaultWaterDefinition(), steepness: 0.85, choppiness: 0.6 };
-    const waves = new WaterVertexWaves(water, normalizeWaterBody({ width: 90, length: 90 }, "ocean"));
-    waves.time = 5.5;
-    const glsl = shaderSample(waves, scene, ground, 6.5, -3.5, 0.3, 20);
+    const water = createDefaultWaterDefinition(), spectrum = waterSpectrum(water), size = 16;
+    const layout = waterSpectrumLayout(spectrum, size, 1), layers = waterFftSynthesize(waterSpectrumInitial(spectrum, layout), layout, waterFftCycle(5.5, layout.timeScale));
+    const terms = { scale: 1, lambda: spectrum.choppiness, patch: layout.patchSizes[0]!, fade: 4 };
+    const glsl = shaderSample(layers, size, terms, 6.5, -3.5, 0.3, 2);
     // The WGSL text itself, run as it is except for the prefixes the language binds uniforms and attributes with.
     const wgsl = waterWaveBlockSource(ShaderLanguage.WGSL).replace(/\b(?:uniforms|vertexInputs)\./g, "");
     expect(wgsl).toContain("var swvH: f32 = 0.0;");
-    const translated = shaderSample(waves, scene, ground, 6.5, -3.5, 0.3, 20, [0, 1, 0], wgsl);
-    expect(translated).toEqual(glsl);
+    expect(shaderSample(layers, size, terms, 6.5, -3.5, 0.3, 2, [0, 1, 0], wgsl)).toEqual(glsl);
   });
 
   it("compiles out for meshes that are not water displaced by the node", async () => {
@@ -181,7 +162,7 @@ describe("Water Waves node", () => {
       expect(await variant.compiled.ready).toEqual([]);
       expect(materialHasWaterWaves(variant.compiled.material)).toBe(true);
       const source = variant.compiled.material.compiledShaders;
-      expect(source).toContain("slateWaterSwellDir0");
+      expect(source).toContain("slateWaterFftCascade0");
       expect(source).toMatch(/swvD = swvD \* swvGain;/);
     } finally { await variant.release(); }
   });
@@ -232,7 +213,7 @@ describe("Water Waves node", () => {
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
     const bind = (mesh: typeof a) => { result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!); return [...bound.get("slateWaterGridOffset")!]; };
     // The snapped centre is the camera within one cell; each volume's offset is the camera relative to it, in world space.
-    const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+    const cell = Math.min(3, Math.max(0.2, createDefaultWaterDefinition().waveLength / 20)) / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
     const offsetA = bind(a), offsetB = bind(b);
     for (const [i, expected] of [40, 0, -25].entries()) expect(Math.abs(offsetA[i]! - expected)).toBeLessThanOrEqual(cell);
     for (const [i, expected] of [-60, 0, 5].entries()) expect(Math.abs(offsetB[i]! - expected)).toBeLessThanOrEqual(cell);
@@ -241,19 +222,32 @@ describe("Water Waves node", () => {
 });
 
 /**
- * The vertex shader's result for one vertex: runs `waterWaveBlockSource` (or `source`) over the uniforms `waves` binds, a
- * rest grid of the given `spacing`, `bank` distance and `baseNormal`, and the rest point (x, 0, z).
+ * The vertex shader's result for one vertex: runs `waterWaveBlockSource` (or `source`) with one cascade over CPU-synthesized
+ * spectrum `layers` (`size`-grids, sampled bilinearly with wrapping, as the GPU's repeating texture is), the spectrum's
+ * uniforms (Wave Scale, λ, its patch, no floating origin) and bank fade, a rest grid of the given `spacing`, `bank`
+ * distance and `baseNormal`, and the rest point (x, 0, z), the eye overhead.
  */
 function shaderSample(
-  waves: WaterVertexWaves, scene: Scene, mesh: AbstractMesh, x: number, z: number, spacing: number, bank: number,
+  layers: Float64Array[], size: number, terms: { scale: number; lambda: number; patch: number; fade: number }, x: number, z: number, spacing: number, bank: number,
   baseNormal: number[] = [0, 1, 0], source = waterWaveBlockSource(ShaderLanguage.GLSL),
 ) {
   const variables = new Map<string, Value>();
-  waves.bind({ setFloat4: (name, a, b, c, d) => variables.set(name, [a, b, c, d]) }, scene, mesh);
+  variables.set("slateWaterGridOffset", [0, 0, 0, 0]);
+  variables.set("slateWaterSwellInfo", [terms.fade, 0, 0, 0]);
+  variables.set("slateWaterFft", [terms.scale, terms.lambda, size, 7.13]);
+  variables.set("slateWaterFftCascade0", [1 / terms.patch, 0.5 / size, 0.5 / size, 0]);
+  for (let c = 1; c < WATER_FFT_CASCADES_MAX; c++) variables.set(`slateWaterFftCascade${c}`, [0, 0, 0, 0]);
+  variables.set("slateWaterEye", [x, 10, z, 0]);
   variables.set("slateWaterData", [spacing, bank, 5, 0]);
   variables.set("slateWaterBaseNormal", baseNormal);
   variables.set("worldPos", [x, 0, z, 1]);
-  evaluateShader(source, variables, { SLATE_WATER_GPU_WAVES: 1 });
+  const tap = (uv: Value, layer: Value) => {
+    const [u, v] = lanes(uv) as [number, number], grid = layers[lanes(layer)[0]!]!;
+    const fx = u * size - 0.5, fy = v * size - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const at = (ix: number, iy: number, channel: number) => grid[((((iy % size) + size) % size) * size + (((ix % size) + size) % size)) * 4 + channel]!;
+    return [0, 1, 2, 3].map((c) => (at(x0, y0, c) * (1 - tx) + at(x0 + 1, y0, c) * tx) * (1 - ty) + (at(x0, y0 + 1, c) * (1 - tx) + at(x0 + 1, y0 + 1, c) * tx) * ty);
+  };
+  evaluateShader(source, variables, { SLATE_WATER_GPU_WAVES: 1, SLATE_WATER_FFT: 1 }, { swFftTapLod: tap });
   return { position: variables.get("worldPos") as number[], height: variables.get("swvH") as number, normal: variables.get("swvNormal") as number[] };
 }
 
@@ -274,6 +268,8 @@ const FUNCTIONS: Record<string, (...args: Value[]) => Value> = {
   max: (a: Value, b: Value) => combine(a, b, Math.max), min: (a: Value, b: Value) => combine(a, b, Math.min),
   step: (edge: Value, x: Value) => combine(edge, x, (e, v) => (v < e ? 0 : 1)),
   normalize: (v: Value) => { const length = Math.hypot(...lanes(v)); return each(v, (x) => x / length); },
+  abs: (x: Value) => each(x, Math.abs), log2: (x: Value) => each(x, Math.log2),
+  length: (v: Value) => Math.hypot(...lanes(v)),
 };
 
 /**
@@ -281,7 +277,7 @@ const FUNCTIONS: Record<string, (...args: Value[]) => Value> = {
  * of float and vec2-4, arithmetic, swizzles, constructors, a few builtins, `#ifdef` / `#if X >= n`), over `variables`, which
  * it updates. An identifier or function it does not know is an error, so a typo in the shader fails here.
  */
-function evaluateShader(source: string, variables: Map<string, Value>, defines: Record<string, number>): void {
+function evaluateShader(source: string, variables: Map<string, Value>, defines: Record<string, number>, extra: Record<string, (...args: Value[]) => Value> = {}): void {
   const lines: string[] = [], branches: boolean[] = [];
   for (const raw of source.split("\n")) {
     const line = raw.trim();
@@ -306,7 +302,7 @@ function evaluateShader(source: string, variables: Map<string, Value>, defines: 
       if (flat.length !== size) throw new Error(`${name} of ${flat.length} lanes`);
       return flat;
     }
-    const f = FUNCTIONS[name];
+    const f = extra[name] ?? FUNCTIONS[name];
     if (!f) throw new Error(`Unknown function ${name}`);
     return f(...args);
   };

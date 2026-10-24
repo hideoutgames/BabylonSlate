@@ -380,20 +380,9 @@ export function RenderQualityFields({
           />
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-fft">FFT Ocean Detail</FieldLabel>
-          <Switch
-            id="quality-water-fft"
-            data-testid="quality-water-fft"
-            checked={water.fft}
-            onCheckedChange={(fft) => edit("water", { fft })}
-          />
-          <FieldDescription>GPU wave detail drawn only; floating objects follow the same waves on every tier.</FieldDescription>
-        </Field>
-        <Field className="settings-field">
           <FieldLabel htmlFor="quality-water-fft-size">FFT Size</FieldLabel>
           <Select
             value={String(water.fftSize)}
-            disabled={!water.fft}
             onValueChange={(size) => {
               if (size) edit("water", { fftSize: Number(size) });
             }}
@@ -420,9 +409,9 @@ export function RenderQualityFields({
             max={WATER_FFT_CASCADES_MAX}
             step={1}
             value={water.fftCascades}
-            disabled={!water.fft}
             onChange={(fftCascades) => edit("water", { fftCascades })}
           />
+          <FieldDescription>Short-wave detail the GPU ocean draws; floating objects follow the same waves on every tier.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-postprocessing-scale">

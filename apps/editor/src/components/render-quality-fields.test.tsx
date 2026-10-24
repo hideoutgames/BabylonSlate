@@ -146,12 +146,13 @@ it("edits Water quality within its tier and disables rows whose feature is off",
   expect(selected("Water Reflections")).toBe("Screen Space");
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", false);
   expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("disabled", true);
-  fireEvent.click(screen.getByRole("switch", { name: "FFT Ocean Detail" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Water Refraction" }));
   expect(selected("Water Quality")).toBe("Custom");
   expect(selected("Overall Quality")).toBe("Custom");
-  expect(screen.getByLabelText("FFT Cascades")).toHaveProperty("disabled", true);
+  expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", false);
   await select("Water Reflections", "Sky Only");
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", true);
+  expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", true);
   await select("Water Quality", "Low");
   expect(selected("Water Shading Detail")).toBe("Low");
   expect(screen.getByRole("switch", { name: "Water Refraction" }).getAttribute("aria-checked")).toBe("false");

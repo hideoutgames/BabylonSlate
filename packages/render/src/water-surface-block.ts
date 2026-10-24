@@ -15,12 +15,14 @@ export function isWaterSurfaceMesh(mesh?: AbstractMesh): boolean {
  * Declares water vertex attributes, together under `define`, that this shader has not declared yet: the water nodes of one
  * graph share them.
  */
-export function declareWaterAttributes(state: NodeMaterialBuildState, define: string, attributes: ReadonlyArray<readonly [name: string, components: 3 | 4]>): void {
+export function declareWaterAttributes(state: NodeMaterialBuildState, define: string, attributes: ReadonlyArray<readonly [name: string, components: 2 | 3 | 4]>): void {
   const wgsl = state.shaderLanguage === 1;
   const fresh = attributes.filter(([name]) => !state.attributes.includes(name));
   if (!fresh.length) return;
   for (const [name] of fresh) state.attributes.push(name);
-  state._attributeDeclaration += `#ifdef ${define}\n${fresh.map(([name, components]) => wgsl ? `attribute ${name}: vec${components}f;` : `attribute vec${components} ${name};`).join("\n")}\n#endif\n`;
+  // A define name, or a condition (`defined(A) || defined(B)`) where blocks under different defines read one attribute.
+  const guard = define.includes("(") ? `#if ${define}` : `#ifdef ${define}`;
+  state._attributeDeclaration += `${guard}\n${fresh.map(([name, components]) => wgsl ? `attribute ${name}: vec${components}f;` : `attribute vec${components} ${name};`).join("\n")}\n#endif\n`;
 }
 
 /**

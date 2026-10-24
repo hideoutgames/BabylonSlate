@@ -123,5 +123,6 @@ export function createSurfacePlumbing(
   plumbing.uv = morph.uvOutput;
   plumbing.uv2 = morph.uv2Output;
   plumbing.view = view.output;
+  plumbing.viewProjection = viewProjection.output;
   return [vertexOutput];
 }

@@ -41,7 +41,6 @@ export const SCALABILITY_FIELD_OWNERS = {
     reflections: "water",
     reflectionSteps: "water",
     planarScale: "water",
-    fft: "water",
     fftSize: "water",
     fftCascades: "water",
   },

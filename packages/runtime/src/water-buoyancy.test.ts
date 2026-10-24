@@ -4,12 +4,14 @@ import { ClassRegistry, World } from "@haptic/object-model";
 import { createPhysicsBackend } from "@haptic/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
-describe("Water buoyancy with native collision response", () => {
+// Each case steps a physics world against the full wave spectrum for seconds of simulated time: under coverage
+// instrumentation that outlasts the default 5 s.
+describe("Water buoyancy with native collision response", { timeout: 30_000 }, () => {
   it("uses explicit cubic metres for carrying capacity, live edits and scale", async () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
-    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     const sea = world.createActor({ classId: "Actor", guid: "sea" });
     sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
     world.spawnActorNow(sea);
@@ -39,7 +41,7 @@ describe("Water buoyancy with native collision response", () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
-    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     const sea = world.createActor({ classId: "Actor", guid: "sea" });
     sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
     world.spawnActorNow(sea);
@@ -99,7 +101,7 @@ describe("Water buoyancy with native collision response", () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
-    // Default water: Realistic Gerstner waves (Steepness 0.5) heading 25° from +X.
+    // Default water: the Realistic spectrum sea (Steepness 0.5), its wind sea heading 25° from +X.
     const sea = world.createActor({ classId: "Actor", guid: "sea" });
     sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent" }));
     world.spawnActorNow(sea);
@@ -126,7 +128,7 @@ describe("Water buoyancy with native collision response", () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
-    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     sync.water.setBlendDistance(blend);
     const lake = world.createActor({ classId: "Actor", guid: "lake" });
     lake.attachComponent(world.createComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 40, length: 40 } }));
@@ -157,7 +159,7 @@ describe("Water buoyancy with native collision response", () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
-    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
     const sea = world.createActor({ classId: "Actor", guid: "sea" });
     sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
     world.spawnActorNow(sea);

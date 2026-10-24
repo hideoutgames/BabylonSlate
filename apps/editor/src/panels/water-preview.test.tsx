@@ -227,7 +227,7 @@ describe("WaterPreviewPanel", () => {
     await waitFor(() => expect(builds()).toBe(4));
     expect(harness.meshes[3]!.material).toEqual({ customMaterial: "other" });
 
-    editWater({ style: "stylized" });
+    editWater({ materialGuid: null });
     rerender();
     await waitFor(() => expect(builds()).toBe(5));
     expect(harness.hosts.slice(0, -1).every((host) => host.scene.isDisposed)).toBe(true);

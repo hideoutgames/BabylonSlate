@@ -139,7 +139,7 @@ export * from "./lattice-deformer";
 export * from "./scene-deformer-host";
 export { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition, waterMeshBody } from "./water-mesh";
 export { waterFftDiagnostics, waterFftForSurface, type WaterFftDiagnostics, type WaterFftResult } from "./water-fft";
-export { waterFftCycle, waterFftInitialSpectrum, waterFftLayout, waterFftSynthesize, type WaterFftLayout } from "./water-fft-spectrum";
+export { waterFftCycle, waterFftSynthesize, waterSpectrumInitial, waterSpectrumLayout, type WaterFftLayout } from "./water-fft-spectrum";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
 export { waterSceneCopyForPass, type WaterSceneCopy } from "./water-scene-copy";
 export { WaterField, distanceTransform } from "./water-field";
