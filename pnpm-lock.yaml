@@ -26,6 +26,9 @@ patchedDependencies:
   '@babylonjs/core@9.29.0':
     hash: 9e37ecfd12f8a47bb00c82e1a7b2b8784b6e7c998a5173e1c2f201e106d8193d
     path: patches/@babylonjs__core@9.29.0.patch
+  '@xyflow/react@12.11.2':
+    hash: 3c8e825545c3354d9a5458713f6acdbfb85f0c04c7ddb8ed1b0af40c7c8b6c64
+    path: patches/@xyflow__react@12.11.2.patch
 
 importers:
 
@@ -144,7 +147,7 @@ importers:
         version: 19.2.4(@types/react@19.2.18)
       '@xyflow/react':
         specifier: ^12.11.2
-        version: 12.11.2(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 12.11.2(patch_hash=3c8e825545c3354d9a5458713f6acdbfb85f0c04c7ddb8ed1b0af40c7c8b6c64)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -595,7 +598,7 @@ importers:
         version: link:../ui
       '@xyflow/react':
         specifier: ^12.11.2
-        version: 12.11.2(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 12.11.2(patch_hash=3c8e825545c3354d9a5458713f6acdbfb85f0c04c7ddb8ed1b0af40c7c8b6c64)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       lucide-react:
         specifier: ^0.552.0
         version: 0.552.0(react@19.2.8)
@@ -7485,7 +7488,7 @@ snapshots:
 
   '@xmldom/xmldom@0.9.12': {}
 
-  '@xyflow/react@12.11.2(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@xyflow/react@12.11.2(patch_hash=3c8e825545c3354d9a5458713f6acdbfb85f0c04c7ddb8ed1b0af40c7c8b6c64)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@xyflow/system': 0.0.79
       classcat: 5.0.5
