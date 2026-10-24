@@ -30,6 +30,7 @@ import {
   type SceneShadowController,
 } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
+import { sceneSignalsHeld } from "./scene-readiness-signal";
 import { beginClusteredAllocation } from "./clustered-allocation";
 import { ClusteredCameraBounds } from "./clustered-camera-bounds";
 import { ClusteredLightOrder } from "./clustered-light-order";
@@ -233,7 +234,9 @@ export class ClusteredSceneLights {
       }
       // Controller entries retain the authored registry even while clustered
       // children leave scene.lights. New admitted maps therefore promote them.
-      findSceneShadowController(this.scene)?.sync();
+      // Not inside a what-if a frame never draws: its maps would follow lights
+      // that are given back next.
+      if (!sceneSignalsHeld(this.scene)) findSceneShadowController(this.scene)?.sync();
       const requestedLocals = this.scratchRequested;
       for (const light of this.registry)
         if (

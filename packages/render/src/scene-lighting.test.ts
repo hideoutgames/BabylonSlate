@@ -6,7 +6,7 @@ import {
   syncForwardLightPolicy,
 } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
-import { sortReceiverLightSources } from "./forward-light-slots";
+import { restoreSceneLightOrder, sortReceiverLightSources } from "./forward-light-slots";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { CelMaterial } from "./cel-material";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -854,6 +854,19 @@ describe("scene material lighting", () => {
       expect(other.lightSources).toEqual(order);
       expect(part.materialDefines!.isDirty).toBe(false);
       expect(other.subMeshes[0]!.materialDefines!.isDirty).toBe(true);
+    });
+
+    it("restores a recorded light order around a light added since and without one removed since", () => {
+      const scene = host(false);
+      const [a, b, c, d] = ["a", "b", "c", "d"].map((name) => new PointLight(name, Vector3.Zero(), scene));
+      const order = [a!, b!, c!, d!];
+      // Exchanges permuted the lights, d left the scene and e arrived.
+      scene.removeLight(d!);
+      const e = new PointLight("e", Vector3.Zero(), scene);
+      scene.lights.splice(0, scene.lights.length, c!, e, a!, b!);
+      expect(restoreSceneLightOrder(scene, order)).toBe(true);
+      expect(scene.lights.map((light) => light.name)).toEqual(["a", "e", "b", "c"]);
+      expect(restoreSceneLightOrder(scene, order)).toBe(false);
     });
 
     it("hands an exchange back to Babylon when the admitted light's parent is the dropped light", async () => {

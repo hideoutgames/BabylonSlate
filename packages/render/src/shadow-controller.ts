@@ -149,6 +149,14 @@ type View = {
 };
 /** How long a view waits before asking the ledger again for a mirror it refused. */
 const VIEW_REFUSAL_RETRY_MS = 1_000;
+/** A light near a shadow map, as `nearShadowStarts` predicts its start. */
+export type ShadowStartPrediction = {
+  light: Light;
+  /** An admitted map of its kind whose defines its own would give receivers; null when it holds a standby map. */
+  borrowed: ShadowGenerator | null;
+  /** The holder it would take a map from, whose receivers lose that shadow. */
+  displaced: Light | null;
+};
 /**
  * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
  * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
@@ -167,6 +175,8 @@ export type ViewShadows = {
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
 const SHADOW_MIN_RESIDENCY_MS = 250;
+/** A map holder ranks this much nearer (squared distance divided by it), so a slightly nearer light cannot take its map. */
+const SHADOW_INCUMBENT_DISTANCE_BONUS = 1.15;
 // Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 const NEUTRAL_DARKNESS = 1;
 const controllers = new WeakMap<Scene, SceneShadowController>();
@@ -337,6 +347,8 @@ export class SceneShadowController {
   private selectionCamera: Camera | null = null;
   /** History the sync `restoreAdmission` runs ranks by, instead of its own. */
   private restoring: ShadowAdmissionSnapshot | null = null;
+  /** The effective settings the last sync admitted by. */
+  private planSettings: ShadowSettings | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; view: boolean }>();
   /** Views with their own sun maps, by camera. */
@@ -530,6 +542,48 @@ export class SceneShadowController {
   generator(light: Light): ShadowGenerator | null {
     const entry = this.entries.get(light);
     return entry?.standby ? null : (entry?.generator ?? null);
+  }
+  /**
+   * Lit local lights the last sync left without an admitted map but within `margin` (a distance ratio) of one: of the
+   * relevant area's edge, or, with every local map taken, of the farthest holder's ranking distance (its incumbent
+   * bonus included) at no lower priority. Each names the map whose defines its admission gives its receivers (its own
+   * standby map, `borrowed` null; or an admitted map of its kind with these settings) and the holder it would take a
+   * map from. A light that would take a map from a holder of its kind is left out (the map moves, and the exchange
+   * keeps every receiver's defines), and so is one no admitted map shares a kind with.
+   */
+  nearShadowStarts(margin: number): ShadowStartPrediction[] {
+    const settings = this.planSettings;
+    if (!settings?.enabled || this.scene.activeCamera !== this.selectionCamera) return [];
+    const key = JSON.stringify(settings);
+    const kind = (entry: Entry) => `${entry.light.getClassName()}:${entry.light.needCube()}`;
+    const holders = [...this.entries.values()].filter((entry) =>
+      entry.status === "active" && entry.generator && !entry.standby && !(entry.light instanceof DirectionalLight));
+    const rank = (entry: Entry) => entry.distanceSquared / SHADOW_INCUMBENT_DISTANCE_BONUS;
+    let farthest: Entry | undefined;
+    for (const holder of holders)
+      if (!farthest || holder.priority < farthest.priority || (holder.priority === farthest.priority && rank(holder) > rank(farthest)))
+        farthest = holder;
+    const full = holders.length >= settings.maxLocalLights;
+    const starts: Array<ShadowStartPrediction & { distanceSquared: number }> = [];
+    for (const entry of this.entries.values()) {
+      if (entry.light instanceof DirectionalLight || !entry.light.isEnabled() || entry.light.intensity <= 0) continue;
+      const outside = entry.status === "outside-relevant-area";
+      if (!outside && !(entry.status === "budget-limited" && entry.reason === "local light capacity")) continue;
+      if (outside && entry.distanceSquared > ((settings.distance + entry.light.range) * margin) ** 2) continue;
+      let displaced: Entry | undefined;
+      if (full) {
+        if (!farthest || entry.priority < farthest.priority ||
+          (entry.priority === farthest.priority && entry.distanceSquared > rank(farthest) * margin ** 2)) continue;
+        if (!entry.generator && kind(farthest) === kind(entry) && JSON.stringify(farthest.settings) === key) continue;
+        displaced = farthest;
+      }
+      const borrowed = entry.generator ? null : holders.find((holder) => holder !== displaced && kind(holder) === kind(entry) &&
+        JSON.stringify(holder.settings) === key && (holder.generator!.getShadowMap()?.renderList?.length ?? 0) > 0)?.generator;
+      if (borrowed === undefined) continue;
+      starts.push({ light: entry.light, borrowed, displaced: displaced?.light ?? null, distanceSquared: entry.distanceSquared });
+    }
+    return starts.sort((a, b) => a.distanceSquared - b.distanceSquared)
+      .map(({ light, borrowed, displaced }) => ({ light, borrowed, displaced }));
   }
   /** Admitted or standby map still attached to the light, which receivers bind. */
   boundGenerator(light: Light): ShadowGenerator | null {
@@ -756,12 +810,17 @@ export class SceneShadowController {
       engineSupportsCascades && constructorSupportsCascades,
       state.mode,
     );
+    this.planSettings = settings;
     const camera = scene.activeCamera;
     camera?.getViewMatrix();
     const restoring = this.restoring;
     this.restoring = null;
     const cameraChanged = camera !== (restoring ? restoring.camera : this.selectionCamera);
     this.selectionCamera = camera;
+    // A restore ranks as of its snapshot, not now: a residency that ran out since moves the map once more at the
+    // next sync, from the snapshot's arrangement, so the light order (receivers' slots) comes out as a load that never
+    // tried the step has it. Ranked now, the map moves straight from the step's arrangement and its exchange leaves
+    // the lights in other slots.
     const selectionTime = restoring ? restoring.at : performance.now();
     const allocationRequestKey = (entry: Entry) =>
       JSON.stringify([
@@ -837,7 +896,7 @@ export class SceneShadowController {
     const resident = (entry: Entry) => incumbent(entry) &&
       selectionTime - held(entry)!.admittedAt < SHADOW_MIN_RESIDENCY_MS;
     const distance = (entry: Entry) =>
-      entry.distanceSquared / (incumbent(entry) ? 1.15 : 1);
+      entry.distanceSquared / (incumbent(entry) ? SHADOW_INCUMBENT_DISTANCE_BONUS : 1);
     candidates.sort(
       (a, b) =>
         b.priority - a.priority ||

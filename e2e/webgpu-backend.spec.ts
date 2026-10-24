@@ -205,6 +205,25 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     pointOff: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     spotShadows: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
   });
+  // A light that waits within reach of an admission has the Effects it asks for compiled ahead: a spot entering the
+  // Forward budget and one taking a point's shadow map compile no Effect when admitted, and never hold a frame; their
+  // render pipelines are still created then, asynchronously, previous variants drawing meanwhile. Jumping straight in,
+  // the same admissions compile their Effects then.
+  const predicted = result.predictedAdmissions!;
+  const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
+    admitted: admission.admitted, done: admission.done, effects: admission.effectsAtAdmission, held: admission.held,
+    synchronous: admission.pipelines.synchronous,
+  });
+  expect({
+    forward: outcome(predicted.forward.approached), shadow: outcome(predicted.shadow.approached),
+    aheadForward: predicted.forward.approached.effectsAhead > 0, aheadShadow: predicted.shadow.approached.effectsAhead > 0,
+    jumpedForward: predicted.forward.jumped.admitted && predicted.forward.jumped.effectsAtAdmission > 0,
+    jumpedShadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.effectsAtAdmission > 0,
+  }, JSON.stringify(predicted)).toEqual({
+    forward: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0 },
+    shadow: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0 },
+    aheadForward: true, aheadShadow: true, jumpedForward: true, jumpedShadow: true,
+  });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);
