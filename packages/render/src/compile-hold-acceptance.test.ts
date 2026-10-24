@@ -42,6 +42,7 @@ import {
   PBRMaterial,
   PointLight,
   Scene,
+  SpotLight,
   StandardMaterial,
   SubMesh,
   UniversalCamera,
@@ -741,7 +742,7 @@ describe("compile holds after the first frame", () => {
     const waiting = { lit: lightOf(30).isEnabled(), map: controller().generator(lightOf(30)) !== null, point: controller().generator(lightOf(11)) !== null };
     const predictionMaps = controller().heldPredictionMaps.length;
     const attached = world.handle.scene.lights.some((light) => [...(light.getShadowGenerators()?.values() ?? [])]
-      .some((generator) => controller().heldPredictionMaps.includes(generator)));
+      .some((generator) => controller().heldPredictionMaps.includes(generator as ShadowGenerator)));
     const before = world.subjectEffect();
     world.driver.arm();
     world.place(spot(30, [0, 5, 2], { castShadows: true }));
@@ -752,9 +753,14 @@ describe("compile holds after the first frame", () => {
       frames.push(view?.rendered === true);
       if (effect && effect !== before) adoptedAfter = index;
     }
+    const compiled = realCompiles(world).length;
+    // The spot's prediction is kept until its new map first draws, then goes with its prediction map.
+    for (let index = 0; index < 6; index++) await world.frame();
     expect({ waiting, predictionMaps, attached, map: controller().generator(lightOf(30)) !== null,
-      point: controller().generator(lightOf(11)) !== null, released: controller().heldPredictionMaps.length,
-      compiled: realCompiles(world).length, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
+      point: controller().generator(lightOf(11)) !== null,
+      // The spot's prediction map goes with its admission (the point that lost its map may now be predicted with one).
+      released: controller().heldPredictionMaps.filter((map) => map.getLight() instanceof SpotLight).length,
+      compiled, pipelines: world.driver.pipelines.size, drawn: frames.every(Boolean),
       adoptedAtOnce: adoptedAfter === 0 }).toEqual({
       waiting: { lit: true, map: false, point: true }, predictionMaps: start === "borrowed" ? 0 : 1, attached: false,
       map: true, point: false, released: 0, compiled: 0, drawn: true, pipelines: 0, adoptedAtOnce: true,

@@ -16,6 +16,7 @@ import {
 import { syncSceneLighting } from "./scene-lighting";
 import { withSceneReadinessState, withSceneSignalsHeld } from "./scene-readiness-signal";
 import { findSceneShadowController, type SceneShadowController, type ShadowStartPrediction } from "./shadow-controller";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import { copyDefines, settleWarmedEffect, withPredictedEffects } from "./variant-pipeline-warmup";
 import { beginPipelineDeferral, deferredPipelineCount, pipelinesDeferred, releaseWarmPipelines } from "./webgpu-pipeline-deferral";
 
@@ -36,6 +37,8 @@ export const PREDICTED_COMPILES_PER_FRAME = 2;
 export const PREDICTED_PIPELINES_PER_FRAME = 2;
 /** Predictions held at once; a new one drops the least recently near. */
 export const PREDICTIONS_MAX = 4;
+/** A prediction that came true is kept at most this long for the first draw of a map its admission started. */
+const PREDICTION_HANDOVER_MS = 1_000;
 /** A prediction whose light has stayed outside the margin this long is dropped, and its Effects released. */
 export const PREDICTION_EXPIRY_MS = 5_000;
 
@@ -64,6 +67,10 @@ type Prediction = {
   warm: boolean;
   /** The controller's prediction map a first shadow start of its kind borrows. */
   map?: ShadowGenerator;
+  /** It prepared a map's casters' depth variants. */
+  casters?: boolean;
+  /** When its admission happened. */
+  fulfilled?: number;
   complete: boolean;
   lastNear: number;
 };
@@ -194,7 +201,20 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   }
   for (const prediction of [...state.predictions.values()]) {
     if (prediction.scene !== scene) continue;
-    if (prediction.light.isDisposed() || cameTrue(prediction, controller) || prediction.context !== context) {
+    if (prediction.light.isDisposed()) {
+      drop(state, prediction);
+      continue;
+    }
+    if (cameTrue(prediction, controller)) {
+      // Its receivers took its Effects in the admission's frame; a map the admission starts asks for its casters'
+      // depth variants only when it first draws, so a prediction that prepared them stays until then.
+      prediction.fulfilled ??= now;
+      const map = controller?.generator(prediction.light);
+      if (!prediction.casters || (map && !awaitsFirstDraw(map)) || now - prediction.fulfilled >= PREDICTION_HANDOVER_MS)
+        drop(state, prediction);
+      continue;
+    }
+    if (prediction.context !== context) {
       drop(state, prediction);
       continue;
     }
@@ -247,8 +267,8 @@ function releaseUnusedPredictionMaps(scene: Scene, controller: SceneShadowContro
   if (!controller?.heldPredictionMaps.length) return;
   const unused = (map: ShadowGenerator) => ![...state.predictions.values()].some((other) => other.map === map);
   if (!controller.heldPredictionMaps.some(unused)) return;
-  // Disposing a map marks its light's receivers light-dirty, though none of them bound this one.
-  keepingWrapperMarks(scene, () => controller.releasePredictionMaps(unused));
+  // Disposing a map marks its light's receivers light-dirty and reports a removed texture, though no frame drew it.
+  withSceneSignalsHeld(scene, () => keepingWrapperMarks(scene, () => controller.releasePredictionMaps(unused)));
 }
 
 /**
@@ -456,8 +476,10 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
         }
       }
     }
-    // The casters' depth variants of a standby map, which renders again once its light is admitted.
+    // The casters' depth variants of a standby map, which renders again once its light is admitted (or of the
+    // prediction map standing in for the first map of a kind).
     const generator = plan.casters;
+    if (generator) prediction.casters = true;
     for (const mesh of generator?.getShadowMap()?.renderList ?? []) {
       if (mesh instanceof InstancedMesh || mesh.isDisposed() || !mesh.subMeshes?.length) continue;
       const { plain, instanced } = mesh instanceof Mesh ? drawnMaterialVariants(mesh) : { plain: true, instanced: false };
