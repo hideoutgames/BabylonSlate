@@ -131,6 +131,13 @@ describe("app settings", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("keeps an HDR import face size of 128, 256 or 512 and reads anything else as 256", () => {
+    expect(defaultEngineSettings().hdrImportFaceSize).toBe(256);
+    expect(engineSettingsSchema.parse({ hdrImportFaceSize: 512 }).hdrImportFaceSize).toBe(512);
+    expect(engineSettingsSchema.parse({ hdrImportFaceSize: 1024 }).hdrImportFaceSize).toBe(256);
+    expect(engineSettingsSchema.parse({ hdrImportFaceSize: "128" }).hdrImportFaceSize).toBe(256);
+  });
+
   it("clamps audio PCM ceiling and max voices", () => {
     expect(engineSettingsSchema.parse({ audioByteCeiling: 1 }).audioByteCeiling).toBe(
       32 * 1024 * 1024,

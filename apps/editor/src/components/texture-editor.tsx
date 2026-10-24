@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { areaEmissionPreparation, areaEmissionPreparationsRevision, subscribeAreaEmissionPreparations } from "../lib/area-emission-preparation";
 import type { IDockviewPanelProps } from "dockview-react";
 import { BoxIcon, ImageIcon, Maximize2Icon, ScanIcon } from "lucide-react";
@@ -28,7 +28,10 @@ import {
 import { cn } from "@haptic/ui/lib/utils";
 import {
   currentAreaEmissionChunk,
+  HDR_ENVIRONMENT_FACE_SIZES,
+  HDR_SOURCE_CHUNK_ID,
   isEnvironmentTexturePayload,
+  normalizeHdrEnvironmentFaceSize,
   shouldCompressTexture,
   type AreaEmissionProgress,
 } from "@haptic/assets";
@@ -49,6 +52,9 @@ import {
   TEXTURE_USAGE_OPTIONS,
 } from "../lib/asset-settings";
 import { shownCompressionState } from "../lib/texture-encode-state";
+import { ImportProgressDialog, type ImportProgress } from "./import-progress-dialog";
+
+const HDR_FACE_SIZE_OPTIONS = HDR_ENVIRONMENT_FACE_SIZES.map((size) => ({ value: String(size), label: `${size} × ${size}` }));
 
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const CHECKERBOARD =
@@ -98,9 +104,16 @@ function useTextureDocument() {
   const doc = useOpenDocument(documentId);
   const path = doc?.ref.path ?? "";
   const indexed = assetRegistry?.getByPath(path);
+  const header = indexed?.header;
+  // A Face Size change rewrites an environment cube in the file, not the
+  // document, so its cube fields are read from the index.
+  const payload = useMemo(() => {
+    const content = asRecord(doc?.content);
+    return header && isEnvironmentTexturePayload(header.payload) ? { ...content, ...header.payload } : content;
+  }, [doc?.content, header]);
   return {
     path,
-    payload: asRecord(doc?.content),
+    payload,
     guid: indexed?.header.guid,
     dependencies: indexed?.header.dependencies ?? [],
     commit: (next: Record<string, unknown>, mergeKey?: string) => {
@@ -372,6 +385,7 @@ export function TextureDetails({
     textureAlignmentStale,
     textureUsageBlockedReason,
     prepareAreaEmission,
+    reconvertHdrEnvironment,
   } = useDocumentActions();
   const { assetRegistry, registryEpoch, encodingTextures } = useRegistryState();
   // `textureUsageBlockedReason` reads source control locks and whether this
@@ -397,6 +411,34 @@ export function TextureDetails({
     });
   };
   useEffect(() => () => { emissionJob.current?.abort(); }, [guid]);
+  const hdrJob = useRef<AbortController | null>(null);
+  const [hdrProgress, setHdrProgress] = useState<ImportProgress | null>(null);
+  const [hdrError, setHdrError] = useState("");
+  useEffect(() => () => { hdrJob.current?.abort(); }, [guid]);
+  const changeHdrFaceSize = async (faceSize: number) => {
+    if (!guid || hdrJob.current) return;
+    const job = new AbortController();
+    hdrJob.current = job;
+    setHdrError("");
+    setHdrProgress({ title: "Converting", phase: `${faceSize} × ${faceSize} Faces`, completed: 0, total: 1, fraction: 0, canceling: false });
+    try {
+      await reconvertHdrEnvironment(guid, faceSize, {
+        signal: job.signal,
+        onProgress: (fraction) => setHdrProgress((current) => current && { ...current, fraction }),
+      });
+    } catch (error) {
+      if (!job.signal.aborted) setHdrError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (hdrJob.current === job) {
+        hdrJob.current = null;
+        setHdrProgress(null);
+      }
+    }
+  };
+  const cancelHdrConversion = () => {
+    hdrJob.current?.abort();
+    setHdrProgress((current) => current && { ...current, canceling: true });
+  };
   const emissionHeader = guid ? assetRegistry?.getByGuid(guid)?.header : undefined;
   const emissionReady = emissionHeader && currentAreaEmissionChunk(emissionHeader);
   useSyncExternalStore(subscribeAreaEmissionPreparations, areaEmissionPreparationsRevision);
@@ -413,20 +455,49 @@ export function TextureDetails({
   };
 
   if (isEnvironmentTexturePayload(payload)) {
+    const sizeLabel = `${payload.width} × ${payload.height}`;
+    const readOnlyRow = (id: string, label: string, value: string): PropertyRow =>
+      ({ id, label, kind: "text", value, disabled: true, onChange: () => undefined });
+    // Only a Texture imported from `.hdr` with its panorama kept can convert again.
+    const hdrSource = emissionHeader?.chunks.some((chunk) => chunk.id === HDR_SOURCE_CHUNK_ID) ?? false;
+    const faceSize = normalizeHdrEnvironmentFaceSize(payload.hdrFaceSize);
+    const faceSizeRow: PropertyRow = hdrSource
+      ? {
+          id: "faceSize",
+          kind: "enum",
+          label: "Face Size",
+          value: String(faceSize),
+          options: HDR_FACE_SIZE_OPTIONS,
+          disabled: encodeBlocked || hdrProgress !== null,
+          description: Number(payload.width) < faceSize
+            ? `Converted at ${sizeLabel}: faces are at most about a quarter of the panorama's width.`
+            : undefined,
+          onChange: (value) => {
+            if (Number(value) !== faceSize) void changeHdrFaceSize(Number(value));
+          },
+        }
+      : readOnlyRow("size", "Face Size", sizeLabel);
     const rows: PropertyRow[] = [
-      ["dimension", "Dimension", "Cube"],
-      ["container", "Container", String(payload.container).toUpperCase()],
-      ["encoding", "Encoding", payload.encoding === "rgbd" ? "RGBD" : payload.encoding === "linearFloat16" ? "Linear RGBA16F" : "Linear RGBA32F"],
-      ["size", "Face Size", `${payload.width} × ${payload.height}`],
-      ["mips", "Roughness Mip Levels", String(payload.mipLevels)],
-    ].map(([id, label, value]) => ({ id: id!, label: label!, kind: "text" as const, value: value!, disabled: true, onChange: () => undefined }));
+      readOnlyRow("dimension", "Dimension", "Cube"),
+      readOnlyRow("container", "Container", String(payload.container).toUpperCase()),
+      readOnlyRow("encoding", "Encoding", payload.encoding === "rgbd" ? "RGBD" : payload.encoding === "linearFloat16" ? "Linear RGBA16F" : "Linear RGBA32F"),
+      faceSizeRow,
+      readOnlyRow("mips", "Roughness Mip Levels", String(payload.mipLevels)),
+    ];
     return (
       <div className="flex flex-col" data-testid="texture-details">
         <Alert className="m-2 w-auto">
           <AlertTitle>Environment Cube</AlertTitle>
-          <AlertDescription>To use it, set the scene's Environment Source to Texture and pick it in Environment Texture. ENV and DDS files keep their authored roughness mips, so they must be prefiltered. HDR panoramas are converted to a prefiltered DDS cube on import.</AlertDescription>
+          <AlertDescription>To use it, set the scene's Environment Source to Texture and pick it in Environment Texture. ENV and DDS files keep their authored roughness mips, so they must be prefiltered. HDR panoramas are converted to a prefiltered DDS cube; change Face Size to convert one again.</AlertDescription>
         </Alert>
         <PropertyGrid title="Cube" rows={rows} />
+        {hdrError ? (
+          <Alert variant="destructive" className="m-2 w-auto" data-testid="texture-hdr-error">
+            <AlertTitle>Conversion Failed</AlertTitle>
+            <AlertDescription>{hdrError}</AlertDescription>
+          </Alert>
+        ) : null}
+        <ImportProgressDialog progress={hdrProgress} onCancel={cancelHdrConversion} />
       </div>
     );
   }

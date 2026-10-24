@@ -187,6 +187,8 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
   }, z.number().positive().default(1)),
+  /** Largest cube face for `.hdr` panoramas imported from now on; each Texture can change its own. */
+  hdrImportFaceSize: z.union([z.literal(128), z.literal(256), z.literal(512)]).catch(256).default(256),
   viewportFlySpeed: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);

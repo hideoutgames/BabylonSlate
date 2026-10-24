@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { ImportProgressDialog, type ImportProgress } from "./import-progress-dialog";
 import { CheckIcon, MinusIcon, UploadIcon } from "lucide-react";
 import {
   AssetPicker,
@@ -258,18 +259,39 @@ export function FontInspector({
     family: string;
   } | null>(null);
   const indexedFont = assetRegistry?.list().find((asset) => asset.path === path);
+  const [msdfProgress, setMsdfProgress] = useState<ImportProgress | null>(null);
+  const msdfJob = useRef<AbortController | null>(null);
 
   const attachMsdfFiles = async (files: Array<{ name: string; bytes: Uint8Array }>) => {
-    if (!assetRegistry || !indexedFont) return;
+    if (!assetRegistry || !indexedFont || msdfJob.current) return;
     const prepared = groupMsdfImportBatch(files);
     const folder = indexedFont.path.includes("/")
       ? indexedFont.path.slice(0, indexedFont.path.lastIndexOf("/")).replace(/^assets\//, "")
       : "";
-    for (const file of prepared) {
-      await assetRegistry.importFile(indexedFont.rootId, folder, file.name, file.bytes, {
-        sidecars: file.sidecars,
-        attachToGuid: indexedFont.header.guid,
-      });
+    const job = new AbortController();
+    msdfJob.current = job;
+    try {
+      for (const [index, file] of prepared.entries()) {
+        setMsdfProgress((current) => ({
+          title: "Importing",
+          phase: file.name,
+          completed: index,
+          total: prepared.length,
+          fraction: null,
+          canceling: current?.canceling ?? false,
+        }));
+        await assetRegistry.importFile(indexedFont.rootId, folder, file.name, file.bytes, {
+          sidecars: file.sidecars,
+          attachToGuid: indexedFont.header.guid,
+          signal: job.signal,
+        });
+      }
+    } catch (error) {
+      if (job.signal.aborted) return;
+      throw error;
+    } finally {
+      msdfJob.current = null;
+      setMsdfProgress(null);
     }
     const updated = assetRegistry.getByGuid(indexedFont.header.guid);
     if (updated) {
@@ -438,7 +460,10 @@ export function FontInspector({
               onClick={() => {
                 const pending = msdfConfirm;
                 setMsdfConfirm(null);
-                if (pending) void attachMsdfFiles(pending.files);
+                if (pending) {
+                  attachMsdfFiles(pending.files).catch((error: unknown) =>
+                    setMsdfError(error instanceof Error ? error.message : String(error)));
+                }
               }}
             >
               Attach
@@ -446,6 +471,13 @@ export function FontInspector({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ImportProgressDialog
+        progress={msdfProgress}
+        onCancel={() => {
+          msdfJob.current?.abort();
+          setMsdfProgress((current) => current && { ...current, canceling: true });
+        }}
+      />
     </div>
   );
 }

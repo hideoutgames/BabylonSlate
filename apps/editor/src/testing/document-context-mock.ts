@@ -138,6 +138,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     writeProjectDerivedText: async () => {},
     retryFailedTextureEncoding: async () => 0,
     prepareAreaEmission: resolved,
+    reconvertHdrEnvironment: async () => true,
     collectPlayAreaEmissions: async () => new Map(),
     retryTextureEncoding: async () => false,
     textureAlignmentStale: async () => false,

@@ -240,6 +240,7 @@ import {
 } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserCopyProgressDialog, type ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
+import { ImportProgressDialog, type ImportProgress } from "./import-progress-dialog";
 import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
@@ -444,11 +445,25 @@ function ContentBrowserWorkspaceBody({
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
-  const [importProgress, setImportProgress] = useState<{
-    total: number;
-    done: number;
-    currentName: string;
-  } | null>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const importAbortRef = useRef<AbortController | null>(null);
+  /** Shows import progress; once the import is cancelled it keeps reading Canceling. */
+  const updateImportProgress = useCallback((signal: AbortSignal, patch: Partial<ImportProgress>) => {
+    setImportProgress((current) => ({
+      title: "Importing",
+      phase: "",
+      completed: 0,
+      total: 1,
+      fraction: null,
+      ...current,
+      ...patch,
+      canceling: signal.aborted,
+    }));
+  }, []);
+  const cancelImport = useCallback(() => {
+    importAbortRef.current?.abort();
+    setImportProgress((current) => current && { ...current, canceling: true });
+  }, []);
   const [importErrors, updateImportErrors] = useState<string[] | null>(null);
   const [importedFileCount, setImportedFileCount] = useState(0);
   const setImportErrors = useCallback((errors: string[] | null) => {
@@ -1320,20 +1335,30 @@ function ContentBrowserWorkspaceBody({
                 browserRoots,
               );
               if (browse.readOnly) return;
-              for (const file of prepared) {
-                await assetRegistry.importFile(
-                  asset.rootId,
-                  browse.relative,
-                  file.name,
-                  file.bytes,
-                  {
-                    sidecars: file.sidecars,
-                    attachToGuid: guid,
-                  },
-                );
+              const controller = new AbortController();
+              importAbortRef.current = controller;
+              try {
+                for (const [index, file] of prepared.entries()) {
+                  updateImportProgress(controller.signal, { phase: file.name, completed: index, total: prepared.length, fraction: null });
+                  await assetRegistry.importFile(
+                    asset.rootId,
+                    browse.relative,
+                    file.name,
+                    file.bytes,
+                    {
+                      sidecars: file.sidecars,
+                      attachToGuid: guid,
+                      signal: controller.signal,
+                    },
+                  );
+                }
+              } finally {
+                if (importAbortRef.current === controller) importAbortRef.current = null;
+                setImportProgress(null);
+                await refreshAssetRegistry();
               }
-              await refreshAssetRegistry();
             } catch (err) {
+              if (err instanceof DOMException && err.name === "AbortError") return;
               setImportErrors([
                 err instanceof Error ? err.message : String(err),
               ]);
@@ -1543,6 +1568,7 @@ function ContentBrowserWorkspaceBody({
       browserRoots,
       rootPrefixes,
       setImportErrors,
+      updateImportProgress,
       keybinds,
     ],
   );
@@ -1799,13 +1825,28 @@ function ContentBrowserWorkspaceBody({
     sourceControl,
   ]);
 
+  /**
+   * Imports files behind the cancelable Importing dialog. Cancel stops the
+   * file in progress (its importer, or the import worker running it) and
+   * deletes the assets earlier files made, so the folder is left as it was.
+   */
   const importPickedFiles = useCallback(
-    async (files: Array<{ name: string; bytes: Uint8Array }>) => {
+    async (
+      files: Array<{ name: string; bytes: Uint8Array }>,
+      controller: AbortController = new AbortController(),
+    ) => {
       if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
+      const { signal } = controller;
       const errors: string[] = [];
+      const createdGuids: string[] = [];
       let importedCount = 0;
       const incoming = filterHpluginFiles(files);
       if (incoming.length === 0) return;
+      importAbortRef.current = controller;
+      const conversion = {
+        signal,
+        onFile: (name: string) => updateImportProgress(signal, { phase: `Converting ${name}`, completed: 0, total: 1, fraction: null }),
+      };
       const createdModels: Array<{
         guid: string;
         path: string;
@@ -1817,14 +1858,16 @@ function ContentBrowserWorkspaceBody({
         () => setImportProgress(null),
         async () => {
           try {
-            const fbx = await convertFbxImportBatch(incoming);
+            const fbx = await convertFbxImportBatch(incoming, conversion);
             errors.push(...fbx.errors);
             const { files: converted, errors: convertErrors } =
               await convertObjImportBatch(fbx.files, {
+                ...conversion,
                 engine: play?.ensureSharedEngine() ?? undefined,
               });
             errors.push(...convertErrors);
             const stl = await convertStlImportBatch(converted, {
+              ...conversion,
               engine: play?.ensureSharedEngine() ?? undefined,
             });
             errors.push(...stl.errors);
@@ -1834,20 +1877,12 @@ function ContentBrowserWorkspaceBody({
               embedded.files.filter((file) => !fbx.consumedSidecars.includes(file.name)),
             );
             if (prepared.length === 0) return;
-            setImportProgress({
-              total: prepared.length,
-              done: 0,
-              currentName: prepared[0]!.name,
-            });
             const folder = selectedRoot.relative;
-            const { modelImportDefaultScale } = await createAppSettingsStore().load();
+            const { modelImportDefaultScale, hdrImportFaceSize } = await createAppSettingsStore().load();
             for (let index = 0; index < prepared.length; index += 1) {
+              signal.throwIfAborted();
               const file = prepared[index]!;
-              setImportProgress({
-                total: prepared.length,
-                done: index,
-                currentName: file.name,
-              });
+              updateImportProgress(signal, { phase: file.name, completed: index, total: prepared.length, fraction: null });
               try {
                 const created = await assetRegistry.importFile(
                   selectedRoot.rootId,
@@ -1856,11 +1891,15 @@ function ContentBrowserWorkspaceBody({
                   file.bytes,
                   {
                     modelImportScale: modelImportDefaultScale,
+                    hdrFaceSize: hdrImportFaceSize,
                     sidecars: file.sidecars,
+                    signal,
+                    onProgress: (fraction) => updateImportProgress(signal, { fraction }),
                   },
                 );
                 importedCount += 1;
                 for (const asset of created) {
+                  createdGuids.push(asset.header.guid);
                   if (asset.header.type !== "Model" && asset.header.type !== "Animation") continue;
                   createdModels.push({
                     guid: asset.header.guid,
@@ -1870,29 +1909,37 @@ function ContentBrowserWorkspaceBody({
                   });
                 }
               } catch (err) {
+                if (signal.aborted) throw err;
                 errors.push(
                   `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
                 );
               }
-              setImportProgress({
-                total: prepared.length,
-                done: index + 1,
-                currentName: file.name,
-              });
+              updateImportProgress(signal, { completed: index + 1, fraction: null });
             }
-            await refreshAssetRegistry();
           } catch (err) {
-            errors.push(err instanceof Error ? err.message : String(err));
+            if (!signal.aborted) errors.push(err instanceof Error ? err.message : String(err));
           }
+          if (signal.aborted) {
+            for (const guid of createdGuids.reverse()) {
+              try {
+                await assetRegistry.deleteAsset(guid);
+              } catch {
+                // Left for the user to delete; the rest of the cancel still applies.
+              }
+            }
+          }
+          await refreshAssetRegistry();
         },
       );
+      if (importAbortRef.current === controller) importAbortRef.current = null;
+      if (signal.aborted) return;
       if (errors.length) {
         setImportErrors(errors);
         setImportedFileCount(importedCount);
       }
       enqueueModelThumbnailJobs(createdModels);
     },
-    [assetRegistry, play, refreshAssetRegistry, selectedRoot, setImportErrors],
+    [assetRegistry, play, refreshAssetRegistry, selectedRoot, setImportErrors, updateImportProgress],
   );
 
   const submitNameEntry = useCallback(async (nameDialog: NameEntry) => {
@@ -2581,6 +2628,8 @@ function ContentBrowserWorkspaceBody({
   const handleImportInputChange = useCallback(
     async (fileList: FileList | null) => {
       if (!fileList?.length || busy) return;
+      const controller = new AbortController();
+      importAbortRef.current = controller;
       setBusy(true);
       setImportErrors(null);
       let readingName: string | null = null;
@@ -2588,21 +2637,26 @@ function ContentBrowserWorkspaceBody({
         const selected = Array.from(fileList);
         const files: Array<{ name: string; bytes: Uint8Array }> = [];
         for (const file of selected) {
+          controller.signal.throwIfAborted();
           readingName = file.name;
-          setImportProgress({ total: selected.length, done: files.length, currentName: `Reading ${file.name}` });
+          updateImportProgress(controller.signal, { phase: `Reading ${file.name}`, completed: files.length, total: selected.length, fraction: null });
           files.push({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
         }
         readingName = null;
-        await importPickedFiles(files);
+        controller.signal.throwIfAborted();
+        await importPickedFiles(files, controller);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setImportErrors([readingName ? `${readingName}: ${message}` : message]);
+        if (!controller.signal.aborted) {
+          const message = error instanceof Error ? error.message : String(error);
+          setImportErrors([readingName ? `${readingName}: ${message}` : message]);
+        }
       } finally {
+        if (importAbortRef.current === controller) importAbortRef.current = null;
         setImportProgress(null);
         setBusy(false);
       }
     },
-    [busy, importPickedFiles, setImportErrors],
+    [busy, importPickedFiles, setImportErrors, updateImportProgress],
   );
 
   const handleCreateAsset = useCallback(async () => {
@@ -3562,43 +3616,7 @@ function ContentBrowserWorkspaceBody({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={importProgress !== null}>
-        <DialogContent
-          showCloseButton={false}
-          data-testid="importing-overlay"
-        >
-          <DialogHeader>
-            <DialogTitle>Importing</DialogTitle>
-            <DialogDescription>
-              Reading files and writing assets into the project. Texture compression continues in
-              the background after this finishes.
-            </DialogDescription>
-          </DialogHeader>
-          {importProgress ? (
-            <div className="flex flex-col gap-2">
-              <p data-testid="importing-file" className="truncate text-sm">
-                {importProgress.currentName}
-              </p>
-              <p
-                data-testid="importing-count"
-                className="text-sm text-muted-foreground tabular-nums"
-              >
-                {importProgress.done} / {importProgress.total}
-              </p>
-              <Progress
-                value={Math.round(
-                  (100 * importProgress.done) /
-                    Math.max(importProgress.total, 1),
-                )}
-                data-testid="importing-progress"
-              >
-                <ProgressLabel>Importing</ProgressLabel>
-                <ProgressValue />
-              </Progress>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <ImportProgressDialog progress={importProgress} onCancel={cancelImport} />
 
       <AssetPicker
         open={retargetPickerOpen}

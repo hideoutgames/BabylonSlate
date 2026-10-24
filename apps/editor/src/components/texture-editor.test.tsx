@@ -15,6 +15,8 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+const ENVIRONMENT = vi.hoisted(() => ({ usage: "skybox", dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, height: 2, mipLevels: 2, prefiltered: true }));
+
 /** The Textures whose encode runs now, which only the editor's memory knows. */
 const running = vi.hoisted(() => ({ guids: new Set<string>() }));
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
@@ -23,6 +25,10 @@ const textureUsageBlockedReason = vi.hoisted(() => vi.fn<(guid: string) => strin
 const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
   options.onProgress({ phase: "filtering", progress: 0.5 });
   await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+}));
+const reconvertHdrEnvironment = vi.hoisted(() => vi.fn(async (_guid: string, _faceSize: number, options: { signal: AbortSignal; onProgress: (fraction: number) => void }) => {
+  options.onProgress(0.4);
+  return new Promise<boolean>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
 }));
 const readAssetChunk = vi.hoisted(() => vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])));
 let assetRegistry: AssetRegistry;
@@ -38,10 +44,19 @@ beforeAll(async () => {
       dependencies: [], payload: {}, chunks: [],
     });
   }
+  await assetRegistry.createAsset("project", "env-hdr.hasset", {
+    guid: "env-hdr", type: "Texture", name: "env-hdr", version: 1, dependencies: [],
+    payload: { ...ENVIRONMENT, hdrFaceSize: 256 },
+    chunks: [
+      { id: "source", kind: "source", mime: "image/vnd-ms.dds", data: new Uint8Array([0x44, 0x44, 0x53, 0x20]) },
+      { id: "hdr", kind: "hdr", mime: "image/vnd.radiance", data: new Uint8Array([0x23, 0x3f]) },
+    ],
+  });
 });
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   prepareAreaEmission,
+  reconvertHdrEnvironment,
   retryTextureEncoding,
   textureAlignmentStale,
   textureUsageBlockedReason,
@@ -59,7 +74,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   ],
 })));
 
-const ENVIRONMENT = { usage: "skybox", dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, height: 2, mipLevels: 2, prefiltered: true };
 
 afterEach(() => {
   cleanup();
@@ -70,6 +84,7 @@ afterEach(() => {
   textureUsageBlockedReason.mockReset();
   textureUsageBlockedReason.mockReturnValue(null);
   prepareAreaEmission.mockClear();
+  reconvertHdrEnvironment.mockClear();
   readAssetChunk.mockClear();
 });
 
@@ -103,6 +118,34 @@ describe("Texture editor", () => {
     expect(screen.getByLabelText("Roughness Mip Levels")).toHaveProperty("value", "2");
     expect(screen.queryByLabelText("Usage")).toBeNull();
     expect(screen.queryByLabelText("Downsample")).toBeNull();
+  });
+
+  it("converts a kept HDR panorama again at a new Face Size behind a cancelable progress dialog", async () => {
+    const onChange = vi.fn();
+    render(<TextureDetails guid="env-hdr" dependencies={[]} payload={{ ...ENVIRONMENT, hdrFaceSize: 256 }} onChange={onChange} />);
+    // Converted at 2 × 2 under a 256 setting: the panorama's width capped it.
+    expect(screen.getByText(/faces are at most about a quarter of the panorama's width/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Face Size" }));
+    const large = screen.getByRole("option", { name: "512 × 512" });
+    fireEvent.pointerDown(large);
+    fireEvent.click(large);
+
+    await screen.findByTestId("importing-overlay");
+    expect(reconvertHdrEnvironment).toHaveBeenCalledWith("env-hdr", 512, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(screen.getByText("Converting")).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("importing-count").textContent).toBe("40%"));
+    fireEvent.click(screen.getByTestId("importing-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("importing-overlay")).toBeNull());
+    expect(reconvertHdrEnvironment.mock.calls[0]?.[2].signal.aborted).toBe(true);
+    // The setting lives in the file, not the document; a cancel is no failure.
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("texture-hdr-error")).toBeNull();
+  });
+
+  it("shows Face Size read-only for a cube with no kept HDR panorama", () => {
+    render(<TextureDetails guid="env" dependencies={[]} payload={ENVIRONMENT} onChange={vi.fn()} />);
+    expect(screen.getByLabelText("Face Size")).toHaveProperty("value", "2 × 2");
+    expect(screen.queryByRole("combobox", { name: "Face Size" })).toBeNull();
   });
 
   it("does not decode 2D pixels for an environment cube preview", () => {
