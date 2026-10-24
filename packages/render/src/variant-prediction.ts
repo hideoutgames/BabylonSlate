@@ -69,6 +69,8 @@ type Prediction = {
   map?: ShadowGenerator;
   /** It prepared a map's casters' depth variants. */
   casters?: boolean;
+  /** Its prediction map's render (WebGPU) found every caster's pipeline. */
+  mapWarm?: boolean;
   /** When its admission happened. */
   fulfilled?: number;
   complete: boolean;
@@ -102,7 +104,26 @@ type PredictionState = {
   free: number[];
   /** Scenes whose disposal drops their predictions. */
   watched: WeakSet<Scene>;
+  /**
+   * Warm pipelines of dropped predictions, by Effect, until the Effect is released (Babylon disposes a draw wrapper's
+   * Effect at the end of a later frame) or, still held by a real draw after `PIPELINE_RELEASE_WAIT_MS`, kept.
+   */
+  releasing: { effect: Effect; nodes: Set<object>; since: number }[];
 };
+
+/** How long a dropped prediction's warm pipelines wait for their Effect's release before they are left to it. */
+const PIPELINE_RELEASE_WAIT_MS = 10_000;
+
+/** Releases the warm pipelines of Effects that left the cache since their prediction was dropped. */
+function releaseWarmPipelinesOfReleasedEffects(engine: AbstractEngine, state: PredictionState, now: number): void {
+  if (!state.releasing.length) return;
+  const cached = new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+  state.releasing = state.releasing.filter((entry) => {
+    const released = (entry.effect as unknown as { _isDisposed: boolean })._isDisposed || !cached.has(entry.effect);
+    if (released) releaseWarmPipelines(engine, entry.nodes);
+    return !released && now - entry.since < PIPELINE_RELEASE_WAIT_MS;
+  });
+}
 
 /** What one prediction prepares: its receivers, the maps they bind meanwhile, and the casters of a map that returns. */
 type Probe = {
@@ -118,7 +139,7 @@ const states = new WeakMap<AbstractEngine, PredictionState>();
 function stateFor(engine: AbstractEngine): PredictionState {
   let state = states.get(engine);
   if (!state) {
-    state = { frame: -1, budget: 0, pipelineBudget: 0, predictions: new Map(), free: [], watched: new WeakSet() };
+    state = { frame: -1, budget: 0, pipelineBudget: 0, predictions: new Map(), free: [], watched: new WeakSet(), releasing: [] };
     states.set(engine, state);
     const created = state;
     engine.onDisposeObservable.addOnce(() => created.predictions.clear());
@@ -151,9 +172,10 @@ function drop(state: PredictionState, prediction: Prediction): void {
       for (const mesh of scene.meshes)
         for (const subMesh of mesh.subMeshes ?? []) for (const pass of passes) subMesh._removeDrawWrapper(pass, true, true);
     state.free.push(...passes);
-    // An Effect that left the cache (only the prediction held it) takes the pipelines its warm draws created along.
-    const cached = new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
-    for (const [effect, nodes] of pipelines) if (!cached.has(effect)) releaseWarmPipelines(engine, nodes);
+    // An Effect only the prediction (or its prediction map) held takes the pipelines its warm draws created along.
+    const now = performance.now();
+    for (const [effect, nodes] of pipelines) state.releasing.push({ effect, nodes, since: now });
+    releaseWarmPipelinesOfReleasedEffects(engine, state, now);
   });
 }
 
@@ -222,6 +244,12 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
     else if (now - prediction.lastNear >= PREDICTION_EXPIRY_MS) drop(state, prediction);
   }
   releaseUnusedPredictionMaps(scene, controller, state);
+  releaseWarmPipelinesOfReleasedEffects(engine, state, now);
+  // WebGPU: a first shadow start of a kind renders its prediction map once its variants are compiled (every draw
+  // skipped), so its casters' depth pipelines exist before the real map's first draw needs them.
+  for (const prediction of state.predictions.values())
+    if (prediction.scene === scene && prediction.complete && prediction.map && !prediction.mapWarm && prediction.fulfilled === undefined)
+      warmPredictionMap(scene, prediction, state);
   if (state.budget <= 0) return;
   // The nearest PREDICTIONS_MAX candidates only. A full set makes room only by dropping a prediction of this scene
   // whose light has left the margin, never one still near (two near lights trading ranks would otherwise drop and
@@ -594,5 +622,34 @@ function warmDraw(engine: AbstractEngine, prediction: Prediction, draw: Predicte
   if (!nodes) prediction.pipelines.set(effect, (nodes = new Set()));
   for (const node of scope.pipelineNodes?.() ?? []) nodes.add(node);
   return scope.warmed() ? "warm" : "cold";
+}
+
+/**
+ * WebGPU: renders a first-of-kind prediction's map outside the frame, inside a warm deferral scope that admits only
+ * the map's own render passes: every caster draw is skipped, and a missing depth pipeline starts creating
+ * asynchronously, with the shadow pass's target state (a map's format, not its size, keys the pipeline). The map is
+ * attached to no light and its output is never sampled.
+ */
+function warmPredictionMap(scene: Scene, prediction: Prediction, state: PredictionState): void {
+  const engine = scene.getEngine();
+  const map = prediction.map?.getShadowMap();
+  if (!pipelinesDeferred(engine) || !map || state.pipelineBudget <= 0) return;
+  const passes = new Set(map.renderPassIds);
+  const scope = beginPipelineDeferral(engine, (pass) => passes.has(pass), { warm: true });
+  if (!scope) return;
+  const started = deferredPipelineCount(engine);
+  try {
+    // The view's camera, matrices, scene UBO, pass, viewport and colour write come back after the map's pass.
+    withSceneReadinessState(scene, () => map.render());
+  } finally {
+    scope.close();
+  }
+  state.pipelineBudget -= Math.max(0, deferredPipelineCount(engine) - started);
+  for (const [effect, node] of scope.pipelineEffects?.() ?? []) {
+    let nodes = prediction.pipelines.get(effect as Effect);
+    if (!nodes) prediction.pipelines.set(effect as Effect, (nodes = new Set()));
+    nodes.add(node);
+  }
+  if (scope.warmed()) prediction.mapWarm = true;
 }
 

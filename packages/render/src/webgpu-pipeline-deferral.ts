@@ -47,7 +47,7 @@ type Scope = {
   /** The pending pipelines its skipped draws wait for. */
   nodes: Set<CacheNode>;
   /** Warm scopes: the cache nodes its draws looked up (found or started), each one Effect's pipeline for one state. */
-  tokens: Set<CacheNode>;
+  tokens: Map<CacheNode, object>;
 };
 
 type DeferralState = {
@@ -126,7 +126,7 @@ function install(engine: AbstractEngine): DeferralState {
       }
       if (!state.pending.has(node)) defer(this, node, effect, topology, sampleCount);
       scope.nodes.add(node);
-      scope.tokens.add(node);
+      scope.tokens.set(node, effect as object);
       throw DEFERRED;
     }
     if (!scope || this.disabled || !node || target._snapshotRendering.record || state.synchronous.has(node))
@@ -156,7 +156,7 @@ function install(engine: AbstractEngine): DeferralState {
     scope.skipped += 1;
     lookup.apply(this, args);
     scope.hits += 1;
-    if (this._parameter.token) scope.tokens.add(this._parameter.token);
+    if (this._parameter.token) scope.tokens.set(this._parameter.token, args[1] as object);
     throw DEFERRED;
   };
   target._draw = function (this: DrawEngine, ...args) {
@@ -189,6 +189,8 @@ export type PipelineDeferral = {
   warmed(): boolean;
   /** A warm scope: the pipeline-cache nodes its draws looked up, for `releaseWarmPipelines`. */
   pipelineNodes?(): readonly object[];
+  /** A warm scope: each Effect a draw looked a pipeline up for, with that pipeline's cache node. */
+  pipelineEffects?(): readonly (readonly [object, object])[];
 };
 
 /**
@@ -227,7 +229,7 @@ export function beginPipelineDeferral(
   const scopes = state.scopes;
   const warm = options.warm === true;
   const scope: Scope = {
-    allows, startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0, lookups: 0, hits: 0, nodes: new Set(), tokens: new Set(),
+    allows, startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0, lookups: 0, hits: 0, nodes: new Set(), tokens: new Map(),
   };
   scopes.push(scope);
   let closed = false;
@@ -250,7 +252,8 @@ export function beginPipelineDeferral(
       return false;
     },
     warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
-    pipelineNodes: () => [...scope.tokens],
+    pipelineNodes: () => [...scope.tokens.keys()],
+    pipelineEffects: () => [...scope.tokens].map(([node, effect]) => [effect, node] as const),
   };
 }
 
