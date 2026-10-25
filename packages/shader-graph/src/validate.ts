@@ -171,7 +171,7 @@ export function functionCallDefinition(
 
 /**
  * Unlike the resolver's plumbing pins, these carry no declared defaults, so a
- * texture Function Output pin must be wired even when the interface gives it one.
+ * declared default never satisfies an unwired texture Function Output pin.
  */
 export function functionPlumbingDefinition(
   type: "function.input" | "function.output",
