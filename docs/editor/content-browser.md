@@ -40,7 +40,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Rename | Rename one asset or folder. References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |
 | Move… / Copy to Folder… | Move or copy the selection to a folder you pick. |
-| Copy Asset Reference | Copy the asset's ID to the clipboard. |
+| Copy Asset Reference | Copy the asset's ID to the clipboard. If the clipboard refuses the copy, the Content Browser says so. |
 | Show References | Open the references graph (below). |
 | Delete | Delete the selection. |
 
