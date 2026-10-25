@@ -1890,7 +1890,6 @@ export class SceneShadowController {
   }
 }
 
-/** Internal renderer lookup; observing a scene never installs a second owner. */
 /** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
 function detachShadowGenerator(generator: ShadowGenerator): void {
   const light = generator.getLight();
@@ -1912,6 +1911,7 @@ function aimShadowGenerator(generator: ShadowGenerator, light: Light): void {
   target._cachedDirection.setAll(Number.MAX_VALUE);
 }
 
+/** Internal renderer lookup; observing a scene never installs a second owner. */
 export function findSceneShadowController(scene: Scene): SceneShadowController | undefined {
   return controllers.get(scene);
 }

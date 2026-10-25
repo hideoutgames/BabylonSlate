@@ -4855,6 +4855,37 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("pans the canvas when a drag starts on a wire", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container } = render(<GraphEditor initialGraph={graphWithWiredPins()} />);
+      const wire = await waitFor(() => {
+        const found = container.querySelector(".react-flow__edge-interaction");
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      const viewport = container.querySelector<HTMLElement>(".react-flow__viewport")!;
+      const before = viewport.style.transform;
+      // d3-zoom follows the drag on `event.view`, which jsdom leaves null.
+      const mouse = (type: string, target: EventTarget, x: number, y: number) => {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+        Object.defineProperty(event, "view", { value: window });
+        fireEvent(target as Element, event);
+      };
+      mouse("mousedown", wire, 100, 100);
+      mouse("mousemove", window, 160, 130);
+      mouse("mouseup", window, 160, 130);
+      expect(viewport.style.transform).not.toBe(before);
+      // The click that ends the drag does not select the wire it started on.
+      mouse("click", wire, 160, 130);
+      expect(wire.closest(".react-flow__edge")!.classList.contains("selected")).toBe(false);
+      // d3 drops its post-drag click blocker on the next task.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("deselects nodes when an animation transition badge is clicked", async () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

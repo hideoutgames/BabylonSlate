@@ -4,6 +4,8 @@ packages:
 
 patchedDependencies:
   "@babylonjs/core@9.29.0": "patches/@babylonjs__core@9.29.0.patch"
+  # XYFlow marks every edge `nopan`, so a drag or pinch starting on a wire never moves the canvas.
+  "@xyflow/react@12.11.2": "patches/@xyflow__react@12.11.2.patch"
 
 # Keep transitive security fixes within each consumer's supported release line.
 overrides:

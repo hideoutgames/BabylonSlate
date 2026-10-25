@@ -12,6 +12,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Haptic</title>
+    <link
+      rel="preload"
+      href="/fonts/licensed/block-berthold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <!-- COOP/COEP via coi-serviceworker so SharedArrayBuffer may activate on Pages. -->
     <script src="/coi-serviceworker.js"></script>
     <script>
@@ -23,6 +30,15 @@
         document.documentElement.setAttribute("data-automation", "");
     </script>
     <style>
+      /* The haptic.no title face, for the text wordmark of the boot intro and
+       * the project-open card. */
+      @font-face {
+        font-family: "Block Berthold";
+        src: url("/fonts/licensed/block-berthold.woff2") format("woff2");
+        font-weight: 400 900;
+        font-style: normal;
+        font-display: block;
+      }
       /* The boot intro. This page paints it outside #root before any bundle
        * runs; LauncherTransitionProvider then drives the same element
        * (useBootIntro) and removes it, so it never restarts mid-flight.
@@ -38,11 +54,11 @@
         --hi-magenta: 188 44 98;
         --hi-ease: cubic-bezier(0.22, 0.8, 0.28, 1);
         --hi-wordmark-width: clamp(220px, 46vw, 720px);
-        /* The edge band: a hard bright line, then a short falloff. */
+        /* The edge band: a thin line, then a short, faint falloff. */
         --hi-line: 2px;
-        --hi-fall: clamp(44px, 9vmin, 112px);
-        --hi-side: #000 0 var(--hi-line), rgb(0 0 0 / 42%) var(--hi-line),
-          rgb(0 0 0 / 16%) calc(var(--hi-fall) * 0.4), transparent var(--hi-fall);
+        --hi-fall: clamp(40px, 8vmin, 104px);
+        --hi-side: rgb(0 0 0 / 85%) 0 var(--hi-line), rgb(0 0 0 / 34%) var(--hi-line),
+          rgb(0 0 0 / 12%) calc(var(--hi-fall) * 0.4), transparent var(--hi-fall);
         --hi-frame: linear-gradient(to bottom, var(--hi-side)) top / 100% var(--hi-fall) no-repeat,
           linear-gradient(to top, var(--hi-side)) bottom / 100% var(--hi-fall) no-repeat,
           linear-gradient(to right, var(--hi-side)) left / var(--hi-fall) 100% no-repeat,
@@ -102,7 +118,7 @@
           rgb(var(--hi-magenta)) 87%,
           rgb(var(--hi-red))
         );
-        opacity: 0.5;
+        opacity: 0.42;
         animation: haptic-intro-band 1.8s ease-out 850ms backwards;
       }
       /* Light sources travelling the edges. The first two ignite at the bottom
@@ -119,9 +135,9 @@
         border-radius: 50%;
         background: radial-gradient(
           closest-side,
-          rgb(255 238 214),
-          rgb(var(--color)) 22%,
-          rgb(var(--color) / 50%) 55%,
+          rgb(255 232 206 / 88%),
+          rgb(var(--color) / 90%) 22%,
+          rgb(var(--color) / 42%) 55%,
           transparent
         );
         mix-blend-mode: screen;
@@ -209,17 +225,20 @@
       .haptic-intro[data-leaving="true"] .haptic-intro-glow {
         animation: haptic-intro-glow-flare 1100ms ease-out both;
       }
-      /* The wordmark artwork, cut into one slice per letter. The letters rise
-       * out of the baseline while amber and red silhouettes of each one close
-       * in from wide and fade into the fringes baked into the artwork; then the
-       * whole image takes over, so the resting frame is the artwork itself.
-       * Every layer is an <img>, not a CSS url(): a CSS image only becomes
-       * paintable after a main-thread task, which waits for the bundle. */
+      /* The wordmark is text, set like haptic.no's title: white ink over a red
+       * and an amber copy stretched a little wider, which leave the chromatic
+       * fringes. The letters rise out of the baseline one after another while
+       * the copies close in from wide to their resting stretch. Each letter
+       * carries its own blur, so only transforms and opacity animate. */
       .haptic-intro-wordmark {
+        --t: calc(var(--hi-wordmark-width) / 3.3 / 172.5);
         position: relative;
-        width: var(--hi-wordmark-width);
-        aspect-ratio: 1119 / 257;
-        clip-path: inset(-60% -40% 0);
+        margin: 0;
+        font: 400 calc(172.5 * var(--t)) / 1 "Block Berthold", "Onest Variable",
+          system-ui, sans-serif;
+        letter-spacing: 0;
+        white-space: nowrap;
+        clip-path: inset(-0.45em -0.45em 0);
         transition:
           scale 1300ms cubic-bezier(0.22, 1, 0.36, 1),
           opacity 800ms cubic-bezier(0.3, 0, 0.2, 1) 220ms;
@@ -230,52 +249,48 @@
         scale: 1.05;
         opacity: 0;
       }
-      /* Until the artwork can paint (data-wait), the letters hold their first
+      /* Until the font can paint (data-wait), the letters hold their first
        * frame instead of rising invisibly; the edges play on regardless. */
       .haptic-intro[data-wait] .haptic-intro-wordmark,
       .haptic-intro[data-wait] .haptic-intro-wordmark * {
         animation-play-state: paused;
       }
-      .haptic-intro-letter,
-      .haptic-intro-letter > img,
-      .haptic-intro-whole {
+      .haptic-intro-ink {
+        position: relative;
+        display: block;
+        color: #fff;
+      }
+      .haptic-intro-ca {
         position: absolute;
         inset: 0;
-        width: 100%;
-        height: 100%;
+        transform: scaleX(var(--ca));
+        animation: haptic-intro-converge 1700ms var(--hi-ease) 400ms backwards;
       }
-      .haptic-intro-letter {
-        visibility: hidden;
-        animation:
-          haptic-intro-show 2150ms step-end 0ms,
-          haptic-intro-rise 1100ms var(--hi-ease) calc(400ms + var(--i) * 85ms)
-            backwards;
+      .haptic-intro-ca-red {
+        --ca: 1.075;
+        --ca-from: 1.34;
+        color: rgb(var(--hi-red));
       }
-      .haptic-intro-letter:nth-of-type(1) { --i: 0; --cut-left: 0%; --cut-right: 77.48%; }
-      .haptic-intro-letter:nth-of-type(2) { --i: 1; --cut-left: 22.52%; --cut-right: 58.62%; }
-      .haptic-intro-letter:nth-of-type(3) { --i: 2; --cut-left: 41.38%; --cut-right: 40.21%; }
-      .haptic-intro-letter:nth-of-type(4) { --i: 3; --cut-left: 59.79%; --cut-right: 24.22%; }
-      .haptic-intro-letter:nth-of-type(5) { --i: 4; --cut-left: 75.78%; --cut-right: 16.53%; }
-      .haptic-intro-letter:nth-of-type(6) { --i: 5; --cut-left: 83.47%; --cut-right: 0%; }
-      .haptic-intro-letter > img {
-        clip-path: inset(-20% var(--cut-right) -20% var(--cut-left));
+      .haptic-intro-ca-amber {
+        --ca: 1.04;
+        --ca-from: 1.2;
+        color: rgb(var(--hi-amber));
       }
-      .haptic-intro-echo {
-        opacity: 0;
-        animation: haptic-intro-converge 1300ms var(--hi-ease)
+      .haptic-intro-wordmark span > span {
+        display: inline-block;
+        filter: blur(calc(0.5 * var(--t)));
+        animation: haptic-intro-rise 1100ms var(--hi-ease)
           calc(400ms + var(--i) * 85ms) backwards;
       }
-      .haptic-intro-echo-red {
-        --spread: 1.34;
-        filter: url(#haptic-intro-red);
+      .haptic-intro-wordmark .haptic-intro-ca > span {
+        filter: blur(calc(1.2 * var(--t)));
       }
-      .haptic-intro-echo-amber {
-        --spread: 1.2;
-        filter: url(#haptic-intro-amber);
-      }
-      .haptic-intro-whole {
-        animation: haptic-intro-hide 2150ms step-end 0ms;
-      }
+      .haptic-intro-wordmark span > span:nth-child(1) { --i: 0; }
+      .haptic-intro-wordmark span > span:nth-child(2) { --i: 1; }
+      .haptic-intro-wordmark span > span:nth-child(3) { --i: 2; }
+      .haptic-intro-wordmark span > span:nth-child(4) { --i: 3; }
+      .haptic-intro-wordmark span > span:nth-child(5) { --i: 4; }
+      .haptic-intro-wordmark span > span:nth-child(6) { --i: 5; }
       .haptic-intro-grain {
         position: absolute;
         inset: 0;
@@ -329,7 +344,7 @@
           opacity: 0;
         }
         40% {
-          opacity: 0.95;
+          opacity: 0.8;
         }
       }
       @keyframes haptic-intro-ignite-right {
@@ -387,28 +402,16 @@
       }
       @keyframes haptic-intro-flare {
         35% {
-          opacity: 0.85;
+          opacity: 0.6;
         }
         100% {
-          opacity: 0.4;
+          opacity: 0.28;
         }
       }
       @keyframes haptic-intro-glow-flare {
         35%,
         100% {
           opacity: 1;
-        }
-      }
-      @keyframes haptic-intro-show {
-        from,
-        to {
-          visibility: visible;
-        }
-      }
-      @keyframes haptic-intro-hide {
-        from,
-        to {
-          visibility: hidden;
         }
       }
       @keyframes haptic-intro-rise {
@@ -422,15 +425,11 @@
       }
       @keyframes haptic-intro-converge {
         0% {
-          opacity: 1;
-          transform: scaleX(var(--spread));
-        }
-        55% {
-          opacity: 1;
-        }
-        100% {
           opacity: 0;
-          transform: scaleX(1);
+          transform: scaleX(var(--ca-from));
+        }
+        25% {
+          opacity: 1;
         }
       }
       /* Without animations every layer shows its resting state. */
@@ -445,6 +444,7 @@
         }
       }
       @media (forced-colors: active) {
+        .haptic-intro-ca,
         .haptic-intro-edge,
         .haptic-intro-glow,
         .haptic-intro-grain {
@@ -473,58 +473,13 @@
       </div>
       <div class="haptic-intro-glow" aria-hidden="true"></div>
       <div class="haptic-intro-wordmark" aria-hidden="true">
-        <img
-          class="haptic-intro-whole"
-          src="/branding/HapticWordmark-DarkMode.png"
-          alt=""
-          fetchpriority="high"
-        />
-        <span class="haptic-intro-letter">
-          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
-        </span>
-        <span class="haptic-intro-letter">
-          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
-        </span>
-        <span class="haptic-intro-letter">
-          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
-        </span>
-        <span class="haptic-intro-letter">
-          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
-        </span>
-        <span class="haptic-intro-letter">
-          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
-        </span>
-        <span class="haptic-intro-letter">
-          <img class="haptic-intro-echo haptic-intro-echo-red" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img class="haptic-intro-echo haptic-intro-echo-amber" src="/branding/HapticWordmark-DarkMode.png" alt="" />
-          <img src="/branding/HapticWordmark-DarkMode.png" alt="" />
-        </span>
+        <span class="haptic-intro-ca haptic-intro-ca-red"><span>H</span><span>A</span><span>P</span><span>T</span><span>I</span><span>C</span></span>
+        <span class="haptic-intro-ca haptic-intro-ca-amber"><span>H</span><span>A</span><span>P</span><span>T</span><span>I</span><span>C</span></span>
+        <span class="haptic-intro-ink"><span>H</span><span>A</span><span>P</span><span>T</span><span>I</span><span>C</span></span>
       </div>
       <div class="haptic-intro-grain haptic-intro-grain-light" aria-hidden="true"></div>
       <div class="haptic-intro-grain haptic-intro-grain-dark" aria-hidden="true"></div>
       <div class="haptic-intro-grain haptic-intro-grain-mid" aria-hidden="true"></div>
-      <svg width="0" height="0" aria-hidden="true" style="position: absolute">
-        <filter id="haptic-intro-red" color-interpolation-filters="sRGB">
-          <feFlood flood-color="#ff4400" />
-          <feComposite in2="SourceAlpha" operator="in" />
-          <feGaussianBlur stdDeviation="1.4" />
-        </filter>
-        <filter id="haptic-intro-amber" color-interpolation-filters="sRGB">
-          <feFlood flood-color="#ffb300" />
-          <feComposite in2="SourceAlpha" operator="in" />
-          <feGaussianBlur stdDeviation="1.4" />
-        </filter>
-      </svg>
       <span class="haptic-intro-build">__SLATE_BUILD_LABEL__</span>
       <span class="haptic-intro-status">Loading application</span>
     </div>
@@ -534,24 +489,23 @@
         var intro = document.getElementById("haptic-intro");
         if (!intro) return;
         // The timeline starts with the first frame, and the launcher counts its
-        // minimum time from data-start. If the wordmark is not loaded yet (a
-        // cold start), only the letters wait for it; its load event can be
-        // queued behind the bundle, which the edges keep covering meanwhile.
+        // minimum time from data-start. If the wordmark font is not loaded yet
+        // (a cold start), only the letters wait for it; its load can be queued
+        // behind the bundle, which the edges keep covering meanwhile.
         intro.setAttribute("data-start", String(performance.now()));
-        var wordmark = intro.querySelector(".haptic-intro-whole");
-        if (!wordmark.complete) {
+        var face = '400 100px "Block Berthold"';
+        if (document.fonts && !document.fonts.check(face)) {
           intro.setAttribute("data-wait", "");
           var release = function () {
             if (!intro.hasAttribute("data-wait")) return;
             intro.removeAttribute("data-wait");
             intro.setAttribute("data-start", String(performance.now()));
           };
-          wordmark.addEventListener("load", release);
-          wordmark.addEventListener("error", release);
+          document.fonts.load(face).then(release, release);
         }
 
         // Procedural film grain, baked once (no image asset) into data URLs,
-        // which are ready for the first paint like the wordmark. One gaussian
+        // which are ready for the first paint. One gaussian
         // sample per pixel: positive values light a white tile (plus-lighter),
         // negative ones darken a black tile (multiply), and a grey tile adds
         // contrast to mid-tones (overlay).
