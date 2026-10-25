@@ -22,10 +22,8 @@ import { directViewPresentationAllowed } from "./direct-view-presentation";
 import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewCanvasHasLayoutBox, viewPresentedDirectly } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
-import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
-import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
-import type { Node as BabylonNode } from "@babylonjs/core";
+import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -51,7 +49,6 @@ import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-hos
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { isLightValueOnlySceneEdit } from "./light-edit";
-import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
@@ -62,14 +59,13 @@ import { releaseLightPredictions } from "./variant-prediction";
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineOptions, EngineView, Material } from "@babylonjs/core";
-import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@haptic/core";
+import { resolveRenderingQuality } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
 import {
   Engine,
   KhronosTextureContainer2,
-  Mesh,
   NodeMaterial,
   Scene,
   ScenePerformancePriority,
@@ -223,6 +219,9 @@ import { firstFrameCompletionMs } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
 import { createEditorViewportTools } from "./editor-viewport-tools";
+import { createPlayGameInput } from "./play-game-input";
+import { createPlayVisualBindings } from "./play-visual-bindings";
+import { createPlayHandleInspection } from "./play-handle-inspection";
 import type {
   CreateEngineOptions,
   EditorSceneLoadOptions,
@@ -1247,33 +1246,6 @@ function initializeEngine(
       meshes: editorSync.visualMeshesForActor(actor.id), bindings: outlineBindings(actor.id, actor.components) })));
     outlineHost.refreshSettings();
   };
-  /** A Play slot's root when it renders in the world Scene: not an overlay slot or another Scene's mesh. */
-  const worldSlotRoot = (slotId: number): Mesh | null => {
-    const root = binding.meshes.get(slotId);
-    return root && root.getScene() === scene && !binding.isOverlaySlot?.(slotId) ? root : null;
-  };
-  const outlineActorBySlot = new Map<number, string>();
-  const deformerActorBySlot = new Map<number, string>();
-  const refreshRuntimeDeformers = (slotId: number, refreshGeometry = true) => {
-    if (options.editor) return;
-    const root = worldSlotRoot(slotId);
-    const authored = binding.deformers.get(slotId);
-    const previous = deformerActorBySlot.get(slotId);
-    if (previous && (!authored || previous !== authored.actorId || !root)) {
-      deformerHost.removeActor(previous);
-      deformerActorBySlot.delete(slotId);
-    }
-    if (!root) return;
-    markLatticeComponentRoot(root);
-    for (const part of binding.meshParts.get(slotId) ?? []) {
-      const target = meshForPlayComponent(binding, slotId, part.componentId);
-      if (target) markLatticeComponentRoot(target);
-    }
-    if (!authored) return;
-    deformerHost.setActor(authored.actorId, authored.bindings,
-      (id) => meshForPlayComponent(binding, slotId, id), refreshGeometry);
-    deformerActorBySlot.set(slotId, authored.actorId);
-  };
   const editorFogActors = new Set<string>();
   const syncEditorFogVolumes = () => {
     const data = editorSync?.serializedScene();
@@ -1291,75 +1263,16 @@ function initializeEngine(
     editorFogActors.clear();
     for (const id of retained) editorFogActors.add(id);
   };
-  const runtimeFogActorBySlot = new Map<number, string>();
-  const refreshRuntimeFogVolumes = (slotId: number) => {
-    if (options.editor) return;
-    const root = worldSlotRoot(slotId);
-    const authored = binding.fogVolumes.get(slotId);
-    const previous = runtimeFogActorBySlot.get(slotId);
-    if (previous && (!root || !authored || authored.actorId !== previous)) {
-      removeFogVolumes(scene, previous);
-      runtimeFogActorBySlot.delete(slotId);
-    }
-    if (!authored || !root) return;
-    upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
-    runtimeFogActorBySlot.set(slotId, authored.actorId);
-  };
-  // Play reflection probes: authored per slot on the binding, static actors from the authored play scene.
-  const runtimeProbeActorBySlot = new Map<number, string>();
-  let playStaticActors = new Set<string>();
-  let probeRoots: { renderId: number; slots: Map<BabylonNode, number> } | null = null;
-  const playProbeStatic = (mesh: BabylonNode): boolean => {
-    // Captures ask once per mesh; map the slot roots once per frame.
-    if (probeRoots?.renderId !== scene.getRenderId()) {
-      probeRoots = { renderId: scene.getRenderId(), slots: new Map([...binding.meshes].map(([slot, root]) => [root as BabylonNode, slot])) };
-    }
-    for (let node: BabylonNode | null = mesh; node; node = node.parent) {
-      const slot = probeRoots.slots.get(node);
-      if (slot === undefined) continue;
-      const actorGuid = binding.meshSorting.get(slot)?.actorGuid;
-      return !!actorGuid && playStaticActors.has(actorGuid);
-    }
-    return false;
-  };
-  const refreshRuntimeReflectionProbes = (slotId: number) => {
-    if (options.editor) return;
-    const root = worldSlotRoot(slotId);
-    const authored = binding.reflectionProbes.get(slotId);
-    const previous = runtimeProbeActorBySlot.get(slotId);
-    if (previous && (!root || !authored || authored.actorId !== previous)) {
-      findSceneReflectionProbes(scene)?.remove(previous);
-      runtimeProbeActorBySlot.delete(slotId);
-    }
-    if (!authored || !authored.bindings.length || !root) return;
-    const probes = sceneReflectionProbes(scene);
-    probes.setStaticPredicate(playProbeStatic);
-    probes.upsert(authored.actorId, root, authored.bindings);
-    runtimeProbeActorBySlot.set(slotId, authored.actorId);
-  };
-  const refreshRuntimeOutline = (slotId: number) => {
-    if (options.editor) return;
-    const root = worldSlotRoot(slotId);
-    const authored = binding.outlines.get(slotId);
-    const actorId = authored?.actorId ?? binding.meshSorting.get(slotId)?.actorGuid;
-    const previous = outlineActorBySlot.get(slotId);
-    if (previous && !root) {
-      outlineHost.removeActor(previous); outlineActorBySlot.delete(slotId);
-    }
-    if (!actorId || !root) return;
-    // Runtime transforms are normally world-space. If a caller attaches actor
-    // roots, descendants still belong to their own actor's outline identity.
-    const otherRoots = new Set([...binding.meshes.values()].filter((mesh) => mesh !== root));
-    const meshes = visualMeshes(root, otherRoots);
-    outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
-    outlineActorBySlot.set(slotId, actorId);
-  };
-  binding.onVisualChanged = (slotId) => {
-    refreshRuntimeDeformers(slotId);
-    refreshRuntimeOutline(slotId);
-    refreshRuntimeFogVolumes(slotId);
-    refreshRuntimeReflectionProbes(slotId);
-  };
+  const playVisuals = createPlayVisualBindings({
+    options,
+    scene,
+    binding,
+    deformerHost,
+    outlineHost,
+    scheduler,
+    worldRenderer,
+    markSnapshotStale: () => { appliedSnapshotIdentity = null; },
+  });
 
   let lastSceneAssetGuid: string | undefined;
   let lastRenderedSnapshotFrame: number | null = null;
@@ -2259,188 +2172,26 @@ function initializeEngine(
   });
   onRollback(() => engine.onContextRestoredObservable.remove(contextRestoredObserver));
 
-  // Tap-to-pick: continuous hover picking is off for touch.
-  const overlayPointerCanvasCoords = (event: PointerEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    };
-  };
-  const scrollTargetAt = (x: number, y: number) => {
-    const size = pointerCanvas();
-    const mapped = mapCanvasPointer(scene, x, y, size);
-    const blockingLayer = sceneLayerCompositor?.pickHits(mapped.x, mapped.y).find(hit => hit.hitTest === "block")?.layerId;
-    for (const layer of [...(sceneLayerCompositor?.sortedLayers() ?? [])].reverse()) {
-      if (layerLoads.get(layer.layerId)?.ready === false) continue;
-      const point = sceneLayerCanvasToLayer(x, y, size.width, size.height, layer.viewBounds, layer.cameraState);
-      const target = overlayLayouts.scrollAt(layer.layerId, point.x, point.y);
-      // Wheel steps: layer units per screen pixel at the camera's zoom, along the box's own axes.
-      const zoom = layer.cameraState.zoom;
-      if (target?.componentId) return { target, layer, scaleX: layer.viewBounds.width / Math.max(1, size.width) / zoom / (target.scroll?.scaleX || 1), scaleY: layer.viewBounds.height / Math.max(1, size.height) / zoom / (target.scroll?.scaleY || 1) };
-      if (layer.layerId === blockingLayer) break;
-    }
-    return undefined;
-  };
-  let scrollDrag: { pointerId: number; startX: number; startY: number; x: number; y: number; active: boolean; target: NonNullable<ReturnType<typeof scrollTargetAt>> } | null = null;
-  const activeGamePointers = new Set<number>();
-  const activeControlKeys = new Set<string>();
-  const ownsGamePointer = (pointerId: number) =>
-    joysticks.owns(pointerId) || uiControls.owns(pointerId) || (scrollDrag?.pointerId === pointerId && scrollDrag.active);
-  const onOverlayWheel = (event: WheelEvent) => {
-    if (!acceptsGameInput()) return;
-    const rect = canvas.getBoundingClientRect();
-    const hit = scrollTargetAt(event.clientX - rect.left, event.clientY - rect.top);
-    if (!hit) return;
-    event.preventDefault();
-    const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
-    // A horizontal box or Shift+wheel scrolls sideways by the dominant axis: a
-    // native horizontal swipe keeps deltaX, and a vertical wheel with a little
-    // horizontal jitter still scrolls by deltaY.
-    const sideways = event.shiftKey || hit.target.scroll?.axis === "horizontal";
-    const deltaX = sideways && Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-    options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: deltaX * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
-  };
-  const onPointerDown = (event: PointerEvent) => {
-    if (!acceptsGameInput()) return;
-    activeGamePointers.add(event.pointerId);
-    event.preventDefault();
-    canvas.focus({ preventScroll: true });
-    canvas.setPointerCapture?.(event.pointerId);
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    // Game views keep no world selection; a ray pick here changed nothing.
-    dispatchOverlayPointer("down", x, y, event.pointerId);
-    if (joysticks.owns(event.pointerId)) return;
-    const controlOwns = uiControls.owns(event.pointerId);
-    if (controlOwns && !uiControls.allowsScroll(event.pointerId)) return;
-    const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
-    if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
-  };
-  const onPointerMove = (event: PointerEvent) => {
-    if (!acceptsGameInput() || ((event.pointerType === "touch" || event.buttons > 0) && !activeGamePointers.has(event.pointerId))) return;
-    const { x, y } = overlayPointerCanvasCoords(event);
-    if (joysticks.move(event.pointerId, x, y)) return;
-    if (scrollDrag?.pointerId === event.pointerId) {
-      if (!scrollDrag.active && Math.hypot(x - scrollDrag.startX, y - scrollDrag.startY) >= 8) {
-        uiControls.cancelForScroll(event.pointerId);
-        scrollDrag.active = true;
-        for (const hit of overlayPointerState.pressed.values()) options.onSceneLayerPointer?.({ layerId: hit.layerId, actorGuid: hit.actorGuid, componentId: hit.componentId, event: "onPressEnd" });
-        overlayPointerState.pressed.clear();
-      }
-      if (scrollDrag.active) {
-        const { target, layer } = scrollDrag.target;
-        // The drag in layer units through the layer camera, so it follows a moved, turned or zoomed view.
-        const size = pointerCanvas();
-        const from = sceneLayerCanvasToLayer(scrollDrag.x, scrollDrag.y, size.width, size.height, layer.viewBounds, layer.cameraState);
-        const to = sceneLayerCanvasToLayer(x, y, size.width, size.height, layer.viewBounds, layer.cameraState);
-        options.onSceneLayerScroll?.({ layerId: layer.layerId, actorId: target.actorId, componentId: target.componentId!,
-          deltaX: (from.x - to.x) / (target.scroll?.scaleX || 1), deltaY: (to.y - from.y) / (target.scroll?.scaleY || 1) });
-        scrollDrag.x = x; scrollDrag.y = y;
-        return;
-      }
-    }
-    if (uiControls.move(event.pointerId, x, y)) return;
-    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    dispatchOverlayPointer("move", x, y);
-  };
-  const onPointerUp = (event: PointerEvent) => {
-    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
-    const point = overlayPointerCanvasCoords(event);
-    const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
-    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
-    if (wasScrolling) return;
-    if (uiControls.release(event.pointerId, false, point.x, point.y) || joysticks.release(event.pointerId)) return;
-    const { x, y } = overlayPointerCanvasCoords(event);
-    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    dispatchOverlayPointer("up", x, y);
-  };
-  const onPointerCancel = (event: PointerEvent) => {
-    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
-    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
-    if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
-    const { x, y } = overlayPointerCanvasCoords(event);
-    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    dispatchOverlayPointer("cancel", x, y);
-  };
-  // A lifted or cancelled touch, and a mouse leaving the canvas, both end in
-  // pointerleave: nothing stays hovered, while up/cancel keep a mouse's hover.
-  const onPointerLeave = () => {
-    if (!acceptsGameInput()) return;
-    for (const event of applyOverlayPointer(overlayPointerState, "move", [])) options.onSceneLayerPointer?.(event);
-  };
-  const resetJoysticks = () => {
-    scrollDrag = null;
-    joysticks.reset();
-    uiControls.reset();
-    for (const event of [...applyOverlayPointer(overlayPointerState, "cancel", []), ...applyOverlayPointer(overlayPointerState, "move", [])])
-      options.onSceneLayerPointer?.(event);
-    const captured = [...activeGamePointers];
-    activeGamePointers.clear();
-    activeControlKeys.clear();
-    const document = canvas.ownerDocument;
-    if (document?.pointerLockElement === canvas) document.exitPointerLock?.();
-    for (const pointerId of captured) {
-      try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
-    }
-  };
-  const onCanvasBlur = (event: FocusEvent) => { if (!uiControls.ownsElement(event.relatedTarget)) resetJoysticks(); };
-  const onControlKeyDown = (event: KeyboardEvent) => {
-    const key = event.code || event.key;
-    if (!acceptsGameInput() || (event.repeat && !activeControlKeys.has(key))) return;
-    activeControlKeys.add(key);
-    uiControls.keyDown(event);
-  };
-  const onControlKeyUp = (event: KeyboardEvent) => { activeControlKeys.delete(event.code || event.key); };
-  const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
-  const onJoystickLostCapture = (event: PointerEvent) => {
-    if (!activeGamePointers.delete(event.pointerId)) return;
-    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
-    joysticks.release(event.pointerId); uiControls.release(event.pointerId, true);
-    for (const result of applyOverlayPointer(overlayPointerState, "cancel", [])) options.onSceneLayerPointer?.(result);
-  };
-  const onOverlayTouch = (event: TouchEvent) => {
-    if (acceptsGameInput()) event.preventDefault();
-  };
-  /** Removes the game input listeners below; rollback and dispose both call it. */
-  const detachGameInput = () => {
-    canvas.removeEventListener("pointerdown", onPointerDown);
-    canvas.removeEventListener("pointermove", onPointerMove);
-    canvas.removeEventListener("pointerup", onPointerUp);
-    canvas.removeEventListener("pointercancel", onPointerCancel);
-    canvas.removeEventListener("pointerleave", onPointerLeave);
-    canvas.removeEventListener("touchstart", onOverlayTouch);
-    canvas.removeEventListener("touchmove", onOverlayTouch);
-    canvas.removeEventListener("wheel", onOverlayWheel);
-    canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
-    canvas.removeEventListener("blur", onCanvasBlur);
-    canvas.removeEventListener("keydown", onControlKeyDown);
-    canvas.removeEventListener("keyup", onControlKeyUp);
-    if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
-    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onJoystickVisibility);
-  };
-  if (!options.editor) {
-    onRollback(detachGameInput);
-    canvas.addEventListener("pointerdown", onPointerDown);
-    if (options.playMode && sceneLayerCompositor) {
-      canvas.addEventListener("pointermove", onPointerMove);
-      canvas.addEventListener("pointerup", onPointerUp);
-      canvas.addEventListener("pointercancel", onPointerCancel);
-      canvas.addEventListener("pointerleave", onPointerLeave);
-      canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
-      canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
-      canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
-      canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
-      canvas.addEventListener("blur", onCanvasBlur);
-      canvas.addEventListener("keydown", onControlKeyDown);
-      canvas.addEventListener("keyup", onControlKeyUp);
-      if (canvas.tabIndex < 0) canvas.tabIndex = 0;
-      if (typeof window !== "undefined") window.addEventListener("blur", resetJoysticks);
-      if (typeof document !== "undefined") document.addEventListener("visibilitychange", onJoystickVisibility);
-    }
-  }
+  const {
+    ownsGamePointer,
+    resetJoysticks,
+    detach: detachGameInput,
+  } = createPlayGameInput({
+    canvas,
+    scene,
+    options,
+    pointerCanvas,
+    sceneLayerCompositor,
+    layerLoads,
+    overlayLayouts,
+    acceptsGameInput,
+    joysticks,
+    uiControls,
+    playCursor,
+    dispatchOverlayPointer,
+    overlayPointerState,
+    onRollback,
+  });
 
   rebuildPostProcessStack();
 
@@ -2923,56 +2674,7 @@ function initializeEngine(
         renderTargetCaptures.request(command.actorGuid);
         scheduler.invalidate("asset");
       }
-      if (command.type === "setActorOutlines") {
-        const previous = binding.outlines.get(command.slotId);
-        binding.outlines.set(command.slotId, { actorId: command.actorId, bindings: command.outlines });
-        try { refreshRuntimeOutline(command.slotId); }
-        catch (error) {
-          if (previous) binding.outlines.set(command.slotId, previous);
-          else binding.outlines.delete(command.slotId);
-          throw error;
-        }
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setActorDeformers") {
-        const previous = binding.deformers.get(command.slotId);
-        if (previous?.actorId === command.actorId && previous.revision >= command.revision) return;
-        binding.deformers.set(command.slotId, { actorId: command.actorId, revision: command.revision, bindings: command.deformers });
-        try { refreshRuntimeDeformers(command.slotId, false); }
-        catch (error) {
-          if (previous) binding.deformers.set(command.slotId, previous);
-          else binding.deformers.delete(command.slotId);
-          throw error;
-        }
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setReflectionProbes") {
-        if (command.probes.length) binding.reflectionProbes.set(command.slotId, { actorId: command.actorId, bindings: command.probes });
-        else binding.reflectionProbes.delete(command.slotId);
-        refreshRuntimeReflectionProbes(command.slotId);
-      }
-      if (command.type === "recaptureReflectionProbes") findSceneReflectionProbes(scene)?.markDirty(true);
-      if (command.type === "setFogVolumes") {
-        appliedSnapshotIdentity = null;
-        binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
-        refreshRuntimeFogVolumes(command.slotId);
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setAreaLights") {
-        let group = binding.areaLights.get(command.slotId);
-        let changed = false;
-        if (command.lights.length) {
-          if (!group) { group = new AreaRectLightGroup(scene, `playAreaLight:${command.slotId}`); binding.areaLights.set(command.slotId, group); }
-          changed = group.update(command.lights, binding.areaEmissions);
-          const mesh = binding.meshes.get(command.slotId);
-          if (mesh) group.setWorld(mesh.getWorldMatrix());
-        } else if (group) { group.dispose(); binding.areaLights.delete(command.slotId); changed = true; }
-        if (changed) {
-          appliedSnapshotIdentity = null;
-          worldRenderer.invalidate();
-          scheduler.invalidate("asset");
-        }
-      }
+      if (!playVisuals.applyCommand(command)) return;
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         if (command.runtimeComponentTokens) runtimeComponentTokens.set(command.slotId,
@@ -3261,92 +2963,7 @@ function initializeEngine(
       return hit ? { meshName: hit.meshName, slotId: hit.slotId } : null;
     },
     lastActorPositions: () => lastPositions,
-    playVisualStates: () => {
-      const states: Array<{
-        slotId: number;
-        name: string;
-        visible: boolean;
-        position: [number, number, number];
-        worldMatrixPosition: [number, number, number];
-        materialName: string | null;
-      }> = [];
-      for (const [slotId, root] of binding.meshes) {
-        const componentVisuals = root
-          .getChildMeshes()
-          .filter(
-            (mesh): mesh is Mesh =>
-              mesh instanceof Mesh &&
-              mesh.name.startsWith(`actor-${slotId}|`) &&
-              !mesh.name.slice(mesh.name.indexOf("|") + 1).includes(":"),
-          );
-        const visuals = componentVisuals.length > 0 ? componentVisuals : [root];
-        for (const visual of visuals) {
-          visual.computeWorldMatrix(true);
-          const position = visual.getAbsolutePosition();
-          const worldMatrixPosition = visual.getWorldMatrix().getTranslation();
-          states.push({
-            slotId,
-            name: visual.name,
-            visible: visual.isVisible && visual.isEnabled(),
-            position: [position.x, position.y, position.z],
-            worldMatrixPosition: [
-              worldMatrixPosition.x,
-              worldMatrixPosition.y,
-              worldMatrixPosition.z,
-            ],
-            materialName: visual.material?.name ?? null,
-          });
-        }
-      }
-      return states.sort(
-        (a, b) => a.slotId - b.slotId || a.name.localeCompare(b.name),
-      );
-    },
-    playMeshMaterialNames: () => {
-      const names = new Set<string>();
-      for (const root of binding.meshes.values()) {
-        const meshes = [root, ...root.getChildMeshes()];
-        for (const mesh of meshes) {
-          const name = mesh.material?.name;
-          if (name) names.add(name);
-        }
-      }
-      return [...names].sort();
-    },
-    playText2DLayouts: () => {
-      const rows: Array<{ slotId: number; name: string; fontStack: string; width: number }> = [];
-      for (const [slotId, root] of binding.meshes) {
-        for (const mesh of [root, ...root.getChildMeshes()]) {
-          const metadata = mesh.metadata as { text2d?: boolean; text2dFontStack?: string; text2dLayoutWidth?: number } | null;
-          if (metadata?.text2d !== true) continue;
-          rows.push({ slotId, name: mesh.name, fontStack: metadata.text2dFontStack ?? "", width: metadata.text2dLayoutWidth ?? 0 });
-        }
-      }
-      return rows.sort((a, b) => a.slotId - b.slotId || a.name.localeCompare(b.name));
-    },
-    playMeshMaterialDefines: () => {
-      const rows: Array<{
-        mesh: string;
-        material: string | null;
-        defines: string;
-      }> = [];
-      for (const root of binding.meshes.values()) {
-        for (const mesh of [root, ...root.getChildMeshes()]) {
-          const defines =
-            mesh.subMeshes
-              ?.map((sub) => String(sub.effect?.defines ?? ""))
-              .filter((entry) => entry.length)
-              .join("\n") ?? "";
-          if (mesh.material || defines)
-            rows.push({
-              mesh: mesh.name,
-              material: mesh.material?.name ?? null,
-              defines,
-            });
-        }
-      }
-      return rows;
-    },
+    ...createPlayHandleInspection(binding),
     registerFonts: async (entries) => {
       await fontRegistry.registerAll(entries);
       if (fontRegistry.consumeDirty()) scheduler.invalidate("asset");
@@ -3488,7 +3105,7 @@ function initializeEngine(
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       if (!options.editor) {
-        playStaticActors = reflectionProbeStaticActors(sceneData.actors);
+        playVisuals.setStaticActors(reflectionProbeStaticActors(sceneData.actors));
         findSceneReflectionProbes(scene)?.markDirty(true);
       }
       applySceneDocumentRenderSettings(sceneData);
