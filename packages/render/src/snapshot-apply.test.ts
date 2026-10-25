@@ -998,6 +998,34 @@ describe("createPlayMesh", () => {
     expect(binding.meshes.get(0)).not.toBe(rebuilt);
   });
 
+  it("keeps the visual for an identical assignment, and rebuilds it for a change, an install since or another host Scene", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { engine, scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    // A script writing a component property every tick re-sends its actor's assignment, a new command each time.
+    const box = (meshKind = "box"): AssignMeshCommand => ({ type: "assignMesh", slotId: 0, meshKind, meshAssetGuid: null, primaryComponentId: "body" });
+    applyAssignMesh(scene, binding, box());
+    const visual = binding.meshes.get(0)!;
+    applyAssignMesh(scene, binding, box());
+    const kept = binding.meshes.get(0) === visual && !visual.isDisposed();
+    applyAssignMesh(scene, binding, box("sphere"));
+    const changed = binding.meshes.get(0)!;
+    // An install replaces the binding's asset maps: the same assignment builds against the new assets.
+    binding.textureBytes = new Map();
+    applyAssignMesh(scene, binding, box("sphere"));
+    const installed = binding.meshes.get(0)!;
+    const layer = new Scene(engine);
+    applyAssignMesh(layer, binding, box("sphere"));
+    const moved = binding.meshes.get(0)!;
+    expect({
+      kept,
+      changed: changed !== visual && visual.isDisposed(),
+      installed: installed !== changed && changed.isDisposed(),
+      moved: moved.getScene() === layer && installed.isDisposed(),
+    }).toEqual({ kept: true, changed: true, installed: true, moved: true });
+  });
+
   it("does not steal activeCamera for a camera that is not the Default Camera", () => {
     const handle = createTestEngine();
     handles.push(handle);

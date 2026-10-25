@@ -15,8 +15,9 @@
  *   pipeline, which stays pending until `release` (`beginPipelineDeferral` and
  *   `pipelinesDeferred` are replaced by a model: NullEngine is not WebGPU). A
  *   warm scope's draws are always skipped and report whether their pipeline
- *   exists; a pass the view's scope omits (its geometry passes in steady frames)
- *   leaves a draw whose pipeline is pending out and holds nothing.
+ *   exists (a lookup scope's start none); a pass the view's scope omits (its
+ *   geometry passes in steady frames) leaves a draw whose pipeline is pending
+ *   out and holds nothing.
  *
  * It records counts and states only, never timings: Effects compiled, frames
  * the world view held its image, whether the hold signal and the game-time
@@ -67,6 +68,7 @@ import {
 } from "@haptic/bridge";
 import {
   areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality,
+  parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -93,11 +95,13 @@ import { managedRenderReservations } from "./managed-render-resources";
 import { shadowBytesPerTexel } from "./shadow-admission";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
 import {
-  beginPipelineDeferral, deferredPipelinesStalled, effectDrawn, PIPELINE_DEFERRAL_STALL_MS, pipelinesDeferred,
+  beginPipelineDeferral, capturePipelineTarget, deferredPipelinesStalled, effectDrawn, PIPELINE_DEFERRAL_STALL_MS, pipelinesDeferred,
+  type PipelineTarget,
 } from "./webgpu-pipeline-deferral";
 
 // NullEngine is not WebGPU, so the real deferral never engages; the `webgpu` model replaces it.
@@ -110,6 +114,7 @@ vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
     pipelinesDeferred: vi.fn(actual.pipelinesDeferred),
     effectDrawn: vi.fn(actual.effectDrawn),
     deferredPipelinesStalled: vi.fn(actual.deferredPipelinesStalled),
+    capturePipelineTarget: vi.fn(actual.capturePipelineTarget),
   };
 });
 // The load's light rehearsal pre-compiles the variants these causes ask for; a case that measures a swap leaves it out
@@ -141,7 +146,7 @@ vi.mock("./variant-prediction", async (importOriginal) => {
 let predictAhead = false;
 const {
   beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn,
-  deferredPipelinesStalled: actualDeferredPipelinesStalled,
+  deferredPipelinesStalled: actualDeferredPipelinesStalled, capturePipelineTarget: actualCapturePipelineTarget,
 } = await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 type Model = "sync" | "parallel" | "webgpu";
@@ -177,6 +182,7 @@ afterEach(() => {
   vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   vi.mocked(effectDrawn).mockImplementation(actualEffectDrawn);
   vi.mocked(deferredPipelinesStalled).mockImplementation(actualDeferredPipelinesStalled);
+  vi.mocked(capturePipelineTarget).mockImplementation(actualCapturePipelineTarget);
   rehearseLoad = false;
   predictAhead = false;
   frameMs = FRAME_MS;
@@ -260,11 +266,20 @@ function driverModel(engine: NullEngine, model: Model) {
   const omitted = new Set<Effect>();
   /** WebGPU model: draws that reached the GPU (not skipped, left out or made only to warm), in all and by render pass. */
   let draws = 0;
+  /** WebGPU model: draws made only to look a pipeline up ahead of a reveal. */
+  let lookups = 0;
+  /**
+   * WebGPU model, from `keyLayouts`: pipelines are per Effect and vertex layout, as Babylon's cache keys them (the
+   * attributes' formats, strides and offsets the draw bound), not per Effect alone.
+   */
+  let byLayout = false;
+  let boundLayout = "";
+  const layoutReady = new Set<string>();
+  const layoutPending = new Set<string>();
   const passDraws = new Map<number, number>();
   type Scope = {
-    allows: (pass: number) => boolean; omits?: (pass: number) => boolean; warm: boolean; isolated: boolean; skipped: number;
-    lookups: number; hits: number;
-    effects: Set<Effect>;
+    allows: (pass: number) => boolean; omits?: (pass: number) => boolean; warm: boolean; lookup: boolean; isolated: boolean;
+    skipped: number; lookups: number; hits: number; effects: Set<Effect>;
     /** Per omitting pass, the Effects whose draws it left out, and the omitting passes in which some draw drew. */
     omittedIn: Map<number, Set<Effect>>; drew: Set<number>;
   };
@@ -274,12 +289,16 @@ function driverModel(engine: NullEngine, model: Model) {
     vi.mocked(effectDrawn).mockImplementation((_engine, effect) => drawnEffects.has(effect as Effect));
     vi.mocked(drawsInPass).mockImplementation((_engine, pass) => passDraws.get(pass) ?? 0);
     vi.mocked(deferredPipelinesStalled).mockImplementation(() => performance.now() - progressAt >= PIPELINE_DEFERRAL_STALL_MS);
+    // Any pass's target replays: the model keys pipelines by Effect alone.
+    vi.mocked(capturePipelineTarget).mockReturnValue({} as PipelineTarget);
     vi.mocked(beginPipelineDeferral).mockImplementation((_engine, allows, options = {}) => {
       if (options.nested && !scopes.length) return undefined;
-      const warm = options.warm === true;
+      const lookup = options.lookup !== undefined;
+      const warm = options.warm === true || lookup;
       const isolated = !warm && options.isolated === true;
       const scope: Scope = {
-        allows, omits: warm || isolated ? undefined : options.omits, warm, isolated, skipped: 0, lookups: 0, hits: 0, effects: new Set(),
+        allows, omits: warm || isolated ? undefined : options.omits, warm, lookup, isolated, skipped: 0, lookups: 0, hits: 0,
+        effects: new Set(),
         omittedIn: new Map(), drew: new Set(),
       };
       scopes.push(scope);
@@ -315,20 +334,44 @@ function driverModel(engine: NullEngine, model: Model) {
       };
     });
     const internals = engine as unknown as { _currentEffect: Effect | null; currentRenderPassId: number };
+    const bindBuffers = engine.bindBuffers.bind(engine);
+    vi.spyOn(engine, "bindBuffers").mockImplementation((buffers, indexBuffer, effect) => {
+      boundLayout = effect.getAttributesNames().map((name) => {
+        const buffer = buffers[name];
+        return buffer ? `${name}:${buffer.hashCode}:${buffer.byteOffset}` : `${name}:-`;
+      }).join(",");
+      bindBuffers(buffers, indexBuffer, effect);
+    });
     for (const name of ["drawElementsType", "drawArraysType"] as const) {
       const draw = (engine[name] as (...args: unknown[]) => void).bind(engine);
       vi.spyOn(engine, name).mockImplementation(((...args: unknown[]) => {
         const effect = internals._currentEffect;
+        const key = byLayout && effect ? `${effect.uniqueId}|${boundLayout}` : undefined;
         let scope: Scope | undefined;
         for (let index = scopes.length - 1; index >= 0 && !scope; index--)
           if (scopes[index]!.allows(internals.currentRenderPassId)) scope = scopes[index];
+        // A lookup only asks whether the pipeline exists: it starts none.
+        if (scope?.lookup) {
+          scope.lookups += 1;
+          scope.skipped += 1;
+          if (key ? layoutReady.has(key) : effect && pipelineReady.has(effect) && !pending.has(effect)) scope.hits += 1;
+          lookups += 1;
+          return;
+        }
         // An Effect's first draw needs its pipeline: at once before arming or after release, pending in between (an
         // Effect the load compiled without drawing it, such as a spawnable's, has none yet).
-        if (effect && !pipelineReady.has(effect) && !pending.has(effect)) {
+        if (key) {
+          if (!layoutReady.has(key) && !layoutPending.has(key)) {
+            if (armed && holding && (!lags || lags(effect!))) {
+              layoutPending.add(key);
+              start(effect!);
+            } else layoutReady.add(key);
+          }
+        } else if (effect && !pipelineReady.has(effect) && !pending.has(effect)) {
           if (armed && holding && (!lags || lags(effect))) start(effect);
           else pipelineReady.add(effect);
         }
-        const missing = !!effect && pending.has(effect);
+        const missing = !!effect && (key ? layoutPending.has(key) : pending.has(effect));
         if (scope?.warm) {
           scope.lookups += 1;
           scope.skipped += 1;
@@ -365,6 +408,10 @@ function driverModel(engine: NullEngine, model: Model) {
           synchronous.add(effect);
           pending.delete(effect);
           pipelineReady.add(effect);
+          if (key) {
+            layoutPending.delete(key);
+            layoutReady.add(key);
+          }
         }
         if (effect) drawnEffects.add(effect);
         draws += 1;
@@ -381,7 +428,10 @@ function driverModel(engine: NullEngine, model: Model) {
     },
     /** The driver finishes everything pending; later requests compile at once again. */
     release: () => {
+      for (const effect of pending) pipelineReady.add(effect);
       pending.clear();
+      for (const key of layoutPending) layoutReady.add(key);
+      layoutPending.clear();
       progressAt = performance.now();
       holding = false;
       lags = undefined;
@@ -409,10 +459,17 @@ function driverModel(engine: NullEngine, model: Model) {
     omitted,
     /** WebGPU model: draws so far that reached the GPU. */
     draws: () => draws,
+    /** WebGPU model: lookup draws so far (`lookUpPipelines`). */
+    lookups: () => lookups,
+    /** WebGPU model: from now on (before the load draws) each Effect needs a pipeline per vertex layout it draws with. */
+    keyLayouts: () => { byLayout = true; },
     /** WebGPU model: Effects whose pipeline a shadow map's draw created synchronously (the shadow pass defers none). */
     synchronous,
     /** WebGPU model: a warm scope is open (draws in its passes only create pipelines). */
     warming: () => scopes.some((scope) => scope.warm),
+    /** WebGPU model: a lookup scope is open (`lookUpPipelines`), and how many scopes of any kind are. */
+    lookingUp: () => scopes.some((scope) => scope.lookup),
+    openScopes: () => scopes.length,
     /** WebGPU model: a draw that was not skipped has drawn with `effect`. */
     drewWith: (effect: Effect) => drawnEffects.has(effect),
   };
@@ -2799,6 +2856,261 @@ describe("the editor world view", () => {
     const reports = error.mock.calls.map(([message]) => String(message)).filter((message) => message.includes("previous shader variant"));
     expect(reports).toHaveLength(1);
     expect(reports[0]).toContain("injected link failure");
+  });
+});
+
+describe("a visual re-sent every tick", () => {
+  const SLOT = 50;
+  const text3d = (text: string): Actor["assign"] => ({ meshAssetGuid: null, meshKind: "text3d", text3d: parseText3DProperties({ text }) });
+  /** World visuals a script can re-send every tick by writing one of their component properties. */
+  const VISUALS: Record<string, Actor["assign"]> = {
+    "a Text3D": text3d("Score 0"),
+    "a box": { meshAssetGuid: null, meshKind: "box" },
+    "a box with a 2D Text part": { meshAssetGuid: null, meshKind: "box", parts: [
+      part("body", "box"), part("label", "2dtext", { text2d: parseText2DProperties({ text: "Hi" }) }),
+    ] },
+    "a sprite": { meshAssetGuid: null, meshKind: "sprite" },
+  };
+  const actor = (assign: Actor["assign"]): Actor => ({ slotId: SLOT, guid: "visual", position: [0, 2, -4], assign });
+  type Row = { kept: boolean; drawn: boolean; hidden: boolean; held: boolean };
+  const rowsOf = (row: Row) => Array.from({ length: 6 }, () => row);
+
+  /**
+   * With the view settled and the driver armed (a new compile or pipeline stays pending), each of six frames first
+   * re-sends the actor's visual (`assign(frame)`), as a script writing one of its component properties every tick does,
+   * then records whether the slot kept the meshes it had, whether a real pass drew them, whether one is hidden for its
+   * reveal and whether the view held its image.
+   */
+  async function resend(model: Model, assign: (frame: number) => Actor["assign"]) {
+    const world = playWorld(model, [actor(assign(-1))]);
+    await settle(world);
+    const drawn = spawnDraws();
+    const meshes = () => {
+      const root = world.handle.scene.getMeshByName(`actor-${SLOT}`);
+      return root ? [root, ...root.getChildMeshes()] : [];
+    };
+    world.driver.arm();
+    const rows: Row[] = [];
+    for (let index = 0; index < 6; index++) {
+      const before = meshes();
+      world.place(actor(assign(index)));
+      drawn.clear();
+      const { view } = await world.frame();
+      const after = meshes();
+      rows.push({
+        kept: after.length === before.length && after.every((mesh, at) => mesh === before[at]),
+        drawn: after.some((mesh) => drawn.has(mesh.name)),
+        hidden: after.some(isRevealPending),
+        held: view?.rendered !== true,
+      });
+    }
+    return { world, rows };
+  }
+
+  it.each(MODELS.flatMap((model) => Object.keys(VISUALS).map((name) => [name, model] as const)))(
+    "%s re-sent unchanged every tick keeps its meshes and draws every frame: %s", async (name, model) => {
+    // The script wrote the value the property had. A rebuild would replace drawn meshes with new ones, which the view
+    // hides until they are known ready: on WebGPU a frame later, so never at one write per frame.
+    const { world, rows } = await resend(model, () => VISUALS[name]!);
+    expect({ rows, holdRaised: world.holds.includes(true) }).toEqual({
+      rows: rowsOf({ kept: true, drawn: true, hidden: false, held: false }), holdRaised: false,
+    });
+  });
+
+  it.each(MODELS)("a Text3D whose text changes every tick draws each new mesh in the frame it arrives: %s", async (model) => {
+    // A real change rebuilds the mesh. Its variant and, on WebGPU, its pipelines (same Effect, same vertex layout) are
+    // the previous mesh's, so it is revealed in its first frame, as on WebGL2: nothing compiles, waits or is created.
+    const { world, rows } = await resend(model, (frame) => text3d(`Score ${frame + 1}`));
+    const { created, pipelines, warmPipelines, synchronous } = world.driver;
+    expect({ rows, compiled: created.length, pipelines: [pipelines.size, warmPipelines.size, synchronous.size] }).toEqual({
+      rows: rowsOf({ kept: false, drawn: true, hidden: false, held: false }), compiled: 0, pipelines: [0, 0, 0],
+    });
+  });
+
+  /** A light over the re-sent visual whose shadows drew: a spot's map, or the sun's cascaded one. */
+  const shadowing = (kind: "spot" | "sun", intensity: number) => kind === "spot"
+    ? spot(10, [0, 6, -4], { castShadows: true, intensity }) : sun({ castShadows: true, intensity });
+  const shadowMapOf = (world: PlayWorld, kind: "spot" | "sun") => world.handle.scene.lights
+    .find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${kind === "spot" ? 10 : 3}`)!.getShadowGenerator() as ShadowGenerator;
+  /** Records the meshes a real (not skipped) draw into `map` drew, until cleared. */
+  const castsInto = (world: PlayWorld, map: ShadowGenerator) => {
+    const cast = new Set<AbstractMesh>();
+    let before = 0;
+    map.onBeforeShadowMapRenderMeshObservable.add(() => { before = world.driver.draws(); });
+    map.onAfterShadowMapRenderMeshObservable.add((mesh) => { if (world.driver.draws() > before) cast.add(mesh); });
+    return cast;
+  };
+  /** Records the meshes the view drew (warm draws only create pipelines), until cleared. */
+  const viewDraws = () => {
+    const drawn = new Set<AbstractMesh>();
+    const render = Mesh.prototype.render;
+    vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
+      if (!this.getScene().getEngine().getCurrentRenderPassName().startsWith("warm ")) drawn.add(this);
+      return render.apply(this, args);
+    });
+    return drawn;
+  };
+
+  const RATES = [["every tick", 1], ["twice a frame", 2]] as const;
+  it.each(RATES.flatMap(([rate, ticksPerFrame]) => (["spot", "sun"] as const).map((kind) => [rate, kind, ticksPerFrame] as const)))(
+    "a Text3D whose text changes %s under a drawn %s map draws every frame and casts into it: webgpu", async (_rate, kind, ticksPerFrame) => {
+    // The script also writes the light every tick, so the shadow controller lists each rebuilt mesh as a caster before
+    // its probe. The mesh takes the place of one that drew and cast (at two ticks a frame, of a rebuild of it that never
+    // drew), so its reveal waits for no map to list it while hidden: the lookup finds its pipelines and it is revealed
+    // in its first frame. Revealed, it is a caster new to the map whose depth pipeline (the previous mesh's) exists, so
+    // that frame's map render draws it.
+    const world = playWorld("webgpu", [shadowing(kind, 1), actor(text3d("Score 0"))]);
+    await settle(world);
+    const map = shadowMapOf(world, kind);
+    const cast = castsInto(world, map);
+    const drawn = viewDraws();
+    world.driver.arm();
+    const visuals = new Set<AbstractMesh>();
+    const rows: { drawn: boolean; hidden: boolean; held: boolean; cast: boolean }[] = [];
+    for (let index = 0; index < 6; index++) {
+      for (let tick = index * ticksPerFrame; tick < (index + 1) * ticksPerFrame; tick++)
+        world.place(actor(text3d(`Score ${tick + 1}`)), shadowing(kind, 1 + (tick + 1) / 10));
+      const visual = world.handle.scene.getMeshByName(`actor-${SLOT}`)!;
+      visuals.add(visual);
+      drawn.clear();
+      cast.clear();
+      const { view } = await world.frame();
+      rows.push({ drawn: drawn.has(visual), hidden: isRevealPending(visual), held: view?.rendered !== true, cast: cast.has(visual) });
+    }
+    const { pipelines, synchronous } = world.driver;
+    expect({ mapDrawn: !awaitsFirstDraw(map), rebuilt: visuals.size, rows, pipelines: pipelines.size, synchronous: synchronous.size })
+      .toEqual({
+        mapDrawn: true, rebuilt: 6, rows: Array.from({ length: 6 }, () => ({ drawn: true, hidden: false, held: false, cast: true })),
+        pipelines: 0, synchronous: 0,
+      });
+  });
+
+  it.each(["spot", "sun"] as const)(
+    "a model visual rebuilt under a drawn %s map draws whole every frame and casts from the frame it takes the slot: webgpu", async (kind) => {
+    // A changed assignment of an actor with a model part stages its new visual until the model has loaded. The visual it
+    // replaces goes only when it takes the slot, and the shadow controller lists it as a caster then. It takes the place
+    // of a visual that drew, so its reveal waits for no map to list it: the lookup finds its pipelines (the same model's
+    // and box's) and it draws, and casts, in the first frame it holds the slot.
+    const model = (orderInLayer: number): Actor => ({
+      slotId: SLOT, guid: "visual", position: [0, 1, -4], assign: { meshAssetGuid: null, meshKind: null, orderInLayer, parts: [
+        part("body", "box", { meshAssetGuid: "model" }), part("base", "box", { position: [0, -0.5, 0], scale: [0.6, 0.1, 0.6] }),
+      ] },
+    });
+    const world = playWorld("webgpu", [shadowing(kind, 1)]);
+    world.handle.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    world.place(model(0));
+    await settle(world);
+    const scene = world.handle.scene;
+    /** The slot's visual a frame shows (a staged replacement stays disabled until it takes the slot), and its surfaces. */
+    const shown = () => scene.meshes.find((mesh) => mesh.name === `actor-${SLOT}` && mesh.isEnabled());
+    const surfaces = (root: AbstractMesh | undefined) => root?.getChildMeshes(false).filter((mesh) => mesh.getTotalVertices() > 0) ?? [];
+    const cast = castsInto(world, shadowMapOf(world, kind));
+    const drawn = viewDraws();
+    const first = shown();
+    drawn.clear();
+    await world.frame();
+    const drewBefore = surfaces(first).length > 0 && surfaces(first).every((mesh) => drawn.has(mesh));
+    world.driver.arm();
+    world.place(model(1), shadowing(kind, 1.1));
+    /** Frames in which some surface of the slot's visual did not draw. */
+    let incomplete = 0;
+    let held = 0;
+    let adoptedAt = -1;
+    let castAt = -1;
+    for (let index = 0; index < 12 && castAt < 0; index++) {
+      const visual = shown();
+      // Before the frame: a replacement taking the slot after it disposes this visual.
+      const parts = surfaces(visual);
+      drawn.clear();
+      cast.clear();
+      if ((await world.frame()).view?.rendered !== true) held++;
+      if (!parts.length || !parts.every((mesh) => drawn.has(mesh))) incomplete++;
+      if (visual === first) continue;
+      if (adoptedAt < 0) adoptedAt = index;
+      if (parts.every((mesh) => cast.has(mesh))) castAt = index;
+    }
+    expect({ drewBefore, adopted: adoptedAt >= 0, incomplete, held, castOnAdoption: castAt >= 0 && castAt === adoptedAt,
+      synchronous: world.driver.synchronous.size }).toEqual({
+      drewBefore: true, adopted: true, incomplete: 0, held: 0, castOnAdoption: true, synchronous: 0,
+    });
+  });
+
+  it("a mesh whose Effect drew only with another vertex layout waits hidden for its own pipeline, holding nothing: webgpu", async () => {
+    // Pipelines are per vertex layout: the crate's Effect has one for the crate's buffers, not for padded positions. The
+    // lookup ahead of the mesh's draws misses, so it waits hidden while its warm draws create that pipeline, and no
+    // frame holds for it nor creates it synchronously.
+    const world = playWorld("webgpu", []);
+    world.driver.keyLayouts();
+    await settle(world);
+    const scene = world.handle.scene;
+    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const drawn = spawnDraws();
+    world.driver.arm();
+    const padded = MeshBuilder.CreateBox("padded", { size: 1 }, scene);
+    const positions = padded.getVerticesData(VertexBuffer.PositionKind)!;
+    const data = new Float32Array((positions.length / 3) * 4);
+    for (let index = 0; index < positions.length / 3; index++) data.set(positions.slice(index * 3, index * 3 + 3), index * 4);
+    padded.setVerticesBuffer(new VertexBuffer(world.engine, data, VertexBuffer.PositionKind, false, false, 4, false, 0, 3));
+    padded.material = crate.material;
+    // Beside the crate: the same lights, so the same variant.
+    padded.position.set(1.5, 1, 0);
+    let held = 0;
+    let hiddenWhilePending = true;
+    for (let index = 0; index < PENDING_FRAMES; index++) {
+      drawn.clear();
+      if (!(await world.frame()).view?.rendered) held++;
+      hiddenWhilePending &&= isRevealPending(padded) && !drawn.has("padded");
+    }
+    world.driver.release();
+    let shownAfter = -1;
+    for (let index = 0; index < 3 && shownAfter < 0; index++) {
+      drawn.clear();
+      if (!(await world.frame()).view?.rendered) held++;
+      if (!isRevealPending(padded) && drawn.has("padded")) shownAfter = index;
+    }
+    const pass = world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+    const effect = (mesh: Mesh) => mesh.subMeshes[0]?._getDrawWrapper(pass)?.effect;
+    const { pipelines, warmPipelines, synchronous } = world.driver;
+    expect({
+      sameEffect: !!effect(padded) && effect(padded) === effect(crate), lookedUp: world.driver.lookups() > 0, hiddenWhilePending,
+      shownAfter, held, viewPipelines: pipelines.size, synchronous: synchronous.size, warmed: warmPipelines.size > 0,
+    }).toEqual({
+      sameEffect: true, lookedUp: true, hiddenWhilePending: true, shownAfter: 0, held: 0, viewPipelines: 0, synchronous: 0, warmed: true,
+    });
+  });
+
+  it("a lookup whose preparation throws leaves no deferral scope open, and the mesh still appears: webgpu", async () => {
+    // Preparing the lookup ahead of a hidden mesh's draws (its warm draw wrapper) throws once. The lookup scope, which
+    // replays its pass's target and, while open, starts no GPU pass for any draw on the Engine, is closed all the same;
+    // the failure is reported once, and the mesh's warm draws reveal it instead.
+    const world = playWorld("webgpu", []);
+    await settle(world);
+    const scene = world.handle.scene;
+    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const getDrawWrapper = SubMesh.prototype._getDrawWrapper;
+    let thrown = 0;
+    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockImplementation(function (this: SubMesh, ...args) {
+      if (args[1] === true && world.driver.lookingUp() && thrown++ === 0) throw new Error("injected lookup preparation failure");
+      return getDrawWrapper.apply(this, args);
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    world.driver.arm();
+    // Beside the crate, with its Material: the same variant, whose pipelines exist, so its probe looks them up.
+    const spawned = MeshBuilder.CreateBox("spawned", { size: 1 }, scene);
+    spawned.material = crate.material;
+    spawned.position.set(1.5, 1, 0);
+    let held = 0;
+    const open: number[] = [];
+    let shownAfter = -1;
+    for (let index = 0; index < 4 && shownAfter < 0; index++) {
+      if (!(await world.frame()).view?.rendered) held++;
+      open.push(world.driver.openScopes());
+      if (!isRevealPending(spawned)) shownAfter = index;
+    }
+    const reports = warn.mock.calls.filter(([message]) => String(message).includes("warm draws failed")).length;
+    expect({ thrown: thrown > 0, open, reports, held, shown: shownAfter >= 0 }, JSON.stringify({ shownAfter })).toEqual({
+      thrown: true, open: open.map(() => 0), reports: 1, held: 0, shown: true,
+    });
   });
 });
 
