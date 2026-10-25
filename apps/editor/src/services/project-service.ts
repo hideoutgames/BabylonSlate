@@ -1,5 +1,4 @@
-import { createDefaultInputAssets, isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
-import { isLockedEngineClassId } from "@haptic/object-model";
+import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles, TEMPLATE_LIBRARY_FOLDER } from "@haptic/vfs";
@@ -8,9 +7,9 @@ import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
-import { guardProjectAssetRegistry, guardProjectEncodeQueue } from "./project-authoring-ports";
+import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
-import { installEngineExtensionDefaults, isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@haptic/assets";
+import { isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@haptic/assets";
 import type {
   DocumentKind,
   PluginEnableOverride,
@@ -32,7 +31,6 @@ import {
   normalizeScene,
   normalizeSceneLayer,
   normalizePrefab,
-  classHeaderMeta,
   documentId,
   parseDocumentId,
   documentKindForAssetType,
@@ -57,14 +55,10 @@ import {
   type RegistryLoadedAsset,
   AccountedPayloadLoader,
   readAssetCatalog,
-  validateAssetSourceLocator,
   RegistryGenerationClock,
   type AreaEmissionProgress,
-  type AreaEmissionProcessor,
-  canUseWorkerEncode,
   createProjectFromTemplate,
   createVfsBlobStore,
-  createWorkerEncodeFn,
   decodeAssetDocument,
   encodePluginSettingsDocument,
   normalizePluginSettings,
@@ -72,26 +66,16 @@ import {
   decodeHasset,
   encodeHasset,
   carryStoredChunks,
-  storedHassetMatches,
-  verifyChunksBeforeWrite,
   audioReverbChunk,
   isCarriedChunk,
-  isEnvironmentTexturePayload,
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
-  encodeJobMayWrite,
-  extraChunksFromDecoded,
   audioClipChunk,
   audioClipChunkToDrop,
   exportProjectZip,
-  fallbackParentClass,
-  clearDeletedAssetRefs,
-  createReadAhead,
-  replaceClassAssetReferences,
-  renamedAssetPath,
   type ClassAssetReplacement,
   isAssetDocumentPath,
   isTracePath,
@@ -108,58 +92,25 @@ import {
   type ChunkInput,
   type EncodableChunk,
   type BlobStore,
-  type EncodeFn,
-  type EncodeJob,
-  stubEncodeKtx2,
   type MigrationPending,
   type MigrationRegistry,
   type PluginDescriptor,
   type PluginDiagnostic,
   type IndexedAsset,
   type ProjectTreeFile,
-  createDefaultPluginSettings,
-  discoverEnginePlugins,
-  discoverProjectPlugins,
-  exportPluginZip,
-  indexUnresolvedPlaceholders,
-  inspectHplugin,
-  applyPluginImport,
-  installEnginePluginDefaults,
-  mountEnabledPlugins,
-  planPluginImport,
-  resolvePluginEnabled,
-  resolvePluginGraph,
-  shadowEnginePlugins,
-  stripAssetFileSuffix,
-  writeProjectPlugin,
-  parseSpriteAnimationPayload,
-  spriteAnimationDurationMs,
-  ATLAS_REFERRER_TYPES,
-  ATLAS_TEXTURES_META,
-  atlasTextureGuids,
-  type ImageSize,
   type OwnAssetWrite,
-  type InspectedHplugin,
-  type PluginImportPlan,
 } from "@haptic/assets";
-import { processAreaEmissionInWorker } from "@haptic/assets/area-emission-client";
-import { convertHdrEnvironmentOffMainThread, runImportOffMainThread } from "@haptic/assets/import-worker-client";
-import { onEncodeQueuePause } from "./encode-queue-pause";
-import { validateClassDeletionReplacements } from "../lib/class-deletion";
-import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
+import { runImportOffMainThread } from "@haptic/assets/import-worker-client";
+import { isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
 import { NAVMESH_CHUNK_ID, navmeshChunk } from "@haptic/navigation/chunk";
-import type { NavMeshGenerateInput } from "@haptic/navigation";
 import {
-  newAssetFileName,
-  classIdFromClassAsset,
   assetHeaderDependencyMetadata,
-  materialHeaderMeta,
 } from "../lib/content-browser-helpers";
 import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
-import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
@@ -167,158 +118,42 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
-import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
-import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
-import {
-  applyKenneyMannequinEmptyScaffold,
-  MANNEQUIN_CLASS_FILE,
-} from "../lib/scaffold-empty-3d";
-import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
 import { createDefaultLogicGraphSerialized, requireClassGraphPayload } from "./graph-validation";
-
-function headerMetaForSave(
-  type: string,
-  content:
-    | SerializedScene
-    | SerializedSceneLayer
-    | SerializedGraph
-    | Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  // Sheets render indexed values without loading one document per visible row.
-  // This header snapshot is always derived from the body being saved.
-  if (type === "DataDefinition") return { ...normalizeDataDefinitionAsset(content) };
-  if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
-  if (isInputAssetType(type)) {
-    const input = normalizeInputAssetPayload(type, content);
-    return { valueType: input.valueType };
-  }
-  const materialMeta = materialHeaderMeta(
-    type,
-    content as Record<string, unknown>,
-  );
-  if (materialMeta) return materialMeta;
-  // Closed Prefabs sync placed instances and place new ones from the header alone.
-  if (type === "Prefab") return { components: normalizePrefab(content).components };
-  if (type === "Class") {
-    return classHeaderMeta(
-      content as {
-        members?: Array<{
-          id?: string;
-          kind: string;
-          name: string;
-          typeId?: string;
-          typeClassId?: string;
-          functionId?: string;
-          assetGuid?: string;
-          overridable?: boolean;
-          implementsInterface?: { assetGuid: string; methodName: string };
-          overrides?: { classId: string; name: string };
-          pins?: Array<{
-            name: string;
-            typeId?: string;
-            direction?: "in" | "out";
-            typeClassId?: string;
-            unit?: string;
-          }>;
-          unit?: string;
-        }>;
-      },
-    );
-  }
-  // Closed Structures and Enums supply their fields and members to type catalogs,
-  // data reads and dependency collection.
-  if (type === "Structure") return { ...asStructureAsset(content as Record<string, unknown>) };
-  if (type === "Enum") return { ...asEnumAsset(content as Record<string, unknown>) };
-  if (type === "ScriptInterface") {
-    const payload = content as {
-      guid?: string;
-      name?: string;
-      methods?: Array<{
-        name: string;
-        pins: Array<{
-          name: string;
-          typeId: string;
-          direction: "in" | "out";
-          typeClassId?: string;
-        }>;
-      }>;
-    };
-    return {
-      guid: typeof payload.guid === "string" ? payload.guid : "",
-      name: typeof payload.name === "string" ? payload.name : "Interface",
-      methods: Array.isArray(payload.methods) ? payload.methods : [],
-    };
-  }
-  if (type === "SpriteAnimation") {
-    const parsed = parseSpriteAnimationPayload(content);
-    return {
-      durationMs: spriteAnimationDurationMs(parsed),
-      [ATLAS_TEXTURES_META]: atlasTextureGuids(type, content as Record<string, unknown>),
-    };
-  }
-  if (ATLAS_REFERRER_TYPES.has(type)) {
-    // The registry reads a referrer's atlases from its header, never its document.
-    return { [ATLAS_TEXTURES_META]: atlasTextureGuids(type, content as Record<string, unknown>) };
-  }
-  return undefined;
-}
-
-/** Environment cube fields the registry rewrites when a Face Size change converts the `.hdr` again. */
-const ENVIRONMENT_TEXTURE_STATE_KEYS = [
-  "container",
-  "encoding",
-  "width",
-  "height",
-  "mipLevels",
-  "hasIrradiance",
-  "hdrFaceSize",
-] as const;
-
-/** Texture payload fields owned by the registry's encode queue, not the document. */
-const TEXTURE_ENCODE_STATE_KEYS = [
-  "compressionState",
-  "ktx2ChunkId",
-  "encodeError",
-  "encodeWallMs",
-  "ktx2Width",
-  "ktx2Height",
-  "ktx2BlockAlign",
-  "ktx2Sha256",
-] as const;
-
-/**
- * An open Texture document keeps the payload it opened with, but encodes can
- * commit meanwhile. Saving takes these fields from the file (absent stays
- * absent) so `ktx2ChunkId` never points back at a superseded encode.
- */
-function withSavedTextureEncodeState(
-  content: Record<string, unknown>,
-  saved: Record<string, unknown>,
-): Record<string, unknown> {
-  const next = { ...content };
-  const keys = isEnvironmentTexturePayload(saved)
-    ? [...TEXTURE_ENCODE_STATE_KEYS, ...ENVIRONMENT_TEXTURE_STATE_KEYS]
-    : TEXTURE_ENCODE_STATE_KEYS;
-  for (const key of keys) {
-    if (key in saved) next[key] = saved[key];
-    else delete next[key];
-  }
-  return next;
-}
-
-/** sha256 of the KTX2 chunk a Texture's header commits to (`ktx2ChunkId`), if any. */
-function committedKtx2Sha256(header: Pick<HassetHeader, "payload" | "chunks"> | undefined): string | null {
-  const id = header?.payload.ktx2ChunkId;
-  return header?.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
-}
-
-/**
- * What a rewrite supplies itself, for `storeDocumentBytes` to verify against
- * the file: the document body and every chunk it did not carry over.
- */
-function suppliedChunkIds(chunks: readonly EncodableChunk[]): string[] {
-  return [DOCUMENT_CHUNK_ID, ...chunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id)];
-}
+import {
+  assetName,
+  fallbackDocumentType,
+  headerMetaForSave,
+  newGuid,
+  parentDir,
+  suppliedChunkIds,
+  withSavedTextureEncodeState,
+} from "./project-document-meta";
+import { ProjectTextureEncoding, type TextureEncodingOptions } from "./project-texture-encoding";
+import { ProjectPlugins, type PluginImportResult } from "./project-plugins";
+import {
+  assertEmptyProjectFolder,
+  createInputAssets,
+  openOwnedDocumentsProject,
+  projectFolderIsEmpty,
+  scaffoldFeatureTest,
+  scaffoldKenneyMannequinEmpty,
+  scaffoldOwnedProject,
+  type OwnedFolder,
+  type StarterScaffoldHost,
+} from "./project-scaffold";
+import {
+  keptChunksFor,
+  readExistingAssetMeta,
+  readUnindexedAssetDocument,
+  storeDocumentBytes,
+  type AssetFileAccess,
+} from "./project-asset-files";
+import {
+  clearDeletedAssetReferences,
+  renameAsset,
+  replaceClassReferencesBeforeDelete,
+  type ReferenceRepairHost,
+} from "./project-reference-repair";
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
@@ -326,14 +161,7 @@ export interface ProjectLoadResult {
   migrationPending: MigrationPending[];
 }
 
-export type PluginImportResult =
-  | { status: "imported"; descriptor: PluginDescriptor }
-  | { status: "kept" }
-  | {
-      status: "conflict";
-      incoming: InspectedHplugin;
-      plan: Extract<PluginImportPlan, { kind: "conflict" }>;
-    };
+export type { PluginImportResult } from "./project-plugins";
 
 /**
  * Reverb results kept per Scene: an edit's, a newer edit's baked during its
@@ -341,70 +169,18 @@ export type PluginImportResult =
  */
 const SCENE_AUDIO_REVERB_RESULTS = 4;
 
-/** Stored payloads requested at once by a delete repair: the document being repaired plus the three after it. */
-const DELETE_REPAIR_READS = 4;
-
 /**
  * Chunks `loadDocumentWithChunks` reads with a document: fixed ids, or a choice
  * made from the header of the version being read.
  */
 export type DocumentChunkSelection = readonly string[] | ((header: HassetHeader) => readonly string[]);
 
-function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser">): string {
-  return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
-}
-
-/** Navmesh bake for scaffolds: the bake worker in the app, Recast directly in unit tests. */
-async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<Uint8Array> {
-  if (typeof Worker === "function" && import.meta.env.MODE !== "test") {
-    const { createNavBakeWorker } = await import("./nav-bake-worker-host");
-    const worker = createNavBakeWorker();
-    try {
-      return await worker.generate(input);
-    } finally {
-      worker.terminate();
-    }
-  }
-  const { generateNavMesh } = await import("@haptic/navigation");
-  return generateNavMesh(input);
-}
-
-function newGuid(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `proj-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function assetName(path: string): string {
-  const file = path.split("/").pop() ?? path;
-  return stripAssetFileSuffix(file) || file.replace(/\.hasset$/, "");
-}
-
-function parentDir(path: string): string {
-  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-}
-
-type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
-
-const PROJECT_CREATION_MARKER = ".haptic-creating";
-/** Entries that do not make a folder "non-empty": our own marker and OS file-browser metadata. */
-const IGNORED_PROJECT_FOLDER_ENTRIES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
-
 export class ProjectService {
   private readonly writeAdmission = new ProjectWriteAdmission();
   private readonly storage: ProjectStorage;
   private readonly publicStorage: ProjectStorage;
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
-  /** The write admission each running encode retains, from its start until its commit or failure ends. */
-  private readonly encodeWriteReleases = new Map<EncodeJob, () => void>();
-  /** The running encode of each Texture the editor shows as `encoding`: memory only, never saved. */
-  private readonly encodingJobs = new Map<string, EncodeJob>();
-  private encodingSnapshot: ReadonlySet<string> = new Set();
-  private externalEncodePause = false;
-  private manualEncodePause = false;
   readonly extensions: EditorExtensionService;
-  private engineExtensionStorage: ProjectStorage | null = null;
   private projectGuid: string | null = null;
   private migrationPending: MigrationPending[] = [];
   private migrateOnSaveApproved = false;
@@ -417,35 +193,11 @@ export class ProjectService {
   private sourceLoading: AssetLoadingService | null = null;
   private sourceSession = 0;
   private projectSearchIndex: ProjectSearchIndex | null = null;
-  private readonly encodeQueue: EncodeQueue;
-  private readonly publicEncodeQueue: EncodeQueue;
-  /** The encode result being committed, which Close Project lets finish in its own folder. */
-  private textureCommit: Promise<unknown> | null = null;
-  /**
-   * Texture state writes in flight (a failed encode's `encode_failed`, a retry's
-   * `pending`), which Close Project lets finish in their own folder like `textureCommit`.
-   */
-  private readonly textureStateWrites = new Set<Promise<unknown>>();
+  private readonly textures: ProjectTextureEncoding;
+  private readonly projectPlugins: ProjectPlugins;
   /** The last queued write of each file the registry does not index. */
   private readonly unindexedWrites = new Map<string, Promise<void>>();
-  private readonly emissionJobs = new Set<AbortController>();
-  private readonly processAreaEmission: AreaEmissionProcessor;
-  private workerEncode:
-    | (EncodeFn & { dispose: () => void; recycleCount: () => number })
-    | null = null;
-  private encodeQueuePauseUnsubscribe: (() => void) | null = null;
-  private readonly configuredEncode?: EncodeFn;
-  private readonly createWorkerEncode: () =>
-    | (EncodeFn & { dispose: () => void; recycleCount: () => number })
-    | null;
-  private transcoderAvailable = true;
   private derivedStorage: ProjectStorage | null = null;
-  private enginePluginStorage: ProjectStorage | null = null;
-  private pluginDescriptors: PluginDescriptor[] = [];
-  /** Plugin folders change only through a full sync; overrides reuse the last discovery. */
-  private pluginDescriptorsCurrent = false;
-  private pluginDiagnostics: PluginDiagnostic[] = [];
-  private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
   /** Guids a scaffold embedded in other documents before writing these paths. */
@@ -461,39 +213,16 @@ export class ProjectService {
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
-  /**
-   * The open project's source control **Enable** setting, saved or not. While
-   * it is on, nothing re-encodes a Texture in the background: only the user's
-   * own edits, and Textures whose committed encode this session wrote, re-align.
-   */
-  private sourceControlEnabled = false;
-  /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
-  private openTextureUsage: ((guid: string) => string | undefined) | null = null;
-  /**
-   * Texture guid -> sha256 of the KTX2 chunk this project session last wrote
-   * for it: an encode it committed, or the one a file it created carries (a
-   * `.hasset` import, Duplicate or Copy). It exempts the Texture only while
-   * that encode is still the committed one in the file on disk: a git revert
-   * or pull that replaces it ends the exemption, even for a job queued before.
-   */
-  private readonly sessionEncodes = new Map<string, string>();
-  /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
-  private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
-  /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
-  private readonly alignmentRequeues = new Set<string>();
   /** Change counter shared by every project registry, so remounts never rewind it. */
   private readonly registryClock = new RegistryGenerationClock();
-  private textureAlignmentChain: Promise<unknown> = Promise.resolve();
-  private readonly textureAlignment = { runs: 0, pending: 0, requeued: new Set<string>() };
+  private readonly files: AssetFileAccess = {
+    storageFor: (path) => this.storageForPath(path),
+    blobsFor: (path) => this.blobsForPath(path),
+  };
 
   constructor(
     storage: ProjectStorage,
-    options: {
-      encode?: EncodeFn;
-      processAreaEmission?: AreaEmissionProcessor;
-      createWorkerEncode?: () =>
-        | (EncodeFn & { dispose: () => void; recycleCount: () => number })
-        | null;
+    options: TextureEncodingOptions & {
       /** Schema versions and migration steps; tests inject steps to exercise the approval flow. */
       migrations?: MigrationRegistry;
     } = {},
@@ -565,115 +294,22 @@ export class ProjectService {
       },
     }, { runAuthoringWrite: operation => this.writeAdmission.run(operation) });
     this.blobs = createVfsBlobStore(storage);
-    this.configuredEncode = options.encode;
-    this.processAreaEmission = options.processAreaEmission ?? processAreaEmissionInWorker;
-    this.createWorkerEncode = options.createWorkerEncode ?? (() =>
-      canUseWorkerEncode()
-        ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
-        : null);
-    this.encodeQueue = new EncodeQueue({
-      // The signal aborts a timed-out job, so the worker encoder can end a hung encode.
-      encode: (source, settings, mime, signal) =>
-        (this.configuredEncode ?? this.workerEncode ?? stubEncodeKtx2)(
-          source,
-          settings,
-          mime,
-          signal,
-        ),
-      // A running encode writes nothing: the file stays `pending` until the
-      // job commits `compressed` (onComplete) or `encode_failed` with its
-      // message (onError), and the editor shows `encoding` from memory
-      // (`textureEncodingGuids`). A guarded (alignment) job also shows nothing:
-      // the Texture keeps its saved state until the job commits, so nothing on
-      // disk requeues it later, source control on or not.
-      onState: (_guid, state, job) => {
-        if (state !== "encoding") return;
-        this.encodeWriteReleases.set(job, this.writeAdmission.retain());
-        if (job.guard || !this.encodeRegistry()) return;
-        if (this.setTextureEncoding(job, true)) this.emitRegistryChange();
-      },
-      onComplete: async (result, job) => {
-        let succeeded = false;
-        try {
-          const registry = this.encodeRegistry();
-          if (!registry) { succeeded = true; return; }
-          const session = this.sourceSession;
-          const commit = registry.commitCompressedTexture(result);
-          this.textureCommit = commit;
-          const committedHere = await commit.finally(() => {
-            if (this.textureCommit === commit) this.textureCommit = null;
-          });
-          if (!committedHere) {
-            // A refused commit (a guarded job, or one a newer request replaced)
-            // leaves the committed file unchanged.
-            if (session === this.sourceSession) this.emitRegistryChange();
-            succeeded = true;
-            return;
-          }
-          if (session !== this.sourceSession) { succeeded = true; return; }
-          const committed = committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
-          if (committed) this.sessionEncodes.set(result.assetGuid, committed);
-          const current = await this.refreshTextureWrite(result.assetGuid, registry, session);
-          if (!current) { succeeded = true; return; }
-          // Recheck atlas changes made while this texture encoded, unless an
-          // unsaved Details edit selected a different Usage for this result.
-          const saved = current.getByGuid(result.assetGuid)?.header.payload.usage;
-          const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
-          if (result.usage === undefined || result.usage === usage) {
-            this.reconcileTextureAlignmentInBackground([result.assetGuid]);
-          }
-          succeeded = true;
-        } finally {
-          // Otherwise the queue's error callback owns the failed-state commit,
-          // and ends the write with it.
-          if (succeeded) {
-            if (this.setTextureEncoding(job, false)) this.emitRegistryChange();
-            this.releaseEncodeWrite(job);
-          }
-        }
-      },
-      onError: (guid, error, job) => {
-        const release = this.takeEncodeWriteRelease(job);
-        this.emitTextureEncodeDiagnostic(guid, error);
-        const registry = this.encodeRegistry();
-        if (job.guard) {
-          // A guarded (alignment) job writes nothing before its commit, so a
-          // failed one leaves the committed Texture as it was. Texture Details
-          // rechecks whether it is stale now that no job holds it.
-          release?.();
-          if (registry) this.emitRegistryChange();
-          return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        if (!registry) {
-          this.setTextureEncoding(job, false);
-          release?.();
-          return;
-        }
-        const session = this.sourceSession;
-        // The Texture keeps showing as encoding until its failure is saved.
-        void this.trackTextureStateWrite(this.writeAdmission.continue(async () => {
-          await registry.setCompressionState(guid, "encode_failed", {
-            error: message,
-            canWrite: (_guid, current) => encodeJobMayWrite(job, current),
-          });
-          await this.refreshTextureWrite(guid, registry, session);
-        }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => {
-          if (this.setTextureEncoding(job, false) && session === this.sourceSession) this.emitRegistryChange();
-          release?.();
-        }));
-      },
-      // A guarded job dropped unencoded may leave its Texture stale for the
-      // user. A closed project's encode, and one a newer request replaced,
-      // end the write they retained here and no longer show as encoding.
-      onDrop: (job) => {
-        this.setTextureEncoding(job, false);
-        this.releaseEncodeWrite(job);
-        this.emitRegistryChange();
-      },
+    this.projectPlugins = new ProjectPlugins({
+      storage,
+      blobs: this.blobs,
+      registry: () => this.assetRegistry,
+      emitRegistryChange: () => this.emitRegistryChange(),
     });
-    this.publicEncodeQueue = guardProjectEncodeQueue(this.encodeQueue, this.writeAdmission);
-    this.writeAdmission.subscribe(() => this.updateEncodePause());
+    this.textures = new ProjectTextureEncoding({
+      writeAdmission: this.writeAdmission,
+      registry: () => this.assetRegistry,
+      encodeRegistry: () => this.encodeRegistry(),
+      sourceSession: () => this.sourceSession,
+      registryMounts: () => this.registryMounts,
+      plugins: () => this.projectPlugins.descriptors,
+      emitRegistryChange: () => this.emitRegistryChange(),
+      pushDiagnostic: (line) => this.pushDiagnostic(line),
+    }, options);
     return admitOwnerWrites(this, this.writeAdmission, [
       "setTranscoderAvailable", "retryTextureEncoding", "retryAllFailedTextureEncoding",
       "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
@@ -713,21 +349,9 @@ export class ProjectService {
     };
   }
 
-  private updateEncodePause(): void {
-    if (this.externalEncodePause || this.manualEncodePause || this.writeAdmission.locked) this.encodeQueue.pause();
-    else this.encodeQueue.resume();
-  }
-
   /** Start provider-lifetime resources; safe across Strict Mode effect probes. */
   initialize(): void {
-    if (this.encodeQueuePauseUnsubscribe) return;
-    if (!this.configuredEncode) {
-      this.workerEncode = this.createWorkerEncode();
-    }
-    this.encodeQueuePauseUnsubscribe = onEncodeQueuePause((paused) => {
-      this.externalEncodePause = paused;
-      this.updateEncodePause();
-    });
+    this.textures.initialize();
   }
 
   /** Release provider-lifetime resources; project close deliberately does not. */
@@ -736,11 +360,7 @@ export class ProjectService {
     this.extensions.close().catch((error: unknown) => {
       console.warn("[editor] Closing editor extensions failed", error);
     });
-    this.cancelEmissionJobs();
-    this.encodeQueuePauseUnsubscribe?.();
-    this.encodeQueuePauseUnsubscribe = null;
-    this.workerEncode?.dispose();
-    this.workerEncode = null;
+    this.textures.dispose();
   }
 
   get sessionDiagnostics(): string[] {
@@ -754,55 +374,13 @@ export class ProjectService {
     };
   }
 
-  /** The write admission `job` retained when its encode started, which the caller now ends. */
-  private takeEncodeWriteRelease(job: EncodeJob): (() => void) | undefined {
-    const release = this.encodeWriteReleases.get(job);
-    this.encodeWriteReleases.delete(job);
-    return release;
-  }
-
-  private releaseEncodeWrite(job: EncodeJob): void {
-    this.takeEncodeWriteRelease(job)?.();
-  }
-
-  /**
-   * Whether the editor shows the Texture of `job` as `encoding`. Returns
-   * whether that changed; the caller tells the editor (`emitRegistryChange`).
-   * A job ends its own mark only, so a replaced job's end never clears the
-   * newer job's.
-   */
-  private setTextureEncoding(job: EncodeJob, encoding: boolean): boolean {
-    const guid = job.assetGuid;
-    const shown = this.encodingJobs.get(guid) === job;
-    if (shown === encoding) return false;
-    if (encoding) this.encodingJobs.set(guid, job);
-    else this.encodingJobs.delete(guid);
-    this.encodingSnapshot = new Set(this.encodingJobs.keys());
-    return true;
-  }
-
   /**
    * Textures whose encode is running now. The file says `pending` until the
    * encode commits, so this is the only record that it started. A new set at
    * each change, and every change is reported by `onRegistryChange`.
    */
   get textureEncodingGuids(): ReadonlySet<string> {
-    return this.encodingSnapshot;
-  }
-
-  /** Lets Close Project wait for `write` (see `textureStateWrites`); returns it unchanged. */
-  private trackTextureStateWrite<T>(write: Promise<T>): Promise<T> {
-    this.textureStateWrites.add(write);
-    const forget = () => { this.textureStateWrites.delete(write); };
-    void write.then(forget, forget);
-    return write;
-  }
-
-  private emitTextureEncodeDiagnostic(guid: string, error: unknown, failure = "encode failed"): void {
-    const asset = this.assetRegistry?.getByGuid(guid);
-    const name = asset?.header.name?.trim() || "Texture";
-    const message = error instanceof Error ? error.message : String(error);
-    this.pushDiagnostic(`Texture ${failure} for ${name} (${guid}): ${message}`);
+    return this.textures.encodingGuids;
   }
 
   private pushDiagnostic(line: string): void {
@@ -811,55 +389,13 @@ export class ProjectService {
     for (const listener of this.diagnosticListeners) listener(line);
   }
 
-  /** Background alignment pass: a refused or failed pass is reported, never left unhandled. */
-  private reconcileTextureAlignmentInBackground(guids: readonly string[]): void {
-    this.reconcileTextureAlignment(guids).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      this.pushDiagnostic(`Texture alignment check failed: ${message}`);
-    });
-  }
-
-  /** A scan may have captured the old encode state before this write committed. */
-  private async refreshTextureWrite(guid: string, writer: AssetRegistry, session: number): Promise<AssetRegistry | null> {
-    try {
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        if (session !== this.sourceSession) return null;
-        // A rejected scan keeps the previous registry; its caller handles the scan error.
-        await Promise.allSettled([...this.registryMounts].filter((mount) => mount.session === session).map((mount) => mount.promise));
-        if (session !== this.sourceSession) return null;
-        const current = this.assetRegistry;
-        if (!current?.getByGuid(guid)) return null;
-        try {
-          // Refresh only this catalog header; a completed encode never starts a scan or another encode.
-          if (current !== writer) await current.getAssetLocator(guid);
-        } catch (error) {
-          if (isAssetSourceRevisionChanged(error) && attempt < 3) continue;
-          throw error;
-        }
-        if (session !== this.sourceSession) return null;
-        if (current === this.assetRegistry && ![...this.registryMounts].some((mount) => mount.session === session)) {
-          this.emitRegistryChange();
-          return current;
-        }
-      }
-      throw new Error("Saved texture metadata changed during 3 refresh attempts; refresh the Content Browser after saving finishes.");
-    } catch (error) {
-      // A metadata refresh failure must not overwrite a successfully committed encode with encode_failed.
-      if (session === this.sourceSession) this.emitTextureEncodeDiagnostic(guid, error);
-      return null;
-    }
-  }
-
   /** When self-hosted transcoder files are missing, prefer source chunks. */
   async setTranscoderAvailable(available: boolean): Promise<void> {
-    this.transcoderAvailable = available;
-    if (!available && this.assetRegistry) {
-      await this.markCompressedTexturesFallback();
-    }
+    return this.textures.setTranscoderAvailable(available);
   }
 
   get isTranscoderAvailable(): boolean {
-    return this.transcoderAvailable;
+    return this.textures.isTranscoderAvailable;
   }
 
   /** Bind app-private derived storage for thumbnail writes at import. */
@@ -881,29 +417,8 @@ export class ProjectService {
     });
   }
 
-  private async markCompressedTexturesFallback(): Promise<void> {
-    const registry = this.assetRegistry;
-    if (!registry) return;
-    for (const asset of registry.list({ type: "Texture" })) {
-      const hasKtx2 = asset.header.chunks.some(
-        (chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"),
-      );
-      const state = asset.header.payload.compressionState;
-      if (!hasKtx2 || state !== "compressed") continue;
-      // Read-only roots and plugins keep their saved state; without a
-      // transcoder the resolver uses their pixels either way.
-      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) continue;
-      try {
-        await registry.setCompressionState(asset.header.guid, "fallback_uncompressed");
-      } catch (error) {
-        // One unwritable Texture must not stop the others, or the open waiting on them.
-        this.emitTextureEncodeDiagnostic(asset.header.guid, error, "fallback state could not be saved");
-      }
-    }
-  }
-
   get textureEncodeQueue(): EncodeQueue {
-    return this.publicEncodeQueue;
+    return this.textures.publicQueue;
   }
 
   onRegistryChange(listener: () => void): () => void {
@@ -931,22 +446,18 @@ export class ProjectService {
 
   /** Pause encode jobs while Preview runs (engineplan §3.5). */
   pauseTextureEncodeQueue(): void {
-    this.manualEncodePause = true;
-    this.updateEncodePause();
+    this.textures.pause();
   }
 
   resumeTextureEncodeQueue(): void {
-    this.manualEncodePause = false;
-    this.updateEncodePause();
+    this.textures.resume();
   }
 
   async retryTextureEncoding(
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string },
   ): Promise<boolean> {
-    const registry = this.assetRegistry;
-    if (!registry) return false;
-    return this.trackTextureStateWrite(registry.retryTextureEncoding(guid, options));
+    return this.textures.retryTextureEncoding(guid, options);
   }
 
   /**
@@ -956,28 +467,7 @@ export class ProjectService {
    * does not request texture processing.
    */
   setSourceControlEnabled(enabled: boolean): void {
-    if (this.sourceControlEnabled === enabled) return;
-    this.sourceControlEnabled = enabled;
-  }
-
-  /**
-   * Whether the alignment pass may rewrite a Texture now: not read-only, and
-   * source control is off or its committed encode is the one this project
-   * session last wrote (such as an import a Tileset then picks); a git revert
-   * or pull that replaced that encode ends it. Asked again when its job
-   * starts, and before its commit with `current`, the file on disk the commit
-   * would replace, which the index may not describe yet.
-   */
-  private alignmentMayWrite(guid: string, current?: HassetHeader): boolean {
-    const registry = this.assetRegistry;
-    const asset = registry?.getByGuid(guid);
-    if (!registry || !asset) return false;
-    if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
-      return false;
-    }
-    if (!this.sourceControlEnabled) return true;
-    const committed = committedKtx2Sha256(current ?? asset.header);
-    return committed !== null && this.sessionEncodes.get(guid) === committed;
+    this.textures.setSourceControlEnabled(enabled);
   }
 
   /**
@@ -986,13 +476,7 @@ export class ProjectService {
    * nothing re-encodes it yet. `usage` is its tab's, saved or not.
    */
   async textureAlignmentStale(guid: string, usage?: string): Promise<boolean> {
-    const registry = this.assetRegistry;
-    const asset = registry?.getByGuid(guid);
-    if (!registry || !asset || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) return false;
-    return registry.isTextureAlignmentStale(guid, {
-      usage: usage ?? this.openTextureUsage?.(guid),
-      ktx2SizeCache: this.ktx2SizeCache,
-    });
+    return this.textures.textureAlignmentStale(guid, usage);
   }
 
   /**
@@ -1001,7 +485,7 @@ export class ProjectService {
    * instead of undoing it with the saved Usage.
    */
   setOpenTextureUsage(usageFor: ((guid: string) => string | undefined) | null): void {
-    this.openTextureUsage = usageFor;
+    this.textures.setOpenTextureUsage(usageFor);
   }
 
   /**
@@ -1013,50 +497,16 @@ export class ProjectService {
    * waits for the user's own edit. Resolves with the number requeued.
    */
   reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
-    if (this.writeAdmission.blocked) return Promise.resolve(0);
-    const run = async () => {
-      const registry = this.assetRegistry;
-      if (!registry) return 0;
-      const requeued = await registry.reconcileTextureAlignment({
-        guids,
-        canWrite: (guid, current) => this.alignmentMayWrite(guid, current),
-        usageFor: this.openTextureUsage ?? undefined,
-        ktx2SizeCache: this.ktx2SizeCache,
-      });
-      this.textureAlignment.runs += 1;
-      for (const guid of requeued) this.textureAlignment.requeued.add(guid);
-      if (requeued.length > 0) this.emitRegistryChange();
-      return requeued.length;
-    };
-    this.textureAlignment.pending += 1;
-    const next = this.writeAdmission.run(() => this.textureAlignmentChain.then(run, run)).finally(() => {
-      this.textureAlignment.pending -= 1;
-    });
-    this.textureAlignmentChain = next.catch(() => 0);
-    return next;
+    return this.textures.reconcileTextureAlignment(guids);
   }
 
   /** Alignment passes finished and still queued, and every Texture they requeued (test hook). */
   get textureAlignmentState(): { runs: number; pending: number; requeued: string[] } {
-    const { runs, pending, requeued } = this.textureAlignment;
-    return { runs, pending, requeued: [...requeued] };
+    return this.textures.alignmentState;
   }
 
   async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {
-    const registry = this.assetRegistry;
-    if (!registry) throw new Error("Open a project before processing emission textures.");
-    options.signal?.throwIfAborted();
-    const controller = new AbortController();
-    const cancel = () => controller.abort(options.signal?.reason);
-    options.signal?.addEventListener("abort", cancel, { once: true });
-    this.emissionJobs.add(controller);
-    try {
-      await registry.prepareAreaEmission(guid, this.processAreaEmission, { ...options, signal: controller.signal });
-      if (this.assetRegistry === registry) this.emitRegistryChange();
-    } finally {
-      this.emissionJobs.delete(controller);
-      options.signal?.removeEventListener("abort", cancel);
-    }
+    return this.textures.prepareAreaEmission(guid, options);
   }
 
   /**
@@ -1064,49 +514,11 @@ export class ProjectService {
    * on the import worker. Resolves false when nothing was written.
    */
   async reconvertHdrEnvironment(guid: string, faceSize: number, options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {}): Promise<boolean> {
-    const registry = this.assetRegistry;
-    if (!registry) throw new Error("Open a project before converting environment textures.");
-    options.signal?.throwIfAborted();
-    const controller = new AbortController();
-    const cancel = () => controller.abort(options.signal?.reason);
-    options.signal?.addEventListener("abort", cancel, { once: true });
-    // Closing the project cancels it with the emission jobs.
-    this.emissionJobs.add(controller);
-    try {
-      const written = await registry.reconvertHdrEnvironment(guid, faceSize, convertHdrEnvironmentOffMainThread, { ...options, signal: controller.signal });
-      if (written && this.assetRegistry === registry) this.emitRegistryChange();
-      return written;
-    } finally {
-      this.emissionJobs.delete(controller);
-      options.signal?.removeEventListener("abort", cancel);
-    }
-  }
-
-  private cancelEmissionJobs(): void {
-    for (const job of this.emissionJobs) job.abort(new Error("Area emission processing cancelled because the project closed."));
-    this.emissionJobs.clear();
+    return this.textures.reconvertHdrEnvironment(guid, faceSize, options);
   }
 
   async retryAllFailedTextureEncoding(): Promise<number> {
-    if (!this.assetRegistry) return 0;
-    const session = this.sourceSession;
-    let count = 0;
-    for (const asset of this.assetRegistry.list({ type: "Texture" })) {
-      // Close Project waits for the retry running, not for the rest of the list.
-      if (session !== this.sourceSession || !this.assetRegistry) break;
-      const state = asset.header.payload.compressionState;
-      if (
-        state === "encode_failed" ||
-        state === "fallback_uncompressed" ||
-        state === "pending" ||
-        state === "encoding"
-      ) {
-        if (await this.trackTextureStateWrite(this.assetRegistry.retryTextureEncoding(asset.header.guid))) {
-          count += 1;
-        }
-      }
-    }
-    return count;
+    return this.textures.retryAllFailedTextureEncoding();
   }
 
   get storagePort(): ProjectStorage {
@@ -1132,57 +544,33 @@ export class ProjectService {
   }
 
   get plugins(): PluginDescriptor[] {
-    return this.pluginDescriptors;
+    return this.projectPlugins.descriptors;
   }
 
   get pluginGraphDiagnostics(): PluginDiagnostic[] {
-    return this.pluginDiagnostics;
+    return this.projectPlugins.diagnostics;
   }
 
   /** Export presets scan their selected plugin roots without changing editor mounts. */
   async listExportAssets(
     enabledPluginGuids: ReadonlySet<string>,
   ): Promise<IndexedAsset[]> {
-    const exportRegistry = new AssetRegistry(this.storage, {
-      blobs: this.blobs,
-    });
-    await mountEnabledPlugins(exportRegistry, this.pluginDescriptors, {
-      enabledGuids: enabledPluginGuids,
-      storageFor: (plugin) =>
-        plugin.source === "engine"
-          ? (this.enginePluginStorage ?? undefined)
-          : undefined,
-    });
-    const byGuid = new Map(
-      (this.assetRegistry?.list() ?? [])
-        .filter((asset) => !asset.rootId.startsWith("plugin:"))
-        .map((asset) => [asset.header.guid, asset]),
-    );
-    for (const asset of exportRegistry.list())
-      byGuid.set(asset.header.guid, asset);
-    return [...byGuid.values()];
+    return this.projectPlugins.listExportAssets(enabledPluginGuids);
   }
 
   setEnginePluginStorage(storage: ProjectStorage | null): void {
-    this.enginePluginStorage = storage;
-    this.pluginDescriptorsCurrent = false;
+    this.projectPlugins.setEnginePluginStorage(storage);
   }
 
   setEngineExtensionStorage(storage: ProjectStorage): void {
-    this.engineExtensionStorage = storage;
+    this.projectPlugins.setEngineExtensionStorage(storage);
     this.extensions.setEngineStorage(storage);
-  }
-
-  private async installEnginePluginDefaultsIfNeeded(): Promise<void> {
-    if (this.engineExtensionStorage) await installEngineExtensionDefaults(this.storage, this.engineExtensionStorage);
-    if (!this.enginePluginStorage) return;
-    await installEnginePluginDefaults(this.storage, this.enginePluginStorage);
   }
 
   setPluginOverrides(
     overrides: Record<string, PluginEnableOverride>,
   ): void {
-    this.pluginOverrides = overrides;
+    this.projectPlugins.setOverrides(overrides);
   }
 
   get searchIndex(): ProjectSearchIndex | null {
@@ -1268,13 +656,13 @@ export class ProjectService {
       for (let attempt = 1; !owned; attempt++) {
         name = attempt === 1 ? base : `${base} ${attempt}`;
         try {
-          owned = await this.openOwnedDocumentsProject(name);
+          owned = await openOwnedDocumentsProject(this.storage, name);
         } catch (error) {
           // A project another tab has open takes its name as well.
           if (isProjectOpenElsewhere(error)) continue;
           throw error;
         }
-        if (!(await this.projectFolderIsEmpty())) owned = null;
+        if (!(await projectFolderIsEmpty(this.storage))) owned = null;
       }
       return this.scaffoldFromTemplate(owned, name, { templateFiles: files });
     }
@@ -1297,15 +685,15 @@ export class ProjectService {
       if (await this.storage.exists(PROJECT_FILE)) {
         return this.loadCurrentProject();
       }
-      await this.assertEmptyProjectFolder();
+      await assertEmptyProjectFolder(this.storage);
       return this.scaffoldNewProject(projectName, options.kind, options);
     }
-    const owned = await this.openOwnedDocumentsProject(projectName);
+    const owned = await openOwnedDocumentsProject(this.storage, projectName);
     if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
-    await this.assertEmptyProjectFolder();
-    return this.scaffoldOwnedProject(owned, () =>
+    await assertEmptyProjectFolder(this.storage);
+    return scaffoldOwnedProject(this.storage, owned, () =>
       this.scaffoldNewProject(projectName, options?.kind, options),
     );
   }
@@ -1321,7 +709,7 @@ export class ProjectService {
     if (options.pickFolder) {
       await this.storage.pickProjectFolder();
     } else {
-      owned = await this.openOwnedDocumentsProject(projectName);
+      owned = await openOwnedDocumentsProject(this.storage, projectName);
     }
     return this.scaffoldFromTemplate(owned, projectName, options);
   }
@@ -1335,9 +723,10 @@ export class ProjectService {
     if (await this.storage.exists(PROJECT_FILE) && !owned?.createdHere) {
       throw new Error("A project already exists in this folder.");
     }
-    await this.assertEmptyProjectFolder();
+    await assertEmptyProjectFolder(this.storage);
     const guid = newGuid();
-    return this.scaffoldOwnedProject(
+    return scaffoldOwnedProject(
+      this.storage,
       owned,
       async () => {
         await createProjectFromTemplate({
@@ -1364,83 +753,10 @@ export class ProjectService {
           );
         }
         this.projectGuid = guid;
-        await this.installEnginePluginDefaultsIfNeeded();
+        await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
         return this.loadCurrentProject();
       },
     );
-  }
-
-  /** True when the current folder holds nothing a scaffold could overwrite. */
-  private async projectFolderIsEmpty(): Promise<boolean> {
-    const entries = await this.storage.readdir(".");
-    return entries.every((entry) => IGNORED_PROJECT_FOLDER_ENTRIES.has(entry.name));
-  }
-
-  /** New projects are scaffolded only into an empty folder, never over existing files. */
-  private async assertEmptyProjectFolder(): Promise<void> {
-    if (!(await this.projectFolderIsEmpty())) {
-      throw new Error("This folder already contains files but no project.json. Choose an empty folder or open an existing project.");
-    }
-  }
-
-  /** Opens the Documents-tier folder for `name`, recording whether this call created it. */
-  private async openOwnedDocumentsProject(name: string): Promise<OwnedFolder> {
-    const known = await this.storage.listProjects();
-    const handle = await this.storage.openDocumentsProject(name);
-    const registered = known.some((p) => p.id === handle.id);
-    let empty = false;
-    if (!registered) {
-      try {
-        empty = (await this.storage.readdir(".")).length === 0;
-      } catch {
-        empty = false;
-      }
-    }
-    if (await this.storage.exists(PROJECT_CREATION_MARKER)) {
-      // Only fresh app-owned folders receive the marker. A retry can use a
-      // different template, so discard the interrupted scaffold's files.
-      if (this.storage.deleteProject) {
-        await this.storage.deleteProject(handle);
-        return { handle: await this.storage.openDocumentsProject(name), createdHere: true };
-      }
-      for (const entry of await this.storage.readdir(".")) await this.storage.remove(entry.name);
-      return { handle, createdHere: true };
-    }
-    return { handle, createdHere: !registered && empty };
-  }
-
-  private async scaffoldOwnedProject<T>(
-    owned: OwnedFolder | null,
-    scaffold: () => Promise<T>,
-  ): Promise<T> {
-    try {
-      if (owned?.createdHere) await this.storage.writeText(PROJECT_CREATION_MARKER, "Project creation in progress\n");
-      const result = await scaffold();
-      if (owned?.createdHere && this.storage.getCurrentFolder()?.id === owned.handle.id) {
-        await this.storage.remove(PROJECT_CREATION_MARKER);
-      }
-      return result;
-    } catch (cause) {
-      // A failed scaffold leaves a registered folder that never reaches the
-      // recents list but still blocks the name via the project-file check.
-      // Drop only folders this call created itself and still owns;
-      // user-picked folders and pre-existing folders stay.
-      if (
-        owned?.createdHere &&
-        this.storage.deleteProject &&
-        this.storage.getCurrentFolder()?.id === owned.handle.id
-      ) {
-        try {
-          await this.storage.deleteProject(owned.handle);
-        } catch (cleanupError) {
-          console.warn(
-            `Could not remove partially created project "${owned.handle.name}"`,
-            cleanupError,
-          );
-        }
-      }
-      throw cause;
-    }
   }
 
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
@@ -1450,22 +766,9 @@ export class ProjectService {
 
   async closeProject(): Promise<void> {
     this.resetAssetLoading();
-    // Queued encodes belong to this project's registry: none may commit into
-    // the next one. Their Textures stay pending for Retry Encoding.
-    this.encodeQueue.clear();
-    // The dropped encode ends its own mark when it settles; none is shown meanwhile.
-    this.encodingJobs.clear();
-    this.encodingSnapshot = new Set();
-    this.sessionEncodes.clear();
+    this.textures.dropQueued();
     await this.extensions.close();
-    this.cancelEmissionJobs();
-    // A KTX2 commit already writing must finish before the shared storage is
-    // released: the next project would reuse it, and the late write would land
-    // in that project's folder. The session bump above ends its follow-up work.
-    await this.textureCommit?.catch(() => {});
-    // So must a state write already running (a failed encode's, a retry's):
-    // none starts once the queue is cleared, but a retry may begin meanwhile.
-    while (this.textureStateWrites.size > 0) await Promise.allSettled([...this.textureStateWrites]);
+    await this.textures.settle();
     await this.storage.releaseFolder();
     this.projectGuid = null;
     this.migrationPending = [];
@@ -1476,10 +779,7 @@ export class ProjectService {
     this.registryClock.advance();
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
-    this.pluginDescriptors = [];
-    this.pluginDescriptorsCurrent = false;
-    this.pluginDiagnostics = [];
-    this.pluginOverrides = {};
+    this.projectPlugins.reset();
   }
 
   /** Compatibility wrapper for display-name-only callers. */
@@ -1561,14 +861,14 @@ export class ProjectService {
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
     this.sceneAudioReverb.clear();
-    this.sessionEncodes.clear();
+    this.textures.forgetSessionEncodes();
 
     // exists() rejects for anything but a missing manifest, so an unreadable
     // project never reaches the scaffold; a missing one is scaffolded only
     // into an empty folder.
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {
-      await this.assertEmptyProjectFolder();
+      await assertEmptyProjectFolder(this.storage);
       return this.scaffoldNewProject(folder.name);
     }
 
@@ -1582,8 +882,8 @@ export class ProjectService {
     }
     this.projectGuid = raw.guid;
     this.loadedTextureSettings = document.settings.textures;
-    this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
-    this.pluginOverrides = document.settings.pluginOverrides ?? {};
+    this.textures.setSourceControlEnabled(document.settings.sourceControl?.enabled === true);
+    this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
 
     // Project manifest schema migration (type Project).
     const projectVersion =
@@ -1698,22 +998,18 @@ export class ProjectService {
       DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
     const registry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
-      alignmentRequeues: this.alignmentRequeues,
+      alignmentRequeues: this.textures.alignmentRequeues,
       generationClock: this.registryClock,
       runImport: runImportOffMainThread,
     });
-    registry.setEncodePipeline(this.encodeQueue, {
+    registry.setEncodePipeline(this.textures.queue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
       maxDimension,
     });
     registry.setOwnWriteListener((write) => {
       for (const listener of this.ownWriteListeners) listener(write);
     });
-    // A file this session creates is its own new work, not one teammates share.
-    registry.setCreatedTextureListener(({ header }) => {
-      const committed = committedKtx2Sha256(header);
-      if (committed) this.sessionEncodes.set(header.guid, committed);
-    });
+    registry.setCreatedTextureListener(({ header }) => this.textures.noteCreatedTexture(header));
     // A remount reports only conflicts the previous catalog did not have.
     const reportedConflicts = new Set((this.assetRegistry?.listGuidConflicts() ?? []).map((conflict) => conflict.path));
     await registry.mountRoot(projectContentRoot());
@@ -1735,172 +1031,38 @@ export class ProjectService {
     // Opening a project only builds its catalog. Legacy metadata upgrades and
     // bulk texture processing are explicit maintenance operations.
     registry.setAtlasStatusListener((guids) => {
-      this.reconcileTextureAlignmentInBackground(guids);
+      this.textures.reconcileInBackground(guids);
     });
     return registry;
   }
 
   async syncPlugins(options: { rediscover?: boolean } = {}): Promise<void> {
-    const registry = this.assetRegistry;
-    if (!registry) return;
-    if (options.rediscover !== false || !this.pluginDescriptorsCurrent) {
-      const projectPlugins = await discoverProjectPlugins(this.storage);
-      const enginePlugins = this.enginePluginStorage
-        ? await discoverEnginePlugins(this.enginePluginStorage)
-        : [];
-      this.pluginDescriptors = shadowEnginePlugins(
-        projectPlugins,
-        enginePlugins,
-      );
-      this.pluginDescriptorsCurrent = true;
-    }
-    const enabledGuids = new Set(
-      this.pluginDescriptors
-        .filter((plugin) =>
-          resolvePluginEnabled(
-            plugin.settings.enabledByDefault,
-            this.pluginOverrides[plugin.pluginGuid]?.enabled,
-          ),
-        )
-        .map((plugin) => plugin.pluginGuid),
-    );
-    for (const plugin of this.pluginDescriptors) {
-      const rootId = pluginRootId(plugin.pluginGuid);
-      if (!enabledGuids.has(plugin.pluginGuid) && registry.getRoot(rootId)) {
-        registry.unmountRoot(rootId);
-      }
-    }
-    await mountEnabledPlugins(registry, this.pluginDescriptors, {
-      enabledGuids,
-      storageFor: (plugin) =>
-        plugin.source === "engine"
-          ? (this.enginePluginStorage ?? undefined)
-          : undefined,
-    });
-    const { diagnostics } = resolvePluginGraph(
-      this.pluginDescriptors.filter((plugin) => enabledGuids.has(plugin.pluginGuid)),
-    );
-    this.pluginDiagnostics = diagnostics;
-    const discoveredGuids = new Set(
-      this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
-    );
-    indexUnresolvedPlaceholders(registry, {
-      expectedGuids: Object.keys(this.pluginOverrides).filter(
-        (guid) => !discoveredGuids.has(guid),
-      ),
-    });
+    return this.projectPlugins.sync(options);
   }
 
   async applyPluginOverrides(
     overrides: Record<string, PluginEnableOverride>,
   ): Promise<void> {
-    this.pluginOverrides = overrides;
-    // Toggling a discovered plugin changes mounts, not plugin folders; an
-    // unknown guid may name a folder written since the last discovery.
-    const known = new Set(this.pluginDescriptors.map((plugin) => plugin.pluginGuid));
-    await this.syncPlugins({ rediscover: Object.keys(overrides).some((guid) => !known.has(guid)) });
-    this.emitRegistryChange();
+    return this.projectPlugins.applyOverrides(overrides);
   }
 
   async createProjectPlugin(displayName: string): Promise<PluginDescriptor> {
-    const name = displayName.trim() || "Plugin";
-    const existing = await discoverProjectPlugins(this.storage);
-    const folderName = uniquePluginFolderName(
-      name,
-      existing.map((plugin) => plugin.folderName),
-    );
-    const settings = createDefaultPluginSettings({
-      pluginGuid: newGuid(),
-      displayName: name,
-    });
-    const descriptor = await writeProjectPlugin(
-      this.storage,
-      folderName,
-      settings,
-    );
-    await this.syncPlugins();
-    this.emitRegistryChange();
-    return descriptor;
+    return this.projectPlugins.create(displayName);
   }
 
   async deleteProjectPlugin(guid: string): Promise<void> {
-    const plugin = this.pluginDescriptors.find(
-      (entry) => entry.pluginGuid === guid,
-    );
-    if (!plugin) return;
-    if (plugin.source === "engine") {
-      throw new Error("Engine plugins cannot be deleted from the project");
-    }
-    this.assetRegistry?.unmountRoot(pluginRootId(guid));
-    await this.storage.remove(plugin.folderPath);
-    const next = { ...this.pluginOverrides };
-    delete next[guid];
-    this.pluginOverrides = next;
-    await this.syncPlugins();
-    this.emitRegistryChange();
+    return this.projectPlugins.delete(guid);
   }
 
   async exportPlugin(guid: string): Promise<Uint8Array> {
-    const plugin = this.pluginDescriptors.find(
-      (entry) => entry.pluginGuid === guid,
-    );
-    if (!plugin) {
-      throw new Error(`Unknown plugin ${guid}`);
-    }
-    const storage =
-      plugin.source === "engine"
-        ? this.enginePluginStorage
-        : this.storage;
-    if (!storage) {
-      throw new Error("Plugin storage is not available");
-    }
-    return exportPluginZip(storage, plugin);
+    return this.projectPlugins.export(guid);
   }
 
   async importPlugin(
     bytes: Uint8Array,
     decision?: "keep" | "replace",
   ): Promise<PluginImportResult> {
-    const incoming = await inspectHplugin(bytes);
-    const plan = planPluginImport({
-      incoming,
-      existingPlugins: this.pluginDescriptors,
-      indexedAssets: this.assetRegistry?.list() ?? [],
-      existingFolderNames: this.pluginDescriptors.map(
-        (plugin) => plugin.folderName,
-      ),
-    });
-    if (plan.kind === "conflict") {
-      if (decision === "keep") return { status: "kept" };
-      if (decision !== "replace") {
-        return { status: "conflict", incoming, plan };
-      }
-      await applyPluginImport(this.storage, incoming, {
-        ...plan,
-        replace: true,
-      });
-    } else {
-      await applyPluginImport(this.storage, incoming, plan);
-    }
-    await this.syncPlugins();
-    this.emitRegistryChange();
-    const guid =
-      plan.kind === "remap-plugin" ? plan.nextGuid : incoming.settings.pluginGuid;
-    const descriptor = this.pluginDescriptors.find(
-      (plugin) => plugin.pluginGuid === guid,
-    );
-    if (!descriptor) {
-      throw new Error("Plugin import did not produce a descriptor");
-    }
-    return { status: "imported", descriptor };
-  }
-
-  private pluginForPath(path: string): PluginDescriptor | undefined {
-    return this.pluginDescriptors.find(
-      (entry) =>
-        path === entry.settingsPath ||
-        path.startsWith(`${entry.folderPath}/`),
-    );
+    return this.projectPlugins.import(bytes, decision);
   }
 
   private storageForPath(path: string): ProjectStorage {
@@ -1914,9 +1076,9 @@ export class ProjectService {
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.storageFor(indexed.rootId);
     }
-    const plugin = this.pluginForPath(path);
-    if (plugin?.source === "engine" && this.enginePluginStorage) {
-      return this.enginePluginStorage;
+    const plugin = this.projectPlugins.forPath(path);
+    if (plugin?.source === "engine" && this.projectPlugins.engineStorage) {
+      return this.projectPlugins.engineStorage;
     }
     return this.storage;
   }
@@ -1927,7 +1089,7 @@ export class ProjectService {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
     const storage = this.storageForPath(path);
-    const plugin = this.pluginForPath(path);
+    const plugin = this.projectPlugins.forPath(path);
     if (plugin) return createVfsBlobStore(storage, `${plugin.contentPath}/.blobs`);
     return storage === this.storage ? this.blobs : createVfsBlobStore(storage);
   }
@@ -1935,10 +1097,24 @@ export class ProjectService {
   /** Re-scan project assets after registry file operations (import, create, delete). */
   async remountRegistry(): Promise<AssetRegistry> {
     await this.mountAssetRegistry();
-    if (!this.transcoderAvailable) {
-      await this.markCompressedTexturesFallback();
+    if (!this.textures.isTranscoderAvailable) {
+      await this.textures.markCompressedTexturesFallback();
     }
     return this.registry!;
+  }
+
+  private referenceRepairHost(): ReferenceRepairHost {
+    return {
+      storage: this.storage,
+      registry: () => this.assetRegistry,
+      plugins: () => this.projectPlugins.descriptors,
+      storageFor: (path) => this.storageForPath(path),
+      loadDocument: this.loadDocument.bind(this),
+      saveDocument: this.saveDocument.bind(this),
+      remountRegistry: this.remountRegistry.bind(this),
+      readStoredAssetDocument: (kind, path) => this.readStoredAssetDocument(kind, path),
+      documentContent: (kind, path, raw) => this.documentContent(kind, path, raw),
+    };
   }
 
   /** Validate all referrers before writing replacements; never delete a Class here. */
@@ -1947,71 +1123,7 @@ export class ProjectService {
     deletingGuids: ReadonlySet<string>,
     onProgress?: (path: string) => Promise<void>,
   ): Promise<void> {
-    const registry = this.assetRegistry;
-    if (!registry) throw new Error("The asset registry is unavailable.");
-    validateClassDeletionReplacements(replacements, registry.list(), deletingGuids);
-    const plans = await this.planClassReferenceReplacements(replacements, deletingGuids, onProgress);
-    // Like a Class rename, the referrers are rewritten together or not at all.
-    const backups = await Promise.all(plans.map(async (plan) => ({
-      path: plan.path,
-      storage: this.storageForPath(plan.path),
-      bytes: await this.storageForPath(plan.path).readBinary(plan.path),
-    })));
-    let attempted = 0;
-    try {
-      for (const plan of plans) {
-        await onProgress?.(plan.path);
-        attempted += 1;
-        await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
-      }
-    } catch (error) {
-      const failures: string[] = [];
-      for (const backup of backups.slice(0, attempted)) {
-        try { await backup.storage.writeBinary(backup.path, backup.bytes); }
-        catch { failures.push(backup.path); }
-      }
-      try { await this.remountRegistry(); }
-      catch { failures.push("Asset Registry"); }
-      if (failures.length) throw new Error(`Replacing Class references failed and some files could not be restored: ${failures.join(", ")}. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-      throw error;
-    }
-  }
-
-  private async planClassReferenceReplacements(
-    replacements: readonly ClassAssetReplacement[],
-    deletingGuids: ReadonlySet<string>,
-    onProgress?: (path: string) => Promise<void>,
-  ) {
-    const registry = this.assetRegistry;
-    if (!registry) throw new Error("The asset registry is unavailable.");
-    const assets = registry.list();
-    const plans: Array<{
-      kind: Exclude<DocumentKind, "content-browser">;
-      path: string;
-      content: Awaited<ReturnType<ProjectService["loadDocument"]>>;
-      parentClass: string | null;
-    }> = [];
-    for (const asset of assets) {
-      if (deletingGuids.has(asset.header.guid)) continue;
-      const kind = documentKindForAssetType(asset.header.type);
-      if (!kind || kind === "trace") continue;
-      await onProgress?.(asset.path);
-      const content = await this.loadDocument(kind, asset.path);
-      const walked = replaceClassAssetReferences(content, replacements, (guid) => {
-        const payload = registry.getByGuid(guid)?.header;
-        return payload && ["DataDefinition", "Structure"].includes(payload.type) && Array.isArray(payload.payload.fields) ? payload.payload.fields : undefined;
-      });
-      const header = replaceClassAssetReferences({
-        parentClass: asset.header.parentClass ?? null,
-        dependencies: asset.header.dependencies,
-      }, replacements);
-      if (!walked.changed && !header.changed) continue;
-      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
-        throw new Error(`${asset.path} is read-only and still references a selected Class.`);
-      }
-      plans.push({ kind, path: asset.path, content: walked.value, parentClass: header.value.parentClass });
-    }
-    return plans;
+    return replaceClassReferencesBeforeDelete(this.referenceRepairHost(), replacements, deletingGuids, onProgress);
   }
 
   /** Rename a Class and its name-based referrers as one recoverable file operation. */
@@ -2019,68 +1131,7 @@ export class ProjectService {
     /** Validate locks and persist recovery before any files change. */
     beforeWrite?: (paths: string[]) => Promise<void>;
   }): Promise<IndexedAsset> {
-    const registry = this.assetRegistry;
-    const before = registry?.getByGuid(guid);
-    if (!registry || !before) throw new Error("The asset is unavailable.");
-    const nextPath = renamedAssetPath(before.path, newName);
-    if (nextPath !== before.path && registry.getByPath(nextPath)) {
-      throw new Error(`Target path already exists: ${nextPath}`);
-    }
-    if (before.header.type !== "Class") {
-      await options?.beforeWrite?.([before.path, nextPath]);
-      return registry.renameAsset(guid, newName);
-    }
-    const classId = classIdFromClassAsset(before);
-    const nextClassId = classIdFromClassAsset({ ...before, path: nextPath });
-    if (classId === nextClassId) {
-      await options?.beforeWrite?.([before.path, nextPath]);
-      return registry.renameAsset(guid, newName);
-    }
-    if (isLockedEngineClassId(nextClassId)) {
-      throw new Error(`"${nextClassId}" is an engine class name. Choose another Class name.`);
-    }
-    if (registry.list().some((asset) => asset.header.guid !== guid &&
-      asset.header.type === "Class" && classIdFromClassAsset(asset) === nextClassId)) {
-      throw new Error("A Class with that name already exists.");
-    }
-    const replacements = [{ guid, classId, replacement: { guid, classId: nextClassId } }];
-    const plans = await this.planClassReferenceReplacements(replacements, new Set());
-    const backups = await Promise.all(plans.map(async (plan) => ({
-      path: plan.path,
-      storage: this.storageForPath(plan.path),
-      bytes: await this.storageForPath(plan.path).readBinary(plan.path),
-    })));
-    const original = await this.storageForPath(before.path).readBinary(before.path);
-    const projectText = await this.storage.readText(PROJECT_FILE);
-    const project = JSON.parse(projectText) as ProjectDocument;
-    const settings = replaceClassAssetReferences(project.settings, replacements);
-    await options?.beforeWrite?.([before.path, nextPath, ...plans.map((plan) => plan.path), ...(settings.changed ? [PROJECT_FILE] : [])]);
-    const renamed = await registry.renameAsset(guid, newName);
-    try {
-      for (const plan of plans) {
-        await this.saveDocument(plan.kind, plan.path === before.path ? renamed.path : plan.path, plan.content, { parentClass: plan.parentClass });
-      }
-      if (settings.changed) await this.storage.writeText(PROJECT_FILE, JSON.stringify({ ...project, settings: settings.value }, null, 2));
-      return registry.getByGuid(guid)!;
-    } catch (error) {
-      // A persistent storage failure must not prevent attempts to restore the
-      // other files. Retain both Class copies if its original cannot be restored.
-      const failures: string[] = [];
-      const restore = async (path: string, write: () => Promise<void>) => {
-        try { await write(); return true; }
-        catch { failures.push(path); return false; }
-      };
-      const storage = this.storageForPath(renamed.path);
-      const sourceRestored = await restore(before.path, () => storage.writeBinary(before.path, original));
-      for (const backup of backups) {
-        if (backup.path !== before.path) await restore(backup.path, () => backup.storage.writeBinary(backup.path, backup.bytes));
-      }
-      if (sourceRestored && renamed.path !== before.path) await restore(renamed.path, () => storage.remove(renamed.path));
-      await restore(PROJECT_FILE, () => this.storage.writeText(PROJECT_FILE, projectText));
-      await restore("Asset Registry", () => this.remountRegistry().then(() => {}));
-      if (failures.length) throw new Error(`Class rename failed and some files could not be restored: ${failures.join(", ")}. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-      throw error;
-    }
+    return renameAsset(this.referenceRepairHost(), guid, newName, options);
   }
 
   /**
@@ -2095,87 +1146,7 @@ export class ProjectService {
       onProgress?: (path: string) => Promise<void>;
     } = {},
   ): Promise<Array<{ path: string; error: unknown }>> {
-    const registry = this.assetRegistry;
-    const deletedClassNames = options.deletedClassNames ?? new Set();
-    if (!registry) return [];
-    if (deletedGuids.size === 0 && deletedClassNames.size === 0) return [];
-
-    const failed: Array<{ path: string; error: unknown }> = [];
-    const assets = registry.list();
-    // The walk replaces any string equal to a deleted guid, wherever a document keeps it, so the
-    // typed dependency metadata in the headers cannot say which documents are unaffected: every
-    // writable document is still read. The stored payloads of the next few are requested while one
-    // is repaired; migration bookkeeping, the walk and the save stay one document at a time, in
-    // catalog order, since a save changes the headers the next walk consults.
-    const repairable = assets.filter((asset) => {
-      const kind = documentKindForAssetType(asset.header.type);
-      return kind && kind !== "trace" && !isTracePath(asset.path) && !deletedGuids.has(asset.header.guid)
-        && !registry.getRoot(asset.rootId)?.readOnly && !isPluginDocumentReadOnly(this.pluginDescriptors, asset.path);
-    });
-    const repairableIndex = new Map(repairable.map((asset, index) => [asset, index] as const));
-    const readStored = createReadAhead(DELETE_REPAIR_READS, (asset: IndexedAsset) =>
-      this.readStoredAssetDocument(documentKindForAssetType(asset.header.type)!, asset.path));
-    for (const asset of assets) {
-      if (deletedGuids.has(asset.header.guid)) continue;
-      const root = registry.getRoot(asset.rootId);
-      if (root?.readOnly) continue;
-      if (isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) continue;
-      const kind = documentKindForAssetType(asset.header.type);
-      if (!kind) continue;
-
-      await options.onProgress?.(asset.path);
-
-      let content:
-        | SerializedScene
-        | SerializedSceneLayer
-        | SerializedGraph
-        | Record<string, unknown>;
-      try {
-        const position = repairableIndex.get(asset);
-        let stored: { type: string; version: number; payload: Record<string, unknown> } | undefined;
-        if (position !== undefined) {
-          // A save that syncs plugins unmounts and remounts their roots, which can fail a read
-          // that was already in flight for a plugin document. Such a document is read again, as
-          // a serial pass would have read it now, before it is given up on.
-          try { stored = await readStored(repairable, position); }
-          catch { stored = undefined; }
-        }
-        content = stored
-          ? this.documentContent(kind, asset.path, stored)
-          : await this.loadDocument(kind, asset.path);
-      } catch {
-        continue;
-      }
-      const walked = clearDeletedAssetRefs(
-        content,
-        deletedGuids,
-        deletedClassNames,
-        (guid) => {
-          const header = registry.getByGuid(guid)?.header;
-          return header && ["DataDefinition", "Structure"].includes(header.type) && Array.isArray(header.payload.fields) ? header.payload.fields : undefined;
-        },
-      );
-      const isClass = asset.header.type === "Class";
-      const nextParent = isClass
-        ? fallbackParentClass(asset.header.parentClass, deletedClassNames)
-        : undefined;
-      const parentChanged =
-        nextParent !== undefined &&
-        nextParent !== (asset.header.parentClass ?? null);
-      if (!walked.changed && !parentChanged) continue;
-      try {
-        await this.saveDocument(
-          kind,
-          asset.path,
-          walked.value,
-          parentChanged ? { parentClass: nextParent } : undefined,
-        );
-      } catch (error) {
-        // A pending migration or a write error keeps the dangling reference.
-        failed.push({ path: asset.path, error });
-      }
-    }
-    return failed;
+    return clearDeletedAssetReferences(this.referenceRepairHost(), deletedGuids, options);
   }
 
   private async keepExisting(paths: string[]): Promise<string[]> {
@@ -2213,8 +1184,8 @@ export class ProjectService {
     if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
-    this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
-    this.pluginOverrides = document.settings.pluginOverrides ?? {};
+    this.textures.setSourceControlEnabled(document.settings.sourceControl?.enabled === true);
+    this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
     const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
     if (kind === "blank") {
@@ -2240,14 +1211,14 @@ export class ProjectService {
     stored.kind = "project";
     stored.version = this.migrations.currentVersion("Project");
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
-    await this.installEnginePluginDefaultsIfNeeded();
+    await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
     if (kind === "empty" || kind === "feature-test") {
-      await this.createInputAssets();
+      await createInputAssets(this.starterHost());
       // FeatureTest pins import scale so the workload ignores Engine Settings.
-      await this.scaffoldKenneyMannequinEmpty(document, kind === "feature-test" ? 1 : undefined);
+      await scaffoldKenneyMannequinEmpty(this.starterHost(), document, kind === "feature-test" ? 1 : undefined);
     }
-    if (kind === "feature-test") await this.scaffoldFeatureTest(document);
+    if (kind === "feature-test") await scaffoldFeatureTest(this.starterHost(), document);
     return {
       document,
       layouts: createEmptyLayouts(),
@@ -2255,81 +1226,17 @@ export class ProjectService {
     };
   }
 
-  private async createInputAssets(): Promise<void> {
-    await this.storage.mkdir("assets/Input", true);
-    for (const { type, name, ...payload } of createDefaultInputAssets()) {
-      const path = `assets/Input/${newAssetFileName(type, name)}`;
-      await this.saveDocument(type === "InputAction" ? "input-action" : "input-axis", path, payload);
-    }
-  }
-
-  private async scaffoldKenneyMannequinEmpty(
-    document: ProjectDocument,
-    modelImportScale?: number,
-  ): Promise<void> {
-    const registry = this.assetRegistry;
-    if (!registry) {
-      throw new Error("Asset registry is not mounted.");
-    }
-    const scene = (await this.loadDocument(
-      "scene",
-      MAIN_SCENE_FILE,
-    )) as SerializedScene;
-    const next = await applyKenneyMannequinEmptyScaffold({
-      registry,
-      scene,
-      mannequinBytes: await loadKenneyMannequinGlb(),
-      modelImportScale: modelImportScale ?? (await createAppSettingsStore().load()).modelImportDefaultScale,
-    });
-    await this.saveDocument("scene", MAIN_SCENE_FILE, next);
-    if (await this.storage.exists(MAIN_CLASS_FILE)) {
-      await this.storage.remove(MAIN_CLASS_FILE);
-    }
-    const classPath = `assets/${MANNEQUIN_CLASS_FILE}`;
-    document.graphs = [classPath];
-    await this.saveProject(document, createEmptyLayouts());
-  }
-
-  /**
-   * FeatureTest starter: every engine feature on top of Basic 3D. Lazily
-   * loaded so its scaffold code stays out of the editor startup chunk.
-   */
-  private async scaffoldFeatureTest(document: ProjectDocument): Promise<void> {
-    const registry = this.assetRegistry;
-    if (!registry) throw new Error("Asset registry is not mounted.");
-    const [{ applyFeatureTestScaffold }, content] = await Promise.all([
-      import("../lib/feature-test"),
-      import("../lib/engine-content"),
-    ]);
-    let result: Awaited<ReturnType<typeof applyFeatureTestScaffold>>;
-    try {
-      result = await applyFeatureTestScaffold({
-        mainScenePath: MAIN_SCENE_FILE,
-        host: {
-          registry,
-          saveDocument: (kind, path, payload, options) => this.saveDocument(kind, path, payload, options),
-          loadDocument: (kind, path) => this.loadDocument(kind, path),
-          // References are written before their targets, so the guid must hold until the save.
-          guidForAsset: async (path) => {
-            const guid = await this.guidForAsset(path);
-            if (!registry.getByPath(path)) this.reservedAssetGuids.set(path, guid);
-            return guid;
-          },
-          writeSceneNavmeshChunk: (path, bytes, payload) => this.writeSceneNavmeshChunk(path, bytes, payload),
-          loadBytes: content.loadEngineContentBytes,
-          loadOptional: content.loadOptionalEngineContent,
-          generateNavMesh: generateFeatureTestNavMesh,
-          modelImportScale: 1,
-        },
-      });
-    } finally {
-      this.reservedAssetGuids.clear();
-    }
-    const paths = registry.listDocumentPaths({ rootId: "project" });
-    document.scenes = paths.scenes;
-    document.graphs = paths.graphs;
-    document.settings = result.applySettings(document.settings);
-    await this.saveProject(document, createEmptyLayouts());
+  private starterHost(): StarterScaffoldHost {
+    return {
+      storage: this.storage,
+      registry: () => this.assetRegistry,
+      saveDocument: this.saveDocument.bind(this),
+      loadDocument: this.loadDocument.bind(this),
+      saveProject: this.saveProject.bind(this),
+      writeSceneNavmeshChunk: this.writeSceneNavmeshChunk.bind(this),
+      guidForAsset: (path) => this.guidForAsset(path),
+      reservedAssetGuids: this.reservedAssetGuids,
+    };
   }
 
   async loadDocument(
@@ -2556,20 +1463,8 @@ export class ProjectService {
       } finally {
         if (!options.scope) scope.dispose();
       }
-    } else decoded = await this.readUnindexedAssetDocument(path, options.signal);
+    } else decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
     return decoded;
-  }
-
-  private async readUnindexedAssetDocument(path: string, signal?: AbortSignal): Promise<AssetDocument> {
-    const storage = this.storageForPath(path);
-    const blobs = this.blobsForPath(path);
-    const { header, locator } = await readAssetCatalog(storage, path, { signal });
-    const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-    const payload = body
-      ? JSON.parse(new TextDecoder().decode(await new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, body, blobs, storage, { signal }))) as Record<string, unknown>
-      : header.payload;
-    if (!body) await validateAssetSourceLocator(storage, locator, { signal });
-    return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
   /** Writes a `.hasset` document in its asset's write queue. */
@@ -2628,18 +1523,18 @@ export class ProjectService {
     this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
-    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+    if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
     const dir = parentDir(path);
     if (dir) {
       await storage.mkdir(dir, true);
     }
-    const existing = await this.readExistingAssetMeta(path);
+    const existing = await readExistingAssetMeta(this.files, path);
     const type = isAssetDocumentKind(kind)
       ? assetTypeForDocumentKind(kind)
       : "Class";
-    const ownerPlugin = this.pluginForPath(path);
+    const ownerPlugin = this.projectPlugins.forPath(path);
     let pluginContentChanged = false;
     if (ownerPlugin && type !== "PluginSettings") {
       const previous = existing
@@ -2657,7 +1552,7 @@ export class ProjectService {
         pluginDependencies: settings.pluginDependencies.map((dependency) => ({
           ...dependency,
           version: authorVersionChanged
-            ? this.pluginDescriptors.find((entry) => entry.pluginGuid === dependency.guid)?.settings.version ?? dependency.version
+            ? this.projectPlugins.descriptors.find((entry) => entry.pluginGuid === dependency.guid)?.settings.version ?? dependency.version
             : ownerPlugin.settings.pluginDependencies.find((entry) => entry.guid === dependency.guid)?.version ?? dependency.version,
         })),
       };
@@ -2688,7 +1583,7 @@ export class ProjectService {
     const stored = existing?.catalog ?? null;
     const extraChunks = type === "Scene"
       ? await this.sceneChunksForSave(path, content as SerializedScene, guid, stored)
-      : await this.keptChunksFor(path, stored);
+      : await keptChunksFor(this.files, path, stored);
     const bytes = await encodeAssetDocument(
       {
         type,
@@ -2721,7 +1616,7 @@ export class ProjectService {
         ),
       },
     );
-    await this.storeDocumentBytes(path, stored, bytes, this.assetRegistry, suppliedChunkIds(extraChunks));
+    await storeDocumentBytes(this.files, path, stored, bytes, this.assetRegistry, suppliedChunkIds(extraChunks));
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
@@ -2735,7 +1630,7 @@ export class ProjectService {
           engineVersion: ENGINE_VERSION,
           pluginDependencies: settings.pluginDependencies.map((dependency) => ({
             ...dependency,
-            version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
+            version: this.projectPlugins.descriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
           })),
         }));
         await this.syncPlugins();
@@ -2812,7 +1707,7 @@ export class ProjectService {
   ): Promise<EncodableChunk[]> {
     const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
     const baked = this.sceneAudioReverb.get(guid)?.get(fingerprint);
-    const kept = await this.keptChunksFor(path, stored, new Set([...omit, ...(baked ? [AUDIO_REVERB_CHUNK_ID] : [])]));
+    const kept = await keptChunksFor(this.files, path, stored, new Set([...omit, ...(baked ? [AUDIO_REVERB_CHUNK_ID] : [])]));
     if (baked) return [...kept, audioReverbChunk(baked)];
     if (kept.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
       const saved = await this.readAssetDocument(path, "Scene");
@@ -2821,71 +1716,6 @@ export class ProjectService {
       }
     }
     return kept;
-  }
-
-  /**
-   * The chunks a rewrite of `path` keeps, other than its document body and
-   * `omit` (which the caller replaces). They are carried over from the chunk
-   * table `stored` snapshots, so unchanged blobs are neither read nor hashed
-   * again; when that cannot be shown safe (a missing blob, a changed file),
-   * every chunk is read and verified instead, which refuses the write if the
-   * file cannot be read.
-   */
-  private async keptChunksFor(
-    path: string,
-    stored: AssetCatalogRead | null,
-    omit?: ReadonlySet<string>,
-  ): Promise<EncodableChunk[]> {
-    if (stored) {
-      try {
-        const carried = await carryStoredChunks(this.storageForPath(path), this.blobsForPath(path), stored, {
-          omit: new Set([DOCUMENT_CHUNK_ID, ...(omit ?? [])]),
-        });
-        if (carried) return carried;
-      } catch {
-        // Read in full below, which reports an unreadable file.
-      }
-    }
-    const loaded = await this.extraChunksFor(path);
-    return omit ? loaded.filter((chunk) => !omit.has(chunk.id)) : loaded;
-  }
-
-  /**
-   * Replace `path` with `bytes`, unless it already holds exactly that (`stored`
-   * is what it held): a save that changed nothing leaves the file, its mtime and
-   * the registry's index alone, rather than invalidating everything keyed on the
-   * registry's generation.
-   *
-   * `replaced` names the chunks whose bytes the caller supplied. Their stored
-   * bytes are verified first (`verifyChunksBeforeWrite`): a damaged inline copy
-   * is rewritten rather than skipped, and a damaged blob, which a write cannot
-   * repair, or a blob the container names that has gone missing, refuses the
-   * save as an unreadable asset always has, so the caller's copy stays dirty.
-   */
-  private async storeDocumentBytes(
-    path: string,
-    stored: AssetCatalogRead | null,
-    bytes: Uint8Array,
-    registry = this.assetRegistry,
-    replaced: readonly string[] = [DOCUMENT_CHUNK_ID],
-  ): Promise<void> {
-    const storage = this.storageForPath(path);
-    if (stored) {
-      let intact: boolean;
-      try {
-        intact = await verifyChunksBeforeWrite(storage, this.blobsForPath(path), stored, bytes, replaced);
-      } catch (cause) {
-        throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
-      }
-      if (intact && await storedHassetMatches(storage, stored, bytes)) {
-        const indexed = registry?.getByPath(path);
-        if (!registry || (indexed && stableStringify(indexed.header) === stableStringify(stored.header))) return;
-        await registry.reindexPath(path);
-        return;
-      }
-    }
-    await storage.writeBinary(path, bytes);
-    await registry?.reindexPath(path);
   }
 
   /** Persist Recast `exportNavMesh` bytes as the Scene `navmesh` extra chunk. */
@@ -2902,12 +1732,12 @@ export class ProjectService {
     bytes: Uint8Array,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+    if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
     this.assertMigrationApproved(path);
     const guid = await this.guidForAsset(path);
-    const existing = await this.readExistingAssetMeta(path);
+    const existing = await readExistingAssetMeta(this.files, path);
     const stored = existing?.catalog ?? null;
     const type = existing?.type ?? "Scene";
     // The stored chunks are carried over, not read; the navmesh it replaces is not read at all.
@@ -2927,7 +1757,7 @@ export class ProjectService {
         dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
       },
     );
-    await this.storeDocumentBytes(path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
+    await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
     this.noteMigrated(path);
   }
 
@@ -2937,7 +1767,7 @@ export class ProjectService {
     bytes: Uint8Array,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+    if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
     const registry = this.assetRegistry;
@@ -2989,7 +1819,7 @@ export class ProjectService {
         chunks: [...kept, audioReverbChunk(baked.bytes)],
         writeBlob: (hash, data) => blobs.writeBlob(hash, data),
       });
-      await this.storeDocumentBytes(currentPath, stored, encoded, registry, [AUDIO_REVERB_CHUNK_ID]);
+      await storeDocumentBytes(this.files, currentPath, stored, encoded, registry, [AUDIO_REVERB_CHUNK_ID]);
     };
     if (asset) await registry!.withAssetWrite(asset.header.guid, write);
     else await write();
@@ -3041,13 +1871,13 @@ export class ProjectService {
     omit: readonly string[],
     added?: ChunkInput,
   ): Promise<void> {
-    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+    if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
     this.assertMigrationApproved(path);
-    const existing = await this.readExistingAssetMeta(path);
+    const existing = await readExistingAssetMeta(this.files, path);
     const stored = existing?.catalog ?? null;
-    const kept = await this.keptChunksFor(path, stored, new Set(omit));
+    const kept = await keptChunksFor(this.files, path, stored, new Set(omit));
     const chunks = added ? [...kept, added] : kept;
     const type = existing?.type ?? "Audio";
     const storeInHeader = existing !== null && !existing.hasDocumentChunk;
@@ -3068,7 +1898,7 @@ export class ProjectService {
         dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list(), existing?.parentClass),
       },
     );
-    await this.storeDocumentBytes(path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
+    await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
     this.noteMigrated(path);
   }
 
@@ -3077,60 +1907,6 @@ export class ProjectService {
     // A former path must not lend its GUID to a new asset created there.
     if (this.assetRegistry) return this.assetRegistry.getByPath(path)?.header.guid ?? null;
     return this.assetGuids.get(path) ?? null;
-  }
-
-  private async readExistingAssetMeta(path: string): Promise<{
-    type: string;
-    name: string;
-    parentClass: string | null;
-    hasDocumentChunk: boolean;
-    payload: Record<string, unknown>;
-    /** The header and file snapshot these came from; null when only a whole-file read could parse it. */
-    catalog: AssetCatalogRead | null;
-  } | null> {
-    const storage = this.storageForPath(path);
-    if (!(await storage.exists(path))) return null;
-    try {
-      // The header is all a rewrite's metadata needs, so only it is read.
-      let catalog: AssetCatalogRead | null = null;
-      try {
-        catalog = await readAssetCatalog(storage, path);
-      } catch {
-        // Parsed from the whole file below, which fails or succeeds on its own terms.
-      }
-      const header = catalog?.header ?? readAssetDocumentHeader(await storage.readBinary(path));
-      return {
-        type: header.type,
-        name: header.name,
-        parentClass: header.parentClass ?? null,
-        hasDocumentChunk: header.chunks.some(
-          (chunk) => chunk.id === DOCUMENT_CHUNK_ID,
-        ),
-        payload: header.payload,
-        catalog,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * The chunks a rewrite of `path` must keep. A file that exists but cannot
-   * be read refuses the write rather than losing them.
-   */
-  private async extraChunksFor(path: string) {
-    const storage = this.storageForPath(path);
-    const blobs = this.blobsForPath(path);
-    if (!(await storage.exists(path))) return [];
-    try {
-      const decoded = await decodeHasset(
-        await storage.readBinary(path),
-        (hash) => blobs.readBlob(hash),
-      );
-      return extraChunksFromDecoded(decoded);
-    } catch (cause) {
-      throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
-    }
   }
 
   /** The identity a write of `path` keeps; an existing file that cannot be read refuses the write. */

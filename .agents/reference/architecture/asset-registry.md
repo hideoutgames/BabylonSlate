@@ -5,7 +5,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 ## Ownership
 
 - Registry and loaders: [`packages/assets/src/`](../../../packages/assets/src/) (`registry.ts`, `content-root.ts`, `payload-loader.ts`, `hasset-carry.ts`, `asset-loading-service.ts`, `registry-asset-loading.ts`, `encode-queue.ts`, `texture-*.ts`, `importers/`).
-- Editor host: `ProjectService` ([`apps/editor/src/services/project-service.ts`](../../../apps/editor/src/services/project-service.ts)); Content Browser UI: [`apps/editor/src/components/content-browser-workspace.tsx`](../../../apps/editor/src/components/content-browser-workspace.tsx), helpers in `apps/editor/src/lib/content-browser-*.ts`.
+- Editor host: `ProjectService` ([`apps/editor/src/services/project-service.ts`](../../../apps/editor/src/services/project-service.ts)), which delegates to sibling `project-*.ts` modules: Texture encoding and alignment (`project-texture-encoding.ts`), plugins (`project-plugins.ts`), reference rewrites on rename and delete (`project-reference-repair.ts`), starter scaffolds (`project-scaffold.ts`) and `.hasset` chunk reads and writes (`project-asset-files.ts`). Content Browser UI: [`apps/editor/src/components/content-browser-workspace.tsx`](../../../apps/editor/src/components/content-browser-workspace.tsx), helpers in `apps/editor/src/lib/content-browser-*.ts`.
 - GPU resources and native disposal stay in `ResourceCache` ([`packages/render/src/`](../../../packages/render/src/)); Babylon never enters `@haptic/assets`.
 
 ## Invariants
