@@ -68,6 +68,8 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Water Reflections** | Sky Only | Sky Only | Screen Space | Planar |
+| **FFT Size** | 128 | 256 | 256 | 256 |
+| **FFT Cascades** | 3 | 3 | 3 | 3 |
 
 - **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
 - **Refraction Resolution** sets the scene copy's scale, shared with Screen Space reflections.

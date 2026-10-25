@@ -3,8 +3,8 @@ import {
   Texture, ThinTexture, Vector3, type AbstractEngine, type AbstractMesh, type Effect, type Material, Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
-  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS, waterBankFadeLength, waterFoamThreshold, waterSpectrum, type WaterBodyProperties,
-  type WaterDefinition, type WaterShadingDetail, type WaterSpectrum,
+  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS, waterBankFadeLength, waterFoamScale, waterFoamThreshold, waterSpectrum, type WaterBodyProperties,
+  type WaterDefinition, type WaterQuality, type WaterShadingDetail, type WaterSpectrum,
 } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { waterFftForSurface, type WaterFftResult } from "./water-fft";
@@ -178,16 +178,18 @@ const PIXEL_SLOPE_CAP = 0.012;
 
 const f = (n: number) => n.toFixed(6);
 
-const foamThresholds = new WeakMap<WaterSpectrum, { crest: number; value: number }>();
+const foamThresholds = new WeakMap<WaterSpectrum, { crest: number; scale: number; size: number; cascades: number; value: number }>();
 /**
- * `waterFoamThreshold` of an asset, cached on its spectrum and Crest Foam, and finite for the shaders (Crest Foam 0, no
- * whitecaps, is a sum no sea reaches).
+ * `waterFoamThreshold` of an asset on a body of `waveScale` drawn by a `fftSize`-texel, `cascades`-cascade simulation,
+ * cached on its spectrum, and finite for the shaders (Crest Foam 0, no whitecaps, is a sum no sea reaches). Shaders
+ * compare it to the foam sum divided by `waterFoamScale(waveScale)`.
  */
-export function waterFoamThresholdOf(water: WaterDefinition): number {
-  const spectrum = waterSpectrum(water);
+export function waterFoamThresholdOf(water: WaterDefinition, waveScale = 1, fftSize = 256, cascades = WATER_FFT_CASCADES_MAX): number {
+  const spectrum = waterSpectrum(water), scale = waterFoamScale(waveScale);
   let cached = foamThresholds.get(spectrum);
-  if (!cached || cached.crest !== water.crestFoam) {
-    cached = { crest: water.crestFoam, value: Math.min(waterFoamThreshold(spectrum, water.crestFoam), 1e4) };
+  if (!cached || cached.crest !== water.crestFoam || cached.scale !== scale || cached.size !== fftSize || cached.cascades !== cascades) {
+    const value = Math.min(waterFoamThreshold(spectrum, water.crestFoam, { waveScale: scale, fftSize, cascades }), 1e4);
+    cached = { crest: water.crestFoam, scale, size: fftSize, cascades, value };
     foamThresholds.set(spectrum, cached);
   }
   return cached.value;
@@ -877,8 +879,10 @@ float swAbsorb = max(0.01, U.slateWaterLook.y);
 
 // Foam. Crests: FFT-Ocean's bias of n − 1 cascades plus Crest Foam's threshold, over the summed turbulence.
 float swFoamAmount = U.slateWaterFoam.w;
-// Past the asset's threshold (\`waterFoamThreshold\`): Crest Foam's share of a steep sea, none of a gentle one.
-float swCrestPast = swFoamSum - U.slateWaterShape.x;
+// Past the asset's threshold (\`waterFoamThreshold\`), the sum taken at Wave Scale 1 (\`waterFoamScale\`): Crest Foam's
+// share of a steep sea, none of a gentle one, and a smaller share on calmer bodies.
+float swFoamAt = swFoamSum * U.slateWaterTerms.z;
+float swCrestPast = swFoamAt - U.slateWaterShape.x;
 float swCrestRaw = swCrestPast * ${f(SPECTRUM_FOAM_SCALE)};
 // Fine bubbly breakup drifting with the water, faded before it would alias.
 float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9 + vec2(swTime * 0.05, 0.0)) * 0.65 + swNoise(swFlowed * 3.1 - vec2(0.0, swTime * 0.08)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swFoot));
@@ -887,7 +891,7 @@ float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9 + vec2(swTime * 0.05, 0.0)) 
 float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swEyeDist * swSc0.x);
 float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0) * swPatchFar;
 // Surface Foam: thin lingering residue where turbulence is still recovering behind the caps.
-float swResidue = clamp((swFoamSum - U.slateWaterShape.x * 0.5) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
+float swResidue = clamp((swFoamAt - U.slateWaterShape.x * 0.5) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
 // Edges: foam thick at every object's waterline and along shallow shores, thinning outward (\`edgeFoamHelpers\`).
 float swContactStrength = U.slateWaterTerms.x;
 float swContactW = max(0.05, U.slateWaterShape.w);
@@ -1383,7 +1387,9 @@ export class WaterVertexWaves {
     const camera = scene.activeCamera, origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     const eye = camera?.globalPosition ?? Vector3.ZeroReadOnly;
     sink.setFloat4(WATER_EYE_UNIFORM, eye.x - origin.x, eye.y - origin.y, eye.z - origin.z, 0);
-    sink.setFloat4(WATER_NODE_FOAM_UNIFORM, this.water.crestFoam, this.water.foamAmount, waterFoamThresholdOf(this.water), 0);
+    const quality = sceneWaterQualityDeviceClamp(scene).quality;
+    sink.setFloat4(WATER_NODE_FOAM_UNIFORM, this.water.crestFoam, this.water.foamAmount,
+      waterFoamThresholdOf(this.water, scale, quality.fftSize, this.cascades(scene)), 1 / waterFoamScale(scale));
     const sun = sceneWaterNodeLighting(scene).sun;
     sink.setFloat4(WATER_NODE_SUN_UNIFORM, sun[0]!, sun[1]!, sun[2]!, this.water.subsurface);
   }
@@ -1514,7 +1520,7 @@ vec3 swnBase = ${base};
 swnNormal = normalize(vec3(swnBase.x / max(swnBase.y, 0.001) - swnSlope.x, 1.0, swnBase.z / max(swnBase.y, 0.001) - swnSlope.y));
 swnHeight = swnH * swnSp.x * swnShares.y;
 vec4 swnTerms = U.${WATER_NODE_FOAM_UNIFORM};
-float swnCrestPast = swnFoamSum - swnTerms.z;
+float swnCrestPast = swnFoamSum * swnTerms.w - swnTerms.z;
 float swnPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swnDist * swnSc0.x);
 swnFoam = clamp(swnCrestPast * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0) * clamp(swnTerms.y * 1.6, 0.0, 1.0) * step(0.000001, swnTerms.x) * swnPatchFar;
 ${subsurfaceSource(`U.${WATER_NODE_SUN_UNIFORM}.xyz`, `normalize(U.${WATER_EYE_UNIFORM}.xyz - swnRestW - vec3(0.0, swnHeight, 0.0))`, "swnNormal",
@@ -1741,8 +1747,11 @@ const FRAME_DEFINITION_FIELDS = [
   "subsurface", "waveHeight", "waveLength", "waveSpeed", "waveDirection", "surfaceFoam", "roughness", "colorVariation", "waveSpread",
   "crestFoam", "contactFoamWidth",
 ] as const satisfies readonly (keyof WaterDefinition)[];
-/** Render, clock, origin, scale, tier, reflection source and bank fade; the fields; three colours; each partner's three and nine. */
-const FRAME_KEY_LENGTH = 10 + FRAME_DEFINITION_FIELDS.length + 9 + BLEND_PARTNERS * (3 + 9);
+/**
+ * Render, clock, origin, scale, tier, reflection source, bank fade and the simulation's size and cascades; the fields;
+ * three colours; each partner's three and nine.
+ */
+const FRAME_KEY_LENGTH = 12 + FRAME_DEFINITION_FIELDS.length + 9 + BLEND_PARTNERS * (3 + 9);
 const REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemovalShape${i}`);
 const REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemoval${i}`);
 
@@ -2428,11 +2437,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    * origin, Wave Scale, tier, reflection source and each definition field it reads) and reports whether any changed
    * since the last call, or a partner did. Allocation-free.
    */
-  private frameInputsChanged(data: WaterBindingData, origin: Vector3, scale: number, reflective: boolean, bankFade: number, blend: boolean): boolean {
+  private frameInputsChanged(data: WaterBindingData, origin: Vector3, scale: number, reflective: boolean, bankFade: number, blend: boolean, quality: Readonly<WaterQuality>): boolean {
     const s = this.frameScratch, w = this.water;
     let n = 0;
     s[n++] = data.frame; s[n++] = data.render; s[n++] = this.time; s[n++] = origin.x; s[n++] = origin.y; s[n++] = origin.z;
     s[n++] = scale; s[n++] = this.tier; s[n++] = reflective ? 1 : 0; s[n++] = bankFade;
+    s[n++] = quality.fftSize; s[n++] = quality.fftCascades;
     for (let i = 0; i < FRAME_DEFINITION_FIELDS.length; i++) s[n++] = w[FRAME_DEFINITION_FIELDS[i]!];
     for (let c = 0; c < 3; c++) { s[n++] = w.shallowColor[c]!; s[n++] = w.deepColor[c]!; s[n++] = w.foamColor[c]!; }
     let changed = false;
@@ -2455,7 +2465,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const bankFade = this.bankFade();
     // The depth pre-pass and colour draws (and further views) of one render bind the same values: compare every input
     // (a few dozen numbers) instead of recomputing them, so in-place asset edits still apply at the next draw.
-    if (!this.frameInputsChanged(data, origin, scale, reflective, bankFade, blend)) return this.frameValues;
+    const quality = sceneWaterQualityDeviceClamp(scene).quality;
+    if (!this.frameInputsChanged(data, origin, scale, reflective, bankFade, blend, quality)) return this.frameValues;
     const v = this.frameValues;
     let o = 0;
     const lighting = data.lighting, ambient = withWaterEnvironment(lighting, w.reflectionStrength, reflective);
@@ -2478,8 +2489,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     o = put4(v, o, origin.x, origin.y, origin.z, w.roughness);
     o = put4(v, o, ambient[0]!, ambient[1]!, ambient[2]!, waterBodyLight(ambient, lighting));
     o = put4(v, o, bankFade, 0, w.colorVariation, 0);
-    o = put4(v, o, waterFoamThresholdOf(w), w.waveSpread, w.crestFoam, w.contactFoamWidth);
-    o = put4(v, o, smoothstep(0, 0.1, w.foamAmount) * Math.max(w.foamAmount, 0.85) * smoothstep(0, 0.05, w.contactFoamWidth), smoothstep(0, 0.05, w.crestFoam), 0, 0);
+    o = put4(v, o, waterFoamThresholdOf(w, scale, quality.fftSize, Math.max(1, quality.fftCascades)), w.waveSpread, w.crestFoam, w.contactFoamWidth);
+    o = put4(v, o, smoothstep(0, 0.1, w.foamAmount) * Math.max(w.foamAmount, 0.85) * smoothstep(0, 0.05, w.contactFoamWidth), smoothstep(0, 0.05, w.crestFoam), 1 / waterFoamScale(scale), 0);
     const haze = lighting.haze;
     o = put4(v, o, haze[0]!, haze[1]!, haze[2]!, haze[3]!);
     for (let k = 0; blend && k < BLEND_PARTNERS; k++) {

@@ -281,6 +281,24 @@ describe("Water contact field", () => {
     expect(seaContacts.queued).toBe(0);
   });
 
+  it("meets unindexed geometry, whose vertices are consecutive triangles", () => {
+    setup();
+    const box = MeshBuilder.CreateBox("indexed", { width: 1, height: 4, depth: 1 }, scene);
+    const source = box.getVerticesData(VertexBuffer.PositionKind)!, indices = box.getIndices()!;
+    const positions = Array.from(indices, (index) => [source[index * 3]!, source[index * 3 + 1]!, source[index * 3 + 2]!]).flat();
+    box.dispose();
+    const post = new Mesh("unindexed", scene);
+    Object.assign(new VertexData(), { positions }).applyToMesh(post);
+    post.isUnIndexed = true;
+    post.position.set(2, 0, 0);
+    frame();
+    const field = new WaterContactField(scene, flatSurface(scene, 0.3));
+    field.update(0);
+    expect(Math.abs(contactAt(field, 2.52, 0, 0))).toBeLessThan(0.1);
+    expect(contactAt(field, 2, 0, 0)).toBeLessThan(0);
+    field.dispose();
+  });
+
   it("rounds the crease where two objects' distances meet, but keeps each waterline exact", () => {
     setup();
     for (const x of [-2, 2]) MeshBuilder.CreateBox(`post ${x}`, { width: 1, height: 4, depth: 1 }, scene).position.set(x, 0, 0);
