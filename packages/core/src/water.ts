@@ -3,6 +3,7 @@ import { identityTransform } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import { sampleSplinePath, SPLINE_SUBDIVISIONS } from "./spline-component";
 import { evaluateWaterSpectrum, waterSpectrum, type WaterSpectrum } from "./water-spectrum";
+import { waterHorizontalEnvelopeOf, waterWaveEnvelopeOf } from "./water-envelope";
 
 export type WaterKind = "global" | "ocean" | "lake" | "river" | "puddle";
 export type WaterColor = [number, number, number];
@@ -299,7 +300,12 @@ export function invertWaterWaves(
  * envelopes, so the offset stays well inside every bank. Zero without sideways motion.
  */
 export function waterBankFadeLength(water: WaterDefinition, scale = 1): number {
-  return WATER_BANK_FADE_ENVELOPES * waterHorizontalEnvelope(water, scale);
+  return waterBankFadeLengthOf(waterSpectrum(water), scale);
+}
+
+/** `waterBankFadeLength` of a spectrum the caller already holds, for per-query paths. */
+function waterBankFadeLengthOf(spectrum: WaterSpectrum, scale: number): number {
+  return WATER_BANK_FADE_ENVELOPES * waterHorizontalEnvelopeOf(spectrum, scale);
 }
 
 /**
@@ -332,12 +338,12 @@ export function evaluateWaterVertex(
 
 /** Bound on |H| for a body (metres): four standard deviations of the sea's height. */
 export function waterWaveEnvelope(water: WaterDefinition, scale = 1): number {
-  return Math.abs(scale) * 4 * waterSpectrum(water).sigma;
+  return waterWaveEnvelopeOf(waterSpectrum(water), scale);
 }
 
 /** Bound on the Gerstner horizontal offset |D| for a body (metres): λ times the height envelope. Zero at Steepness 0. */
 export function waterHorizontalEnvelope(water: WaterDefinition, scale = 1): number {
-  return waterSpectrum(water).choppiness * waterWaveEnvelope(water, scale);
+  return waterHorizontalEnvelopeOf(waterSpectrum(water), scale);
 }
 
 /**
@@ -354,7 +360,8 @@ const waveScratch = createWaterWaveOutput(), gradientScratch = new Float64Array(
 /**
  * Surface waves under world (x, z) in world metres, independent of the volume's transform. The world point is inverted
  * to its rest point first, so height, normal (J⁻ᵀ∇H) and `velocity` (∂η/∂t at this fixed X/Z) describe the rendered
- * surface; `orbital` is the water's horizontal particle velocity.
+ * surface; `orbital` is the water's horizontal particle velocity. Not a runtime path (queries use `sampleWaterSurface`):
+ * it is the transform-free reference surface the core water tests and the render mesh parity tests check against.
  */
 export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, time: number, scale = 1) {
   const spectrum = waterSpectrum(water), o = waveScratch;
@@ -531,11 +538,12 @@ export function sampleWaterSurface(
   let hit = waterRestBase(body, transform, inverse, ray, position.x, position.y, position.z);
   if (!hit?.footprint.inside) return emptyWaterSample();
   if (gerstner) {
-    const fadeLength = body.kind === "global" ? 0 : waterBankFadeLength(water, scale);
+    const horizontal = waterHorizontalEnvelopeOf(spectrum, scale);
+    const fadeLength = body.kind === "global" ? 0 : waterBankFadeLengthOf(spectrum, scale);
     let gain: WaterWaveGain | undefined;
     // A rest point within the fade band lies at most one horizontal envelope from the query; further inside, the
     // rest point is unfaded and the plain inversion is exact.
-    if (fadeLength > 0 && waterBankDistance(hit.footprint, transform, bankScratch) < fadeLength + waterHorizontalEnvelope(water, scale)) {
+    if (fadeLength > 0 && waterBankDistance(hit.footprint, transform, bankScratch) < fadeLength + horizontal) {
       Object.assign(bankGain, { body, transform, inverse, ray, y: position.y, fadeLength });
       gain = bankGain;
     }

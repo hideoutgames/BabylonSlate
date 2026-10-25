@@ -20,9 +20,15 @@ export function lfsEndpointFromRepoUrl(raw: string): string | null {
     return httpsLfsBase(scp[1]!, scp[2]!);
   }
 
-  const ssh = trimmed.match(/^ssh:\/\/(?:git@)?([^/]+)\/(.+)$/);
-  if (ssh) {
-    return httpsLfsBase(ssh[1]!, ssh[2]!);
+  if (/^ssh:\/\//i.test(trimmed)) {
+    // The SSH user and port do not apply to the HTTPS host.
+    try {
+      const url = new URL(trimmed);
+      if (!url.hostname || url.pathname === "/" || url.pathname === "") return null;
+      return httpsLfsBase(url.hostname, url.pathname);
+    } catch {
+      return null;
+    }
   }
 
   try {

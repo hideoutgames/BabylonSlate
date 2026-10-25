@@ -2,7 +2,6 @@ import {
   identityTransform,
   newGuid,
   normalizeScenePostProcessStack,
-  normalizeSceneStreamingProperties,
   normalizeMaterialInstanceOverrides,
   normalizeSuppressedComponentSourceIds,
   type MaterialInstanceOverrides,
@@ -328,20 +327,7 @@ export class SceneLayerActorSwitcher extends Actor {
 }
 
 /** Typed live actor identity for a placed additive-scene origin. */
-export class SceneStreamingActor extends Actor {
-  get targetSceneGuid(): string {
-    return this.sceneStreamingProperties.sceneGuid;
-  }
-
-  get targetSceneName(): string {
-    return this.sceneStreamingProperties.sceneName;
-  }
-
-  private get sceneStreamingProperties() {
-    const component = this.components.find((entry) => entry.classId === "SceneStreamingComponent");
-    return normalizeSceneStreamingProperties(component ? Object.fromEntries(component.variables) : undefined);
-  }
-}
+export class SceneStreamingActor extends Actor {}
 
 export class ActorComponent extends EngineObject {
   override callOnDestroyed(): void {

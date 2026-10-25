@@ -26,6 +26,15 @@ describe("lfsEndpointFromRepoUrl", () => {
     );
   });
 
+  it("drops the SSH port and user from the HTTPS LFS host", () => {
+    expect(lfsEndpointFromRepoUrl("ssh://git@gitlab.example.com:2222/group/repo.git")).toBe(
+      "https://gitlab.example.com/group/repo.git/info/lfs",
+    );
+    expect(lfsEndpointFromRepoUrl("ssh://alice@host.example.com/org/repo")).toBe(
+      "https://host.example.com/org/repo.git/info/lfs",
+    );
+  });
+
   it("derives GitLab and Gitea HTTPS and SSH remotes", () => {
     expect(lfsEndpointFromRepoUrl("https://gitlab.com/group/sub/repo.git")).toBe(
       "https://gitlab.com/group/sub/repo.git/info/lfs",
