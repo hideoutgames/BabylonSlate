@@ -5,6 +5,7 @@ import {
   beginPipelineDeferral,
   deferredPipelineCount,
   deferredPipelinesStalled,
+  drawsInPass,
   PIPELINE_DEFERRAL_STALL_MS,
 } from "./webgpu-pipeline-deferral";
 import { DriverCompileWatch } from "./driver-compile";
@@ -131,6 +132,138 @@ describe("beginPipelineDeferral", () => {
     expect(after.close()).toBe(0);
     expect(drawn).toHaveLength(2);
     expect(device.createRenderPipeline).toHaveBeenCalledTimes(2);
+  });
+
+  /** An engine whose geometry pass (2) already has a pipeline for effect 5 (created outside any scope), as a drawn floor does. */
+  function withFloor() {
+    const fixture = webGpuEngine();
+    fixture.draw(5, 2);
+    fixture.device.createRenderPipeline.mockClear();
+    fixture.drawn.length = 0;
+    return fixture;
+  }
+  const geometryPass = 2;
+  const admitted = (pass: number) => pass === 1 || pass === geometryPass;
+  const omits = (pass: number) => pass === geometryPass;
+
+  it("leaves a draw out of an omitted pass without counting it, starts its pipeline past the hold cap and draws once it exists", async () => {
+    const { engine, device, drawn, draw, resolve } = withFloor();
+    const first = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(5, geometryPass);
+    draw(7, geometryPass);
+    // The object pass's miss in the same scope still holds the frame.
+    draw(8, 1);
+    expect(first.close()).toBe(1);
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(2);
+    // Past the view's hold cap its own misses compile synchronously; an omitted one still defers.
+    const capped = beginPipelineDeferral(engine, admitted, { startsDeferrals: false, omits })!;
+    draw(5, geometryPass);
+    draw(7, geometryPass);
+    draw(9, geometryPass);
+    expect(capped.close()).toBe(0);
+    expect(capped.waiting()).toBe(false);
+    expect(drawn).toEqual([{ label: "sync" }, { label: "sync" }]);
+    expect(drawsInPass(engine, geometryPass)).toBe(2);
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(3);
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    const pipeline = { label: "async" };
+    resolve(pipeline);
+    await settle();
+    const next = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(9, geometryPass);
+    expect(next.close()).toBe(0);
+    expect(drawn.at(-1)).toBe(pipeline);
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+  });
+
+  it("holds for an omitted pass whose every draw was left out, so its output is never presented empty", async () => {
+    const { engine, draw, resolve } = withFloor();
+    const frame = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(7, geometryPass);
+    expect(frame.close()).toBe(1);
+    expect(frame.waiting()).toBe(true);
+    resolve({ label: "async" });
+    await settle();
+    expect(frame.waiting()).toBe(false);
+  });
+
+  it("draws an omitted pass's draw with a synchronous pipeline once deferred creation stalls", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine, device, drawn, draw } = withFloor();
+    const frame = beginPipelineDeferral(engine, omits, { omits })!;
+    draw(5, geometryPass);
+    draw(4, geometryPass);
+    expect(frame.close()).toBe(0);
+    now += PIPELINE_DEFERRAL_STALL_MS - 1;
+    const early = beginPipelineDeferral(engine, omits, { omits })!;
+    draw(4, geometryPass);
+    draw(5, geometryPass);
+    early.close();
+    expect(drawn).toHaveLength(2);
+    now += 1;
+    const stalled = beginPipelineDeferral(engine, omits, { omits })!;
+    draw(4, geometryPass);
+    expect(stalled.close()).toBe(0);
+    expect(drawn).toHaveLength(3);
+    expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up a left-out draw's own creation after the stall time while other creations keep the Engine progressing", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine, device, draw } = withFloor();
+    const frame = (...draws: [number, number][]) => {
+      const scope = beginPipelineDeferral(engine, admitted, { omits })!;
+      draw(5, geometryPass);
+      for (const [effect, pass] of draws) draw(effect, pass);
+      scope.close();
+    };
+    frame([4, geometryPass]);
+    // Another view's miss starts a creation later, so the Engine-wide stall is not reached when the first one's is.
+    now += PIPELINE_DEFERRAL_STALL_MS / 2;
+    frame([9, 1]);
+    now += PIPELINE_DEFERRAL_STALL_MS / 2 - 1;
+    frame([4, geometryPass]);
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    now += 1;
+    frame([4, geometryPass]);
+    expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+    // The other creation still waits on its own.
+    expect(deferredPipelineCount(engine)).toBe(1);
+  });
+
+  it("past the hold cap compiles a miss synchronously in an omitted pass that has drawn nothing yet, which would hold", () => {
+    const { engine, device, drawn, draw } = withFloor();
+    const capped = beginPipelineDeferral(engine, admitted, { startsDeferrals: false, omits })!;
+    draw(7, geometryPass);
+    expect({ skipped: capped.close(), waiting: capped.waiting(), drawn: drawn.length })
+      .toEqual({ skipped: 0, waiting: false, drawn: 1 });
+    expect(device.createRenderPipelineAsync).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting for a left-out draw counted at close after its own stall time, while other creations progress", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine, device, draw } = withFloor();
+    // The geometry pass draws nothing else: the frame holds for its left-out draw.
+    const held = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(7, geometryPass);
+    expect(held.close()).toBe(1);
+    // Another view's miss starts a creation later, so the Engine-wide stall is not reached when this one's is.
+    now += PIPELINE_DEFERRAL_STALL_MS / 2;
+    const other = beginPipelineDeferral(engine, objectPass)!;
+    draw(9);
+    other.close();
+    now += PIPELINE_DEFERRAL_STALL_MS / 2 - 1;
+    expect(held.waiting()).toBe(true);
+    now += 1;
+    expect({ held: held.waiting(), other: other.waiting() }).toEqual({ held: false, other: true });
+    // The next frame draws it with a synchronous pipeline.
+    const next = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(7, geometryPass);
+    expect(next.close()).toBe(0);
+    expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
   });
 
   it("warms a pipeline without drawing: a miss starts it asynchronously past the hold cap, a hit is skipped too, and the view counts neither", async () => {

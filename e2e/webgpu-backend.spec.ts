@@ -209,6 +209,19 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     pointOff: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     spotShadows: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
   });
+  // With a geometry pass (temporal anti-aliasing), a spawn with a variant nothing compiled stays hidden until its colour
+  // pipelines exist, then is left out of the geometry pass alone, holding no frame, until its geometry pipeline exists;
+  // a light switching off keeps the floor's geometry Effect while its colour variant swaps.
+  const geometry = result.geometrySpawn!;
+  expect({
+    geometryPass: geometry.geometryPass, settled: geometry.settled, done: geometry.done, held: geometry.held,
+    hidden: geometry.hiddenFrames > 0, leftOut: geometry.leftOutFrames > 0, synchronous: geometry.pipelines.synchronous,
+    asynchronous: geometry.pipelines.asynchronous > 0,
+    lightOff: { done: geometry.lightOff.done, held: geometry.lightOff.held, geometryKept: geometry.lightOff.geometryKept },
+  }, JSON.stringify(geometry)).toEqual({
+    geometryPass: true, settled: true, done: true, held: 0, hidden: true, leftOut: true, synchronous: 0, asynchronous: true,
+    lightOff: { done: true, held: 0, geometryKept: true },
+  });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);

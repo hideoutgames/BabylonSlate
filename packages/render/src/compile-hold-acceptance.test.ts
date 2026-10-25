@@ -15,7 +15,8 @@
  *   pipeline, which stays pending until `release` (`beginPipelineDeferral` and
  *   `pipelinesDeferred` are replaced by a model: NullEngine is not WebGPU). A
  *   warm scope's draws are always skipped and report whether their pipeline
- *   exists.
+ *   exists; a pass the view's scope omits (its geometry passes in steady frames)
+ *   leaves a draw whose pipeline is pending out and holds nothing.
  *
  * It records counts and states only, never timings: Effects compiled, frames
  * the world view held its image, whether the hold signal and the game-time
@@ -48,6 +49,7 @@ import {
   SpotLight,
   StandardMaterial,
   SubMesh,
+  TransformNode,
   UniversalCamera,
   Vector3,
   type AbstractEngine,
@@ -61,13 +63,16 @@ import {
   type ScriptBundleEntry,
 } from "@haptic/bridge";
 import {
-  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, normalizeRenderingQuality,
+  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEngine } from "./create-engine";
+import { drawsInPass } from "./webgpu-pipeline-deferral";
 import { effectLightSeats } from "./fixed-light-binding";
+import { upsertFogVolumes } from "./fog-volumes";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { isForwardLightExcluded, nearForwardAdmissions, setAuthoredLightEnabled } from "./light-policy";
@@ -97,6 +102,7 @@ vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
   return {
     ...actual,
+    drawsInPass: vi.fn(actual.drawsInPass),
     beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral),
     pipelinesDeferred: vi.fn(actual.pipelinesDeferred),
     effectDrawn: vi.fn(actual.effectDrawn),
@@ -158,10 +164,12 @@ class FakeCanvas {
   }
 }
 
+const { drawsInPass: actualDrawsInPass } = await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
   vi.restoreAllMocks();
+  vi.mocked(drawsInPass).mockImplementation(actualDrawsInPass);
   vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
   vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   vi.mocked(effectDrawn).mockImplementation(actualEffectDrawn);
@@ -245,16 +253,30 @@ function driverModel(engine: NullEngine, model: Model) {
   const drawnEffects = new WeakSet<Effect>();
   /** WebGPU model: Effects whose pipeline a draw outside any deferring scope (a shadow map's) created synchronously. */
   const synchronous = new Set<Effect>();
-  type Scope = { allows: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number; effects: Set<Effect> };
+  /** WebGPU model: Effects whose draw a pass the view's scope omits left out while their pipeline was pending. */
+  const omitted = new Set<Effect>();
+  /** WebGPU model: draws that reached the GPU (not skipped, left out or made only to warm), in all and by render pass. */
+  let draws = 0;
+  const passDraws = new Map<number, number>();
+  type Scope = {
+    allows: (pass: number) => boolean; omits?: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number;
+    effects: Set<Effect>;
+    /** Per omitting pass, the Effects whose draws it left out, and the omitting passes in which some draw drew. */
+    omittedIn: Map<number, Set<Effect>>; drew: Set<number>;
+  };
   const scopes: Scope[] = [];
   if (model === "webgpu") {
     vi.mocked(pipelinesDeferred).mockReturnValue(true);
     vi.mocked(effectDrawn).mockImplementation((_engine, effect) => drawnEffects.has(effect as Effect));
+    vi.mocked(drawsInPass).mockImplementation((_engine, pass) => passDraws.get(pass) ?? 0);
     vi.mocked(deferredPipelinesStalled).mockImplementation(() => performance.now() - progressAt >= PIPELINE_DEFERRAL_STALL_MS);
     vi.mocked(beginPipelineDeferral).mockImplementation((_engine, allows, options = {}) => {
       if (options.nested && !scopes.length) return undefined;
       const warm = options.warm === true;
-      const scope: Scope = { allows, warm, skipped: 0, lookups: 0, hits: 0, effects: new Set() };
+      const scope: Scope = {
+        allows, omits: warm ? undefined : options.omits, warm, skipped: 0, lookups: 0, hits: 0, effects: new Set(), omittedIn: new Map(),
+        drew: new Set(),
+      };
       scopes.push(scope);
       let closed = false;
       return {
@@ -263,6 +285,16 @@ function driverModel(engine: NullEngine, model: Model) {
             closed = true;
             const index = scopes.lastIndexOf(scope);
             if (index >= 0) scopes.splice(index, 1);
+            // A pass whose every draw was left out holds for them, as the real deferral does.
+            for (const [pass, effects] of scope.omittedIn) {
+              if (scope.drew.has(pass)) continue;
+              scope.skipped += effects.size;
+              for (const effect of effects) {
+                omitted.delete(effect);
+                pipelines.add(effect);
+                scope.effects.add(effect);
+              }
+            }
             const parent = scopes[index - 1];
             if (parent && !warm) {
               parent.skipped += scope.skipped;
@@ -299,6 +331,15 @@ function driverModel(engine: NullEngine, model: Model) {
           } else scope.hits += 1;
           return;
         }
+        // A pass the scope omits leaves the draw out and holds nothing: neither skipped nor waited for.
+        const pass = internals.currentRenderPassId;
+        if (scope?.omits?.(pass) && missing) {
+          omitted.add(effect);
+          let effects = scope.omittedIn.get(pass);
+          if (!effects) scope.omittedIn.set(pass, (effects = new Set()));
+          effects.add(effect);
+          return;
+        }
         if (scope && missing) {
           pipelines.add(effect);
           scope.skipped += 1;
@@ -312,6 +353,9 @@ function driverModel(engine: NullEngine, model: Model) {
           pipelineReady.add(effect);
         }
         if (effect) drawnEffects.add(effect);
+        draws += 1;
+        if (scopes.length) passDraws.set(pass, (passDraws.get(pass) ?? 0) + 1);
+        if (scope?.omits?.(pass)) scope.drew.add(pass);
         draw(...args);
       }) as never);
     }
@@ -347,6 +391,10 @@ function driverModel(engine: NullEngine, model: Model) {
     pipelines,
     /** WebGPU model: Effects whose pipeline a warm draw started before any real draw needed it. */
     warmPipelines,
+    /** WebGPU model: Effects a geometry pass left out while their pipeline was pending, holding nothing. */
+    omitted,
+    /** WebGPU model: draws so far that reached the GPU. */
+    draws: () => draws,
     /** WebGPU model: Effects whose pipeline a shadow map's draw created synchronously (the shadow pass defers none). */
     synchronous,
     /** WebGPU model: a warm scope is open (draws in its passes only create pipelines). */
@@ -457,12 +505,15 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
   // The world view's frames, as the render loop drives them.
   const views: Array<{ rendered: boolean; reason?: string; holding: boolean; checks: number }> = [];
   const render = SceneRenderCoordinator.prototype.render;
-  vi.spyOn(SceneRenderCoordinator.prototype, "render").mockImplementation(function (this: SceneRenderCoordinator, ...args) {
+  const renders = vi.spyOn(SceneRenderCoordinator.prototype, "render").mockImplementation(function (this: SceneRenderCoordinator, ...args) {
     const result = render.apply(this, args);
     if ((this as unknown as { scene: unknown }).scene === handle.scene)
       views.push({ rendered: result.rendered, reason: result.reason, holding: this.holdingForPipelines, checks: this.strictReadinessChecks });
     return result;
   });
+  /** The world view's coordinator, once it has drawn. */
+  const view = () => (renders.mock.contexts as SceneRenderCoordinator[])
+    .filter((context) => (context as unknown as { scene: unknown }).scene === handle.scene).at(-1)!;
   /** One Play frame, then `FRAME_MS` of timers and microtasks (preparation, presentation, material preparation). */
   const frame = async () => {
     handle.scheduler.invalidate("manual");
@@ -486,7 +537,7 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     const pass = engine.getRenderPassNames().lastIndexOf("Forward objects#0");
     return pass < 0 ? null : handle.scene.getMeshByName(subject)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
   };
-  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect };
+  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect, view };
 }
 
 type PlayWorld = ReturnType<typeof playWorld>;
@@ -1896,6 +1947,262 @@ describe("compile holds after the first frame", () => {
       hiddenWhilePending: true, revealed: names, together: true, shown: [true, true], viewPipelines: 0, holdRaised: false,
       materials: [expect.stringContaining("surface-a"), expect.stringContaining("surface-b")],
     });
+  });
+
+  /**
+   * Temporal anti-aliasing on (in any render mode), with `effects` on top: the world view's graph draws the spatial
+   * geometry pass (view depth and velocity) every frame, and no warm draw creates its pipelines.
+   */
+  function withGeometryPass(world: PlayWorld, effects: Partial<ReturnType<typeof sceneRenderingSettings>["effects"]> = {}) {
+    // The spatial chain also needs texel fetches.
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    updateSceneRenderingSettings(world.handle.scene, { effects: { ...sceneRenderingSettings(world.handle.scene).effects,
+      temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 }, ...effects } });
+  }
+  /** A geometry pass's variant: Babylon's geometry rendering defines `PREPASS`. */
+  const geometryVariant = (effect: Effect) => /#define PREPASS\b/.test(effect.defines);
+
+  it.each(["a spawned actor is revealed", "an actor's Material changes"] as const)(
+    "with a geometry pass, %s with no frame held and fills the geometry buffers once its pipeline exists: webgpu", async (cause) => {
+    // The new Material's colour pipelines are warmed while the barrel is hidden; its geometry variant's pipeline is
+    // started only by its first geometry draw, after the reveal, and arrives later (`lagOnly`). Meanwhile that pass
+    // alone leaves the barrel out, and the view keeps drawing.
+    const barrel: Actor = { slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } };
+    const changes = cause === "an actor's Material changes";
+    const world = playWorld("webgpu", changes ? [barrel] : [], ["surface-a"]);
+    if (changes) world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    withGeometryPass(world);
+    /** The passes the barrel really drew in (`pass:mesh`), since last cleared; a draw left out or skipped is not one. */
+    const drawn = new Set<string>();
+    const render = Mesh.prototype.render;
+    vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
+      const before = world.driver.draws();
+      const result = render.apply(this, args);
+      if (world.driver.draws() > before) drawn.add(`${world.engine.getCurrentRenderPassName()}:${this.name}`);
+      return result;
+    });
+    await settle(world);
+    // A Material library that gains the new Material prepares the view again; let it settle first.
+    world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+    for (let index = 0; index < 6; index++) await world.frame();
+    const geometry = world.engine.getRenderPassNames().filter((name) => name?.startsWith("Spatial Geometry"));
+    const holdsBefore = world.holds.length;
+    world.driver.arm();
+    if (!changes) world.place(barrel);
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
+    /** Each frame: whether the view drew and reported holding, and where the barrel drew. */
+    const frames: Array<{ rendered: boolean; holding: boolean; colour: boolean; geometry: boolean }> = [];
+    const step = async () => {
+      drawn.clear();
+      const { view, holding } = await world.frame();
+      frames.push({ rendered: view?.rendered === true, holding, colour: drawn.has("Forward objects#0:actor-20"),
+        geometry: [...drawn].some((entry) => entry.startsWith("Spatial Geometry") && entry.endsWith(":actor-20")) });
+    };
+    // Every new pipeline pending: the barrel is hidden while its colour pipelines are warmed.
+    for (let index = 0; index < 2; index++) await step();
+    // The colour pipelines arrive; the geometry variant's still lags.
+    world.driver.lagOnly(geometryVariant);
+    for (let index = 0; index < 6; index++) await step();
+    const lagging = frames.length;
+    world.driver.release();
+    for (let index = 0; index < 2; index++) await step();
+    const revealed = frames.findIndex((frame) => frame.colour);
+    expect({
+      geometryPass: geometry.length > 0, revealedWhileLagging: revealed >= 2 && revealed < lagging - 1,
+      held: frames.filter((frame) => !frame.rendered || frame.holding).length, holdRaised: world.holds.slice(holdsBefore).includes(true),
+      paused: isSceneGameTimePaused(world.handle.scene), synchronousPipelines: world.driver.synchronous.size,
+      // From its reveal the barrel draws in the colour pass every frame, and into the geometry buffers from the first
+      // frame its geometry pipeline exists.
+      colourFromReveal: frames.slice(revealed).every((frame) => frame.colour),
+      geometryWhileLagging: frames.slice(0, lagging).some((frame) => frame.geometry),
+      geometryOnceReady: frames.slice(lagging).every((frame) => frame.geometry),
+      leftOut: world.driver.omitted.size > 0 && [...world.driver.omitted].every(geometryVariant),
+    }, JSON.stringify(frames)).toEqual({
+      geometryPass: true, revealedWhileLagging: true, held: 0, holdRaised: false, paused: false, synchronousPipelines: 0,
+      colourFromReveal: true, geometryWhileLagging: false, geometryOnceReady: true, leftOut: true,
+    });
+  });
+
+  it.each(["a point light switches off", "a spot light starts casting shadows"] as const)(
+    "with a geometry pass, %s with no new geometry variant: webgpu", async (cause) => {
+    // Geometry variants carry the Material's light defines, but no geometry attachment reads the lights: the geometry
+    // pass keeps the defines it prepared, so the receivers keep drawing their geometry Effects there (no pipeline to
+    // create, nothing left out), while the object pass swaps to their new variants as without the pass.
+    const world = playWorld("webgpu", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])], [], "actor-1");
+    withGeometryPass(world);
+    const geometryEffects = () => {
+      const pass = world.engine.getRenderPassNames().lastIndexOf("Spatial Geometry#0");
+      return ["actor-1", "actor-2"].map((name) => world.handle.scene.getMeshByName(name)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null);
+    };
+    let before: (Effect | null)[] = [];
+    const record = await measure(world, () => cause === "a point light switches off"
+      ? world.place(point(11, [1.5, 2.5, -1], { enabled: false }))
+      : world.place(spot(12, [0, 5, 0], { castShadows: true })), () => { before = geometryEffects(); });
+    expectSwapped(record, "webgpu");
+    expect({ drawnBefore: before.every(Boolean), geometryVariants: world.driver.created.filter(geometryVariant).length,
+      leftOut: world.driver.omitted.size, kept: geometryEffects().every((effect, index) => effect === before[index]) })
+      .toEqual({ drawnBefore: true, geometryVariants: 0, leftOut: 0, kept: true });
+  });
+
+  it("a geometry effect switched on mid-game holds the view for its new graph's geometry pipelines: webgpu", async () => {
+    // Ambient occlusion adds world normals to the geometry pass, so the rebuilt graph's geometry variants are new for
+    // every mesh at once. Until a build has drawn a complete frame it keeps the hold (bounded by the hold cap and the
+    // stall) rather than present every mesh missing from the geometry buffers.
+    const world = playWorld("webgpu", []);
+    withGeometryPass(world);
+    const record = await measure(world, () => withGeometryPass(world, {
+      ambientOcclusion: { ...sceneRenderingSettings(world.handle.scene).effects.ambientOcclusion, enabled: true } }));
+    expect({ geometryVariants: world.driver.created.some(geometryVariant), held: record.heldFrames > 0, holdReported: record.holdReported,
+      leftOut: world.driver.omitted.size, recovered: record.recovered }, JSON.stringify(record)).toEqual({
+      geometryVariants: true, held: true, holdReported: true, leftOut: 0, recovered: true,
+    });
+  });
+
+  it("a geometry pass that first draws when a Fog Volume comes within reach holds the view for its pipelines: webgpu", async () => {
+    // Fog Volumes alone run the geometry pass only while one is within reach of the camera, so the view's complete
+    // frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a new graph's do.
+    const world = playWorld("webgpu", []);
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    const fog = new TransformNode("fog", world.handle.scene);
+    fog.position.z = 5_000;
+    upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
+    const record = await measure(world, () => { fog.position.z = 0; });
+    // Its geometry variants are compiled only once it runs: the pass had not drawn before.
+    expect({ geometryVariants: world.driver.created.some(geometryVariant), held: record.heldFrames > 0, holdReported: record.holdReported,
+      leftOut: world.driver.omitted.size, recovered: record.recovered }, JSON.stringify(record)).toEqual({
+      geometryVariants: true, held: true, holdReported: true, leftOut: 0, recovered: true,
+    });
+  });
+
+  /** Gives the world's meshes (by name) PBR Materials of their own before the load: one can then change alone. */
+  const ownMaterials = (world: PlayWorld, ...names: string[]) => names.map((name) => {
+    const material = (world.handle.scene.defaultMaterial as PBRMaterial).clone(name);
+    world.handle.scene.getMeshByName(name)!.material = material;
+    return material;
+  });
+  /**
+   * Changes a define of each Material (it normalizes in the forward shader) as a runtime change does, marking the Scene's
+   * readiness: every pass, the geometry pass included, asks its meshes for a new variant.
+   */
+  const changeDefines = (world: PlayWorld, ...materials: PBRMaterial[]) => {
+    for (const material of materials) material.forceNormalForward = !material.forceNormalForward;
+    markSceneReadinessDirty(world.handle.scene);
+  };
+  /**
+   * From now on new geometry variants' pipelines (those `lags` picks) lag while every other pipeline exists at once;
+   * `change` then gives some mesh a new geometry variant. Records `frames` frames, releases the lag and lets the view
+   * recover.
+   */
+  async function geometryLag(world: PlayWorld, change: () => void | Promise<void>, frames = 4, lags = geometryVariant) {
+    world.driver.arm();
+    world.driver.lagOnly(lags);
+    const holdsBefore = world.holds.length;
+    await change();
+    const lagging: { rendered: boolean; holding: boolean }[] = [];
+    for (let index = 0; index < frames; index++) {
+      const { view, holding } = await world.frame();
+      lagging.push({ rendered: view?.rendered === true, holding });
+    }
+    world.driver.release();
+    let recovered = false;
+    for (let index = 0; index < 6 && !recovered; index++) recovered = (await world.frame()).view?.rendered === true;
+    return {
+      geometryVariants: world.driver.created.some(geometryVariant),
+      held: lagging.some((frame) => !frame.rendered), holdRaised: world.holds.slice(holdsBefore).includes(true),
+      leftOut: world.driver.omitted.size, waitedFor: [...world.driver.pipelines].some(geometryVariant), recovered,
+    };
+  }
+  /** A pass's first draws of a variant hold, as a new graph's do: nothing left out, the view waits and then draws. */
+  const HELD = { geometryVariants: true, held: true, holdRaised: true, leftOut: 0, waitedFor: true, recovered: true };
+
+  it("a Fog Volume pass that went idle holds again for its next draws: webgpu", async () => {
+    // The pass drew while a volume was within reach, then idled while the crate's geometry variant changed. A volume
+    // coming within reach again draws that new variant first; an idle pass is forgotten, so it holds as a first draw.
+    const world = playWorld("webgpu", []);
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    const fog = new TransformNode("fog", world.handle.scene);
+    upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
+    const [crate] = ownMaterials(world, "actor-2");
+    await settle(world);
+    fog.position.z = 5_000;
+    for (let index = 0; index < 3; index++) await world.frame();
+    expect(await geometryLag(world, async () => {
+      changeDefines(world, crate!);
+      for (let index = 0; index < 4; index++) await world.frame();
+      fog.position.z = 0;
+    })).toEqual(HELD);
+  });
+
+  it("a geometry pass whose complete frames drew nothing holds for its first draws: webgpu", async () => {
+    // A new graph (Bloom switched on) with nothing in view (both meshes disabled, as facing the sky): its geometry pass
+    // runs and draws nothing. Back in view, the floor finds its pipeline and the crate's new geometry variant misses:
+    // the pass has drawn nothing yet, so it holds as a first draw.
+    const world = playWorld("webgpu", []);
+    withGeometryPass(world);
+    const [crate] = ownMaterials(world, "actor-2");
+    await settle(world);
+    const meshes = ["actor-1", "actor-2"].map((name) => world.handle.scene.getMeshByName(name)!);
+    for (const mesh of meshes) mesh.setEnabled(false);
+    withGeometryPass(world, { bloom: { ...sceneRenderingSettings(world.handle.scene).effects.bloom, enabled: true } });
+    const pass = () => world.engine.getRenderPassNames().lastIndexOf("Spatial Geometry#0");
+    const drew: number[] = [];
+    let drawn = 0;
+    for (let index = 0; index < 8; index++) {
+      if ((await world.frame()).view?.rendered) drawn++;
+      drew.push(drawsInPass(world.engine, pass()));
+    }
+    // Enabled again, the meshes rejoin the view's lists first (a few frames not drawn), then draw. Only the crate's new
+    // geometry variant lags: the floor's, new in this graph too, has its pipeline at once.
+    const record = await geometryLag(world, () => {
+      changeDefines(world, crate!);
+      for (const mesh of meshes) mesh.setEnabled(true);
+    }, 12, (effect) => geometryVariant(effect) && /#define FORCENORMALFORWARD\b/.test(effect.defines));
+    expect({ ...record, drewNothingBefore: drawn > 0 && drew.every((count) => count === 0) }).toEqual({ ...HELD, drewNothingBefore: true });
+  });
+
+  it("a steady frame whose deferral counts a geometry pass's left-out draws holds and reports the hold: webgpu", async () => {
+    // The floor and the crate get new geometry variants at once, so every draw of the pass is left out. Whether those
+    // count is the deferral's rule (`close()`, modelled here and tested in `webgpu-pipeline-deferral.test.ts`); this
+    // covers the view's response to a steady frame that counts them: it holds, reports the hold, waits and recovers.
+    const world = playWorld("webgpu", []);
+    withGeometryPass(world);
+    const materials = ownMaterials(world, "actor-1", "actor-2");
+    await settle(world);
+    expect(await geometryLag(world, () => changeDefines(world, ...materials))).toEqual(HELD);
+  });
+
+  it("an invalidated view holds for its geometry pass's next draws: webgpu", async () => {
+    // An invalidation starts a new run, which can give every mesh new geometry variants: its geometry pass holds for
+    // a miss until it has drawn a complete frame again.
+    const world = playWorld("webgpu", []);
+    withGeometryPass(world);
+    const [crate] = ownMaterials(world, "actor-2");
+    await settle(world);
+    expect(await geometryLag(world, () => {
+      changeDefines(world, crate!);
+      world.view().invalidate();
+    }, 6)).toEqual(HELD);
+  });
+
+  it("a frame report's frame never leaves a geometry draw out: webgpu", async () => {
+    // Steady frames leave the crate's new geometry variant out and draw; the frame a report captures validates its
+    // presentation, so it holds for that pipeline instead of reporting a frame without the crate's geometry.
+    const world = playWorld("webgpu", []);
+    withGeometryPass(world);
+    const [crate] = ownMaterials(world, "actor-2");
+    await settle(world);
+    world.driver.arm();
+    world.driver.lagOnly(geometryVariant);
+    changeDefines(world, crate!);
+    const steady: boolean[] = [];
+    for (let index = 0; index < 3; index++) steady.push((await world.frame()).view?.rendered === true);
+    const leftOut = world.driver.omitted.size;
+    void world.handle.captureFrame().catch(() => {});
+    const captured = (await world.frame()).view;
+    world.driver.release();
+    for (let index = 0; index < 4; index++) await world.frame();
+    expect({ steady, leftOut, captured: captured?.rendered, reason: captured?.reason })
+      .toEqual({ steady: [true, true, true], leftOut: 1, captured: false, reason: "Render pipelines are compiling." });
   });
 
   it("a camera move that makes the Forward budget drop a shadowed spot binds a placeholder for its map from the first frame", async () => {
