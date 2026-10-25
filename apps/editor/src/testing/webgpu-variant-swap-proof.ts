@@ -68,7 +68,8 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 16));
  */
 export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
   const result = await webGpuWorld(engine, false);
-  if (!("swap" in result)) throw new Error("The swap proof did not run its swaps.");
+  // The branches' union declares every key, so only a value check narrows it.
+  if (!result.swap) throw new Error("The swap proof did not run its swaps.");
   return result;
 }
 
@@ -78,7 +79,7 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
  */
 export async function proveWebGpuRehearsedChanges(engine: AbstractEngine) {
   const result = await webGpuWorld(engine, true);
-  if (!("report" in result)) throw new Error("The rehearsal proof did not rehearse.");
+  if (!result.report) throw new Error("The rehearsal proof did not rehearse.");
   return result;
 }
 
