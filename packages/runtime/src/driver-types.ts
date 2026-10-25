@@ -336,7 +336,6 @@ export interface RuntimeDriver {
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
   findNavPath(from: NavPoint, to: NavPoint): NavPoint[];
   addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
-  removeNavObstacle(id: string): void;
   stopNavAgent(actorGuid: string): void;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
