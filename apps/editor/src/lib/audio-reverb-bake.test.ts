@@ -354,6 +354,47 @@ describe("audio reverb bake controller", () => {
     controller.dispose();
   });
 
+  it.each(["times out", "fails"] as const)("gives a queued Scene the bake slot when the bake holding it %s", async (outcome) => {
+    vi.useFakeTimers();
+    const timeoutMs = 1_000;
+    const failAtMs = timeoutMs / 2;
+    const signals: AbortSignal[] = [];
+    const writes: AudioReverbBakeWrite[] = [];
+    const diagnostics: Array<{ code: string }> = [];
+    const controller = createAudioReverbBakeController({
+      timeoutMs,
+      bakeSlots: 1,
+      bake: (_geometry, signal) => {
+        signals.push(signal);
+        if (signals.length > 1) return Promise.resolve(new Uint8Array([7]));
+        // A's worker hangs without ever settling, or crashes before its timeout.
+        return new Promise((_, reject) => {
+          if (outcome === "fails") setTimeout(() => reject(new Error("worker crashed")), failAtMs);
+        });
+      },
+      write: async (entry) => { writes.push(entry); },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    const flushed = controller.flushAll([
+      { path: "assets/A.scene.hasset", scene: sceneWith([boxActor("a", [0, 0, 0])]) },
+      { path: "assets/B.scene.hasset", scene: sceneWith([boxActor("b", [8, 0, 0])]) },
+    ]);
+    const settleAtMs = outcome === "fails" ? failAtMs : timeoutMs;
+    await vi.advanceTimersByTimeAsync(settleAtMs - 1);
+    expect(signals).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signals).toHaveLength(2);
+    // A timed-out bake's signal stops its worker.
+    if (outcome === "times out") expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+    expect((await flushed).size).toBe(0);
+    const written = new Map(writes.map((entry) => [entry.path, entry.bytes]));
+    expect(isDryAudioReverbFallback(decodeAudioReverbChunk(written.get("assets/A.scene.hasset")!))).toBe(true);
+    expect([...written.get("assets/B.scene.hasset")!]).toEqual([7]);
+    expect(diagnostics).toEqual([expect.objectContaining({ code: "audio.reverb_bake_failed" })]);
+    controller.dispose();
+  });
+
   it("flush of empty static geometry writes dry fallback without hanging", async () => {
     const writes: AudioReverbBakeWrite[] = [];
     const controller = createAudioReverbBakeController({
