@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { encodeGlbJsonBin } from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
@@ -67,5 +68,19 @@ describe("EditorSceneSync.applyPoses", () => {
     // A 2D Panel's nine-slice is built for its actor scale.
     expect(sync.applyPoses(sceneOf([at(panel, [0, 0, 0], [3, 1, 1])]))).toBe(false);
     expect(sync.serializedScene()).toBe(initial);
+  });
+
+  it("takes the fast path once a model load has settled, even a failed one", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sync = createSync();
+    sync.setMeshAssets({ modelBytes: new Map([["broken", encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array())]]) });
+    const moved = at(box("a"), [0, 0, 0]);
+    const model = box("m");
+    model.components[0]!.properties.assetGuid = "broken";
+    sync.apply(sceneOf([moved, model]));
+    await expect(sync.whenEditorModelsReady()).rejects.toThrow();
+    const edited = sceneOf([at(moved, [4, 0, 0]), model]);
+    expect(sync.applyPoses(edited)).toBe(true);
+    expect(sync.serializedScene()).toBe(edited);
   });
 });
