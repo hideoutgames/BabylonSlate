@@ -9,15 +9,11 @@ import { parseMirrorProperties } from "@haptic/core";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
-  DirectionalLight,
-  HemisphericLight,
   Matrix,
   Mesh,
   MeshBuilder,
-  PointLight,
   Quaternion,
   Scene,
-  SpotLight,
   TransformNode,
   UniversalCamera,
   Vector3,
@@ -90,6 +86,7 @@ import {
   applyAuthoredCameraProperties,
   applyAuthoredLightProperties,
   composeActorComponentTransformToRef,
+  createPlayLight,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -2066,23 +2063,8 @@ export function createPlayMesh(
       const kind = meshKind.slice("light:".length);
       const lights = targets?.lights ?? binding.lights;
       const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}${lights.has(slotId) ? `|${illuminationPart?.componentId ?? name}` : ""}`;
-      const light =
-        kind === "hemispheric"
-          ? new HemisphericLight(lightName, new Vector3(0, 1, 0), scene)
-          : kind === "directional"
-            ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
-            : kind === "spot"
-              ? new SpotLight(
-                  lightName,
-                  Vector3.Zero(),
-                  new Vector3(0, 0, 1),
-                  Math.PI / 3,
-                  2,
-                  scene,
-                )
-              : new PointLight(lightName, Vector3.Zero(), scene);
       const props = illuminationPart?.light ?? binding.lightProps.get(slotId);
-      if (props) applyAuthoredLightProperties(light, props);
+      const light = createPlayLight(scene, lightName, kind, props);
       if (!lights.has(slotId)) lights.set(slotId, light);
       helper.light = light;
       helper.lightProperties = props;

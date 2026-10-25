@@ -2105,6 +2105,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.flushPainters();
     this.flushTextAppear();
     this.renderEmitter.flushDeformers();
+    this.renderEmitter.flushComponentTransforms();
   }
 
   /** Tick phase 5, after the frame id advanced. */

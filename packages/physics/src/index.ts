@@ -58,6 +58,7 @@ export {
 } from "./component-props";
 export {
   bakeColliderLocal,
+  assertColliderLocalPose,
   colliderLocalPose,
   scaleColliderShape,
   rotateQuatVec,

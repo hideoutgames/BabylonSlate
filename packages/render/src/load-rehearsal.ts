@@ -1,4 +1,4 @@
-import { DirectionalLight, PointLight, SpotLight, type Effect, type Light, type Scene } from "@babylonjs/core";
+import { DirectionalLight, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import { DriverCompileWatch } from "./driver-compile";
 import { restoreSceneLightOrder } from "./forward-light-slots";
@@ -8,14 +8,18 @@ import {
   restoreForwardLightSelection,
   setAuthoredLightEnabled,
 } from "./light-policy";
-import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
+import { sceneRenderingSettings } from "./render-settings";
+import { AUTHORED_LIGHT_PREFIX, createPlayLight } from "./scene-illumination";
 import { syncSceneLighting } from "./scene-lighting";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
-import { findSceneShadowController, type ShadowAdmissionSnapshot } from "./shadow-controller";
+import { findSceneShadowController, sceneShadowController, type ShadowAdmissionSnapshot } from "./shadow-controller";
+import type { SpawnableLight } from "./spawnable-lights";
 
 /**
- * Light changes a load rehearses at most. The first change of each kind (light class and change) comes first, then the
- * rest in scene order; a scene with more changes reports the rest, repeats of kinds already rehearsed, as left out.
+ * Light changes a load rehearses at most. The first change of each authored kind (light class and change) comes first,
+ * then one spawned light of each kind Play may spawn, then the other authored changes in scene order; a scene with
+ * more changes reports the rest, repeats of kinds already rehearsed, as left out. There are at most fourteen authored
+ * kinds and seven spawned ones, so the budget always keeps every kind.
  */
 export const LOAD_REHEARSAL_STEP_BUDGET = 48;
 /**
@@ -76,12 +80,14 @@ export interface LoadRehearsal {
 }
 
 /**
- * The light changes gameplay can make, one at a time, for every authored light of `scene`: switching it off (or on),
- * and for a lit shadow-capable light, starting (or stopping) its shadows. Combinations are left out: their count grows
- * exponentially. The first change of each kind leads, so the step budget leaves out repeats (many identical lights,
- * whose changes usually ask for variants an earlier one compiled) rather than a later light of another class.
+ * The light changes gameplay can make, one at a time: for every authored light of `scene`, switching it off (or on),
+ * and for a lit shadow-capable light, starting (or stopping) its shadows; and one light of each kind in `spawnable`
+ * spawning (`spawnedLightSteps`). Combinations are left out: their count grows exponentially. The first change of each
+ * authored kind leads, then the spawned lights (each a kind of its own), so the step budget leaves out repeats (many
+ * identical lights, whose changes usually ask for variants an earlier one compiled) rather than a later light of
+ * another class.
  */
-function rehearsalSteps(scene: Scene): RehearsalStep[] {
+function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): RehearsalStep[] {
   const shadows = findSceneShadowController(scene);
   const steps: RehearsalStep[] = [];
   for (const light of scene.lights) {
@@ -111,11 +117,65 @@ function rehearsalSteps(scene: Scene): RehearsalStep[] {
     (kinds.has(step.kind) ? repeats : leading).push(step);
     kinds.add(step.kind);
   }
-  return [...leading, ...repeats];
+  return [...leading, ...spawnedLightSteps(scene, spawnable), ...repeats];
 }
 
 function castsShadows(light: Light): boolean {
   return light instanceof DirectionalLight || light instanceof PointLight || light instanceof SpotLight;
+}
+
+/**
+ * One step per kind of light in `spawnable` (its light type, and for a shadow-capable one whether it casts shadows:
+ * nothing else Play sets on a light changes a receiver's defines, and every map of a type takes the scene's shadow
+ * settings), of the template with the highest shadow priority. Each adds that light as Play builds a spawned light part
+ * (`createPlayLight`), lit, at the active camera and facing its way, where the Forward budget ranks it nearest and a
+ * shadow map ranks it at its own priority, as for a spawn at the player; reverting it disposes the light.
+ *
+ * The stand-in reaches as far as the shadow distance, however short its template's range: a local map draws only the
+ * casters within its light's range, and the camera can be far from them (high above, or behind a third-person pawn),
+ * while a real spawn near the player draws the casters around it. A caster the stand-in's map never draws would have
+ * its depth variant compiled (every caster's, by the readiness probe) but never drawn, so a real spawn's map would
+ * create its WebGPU pipeline synchronously in the shadow pass, and iPad WebKit would pay its first draw then. Range
+ * changes no define, and at the camera the stand-in is inside the shadows' relevant area whatever its range. Posing it
+ * at the player's pawn instead would need the game's possession, which the render side does not know.
+ */
+function spawnedLightSteps(scene: Scene, spawnable: readonly SpawnableLight[]): RehearsalStep[] {
+  const kinds = new Map<string, SpawnableLight>();
+  for (const template of spawnable) {
+    const kind = template.kind === "hemispheric" || template.kind === "directional" || template.kind === "spot" ? template.kind : "point";
+    const key = `${kind}${kind !== "hemispheric" && template.properties.castShadows === true ? " with shadows" : ""}`;
+    const kept = kinds.get(key);
+    if (!kept || priority(template) > priority(kept)) kinds.set(key, { kind, properties: template.properties });
+  }
+  return [...kinds].map(([key, template]) => {
+    let staged: Light | undefined;
+    return {
+      label: `spawned ${key} light`,
+      kind: `spawned ${key} light`,
+      apply: () => {
+        const { intensity, range } = template.properties;
+        const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
+        // Lit, also when the light starts switched off or dark: it compiles what switching it on asks for.
+        staged = createPlayLight(scene, `${AUTHORED_LIGHT_PREFIX}spawned ${key}`, template.kind, {
+          ...template.properties, enabled: true, intensity: (finite(intensity) ?? 0) > 0 ? intensity : undefined,
+          range: Math.max(finite(range) ?? 0, sceneRenderingSettings(scene).shadows.distance),
+        });
+        const camera = scene.activeCamera;
+        if (camera && (staged instanceof PointLight || staged instanceof SpotLight)) staged.position.copyFrom(camera.globalPosition);
+        if (camera && staged instanceof SpotLight) staged.direction.copyFrom(camera.getDirection(Vector3.Forward()));
+        sceneShadowController(scene).sync();
+      },
+      revert: () => {
+        staged?.dispose();
+        staged = undefined;
+      },
+    };
+  });
+}
+
+function priority(template: SpawnableLight): number {
+  const value = template.properties.shadowPriority;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /**
@@ -214,9 +274,15 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * capture's, have prepared) and draws again while it holds anything undrawn: a view first prepared during a step
  * would build its draw wrappers' defines in that step's order, and Babylon keys Effects by the defines text, so the
  * starting state would compile again for it once the step is reverted.
+ *
+ * `spawnable` lists the light parts Play may spawn: one of each kind is added and removed as a step. Each adds a
+ * light to the Scene, so the caller reserves room for one more in the light inventory before the load compiles
+ * anything (`reserveSceneLightInventory`), or the step would raise every lit Material's light capacity.
  */
-export function createLoadRehearsal(scene: Scene, settled: () => boolean = () => true): LoadRehearsal {
-  const all = rehearsalSteps(scene);
+export function createLoadRehearsal(
+  scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
+): LoadRehearsal {
+  const all = rehearsalSteps(scene, spawnable);
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
   const omitted = all.slice(LOAD_REHEARSAL_STEP_BUDGET).map((step) => step.label);
   const timedOut: string[] = [];
@@ -323,9 +389,10 @@ export function createLoadRehearsal(scene: Scene, settled: () => boolean = () =>
       }
       if (!applied) {
         admission = snapshotAdmission(scene);
+        // Before `apply`, so a step that throws midway (its stand-in added, a shadow sync failing) is still reverted.
+        applied = true;
         steps[index]!.apply();
         markSceneReadinessDirty(scene);
-        applied = true;
         phaseSince = performance.now();
         watch!.restart();
         return;

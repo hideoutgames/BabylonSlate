@@ -67,6 +67,7 @@ import {
   type PlayActorPosition,
   type SceneSourceAssets,
 } from "@haptic/render";
+import { spawnableLightsFromScripts, type SpawnableLight } from "@haptic/render/spawnable-lights";
 import { encodeInputEvents } from "@haptic/input";
 import {
   isPlayEngineCommandType,
@@ -626,6 +627,8 @@ export function startPlaySession(options: {
   physics?: PlayPhysicsSettings;
   /** Compiled project graphs to run for this session. */
   scripts?: readonly ScriptBundleEntry[];
+  /** The light parts the startup sources may spawn (`spawnableLightsOfLoad`); defaults to those of `scripts`. */
+  spawnableLights?: ReadonlyMap<string, SpawnableLight>;
   /** Authored scene instantiated in the worker instead of demo actors. */
   sceneAssetGuid?: string;
   scene?: SerializedScene;
@@ -913,6 +916,8 @@ export function startPlaySession(options: {
     audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
+    // What the startup sources' Classes may spawn (Play's load rehearses a light of each kind), or the session's.
+    spawnableLights: options.spawnableLights ?? spawnableLightsFromScripts(options.scripts ?? []),
     postProcessStack: options.scene?.settings.postProcessStack,
     postProcessingEnabled: options.postProcessingEnabled,
     hardwareScalingLevel: options.hardwareScalingLevel,

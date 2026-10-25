@@ -84,6 +84,15 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.state.dirtyDeformerActors.add(actor);
   }
 
+  /**
+   * Send this actor's component transforms after the current tick
+   * (`flushComponentTransforms`): a tween or script moving several components
+   * in one tick sends one message for the actor, not one per write.
+   */
+  queueComponentTransforms(actor: Actor): void {
+    this.state.dirtyComponentTransformActors.add(actor);
+  }
+
   /** The component is one of the owner's Play renderables, so it has a native view. */
   rendersComponent(owner: Actor, component: ActorComponent): boolean {
     const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.host.world());
@@ -125,6 +134,14 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
     }
     this.state.dirtyDeformerActors.clear();
+  }
+
+  flushComponentTransforms(): void {
+    for (const actor of this.state.dirtyComponentTransformActors) {
+      const slotId = this.host.slot(actor);
+      if (!actor.destroyed && slotId !== undefined) this.emitComponentTransforms(actor, slotId);
+    }
+    this.state.dirtyComponentTransformActors.clear();
   }
 
   emitActorFogVolumes(actor: Actor, slotId: number): void {
@@ -203,6 +220,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   }
 
   emitComponentTransforms(actor: Actor, slotId: number): void {
+    this.state.dirtyComponentTransformActors.delete(actor);
     const renderables = playRenderablesOf(actor.components,
       overlayButtonHasSiblingVisual(actor) || overlayButtonHasParentVisual(actor, this.host.world()));
     const ids = new Set(renderables.map(component => component.guid));

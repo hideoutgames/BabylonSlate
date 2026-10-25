@@ -296,6 +296,24 @@ export function applyAuthoredLightProperties(
   }
 }
 
+/**
+ * The Babylon light a Play light part (`light:{kind}`) draws as, with `properties` applied (registering its shadows):
+ * a hemispheric, directional or spot light, and a point light for any other kind. The caller poses it and syncs the
+ * shadow maps. Play's spawned and scene actors and the load rehearsal's spawned lights share it, so their defines match.
+ */
+export function createPlayLight(scene: Scene, name: string, kind: string, properties?: AuthoredLightProperties): Light {
+  const light =
+    kind === "hemispheric"
+      ? new HemisphericLight(name, new Vector3(0, 1, 0), scene)
+      : kind === "directional"
+        ? new DirectionalLight(name, new Vector3(0, 0, 1), scene)
+        : kind === "spot"
+          ? new SpotLight(name, Vector3.Zero(), new Vector3(0, 0, 1), Math.PI / 3, 2, scene)
+          : new PointLight(name, Vector3.Zero(), scene);
+  if (properties) applyAuthoredLightProperties(light, properties);
+  return light;
+}
+
 export const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
 
 const authoredCameraAspects = new WeakMap<Camera, number>();
@@ -494,7 +512,8 @@ export function syncAuthoredCamerasFromMeshes(
   meshForActor: (actorId: string) => AbstractMesh | null,
 ): void {
   const state = stateByScene.get(scene);
-  if (!state) return;
+  // Gizmo drags call this on every pointer move; most scenes author no camera.
+  if (!state || state.cameras.size === 0) return;
   for (const actor of sceneData.actors) {
     const mesh = meshForActor(actor.id);
     if (!mesh) continue;
