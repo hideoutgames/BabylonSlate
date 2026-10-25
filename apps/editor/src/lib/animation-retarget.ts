@@ -93,7 +93,7 @@ export async function writeRetargetedAnimations(options: {
   let created = 0;
   const targetBytes = await options.readModelBytes(options.targetModelGuid);
   // A probe loads both GLBs, so each source Model is read and probed once for
-  // all of its clips.
+  // all of its clips; a source Model that is the target reuses its bytes.
   const clipsByModel = new Map<string, Set<string>>();
   for (const { payload } of options.sources) {
     if (!payload.clipName) continue;
@@ -104,7 +104,10 @@ export async function writeRetargetedAnimations(options: {
   const matchesByModel = new Map<string, ReadonlySet<string>>();
   if (targetBytes) {
     for (const [modelGuid, clips] of clipsByModel) {
-      const sourceBytes = await options.readModelBytes(modelGuid);
+      const sourceBytes =
+        modelGuid === options.targetModelGuid
+          ? targetBytes
+          : await options.readModelBytes(modelGuid);
       if (!sourceBytes) continue;
       matchesByModel.set(
         modelGuid,
