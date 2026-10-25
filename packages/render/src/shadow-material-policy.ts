@@ -1,5 +1,6 @@
 import {
   DetailMapConfiguration,
+  InstancedMesh,
   Material,
   Mesh,
   NodeMaterial,
@@ -98,28 +99,30 @@ export function canCacheShadowMaterial(
   material: Material,
   mesh: AbstractMesh,
 ): boolean {
-  if (hasMeshLatticeDeformer(mesh)) return false;
+  // An instance draws its source's geometry, deformers and material at its own world matrix, which the refresh
+  // scheduler tracks per caster: it caches as its source would (render hooks exist on the source only).
+  const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  if (hasMeshLatticeDeformer(mesh) || (source !== mesh && hasMeshLatticeDeformer(source))) return false;
   const padding = Number(material.metadata?.boundsPadding ?? 0);
   if (!Number.isFinite(padding) || padding > 0) return false;
   if (
-    !(mesh instanceof Mesh) ||
-    mesh.skeleton ||
-    mesh.morphTargetManager ||
-    mesh.bakedVertexAnimationManager ||
-    mesh.hasThinInstances ||
-    mesh.instances.length > 0 ||
-    mesh.onBeforeRenderObservable.hasObservers() ||
-    mesh.onBeforeBindObservable.hasObservers()
+    !(source instanceof Mesh) ||
+    source.skeleton ||
+    source.morphTargetManager ||
+    source.bakedVertexAnimationManager ||
+    source.hasThinInstances ||
+    source.onBeforeRenderObservable.hasObservers() ||
+    source.onBeforeBindObservable.hasObservers()
   )
     return false;
   if (
     material.alpha !== 1 ||
-    mesh.visibility !== 1 ||
+    source.visibility !== 1 ||
     material.shadowDepthWrapper ||
     (material.transparencyMode !== null &&
       material.transparencyMode !== Material.MATERIAL_OPAQUE) ||
-    material.needAlphaBlendingForMesh(mesh) ||
-    material.needAlphaTestingForMesh(mesh)
+    material.needAlphaBlendingForMesh(source) ||
+    material.needAlphaTestingForMesh(source)
   )
     return false;
   if (

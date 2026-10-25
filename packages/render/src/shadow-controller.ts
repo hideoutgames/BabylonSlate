@@ -1616,6 +1616,8 @@ export class SceneShadowController {
       };
     generator.customAllowRendering = (part) => {
       if (hasDeformingShadowBounds(part.getMesh())) return true;
+      // Babylon draws a mesh's instances in its parts' batches: culled by the mesh's own box, they would draw where it is.
+      if (part.getRenderingMesh().hasInstances) return true;
       if (!activePlanes || part.getMesh().subMeshes.length < 2)
         return true;
       const box = part.getBoundingInfo()?.boundingBox;
