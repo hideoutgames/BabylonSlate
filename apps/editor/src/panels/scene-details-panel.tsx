@@ -3,41 +3,20 @@ import { SimulationInspector } from "./simulation-inspector";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { parseUIControl2DProperties } from "@haptic/core";
 
-import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
-import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
 import { isEnvironmentTexturePayload, normalizeModelPayload } from "@haptic/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
-import { normalizeRenderTargetCaptureProperties } from "@haptic/core";
-import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
-import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { useAreaEmissionStatus } from "../lib/use-area-emission-status";
-import { CelShadingFields } from "../components/cel-shading-fields";
 
 import {
   AssetPicker,
-  AssetPickerControl,
-  MultilineTextField,
-  EntryListEditor,
-  InlineRenameInput,
-  NamedListEditor,
-  DisclosureSection,
-  NumberField,
   PanelFrame,
   PropertyGrid,
   SearchInput,
   SearchDialog,
-  SceneComponentPicker,
-  TypeVisualIcon,
-  assetRowIdentity,
-  classRowIdentity,
   humanizePropertyLabel,
-  resolveTypeVisual,
-  selectedPickerIdentity,
-  useDoubleTap,
   walkAncestry,
   type PropertyRow,
   type SearchDialogItem,
@@ -45,58 +24,27 @@ import {
 import {
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
-  createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
   isFocusTargetClass,
   isSceneLayer3DActor,
   isSceneLayerAnchorActor,
-  parseOverlayPanelProperties,
-  parseText2DProperties,
-  parseText2DAppearProperties,
-  parseText3DProperties,
   patchComponentProperties,
   setSceneStreamingTarget,
   type SerializedActor,
   type SerializedScene,
   isSceneWorkspaceKind,
-  normalizeCelShadingSettings,
-  normalizeSceneFogSettings,
   normalizeScenePostProcessStack,
-  newGuid,
   waterKindForClass,
   DEFORMER_COMPONENT_CLASS_ID,
-  ENVIRONMENT_SOURCES,
-  type EnvironmentSource,
 } from "@haptic/core";
-import {
-  ChevronDownIcon,
-  ChevronUpIcon,
-  HashIcon,
-  PlusIcon,
-  Trash2Icon,
-} from "lucide-react";
-import { Button } from "@haptic/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@haptic/ui/components/dialog";
+import { PlusIcon } from "lucide-react";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@haptic/ui/components/empty";
-import { Switch } from "@haptic/ui/components/switch";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@haptic/ui/components/field";
 import {
   useDocumentActions,
   useProjectState,
@@ -110,16 +58,15 @@ import {
 } from "../context/scene-editing-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
-import { NineSlicePreview } from "../components/nine-slice-preview";
 import { AddComponentMenu } from "../components/add-component-menu";
 import { anchorBelow } from "../lib/menu-anchor";
-import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   defaultPropertiesFor,
   prefabComponentLabelParts,
   projectAddComponentItems,
-  renamedComponentName,
 } from "./add-component-catalog";
+import { SceneComponentCard } from "./scene-details-component-card";
+import { SceneDetailsSettings } from "./scene-details-settings";
 import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
@@ -127,10 +74,6 @@ import {
   subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
-import {
-  sceneComponentDisplayLabel,
-  sceneComponentEntries,
-} from "../lib/scene-component-entries";
 import {
   classParentLookup,
   isPostProcessMaterialForPicker,
@@ -158,65 +101,10 @@ import {
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
 
-/** Scene rows shown inside the Environment Lighting section. */
-const ENVIRONMENT_ROW_IDS = new Set(["scene-environment-source", "scene-environment-texture"]);
-
 const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
 const CLASS_KINDS = ["graph"] as const;
 const PREFAB_KINDS = ["prefab"] as const;
 const MODEL_KINDS = ["model"] as const;
-
-function PostProcessEntryId({ id, index }: { id: string; index: number }) {
-  return (
-    <Dialog>
-      <DialogTrigger
-        render={
-          <IconActionButton
-            label={`Pass ${index + 1} Entry ID`}
-            className="shrink-0 pointer-coarse:size-11"
-          />
-        }
-      >
-        <HashIcon />
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Pass {index + 1} Entry ID</DialogTitle>
-          <DialogDescription>
-            Copy this ID to target this pass with Get Post Process Entry.
-          </DialogDescription>
-        </DialogHeader>
-        <PropertyGrid density="compact" rows={[{
-          kind: "text",
-          id: `scene-post-process-${id}-entry-id`,
-          label: "Entry ID",
-          value: id,
-          readOnly: true,
-          onChange: () => {},
-        }]} />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Component card name; double-click or double-tap starts an inline rename. */
-function ComponentCardName({ title, onRename }: { title: string; onRename: () => void }) {
-  const onTap = useDoubleTap(onRename);
-  return (
-    <span
-      className="truncate"
-      title={`${title} · Double-click to rename`}
-      data-component-name=""
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        onRename();
-      }}
-      onPointerUp={onTap}
-    >
-      {title}
-    </span>
-  );
-}
 
 export function SceneDetailsPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
@@ -367,40 +255,6 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
   };
-  const stackAssetPicker = (
-    guid: string,
-    id: string,
-    label: string,
-    onPick: () => void,
-  ) => {
-    const asset = pickerAssets.find((entry) => entry.guid === guid);
-    return (
-      <Field className="min-w-0 gap-0">
-        <FieldLabel className="sr-only" htmlFor={id}>
-          {label}
-        </FieldLabel>
-        <AssetPickerControl value={guid}>
-          <Button
-            type="button"
-            id={id}
-            variant="outline"
-            size="sm"
-            className="w-full min-w-0 justify-start pointer-coarse:min-h-11"
-            title={
-              asset ? `${asset.name} — ${asset.path}` : `Missing Asset: ${guid}`
-            }
-            data-testid={id}
-            onClick={onPick}
-          >
-            {selectedPickerIdentity(
-              { ...assetRowIdentity(asset), displayType: undefined },
-              "Missing Asset",
-            )}
-          </Button>
-        </AssetPickerControl>
-      </Field>
-    );
-  };
   const fontHasFacetype = (guid: string | null | undefined) => {
     if (!guid) return false;
     return fontAssetHasFacetype(
@@ -533,692 +387,32 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   }
 
   if (!actor) {
-    const defaults = createDefaultSceneSettings();
-    const settingsRows: PropertyRow[] = [
-      {
-        kind: "text",
-        id: "scene-name",
-        label: "Name",
-        value: scene.name,
-        onChange: (name) => mutate({ ...scene, name }),
-      },
-      {
-        kind: "asset",
-        id: "scene-game-instance-class",
-        label: "Game Instance",
-        value: projectDocument?.settings.gameInstanceClass ?? null,
-        placeholder: "None",
-        disabled: true,
-        onPick: () => {},
-        onChange: () => {},
-        ...classRowIdentity(
-          classEntries.find(
-            (entry) => entry.id === projectDocument?.settings.gameInstanceClass,
-          ),
-          projectDocument?.settings.gameInstanceClass,
-        ),
-      },
-      {
-        kind: "enum",
-        id: "scene-viewport-mode",
-        label: "Viewport",
-        value: scene.viewportMode,
-        options: [
-          { value: "3d", label: "3D" },
-          { value: "2d", label: "2D" },
-        ],
-        onChange: (mode) =>
-          mutate({ ...scene, viewportMode: mode === "2d" ? "2d" : "3d" }),
-      },
-      {
-        kind: "enum",
-        id: "scene-physics-world",
-        label: "Physics World",
-        value: scene.settings.physicsWorld,
-        options: [
-          { value: "3d", label: "3D (Havok)" },
-          { value: "2d", label: "2D (Rapier)" },
-        ],
-        onChange: (world) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              physicsWorld: world === "2d" ? "2d" : "3d",
-            },
-          }),
-      },
-      {
-        kind: "color",
-        id: "scene-environment-color",
-        label: "Environment",
-        value: scene.settings.environmentColor,
-        defaultValue: defaults.environmentColor,
-        onChange: (environmentColor) =>
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, environmentColor },
-          }),
-      },
-      {
-        kind: "boolean",
-        id: "scene-fog",
-        label: "Fog",
-        description: "Distance fog. For light scattering, use Volumetric Fog in Project Settings > Rendering > Post Processing.",
-        value: scene.settings.fogEnabled,
-        defaultValue: defaults.fogEnabled,
-        onChange: (fogEnabled) =>
-          mutate({ ...scene, settings: { ...scene.settings, fogEnabled } }),
-      },
-      ...(scene.settings.fogEnabled
-        ? [
-            {
-              kind: "enum" as const,
-              id: "scene-fog-mode",
-              label: "Fog Mode",
-              description: "Linear fades between Start and End. Exponential modes use Density; Exponential Squared builds more gradually nearby.",
-              value: scene.settings.fogMode,
-              defaultValue: defaults.fogMode,
-              options: [
-                { value: "linear", label: "Linear" },
-                { value: "exponential", label: "Exponential" },
-                { value: "exponentialSquared", label: "Exponential Squared" },
-              ],
-              onChange: (fogMode: string) =>
-                mutate({
-                  ...scene,
-                  settings: {
-                    ...scene.settings,
-                    ...normalizeSceneFogSettings({ ...scene.settings, fogMode }),
-                  },
-                }),
-            },
-            {
-              kind: "color" as const,
-              id: "scene-fog-color",
-              label: "Fog Color",
-              value: scene.settings.fogColor,
-              defaultValue: defaults.fogColor,
-              onChange: (fogColor: typeof scene.settings.fogColor) =>
-                mutate({
-                  ...scene,
-                  settings: { ...scene.settings, fogColor },
-                }),
-            },
-            ...(scene.settings.fogMode === "linear"
-              ? [
-                  {
-                    kind: "number" as const,
-                    id: "scene-fog-start",
-                    label: "Fog Start",
-                    description: "Distance from the camera where fog begins. Moving beyond End also moves End.",
-                    unit: "scene units",
-                    value: scene.settings.fogStart,
-                    defaultValue: defaults.fogStart,
-                    min: 0,
-                    onChange: (fogStart: number) =>
-                      mutate({
-                        ...scene,
-                        settings: {
-                          ...scene.settings,
-                          ...normalizeSceneFogSettings({ ...scene.settings, fogStart }),
-                        },
-                      }),
-                  },
-                  {
-                    kind: "number" as const,
-                    id: "scene-fog-end",
-                    label: "Fog End",
-                    description: "Distance where fog reaches full color. Moving before Start also moves Start.",
-                    unit: "scene units",
-                    value: scene.settings.fogEnd,
-                    defaultValue: defaults.fogEnd,
-                    min: 0.01,
-                    onChange: (fogEnd: number) =>
-                      mutate({
-                        ...scene,
-                        settings: {
-                          ...scene.settings,
-                          ...normalizeSceneFogSettings({
-                            ...scene.settings,
-                            fogStart: Math.min(scene.settings.fogStart, fogEnd - 0.01),
-                            fogEnd,
-                          }),
-                        },
-                      }),
-                  },
-                ]
-              : [
-                  {
-                    kind: "number" as const,
-                    id: "scene-fog-density",
-                    label: "Fog Density",
-                    description: "Higher values obscure nearby objects. Zero leaves distance fog invisible.",
-                    value: scene.settings.fogDensity,
-                    defaultValue: defaults.fogDensity,
-                    min: 0,
-                    precision: 6,
-                    sensitivity: 0.0001,
-                    onChange: (fogDensity: number) =>
-                      mutate({
-                        ...scene,
-                        settings: { ...scene.settings, fogDensity },
-                      }),
-                  },
-                ]),
-          ]
-        : []),
-      {
-        kind: "enum",
-        id: "scene-environment-source",
-        label: "Environment Source",
-        description: "What lights surfaces with image-based lighting. Skybox uses the scene's visible Skybox; Texture uses an imported environment cube.",
-        value: scene.settings.environmentSource,
-        options: [
-          { value: "none", label: "None" },
-          { value: "skybox", label: "Skybox" },
-          { value: "texture", label: "Texture" },
-        ],
-        onChange: (source) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              environmentSource: ENVIRONMENT_SOURCES.includes(source as EnvironmentSource)
-                ? (source as EnvironmentSource)
-                : "none",
-            },
-          }),
-      },
-      ...(scene.settings.environmentSource === "texture"
-        ? [
-            {
-              kind: "asset" as const,
-              id: "scene-environment-texture",
-              label: "Environment Texture",
-              value: scene.settings.environmentTextureGuid,
-              placeholder: "None",
-              onPick: () => setEnvTexturePickOpen(true),
-              onChange: (environmentTextureGuid: string | null) =>
-                mutate({
-                  ...scene,
-                  settings: { ...scene.settings, environmentTextureGuid },
-                }),
-              ...assetRowIdentity(
-                pickerAssets.find(
-                  (asset) => asset.guid === scene.settings.environmentTextureGuid,
-                ),
-              ),
-            },
-          ]
-        : []),
-      {
-        kind: "asset",
-        id: "scene-default-camera",
-        label: "Default Camera",
-        value: scene.settings.mainCameraComponentId,
-        displayLabel: sceneComponentDisplayLabel(
-          scene,
-          scene.settings.mainCameraActorId,
-          scene.settings.mainCameraComponentId,
-        ),
-        displayType: scene.settings.mainCameraComponentId
-          ? "CameraComponent"
-          : undefined,
-        visual: scene.settings.mainCameraComponentId
-          ? { classId: "CameraComponent", family: "class" }
-          : undefined,
-        placeholder: "None",
-        onPick: () => setCameraPickerOpen(true),
-        onChange: () =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              mainCameraActorId: null,
-              mainCameraComponentId: null,
-            },
-          }),
-      },
-      {
-        kind: "boolean",
-        id: "scene-editor-joystick",
-        label: "Joystick",
-        value: scene.settings.editorJoystickEnabled,
-        defaultValue: defaults.editorJoystickEnabled,
-        onChange: (editorJoystickEnabled) =>
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, editorJoystickEnabled },
-          }),
-      },
-      {
-        kind: "vector3",
-        id: "scene-gravity",
-        label: "Gravity",
-        value: scene.settings.gravity,
-        defaultValue: defaults.gravity,
-        onChange: (gravity) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              gravity: [gravity[0], gravity[1], gravity[2]],
-            },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-snap-translate",
-        label: "Snap Step",
-        value: scene.settings.grid.snapTranslate,
-        defaultValue: defaults.grid.snapTranslate,
-        onChange: (snapTranslate) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              grid: { ...scene.settings.grid, snapTranslate },
-            },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-tile-size",
-        label: "Tile Size",
-        value: scene.settings.grid.tileSize,
-        defaultValue: defaults.grid.tileSize,
-        onChange: (tileSize) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              grid: { ...scene.settings.grid, tileSize },
-            },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-tile-subdivisions",
-        label: "Tile Subdivisions",
-        value: scene.settings.grid.tileSubdivisions,
-        defaultValue: defaults.grid.tileSubdivisions,
-        onChange: (tileSubdivisions) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              grid: {
-                ...scene.settings.grid,
-                tileSubdivisions: Math.max(1, Math.round(tileSubdivisions)),
-              },
-            },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-camera-bounds-width",
-        label: "2D Camera Width",
-        value: scene.settings.cameraBounds2D.width,
-        defaultValue: defaults.cameraBounds2D.width,
-        onChange: (width) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              cameraBounds2D: { ...scene.settings.cameraBounds2D, width },
-            },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-camera-bounds-height",
-        label: "2D Camera Height",
-        value: scene.settings.cameraBounds2D.height,
-        defaultValue: defaults.cameraBounds2D.height,
-        onChange: (height) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              cameraBounds2D: { ...scene.settings.cameraBounds2D, height },
-            },
-          }),
-      },
-    ];
-
-    const layerPhysicsRow: PropertyRow = {
-      kind: "boolean",
-      id: "scene-layer-physics",
-      label: "Enable Physics",
-      description: "Each instance simulates Rigid Bodies and Colliders in its own 2D world with this Gravity. Off: no physics world; bodies stay where scripts place them and collision events do not fire.",
-      value: scene.settings.layerPhysicsEnabled === true,
-      defaultValue: false,
-      onChange: (layerPhysicsEnabled) =>
-        mutate({
-          ...scene,
-          settings: { ...scene.settings, layerPhysicsEnabled },
-        }),
-    };
-    const overlaySettingsRows = settingsRows
-      .filter(
-        (row) =>
-          row.id === "scene-name" ||
-          row.id === "scene-gravity" ||
-          row.id === "scene-camera-bounds-width" ||
-          row.id === "scene-camera-bounds-height",
-      )
-      .flatMap((row) => {
-        if (row.id === "scene-gravity") return [layerPhysicsRow, row];
-        if (row.id === "scene-camera-bounds-width") {
-          return [{ ...row, label: "Layer Width" }];
-        }
-        if (row.id === "scene-camera-bounds-height") {
-          return [{ ...row, label: "Layer Height" }];
-        }
-        return [row];
-      });
-
-    const visibleSettingsRows = filterRows(
-      overlay ? overlaySettingsRows : settingsRows.filter((row) => !ENVIRONMENT_ROW_IDS.has(row.id)),
-      "Scene Settings",
-    );
-    const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
-    const showPostProcess = matches("Post Processing Material Entry ID Enabled Scalable Resolution");
-    const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
-    const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
-    const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Specular Light Color Influence Mixing Strongest Additive Blend Outlines Outline Color Width Distance Fade Start End");
-    const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
       <PanelFrame data-testid="scene-details-panel">
         {propertySearch}
-        {visibleSettingsRows.length > 0 ? (
-          <PropertyGrid
-            title="Scene Settings"
-            rows={visibleSettingsRows}
-            data-testid="scene-settings-grid"
-          />
-        ) : null}
-        {showPostProcess ? (
-          <div className="px-2 pb-3">
-            <EntryListEditor
-              title="Post Processing"
-              data-testid="scene-post-process-stack"
-              items={postProcessEntries}
-              getItemKey={(item) => item.id}
-              addLabel="Add Pass"
-              countNoun={{ one: "pass", other: "passes" }}
-              onAdd={() => setPostProcessPick("add")}
-              onChange={(postProcessStack) =>
-                mutate({
-                  ...scene,
-                  settings: {
-                    ...scene.settings,
-                    postProcessStack: normalizeScenePostProcessStack(postProcessStack),
-                  },
-                })
-              }
-              renderItemHeader={({ item, index }) => (
-                <div className="flex items-center gap-1">
-                  <div className="min-w-0 flex-1">
-                    {stackAssetPicker(
-                      item.materialGuid,
-                      `scene-post-process-${index}-material`,
-                      `Pass ${index + 1} Material`,
-                      () => setPostProcessPick({ id: item.id }),
-                    )}
-                  </div>
-                  <PostProcessEntryId id={item.id} index={index} />
-                </div>
-              )}
-              renderItem={({ item, index, onChange }) => (
-                <div className="flex items-center justify-between gap-2 px-2 pointer-coarse:flex-wrap">
-                <Field
-                  orientation="horizontal"
-                  className="w-fit min-h-7 gap-1 pointer-coarse:min-h-11"
-                >
-                  <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
-                    Enabled
-                  </FieldLabel>
-                  <Switch
-                    size="sm"
-                    className="pointer-coarse:after:-inset-y-[15px]"
-                    id={`scene-post-process-${index}-enabled`}
-                    data-testid={`scene-post-process-${index}-enabled`}
-                    aria-label={`Pass ${index + 1} Enabled`}
-                    checked={item.enabled !== false}
-                    onCheckedChange={(enabled) =>
-                      onChange({ ...item, enabled })
-                    }
-                  />
-                </Field>
-                <Field orientation="horizontal" className="w-fit min-h-7 gap-1 pointer-coarse:min-h-11">
-                  <FieldLabel htmlFor={`scene-post-process-${index}-scalable`} title="Allow quality settings to scale this pass resolution">Scalable</FieldLabel>
-                  <Switch size="sm" className="pointer-coarse:after:-inset-y-[15px]" id={`scene-post-process-${index}-scalable`} aria-label={`Pass ${index + 1} Scalable Resolution`} checked={item.scalable === true} onCheckedChange={(scalable) => onChange({ ...item, scalable })} />
-                </Field>
-                </div>
-              )}
-            />
-          </div>
-        ) : null}
-        {showEnvironment ? (
-          <div className="px-2 pb-3">
-            <DisclosureSection title="Environment Lighting" open={overrideOpen("environment")} onOpenChange={(open) => setOverrideOpen("environment", open)}>
-              <EnvironmentLightingFields hideTitle cel={celEnabled} project={projectDocument?.settings.render.environmentLighting} overrides={scene.settings.environmentLighting ?? {}} onChange={(environmentLighting) => mutate({ ...scene, settings: { ...scene.settings, environmentLighting } })}>
-                <PropertyGrid rows={settingsRows.filter((row) => ENVIRONMENT_ROW_IDS.has(row.id))} />
-              </EnvironmentLightingFields>
-            </DisclosureSection>
-          </div>
-        ) : null}
-        {showShadows ? (
-          <div className="px-2 pb-3">
-            <DisclosureSection title="Shadows" open={overrideOpen("shadows")} onOpenChange={(open) => setOverrideOpen("shadows", open)}>
-              <ShadowSettingsFields hideTitle project={projectDocument?.settings.render.shadows} overrides={scene.settings.shadowOverrides ?? {}} onChange={(shadowOverrides) => mutate({ ...scene, settings: { ...scene.settings, shadowOverrides } })} />
-            </DisclosureSection>
-          </div>
-        ) : null}
-        {showCel ? (
-          <div className="px-2 pb-3">
-            <DisclosureSection title="CEL Shading" open={overrideOpen("cel")} onOpenChange={(open) => setOverrideOpen("cel", open)}>
-            <CelShadingFields
-              hideTitle
-              project={normalizeCelShadingSettings(projectDocument?.settings.render.cel)}
-              overrides={scene.settings.celShading ?? {}}
-              onChange={(celShading) => mutate({ ...scene, settings: { ...scene.settings, celShading } })}
-            />
-            </DisclosureSection>
-          </div>
-        ) : null}
-        {showSceneLayers ? (
-          <div className="px-2 pb-3">
-            <EntryListEditor
-              title="Scene Layers"
-              data-testid="scene-layers-stack"
-              items={scene.settings.sceneLayers}
-              addLabel="Add Layer"
-              countNoun={{ one: "layer", other: "layers" }}
-              onAdd={() => setSceneLayerPick("add")}
-              onChange={(sceneLayers) =>
-                mutate({
-                  ...scene,
-                  settings: {
-                    ...scene.settings,
-                    sceneLayers,
-                  },
-                })
-              }
-              renderItemHeader={({ item, index }) =>
-                stackAssetPicker(
-                  item.assetGuid,
-                  `scene-layer-${index}-asset`,
-                  `Layer ${index + 1} Asset`,
-                  () => setSceneLayerPick(index),
-                )
-              }
-              renderItem={({ item, index, onChange }) => (
-                <FieldGroup className="flex-row flex-wrap items-center gap-1">
-                  <Field
-                    orientation="horizontal"
-                    className="w-fit min-h-7 px-3 pointer-coarse:min-h-11"
-                  >
-                    <FieldLabel
-                      className="sr-only"
-                      htmlFor={`scene-layer-${index}-enabled`}
-                    >
-                      Layer {index + 1} Enabled
-                    </FieldLabel>
-                    <Switch
-                      size="sm"
-                      className="pointer-coarse:after:-inset-y-[15px]"
-                      id={`scene-layer-${index}-enabled`}
-                      data-testid={`scene-layer-${index}-enabled`}
-                      title={item.enabled !== false ? "Enabled" : "Disabled"}
-                      checked={item.enabled !== false}
-                      onCheckedChange={(enabled) =>
-                        onChange({ ...item, enabled })
-                      }
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="w-auto min-w-0 gap-1"
-                  >
-                    <FieldLabel htmlFor={`scene-layer-${index}-z`}>
-                      Z-Order
-                    </FieldLabel>
-                    <NumberField
-                      id={`scene-layer-${index}-z`}
-                      data-testid={`scene-layer-${index}-z-order`}
-                      className="h-7 w-12 px-1.5 pointer-coarse:h-11"
-                      aria-label={`Layer ${index + 1} Z-Order`}
-                      value={item.zOrder}
-                      onChange={(zOrder) => onChange({ ...item, zOrder })}
-                    />
-                  </Field>
-                </FieldGroup>
-              )}
-            />
-          </div>
-        ) : null}
-        {!visibleSettingsRows.length && !showPostProcess && !showShadows && !showEnvironment && !showCel && !showSceneLayers
-          ? noMatchingProperties
-          : null}
-        <AssetPicker
-          open={envTexturePickOpen}
-          onOpenChange={setEnvTexturePickOpen}
-          assets={environmentPickerAssets}
-          allowedTypes={["Texture"]}
-          title="Pick Environment Texture"
-          allowNone
-          onPick={(environmentTextureGuid) => {
-            mutate({
-              ...scene,
-              settings: { ...scene.settings, environmentTextureGuid },
-            });
-            setEnvTexturePickOpen(false);
-          }}
-          data-testid="scene-environment-texture-picker"
-        />
-        <AssetPicker
-          open={sceneLayerPick !== null}
-          onOpenChange={(open) => {
-            if (!open) setSceneLayerPick(null);
-          }}
-          assets={pickerAssets}
-          allowedTypes={["SceneLayer"]}
-          title="Pick Scene Layer"
-          allowNone={sceneLayerPick !== "add"}
-          onPick={(assetGuid) => {
-            const stack = [...scene.settings.sceneLayers];
-            if (sceneLayerPick === "add") {
-              if (assetGuid) {
-                stack.push({
-                  assetGuid,
-                  zOrder: stack.length,
-                  enabled: true,
-                });
-              }
-            } else if (typeof sceneLayerPick === "number") {
-              if (!assetGuid) {
-                stack.splice(sceneLayerPick, 1);
-              } else {
-                const current = stack[sceneLayerPick];
-                stack[sceneLayerPick] = {
-                  assetGuid,
-                  zOrder: current?.zOrder ?? sceneLayerPick,
-                  enabled: current?.enabled !== false,
-                };
-              }
-            }
-            mutate({
-              ...scene,
-              settings: { ...scene.settings, sceneLayers: stack },
-            });
-            setSceneLayerPick(null);
-          }}
-          data-testid="scene-layers-picker"
-        />
-        <AssetPicker
-          open={postProcessPick !== null}
-          onOpenChange={(open) => {
-            if (!open) setPostProcessPick(null);
-          }}
-          assets={postProcessPickerAssets}
-          allowedTypes={["Material", "MaterialInstance"]}
-          createTypes={["Material"]}
-          createOptions={{ materialDomain: "postProcess" }}
-          title="Pick Post-Process Material"
-          allowNone={postProcessPick !== "add"}
-          onPick={(materialGuid) => {
-            const stack = [...postProcessEntries];
-            if (postProcessPick === "add") {
-              if (materialGuid) {
-                stack.push({ id: newGuid(), materialGuid, enabled: true });
-              }
-            } else if (postProcessPick) {
-              const index = stack.findIndex((entry) => entry.id === postProcessPick.id);
-              if (index < 0) {
-                setPostProcessPick(null);
-                return;
-              }
-              if (!materialGuid) {
-                stack.splice(index, 1);
-              } else {
-                const current = stack[index]!;
-                stack[index] = {
-                  ...current,
-                  materialGuid,
-                  enabled: current?.enabled !== false,
-                };
-              }
-            }
-            mutate({
-              ...scene,
-              settings: { ...scene.settings, postProcessStack: normalizeScenePostProcessStack(stack) },
-            });
-            setPostProcessPick(null);
-          }}
-          data-testid="scene-post-process-picker"
-        />
-        <SceneComponentPicker
-          open={cameraPickerOpen}
-          onOpenChange={setCameraPickerOpen}
-          components={sceneComponentEntries(scene, ["CameraComponent"])}
-          allowedClassIds={["CameraComponent"]}
-          title="Pick Default Camera"
-          allowNone
-          onPick={(ref) => {
-            mutate({
-              ...scene,
-              settings: {
-                ...scene.settings,
-                mainCameraActorId: ref?.actorId ?? null,
-                mainCameraComponentId: ref?.componentId ?? null,
-              },
-            });
-            setCameraPickerOpen(false);
-          }}
-          data-testid="scene-default-camera-picker"
+        <SceneDetailsSettings
+          scene={scene}
+          overlay={overlay}
+          projectDocument={projectDocument}
+          mutate={mutate}
+          classEntries={classEntries}
+          pickerAssets={pickerAssets}
+          environmentPickerAssets={environmentPickerAssets}
+          postProcessPickerAssets={postProcessPickerAssets}
+          postProcessEntries={postProcessEntries}
+          matches={matches}
+          filterRows={filterRows}
+          overrideOpen={overrideOpen}
+          setOverrideOpen={setOverrideOpen}
+          noMatchingProperties={noMatchingProperties}
+          envTexturePickOpen={envTexturePickOpen}
+          setEnvTexturePickOpen={setEnvTexturePickOpen}
+          cameraPickerOpen={cameraPickerOpen}
+          setCameraPickerOpen={setCameraPickerOpen}
+          postProcessPick={postProcessPick}
+          setPostProcessPick={setPostProcessPick}
+          sceneLayerPick={sceneLayerPick}
+          setSceneLayerPick={setSceneLayerPick}
         />
       </PanelFrame>
     );
@@ -1486,283 +680,24 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             No Matching Components
           </p>
         ) : null}
-        {shownComponentDetails.map(
-          ({
-            component,
-            template,
-            index,
-            title,
-            nameParts,
-            rows,
-            colliderRows,
-            showExtras,
-            expanded,
-          }) => (
-            <div
-              key={component.id}
-              className="mx-2 overflow-hidden rounded-lg border border-border/60 bg-sidebar"
-              data-testid={`component-card-${component.id}`}
-            >
-              <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
-                {renamingComponentKey === `${actor.id}:${component.id}` ? (
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <TypeVisualIcon
-                      visual={resolveTypeVisual({
-                        classId: component.classId,
-                        ancestry: walkAncestry(component.classId, parentOf),
-                      })}
-                    />
-                    <InlineRenameInput
-                      value={nameParts.name}
-                      aria-label={`Rename ${title}`}
-                      data-testid={`component-rename-${component.id}`}
-                      onDone={(name) => {
-                        setRenamingComponentKey(null);
-                        if (name === null) return;
-                        updateActor((entry) => ({
-                          ...entry,
-                          components: entry.components.map((candidate) => {
-                            if (candidate.id !== component.id) return candidate;
-                            const next = { ...candidate };
-                            const renamed = renamedComponentName(candidate.classId, name);
-                            if (renamed === undefined) delete next.name;
-                            else next.name = renamed;
-                            return next;
-                          }),
-                        }));
-                      }}
-                    />
-                    {nameParts.detail ? (
-                      <span className="shrink-0 text-[13px] text-muted-foreground">{nameParts.detail}</span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="min-w-0 flex-1 justify-start px-0"
-                    aria-label={title}
-                    aria-expanded={expanded}
-                    aria-controls={`component-details-${actor.id}-${component.id}`}
-                    onClick={() => {
-                      (needle
-                        ? setFilterCollapsedComponents
-                        : setCollapsedComponents)((current) => {
-                        const next = new Set(current);
-                        const key = `${actor.id}:${component.id}`;
-                        if (expanded) next.add(key);
-                        else next.delete(key);
-                        return next;
-                      });
-                    }}
-                  >
-                    <ChevronDownIcon
-                      className={expanded ? undefined : "-rotate-90"}
-                    />
-                    <TypeVisualIcon
-                      visual={resolveTypeVisual({
-                        classId: component.classId,
-                        ancestry: walkAncestry(
-                          component.classId,
-                          parentOf,
-                        ),
-                      })}
-                      data-testid={`component-type-icon-${component.id}`}
-                    />
-                    <ComponentCardName
-                      title={title}
-                      onRename={() => setRenamingComponentKey(`${actor.id}:${component.id}`)}
-                    />
-                  </Button>
-                )}
-                <div className="flex shrink-0 items-center gap-1">
-                  <IconActionButton
-                    label={`Move ${title} Up`}
-                    disabled={index === 0}
-                    onClick={() =>
-                      updateActor((entry) => {
-                        const components = [...entry.components];
-                        const [moved] = components.splice(index, 1);
-                        components.splice(index - 1, 0, moved!);
-                        return { ...entry, components };
-                      })
-                    }
-                    data-testid={`component-up-${component.id}`}
-                  >
-                    <ChevronUpIcon />
-                  </IconActionButton>
-                  <IconActionButton
-                    label={`Remove ${title}`}
-                    onClick={() =>
-                      updateActor((entry) => ({
-                        ...entry,
-                        components: entry.components.filter(
-                          (candidate) => candidate.id !== component.id,
-                        ),
-                      }))
-                    }
-                    data-testid={`component-remove-${component.id}`}
-                  >
-                    <Trash2Icon />
-                  </IconActionButton>
-                </div>
-              </div>
-              {shapeComponents.includes(component) ? (
-                <div className="flex px-2 py-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="pointer-coarse:min-h-11"
-                    aria-label={`Edit ${title} In Viewport`}
-                    aria-pressed={activeShapeComponent?.id === component.id}
-                    disabled={actor.locked || multiSelection}
-                    onClick={() => setShapeEditTarget({ actorId: actor.id, componentId: component.id })}
-                    data-testid={`component-shape-edit-${component.id}`}
-                  >
-                    {activeShapeComponent?.id === component.id ? "Editing In Viewport" : "Edit In Viewport"}
-                  </Button>
-                </div>
-              ) : null}
-              {expanded ? (
-                <div id={`component-details-${actor.id}-${component.id}`}>
-                  {showExtras && component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => updateActor(entry => ({ ...entry, components: entry.components.map(candidate => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, options } } : candidate) }))} /> : null}
-                  {showExtras && component.classId === "2DRichTextComponent" ? (
-                    <RichTextAppearModesField
-                      value={parseText2DAppearProperties(component.properties).appearModes}
-                      defaultValue={parseText2DAppearProperties(template?.properties ?? {}).appearModes}
-                      onChange={(appearModes) => updateActor((entry) => ({
-                        ...entry,
-                        components: entry.components.map((candidate) => candidate.id === component.id
-                          ? { ...candidate, properties: { ...candidate.properties, appearModes } }
-                          : candidate),
-                      }))}
-                      data-testid={`rich-text-appear-modes-${component.id}`}
-                    />
-                  ) : null}
-                  {rows.length ? <PropertyGrid rows={rows} /> : null}
-                  {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
-                    <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
-                      onChange={(actorIds) => updateActor((entry) => ({ ...entry, components: entry.components.map((candidate) => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, actorIds } } : candidate) }))} />
-                  ) : null}
-                  {showExtras && component.classId === "RagdollComponent" ? (
-                    <RagdollBoneNamesEditor
-                      boneNames={component.properties.boneNames as string[] | undefined}
-                      onChange={(boneNames) => updateActor((entry) => ({
-                        ...entry,
-                        components: entry.components.map((candidate) => candidate.id === component.id
-                          ? { ...candidate, properties: { ...candidate.properties, boneNames } }
-                          : candidate),
-                      }))}
-                      data-testid={`ragdoll-bone-names-${component.id}`}
-                    />
-                  ) : null}
-                  {showExtras && component.classId === "2DPanelComponent" ? (
-                    <NineSlicePreview
-                      {...parseOverlayPanelProperties(component.properties)}
-                    />
-                  ) : null}
-                  {showExtras && component.classId === "Text3DComponent" ? (
-                    <div className="p-2">
-                      <Field>
-                        <FieldLabel htmlFor={`text3d-text-${component.id}`}>
-                          Text
-                        </FieldLabel>
-                        <MultilineTextField
-                          id={`text3d-text-${component.id}`}
-                          title="Text"
-                          disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
-                          value={
-                            parseText3DProperties(component.properties).text
-                          }
-                          onChange={(value) =>
-                            updateActor((entry) => ({
-                              ...entry,
-                              components: entry.components.map((candidate) =>
-                                candidate.id === component.id
-                                  ? {
-                                      ...candidate,
-                                      properties: patchComponentProperties(
-                                        candidate.properties,
-                                        "text",
-                                        value,
-                                      ),
-                                    }
-                                  : candidate,
-                              ),
-                            }))
-                          }
-                          data-testid={`text3d-text-${component.id}`}
-                        />
-                      </Field>
-                    </div>
-                  ) : null}
-                  {showExtras &&
-                  (component.classId === "2DTextComponent" ||
-                    component.classId === "2DRichTextComponent") ? (
-                    <div className="p-2">
-                      <Field>
-                        <FieldLabel htmlFor={`text2d-text-${component.id}`}>
-                          Text
-                        </FieldLabel>
-                        <MultilineTextField
-                          id={`text2d-text-${component.id}`}
-                          title="Text"
-                          markup={component.classId === "2DRichTextComponent"}
-                          value={
-                            parseText2DProperties(component.properties, {
-                              rich: component.classId === "2DRichTextComponent",
-                            }).text
-                          }
-                          onChange={(value) =>
-                            updateActor((entry) => ({
-                              ...entry,
-                              components: entry.components.map((candidate) =>
-                                candidate.id === component.id
-                                  ? {
-                                      ...candidate,
-                                      properties: patchComponentProperties(
-                                        candidate.properties,
-                                        "text",
-                                        value,
-                                      ),
-                                    }
-                                  : candidate,
-                              ),
-                            }))
-                          }
-                          data-testid={`text2d-text-${component.id}`}
-                        />
-                      </Field>
-                    </div>
-                  ) : null}
-                  {colliderRows.length ? (
-                    <PropertyGrid
-                      title="Transform"
-                      rows={colliderRows}
-                      data-testid={`${component.classId === "ColliderComponent" ? "collider" : "component"}-transform-grid-${component.id}`}
-                    />
-                  ) : null}
-                  {showExtras && component.classId === "NavMeshComponent" ? (
-                    <div className="p-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full"
-                        data-testid={`navmesh-bake-${component.id}`}
-                        disabled={navBake?.baking}
-                        onClick={() => {
-                          void navBake?.startBake(component.properties);
-                        }}
-                      >
-                        Bake NavMesh
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ),
-        )}
+        {shownComponentDetails.map((detail) => (
+          <SceneComponentCard
+            key={detail.component.id}
+            {...detail}
+            actor={actor}
+            scene={scene}
+            parentOf={parentOf}
+            updateActor={updateActor}
+            renamingComponentKey={renamingComponentKey}
+            setRenamingComponentKey={setRenamingComponentKey}
+            setCollapsedKeys={needle ? setFilterCollapsedComponents : setCollapsedComponents}
+            shapeEditable={shapeComponents.includes(detail.component)}
+            shapeEditing={activeShapeComponent?.id === detail.component.id}
+            multiSelection={multiSelection}
+            setShapeEditTarget={setShapeEditTarget}
+            navBake={navBake}
+          />
+        ))}
       </div>
       <AssetPicker
         open={assetPick !== null}
