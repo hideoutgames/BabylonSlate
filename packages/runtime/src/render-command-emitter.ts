@@ -371,12 +371,14 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
       });
+      this.state.meshSlots.add(slotId);
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
       return;
     }
     const capture = captureComponent(actor);
     if (capture) {
       this.host.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
+      this.state.meshSlots.add(slotId);
       return;
     }
     const audio = actor.components.find(
@@ -391,6 +393,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         meshKind: "audio",
         parts: [playMeshPartOf(audio)],
       });
+      this.state.meshSlots.add(slotId);
       return;
     }
     const particle = actor.components.find(
@@ -405,6 +408,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         meshKind: "particle",
         parts: [playMeshPartOf(particle)],
       });
+      this.state.meshSlots.add(slotId);
       return;
     }
     const rigid = actor.components.find(
@@ -419,8 +423,14 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         meshKind: "rigidbody",
         parts: [playMeshPartOf(rigid)],
       });
+      this.state.meshSlots.add(slotId);
     } else if (this.state.fogVolumeSlots.has(slotId) || this.state.reflectionProbeSlots.has(slotId)) {
       this.host.emit({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: null });
+      this.state.meshSlots.delete(slotId);
+    } else if (this.state.meshSlots.delete(slotId)) {
+      // The last visual stopped rendering (Render In Game off, Editor Only on): send the empty one.
+      this.host.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: null,
+        ...(actor.sceneLayerId ? { sceneLayerId: actor.sceneLayerId } : {}) });
     }
   }
 

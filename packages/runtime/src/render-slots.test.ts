@@ -35,4 +35,30 @@ describe("render slots", () => {
       runtime.stop();
     }
   });
+
+  it("clears a slot's visual when its last Play renderable stops rendering", async () => {
+    const commands: CommandMessage[] = [];
+    const scene = createDefaultScene();
+    scene.actors = [createActor("crate", "Crate", { classId: "Hider", components: [
+      { id: "col", classId: "ColliderComponent", properties: { renderInGame: true,
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
+    ] })];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: scene, onCommand: (command) => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ assetGuid: "hider-script", classId: "Hider", parentClassId: "Actor",
+        source: 'export function Update(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "col"), "renderInGame", false); }',
+        anchors: [], entryPoints: [{ name: "Update", event: "Update", isAsync: false }] }]);
+      runtime.realizePlayWorld();
+      const shown = commands.find((command): command is Extract<CommandMessage, { type: "assignMesh" }> => command.type === "assignMesh");
+      expect(shown).toMatchObject({ actorGuid: "crate", meshKind: expect.stringMatching(/^collider:/) });
+      commands.length = 0;
+      runtime.invokeScriptEvent("Hider", "Update", runtime.getWorld().findActor("crate")!);
+      expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
+        expect.objectContaining({ slotId: shown!.slotId, actorGuid: "crate", meshAssetGuid: null, meshKind: null }),
+      ]);
+    } finally {
+      runtime.stop();
+    }
+  });
 });
