@@ -24,6 +24,7 @@ Optional Git LFS file locking: the `LockProvider` port, the LFS client, token st
 | SecretStore and native HTTP | [`packages/vfs/src/`](../../../packages/vfs/src/) `secret-store.ts`, `capacitor-secret-store.ts`, `electron-secret-store.ts`, `native-http.ts` |
 | Desktop IPC (`secrets:*`, `lfs:fetch`) | [`apps/desktop/src/`](../../../apps/desktop/src/) `desktop-secret-store.ts`, `packaged-security.ts` |
 | Editor service, path-keyed file ops, external change | [`apps/editor/src/`](../../../apps/editor/src/) `services/source-control-service.ts`, `lib/source-control-file-ops.ts`, `lib/external-change.ts` |
+| Project Settings → Source Control, Turn Off confirmation | [`apps/editor/src/components/project-source-control-settings.tsx`](../../../apps/editor/src/components/project-source-control-settings.tsx) (state in `settings-modal.tsx`) |
 | mtime diff (`MANY_EXTERNAL_CHANGES` = 8) | [`mtime-diff.ts`](../../../packages/assets/src/mtime-diff.ts) |
 
 ## Port and client
