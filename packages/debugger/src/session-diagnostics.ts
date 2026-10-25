@@ -1,6 +1,6 @@
-import type { DiagnosticOperation, DiagnosticOperationResult } from "@haptic/bridge";
+import type { DiagnosticOperation, DiagnosticOperationResult, PerformanceScriptEntry } from "@haptic/bridge";
 import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample,
-  type PerformanceGpuSample, type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile, type PerformanceScriptEntry,
+  type PerformanceGpuSample, type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile,
   type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
 import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 
