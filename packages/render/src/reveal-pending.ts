@@ -46,6 +46,11 @@ export function isRevealPending(mesh: AbstractMesh): boolean {
   return pending.has(mesh);
 }
 
+/** Whether `mesh` exists only for warm draws ahead of a spawn (`hideForPipelineWarmup`): it is never revealed. */
+export function isPipelineWarmupMesh(mesh: AbstractMesh): boolean {
+  return warmOnly.has(mesh);
+}
+
 /** Whether `mesh` has drawn with its current Material: such a mesh is never hidden. */
 export function hasDrawn(mesh: AbstractMesh): boolean {
   return drawnWith.has(mesh) && drawnWith.get(mesh) === (mesh.material ?? null);

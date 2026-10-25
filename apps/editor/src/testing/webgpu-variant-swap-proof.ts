@@ -2,8 +2,9 @@
  * Test-build-only proof, on a real WebGPU device (the software adapter in CI), that a world view keeps drawing while
  * new variants' render pipelines are created: a light switching off draws each Material's previous Effect until its
  * new variant's pipeline exists, a new shadow map (a spot's, the sun's first cascaded one) samples neutrally until its
- * casters' pipelines exist, a spawn with a variant nothing compiled stays hidden until its pipelines exist, and a spawn
- * whose Material Play's load warmed creates no pipeline at all. It counts the pipelines the device created
+ * casters' pipelines exist, a spawn with a variant nothing compiled stays hidden until its pipelines exist (into a drawn
+ * shadow map, its caster depth pipeline included), and a spawn whose Material Play's load warmed creates no pipeline at
+ * all. It counts the pipelines the device created
  * synchronously (each blocks the renderer while the GPU process compiles it) and asynchronously.
  */
 import {
@@ -11,6 +12,7 @@ import {
   Color4,
   DirectionalLight,
   FreeCamera,
+  Matrix,
   MeshBuilder,
   PBRMaterial,
   PointLight,
@@ -584,6 +586,20 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
     const sunMap = () => sun.getShadowGenerator() as ShadowGenerator | null;
     const sunShadows = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== unshadowedBySun[index]) &&
       sunMap()?.getDarkness() === 0);
+    // A spawn into the drawn sun map with a caster depth variant no caster drew (an instanced one): hidden, it is
+    // listed in the map's redraws only to create that pipeline asynchronously, and is revealed once it exists, so the
+    // map's redraw with it creates none synchronously.
+    const instanced = MeshBuilder.CreateBox("instanced spawn", { size: 0.5 }, scene);
+    instanced.position.set(0, 0.25, -2);
+    instanced.material = standard;
+    instanced.thinInstanceAdd(Matrix.Identity());
+    const castsIntoSun = () => {
+      const effect = instanced.subMeshes[0]?._getDrawWrapper(sunMap()!.getShadowMap()!.renderPassIds[0]!)?.effect;
+      return !!effect && effectDrawn(engine, effect);
+    };
+    let casterHiddenFrames = 0;
+    const casterSpawn = await step(() => !isRevealPending(instanced) && drawnEffect(instanced) !== null && castsIntoSun(),
+      () => { if (isRevealPending(instanced)) casterHiddenFrames++; });
     return {
       swap: { ...swap, previousFrames },
       shadowGain,
@@ -592,6 +608,7 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
       staged,
       warmSpawn,
       sunShadows: { ...sunShadows, cascades: sunMap()?.getShadowMap()?.renderPassIds.length ?? 0 },
+      casterSpawn: { ...casterSpawn, hiddenFrames: casterHiddenFrames },
     };
   } finally {
     device.createRenderPipeline = createRenderPipeline;

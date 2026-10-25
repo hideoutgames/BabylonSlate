@@ -26,6 +26,7 @@ import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
 import { hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe } from "./reveal-pending";
+import { casterPipelinesWarm } from "./shadow-caster-warm";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { pipelinesWarm, requestPipelineWarm } from "./variant-pipeline-warmup";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
@@ -323,9 +324,12 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     const meshReady = collectEffectRequests(scene.getEngine(), meshRequests, probeMesh);
     if (hideable) {
       hideUntilReady(mesh);
-      // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`).
+      // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`), those of
+      // the drawn shadow maps its reveal redraws included (`shadow-caster-warm.ts`), which those maps start creating
+      // once its caster depth variants are ready, while its own warm draws create theirs.
       requestPipelineWarm(mesh);
-      noteRevealProbe(mesh, meshReady && pipelinesWarm(mesh));
+      const castersWarm = meshReady && casterPipelinesWarm(mesh);
+      noteRevealProbe(mesh, meshReady && pipelinesWarm(mesh) && castersWarm);
       const failed = meshReady ? undefined : failedRequest();
       if (failed) {
         reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);

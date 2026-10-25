@@ -65,6 +65,7 @@ import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
+import { forgetCasterRequests, listsHiddenCaster, setShadowCasterReach } from "./shadow-caster-warm";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -450,17 +451,26 @@ export class SceneShadowController {
     // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
     // with it: a local light's only when the mesh is within its range, a sun's always.
     const unwatchReveals = onMeshRevealed(scene, (mesh) => {
+      forgetCasterRequests(mesh);
       if (!this.meshes.has(mesh)) return;
       this.forEachGenerator((generator) => {
-        const light = generator.getLight();
-        if (!(light instanceof DirectionalLight) && "range" in light && Number.isFinite(light.range) &&
-          !casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number)) return;
-        generator.getShadowMap()?.resetRefreshCounter();
+        if (reaches(generator, mesh)) generator.getShadowMap()?.resetRefreshCounter();
       });
+    });
+    // On WebGPU a hidden mesh's reveal waits for the depth pipelines of the scene view's drawn maps among those
+    // (`shadow-caster-warm.ts`): a standby map samples neutrally, and one awaiting its first draw has none yet.
+    setShadowCasterReach(scene, (mesh, visit) => {
+      if (!this.meshes.has(mesh) || !scene.shadowsEnabled || !scene.renderTargetsEnabled) return;
+      for (const entry of this.entries.values()) {
+        const generator = entry.generator;
+        if (!generator || entry.status !== "active" || entry.standby || awaitsFirstDraw(generator)) continue;
+        if (entry.light.isEnabled() && entry.light.shadowEnabled && reaches(generator, mesh)) visit(generator);
+      }
     });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
       unwatchReveals();
+      setShadowCasterReach(scene, undefined);
       // Their owners still await the ledger releases through their own claims.
       for (const view of [...this.views.values()]) void this.releaseView(view).catch(() => {});
       for (const entry of this.entries.values()) entry.generator?.dispose();
@@ -1618,13 +1628,17 @@ export class SceneShadowController {
         this.spatial.queryPlanes(activePlanes, casters);
         // The index never plane-culls deforming casters. A local map ends
         // at its light's range, so anything that cannot reach it draws nothing.
-        // A mesh a world view does not draw yet casts nothing either.
+        // A mesh a world view does not draw yet casts nothing either; on WebGPU
+        // a steady frame lists it while its reveal waits for this map, only to
+        // create its depth pipelines, every draw of it skipped
+        // (`shadow-caster-warm.ts`).
         const light = generator.getLight();
         const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
         const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
         let kept = 0;
         for (const mesh of casters)
-          if (!isRevealPending(mesh) && (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
+          if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
+            (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
         casters.length = kept;
         return casters;
       };
@@ -1902,6 +1916,13 @@ export class SceneShadowController {
     generator.normalBias = settings.normalBias;
     generator.frustumEdgeFalloff = 0;
   }
+}
+
+/** Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (its cone unchecked), a sun's always. */
+function reaches(generator: ShadowGenerator, mesh: AbstractMesh): boolean {
+  const light = generator.getLight();
+  return light instanceof DirectionalLight || !("range" in light) || !Number.isFinite(light.range) ||
+    casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number);
 }
 
 /** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
