@@ -169,6 +169,63 @@ function previewCamera(overlay: EditorDebugOverlay): Camera {
   return camera;
 }
 
+type DrawnImage = { data: Uint8ClampedArray; width: number; height: number };
+
+/** Node has no `ImageData`; returns the restore. */
+function stubImageData(): () => void {
+  const previous = (globalThis as { ImageData?: unknown }).ImageData;
+  (globalThis as { ImageData: unknown }).ImageData = class {
+    data: Uint8ClampedArray;
+    width: number;
+    height: number;
+    constructor(data: Uint8ClampedArray, width: number, height: number) {
+      this.data = data;
+      this.width = width;
+      this.height = height;
+    }
+  };
+  return () => {
+    if (previous) (globalThis as { ImageData: unknown }).ImageData = previous;
+    else delete (globalThis as { ImageData?: unknown }).ImageData;
+  };
+}
+
+/** A preview canvas that records every drawn image. */
+function recordingCanvas() {
+  const drawn: DrawnImage[] = [];
+  const canvas = {
+    hidden: true,
+    dataset: {} as Record<string, string>,
+    width: 0,
+    height: 0,
+    getContext: () => ({ putImageData: (image: DrawnImage) => drawn.push(image) }),
+  };
+  return { canvas: canvas as unknown as HTMLCanvasElement, drawn };
+}
+
+/** A GPU-order RGBA readback: red bottom row, blue top row. */
+function gpuReadback(width: number, height: number): Uint8Array {
+  const row = width * 4;
+  const gpu = new Uint8Array(width * height * 4);
+  for (let x = 0; x < width; x++) {
+    const bottom = x * 4;
+    gpu[bottom] = 255;
+    gpu[bottom + 3] = 255;
+    const top = (height - 1) * row + x * 4;
+    gpu[top + 2] = 255;
+    gpu[top + 3] = 255;
+  }
+  return gpu;
+}
+
+/** The canvas shows `gpuReadback` upright: blue top row, red bottom row. */
+function expectUpright(image: DrawnImage, width: number, height: number): void {
+  const row = width * 4;
+  expect([image.width, image.height]).toEqual([width, height]);
+  expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+  expect([...image.data.subarray((height - 1) * row, (height - 1) * row + 4)]).toEqual([255, 0, 0, 255]);
+}
+
 describe("EditorDebugOverlay", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
     [];
@@ -1123,69 +1180,54 @@ describe("EditorDebugOverlay", () => {
   });
 
   it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
-    const ImageDataStub = class {
-      data: Uint8ClampedArray;
-      width: number;
-      height: number;
-      constructor(data: Uint8ClampedArray, width: number, height: number) {
-        this.data = data;
-        this.width = width;
-        this.height = height;
-      }
-    };
-    const previousImageData = (globalThis as { ImageData?: unknown }).ImageData;
-    (globalThis as { ImageData: unknown }).ImageData = ImageDataStub;
-
-    const width = CAMERA_PREVIEW_WIDTH;
-    const height = CAMERA_PREVIEW_HEIGHT;
-    const row = width * 4;
-    const gpu = new Uint8Array(width * height * 4);
-    for (let x = 0; x < width; x++) {
-      const bottom = x * 4;
-      gpu[bottom] = 255;
-      gpu[bottom + 3] = 255;
-      const top = (height - 1) * row + x * 4;
-      gpu[top + 2] = 255;
-      gpu[top + 3] = 255;
-    }
+    const restoreImageData = stubImageData();
     const readPixels = vi
       .spyOn(RenderTargetTexture.prototype, "readPixels")
-      .mockResolvedValue(gpu);
+      .mockResolvedValue(gpuReadback(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT));
 
     try {
       const { scene } = createHandle();
       const overlay = new EditorDebugOverlay(scene);
-      const captured: Array<{ data: Uint8ClampedArray }> = [];
-      const canvas = {
-        hidden: true,
-        dataset: {} as Record<string, string>,
-        width: 0,
-        height: 0,
-        getContext: () => ({
-          putImageData: (image: { data: Uint8ClampedArray }) => {
-            captured.push(image);
-          },
-        }),
-      };
-      overlay.setPreviewCanvas(canvas as unknown as HTMLCanvasElement);
+      const { canvas, drawn } = recordingCanvas();
+      overlay.setPreviewCanvas(canvas);
       overlay.sync({
         sceneData: sceneWith([cameraActor()]),
         selectedActorIds: ["cam"],
       });
-      await vi.waitFor(() => expect(captured.length).toBeGreaterThan(0));
-      const image = captured[0]!;
-      expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
-      expect([...image.data.subarray((height - 1) * row, (height - 1) * row + 4)]).toEqual([
-        255, 0, 0, 255,
-      ]);
+      await vi.waitFor(() => expect(drawn.length).toBeGreaterThan(0));
+      expectUpright(drawn[0]!, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
       overlay.dispose();
     } finally {
       readPixels.mockRestore();
-      if (previousImageData) {
-        (globalThis as { ImageData: unknown }).ImageData = previousImageData;
-      } else {
-        delete (globalThis as { ImageData?: unknown }).ImageData;
-      }
+      restoreImageData();
+    }
+  });
+
+  it("draws a pending readback at the size it was taken at after a lens switch resizes the preview", async () => {
+    const restoreImageData = stubImageData();
+    let resolveReadback!: (pixels: ArrayBufferView) => void;
+    const pending = new Promise<ArrayBufferView>((resolve) => { resolveReadback = resolve; });
+    const readPixels = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pending);
+
+    try {
+      const { scene } = createHandle();
+      const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+      const { canvas, drawn } = recordingCanvas();
+      overlay.setPreviewCanvas(canvas);
+      const sceneData = sceneWith([cameraActor(), captureActor()]);
+      overlay.sync({ sceneData, selectedActorIds: ["cam"] });
+      // An unassigned capture previews 1:1, so the RTT shrinks while the camera's readback is pending.
+      overlay.sync({ sceneData, selectedActorIds: ["rt"] });
+      expect(overlay.previewTexture!.getSize()).toEqual({ width: 180, height: 180 });
+      expect(readPixels).toHaveBeenCalledOnce();
+
+      resolveReadback(gpuReadback(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT));
+      await vi.waitFor(() => expect(drawn).toHaveLength(1));
+      expectUpright(drawn[0]!, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
+      overlay.dispose();
+    } finally {
+      readPixels.mockRestore();
+      restoreImageData();
     }
   });
 });

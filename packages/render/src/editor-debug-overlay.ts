@@ -941,12 +941,13 @@ export class EditorDebugOverlay {
     if (!canvas || !texture || this.previewBlitInFlight) return;
     this.previewBlitInFlight = true;
     try {
+      // The size the readback is taken at: a lens switch can resize the RTT before it resolves.
+      const { width, height } = texture.getSize();
       const buffer = await this.previewBlitter.read(texture);
       // A stopped overlay or replaced canvas must not receive a late readback.
       if (!buffer || !canvas.getContext || this.previewCanvas !== canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const { width, height } = texture.getSize();
       canvas.width = width;
       canvas.height = height;
       this.previewBlitter.put(ctx, buffer, width, height);
