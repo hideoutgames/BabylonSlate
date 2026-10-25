@@ -1,6 +1,6 @@
 import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
-import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
+import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
@@ -853,11 +853,25 @@ function initializePlayer(
     if (worker) worker.postControl({ type: "assetPreloadResult", ...result });
     else runtime?.notifyAssetPreloadResult(result);
   };
+  // The runtime merges published states, so each publish posts only the states
+  // that changed since the last one its current receiver accepted (every Audio
+  // voice and command load publishes).
+  let publishedStates = new Map<string, RuntimeAssetLoadState>();
+  let publishedTo: PlayerWorkerHost | RuntimeDriver | null = null;
   const publishAssetStates = () => {
+    const target = worker ?? runtime;
+    if (!target) return;
+    if (target !== publishedTo) { publishedTo = target; publishedStates = new Map(); }
     const preparing = new Set([...preparingPreloads.values()].flatMap(ids => [...ids]));
-    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: preparing.has(entry.guid) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets.getLoadState(entry.guid) }));
+    const states: Array<{ guid: string; state: RuntimeAssetLoadState }> = [];
+    for (const entry of manifest.assets) {
+      const state = preparing.has(entry.guid) ? "loading" : resourceFailures.has(entry.guid) ? "failed" : game.assets.getLoadState(entry.guid);
+      if (publishedStates.get(entry.guid) !== state) states.push({ guid: entry.guid, state });
+    }
+    if (!states.length) return;
     if (worker) worker.postControl({ type: "assetLoadStates", states });
     else runtime?.setAssetLoadStates(states);
+    for (const { guid, state } of states) publishedStates.set(guid, state);
   };
   if (game.onSourcesChanged) own(game.onSourcesChanged(() => { if (!halted) { refreshSourceContent(); publishAssetStates(); } }));
   const releasePreload = (id: string) => {
