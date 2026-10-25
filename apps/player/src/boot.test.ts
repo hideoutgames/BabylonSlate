@@ -196,6 +196,19 @@ describe("player startup and Stop ownership", () => {
     expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(true);
   });
 
+  it("does not report a Preview boundary that Stop cancelled as a console error", async () => {
+    const { game, canvas } = await fixture();
+    game.manifest.bundleDebugger = true;
+    const commands: Array<{ type: string } & Record<string, unknown>> = [];
+    const session = startPlayer({ game, canvas, previewDiagnostics: true, onConsoleEvent: (command) => commands.push(command) });
+    sessions.push(session);
+    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!(true);
+    expect(TestWorker.instances[0]!.messages.some(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary")).toBe(true);
+    session.stop();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(commands.filter(command => command.type === "log" && command.severity === "error")).toEqual([]);
+  });
+
   it("stops Preview game time for a render hold without taking input from the game", async () => {
     const { game, canvas, handle } = await fixture();
     game.manifest.bundleDebugger = true;

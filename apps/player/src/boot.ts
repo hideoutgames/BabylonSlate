@@ -597,7 +597,9 @@ function initializePlayer(
     // unknown, so the latest failed boundary releases the view freeze and the
     // input hold it placed; explicit editor suppression still applies.
     void request.catch(error => {
-      if (!halted && issued === issuedBoundaries) {
+      // Stop rejects every pending boundary; that is no failure to report.
+      if (halted) return;
+      if (issued === issuedBoundaries) {
         handle.setPaused(false);
         applyInputOwnership();
       }
