@@ -160,7 +160,7 @@ function reportLoadFailure(label: string, path: string, error: unknown, required
  * Play and export content collection, without React: the `collectPlay*`
  * loaders (open tabs override saved documents), Class / Animation Graph script
  * compilation with its codegen cache, and the compile signatures that decide
- * when Play bundles are stale. `DocumentProvider` creates one and exposes its
+ * when open graphs need Compile. `DocumentProvider` creates one and exposes its
  * functions as actions; each keeps its identity for the service's lifetime.
  */
 export function createPlayContentService(options: PlayContentServiceOptions) {
@@ -195,8 +195,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   /**
    * Compile on Save: warm the codegen cache for open Class and Animation
-   * Graphs only and return their signature. Play bundles are not recorded;
-   * Play still runs `collectPlayPreviewScripts` for the full set.
+   * Graphs only and return their signature, which the caller records as
+   * compiled. Play still runs `collectPlayPreviewScripts` for the full set.
    */
   const compileOpenGraphs = (tags: ProjectDocument["settings"]["tags"] | undefined): string => {
     const assets = projectService.registry?.list() ?? [];
