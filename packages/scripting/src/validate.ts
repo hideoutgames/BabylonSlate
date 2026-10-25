@@ -29,7 +29,7 @@ import {
   normalizeStringSwitchCases,
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
-import { eventNameForEntry } from "./compile";
+import { eventNameForEntry, localVariableIdent } from "./compile";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
 
@@ -680,19 +680,22 @@ function validateMemberBindings(
   const locals = members.filter(
     (member) => member.kind === "variable" && member.functionId,
   );
-  const seenLocal = new Set<string>();
+  // A function's locals compile to one `let` each, so two names with the same identifier collide.
+  const seenLocal = new Map<string, string>();
   for (const local of locals) {
-    const key = `${local.functionId}:${local.name}`;
+    const key = `${local.functionId}:${localVariableIdent(local.name)}`;
     const classHit = classVars.some((entry) => entry.name === local.name);
-    const duplicate = seenLocal.has(key);
-    seenLocal.add(key);
-    if (!classHit && !duplicate) continue;
+    const previous = seenLocal.get(key);
+    if (previous === undefined) seenLocal.set(key, local.name);
+    if (!classHit && previous === undefined) continue;
     out.push(
       diagnostic({
         code: "member.local_name_conflict",
         message: classHit
           ? `Local variable "${local.name}" collides with a class variable`
-          : `Local variable "${local.name}" is declared more than once`,
+          : previous === local.name
+            ? `Local variable "${local.name}" is declared more than once`
+            : `Local variable "${local.name}" collides with local variable "${previous}"`,
         assetGuid: ctx.assetGuid,
         graphId: graph.id,
       }),
@@ -1107,19 +1110,24 @@ const EDGE_DIAGNOSTIC_CODES = new Set([
   "type.wildcard_group",
 ]);
 
+function anchorsCompiledNode(
+  d: Diagnostic,
+  compiled: ReadonlySet<string>,
+): boolean {
+  if (!d.nodeId || compiled.has(d.nodeId)) return true;
+  const related = d.relatedNodeId;
+  return (
+    !!related &&
+    compiled.has(related) &&
+    EDGE_DIAGNOSTIC_CODES.has(d.code)
+  );
+}
+
 function keepCompiledNodeDiagnostics(
   diagnostics: readonly Diagnostic[],
   compiled: ReadonlySet<string>,
 ): Diagnostic[] {
-  return diagnostics.filter((d) => {
-    if (!d.nodeId || compiled.has(d.nodeId)) return true;
-    const related = d.relatedNodeId;
-    return (
-      !!related &&
-      compiled.has(related) &&
-      EDGE_DIAGNOSTIC_CODES.has(d.code)
-    );
-  });
+  return diagnostics.filter((d) => anchorsCompiledNode(d, compiled));
 }
 
 function validateFlowSwitchCases(
@@ -1278,8 +1286,10 @@ export function validateGraphs(
   options: ValidateOptions = {},
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  const compiledByGraph = new Map<string, ReadonlySet<string>>();
   for (const graph of graphs) {
     const compiled = compiledNodeIds(graph);
+    compiledByGraph.set(graph.id, compiled);
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
     const incoming = indexIncomingEdges(graph);
@@ -1301,8 +1311,12 @@ export function validateGraphs(
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   diagnostics.push(...validateCustomEventNames(graphs, ctx));
+  // Registered rules see every graph; their node diagnostics follow the same compiled-node filter.
   for (const rule of listValidationRules()) {
-    diagnostics.push(...rule.run(graphs, ctx));
+    for (const d of rule.run(graphs, ctx)) {
+      const compiled = compiledByGraph.get(d.graphId);
+      if (!compiled || anchorsCompiledNode(d, compiled)) diagnostics.push(d);
+    }
   }
   return diagnostics;
 }

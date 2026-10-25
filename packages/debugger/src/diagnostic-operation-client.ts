@@ -1,23 +1,17 @@
-import type { DiagnosticOperationRequest, DiagnosticOperationResult } from "./session-diagnostics";
-
-export type RuntimeDiagnosticOperationRequest = {
-  sessionGeneration: number; requestId: number; operation: DiagnosticOperationRequest;
-};
-export type RuntimeDiagnosticOperationResult = DiagnosticOperationResult & {
-  sessionGeneration: number; requestId: number; recordingId: string;
-};
+import type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult } from "@haptic/bridge";
+import type { DiagnosticOperationOutcome } from "./session-diagnostics";
 
 /** Shared by editor Play and the packaged player; never an uncorrelated FIFO. */
 export function createDiagnosticOperationClient(options: {
   sessionGeneration: number;
-  send: (request: RuntimeDiagnosticOperationRequest) => void | Promise<void>;
+  send: (request: DiagnosticOperationRequest) => void | Promise<void>;
 }) {
   let sequence = 0;
   let closed = false;
   const pending = new Map<number, { recordingId: string;
-    resolve: (result: DiagnosticOperationResult) => void; timer: ReturnType<typeof setTimeout> }>();
+    resolve: (result: DiagnosticOperationOutcome) => void; timer: ReturnType<typeof setTimeout> }>();
   return {
-    request(operation: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
+    request(operation: DiagnosticOperation): Promise<DiagnosticOperationOutcome> {
       if (closed || pending.size >= 4) return Promise.resolve({ success: false, reason: closed ? "Game session stopped." : "Too many pending diagnostic requests." });
       const requestId = ++sequence;
       return new Promise((resolve) => {
@@ -34,7 +28,7 @@ export function createDiagnosticOperationClient(options: {
         } catch (error) { fail(String(error)); }
       });
     },
-    receive(result: RuntimeDiagnosticOperationResult): boolean {
+    receive(result: DiagnosticOperationResult): boolean {
       if (closed || result.sessionGeneration !== options.sessionGeneration) return false;
       const entry = pending.get(result.requestId);
       if (!entry || result.recordingId !== entry.recordingId || typeof result.success !== "boolean") return false;

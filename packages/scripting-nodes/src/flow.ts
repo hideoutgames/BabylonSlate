@@ -30,6 +30,11 @@ import {
   pinTypeForMember,
 } from "./member-pins";
 
+/**
+ * On Command Run's only fixed pin. A parameter named `execIn` keeps that id,
+ * as it always has, so stored edges from it still resolve.
+ */
+const COMMAND_RUN_PIN_IDS: ReadonlySet<string> = new Set(["execOut"]);
 const MAP_K: PinType = { kind: "resolvingWildcard", group: "K" };
 const MAP_V: PinType = { kind: "resolvingWildcard", group: "V" };
 /** Runtime export names for catalog event entry nodes. */
@@ -473,7 +478,7 @@ export const flowNodes: NodeDefinition[] = [
       return [
         pin("execOut", "then", "out", EXEC),
         ...params.map((param) =>
-          pin(param.name, param.name, "out", pinTypeForCommandParam(param.type)),
+          pin(memberArgPinId(param.name, COMMAND_RUN_PIN_IDS), param.name, "out", pinTypeForCommandParam(param.type)),
         ),
       ];
     },
@@ -483,7 +488,7 @@ export const flowNodes: NodeDefinition[] = [
         : [];
       const out: Record<string, string> = {};
       for (const param of params) {
-        out[param.name] = `(ctx.commandArgs[${JSON.stringify(param.name)}])`;
+        out[memberArgPinId(param.name, COMMAND_RUN_PIN_IDS)] = `(ctx.commandArgs[${JSON.stringify(param.name)}])`;
       }
       if (Object.keys(out).length === 0) return;
       return out;

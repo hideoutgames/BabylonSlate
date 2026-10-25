@@ -223,6 +223,36 @@ export function meshAssetFingerprint(
   ].join("|");
 }
 
+/** A number per installed map (or other object value), keyed weakly: a revision compares identities and keeps none. */
+const installedIdentities = new WeakMap<object, number>();
+let lastInstalledIdentity = 0;
+/** Each context's install revision, with the identities of what it held when that revision was taken. */
+const installRevisions = new WeakMap<MeshAssetContext, { key: string; revision: number }>();
+
+/**
+ * The revision of the installed assets `meshAssetFingerprint` hashes, as `assets` holds them now. An install replaces
+ * these maps and values rather than editing them, so the revision moves on whenever one was replaced since the last
+ * call, and an equal revision means the same maps, without hashing any bytes or holding any map: a record of what a
+ * visual was built with keeps the number, never the superseded bytes (a scene's sources released since).
+ */
+export function meshAssetInstallRevision(assets: MeshAssetContext): number {
+  const key = [
+    assets.pixelsPerUnit, assets.spritePayloads, assets.spriteAnimations, assets.tilemaps, assets.waters, assets.tilesets,
+    assets.payloadRevisions, assets.textureBytes, assets.texturePixelSizes, assets.fontFacetypeBytes, assets.fontMsdfJson,
+    assets.fontMsdfPng, assets.fontCssStack, assets.fontCssStackByGuid, assets.areaEmissions, assets.modelSources ?? assets.modelBytes,
+  ].map((value) => {
+    if (typeof value !== "object" || value === null) return `${typeof value}:${String(value)}`;
+    let identity = installedIdentities.get(value);
+    if (identity === undefined) installedIdentities.set(value, (identity = ++lastInstalledIdentity));
+    return `#${identity}`;
+  }).join("|");
+  const last = installRevisions.get(assets);
+  if (last?.key === key) return last.revision;
+  const revision = (last?.revision ?? 0) + 1;
+  installRevisions.set(assets, { key, revision });
+  return revision;
+}
+
 export function modelSlotFingerprint(
   payloads: ReadonlyMap<string, ModelPayload> | undefined,
 ): string {

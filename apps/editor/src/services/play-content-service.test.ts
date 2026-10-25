@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { createActor, createDefaultScene, type DocumentRef, type SerializedGraph } from "@haptic/core";
-import type { ScriptBundleEntry } from "@haptic/bridge";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
 import type { ProjectService } from "./project-service";
@@ -15,7 +14,7 @@ function logGraph(message: string): SerializedGraph {
   return {
     nodes: [
       { id: "tick", type: "flow.event.tick", position: { x: 0, y: 0 }, data: {} },
-      { id: "log", type: "debug.log", position: { x: 200, y: 0 }, data: { message } },
+      { id: "log", type: "debug.log", position: { x: 200, y: 0 }, data: { "default:message": message } },
     ],
     edges: [{ id: "e1", source: "tick", target: "log", sourceHandle: "execOut", targetHandle: "execIn" }],
   };
@@ -38,13 +37,13 @@ function createPlayContent(assets: readonly Asset[], readAssetChunk: (path: stri
     loadDocument: vi.fn(async (_kind: string, path: string) => fromDisk(files.get(path))),
     guidForPath: (path: string) => assets.find((asset) => asset.path === path)?.guid ?? null,
   } as unknown as ProjectService;
-  const compiled: Array<{ signature: string; bundles: ScriptBundleEntry[] }> = [];
+  const compiled: string[] = [];
   const playContent = createPlayContentService({
     documents,
     project,
     readAssetChunk,
     projectDocument: () => null,
-    onPreviewScriptsCompiled: (signature, bundles) => compiled.push({ signature, bundles }),
+    onPreviewScriptsCompiled: (signature) => compiled.push(signature),
   });
   const open = (ref: DocumentRef) => documents.openDocument(project, ref, null, true);
   return { documents, project, playContent, compiled, open };
@@ -62,10 +61,37 @@ describe("createPlayContentService", () => {
 
     const { bundles } = await playContent.collectPlayPreviewScripts();
     expect(bundles.map((bundle) => bundle.classId)).toContain("Hero");
-    expect(compiled).toEqual([{ signature: playContent.graphSignature(undefined), bundles }]);
+    expect(compiled).toEqual([playContent.graphSignature(undefined)]);
 
     documents.updateGraph(id, logGraph("edited"));
-    expect(playContent.graphSignature(undefined)).not.toBe(compiled[0]!.signature);
+    expect(playContent.graphSignature(undefined)).not.toBe(compiled[0]);
+  });
+
+  it("leaves a Class edit made while a whole-project compile loads closed Classes uncompiled", async () => {
+    // Goblin loads from disk before the compile reaches the open Hero tab.
+    const { documents, project, playContent, compiled, open } = createPlayContent([
+      { guid: "goblin", type: "Class", name: "Goblin", path: "Goblin.hasset", content: logGraph("goblin") },
+      { guid: "hero", type: "Class", name: "Hero", path: "Hero.hasset", content: logGraph("saved") },
+    ]);
+    const id = await open({ kind: "graph", path: "Hero.hasset", label: "Hero" });
+    const beforeEdit = playContent.graphSignature(undefined);
+    const load = vi.mocked(project.loadDocument).getMockImplementation()!;
+    let finishLoad!: () => void;
+    vi.mocked(project.loadDocument).mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => { finishLoad = resolve; });
+      return load(...args);
+    });
+
+    const compiling = playContent.collectPlayPreviewScripts();
+    documents.updateGraph(id, logGraph("edited"));
+    finishLoad();
+    const { bundles } = await compiling;
+
+    const hero = bundles.find((bundle) => bundle.classId === "Hero")?.source;
+    expect(hero).toContain("saved");
+    expect(hero).not.toContain("edited");
+    expect(compiled).toEqual([beforeEdit]);
+    expect(playContent.graphSignature(undefined)).not.toBe(beforeEdit);
   });
 
   it("makes the compiled signature stale when an open Animation Graph's compiled graph changes", async () => {

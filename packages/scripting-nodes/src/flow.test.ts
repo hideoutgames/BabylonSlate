@@ -5,6 +5,7 @@ import {
   FLOAT,
   compileGraph,
   objectRef,
+  validateGraphs,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -44,6 +45,35 @@ describe("flow nodes", () => {
     expect(pins?.some((pin) => pin.id === "amount" && pin.direction === "out")).toBe(
       true,
     );
+  });
+
+  it("reads On Command Run parameters named like the then pin or execIn", () => {
+    const registry = createDefaultNodeRegistry();
+    const run = node(registry, "run", "flow.event.commandRun", {
+      parameters: [{ name: "execOut", type: "string" }, { name: "execIn", type: "string" }],
+    });
+    const param = run.pins.find((pin) => pin.kind === "data" && pin.name === "execOut")!;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [run, node(registry, "log", "debug.log"), node(registry, "log2", "debug.log")],
+      edges: [
+        { id: "e1", sourceNodeId: "run", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "run", sourcePinId: param.id, targetNodeId: "log", targetPinId: "message" },
+        { id: "e3", sourceNodeId: "log", sourcePinId: "execOut", targetNodeId: "log2", targetPinId: "execIn" },
+        // The node has no execIn pin, so a stored edge from the execIn parameter keeps its plain id.
+        { id: "e4", sourceNodeId: "run", sourcePinId: "execIn", targetNodeId: "log2", targetPinId: "message" },
+      ],
+    };
+    const edgeCodes = new Set(["ref.missing_pin", "pin.direction", "type.mismatch"]);
+    expect(validateGraphs([graph], { assetGuid: "a" }, { registry }).filter((d) => edgeCodes.has(d.code))).toEqual([]);
+    const logs: unknown[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source, "onCommandRun").onCommandRun as (ctx: unknown) => void)({
+      commandArgs: { execOut: "go", execIn: "now" },
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+    });
+    expect(logs).toEqual(["go", "now"]);
   });
 
   it("registers editor utility lifecycle events", () => {

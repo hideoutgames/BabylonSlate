@@ -7,7 +7,7 @@
 const DEGREE_ALIASES = ["degrees", "degree", "deg", "°"] as const;
 
 /** The suffix a field shows: degrees as `°`, everything else as given. */
-export function numberUnitSuffix(unit: string): string {
+function numberUnitSuffix(unit: string): string {
   const trimmed = unit.trim();
   if ((DEGREE_ALIASES as readonly string[]).includes(trimmed.toLowerCase())) return "°";
   return trimmed.replace(/^deg\//i, "°/");

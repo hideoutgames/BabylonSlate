@@ -17,7 +17,10 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Toggle Focus | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> |
 | Project Settings | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>,</kbd> |
 | Engine Settings | <kbd>Mod</kbd>+<kbd>,</kbd> |
+| Project Browser | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, then <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> |
 | Content Browser | <kbd>Alt</kbd>+<kbd>B</kbd> |
+
+**Project Browser** closes the project, so its shortcut has two steps: press the second straight after the first. Holding <kbd>Alt</kbd>+<kbd>Shift</kbd> while you tap <kbd>P</kbd> and then <kbd>B</kbd> works too.
 
 ### Documents
 
@@ -89,9 +92,9 @@ Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has
 ## Change a shortcut
 
 1. Open **Engine Settings > Keybinds**. Commands are grouped as in the tables above.
-2. Select the shortcut next to a command, then press the new keys. <kbd>Esc</kbd> cancels.
+2. Select the shortcut next to a command, then press the new keys. For a two-step shortcut, press the second keys straight after the first. <kbd>Esc</kbd> cancels.
 3. Use **Unassign** to remove a shortcut or **Reset to Default** to restore one. **Reset All** restores every shortcut.
 
-If a shortcut is already in use, the row warns "Also used by" and names the other command. Viewport commands also warn when you choose W, A, S or D. Searching Engine Settings finds commands by name.
+If a shortcut is already in use, or is the first step of another command's two-step shortcut, the row warns "Also used by" and names the other command. Viewport commands also warn when you choose W, A, S or D. Searching Engine Settings finds commands by name.
 
 Shortcuts are stored with Engine Settings on this device, not in the project.

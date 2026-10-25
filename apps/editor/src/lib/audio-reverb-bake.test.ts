@@ -248,6 +248,153 @@ describe("audio reverb bake controller", () => {
     release();
   });
 
+  it("gives each Scene in a flush its own bake timeout", async () => {
+    vi.useFakeTimers();
+    const timeoutMs = 1_000;
+    const writes: AudioReverbBakeWrite[] = [];
+    const diagnostics: Array<{ code: string }> = [];
+    // One bake thread: each job starts when the one before it finishes.
+    let thread = Promise.resolve();
+    const controller = createAudioReverbBakeController({
+      timeoutMs,
+      bake: () => {
+        const job = thread.then(() => new Promise<Uint8Array>((resolve) => {
+          setTimeout(() => resolve(new Uint8Array([7])), timeoutMs * 0.6);
+        }));
+        thread = job.then(() => undefined);
+        return job;
+      },
+      write: async (entry) => {
+        writes.push(entry);
+      },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    const flushed = controller.flushAll([
+      { path: "assets/A.scene.hasset", scene: sceneWith([boxActor("a", [0, 0, 0])]) },
+      { path: "assets/B.scene.hasset", scene: sceneWith([boxActor("b", [8, 0, 0])]) },
+    ]);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(timeoutMs * 2);
+    expect((await flushed).size).toBe(0);
+    expect(diagnostics).toEqual([]);
+    expect(writes.map((entry) => [entry.path, [...entry.bytes]])).toEqual([
+      ["assets/A.scene.hasset", [7]],
+      ["assets/B.scene.hasset", [7]],
+    ]);
+    controller.dispose();
+  });
+
+  it("bakes an edit made to one Scene while a flush is still baking another", async () => {
+    const sceneB = "assets/B.scene.hasset";
+    const savedA = sceneWith([boxActor("a", [0, 0, 0])]);
+    const edited = sceneWith([boxActor("b", [30, 0, 0])]);
+    const hashOf = async (scene: ReturnType<typeof sceneWith>) =>
+      geometryHashForAudioBake(await collectStaticAudioGeometry({ actors: scene.actors }));
+    const [hashA, editedHash] = await Promise.all([hashOf(savedA), hashOf(edited)]);
+    let releaseA!: () => void;
+    const heldA = new Promise<void>((resolve) => { releaseA = resolve; });
+    let bakingA = false;
+    const heldEdits: Array<() => void> = [];
+    let flushSettled = false;
+    const writes: AudioReverbBakeWrite[] = [];
+    const controller = createAudioReverbBakeController({
+      debounceMs: 0,
+      bake: async (geometry) => {
+        const hash = geometryHashForAudioBake(geometry);
+        if (hash === hashA) {
+          bakingA = true;
+          await heldA;
+        } else if (!flushSettled && hash === editedHash) {
+          // The edit's bake outlasts the flush, which reaches B while it runs.
+          await new Promise<void>((resolve) => { heldEdits.push(resolve); });
+        }
+        return new Uint8Array([1]);
+      },
+      write: async (entry) => { writes.push(entry); },
+    });
+    const flushed = controller.flushAll([
+      { path: "assets/A.scene.hasset", scene: savedA },
+      { path: sceneB, scene: sceneWith([boxActor("b", [8, 0, 0])]) },
+    ]);
+    await vi.waitFor(() => expect(bakingA).toBe(true));
+    // The user moves B's wall in its open tab while the flush bakes A.
+    controller.schedule(sceneB, edited);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseA();
+    expect((await flushed).size).toBe(0);
+    flushSettled = true;
+    for (const release of heldEdits) release();
+    await vi.waitFor(() => {
+      expect(writes.filter((entry) => entry.path === sceneB).at(-1)?.payload).toBe(edited);
+    });
+    controller.dispose();
+  });
+
+  it("runs at most bakeSlots bakes at once and stops a superseded bake", async () => {
+    const signals: AbortSignal[] = [];
+    const controller = createAudioReverbBakeController({
+      debounceMs: 0,
+      bakeSlots: 1,
+      // As the worker host does, an abort rejects the bake (and stops its worker).
+      bake: (_geometry, signal) => new Promise((_, reject) => {
+        signals.push(signal);
+        signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+      }),
+      write: async () => undefined,
+    });
+    controller.schedule("assets/A.scene.hasset", sceneWith([boxActor("a", [0, 0, 0])]));
+    controller.schedule("assets/B.scene.hasset", sceneWith([boxActor("b", [0, 0, 0])]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(signals).toHaveLength(1);
+    // Moving A's wall supersedes its bake, which gives up its slot to B.
+    controller.schedule("assets/A.scene.hasset", sceneWith([boxActor("a", [5, 0, 0])]));
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+    controller.dispose();
+  });
+
+  it.each(["times out", "fails"] as const)("gives a queued Scene the bake slot when the bake holding it %s", async (outcome) => {
+    vi.useFakeTimers();
+    const timeoutMs = 1_000;
+    const failAtMs = timeoutMs / 2;
+    const signals: AbortSignal[] = [];
+    const writes: AudioReverbBakeWrite[] = [];
+    const diagnostics: Array<{ code: string }> = [];
+    const controller = createAudioReverbBakeController({
+      timeoutMs,
+      bakeSlots: 1,
+      bake: (_geometry, signal) => {
+        signals.push(signal);
+        if (signals.length > 1) return Promise.resolve(new Uint8Array([7]));
+        // A's worker hangs without ever settling, or crashes before its timeout.
+        return new Promise((_, reject) => {
+          if (outcome === "fails") setTimeout(() => reject(new Error("worker crashed")), failAtMs);
+        });
+      },
+      write: async (entry) => { writes.push(entry); },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    const flushed = controller.flushAll([
+      { path: "assets/A.scene.hasset", scene: sceneWith([boxActor("a", [0, 0, 0])]) },
+      { path: "assets/B.scene.hasset", scene: sceneWith([boxActor("b", [8, 0, 0])]) },
+    ]);
+    const settleAtMs = outcome === "fails" ? failAtMs : timeoutMs;
+    await vi.advanceTimersByTimeAsync(settleAtMs - 1);
+    expect(signals).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signals).toHaveLength(2);
+    // A timed-out bake's signal stops its worker.
+    if (outcome === "times out") expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+    expect((await flushed).size).toBe(0);
+    const written = new Map(writes.map((entry) => [entry.path, entry.bytes]));
+    expect(isDryAudioReverbFallback(decodeAudioReverbChunk(written.get("assets/A.scene.hasset")!))).toBe(true);
+    expect([...written.get("assets/B.scene.hasset")!]).toEqual([7]);
+    expect(diagnostics).toEqual([expect.objectContaining({ code: "audio.reverb_bake_failed" })]);
+    controller.dispose();
+  });
+
   it("flush of empty static geometry writes dry fallback without hanging", async () => {
     const writes: AudioReverbBakeWrite[] = [];
     const controller = createAudioReverbBakeController({

@@ -56,6 +56,11 @@ describe("normalizeChord", () => {
   it("rejects unknown modifiers so bad saved data is ignored", () => {
     expect(normalizeChord("Hyper+K")).toBeNull();
     expect(normalizeChord("")).toBeNull();
+    expect(normalizeChord("Alt+P Hyper+K")).toBeNull();
+  });
+
+  it("normalizes every step of a multi-step shortcut", () => {
+    expect(normalizeChord(" shift+alt+p   Alt+Shift+b ")).toBe("Alt+Shift+P Alt+Shift+B");
   });
 });
 
@@ -67,9 +72,16 @@ describe("chord descriptions", () => {
     expect(ariaKeyShortcuts("Mod+S", false)).toBe("Control+S");
   });
 
+  it("spells out multi-step shortcuts and leaves them out of aria-keyshortcuts", () => {
+    expect(describeChord("Alt+Shift+P Alt+Shift+B", true)).toBe("Option+Shift+P then Option+Shift+B");
+    expect(ariaKeyShortcuts("Alt+Shift+P Alt+Shift+B", false)).toBeUndefined();
+  });
+
   it("treats only Mod and Ctrl as command modifiers", () => {
     expect(chordHasCommandModifier("Mod+S")).toBe(true);
     expect(chordHasCommandModifier("Alt+P")).toBe(false);
     expect(chordHasCommandModifier("F")).toBe(false);
+    expect(chordHasCommandModifier("Mod+K Mod+S")).toBe(true);
+    expect(chordHasCommandModifier("Mod+K S")).toBe(false);
   });
 });

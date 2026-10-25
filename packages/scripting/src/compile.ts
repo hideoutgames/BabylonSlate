@@ -206,6 +206,14 @@ function jsIdent(name: string): string {
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
 }
 
+/**
+ * Function-local `let` name, prefixed so authored names cannot collide with `ctx`.
+ * Not injective: `Move Speed` and `Move_Speed` share one, which validation reports.
+ */
+export function localVariableIdent(name: string): string {
+  return `__lv_${jsIdent(name)}`;
+}
+
 /** Words a strict-mode module cannot use as a function declaration name. */
 const RESERVED_WORDS = new Set([
   "arguments", "await", "break", "case", "catch", "class", "const", "continue",
@@ -663,7 +671,7 @@ export function compileGraph(
         !pinTypeEquals(sourcePin.type, targetPin.type) || !isWritableVariableOutput(source, sourcePin)) return "null";
     const name = String(source.properties.variableName ?? "Value").trim() || "Value";
     if (source.properties.scope === "local") {
-      const local = `__lv_${jsIdent(name)}`;
+      const local = localVariableIdent(name);
       const reference = `__ref_${local}`;
       outputDecls.set(reference, `  const ${reference} = { identity: {}, property: ${JSON.stringify(name)}, set: value => { ${local} = value; } };`);
       return reference;

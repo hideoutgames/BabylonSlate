@@ -436,16 +436,16 @@ export function ParticlePreviewCanvas({
       };
       frame = window.requestAnimationFrame(tick);
     })().catch((error: unknown) => {
+      // The cleanup already disposed this run; the shared refs may hold a newer run's preview.
+      if (cancelled) return;
       disposePreview();
-      if (!cancelled) {
-        setFailure({
-          code: "particle.apply_failed",
-          message:
-            error instanceof Error ? error.message : "The particle Preview could not load.",
-        });
-        setBooted(true);
-        setUpdating(false);
-      }
+      setFailure({
+        code: "particle.apply_failed",
+        message:
+          error instanceof Error ? error.message : "The particle Preview could not load.",
+      });
+      setBooted(true);
+      setUpdating(false);
     });
     return () => {
       cancelled = true;

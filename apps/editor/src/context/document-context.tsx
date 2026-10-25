@@ -11,6 +11,7 @@ import {
 import { DocumentSubscriptions, sameDocumentRef } from "./document-subscriptions";
 import { flushSync } from "react-dom";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
+import { DocumentOpenErrorDialog } from "../components/document-open-error-dialog";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import type {
   AssetDocumentKind,
@@ -68,8 +69,6 @@ import {
   type EngineSettings,
 } from "@haptic/vfs";
 import type { ProjectStorage } from "@haptic/core";
-import type { ScriptBundleEntry } from "@haptic/bridge";
-import type { Diagnostic } from "@haptic/scripting";
 import type { TracePayload } from "@haptic/debugger";
 import {
   DocumentService,
@@ -104,7 +103,6 @@ import {
   classIdForGraphPath,
   graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
-import { playBundlesNeedCollect } from "../services/play-preview-prepare";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ExportArtifact } from "@haptic/exporter";
 import {
@@ -248,6 +246,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const registerBeforeTransition = useCallback<DocumentTransitionGate["register"]>(handler => documentTransitions.register(handler), [documentTransitions]);
   const sceneDocumentLoadRef = useRef<AbortController | null>(null);
   const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean; error?: unknown } | null>(null);
+  /** Why a selected tab's asset could not be read; a Scene's read failure shows in its loading dialog instead. */
+  const [documentOpenError, setDocumentOpenError] = useState<string | null>(null);
   const debugMode = useDebugMode();
   useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
   const cancelSceneDocumentLoad = useCallback(() => {
@@ -367,15 +367,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
-  const [playLoadedSignature, setPlayLoadedSignature] = useState<string | null>(
-    null,
-  );
-  const [playPreviewBundles, setPlayPreviewBundles] = useState<
-    ScriptBundleEntry[]
-  >([]);
-  const [playPreviewDiagnostics, setPlayPreviewDiagnostics] = useState<
-    Diagnostic[]
-  >([]);
   const documentService = documentServiceRef.current;
   const readAssetChunk = useCallback(
     (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) =>
@@ -395,12 +386,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         project: projectService,
         readAssetChunk,
         projectDocument: () => projectDocumentRef.current,
-        onPreviewScriptsCompiled: (signature, bundles, nextDiagnostics) => {
-          setLastCompiledSignature(signature);
-          setPlayLoadedSignature(signature);
-          setPlayPreviewBundles(bundles);
-          setPlayPreviewDiagnostics(nextDiagnostics);
-        },
+        onPreviewScriptsCompiled: setLastCompiledSignature,
       }),
     [documentService, projectService, readAssetChunk],
   );
@@ -425,11 +411,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectPlayAudio,
     collectPlayMaterialLibrary,
   } = playContent;
-  const clearPlayPreviewScripts = useCallback(() => {
-    setPlayLoadedSignature(null);
-    setPlayPreviewBundles([]);
-    setPlayPreviewDiagnostics([]);
-  }, []);
 
   const bump = useCallback(() => setContextTick((v) => v + 1), []);
   const lockAuthoring = useCallback((reason: string) => documentService.lockAuthoring(reason), [documentService]);
@@ -1006,7 +987,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
-      clearPlayPreviewScripts();
       playContent.clearCompileCache();
       // A reload as soon as editing starts must still find this project on Homepage.
       await recordRecent(
@@ -1048,7 +1028,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       resetDockLayouts,
       refreshProjectList,
       captureMtimeSnapshot,
-      clearPlayPreviewScripts,
       cancelSceneDocumentLoad,
       playContent,
       setAnimEditorModes,
@@ -1508,12 +1487,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
     setMigrationPending([]);
     setLastCompiledSignature(null);
-    clearPlayPreviewScripts();
     playContent.clearCompileCache();
     setRoute("home");
     setAnimEditorModes({});
     mtimeSnapshotRef.current = null;
     setExternalChangePrompt(null);
+    setDocumentOpenError(null);
     await refreshProjectList();
     bump();
     return { outcome: "closed" };
@@ -1527,7 +1506,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     journalBuffer,
     projectService,
     refreshProjectList,
-    clearPlayPreviewScripts,
     cancelSceneDocumentLoad,
     playContent,
     resetDockLayouts,
@@ -1718,15 +1696,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
         : [];
       const schemas = collectGraphTypeSchemas();
+      const definitionFields = (definitionGuid: string) => schemas.structs?.[definitionGuid]?.fields;
       const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
         if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
-        const walked = replaceClassAssetReferences(doc.content, replacements, (definitionGuid) => schemas.structs?.[definitionGuid]?.fields);
+        const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
         if (!walked.changed) return [];
         const asset = registry.list().find((entry) => entry.path === doc.ref.path);
         if ((asset && registry.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
           throw new Error(`${doc.ref.path} is read-only and still references this Class.`);
         }
-        return [{ doc, content: walked.value }];
+        return [{ doc }];
       });
       const renamed = await projectService.renameAsset(guid, newName, {
         beforeWrite: async (paths) => {
@@ -1750,12 +1729,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       // The rename moved files and may have rewritten project.json: neither is external.
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-      for (const { doc, content } of openChanges) {
-        documentService.applyFileRewrite(doc.id, content);
-        // Content Browser file operations are not undoable. Old edit commands
-        // must not reintroduce the Class id that no longer exists.
-        editSessionRef.current.dropDocument(doc.id);
+      // Every open tab, from its current content: an edit or a first read
+      // while the rename wrote can add a reference the walk above missed.
+      const rewritten = new Set(openChanges.map(({ doc }) => doc.id));
+      for (const open of documentService.getOpenDocumentsOrdered()) {
+        if (!open.content || open.ref.kind === "content-browser" || open.ref.kind === "trace") continue;
+        const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
+        if (!walked.changed) continue;
+        documentService.applyFileRewrite(open.id, walked.value);
+        rewritten.add(open.id);
       }
+      // Content Browser file operations are not undoable. Old edit commands,
+      // also those of a tab closed meanwhile, must not reintroduce the Class
+      // id that no longer exists.
+      for (const id of rewritten) editSessionRef.current.dropDocument(id);
       // The registry stamped the file's payload name; an open tab follows it.
       for (const doc of documentService.getOpenDocumentsOrdered()) {
         if (doc.ref.path === before.path) documentService.applyAssetRename(doc.id, renamed.header.name);
@@ -2038,7 +2025,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (id === activeDocumentId) return;
       const target = documentService.getState().openDocuments.get(id);
       if (target?.content === null && target.ref.kind !== "content-browser") {
-        void finishOpenDocument(target.ref);
+        // A restored tab reads its asset when first selected. Callers do not
+        // wait for it, so a failed read is reported here.
+        finishOpenDocument(target.ref).catch((error: unknown) => {
+          // Cancelled, not failed: closing the tab aborts its read, and closing
+          // the project ends ProjectService's read session first, so a read
+          // still running then rejects as aborted too. Matched by name: some
+          // readers cancel with an Error named AbortError, and an abort
+          // reason need not be this window's DOMException.
+          if ((error as { name?: unknown } | null)?.name === "AbortError") return;
+          console.error("[editor] failed to open document", error);
+          setDocumentOpenError(error instanceof Error ? error.message : String(error));
+        });
         return;
       }
       if (activeDocumentId) {
@@ -2179,14 +2177,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
       }
-      // The graph signature does not cover the header's parent, so Compile and
-      // Play's stored bundles would otherwise keep the previous parent.
+      // The graph signature does not cover the header's parent, so Compile
+      // would otherwise keep the previous parent.
       setLastCompiledSignature(null);
-      clearPlayPreviewScripts();
       bump();
       return null;
     },
-    [bump, clearPlayPreviewScripts, documentService, editing, projectService],
+    [bump, documentService, editing, projectService],
   );
 
   const beginSimulationDocument = useCallback<DocumentContextValue["beginSimulationDocument"]>(
@@ -2794,17 +2791,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         lastCompiledSignature,
       ),
       currentGraphSignature,
-      scriptsStale: playBundlesNeedCollect({
-        playLoadedSignature,
-        currentGraphSignature,
-        scriptsLength: playPreviewBundles.length,
-        editorCompileSignature: lastCompiledSignature,
-      }),
-      playPreviewBundles,
-      playPreviewDiagnostics,
-      playLoadedSignature,
     }),
-    [currentGraphSignature, lastCompiledSignature, playLoadedSignature, playPreviewBundles, playPreviewDiagnostics],
+    [currentGraphSignature, lastCompiledSignature],
   );
   const editorShellState = useMemo<EditorShellState>(
     () => ({
@@ -2899,6 +2887,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                               surface: "Scene Document", scene: sceneDocumentLoad.ref.path, phase: "Loading Document",
                               progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
                             }) : undefined}
+                          />
+                          <DocumentOpenErrorDialog
+                            error={documentOpenError}
+                            onClose={() => setDocumentOpenError(null)}
+                            testId="document-open-error"
+                            dismissTestId="document-open-error-dismiss"
                           />
                         </DocumentContext.Provider>
                       </SourceControlStateContext.Provider>

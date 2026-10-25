@@ -31,7 +31,7 @@ import {
 import {
   convertObjImportBatch,
   convertStlImportBatch,
-  animationRetargetHasMatches,
+  animationRetargetMatchingClips,
 } from "@haptic/render";
 import { convertFbxImportBatch } from "@haptic/render/fbx-import";
 import {
@@ -592,8 +592,8 @@ function ContentBrowserWorkspaceBody({
             if (!model) return null;
             return readAssetChunk(model.path, "source");
           },
-          probeMatches: (sourceBytes, targetBytes, clipName) =>
-            animationRetargetHasMatches(engine, sourceBytes, targetBytes, clipName),
+          probeMatches: (sourceBytes, targetBytes, clipNames) =>
+            animationRetargetMatchingClips(engine, sourceBytes, targetBytes, clipNames),
           createAsset: (rootId, relativePath, importResult) =>
             assetRegistry.createAsset(rootId, relativePath, importResult),
         });

@@ -41,12 +41,12 @@ export {
   createSoftwarePhysicsBackend,
   loadedBackendModules,
   loadRapier2DBackendFactory,
-  resetLoadedBackendModules,
   type CreatePhysicsBackendOptions,
 } from "./create-backend";
-export { HavokPhysicsBackend } from "./havok-backend";
-export { resetHavokModuleCache } from "./havok-loader";
-export { Rapier2DPhysicsBackend } from "./rapier-backend";
+// Types only, so the engines stay in the chunks `createPhysicsBackend` loads lazily; tests that need the classes
+// import the `./havok-backend` and `./rapier-backend` subpaths.
+export type { HavokPhysicsBackend } from "./havok-backend";
+export type { Rapier2DPhysicsBackend } from "./rapier-backend";
 export {
   parseRigidBodyProperties,
   parseColliderProperties,

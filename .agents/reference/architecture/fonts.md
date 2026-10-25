@@ -21,7 +21,7 @@ Font assets, optional facetype/MSDF chunks, CSS fallback stacks and the main-thr
 - Optional chunks are import-only, never baked in-engine: `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`), `msdf-atlas` (JSON), `msdf-atlas-png` (PNG). The MSDF PNG is a Font companion, not a Texture asset.
 - Imported Fonts store their payload on the `.hasset` header (no `document` chunk); `decodeAssetDocument` falls back to `header.payload`. Saving keeps the extra chunks beside the rewritten body.
 - Attaching MSDF merges representation flags with OR (never clears `source`) and writes both the header and any saved `document` chunk; an open Font tab merges only those flags into its payload.
-- Export packs `font-facetype:<guid>`, `font-msdf:<guid>` and `font-msdf-png:<guid>` sidecars so the source Font stays a font file. A player missing the MSDF sidecar falls back to Bitmap (log once).
+- Export packs `font-facetype:<guid>`, `font-msdf:<guid>` and `font-msdf-png:<guid>` sidecars so the source Font stays a font file, each only when the Font has that chunk. The player requests only sidecars its catalog lists, so a Scene using a source-only Font still loads. MSDF text whose Font lacks either half of the pair falls back to Bitmap (log once); the player then loads the Font's source instead of the lone sidecar, so the fallback keeps the Font's face.
 
 ## Fallback stack
 
@@ -53,7 +53,7 @@ Bitmap 2D Text measures and rasterizes its glyphs once, when its mesh is built, 
 ## 3D Text
 
 - `Text3DComponent` is a flat triangulated TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + injected `earcut`), one unlit two-sided material. It is a scene mesh, not a DynamicTexture plane, and not Development Only.
-- Uses the Font's `facetype-glyphs` chunk when it parses, else the bundled ASCII TypeFace (5×7 pixels greedy-merged). Play/export collect those bytes independently of `FontFace` source bytes.
+- Uses the Font's `facetype-glyphs` chunk when it parses, else the bundled ASCII TypeFace (5×7 pixels greedy-merged). 3D Text without a Font uses the bundled face, never the project default Font, so no host loads a Font for it. Play/export collect those bytes independently of `FontFace` source bytes.
 - Newlines stack upward from a bottom origin; `alignment` is the horizontal anchor, not a wrap width.
 
 ## Overlay 2D Text
@@ -61,3 +61,4 @@ Bitmap 2D Text measures and rasterizes its glyphs once, when its mesh is built, 
 - Renderer `bitmap` (default): canvas `FontFace` glyphs packed onto a shared RGBA atlas when the paint is letter-shaped; blank or solid tofu output (Node, NullEngine, broken headless 2D) falls back to the bundled 5×7 bitmap.
 - Renderer `msdf` is enabled only when the Font has both JSON and PNG; the Inspector writes `renderer` back to `bitmap` if the pair becomes incomplete. Missing atlas glyphs fall back to Bitmap cells.
 - MSDF import paths (Content Browser Import, Font document, tile context menu) all use the platform picker (`pickImportFiles`).
+- The Font document and tile menu **Import MSDF Atlas…** attach to one Font, so `msdfAtlasPickError` refuses a pick without a JSON and a PNG, with more than one MSDF JSON (each pair attaches to the same Font chunks, so a second would replace the first), or in which `groupMsdfImportBatch` leaves any PNG unpaired (it would attach as a Texture chunk). A JSON naming no atlas page pairs only with a same-family PNG whose name contains `msdf`. Content Browser Import keeps unpaired PNGs as Textures.

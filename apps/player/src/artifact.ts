@@ -328,7 +328,8 @@ export async function loadGameFromFiles(
     for (const [guid, selected] of requestedFonts ?? []) for (const mode of selected) requireFont(guid, mode);
     for (const root of roots) if (entries.get(root)?.type === "Font" && !modes.has(root)) requireFont(root, "bitmap");
     // Font metadata already lives in the catalog. Original font bytes are only
-    // requested for Bitmap text; MSDF and geometry consumers select sidecars.
+    // requested for Bitmap text (including MSDF text without an atlas); MSDF
+    // and geometry consumers select sidecars.
     const acquire = (id: string, metadataOnly = false) => scope.acquire<PreparedAsset>(id, metadataOnly ? {
       key: "export-font-catalog", estimate: { sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0 },
       load: async () => ({ value: { bytes: new Uint8Array(), decodedBytes: 0, publish() {} } }),
@@ -340,8 +341,10 @@ export async function loadGameFromFiles(
       if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
       const row = value as Record<string, unknown>;
       const properties = row.properties as Record<string, unknown> | undefined;
-      if (row.classId === "Text3DComponent") requireFont(typeof properties?.fontAssetGuid === "string" ? properties.fontAssetGuid : undefined, "facetype");
-      else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
+      if (row.classId === "Text3DComponent") {
+        // 3D Text without a Font draws the bundled face, never the project default Font.
+        if (typeof properties?.fontAssetGuid === "string" && properties.fontAssetGuid) requireFont(properties.fontAssetGuid, "facetype");
+      } else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
         const text = parseText2DProperties(properties);
         requireFont(text.fontAssetGuid, text.renderer === "msdf" ? "msdf" : "bitmap");
       }
@@ -358,10 +361,17 @@ export async function loadGameFromFiles(
     };
     for (const [guid, selected] of modes) inheritModes(guid, selected);
     const variants = new Set<string>();
+    // A Font exports only the representations it has. 3D Text without a
+    // facetype draws the bundled face; MSDF text without the full atlas pair
+    // draws Bitmap, which needs the Font's own source to keep its face.
     for (const [guid, selected] of modes) {
       if (selected.has("bitmap")) variants.add(guid);
-      if (selected.has("facetype")) variants.add(fontFacetypeExportGuid(guid));
-      if (selected.has("msdf")) { variants.add(fontMsdfExportGuid(guid)); variants.add(fontMsdfAtlasExportGuid(guid)); }
+      if (selected.has("facetype") && entries.has(fontFacetypeExportGuid(guid))) variants.add(fontFacetypeExportGuid(guid));
+      if (selected.has("msdf")) {
+        const pair = [fontMsdfExportGuid(guid), fontMsdfAtlasExportGuid(guid)];
+        if (pair.every(id => entries.has(id))) for (const id of pair) variants.add(id);
+        else variants.add(guid);
+      }
     }
     const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
     // A Model's collision triangles are a separate cached representation, cooked

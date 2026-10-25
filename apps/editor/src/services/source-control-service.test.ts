@@ -132,6 +132,56 @@ describe("SourceControlService", () => {
     } finally { service.dispose(); }
   });
 
+  it("keeps a lock transfer that finishes while an older lock list is still on its way", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      service.pausePolling();
+      await service.autoLock("assets/old.hasset");
+      // The server answers verify with the locks it held before the transfer.
+      const beforeTransfer = await fake.verify();
+      let answer!: () => void;
+      vi.spyOn(fake, "verify").mockImplementationOnce(() => new Promise((resolve) => { answer = () => resolve(beforeTransfer); }));
+      const refreshing = service.refresh();
+      await service.transferLock("assets/old.hasset", "assets/new.hasset");
+      answer();
+      await refreshing;
+      expect(service.lockStateForPath("assets/new.hasset")).toBe("mine");
+      expect(service.lockForPath("assets/old.hasset")).toBeUndefined();
+      expect(service.refreshState.status).toBe("ready");
+    } finally { service.dispose(); }
+  });
+
+  it("stops asking for the lock list while a burst of local lock changes overtakes it, and polls again", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      service.pausePolling();
+      // A folder move locks its assets one after another, each while a lock list is on its way.
+      let movesLeft = 20;
+      const verify = fake.verify.bind(fake);
+      vi.spyOn(fake, "verify").mockImplementation(async () => {
+        const reply = await verify();
+        if (movesLeft > 0) await service.autoLock(`assets/moved-${movesLeft--}.hasset`);
+        return reply;
+      });
+
+      await service.refresh();
+      expect(movesLeft).toBeGreaterThan(0);
+      expect(service.lockStateForPath(`assets/moved-${movesLeft + 1}.hasset`)).toBe("mine");
+      expect(service.refreshState.status).not.toBe("refreshing");
+
+      service.resumePolling();
+      await vi.waitFor(() => {
+        expect(movesLeft).toBe(0);
+        expect(service.refreshState.status).toBe("ready");
+      });
+      expect(fake.snapshot().map((lock) => service.lockStateForPath(lock.path))).toEqual(Array(20).fill("mine"));
+    } finally { service.dispose(); }
+  });
+
   it("ignores an old unlock failure after switching projects", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();

@@ -22,7 +22,7 @@ Double-tap a Font to open it. The window has **Preview** and an **Inspector**.
 | Family | The family name of the font. |
 | Sample text and Size | The preview's text and size only; not saved. |
 | Fallbacks | Other Fonts to try, in order, for characters this font lacks. **Add Fallback** picks a Font. |
-| MSDF Atlas | **Import MSDF Atlas** attaches a JSON and PNG pair to this Font. |
+| MSDF Atlas | **Import MSDF Atlas** attaches a JSON and PNG pair to this Font. Pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
 
 In **Project Settings > Fonts**, **Default Font** is used when a requested font is unavailable, and **Global Fallback** picks the generic family (such as sans-serif) used last.
 

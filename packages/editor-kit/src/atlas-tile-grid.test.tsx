@@ -375,6 +375,32 @@ describe("AtlasTileGrid", () => {
     expect(Number(surface.getAttribute("data-zoom") ?? "1")).toBeGreaterThan(1);
   });
 
+  it("keeps every wheel step that arrives before the atlas re-renders", () => {
+    render(
+      <AtlasTileGrid
+        tileset={twoTileSet()}
+        imageUrl="blob:atlas"
+        selectedId={1}
+        onSelect={() => {}}
+        panZoom
+        data-testid="atlas"
+      />,
+    );
+    const surface = screen.getByTestId("atlas-surface");
+    const zoom = Number(surface.getAttribute("data-zoom"));
+    const panX = Number(surface.getAttribute("data-pan-x"));
+    act(() => {
+      for (let step = 0; step < 2; step++) {
+        surface.dispatchEvent(
+          new WheelEvent("wheel", { deltaY: -120, clientX: 10, clientY: 10, bubbles: true, cancelable: true }),
+        );
+      }
+    });
+    // Two notches double the zoom twice, about the pointer.
+    expect(Number(surface.getAttribute("data-zoom"))).toBeCloseTo(zoom * 4);
+    expect(Number(surface.getAttribute("data-pan-x"))).toBeCloseTo(10 - (10 - panX) * 4);
+  });
+
   it("leaves the wheel to the page when the atlas does not pan and zoom", () => {
     render(
       <AtlasTileGrid

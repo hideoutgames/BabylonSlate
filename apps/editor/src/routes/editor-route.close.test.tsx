@@ -12,6 +12,7 @@ import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
+  type DocumentRef,
 } from "@haptic/core";
 import type { CloseProjectResult } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
@@ -32,6 +33,12 @@ const state = vi.hoisted(() => ({
   closeDocument: vi.fn((id: string) => {
     state.documents = state.documents.filter((doc) => doc.id !== id);
   }),
+  pendingExclusiveScene: null as DocumentRef | null,
+  cancelExclusiveSceneOpen: vi.fn(() => {
+    state.pendingExclusiveScene = null;
+  }),
+  openDocument: vi.fn<(ref: DocumentRef) => Promise<void>>(async () => {}),
+  confirmExclusiveSceneOpen: vi.fn<(mode: "save" | "discard") => Promise<void>>(async () => {}),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -43,9 +50,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   forceCloseProject: state.forceCloseProject,
   migrationPending: [],
   migrationPromptRequest: state.migrationPromptRequest,
-  pendingExclusiveScene: null,
+  pendingExclusiveScene: state.pendingExclusiveScene,
   externalChangePrompt: null,
-  cancelExclusiveSceneOpen: vi.fn(),
+  cancelExclusiveSceneOpen: state.cancelExclusiveSceneOpen,
+  openDocument: state.openDocument,
+  confirmExclusiveSceneOpen: state.confirmExclusiveSceneOpen,
   saveAll: state.saveAll,
   setAutoSavePaused: state.setAutoSavePaused,
   approveMigrationsAndSave: state.approveMigrationsAndSave,
@@ -164,8 +173,12 @@ beforeEach(() => {
   state.approveMigrationsAndSave.mockReset().mockResolvedValue(true);
   state.migrationPromptRequest = 0;
   state.play = {};
-  state.closeDocument.mockClear();
+  state.closeDocument.mockReset();
   state.setAutoSavePaused.mockClear();
+  state.pendingExclusiveScene = null;
+  state.cancelExclusiveSceneOpen.mockClear();
+  state.openDocument.mockClear();
+  state.confirmExclusiveSceneOpen.mockClear();
 });
 afterEach(cleanup);
 
@@ -242,6 +255,24 @@ describe("document tab close requests", () => {
     fireEvent.click(screen.getByTestId("dirty-discard"));
     expect(state.documents.map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
     expect(state.saveAll).not.toHaveBeenCalled();
+  });
+
+  it("reports a tab the authoring lock keeps open and still closes the others", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.closeDocument.mockImplementation((id: string) => {
+      if (id === "graph") throw new Error("Read-only during Simulation Play");
+      state.documents = state.documents.filter((doc) => doc.id !== id);
+    });
+    try {
+      render(<EditorRoute />);
+      requestBulkClose();
+      fireEvent.click(screen.getByTestId("dirty-discard"));
+      expect(state.documents.map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID, "graph"]);
+      expect((await screen.findByTestId("close-error-dialog")).textContent).toContain("Read-only during Simulation Play");
+      await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it.each([true, false])(
@@ -415,10 +446,10 @@ describe("project close requests", () => {
     state.closeProject.mockResolvedValueOnce({ outcome: "refused" });
     render(<EditorRoute />);
     fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
-    await screen.findByTestId("close-project-error-dialog");
+    await screen.findByTestId("close-error-dialog");
     expect(screen.queryByTestId("dirty-close-dialog")).toBeNull();
-    fireEvent.click(screen.getByTestId("close-project-error-ok"));
-    await waitFor(() => expect(screen.queryByTestId("close-project-error-dialog")).toBeNull());
+    fireEvent.click(screen.getByTestId("close-error-ok"));
+    await waitFor(() => expect(screen.queryByTestId("close-error-dialog")).toBeNull());
   });
 
   it("reports a Discard whose close fails", async () => {
@@ -430,7 +461,7 @@ describe("project close requests", () => {
       fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
       await screen.findByTestId("dirty-close-dialog");
       fireEvent.click(screen.getByTestId("dirty-discard"));
-      expect((await screen.findByTestId("close-project-error-dialog")).textContent).toContain("Journal unavailable");
+      expect((await screen.findByTestId("close-error-dialog")).textContent).toContain("Journal unavailable");
       await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
     } finally {
       error.mockRestore();
@@ -457,6 +488,23 @@ describe("project close requests", () => {
     fireEvent.click(await screen.findByTestId("migrate-approve"));
     await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+  });
+});
+
+describe("exclusive Scene open", () => {
+  it("opens the Scene without the prompt once everything listed was saved meanwhile", async () => {
+    const ref = createDocumentRef("scene", "assets/Level.scene.hasset");
+    state.pendingExclusiveScene = ref;
+    const { rerender } = render(<EditorRoute />);
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Main Scene"]);
+    state.documents.forEach((doc) => { doc.dirty = false; });
+    rerender(<EditorRoute />);
+    expect(state.openDocument).toHaveBeenCalledExactlyOnceWith(ref);
+    expect(state.confirmExclusiveSceneOpen).not.toHaveBeenCalled();
+    // The provider re-renders once the pending request ends.
+    rerender(<EditorRoute />);
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(false);
   });
 });
 

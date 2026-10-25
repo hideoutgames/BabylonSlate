@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { AssetRegistry, STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles, discoverEnginePlugins } from "@haptic/assets";
 import type { HttpStorageCatalog } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
-import { loadEnginePluginStorage } from "./engine-plugins";
+import { ensureEnginePluginStorage, loadEnginePluginStorage } from "./engine-plugins";
 
 describe("loadEnginePluginStorage", () => {
   it("mounts bundled catalogs without downloading archives or unused document chunks", async () => {
@@ -49,5 +49,18 @@ describe("loadEnginePluginStorage", () => {
   it("returns empty storage when the index is missing", async () => {
     const storage = await loadEnginePluginStorage({ fetch: async () => new Response("missing", { status: 404 }), baseUrl: "/" });
     expect(await discoverEnginePlugins(storage)).toEqual([]);
+  });
+});
+
+describe("ensureEnginePluginStorage", () => {
+  it("keeps a successfully loaded catalog that lists no plugins instead of fetching it again", async () => {
+    let indexRequests = 0;
+    const fetchFn: typeof fetch = async () => {
+      indexRequests++;
+      return new Response(JSON.stringify({ version: 1, files: [], plugins: [] }));
+    };
+    const first = await ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" });
+    expect(await ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" })).toBe(first);
+    expect(indexRequests).toBe(1);
   });
 });

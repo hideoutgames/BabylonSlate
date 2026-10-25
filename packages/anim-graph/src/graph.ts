@@ -556,9 +556,7 @@ function factsFor(
   previousTotalNormalisedTime: number,
 ): AnimStateFacts {
   const durationSeconds = durationMs / 1000;
-  const remainingRatio = state.loop
-    ? Math.max(0, 1 - clock.normalised)
-    : Math.max(0, 1 - clock.normalised);
+  const remainingRatio = Math.max(0, 1 - clock.normalised);
   return {
     elapsedSeconds: clock.timeMs / 1000,
     durationSeconds,
@@ -840,7 +838,6 @@ function parseVariables(
   source: Record<string, unknown>,
 ): AnimGraphVariable[] {
   const variables: AnimGraphVariable[] = [];
-  const seen = new Set<string>();
   if (Array.isArray(source.variables)) {
     for (const row of source.variables) {
       if (!row || typeof row !== "object") continue;
@@ -867,7 +864,6 @@ function parseVariables(
             ? variable.defaultValue
             : defaultAnimVariableValue(typeId),
       });
-      seen.add(name.toLowerCase());
     }
   }
   return variables;

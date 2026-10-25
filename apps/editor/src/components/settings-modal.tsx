@@ -83,7 +83,6 @@ import {
   type EngineSettings,
 } from "@haptic/vfs";
 import { isSourceControlHost } from "@haptic/source-control";
-import { LogOutIcon } from "lucide-react";
 import {
   useDocumentActions,
   useProjectState,
@@ -94,7 +93,7 @@ import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
-import { downloadBlob } from "../lib/download";
+import { downloadZipArchive } from "../lib/download";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
   EngineSettingsForm,
@@ -116,7 +115,6 @@ interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: SettingsScope;
-  onCloseProject?: () => void;
   onEngineSaved?: () => void | Promise<void>;
   "data-testid"?: string;
 }
@@ -309,14 +307,6 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   { label: "Projects", ids: ["templates", "plugins", "extensions"] },
 ];
 
-/** Downloads exactly the view's bytes, even when it shares a larger buffer. */
-function downloadZip(bytes: Uint8Array, fileName: string): void {
-  downloadBlob(
-    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }),
-    fileName,
-  );
-}
-
 function matchesSearch(
   label: string,
   keywords: string,
@@ -329,7 +319,6 @@ export function SettingsModal({
   open,
   onOpenChange,
   scope,
-  onCloseProject,
   onEngineSaved,
   "data-testid": testId,
 }: SettingsModalProps) {
@@ -512,7 +501,7 @@ export function SettingsModal({
     setExportNotice(null);
     try {
       const bytes = await exportProject(projectDocument);
-      downloadZip(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
+      downloadZipArchive(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
       setExportNotice("Project backup prepared. Check your downloads.");
     } catch (error) {
       setExportProjectError(error instanceof Error ? error.message : String(error));
@@ -532,7 +521,7 @@ export function SettingsModal({
         setExportGameError(exportGameFailureMessage(result.error));
         return;
       }
-      downloadZip(
+      downloadZipArchive(
         zipExportedGame(result.value),
         `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`,
       );
@@ -610,21 +599,6 @@ export function SettingsModal({
       data-testid={resolvedTestId}
       footer={
         <div className="flex items-center justify-end gap-2">
-          {scope === "project" && projectDocument && onCloseProject ? (
-            <Button
-              variant="outline"
-              data-testid="close-project"
-              id="close-project"
-              className="mr-auto min-h-[var(--chrome-row,28px)] w-fit"
-              onClick={() => {
-                changeOpen(false);
-                onCloseProject();
-              }}
-            >
-              <LogOutIcon data-icon="inline-start" />
-              Close Project
-            </Button>
-          ) : null}
           <Button
             variant="outline"
             onClick={() => changeOpen(false)}

@@ -27,7 +27,11 @@ export interface NumericDragFieldProps {
   validate?: (value: number) => string | undefined;
   disabled?: boolean;
   onChange: (value: number) => void;
-  /** Fired once when a scrub ends, so callers can commit one undo entry. */
+  /**
+   * Fired once per scrub and once per submitted typed edit, so callers can
+   * commit one undo entry. A draft that ends invalid ends on the last value it
+   * sent through `onChange`; Escape never fires it.
+   */
   onDragEnd?: (value: number) => void;
   /** Axis color token: X red, Y green, Z blue. */
   accent?: "x" | "y" | "z";
@@ -80,6 +84,8 @@ export function NumericDragField({
   const errorId = useId();
   const baselineRef = useRef(value);
   const cancelledRef = useRef(false);
+  /** The last typed value already sent through `onChange` in this edit. */
+  const liveRef = useRef<number | undefined>(undefined);
   const selectAll = useSelectAllOnActivate();
 
   const onPointerDown = useCallback(
@@ -201,6 +207,7 @@ export function NumericDragField({
             if (parsed === undefined) return;
             if (parsed !== clamp(parsed, min, max) || validate?.(parsed)) return;
             onChange(parsed);
+            liveRef.current = parsed;
           }}
           onFocus={selectAll.onFocus}
           onPointerDown={selectAll.onPointerDown}
@@ -216,6 +223,7 @@ export function NumericDragField({
               event.preventDefault();
               event.stopPropagation();
               cancelledRef.current = true;
+              liveRef.current = undefined;
               if (draft !== null) onChange(baselineRef.current);
               setDraft(null);
               setError(null);
@@ -236,10 +244,15 @@ export function NumericDragField({
             const parsed = evaluate(draft, baselineRef.current);
             const next = parsed === undefined ? undefined : clamp(parsed, min, max);
             const validationError = next === undefined ? undefined : validate?.(next);
+            // An edit that ends invalid still ends on the last value it sent, which the field shows.
+            const live = liveRef.current;
+            liveRef.current = undefined;
             if (next === undefined) {
               setError("Invalid expression. Restored the last valid value.");
+              if (live !== undefined) onDragEnd?.(live);
             } else if (validationError) {
               setError(`${validationError} Restored the last valid value.`);
+              if (live !== undefined) onDragEnd?.(live);
             } else {
               if (parsed !== next) setNotice(`Adjusted to ${next} to stay within the allowed range.`);
               if (next !== value) onChange(next);

@@ -26,6 +26,7 @@ import {
   EmptyTitle,
 } from "@haptic/ui/components/empty";
 import { cn } from "@haptic/ui/lib/utils";
+import { zoomViewAbout, type PanZoomLimits, type PanZoomView } from "./pan-zoom-model";
 
 export type AtlasTileGridTool = "move" | "select";
 
@@ -48,6 +49,7 @@ export interface AtlasTileGridProps {
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
+const ZOOM_LIMITS: PanZoomLimits = { minScale: MIN_ZOOM, maxScale: MAX_ZOOM };
 const TAP_SELECT_PX = 8;
 
 function fitAtlasView(
@@ -141,8 +143,9 @@ export function AtlasTileGrid({
     () => new Set(selectionPreview?.ids ?? selectedIds ?? [selectedId]),
     [selectionPreview?.ids, selectedIds, selectedId],
   );
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  // One state, so wheel steps and pans that arrive before a render build on each other.
+  const [view, setView] = useState<PanZoomView>({ scale: 1, x: 0, y: 0 });
+  const zoom = view.scale;
   // Set once the user pans or zooms; a later surface resize keeps their view.
   const userViewRef = useRef(false);
 
@@ -166,8 +169,7 @@ export function AtlasTileGrid({
         filled.atlasWidth,
         filled.atlasHeight,
       );
-      setZoom(next.zoom);
-      setPan({ x: next.panX, y: next.panY });
+      setView({ scale: next.zoom, x: next.panX, y: next.panY });
     };
     fit();
     const observer = new ResizeObserver(fit);
@@ -219,8 +221,8 @@ export function AtlasTileGrid({
         points[0]!.y - points[1]!.y,
       );
       pinchRef.current = {
-        panX: pan.x,
-        panY: pan.y,
+        panX: view.x,
+        panY: view.y,
         zoom,
         spread: Math.max(1, spread),
         midX: (points[0]!.x + points[1]!.x) / 2,
@@ -296,8 +298,8 @@ export function AtlasTileGrid({
       const midX = (points[0]!.x + points[1]!.x) / 2;
       const midY = (points[0]!.y + points[1]!.y) / 2;
       userViewRef.current = true;
-      setZoom(nextZoom);
-      setPan({
+      setView({
+        scale: nextZoom,
         x:
           originX -
           (originX - pinchRef.current.panX) * scale +
@@ -376,14 +378,14 @@ export function AtlasTileGrid({
     const dy = event.clientY - drag.lastY;
     drag.lastX = event.clientX;
     drag.lastY = event.clientY;
-    setPan((current) => {
+    setView((current) => {
       const next = applyPointerPan({
         panX: current.x,
         panY: current.y,
         dx,
         dy,
       });
-      return { x: next.panX, y: next.panY };
+      return { ...current, x: next.panX, y: next.panY };
     });
   };
 
@@ -425,19 +427,10 @@ export function AtlasTileGrid({
     const surface = surfaceRef.current;
     if (!surface) return;
     const rect = surface.getBoundingClientRect();
-    const originX = event.clientX - rect.left;
-    const originY = event.clientY - rect.top;
-    const nextZoom = Math.min(
-      MAX_ZOOM,
-      Math.max(MIN_ZOOM, zoom * 2 ** (-event.deltaY / 120)),
-    );
-    const scale = nextZoom / zoom;
+    const pivot = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const factor = 2 ** (-event.deltaY / 120);
     userViewRef.current = true;
-    setZoom(nextZoom);
-    setPan({
-      x: originX - (originX - pan.x) * scale,
-      y: originY - (originY - pan.y) * scale,
-    });
+    setView((current) => zoomViewAbout(current, factor, pivot, ZOOM_LIMITS));
   };
   // React attaches wheel listeners as passive, which ignore preventDefault, so
   // the surface keeps a native non-passive listener that runs the latest handler.
@@ -534,8 +527,8 @@ export function AtlasTileGrid({
         data-testid={`${testId}-surface`}
         data-tool={tool}
         data-zoom={String(zoom)}
-        data-pan-x={String(pan.x)}
-        data-pan-y={String(pan.y)}
+        data-pan-x={String(view.x)}
+        data-pan-y={String(view.y)}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -567,7 +560,7 @@ export function AtlasTileGrid({
             {
               width: Math.max(1, filled.atlasWidth),
               height: Math.max(1, filled.atlasHeight),
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transform: `translate(${view.x}px, ${view.y}px) scale(${zoom})`,
               transformOrigin: "0 0",
               "--atlas-zoom": panZoom ? zoom : 1,
             } as CSSProperties

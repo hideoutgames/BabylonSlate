@@ -24,6 +24,7 @@ import {
   EDITOR_COMMAND_CATEGORIES,
   EDITOR_COMMANDS,
   editorCommand,
+  KEY_SEQUENCE_TIMEOUT_MS,
   keybindConflicts,
   resolveKeybinds,
   withKeybindOverride,
@@ -60,6 +61,12 @@ export function KeybindSettings({
   const overrides = settings.keybinds;
   const bindings = useMemo(() => resolveKeybinds(overrides), [overrides]);
   const [recording, setRecording] = useState<EditorCommandId | null>(null);
+  // The recorded first step, saved already, while a second step may follow.
+  const [firstStep, setFirstStep] = useState<KeyChord | null>(null);
+  const record = (commandId: EditorCommandId | null) => {
+    setRecording(commandId);
+    setFirstStep(null);
+  };
 
   const assign = (commandId: EditorCommandId, chords: KeyChord[] | null) =>
     void onChange({ keybinds: withKeybindOverride(overrides, commandId, chords) });
@@ -67,34 +74,42 @@ export function KeybindSettings({
   useEffect(() => {
     if (!recording) return;
     const apple = isApplePlatform();
+    const stop = () => {
+      setRecording(null);
+      setFirstStep(null);
+    };
     // Capture before the dialog so Escape cancels recording instead of closing it.
     const capture = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        setRecording(null);
+        stop();
         return;
       }
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.key === "Escape") {
-        setRecording(null);
+        stop();
         return;
       }
+      if (event.repeat) return;
       const chord = chordFromEvent(event, apple);
       if (!chord) return;
       void onChange({
-        keybinds: withKeybindOverride(overrides, recording, [chord]),
+        keybinds: withKeybindOverride(overrides, recording, [firstStep ? `${firstStep} ${chord}` : chord]),
       });
-      setRecording(null);
+      if (firstStep) stop();
+      else setFirstStep(chord);
     };
-    const cancel = () => setRecording(null);
+    // A first step with no second one in time stays a one-step shortcut.
+    const timer = firstStep ? setTimeout(stop, KEY_SEQUENCE_TIMEOUT_MS) : undefined;
     window.addEventListener("keydown", capture, true);
-    window.addEventListener("blur", cancel);
+    window.addEventListener("blur", stop);
     return () => {
+      clearTimeout(timer);
       window.removeEventListener("keydown", capture, true);
-      window.removeEventListener("blur", cancel);
+      window.removeEventListener("blur", stop);
     };
-  }, [recording, overrides, onChange]);
+  }, [recording, firstStep, overrides, onChange]);
 
   const customized = Object.keys(overrides).length > 0;
 
@@ -102,7 +117,7 @@ export function KeybindSettings({
     <>
       <Field orientation="horizontal" className="justify-between">
         <FieldDescription>
-          Select a shortcut, then press the new keys. Escape cancels.
+          Select a shortcut, then press the new keys. Press more keys straight after for a two-step shortcut. Escape cancels.
         </FieldDescription>
         <Button
           type="button"
@@ -143,11 +158,18 @@ export function KeybindSettings({
                       aria-pressed={listening}
                       data-testid={`keybind-record-${command.id}`}
                       className="min-w-32 justify-end"
-                      onClick={() => setRecording(listening ? null : command.id)}
+                      onClick={() => record(listening ? null : command.id)}
                     >
                       <span id={`${labelId}-value`} className="flex items-center gap-1.5">
                         {listening ? (
-                          <span aria-live="polite">Press Keys…</span>
+                          firstStep ? (
+                            <span aria-live="polite" className="flex items-center gap-1.5">
+                              <ShortcutKeys chord={firstStep} />
+                              then…
+                            </span>
+                          ) : (
+                            <span aria-live="polite">Press Keys…</span>
+                          )
                         ) : chords.length ? (
                           chords.map((chord, index) => (
                             <span key={chord} className="flex items-center gap-1.5">

@@ -103,21 +103,20 @@ export interface PlayContentServiceOptions {
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** The open project's settings and scene list, read when a loader runs. */
   projectDocument: () => ProjectDocument | null;
-  /** A whole-project Play compile finished; the owner stores its bundles and signature. */
-  onPreviewScriptsCompiled: (signature: string, bundles: ScriptBundleEntry[], diagnostics: Diagnostic[]) => void;
+  /** A whole-project Play compile finished; the owner records the open graphs' signature it compiled. */
+  onPreviewScriptsCompiled: (signature: string) => void;
 }
 
 export type PlayContentService = ReturnType<typeof createPlayContentService>;
 
 function openGraphCompileDocuments(
-  documentService: DocumentService,
+  openDocuments: readonly OpenDocument[],
   assets: ReadonlyArray<{ path: string; header: { parentClass?: string | null } }>,
 ): GraphCompileDocument[] {
   // The saved parent is part of what compiles, so a parent changed on disk
   // (outside Reparent) also changes the signature.
   const parentByPath = new Map(assets.map((asset) => [asset.path, asset.header.parentClass ?? null]));
-  return documentService
-    .getOpenDocumentsOrdered()
+  return openDocuments
     .filter((doc) => doc.ref.kind === "graph" && doc.content)
     .map((doc) => ({
       path: doc.ref.path,
@@ -132,10 +131,9 @@ function openGraphCompileDocuments(
  * decide the one-way rule decoration.
  */
 function openAnimGraphSignatureSlices(
-  documentService: DocumentService,
+  openDocuments: readonly OpenDocument[],
 ): Array<{ path: string; content: SerializedGraph }> {
-  return documentService
-    .getOpenDocumentsOrdered()
+  return openDocuments
     .filter((doc) => doc.ref.kind === "anim-graph" && doc.content)
     .flatMap((doc) => {
       const parsed = parseAnimGraphDocument(doc.content);
@@ -162,7 +160,7 @@ function reportLoadFailure(label: string, path: string, error: unknown, required
  * Play and export content collection, without React: the `collectPlay*`
  * loaders (open tabs override saved documents), Class / Animation Graph script
  * compilation with its codegen cache, and the compile signatures that decide
- * when Play bundles are stale. `DocumentProvider` creates one and exposes its
+ * when open graphs need Compile. `DocumentProvider` creates one and exposes its
  * functions as actions; each keeps its identity for the service's lifetime.
  */
 export function createPlayContentService(options: PlayContentServiceOptions) {
@@ -171,20 +169,19 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   const collectGraphTypeSchemas = (
     assets = projectService.registry?.list() ?? [],
-    openDocuments = [...documentService.getState().openDocuments.values()],
+    openDocuments: readonly OpenDocument[] = [...documentService.getState().openDocuments.values()],
   ) => {
     return typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments }));
   };
 
   /**
-   * Fingerprint of the open Class and Animation Graphs and the catalogs they compile against (node positions omitted).
-   * It runs on every graph keystroke, so the registry and the open documents are listed once for all of its catalogs.
+   * Fingerprint of the given open Class and Animation Graphs and the catalogs they compile against (node positions omitted).
+   * It runs on every graph keystroke, so the registry is listed once for all of its catalogs.
    */
-  const graphSignature = (tags: ProjectDocument["settings"]["tags"] | undefined) => {
+  const graphSignatureOf = (tags: ProjectDocument["settings"]["tags"] | undefined, openDocuments: readonly OpenDocument[]) => {
     const assets = projectService.registry?.list() ?? [];
-    const openDocuments = [...documentService.getState().openDocuments.values()];
     return graphCompileSignature(
-      [...openGraphCompileDocuments(documentService, assets), ...openAnimGraphSignatureSlices(documentService)],
+      [...openGraphCompileDocuments(openDocuments, assets), ...openAnimGraphSignatureSlices(openDocuments)],
       inputAssetCatalog(assets, openDocuments),
       tags,
       collectDataGraphAssets(assets, openDocuments),
@@ -192,14 +189,14 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     );
   };
 
-  const recordPlayPreviewScripts = (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
-    options.onPreviewScriptsCompiled(graphSignature(options.projectDocument()?.settings.tags), bundles, nextDiagnostics);
-  };
+  /** The signature of the open documents as they are now. */
+  const graphSignature = (tags: ProjectDocument["settings"]["tags"] | undefined) =>
+    graphSignatureOf(tags, [...documentService.getState().openDocuments.values()]);
 
   /**
    * Compile on Save: warm the codegen cache for open Class and Animation
-   * Graphs only and return their signature. Play bundles are not recorded;
-   * Play still runs `collectPlayPreviewScripts` for the full set.
+   * Graphs only and return their signature, which the caller records as
+   * compiled. Play still runs `collectPlayPreviewScripts` for the full set.
    */
   const compileOpenGraphs = (tags: ProjectDocument["settings"]["tags"] | undefined): string => {
     const assets = projectService.registry?.list() ?? [];
@@ -235,7 +232,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     });
     compileAnimGraphScripts(animGraphs, { cache: compileCache, inputAssets, dataAssets, ...typeSchemas, tagRegistry: tags });
     return graphCompileSignature(
-      [...graphs, ...openAnimGraphSignatureSlices(documentService)],
+      [...graphs, ...openAnimGraphSignatureSlices(openDocuments)],
       inputAssets,
       tags,
       dataAssets,
@@ -369,11 +366,16 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   }> => {
     // A Play session's closure is required content; a whole-project compile skips unreadable files.
     const strict = requiredGuids !== undefined;
-    const documents = await loadProjectGraphDocuments(requiredGuids, sourceDocuments, strict);
-    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, sourceDocuments, strict);
+    // Read the tabs once, before closed files load: an edit applies to the
+    // shared document in place, so copy each one to keep its content as read.
+    // A restored tab that finishes loading meanwhile compiles from disk but is
+    // left out of the recorded signature, so it reads as needing a compile, as
+    // it does when it loads after any recorded compile.
+    const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()].map((document) => ({ ...document }));
+    const documents = await loadProjectGraphDocuments(requiredGuids, openDocuments, strict);
+    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, openDocuments, strict);
     const parentOf = registryClassParentLookup(projectService.registry);
     const assets = projectService.registry?.list() ?? [];
-    const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()];
     const classGraphs = collectClassGraphsForPalette({
       assets,
       openDocuments,
@@ -438,7 +440,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         tagRegistry: (sourceProject ?? options.projectDocument())?.settings.tags,
       }),
     ];
-    if (!requiredGuids) recordPlayPreviewScripts(bundles, diagnostics);
+    // `openDocuments` are the tabs the compile read, so an edit made while it loaded files stays uncompiled.
+    if (!requiredGuids) options.onPreviewScriptsCompiled(graphSignatureOf(options.projectDocument()?.settings.tags, openDocuments));
     return { bundles, diagnostics };
   };
 

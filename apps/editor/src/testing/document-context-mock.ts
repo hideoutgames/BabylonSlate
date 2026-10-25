@@ -259,12 +259,8 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     collectPlayAudio: unavailable("collectPlayAudio"),
     collectPlayMaterialLibrary: async () => ({ documents: new Map(), functions: new Map(), textureGuids: [] }),
     loadGraphDocument: async () => null,
-    scriptsStale: false,
     graphsNeedCompile: false,
     currentGraphSignature: "",
-    playPreviewBundles: [],
-    playPreviewDiagnostics: [],
-    playLoadedSignature: null,
     searchIndex: null,
   };
 }

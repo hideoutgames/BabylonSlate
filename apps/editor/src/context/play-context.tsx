@@ -215,6 +215,11 @@ type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog"> & {
 };
 const PlayDiagnosticsActionsContext = createContext<PlayDiagnosticsActions | null>(null);
 
+/** The names a save prompt lists: each dirty document, then Project Settings when the project is dirty. */
+function dirtyDocumentLabels(documents: readonly { ref: { label: string } }[], projectDirty: boolean): string[] {
+  return [...documents.map((doc) => doc.ref.label), ...(projectDirty ? ["Project Settings"] : [])];
+}
+
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -727,6 +732,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     playRequestInputsRef.current = playRequestInputs;
   });
+  /** Loads the project's Save Game definition from the documents as they are when Play reads it. */
+  const loadSaveGameDefinition = useCallback(async (guid: string) => {
+    const current = playRequestInputsRef.current.documents;
+    const asset = current.assetRegistry?.getByGuid(guid);
+    if (!asset) throw new Error("The default Save Game definition is missing.");
+    return current.loadAssetDocument("save-game", asset.path);
+  }, []);
 
   // Saved Debug menu defaults apply field by field: a settings write re-applies only the fields it
   // changed, so it no longer reverts another field whose own write is still queued behind it.
@@ -1165,10 +1177,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const needsSave = dirtyDocuments.length > 0 || projectDirty;
     if (needsSave && !saveConfirmed) {
       setUnsavedPrompt({
-        dirtyNames: [
-          ...dirtyDocuments.map((doc) => doc.ref.label),
-          ...(projectDirty ? ["Project Settings"] : []),
-        ],
+        dirtyNames: dirtyDocumentLabels(dirtyDocuments, projectDirty),
         previewBuild: true,
       });
       return;
@@ -1207,12 +1216,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       await prepareSaveGameConfiguration({
         projectId: playRequestInputsRef.current.documents.projectGuid,
         settings: projectDocument?.settings.saveGame,
-        loadDefinition: async (guid) => {
-          const current = playRequestInputsRef.current.documents;
-          const asset = current.assetRegistry?.getByGuid(guid);
-          if (!asset) throw new Error("The default Save Game definition is missing.");
-          return current.loadAssetDocument("save-game", asset.path);
-        },
+        loadDefinition: loadSaveGameDefinition,
       });
       if (!isCurrentRequest()) return;
       setPreviewPhase("Collecting Assets");
@@ -1286,7 +1290,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (sessionOwner.getSnapshot().lifecycle === "preparing") void sessionOwner.stop(ticket);
       }
     }
-  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner, finishPreviewPresentation]);
+  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner, finishPreviewPresentation, loadSaveGameDefinition]);
 
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
@@ -1326,19 +1330,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       const inject = Boolean(options?.injectFixtureThrow);
       // Play Without Saving runs the open in-memory documents as they are.
       const skipSave = simulating || options?.saveChoice === "skip";
+      const dirtyLabels = dirtyDocumentLabels(dirtyDocuments, projectDirty);
       const plan = planPlayPreviewPrepare({
-        dirtyDocuments: skipSave ? [] : [
-          ...dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
-          ...(projectDirty ? [{ label: "Project Settings" }] : []),
-        ],
+        dirtyDocuments: skipSave ? [] : dirtyLabels.map((label) => ({ label })),
         scriptsStale: graphsNeedCompile,
         migrationPending: migrationPending.length > 0,
       });
 
-      const dirtyNames = plan.action === "prepare" ? plan.dirtyNames : [
-        ...dirtyDocuments.map((doc) => doc.ref.label),
-        ...(projectDirty ? ["Project Settings"] : []),
-      ];
+      const dirtyNames = plan.action === "prepare" ? plan.dirtyNames : dirtyLabels;
       // Ask before writing anything (including a migrate-on-save) to disk.
       if (!skipSave && options?.saveChoice !== "save" && dirtyNames.length > 0) {
         setUnsavedPrompt({ dirtyNames, previewBuild: false, options });
@@ -1500,12 +1499,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           storage: simulating ? simulationRef.current?.storage : undefined,
           projectId: playRequestInputsRef.current.documents.projectGuid,
           settings: projectDocument?.settings.saveGame,
-          loadDefinition: async (guid) => {
-            const current = playRequestInputsRef.current.documents;
-            const asset = current.assetRegistry?.getByGuid(guid);
-            if (!asset) throw new Error("The default Save Game definition is missing.");
-            return current.loadAssetDocument("save-game", asset.path);
-          },
+          loadDefinition: loadSaveGameDefinition,
         })));
         setPrepareState(null);
 
@@ -1557,6 +1551,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       projectEngine,
       registerSharedEngine,
       setDiagnostics,
+      loadSaveGameDefinition,
     ],
   );
 

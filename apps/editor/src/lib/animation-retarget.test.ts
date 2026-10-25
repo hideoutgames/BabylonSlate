@@ -89,7 +89,7 @@ describe("writeRetargetedAnimations", () => {
       folderRelative: "assets",
       rootId: "project",
       readModelBytes: async () => new Uint8Array([1]),
-      probeMatches: async () => false,
+      probeMatches: async () => new Set(),
       createAsset: async (_rootId, relativePath) => {
         created.push(relativePath);
       },
@@ -121,7 +121,7 @@ describe("writeRetargetedAnimations", () => {
       folderRelative: "assets",
       rootId: "project",
       readModelBytes: async () => new Uint8Array([1]),
-      probeMatches: async () => true,
+      probeMatches: async (_source, _target, clipNames) => new Set(clipNames),
       createAsset: async (_rootId, relativePath, importResult) => {
         created.push(relativePath);
         expect(importResult.payload).toMatchObject({
@@ -153,7 +153,7 @@ describe("writeRetargetedAnimations", () => {
       folderRelative: "assets",
       rootId: "project",
       readModelBytes: async () => new Uint8Array([1]),
-      probeMatches: async () => true,
+      probeMatches: async (_source, _target, clipNames) => new Set(clipNames),
       createAsset: async (_rootId, relativePath, importResult) => {
         created.push({ path: relativePath, name: importResult.name });
       },

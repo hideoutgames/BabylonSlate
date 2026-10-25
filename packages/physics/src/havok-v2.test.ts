@@ -5,10 +5,10 @@ import { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
 import { Scene } from "@babylonjs/core/scene";
 import {
   createPhysicsBackend,
-  HavokPhysicsBackend,
-  resetLoadedBackendModules,
   type PhysicsBackend,
 } from "./index";
+import { resetLoadedBackendModules } from "./create-backend";
+import { HavokPhysicsBackend } from "./havok-backend";
 import { resetHavokModuleCache } from "./havok-loader";
 
 /**

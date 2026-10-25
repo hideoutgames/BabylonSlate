@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline,
   SaveGameService, createSaveStorageClient, type SaveGameConfiguration, type SaveGameStorage } from "@haptic/core";
+import { encodePackedAudioAsset } from "@haptic/assets";
 import { exportGame } from "@haptic/exporter";
 import * as rendering from "@haptic/render";
 import * as runtimes from "@haptic/runtime";
@@ -61,11 +62,23 @@ function flushFrames(count: number) {
   }
 }
 
-async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
+/** The merged asset load state the worker's runtime holds for `guid` (it merges each publish). */
+function publishedState(worker: TestWorker, guid: string) {
+  let state: string | undefined;
+  for (const message of worker.messages) {
+    if (message.channel !== "control" || message.payload.type !== "assetLoadStates") continue;
+    state = message.payload.states.find(entry => entry.guid === guid)?.state ?? state;
+  }
+  return state;
+}
+
+/** `withAudio` adds a "jump" Audio asset outside the startup closure. */
+async function fixture(withWater = false, saveGame?: SaveGameConfiguration, withAudio = false) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition())) }] : [])] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition())) }] : []),
+      ...(withAudio ? [{ guid: "jump", type: "Audio", sceneGuid: "world", bytes: encodePackedAudioAsset({ volume: 1 }, new Uint8Array([1, 2, 3, 4])) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -77,7 +90,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const handle = {
     engine: { onEndFrameObservable: { add: (callback: () => void) => (endFrame.add(callback), callback), remove: (callback: () => void) => { endFrame.delete(callback); } } },
     loadScene: vi.fn(),
-    acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(),
+    acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(), setCommandSourceLoader: vi.fn<(loader: rendering.CommandSourceLoader | null) => void>(),
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(), whenReleased: vi.fn(async () => {}),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
@@ -194,6 +207,19 @@ describe("player startup and Stop ownership", () => {
     reject();
     await expect(restore).rejects.toThrow("Runtime busy");
     expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it("does not report a Preview boundary that Stop cancelled as a console error", async () => {
+    const { game, canvas } = await fixture();
+    game.manifest.bundleDebugger = true;
+    const commands: Array<{ type: string } & Record<string, unknown>> = [];
+    const session = startPlayer({ game, canvas, previewDiagnostics: true, onConsoleEvent: (command) => commands.push(command) });
+    sessions.push(session);
+    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!(true);
+    expect(TestWorker.instances[0]!.messages.some(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary")).toBe(true);
+    session.stop();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(commands.filter(command => command.type === "log" && command.severity === "error")).toEqual([]);
   });
 
   it("stops Preview game time for a render hold without taking input from the game", async () => {
@@ -571,10 +597,7 @@ describe("player startup and Stop ownership", () => {
     handle.acquireSceneSources.mockImplementationOnce(() => new Promise<() => void>((_resolve, reject) => { fail = reject; }));
     sessions.push(startPlayer({ game, canvas }));
     const worker = TestWorker.instances[0]!;
-    const state = () => {
-      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "assetLoadStates");
-      return message?.channel === "control" && message.payload.type === "assetLoadStates" ? message.payload.states.find(entry => entry.guid === "world")?.state : undefined;
-    };
+    const state = () => publishedState(worker, "world");
     worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "first", ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
     await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
     expect(game.assets?.getLoadState("world")).toBe("ready");
@@ -585,6 +608,25 @@ describe("player startup and Stop ownership", () => {
     worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "retry", ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
     await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "retry", success: true, progress: 1 } }));
     expect(state()).toBe("ready");
+  });
+  it.each(["command source", "audio"] as const)("publishes the ready state when a %s load completes", async (path) => {
+    const { game, canvas, handle } = await fixture(false, undefined, true);
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    await vi.waitFor(() => expect(publishedState(worker, "jump")).toBe("unloaded"));
+    const request = { slotId: 1, consumer: "test", signal: new AbortController().signal };
+    const load = () => path === "audio"
+      ? vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.prepareAudioAsset!("jump", request)
+      : handle.setCommandSourceLoader.mock.calls[0]![0]!(["jump"], request);
+    const release = await load();
+    expect(publishedState(worker, "jump")).toBe("ready");
+    // Another voice of a ready Audio asset changes no state, so it posts none.
+    const stateMessages = () => worker.messages.filter(entry => entry.channel === "control" && entry.payload.type === "assetLoadStates").length;
+    const published = stateMessages();
+    const releaseSecond = await load();
+    expect(stateMessages()).toBe(published);
+    releaseSecond();
+    release();
   });
   it.each(["gameplay", "preload", "background"] as const)("schedules a %s priority asset load that way in the loader and the renderer", async priority => {
     const { game, canvas, handle } = await fixture();

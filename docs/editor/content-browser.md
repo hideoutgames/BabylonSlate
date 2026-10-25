@@ -34,13 +34,13 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | --- | --- |
 | Open | Open the asset in its editor. |
 | Generate Thumbnail | Redraw the thumbnail of a Model, Animation, Material or actor Class. |
-| Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas (JSON and PNG). |
+| Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
 | Create Material Instance | Materials and Material Instances only. Make a new instance of it. |
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder. References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |
 | Move… / Copy to Folder… | Move or copy the selection to a folder you pick. |
-| Copy Asset Reference | Copy the asset's ID to the clipboard. |
+| Copy Asset Reference | Copy the asset's ID to the clipboard. If the clipboard refuses the copy, the Content Browser says so. |
 | Show References | Open the references graph (below). |
 | Delete | Delete the selection. |
 

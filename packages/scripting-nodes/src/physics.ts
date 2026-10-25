@@ -59,10 +59,12 @@ function validatePhysicsRadius(
 ) {
   const out = [];
   for (const graph of graphs) {
+    const wired = new Set(graph.edges.map((edge) => `${edge.targetNodeId}\t${edge.targetPinId}`));
     for (const node of graph.nodes) {
       if (
-        node.typeId !== "physics.sphereOverlap" &&
-        node.typeId !== "physics.shapeSweep"
+        (node.typeId !== "physics.sphereOverlap" &&
+          node.typeId !== "physics.shapeSweep") ||
+        wired.has(`${node.id}\tradius`)
       ) {
         continue;
       }

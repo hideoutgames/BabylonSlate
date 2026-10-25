@@ -1,6 +1,6 @@
 import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
-import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
+import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
@@ -36,6 +36,8 @@ import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
+import { playerDecoderPaths } from "./decoder-paths";
+import { manifestConsoleCommands } from "./console-catalog";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
   applyPlayerActiveScene,
@@ -67,18 +69,6 @@ import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
-}
-
-function ktx2BasePath(): string {
-  return new URL("./ktx2/", document.baseURI).href;
-}
-
-function dracoBasePath(): string {
-  return new URL("./draco/", document.baseURI).href;
-}
-
-function meshoptBasePath(): string {
-  return new URL("./meshopt/", document.baseURI).href;
 }
 
 export type PlayerDiagnostic = {
@@ -287,6 +277,7 @@ function initializePlayer(
         clearResourceFailures(requiredGameAssets(manifest, [guid]));
         await refreshSourceContent();
         request.signal.throwIfAborted();
+        publishAssetStates();
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     } : undefined,
@@ -326,9 +317,7 @@ function initializePlayer(
     physicsWorld: manifest.physicsWorld,
     navmeshBytes: content.navmeshBytes,
     navBlockers: navDebugBlockersFromActors(scene.actors),
-    ktx2BasePath: ktx2BasePath(),
-    dracoBasePath: dracoBasePath(),
-    meshoptBasePath: meshoptBasePath(),
+    ...playerDecoderPaths(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onConsoleEvent?.({
         type: "log",
@@ -532,11 +521,7 @@ function initializePlayer(
       const classId = entry.type === "Class" ? entry.classId ?? (entry.assetPath ? classIdForAssetPath(entry.assetPath) : undefined) : undefined;
       return classId ? [[classId, entry.guid]] : [];
     })),
-    consoleCommands: manifest.assets.flatMap(entry => {
-      if (!entry.consoleCommand) return [];
-      const classId = entry.classId ?? game.scripts.find(script => script.assetGuid === entry.guid)?.classId ?? entry.name ?? entry.guid;
-      return [{ ...entry.consoleCommand, name: entry.consoleCommand.name || classId.toLowerCase(), classId, assetGuid: entry.guid }];
-    }),
+    consoleCommands: manifestConsoleCommands(manifest, game.scripts),
     ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
@@ -597,7 +582,9 @@ function initializePlayer(
     // unknown, so the latest failed boundary releases the view freeze and the
     // input hold it placed; explicit editor suppression still applies.
     void request.catch(error => {
-      if (!halted && issued === issuedBoundaries) {
+      // Stop rejects every pending boundary; that is no failure to report.
+      if (halted) return;
+      if (issued === issuedBoundaries) {
         handle.setPaused(false);
         applyInputOwnership();
       }
@@ -831,6 +818,7 @@ function initializePlayer(
       clearResourceFailures(requiredGameAssets(manifest, ids));
       await refreshSourceContent();
       request.signal.throwIfAborted();
+      publishAssetStates();
       return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
     } catch (error) { releaseRender?.(); source.release(); throw error; }
   });
@@ -865,11 +853,25 @@ function initializePlayer(
     if (worker) worker.postControl({ type: "assetPreloadResult", ...result });
     else runtime?.notifyAssetPreloadResult(result);
   };
+  // The runtime merges published states, so each publish posts only the states
+  // that changed since the last one its current receiver accepted (every Audio
+  // voice and command load publishes).
+  let publishedStates = new Map<string, RuntimeAssetLoadState>();
+  let publishedTo: PlayerWorkerHost | RuntimeDriver | null = null;
   const publishAssetStates = () => {
+    const target = worker ?? runtime;
+    if (!target) return;
+    if (target !== publishedTo) { publishedTo = target; publishedStates = new Map(); }
     const preparing = new Set([...preparingPreloads.values()].flatMap(ids => [...ids]));
-    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: preparing.has(entry.guid) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets.getLoadState(entry.guid) }));
+    const states: Array<{ guid: string; state: RuntimeAssetLoadState }> = [];
+    for (const entry of manifest.assets) {
+      const state = preparing.has(entry.guid) ? "loading" : resourceFailures.has(entry.guid) ? "failed" : game.assets.getLoadState(entry.guid);
+      if (publishedStates.get(entry.guid) !== state) states.push({ guid: entry.guid, state });
+    }
+    if (!states.length) return;
     if (worker) worker.postControl({ type: "assetLoadStates", states });
     else runtime?.setAssetLoadStates(states);
+    for (const { guid, state } of states) publishedStates.set(guid, state);
   };
   if (game.onSourcesChanged) own(game.onSourcesChanged(() => { if (!halted) { refreshSourceContent(); publishAssetStates(); } }));
   const releasePreload = (id: string) => {

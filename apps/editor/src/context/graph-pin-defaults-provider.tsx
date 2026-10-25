@@ -41,9 +41,9 @@ type PickerTarget =
   | { kind: "class"; rowId: string; classId: string; source: string }
   | { kind: "asset"; rowId: string; assetType: string; source: string };
 
-function entryPathOptions(request: PinDefaultEditorRequest, catalogs: GraphPinDefaultCatalogs) {
+function entryPathOptions(request: PinDefaultEditorRequest, dataTrees: readonly DataGraphAssetEntry[]) {
   return request.pin.type.kind === "string"
-    ? dataNodePathOptions(request.nodeType ?? "", request.pin.id, request.nodeData, catalogs.dataTrees,
+    ? dataNodePathOptions(request.nodeType ?? "", request.pin.id, request.nodeData, dataTrees,
       (pinId) => request.connectedInputIds?.includes(pinId) === true)
     : undefined;
 }
@@ -77,7 +77,7 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
       onPickAsset: (rowId, assetType) => { if (!disabled) setPick({ kind: "asset", rowId, assetType, source: valueSignature }); },
     },
   );
-  const pathOptions = entryPathOptions(request, catalogs);
+  const pathOptions = entryPathOptions(request, catalogs.dataTrees);
   const controls = rows.map((row) => ({ ...row, id: `${rootId}:${row.id}` }));
   const commitPick = (selected: string | null) => {
     const row = rows.find((entry) => entry.id === activePick?.rowId);
@@ -135,20 +135,24 @@ export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) 
     void registryEpoch;
     return assetRegistry?.list() ?? [];
   }, [assetRegistry, registryEpoch]);
-  const catalogs = useMemo<GraphPinDefaultCatalogs>(() => ({
-    assets, materialDocuments,
+  const registryCatalogs = useMemo(() => ({
     pickerAssets: assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })),
     assetEntries: assets.map((asset) => ({ id: asset.header.guid, name: asset.header.name, type: asset.header.type })),
     classEntries: subclassClassEntries("Object", assets, { editorGraph: true }),
     parentOf: classParentLookup(assets),
-    enumMembers: collectEnumMemberNames(enumDocuments, assets),
-    dataTrees: collectDataGraphAssets(assets, treeDocuments),
-  }), [assets, enumDocuments, materialDocuments, treeDocuments]);
+  }), [assets]);
+  const enumMembers = useMemo(() => collectEnumMemberNames(enumDocuments, assets), [enumDocuments, assets]);
+  const dataTrees = useMemo(() => collectDataGraphAssets(assets, treeDocuments), [assets, treeDocuments]);
+  const catalogs = useMemo<GraphPinDefaultCatalogs>(() => ({
+    ...registryCatalogs, assets, materialDocuments, enumMembers, dataTrees,
+  }), [registryCatalogs, assets, materialDocuments, enumMembers, dataTrees]);
+  // Pin rows re-render whenever this renderer changes, so it reads only the Data Trees that decide
+  // whether a string pin gets an entry picker; the editors read the other catalogs from context.
   const render = useCallback<PinDefaultEditorRenderer>((request) => {
     const kind = request.pin.type.kind;
-    if (kind !== "enumRef" && kind !== "classRef" && kind !== "assetRef" && entryPathOptions(request, catalogs) === undefined) return null;
+    if (kind !== "enumRef" && kind !== "classRef" && kind !== "assetRef" && entryPathOptions(request, dataTrees) === undefined) return null;
     return <ProjectPinEditor key={`${request.nodeId}:${request.pin.id}`} request={request} />;
-  }, [catalogs]);
+  }, [dataTrees]);
   return <CatalogContext.Provider value={catalogs}>
     <PinDefaultEditorContext.Provider value={render}>{children}</PinDefaultEditorContext.Provider>
   </CatalogContext.Provider>;

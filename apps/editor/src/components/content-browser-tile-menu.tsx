@@ -15,6 +15,7 @@ import {
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import {
   groupMsdfImportBatch,
+  msdfAtlasPickError,
   newAssetGuid,
   stripAssetFileSuffix,
   type AssetCopyOptions,
@@ -37,6 +38,7 @@ import {
   rootSelectedFolderPaths,
 } from "../lib/content-browser-helpers";
 import { contentBrowserFolderOps } from "../lib/plugin-ui";
+import { copyText } from "../lib/diagnostic-info";
 import type { ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
 import type { ImportProgress } from "./import-progress-dialog";
 import type { NameEntry } from "./content-browser-name-dialog";
@@ -171,6 +173,13 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
               accept: ".json,.png",
             });
             if (!files.length) return;
+            // As the Font editor does: refuse anything but an MSDF JSON and the
+            // PNG it pairs with (an unpaired PNG would attach as a Texture chunk).
+            const pickError = msdfAtlasPickError(files);
+            if (pickError) {
+              setImportErrors([pickError]);
+              return;
+            }
             const prepared = groupMsdfImportBatch(files);
             const browse = contentBrowserFolderOps(
               selectedFolderPath,
@@ -371,7 +380,9 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       onSelect: () => {
         const guid = menuTargetGuidsRef.current[0];
         if (!guid) return;
-        void navigator.clipboard.writeText(guid);
+        void copyText(guid).then((ok) => {
+          if (!ok) setOperationError("Could not copy the asset reference.");
+        });
       },
     },
     {

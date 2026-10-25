@@ -1,4 +1,4 @@
-import type { ComponentType, SVGProps } from "react";
+import { Fragment, type ComponentType, type SVGProps } from "react";
 import {
   ArrowBigUpIcon,
   ArrowDownIcon,
@@ -14,6 +14,7 @@ import {
 import { Kbd, KbdGroup } from "@haptic/ui/components/kbd";
 import { cn } from "@haptic/ui/lib/utils";
 import {
+  chordSteps,
   describeChord,
   isApplePlatform,
   keyLabel,
@@ -57,6 +58,7 @@ export interface ShortcutKeysProps {
 /**
  * Keyboard chord as compact keycaps. Modifiers use platform glyphs where they
  * exist (Command, Option, Shift); screen readers get the spelled-out chord.
+ * The steps of a multi-step shortcut are joined by "then".
  */
 export function ShortcutKeys({
   chord,
@@ -65,22 +67,10 @@ export function ShortcutKeys({
   decorative = false,
 }: ShortcutKeysProps) {
   if (!chord) return null;
-  const parsed = parseChord(chord);
-  if (!parsed) return null;
+  const steps = chordSteps(chord).map(parseChord);
+  if (!steps.length || steps.some((step) => step === null)) return null;
   const onApple = apple ?? isApplePlatform();
   const label = describeChord(chord, onApple);
-  const keys = [
-    ...parsed.modifiers.map((modifier) => ({
-      id: modifier,
-      glyph: modifierGlyph(modifier, onApple),
-      text: modifierLabel(modifier, onApple),
-    })),
-    {
-      id: parsed.key,
-      glyph: KEY_GLYPHS[parsed.key] ?? null,
-      text: keyLabel(parsed.key),
-    },
-  ];
   return (
     <KbdGroup
       data-slot="shortcut-keys"
@@ -88,11 +78,30 @@ export function ShortcutKeys({
       className={cn("shortcut-keys", className)}
     >
       {decorative ? null : <span className="sr-only">{label}</span>}
-      {keys.map(({ id, glyph: Glyph, text }) => (
-        <Kbd key={id} aria-hidden="true">
-          {Glyph ? <Glyph /> : text}
-        </Kbd>
-      ))}
+      {steps.map((step, index) => {
+        const keys = [
+          ...step!.modifiers.map((modifier) => ({
+            id: modifier,
+            glyph: modifierGlyph(modifier, onApple),
+            text: modifierLabel(modifier, onApple),
+          })),
+          {
+            id: step!.key,
+            glyph: KEY_GLYPHS[step!.key] ?? null,
+            text: keyLabel(step!.key),
+          },
+        ];
+        return (
+          <Fragment key={index}>
+            {index > 0 ? <span aria-hidden="true">then</span> : null}
+            {keys.map(({ id, glyph: Glyph, text }) => (
+              <Kbd key={id} aria-hidden="true">
+                {Glyph ? <Glyph /> : text}
+              </Kbd>
+            ))}
+          </Fragment>
+        );
+      })}
     </KbdGroup>
   );
 }

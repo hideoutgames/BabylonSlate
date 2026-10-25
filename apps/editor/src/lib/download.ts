@@ -16,3 +16,16 @@ export function downloadBlob(blob: Blob, fileName: string): void {
     setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
   }
 }
+
+/**
+ * Saves zip bytes as `fileName`: exactly the view's bytes, even when it shares
+ * a larger buffer, without an extra copy of a large Export Game archive. Every
+ * producer is fflate output on a plain `ArrayBuffer`; a `SharedArrayBuffer`
+ * view would make `Blob` throw.
+ */
+export function downloadZipArchive(bytes: Uint8Array, fileName: string): void {
+  downloadBlob(
+    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }),
+    fileName,
+  );
+}

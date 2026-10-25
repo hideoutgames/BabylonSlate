@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { runWebGpuPredictedAdmissionsProof, runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
@@ -70,7 +70,7 @@ test("project backend changes rebuild one Engine while preserving scene edits an
     expect((await baseline())?.engineCount).toBe(1);
     await expect(page.getByTestId("undo-document")).toBeEnabled();
     captures.push(await baseline());
-    await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${backend}-${captures.length}.png`) });
+    await attachPresentedViewport(page, testInfo, `${backend}-${captures.length}`);
   }
   await page.getByTestId("undo-document").click();
   await expect.poll(async () => (await position())[0]).toBeCloseTo(moved[0] - 1.5, 5);
@@ -172,9 +172,11 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // each Material's previous Effect while its pipeline is created asynchronously, as do floors whose spot starts or
   // stops casting shadows (a lost map's sampler takes a placeholder of the declared type, so no GPU validation error),
   // a spawn with a variant nothing compiled stays hidden meanwhile, and a spawn whose Material the load warmed creates
-  // no pipeline at all. A new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth
-  // pipelines exist, creating none synchronously, and a spawn into the drawn sun map with a caster depth variant no
-  // caster drew is revealed once that pipeline exists, so the map's redraw with it creates none synchronously either.
+  // no pipeline at all. The first spawn built again (a visual a script's write rebuilds) is revealed in its first frame
+  // and creates none; the same Effect with another vertex layout waits hidden for its own pipeline, holding nothing. A
+  // new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth pipelines exist,
+  // creating none synchronously, and a spawn into the drawn sun map with a caster depth variant no caster drew is
+  // revealed once that pipeline exists, so the map's redraw with it creates none synchronously either.
   const swap = result.variantSwap!;
   expect({
     swap: { done: swap.swap.done, held: swap.swap.held, previous: swap.swap.previousFrames > 0, ...swap.swap.pipelines,
@@ -186,6 +188,10 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       synchronous: swap.shadowLoss.pipelines.synchronous },
     spawn: { done: swap.spawn.done, held: swap.spawn.held, hidden: swap.spawn.hiddenFrames > 0, ...swap.spawn.pipelines,
       asynchronous: swap.spawn.pipelines.asynchronous > 0 },
+    respawn: { done: swap.respawn.done, frames: swap.respawn.frames, held: swap.respawn.held, hidden: swap.respawn.hiddenFrames,
+      ...swap.respawn.pipelines },
+    layout: { done: swap.layout.done, held: swap.layout.held, hidden: swap.layout.hiddenFrames > 0, sameEffect: swap.layout.sameEffect,
+      synchronous: swap.layout.pipelines.synchronous, asynchronous: swap.layout.pipelines.asynchronous > 0 },
     staged: { done: swap.staged.done, held: swap.staged.held, ...swap.staged.pipelines,
       asynchronous: swap.staged.pipelines.asynchronous > 0 },
     warmSpawn: { done: swap.warmSpawn.done, held: swap.warmSpawn.held, ...swap.warmSpawn.pipelines },
@@ -197,6 +203,8 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     sunShadows: { done: true, held: 0, synchronous: 0, cascades: 2 },
     shadowLoss: { done: true, held: 0, previous: true, synchronous: 0 },
     spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
+    respawn: { done: true, frames: 1, held: 0, hidden: 0, synchronous: 0, asynchronous: 0 },
+    layout: { done: true, held: 0, hidden: true, sameEffect: true, synchronous: 0, asynchronous: true },
     staged: { done: true, held: 0, synchronous: 0, asynchronous: true },
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     casterSpawn: { done: true, held: 0, hidden: true, synchronous: 0 },
@@ -471,4 +479,85 @@ test("WebGPU admissions a waiting light approaches have their variants and caste
 function isGpuFailure(type: string, message: string): boolean {
   return ["error", "warning"].includes(type) &&
     /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error|No vertex buffer is provided/i.test(message);
+}
+
+type ViewportHooks = {
+  __hapticViewportTest: {
+    holdViewportFrames(hold: boolean): Promise<void>;
+    renderingBaseline(): { render?: { presentation?: { drawn: number; direct?: boolean } } } | null;
+  };
+};
+
+/**
+ * Attaches what the viewport presents and requires it to be non-blank, read in the page while the viewport's frames
+ * are held. An element screenshot waits on the compositor, which a continuously rendering view on the software
+ * adapter can keep busy past the test's budget. Reading the view canvas makes the test build's read sync write the
+ * presented image into it first. No frame may draw while held, the viewport's box must hold still over ten held
+ * frames, and the Engine must draw again once they are released.
+ */
+async function attachPresentedViewport(page: Page, testInfo: TestInfo, name: string) {
+  const hold = (value: boolean) =>
+    page.evaluate((held) => (window as unknown as ViewportHooks).__hapticViewportTest.holdViewportFrames(held), value);
+  const drawn = () => page.evaluate(() =>
+    (window as unknown as ViewportHooks).__hapticViewportTest.renderingBaseline()?.render?.presentation?.drawn ?? 0);
+  let read: {
+    png: string; spread: number; minAlpha: number; boxes: string[]; heldDrawn: number; drawn: number; milliseconds: number;
+  };
+  try {
+    await hold(true);
+    read = await page.evaluate(async () => {
+      const presentation = () => (window as unknown as ViewportHooks).__hapticViewportTest.renderingBaseline()?.render?.presentation;
+      const heldDrawn = presentation()?.drawn ?? 0;
+      const view = document.querySelector<HTMLCanvasElement>('[data-testid="viewport-canvas"]')!;
+      const boxes = new Set<string>();
+      for (let frame = 0; frame < 10; frame++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const box = view.getBoundingClientRect();
+        boxes.add(`${box.x},${box.y} ${box.width}x${box.height}`);
+      }
+      // A covered view canvas is drawn into only when it stops being covered, so it could hold an older image. It is
+      // cleared first, so only the read sync's write of the presented image can make it non-blank.
+      if (presentation()?.direct === true) view.getContext("2d")!.clearRect(0, 0, view.width, view.height);
+      const started = performance.now();
+      // The read sync may resize the view canvas, so the copy takes the bitmap's size.
+      const bitmap = await createImageBitmap(view);
+      const copy = document.createElement("canvas");
+      copy.width = bitmap.width;
+      copy.height = bitmap.height;
+      const context = copy.getContext("2d", { willReadFrequently: true })!;
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      const data = context.getImageData(0, 0, copy.width, copy.height).data;
+      let minAlpha = 255;
+      let low = 255;
+      let high = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        minAlpha = Math.min(minAlpha, data[index + 3]!);
+        const luma = (2 * data[index]! + 5 * data[index + 1]! + data[index + 2]!) / 8;
+        low = Math.min(low, luma);
+        high = Math.max(high, luma);
+      }
+      return {
+        png: copy.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""),
+        spread: high - low,
+        minAlpha,
+        boxes: [...boxes],
+        heldDrawn,
+        drawn: presentation()?.drawn ?? 0,
+        milliseconds: Math.round(performance.now() - started),
+      };
+    });
+  } finally {
+    await hold(false);
+  }
+  testInfo.annotations.push({ type: "presented-viewport-read", description: `${name}: ${read.milliseconds} ms` });
+  await testInfo.attach(name, { body: Buffer.from(read.png, "base64"), contentType: "image/png" });
+  // So a later draw shows the release resumed frames: loading frames would draw through the hold.
+  expect(read.drawn, "no frame drew while held").toBe(read.heldDrawn);
+  expect(read.boxes, "the viewport keeps its box while frames are held").toHaveLength(1);
+  // Blank as the direct presentation probe defines it: transparent, or a single flat colour.
+  expect(read.minAlpha, "the presented viewport is opaque").toBeGreaterThanOrEqual(250);
+  expect(read.spread, "the presented viewport is not blank").toBeGreaterThanOrEqual(8);
+  await expect.poll(drawn, { message: "the Engine draws again once frames are released", timeout: 30_000 })
+    .toBeGreaterThan(read.drawn);
 }

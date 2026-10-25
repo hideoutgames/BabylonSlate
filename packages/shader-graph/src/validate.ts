@@ -1,3 +1,4 @@
+import { findGraphCycle } from "@haptic/core";
 import {
   materialNodeDefinition,
   nodeIsLegalInDomain,
@@ -29,7 +30,7 @@ import type {
   MaterialGraphEdge,
   MaterialGraphNode,
 } from "./document";
-import { createTypeResolver } from "./resolve";
+import { callDefinition, createTypeResolver } from "./resolve";
 import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
 import { vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { validateMaterialParameterNames } from "./parameters";
@@ -89,42 +90,6 @@ function pinById(
 interface GraphLike {
   nodes: MaterialGraphNode[];
   edges: MaterialGraphEdge[];
-}
-
-/** Depth-first cycle search over data edges. */
-export function findGraphCycle(graph: GraphLike): string[] | null {
-  const outgoing = new Map<string, string[]>();
-  for (const edge of graph.edges) {
-    const list = outgoing.get(edge.sourceNodeId) ?? [];
-    list.push(edge.targetNodeId);
-    outgoing.set(edge.sourceNodeId, list);
-  }
-  const state = new Map<string, "visiting" | "done">();
-  const stack: string[] = [];
-
-  const visit = (nodeId: string): string[] | null => {
-    const current = state.get(nodeId);
-    if (current === "done") return null;
-    if (current === "visiting") {
-      const start = stack.indexOf(nodeId);
-      return stack.slice(start >= 0 ? start : 0);
-    }
-    state.set(nodeId, "visiting");
-    stack.push(nodeId);
-    for (const next of outgoing.get(nodeId) ?? []) {
-      const cycle = visit(next);
-      if (cycle) return cycle;
-    }
-    stack.pop();
-    state.set(nodeId, "done");
-    return null;
-  };
-
-  for (const node of graph.nodes) {
-    const cycle = visit(node.id);
-    if (cycle) return cycle;
-  }
-  return null;
 }
 
 /** Function guids reachable from a graph, or the recursion chain that fails. */
@@ -201,24 +166,13 @@ export function functionCallDefinition(
   if (!base) return undefined;
   const guid = node.properties.functionGuid;
   const fn = typeof guid === "string" ? functions[guid] : undefined;
-  if (!fn) return base;
-  return {
-    ...base,
-    title: fn.name,
-    inputs: fn.inputs.map((pin) => ({
-      id: pin.id,
-      name: pin.name,
-      type: { kind: pin.type },
-      ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
-    })),
-    outputs: fn.outputs.map((pin) => ({
-      id: pin.id,
-      name: pin.name,
-      type: { kind: pin.type },
-    })),
-  };
+  return fn ? callDefinition(base, fn) : base;
 }
 
+/**
+ * Unlike the resolver's plumbing pins, these carry no declared defaults, so a
+ * declared default never satisfies an unwired texture Function Output pin.
+ */
 export function functionPlumbingDefinition(
   type: "function.input" | "function.output",
   fn: MaterialFunctionDocument | undefined,

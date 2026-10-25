@@ -1,4 +1,5 @@
-import type { PerformanceProfile, PerformanceScriptEntry } from "@haptic/debugger";
+import type { PerformanceScriptEntry } from "@haptic/bridge";
+import type { PerformanceProfile } from "@haptic/debugger";
 import { formatEventTitle, humanizePropertyLabel } from "@haptic/editor-kit";
 
 /** Calls and time over a recording, for one entry point or for a Class's entry points together. */

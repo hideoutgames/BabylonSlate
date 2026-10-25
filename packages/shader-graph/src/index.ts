@@ -91,7 +91,6 @@ export {
 export {
   collectFunctionDependencies,
   customGlslBody,
-  findGraphCycle,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
   type MaterialCapabilities,

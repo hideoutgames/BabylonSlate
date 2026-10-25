@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { identityTransform } from "@haptic/core";
 import { ClassRegistry, World, type Actor } from "@haptic/object-model";
-import { HavokPhysicsBackend, createSoftwarePhysicsBackend } from "@haptic/physics";
+import { createSoftwarePhysicsBackend } from "@haptic/physics";
+import { HavokPhysicsBackend } from "@haptic/physics/havok-backend";
 import { PhysicsWorldSync } from "./physics-sync";
 import { PhysicsConstraintSync } from "./physics-constraint-sync";
 import { actorWorldTransforms } from "./actor-world-transform";

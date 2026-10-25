@@ -29,11 +29,11 @@ export interface SceneComponentPickerProps {
 
 const NONE_ID = "__none__";
 
-export function sceneComponentPickId(entry: SceneComponentPickerEntry): string {
+function sceneComponentPickId(entry: SceneComponentPickerEntry): string {
   return `${entry.actorId}:${entry.componentId}`;
 }
 
-export function parseSceneComponentPickId(
+function parseSceneComponentPickId(
   id: string,
 ): SceneComponentRef | null {
   const split = id.indexOf(":");

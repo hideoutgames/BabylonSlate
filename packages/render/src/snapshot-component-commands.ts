@@ -52,6 +52,11 @@ export function recordVisualAssignment(binding: SnapshotSceneBinding, command: A
   assignments.set(command.slotId, command);
 }
 
+/** The latest assignMesh recorded for the slot. */
+export function visualAssignmentOf(binding: SnapshotSceneBinding, slotId: number): AssignMeshCommand | undefined {
+  return visualAssignments.get(binding)?.get(slotId);
+}
+
 export function forgetVisualAssignment(binding: SnapshotSceneBinding, slotId: number): void {
   visualAssignments.get(binding)?.delete(slotId);
 }
@@ -62,6 +67,11 @@ export function forgetVisualAssignments(binding: SnapshotSceneBinding): void {
 
 export function hasPendingVisualReplacement(binding: SnapshotSceneBinding, slotId: number): boolean {
   return pendingVisualReplacements.get(binding)?.has(slotId) === true;
+}
+
+/** The slot's prepared successor not yet adopted, if any. */
+export function pendingVisualReplacement(binding: SnapshotSceneBinding, slotId: number): Mesh | undefined {
+  return pendingVisualReplacements.get(binding)?.get(slotId);
 }
 
 /** The binding's stored map (created on first use) of prepared successors not yet adopted. */

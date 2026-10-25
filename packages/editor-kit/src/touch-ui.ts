@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
  * application setting; the `pointer-coarse:` Tailwind variant and touch CSS
  * read it. Gestures (long-press, hold-to-drag) follow the real pointer instead.
  */
-export const TOUCH_UI_CLASS = "touch-ui";
+const TOUCH_UI_CLASS = "touch-ui";
 
 /** Row height for lists and trees in the touch layout. */
 export const TOUCH_ROW_HEIGHT = 44;

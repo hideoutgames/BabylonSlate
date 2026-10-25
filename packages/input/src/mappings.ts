@@ -36,7 +36,7 @@ export interface InputMappings {
   axes: AxisMapping[];
 }
 
-export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
+const DEFAULT_INPUT_MAPPINGS: InputMappings = {
   actions: [
     {
       name: "Jump",

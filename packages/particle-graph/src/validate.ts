@@ -1,4 +1,4 @@
-import { PARTICLE_CPU_CAPACITY_BUDGET } from "@haptic/core";
+import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle } from "@haptic/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_UNSUPPORTED_V1_TYPES,
@@ -59,38 +59,9 @@ export function indexParticleIncomingEdges(graph: GraphLike): ParticleIncomingEd
   return (nodeId, pinId) => byNode.get(nodeId)?.get(pinId);
 }
 
-/** Depth-first cycle search over all edges. */
+/** Depth-first cycle search over all edges; returns the node ids on the first loop found. */
 export function findParticleGraphCycle(graph: GraphLike): string[] | null {
-  const outgoing = new Map<string, string[]>();
-  for (const edge of graph.edges) {
-    const list = outgoing.get(edge.sourceNodeId) ?? [];
-    list.push(edge.targetNodeId);
-    outgoing.set(edge.sourceNodeId, list);
-  }
-  const state = new Map<string, "visiting" | "done">();
-  const stack: string[] = [];
-  const visit = (nodeId: string): string[] | null => {
-    const current = state.get(nodeId);
-    if (current === "done") return null;
-    if (current === "visiting") {
-      const start = stack.indexOf(nodeId);
-      return stack.slice(start >= 0 ? start : 0);
-    }
-    state.set(nodeId, "visiting");
-    stack.push(nodeId);
-    for (const next of outgoing.get(nodeId) ?? []) {
-      const cycle = visit(next);
-      if (cycle) return cycle;
-    }
-    stack.pop();
-    state.set(nodeId, "done");
-    return null;
-  };
-  for (const node of graph.nodes) {
-    const cycle = visit(node.id);
-    if (cycle) return cycle;
-  }
-  return null;
+  return findGraphCycle(graph);
 }
 
 /**
@@ -312,7 +283,7 @@ function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
     seenTargets.add(key);
   }
 
-  const cycle = findParticleGraphCycle(graph);
+  const cycle = findGraphCycle(graph);
   let resolver: ParticleTypeResolver | null = null;
   if (cycle) {
     diagnostics.push({

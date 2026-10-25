@@ -51,7 +51,7 @@ Each card has a **Project Actions** button (also a long-press or right-click on 
 ## Save and close
 
 - Choose **Save All** (<kbd>Mod</kbd>+<kbd>S</kbd>) to save every changed document and the project settings. Haptic also auto-saves. See [Undo and Saving](../editor/undo-and-saving.md).
-- To close the project, choose **Settings > Project Settings**, then **Close Project** at the bottom of the window.
+- To close the project, choose **Settings > Project Browser** in the toolbar. Haptic returns to the Homepage.
 
 If anything is unsaved, **Unsaved Documents** lists it. Choose **Save All**, **Discard** or **Cancel**.
 
