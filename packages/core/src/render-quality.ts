@@ -147,9 +147,6 @@ export interface PostProcessingQuality extends QualitySelection {
   volumetricLighting: boolean;
 }
 export type PostProcessingEffectField = "ambientOcclusion" | "reflections" | "volumetricLighting";
-export const POST_PROCESSING_EFFECT_FIELDS: readonly PostProcessingEffectField[] = [
-  "ambientOcclusion", "reflections", "volumetricLighting",
-];
 export interface LightingQuality extends QualitySelection {
   localLightMode: "auto" | "manual";
   maxLocalLights: number;

@@ -360,7 +360,7 @@ export function sceneLayerCanvasToLayer(
   return { x: camera.x + viewX * cos - viewY * sin, y: camera.y + viewX * sin + viewY * cos };
 }
 
-export function sceneLayerAnchorOrigin(
+function sceneLayerAnchorOrigin(
   anchor: SceneLayerAnchor,
   width: number,
   height: number,
@@ -369,20 +369,6 @@ export function sceneLayerAnchorOrigin(
   return {
     x: origin[0] * (width / 2),
     y: origin[1] * (height / 2),
-  };
-}
-
-export function sceneLayerAnchorWorldPosition(
-  anchor: SceneLayerAnchor,
-  offsetX: number,
-  offsetY: number,
-  frustumWidth: number,
-  frustumHeight: number,
-): { x: number; y: number } {
-  const origin = sceneLayerAnchorOrigin(anchor, frustumWidth, frustumHeight);
-  return {
-    x: origin.x + offsetX,
-    y: origin.y + offsetY,
   };
 }
 

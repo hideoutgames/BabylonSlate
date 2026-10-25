@@ -1,7 +1,6 @@
 import type { SerializedComponent } from "./scene";
 
 export const DEFORMER_COMPONENT_CLASS_ID = "DeformerComponent";
-export const DEFORMER_MAX_CONTROLS = 64;
 /** Match dynamic geometry's finite world-coordinate envelope before Float32 upload. */
 export const DEFORMER_MAX_COORDINATE = 1e10;
 export const DEFORMER_PROPERTY_KEYS = ["targetMeshComponentId", "enabled", "strength", "resolution", "offsets", "fitToMesh", "boundsMin", "boundsMax"] as const;
