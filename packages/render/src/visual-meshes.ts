@@ -17,7 +17,7 @@ function hasGeometry(mesh: AbstractMesh): boolean {
  * Drawn glTF parts under a hidden placeholder. Skip the stub and empty
  * `__root__` meshes so slot 0 is the first real primitive.
  */
-export function visualMeshes(root: AbstractMesh, excludedRoots?: ReadonlySet<AbstractMesh>): AbstractMesh[] {
+export function visualMeshes(root: AbstractMesh, excludedRoots?: Pick<ReadonlySet<AbstractMesh>, "has">): AbstractMesh[] {
   const children = root.getChildMeshes().filter(
     (mesh) => {
       // Automatic LOD levels draw in place of their master, never as parts.
