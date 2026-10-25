@@ -97,8 +97,10 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
     setBusy(true);
     setError(null);
     try {
-      await action(await ensureLibrary());
-      setEntries(await (await ensureLibrary()).list());
+      // One library per action: an uncached fallback library re-reads the bundled index.
+      const library = await ensureLibrary();
+      await action(library);
+      setEntries(await library.list());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
