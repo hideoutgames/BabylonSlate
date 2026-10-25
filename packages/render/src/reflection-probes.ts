@@ -97,6 +97,7 @@ export class ReflectionProbes {
   private readonly world = Matrix.Identity();
   private readonly part = Matrix.Identity();
   private readonly corner = new Vector3();
+  private readonly extent = new Vector3();
   private readonly position = new Vector3();
   private readonly lookAt = new Vector3();
   private readonly viewMatrix = Matrix.Identity();
@@ -270,15 +271,16 @@ export class ReflectionProbes {
       probe.min.minimizeInPlace(this.corner);
       probe.max.maximizeInPlace(this.corner);
     }
-    const size = probe.max.subtract(probe.min);
-    const volume = size.x * size.y * size.z;
-    const target = probe.target;
-    if (target && (probe.volume !== volume || !target.view.boundingBoxPosition.equalsWithEpsilon(this.corner.copyFrom(probe.min).addInPlace(probe.max).scaleInPlace(0.5), 0))) {
-      target.view.boundingBoxPosition = this.corner.clone();
-      target.view.boundingBoxSize = size;
-      if (probe.published) this.generation++;
-    }
-    probe.volume = volume;
+    const size = probe.max.subtractToRef(probe.min, this.extent);
+    probe.volume = size.x * size.y * size.z;
+    const view = probe.target?.view;
+    if (!view) return;
+    const center = this.corner.copyFrom(probe.min).addInPlace(probe.max).scaleInPlace(0.5);
+    // Compare the box itself: turning or reshaping it can keep its volume and centre.
+    if (view.boundingBoxSize.equals(size) && view.boundingBoxPosition.equals(center)) return;
+    view.boundingBoxPosition = center.clone();
+    view.boundingBoxSize = size.clone();
+    if (probe.published) this.generation++;
   }
 
   private staticSignature(): string {
