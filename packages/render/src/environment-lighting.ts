@@ -290,6 +290,8 @@ class EnvironmentLighting {
   /**
    * A turned sky changes only the shared matrix, which no define reads and other materials rebind every frame:
    * a frozen material skips its uniform buffer unless forced, so only its own draw wrappers rebind.
+   * Its own wrappers are those carrying its material context, the filter Material.markDirty uses; Babylon's
+   * materials stamp that context on every wrapper they prepare through subMesh.setEffect.
    */
   private rebindFrozenMaterials(): void {
     for (const mesh of this.scene.meshes) {
