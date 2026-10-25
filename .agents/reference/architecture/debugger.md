@@ -20,7 +20,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 
 ## Package boundary
 
-- `@haptic/debugger` imports only `@haptic/core` and types from `@haptic/bridge`, which owns the diagnostic operation wire types and `PerformanceScriptEntry` ([`diagnostic-operation.ts`](../../../packages/bridge/src/diagnostic-operation.ts)): no React, Babylon, Capacitor or scripting. New behavior goes through `ConsoleCommandHost` plus bridge commands; rendering, audio and camera stay in render / the Play overlay.
+- `@haptic/debugger` imports only `@haptic/core` and types from `@haptic/bridge` (ESLint `boundary/debugger`): no React, Babylon, Capacitor or scripting. The bridge owns the diagnostic operation wire types and `PerformanceScriptEntry` ([`diagnostic-operation.ts`](../../../packages/bridge/src/diagnostic-operation.ts)); the debugger does not re-export them. New behavior goes through `ConsoleCommandHost` plus bridge commands; rendering, audio and camera stay in render / the Play overlay.
 - `@haptic/scripting` may import only `instrumentJsLoops` from it.
 - `CommandRegistry.execute` never throws: parse/coercion failures, unknown names and stripped names return `{ success: false, output }`.
 

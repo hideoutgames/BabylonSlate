@@ -1,7 +1,5 @@
 import type { PerformanceScriptEntry } from "@haptic/bridge";
 
-export type { PerformanceScriptEntry };
-
 /** Explicit timing captures, independent of Stats and full-world traces. */
 export const PERFORMANCE_FRAME_COLUMNS = [
   "frameId", "tickId", "sceneGeneration", "completedAtMs", "intervalMs",
