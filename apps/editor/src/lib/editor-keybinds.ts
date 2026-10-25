@@ -1,4 +1,4 @@
-import { normalizeChord, type KeyChord } from "@haptic/editor-kit";
+import { chordStartsWith, normalizeChord, type KeyChord } from "@haptic/editor-kit";
 
 export type EditorCommandCategory = "General" | "Documents" | "Play" | "Viewport" | "Editing" | "Content Browser";
 
@@ -15,6 +15,9 @@ export interface EditorCommandDefinition {
   blocksBrowserDefault?: boolean;
 }
 
+/** How long a multi-step shortcut, or its recording, waits for the next step. */
+export const KEY_SEQUENCE_TIMEOUT_MS = 1500;
+
 const COMMAND_LIST = [
   { id: "editor.saveAll", label: "Save All", category: "General", defaultChords: ["Mod+S"], allowInTextInput: true, blocksBrowserDefault: true },
   { id: "editor.undo", label: "Undo", category: "General", defaultChords: ["Mod+Z"], repeat: true },
@@ -23,6 +26,8 @@ const COMMAND_LIST = [
   { id: "editor.focusLayout", label: "Toggle Focus", category: "General", defaultChords: ["Mod+Shift+F"] },
   { id: "editor.projectSettings", label: "Project Settings", category: "General", defaultChords: ["Mod+Shift+,"] },
   { id: "editor.engineSettings", label: "Engine Settings", category: "General", defaultChords: ["Mod+,"], allowInTextInput: true },
+  // Two steps, so closing the project never happens from one stray chord.
+  { id: "editor.projectBrowser", label: "Project Browser", category: "General", defaultChords: ["Alt+Shift+P Alt+Shift+B"] },
   { id: "editor.contentBrowser", label: "Content Browser", category: "General", defaultChords: ["Alt+B"] },
   { id: "document.close", label: "Close Document", category: "Documents", defaultChords: ["Alt+W"] },
   { id: "document.closeAll", label: "Close Open Tabs", category: "Documents", defaultChords: ["Alt+Shift+W"] },
@@ -97,7 +102,11 @@ export function resolveKeybinds(overrides: KeybindOverrides = {}): ResolvedKeybi
   );
 }
 
-/** Other commands already using `chord`, so the settings UI can warn. */
+/**
+ * Other commands already using `chord`, so the settings UI can warn. A chord
+ * that begins another command's multi-step shortcut also conflicts: the
+ * multi-step shortcut waits for its next step and the shorter one never runs.
+ */
 export function keybindConflicts(
   bindings: ResolvedKeybinds,
   commandId: EditorCommandId,
@@ -105,8 +114,10 @@ export function keybindConflicts(
 ): EditorCommandId[] {
   const target = normalizeChord(chord);
   if (!target) return [];
+  const overlaps = (other: KeyChord) =>
+    other === target || chordStartsWith(other, target) || chordStartsWith(target, other);
   return [...bindings]
-    .filter(([id, chords]) => id !== commandId && chords.includes(target))
+    .filter(([id, chords]) => id !== commandId && chords.some(overlaps))
     .map(([id]) => id);
 }
 

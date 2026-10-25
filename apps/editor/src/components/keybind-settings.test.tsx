@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
 import { defaultEngineSettings, type EngineSettings } from "@haptic/vfs";
 import { KeybindSettings } from "./keybind-settings";
@@ -41,6 +41,28 @@ describe("KeybindSettings", () => {
     expect(view.getByTestId("keybind-reset-edit.rename")).toHaveProperty("disabled", false);
   });
 
+  it("records a second chord pressed straight after as a two-step shortcut", () => {
+    vi.useFakeTimers();
+    try {
+      const onKeybinds = vi.fn();
+      const view = render(<Harness onKeybinds={onKeybinds} />);
+      fireEvent.click(view.getByTestId("keybind-record-edit.rename"));
+      fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true });
+      fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true, repeat: true });
+      fireEvent.keyDown(window, { key: "r", code: "KeyR" });
+      expect(onKeybinds).toHaveBeenLastCalledWith({ "edit.rename": ["Mod+K R"] });
+      expect(view.getByTestId("keybind-record-edit.rename").getAttribute("aria-pressed")).toBe("false");
+
+      fireEvent.click(view.getByTestId("keybind-record-edit.rename"));
+      fireEvent.keyDown(window, { key: "F3", code: "F3" });
+      act(() => vi.advanceTimersByTime(1500));
+      fireEvent.keyDown(window, { key: "r", code: "KeyR" });
+      expect(onKeybinds).toHaveBeenLastCalledWith({ "edit.rename": ["F3"] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("cancels recording on Escape without letting the dialog see it", () => {
     const onKeybinds = vi.fn();
     const dialogEscape = vi.fn();
@@ -65,6 +87,12 @@ describe("KeybindSettings", () => {
     expect(view.getByTestId("keybind-conflict-viewport.translate").textContent).toContain(
       "Viewport Fly",
     );
+  });
+
+  it("warns when a chord begins another command's two-step shortcut", () => {
+    const view = render(<Harness initial={{ "edit.rename": ["Alt+Shift+P"] }} />);
+    expect(view.getByTestId("keybind-conflict-edit.rename").textContent).toContain("Project Browser");
+    expect(view.getByTestId("keybind-conflict-editor.projectBrowser").textContent).toContain("Rename");
   });
 
   it("unassigns, resets one command, and resets everything", () => {

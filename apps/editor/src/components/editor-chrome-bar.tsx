@@ -20,6 +20,7 @@ import {
   ChevronDownIcon,
   HammerIcon,
   LayoutGridIcon,
+  LibraryBigIcon,
   PlayIcon,
   Redo2Icon,
   RefreshCwIcon,
@@ -62,6 +63,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuGroup,
+  DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
@@ -419,6 +421,7 @@ export function EditorChromeBar({
   const compileChord = useKeybindChord("graph.compile");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
+  const projectBrowserChord = useKeybindChord("editor.projectBrowser");
   // The Play Mode is a saved preference: Simulate wins over Preview Build.
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const simulateSelected = appSettings.debuggerDefaults.simulate;
@@ -453,6 +456,9 @@ export function EditorChromeBar({
   useKeybindCommand("editor.engineSettings", () => setSettingsScope("engine"), {
     enabled: Boolean(projectName),
   });
+  useKeybindCommand("editor.projectBrowser", () => onCloseProject?.(), {
+    enabled: Boolean(projectName && onCloseProject),
+  });
   useKeybindCommand("play.start", launchPlay, { enabled: playEnabled });
 
   const openSearch = () => {
@@ -462,6 +468,10 @@ export function EditorChromeBar({
   const openSettings = (scope: "project" | "engine") => {
     setToolsOpen(false);
     setSettingsScope(scope);
+  };
+  const openProjectBrowser = () => {
+    setToolsOpen(false);
+    onCloseProject?.();
   };
   const debugMenu = (
     <DropdownMenu>
@@ -662,6 +672,16 @@ export function EditorChromeBar({
             shortcut: engineSettingsChord,
             onSelect: () => openSettings("engine"),
           },
+          ...(onCloseProject ? [
+            { type: "separator", id: "project-browser-separator" },
+            {
+              id: "project-browser",
+              label: "Project Browser",
+              icon: <LibraryBigIcon />,
+              shortcut: projectBrowserChord,
+              onSelect: openProjectBrowser,
+            },
+          ] satisfies NestedMenuItem[] : []),
         ],
       }], (
       <DropdownMenu>
@@ -706,6 +726,25 @@ export function EditorChromeBar({
               ) : null}
             </DropdownMenuItem>
           </DropdownMenuGroup>
+          {onCloseProject ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  data-testid="project-browser"
+                  onClick={openProjectBrowser}
+                >
+                  <LibraryBigIcon />
+                  Project Browser
+                  {projectBrowserChord ? (
+                    <DropdownMenuShortcut className="pl-4 tracking-normal">
+                      <ShortcutKeys chord={projectBrowserChord} decorative />
+                    </DropdownMenuShortcut>
+                  ) : null}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       ))}
@@ -1140,7 +1179,6 @@ export function EditorChromeBar({
             if (!open) setSettingsScope(null);
           }}
           scope="project"
-          onCloseProject={onCloseProject}
         />
       ) : null}
       {openedSettings.engine ? (

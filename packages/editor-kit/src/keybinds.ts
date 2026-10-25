@@ -1,7 +1,8 @@
 /**
  * Keyboard chords are stored as canonical strings such as `Mod+Shift+Z`,
  * `Alt+P`, `F2`, or `Delete`. `Mod` is Command on Apple platforms and Control
- * elsewhere; `Ctrl` is only distinct from `Mod` on Apple platforms.
+ * elsewhere; `Ctrl` is only distinct from `Mod` on Apple platforms. A
+ * multi-step shortcut separates its steps with a space (`Alt+Shift+P Alt+Shift+B`).
  */
 export type KeyChord = string;
 
@@ -84,9 +85,20 @@ function formatChord(parsed: ParsedChord): KeyChord {
   return [...parsed.modifiers, parsed.key].join("+");
 }
 
+/** The single-key steps of a chord, in order; one step for ordinary chords. */
+export function chordSteps(chord: KeyChord): KeyChord[] {
+  return chord.trim().split(/\s+/).filter(Boolean);
+}
+
+/** Whether `chord` is a multi-step shortcut that begins with the steps of `prefix`. */
+export function chordStartsWith(chord: KeyChord, prefix: KeyChord): boolean {
+  return chord.startsWith(`${prefix} `);
+}
+
 export function normalizeChord(chord: KeyChord): KeyChord | null {
-  const parsed = parseChord(chord);
-  return parsed ? formatChord(parsed) : null;
+  const steps = chordSteps(chord).map(parseChord);
+  if (!steps.length || steps.some((step) => step === null)) return null;
+  return steps.map((step) => formatChord(step!)).join(" ");
 }
 
 function eventKey(event: KeybindEvent): string | null {
@@ -115,10 +127,12 @@ export function chordFromEvent(
   return formatChord({ modifiers, key });
 }
 
-/** Whether the chord uses a command modifier, so it can fire from text fields. */
+/** Whether every step uses a command modifier, so the chord can fire from text fields. */
 export function chordHasCommandModifier(chord: KeyChord): boolean {
-  const parsed = parseChord(chord);
-  return Boolean(parsed?.modifiers.some((modifier) => modifier === "Mod" || modifier === "Ctrl"));
+  const steps = chordSteps(chord);
+  return steps.length > 0 && steps.every((step) =>
+    Boolean(parseChord(step)?.modifiers.some((modifier) => modifier === "Mod" || modifier === "Ctrl")),
+  );
 }
 
 const KEY_LABELS: Record<string, string> = {
@@ -152,11 +166,16 @@ export function keyLabel(key: string): string {
   return KEY_LABELS[key] ?? key;
 }
 
-/** `aria-keyshortcuts` value using the WAI-ARIA modifier names. */
+/**
+ * `aria-keyshortcuts` value using the WAI-ARIA modifier names. The attribute
+ * separates alternatives with spaces and cannot express a multi-step
+ * shortcut, so those have none.
+ */
 export function ariaKeyShortcuts(
   chord: KeyChord,
   apple: boolean = isApplePlatform(),
 ): string | undefined {
+  if (chordSteps(chord).length !== 1) return undefined;
   const parsed = parseChord(chord);
   if (!parsed) return undefined;
   const modifiers = parsed.modifiers.map((modifier) =>
@@ -176,10 +195,12 @@ export function describeChord(
   chord: KeyChord,
   apple: boolean = isApplePlatform(),
 ): string {
-  const parsed = parseChord(chord);
-  if (!parsed) return chord;
-  return [
-    ...parsed.modifiers.map((modifier) => modifierLabel(modifier, apple)),
-    keyLabel(parsed.key),
-  ].join("+");
+  const steps = chordSteps(chord).map(parseChord);
+  if (!steps.length || steps.some((step) => step === null)) return chord;
+  return steps
+    .map((step) => [
+      ...step!.modifiers.map((modifier) => modifierLabel(modifier, apple)),
+      keyLabel(step!.key),
+    ].join("+"))
+    .join(" then ");
 }
