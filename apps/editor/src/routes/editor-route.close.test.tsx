@@ -38,6 +38,7 @@ const state = vi.hoisted(() => ({
     state.pendingExclusiveScene = null;
   }),
   openDocument: vi.fn<(ref: DocumentRef) => Promise<void>>(async () => {}),
+  confirmExclusiveSceneOpen: vi.fn<(mode: "save" | "discard") => Promise<void>>(async () => {}),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -53,6 +54,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   externalChangePrompt: null,
   cancelExclusiveSceneOpen: state.cancelExclusiveSceneOpen,
   openDocument: state.openDocument,
+  confirmExclusiveSceneOpen: state.confirmExclusiveSceneOpen,
   saveAll: state.saveAll,
   setAutoSavePaused: state.setAutoSavePaused,
   approveMigrationsAndSave: state.approveMigrationsAndSave,
@@ -176,6 +178,7 @@ beforeEach(() => {
   state.pendingExclusiveScene = null;
   state.cancelExclusiveSceneOpen.mockClear();
   state.openDocument.mockClear();
+  state.confirmExclusiveSceneOpen.mockClear();
 });
 afterEach(cleanup);
 
@@ -497,6 +500,7 @@ describe("exclusive Scene open", () => {
     state.documents.forEach((doc) => { doc.dirty = false; });
     rerender(<EditorRoute />);
     expect(state.openDocument).toHaveBeenCalledExactlyOnceWith(ref);
+    expect(state.confirmExclusiveSceneOpen).not.toHaveBeenCalled();
     // The provider re-renders once the pending request ends.
     rerender(<EditorRoute />);
     await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
