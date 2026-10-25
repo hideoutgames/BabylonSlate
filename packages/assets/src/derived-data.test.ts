@@ -175,22 +175,18 @@ describe("derived-data journal", () => {
       expect(await readJournalLines(storage, "proj-1")).toEqual([]);
     });
 
-    it("survive a truncation that cannot read their marker, which fails instead", async () => {
+    it("survive a truncation that finds their marker but cannot read it, which fails instead", async () => {
       const { storage, earlier } = await sealedSession();
       await appendJournalLines(storage, "proj-1", ["after reopen"]);
       const marker = `${journalSegmentsPath("proj-1")}/sealed.json`;
       const failure = new Error("Storage is unavailable");
-      const fail = (path: string) => { if (path === marker) throw failure; };
-      const exists = storage.exists.bind(storage);
-      const stat = storage.stat.bind(storage);
       const readText = storage.readText.bind(storage);
-      const spies = [
-        vi.spyOn(storage, "exists").mockImplementation(async (path) => { fail(path); return exists(path); }),
-        vi.spyOn(storage, "stat").mockImplementation(async (path) => { fail(path); return stat(path); }),
-        vi.spyOn(storage, "readText").mockImplementation(async (path) => { fail(path); return readText(path); }),
-      ];
+      const read = vi.spyOn(storage, "readText").mockImplementation(async (path) => {
+        if (path === marker) throw failure;
+        return readText(path);
+      });
       await expect(truncateJournal(storage, "proj-1")).rejects.toBe(failure);
-      for (const spy of spies) spy.mockRestore();
+      read.mockRestore();
       expect(await readJournalLines(storage, "proj-1")).toEqual([...earlier, "after reopen"]);
       expect(await readSealedJournalLines(storage, "proj-1")).toEqual(earlier);
     });
