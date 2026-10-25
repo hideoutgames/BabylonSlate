@@ -185,6 +185,8 @@ export function createRunFlasher(root: HTMLElement, graph: () => RunGraph): RunF
       disposed = true;
       if (frame !== null) cancelAnimationFrame(frame);
       found.clear();
+      // A held highlight is paused and would stay lit on elements that outlive this flasher.
+      if (held) for (const animation of lastRun) animation.cancel();
       lastRun.clear();
     },
   };

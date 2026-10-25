@@ -1,9 +1,10 @@
+import type { DiagnosticOperationRequest } from "@haptic/bridge";
 import { describe, expect, it } from "vitest";
-import { createDiagnosticOperationClient, type RuntimeDiagnosticOperationRequest } from "./diagnostic-operation-client";
+import { createDiagnosticOperationClient } from "./diagnostic-operation-client";
 
 describe("diagnostic operation correlation", () => {
   it("rejects mismatched generation, request and capture identity before resolving", async () => {
-    const sent: RuntimeDiagnosticOperationRequest[] = [];
+    const sent: DiagnosticOperationRequest[] = [];
     const client = createDiagnosticOperationClient({ sessionGeneration: 7, send: (request) => { sent.push(request); } });
     const request = client.request({ kind: "profile", action: "start", recordingId: "recording" });
     const reply = { sessionGeneration: 7, requestId: sent[0]!.requestId, recordingId: "recording", success: true };

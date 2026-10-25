@@ -5,10 +5,10 @@ import {
   loadedBackendModules,
   parseColliderProperties,
   parseRigidBodyProperties,
-  resetLoadedBackendModules,
   scaleColliderShape,
   type PhysicsBackend,
 } from "./index";
+import { resetLoadedBackendModules } from "./create-backend";
 
 function identity() {
   return {

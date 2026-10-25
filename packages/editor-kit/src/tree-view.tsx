@@ -30,7 +30,7 @@ export const TREE_ROW_HEIGHT = 28;
 /** Horizontal swipe distance that adds a row to the selection (touch target). */
 export const TREE_SWIPE_ADD_PX = 44;
 /** Top/bottom band that inserts as a sibling instead of nesting into the row. */
-export const TREE_DROP_EDGE_PX = 8;
+const TREE_DROP_EDGE_PX = 8;
 
 export type TreeDropPlacement = "before" | "into" | "after";
 

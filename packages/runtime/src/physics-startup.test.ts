@@ -1,9 +1,7 @@
 import type { CommandMessage } from "@haptic/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  HavokPhysicsBackend,
-  Rapier2DPhysicsBackend,
-} from "@haptic/physics";
+import { HavokPhysicsBackend } from "@haptic/physics/havok-backend";
+import { Rapier2DPhysicsBackend } from "@haptic/physics/rapier-backend";
 import {
   createActor,
   createDefaultScene,

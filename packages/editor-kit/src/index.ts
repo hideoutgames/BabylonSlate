@@ -57,7 +57,6 @@ export {
   chordFromEvent,
   chordHasCommandModifier,
   describeChord,
-  formatChord,
   isApplePlatform,
   normalizeChord,
   parseChord,
@@ -72,7 +71,7 @@ export {
   isCoarsePointerEnvironment,
   shouldPreventDocumentOverscroll,
 } from "./prevent-document-overscroll";
-export { TOUCH_ROW_HEIGHT, TOUCH_UI_CLASS, isTouchUi, setTouchUi, useTouchUi } from "./touch-ui";
+export { TOUCH_ROW_HEIGHT, isTouchUi, setTouchUi, useTouchUi } from "./touch-ui";
 export {
   useContextMenu,
   CONTEXT_MENU_LONG_PRESS_MS,
@@ -86,7 +85,6 @@ export {
 
 export {
   ParameterListEditor,
-  PARAMETER_VALUE_TYPES,
   type ParameterRow,
   type ParameterValueType,
   type ParameterListEditorProps,
@@ -95,7 +93,6 @@ export { PinTypeMenu, PinTypePicker, type PinTypeMenuProps, type PinTypePickerPr
 export {
   EditableName,
   InlineRenameInput,
-  INLINE_RENAME_DOUBLE_TAP_MS,
   useDoubleTap,
   type EditableNameProps,
   type InlineRenameEnd,
@@ -103,7 +100,6 @@ export {
 } from "./inline-rename";
 export {
   VariableTypeFields,
-  VARIABLE_CONTAINERS,
   type VariableContainer,
   type VariableTypeFieldsProps,
   type VariableTypeFieldsValue,
@@ -114,13 +110,11 @@ export {
 } from "./asset-loading-field";
 export {
   PinListEditor,
-  nextPinRowName,
   type PinListEditorProps,
   type PinListRow,
 } from "./pin-list-editor";
 export {
   PIN_PICKER_TYPES,
-  PIN_PICKER_LABEL,
   FUNCTION_PIN_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerLabel,
@@ -192,7 +186,6 @@ export {
 export {
   TreeView,
   TREE_ROW_HEIGHT,
-  TREE_DROP_EDGE_PX,
   TREE_SWIPE_ADD_PX,
   rangeSelectTreeIds,
   treeDropPlacement,
@@ -266,8 +259,6 @@ export {
 } from "./class-picker";
 export {
   SceneComponentPicker,
-  parseSceneComponentPickId,
-  sceneComponentPickId,
   type SceneComponentPickerEntry,
   type SceneComponentPickerProps,
   type SceneComponentRef,
@@ -305,7 +296,6 @@ export {
 } from "./pan-zoom-model";
 export {
   isInlineNumberUnit,
-  numberUnitSuffix,
   stripNumberUnit,
   withNumberUnit,
 } from "./number-units";
@@ -351,13 +341,11 @@ export { CollisionPresetsField, type CollisionPresetsFieldProps } from "./collis
 export { CollisionResponsesField, type CollisionResponsesFieldProps, type CollisionResponsesValue } from "./collision-responses-field";
 export {
   FlagsField,
-  DEFAULT_FLAG_BIT_COUNT,
   hasFlagBit,
   setFlagBit,
   type FlagsFieldProps,
 } from "./flags-field";
 export {
-  TYPE_VISUAL_ICON_CHROME_SIZE,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
   TypeVisualIcon,

@@ -8,7 +8,9 @@ export type DiagnosticOperationResult = { sessionGeneration: number; requestId: 
 export type PerformanceScriptEntry = {
   assetGuid: string; classId: string; className?: string;
   /** The compiled export the runtime called. */
-  exportName: string; event?: string; title?: string;
+  exportName: string; event?: string;
+  /** The entry node's canvas title (`Event Tick`), or the function's name. */
+  title?: string;
   graphId?: string; nodeId?: string;
 };
 export type PerformanceTickChunk = {

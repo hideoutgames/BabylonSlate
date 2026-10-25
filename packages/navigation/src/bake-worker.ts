@@ -2,7 +2,7 @@
  * Dedicated navmesh bake worker. Hosts post generate input; this thread runs
  * Recast solo or tile-cache generate and returns export bytes.
  */
-import { runNavBakeJob } from "./bake-job";
+import { generateNavMesh } from "./recast-backend";
 import type { NavMeshGenerateInput } from "./types";
 
 type BakeRequest = {
@@ -16,7 +16,7 @@ type BakeResponse =
 
 self.onmessage = (event: MessageEvent<BakeRequest>) => {
   const msg = event.data;
-  void runNavBakeJob(msg.input)
+  void generateNavMesh(msg.input)
     .then((bytes) => {
       const copy = bytes.slice();
       const response: BakeResponse = { id: msg.id, ok: true, bytes: copy };

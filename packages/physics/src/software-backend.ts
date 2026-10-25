@@ -1,6 +1,6 @@
 import type { PhysicsBackend } from "./backend";
 import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
-import { listDebugCollidersFromRecords } from "./debug-colliders";
+import { colliderWorldPosition, listDebugCollidersFromRecords } from "./debug-colliders";
 import { queryAdmitsShape } from "./query-filter";
 import { colliderPairResponse } from "./collision-response";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
@@ -48,17 +48,6 @@ function cloneTransform(t: PhysicsTransform): PhysicsTransform {
   return {
     position: { ...t.position },
     rotation: { ...t.rotation },
-  };
-}
-
-function colliderWorldPosition(desc: ColliderDesc, body: PhysicsTransform): Vec3 {
-  const bodyPos = body.position;
-  if (!desc.translation) return bodyPos;
-  const offset = rotateQuatVec(body.rotation, desc.translation);
-  return {
-    x: bodyPos.x + offset.x,
-    y: bodyPos.y + offset.y,
-    z: bodyPos.z + offset.z,
   };
 }
 

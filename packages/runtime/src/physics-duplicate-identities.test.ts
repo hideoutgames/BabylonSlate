@@ -12,10 +12,8 @@ import {
   World,
   createActorFromSerialized,
 } from "@haptic/object-model";
-import {
-  createSoftwarePhysicsBackend,
-  HavokPhysicsBackend,
-} from "@haptic/physics";
+import { createSoftwarePhysicsBackend } from "@haptic/physics";
+import { HavokPhysicsBackend } from "@haptic/physics/havok-backend";
 import { PhysicsWorldSync } from "./physics-sync";
 
 /** Unspawned actors from the per-actor factory the runtime driver uses. */

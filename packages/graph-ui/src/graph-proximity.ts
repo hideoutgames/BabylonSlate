@@ -27,7 +27,26 @@ type ProximityOptions = {
 };
 
 function pinKey(nodeId: string, pinId: string): string {
-  return JSON.stringify([nodeId, pinId]);
+  return `${nodeId}\u0000${pinId}`;
+}
+
+/** Edges stay the same array for a whole node drag, so each tick reuses its pin set. */
+const occupiedByEdges = new WeakMap<readonly ProximityEdge[], ReadonlySet<string>>();
+
+function occupiedPins(edges: readonly ProximityEdge[]): ReadonlySet<string> {
+  const cached = occupiedByEdges.get(edges);
+  if (cached) return cached;
+  const occupied = new Set<string>();
+  for (const edge of edges) {
+    if (edge.sourceHandle != null) {
+      occupied.add(pinKey(edge.source, edge.sourceHandle));
+    }
+    if (edge.targetHandle != null) {
+      occupied.add(pinKey(edge.target, edge.targetHandle));
+    }
+  }
+  occupiedByEdges.set(edges, occupied);
+  return occupied;
 }
 
 function compareConnections(
@@ -63,16 +82,7 @@ export function findProximityConnections({
     return [];
   }
 
-  const occupied = new Set<string>();
-  for (const edge of edges) {
-    if (edge.sourceHandle != null) {
-      occupied.add(pinKey(edge.source, edge.sourceHandle));
-    }
-    if (edge.targetHandle != null) {
-      occupied.add(pinKey(edge.target, edge.targetHandle));
-    }
-  }
-
+  const occupied = occupiedPins(edges);
   const available = new Map<string, ProximityPin>();
   const movingOutputs: ProximityPin[] = [];
   const movingInputs: ProximityPin[] = [];

@@ -582,7 +582,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   );
 }
 
-export function VariableGetNode({
+function VariableGetNode({
   id,
   data,
   selected,
