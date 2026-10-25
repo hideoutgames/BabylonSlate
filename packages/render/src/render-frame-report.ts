@@ -135,14 +135,6 @@ const BYTE_BUDGET = 256 * 1024;
 const text = (value: string) => value.slice(0, 160);
 let active: RenderFrameCapture | undefined;
 
-/** Only the explicitly requested synchronous game draw owns this scope. A
- * shared Engine's unrelated later views cannot join it. No listeners survive it. */
-export function captureRenderFrame<T>(engine: AbstractEngine, draw: () => T): { value: T; report: RenderFrameReportDraft } {
-  const scope = beginRenderFrameCapture(engine);
-  try { return { value: draw(), report: scope.capture.report }; }
-  finally { scope.dispose(); }
-}
-
 /** The owner must close this scope in the same synchronous turn, in finally. */
 export function beginRenderFrameCapture(engine: AbstractEngine): { capture: RenderFrameCapture; dispose: () => void } {
   if (active) throw new Error("A frame report is already being collected.");

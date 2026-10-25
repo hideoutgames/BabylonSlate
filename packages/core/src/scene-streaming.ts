@@ -1,8 +1,5 @@
 import type { SerializedActor } from "./scene";
 
-export const SCENE_STREAMING_ACTOR_CLASS_ID = "SceneStreamingActor";
-export const SCENE_STREAMING_COMPONENT_CLASS_ID = "SceneStreamingComponent";
-
 export const SceneStreamingState = {
   Unloaded: "Unloaded",
   Loading: "Loading",
@@ -84,17 +81,6 @@ export function remapSceneStreamingReferences(
       ? referenceId(entry, componentIdentity)
       : remapSceneStreamingReferences(entry, idMap, componentIds)];
   }));
-}
-
-/** Clone one independent scene instance, retaining local transforms at its root. */
-export function cloneSceneStreamingActors(
-  source: readonly SerializedActor[],
-  options: { instanceId: string; parentActorId: string },
-): SceneStreamingActorClone {
-  const steps = cloneSceneStreamingActorsSteps(source, options);
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
 }
 
 export type SceneStreamingActorClone = {

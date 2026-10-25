@@ -27,7 +27,7 @@ export {
   fontGuidFromFontMsdfExport,
   fontGuidFromFontMsdfAtlasExport,
 } from "./constants";
-export { collectExportReachability, collectHeaderReachability, selectExportRoots, type ExportRoots } from "./closure";
+export { collectExportReachability, collectHeaderReachability } from "./closure";
 export { runtimeAssetCatalogFromIndexed, runtimeAssetCatalogFromManifest } from "./asset-catalog";
 export { selectPlayerRuntimeFiles } from "./player-files";
 export {

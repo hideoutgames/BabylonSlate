@@ -81,13 +81,6 @@ export type AudioReverbOccupancyGrid = {
   sizeZ: number;
 };
 
-export type ExtraChunkLike = {
-  id: string;
-  kind?: string;
-  mime?: string;
-  data?: Uint8Array;
-};
-
 export function audioReverbChunk(bytes: Uint8Array): {
   id: string;
   kind: string;
@@ -100,26 +93,6 @@ export function audioReverbChunk(bytes: Uint8Array): {
     mime: "application/octet-stream",
     data: bytes,
   };
-}
-
-/** Replace or insert the Scene `audioReverb` extra chunk, keeping other extras. */
-export function extraChunksWithAudioReverb(
-  extra: Iterable<ExtraChunkLike>,
-  bytes: Uint8Array,
-): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
-  const next: Array<{ id: string; kind: string; mime: string; data: Uint8Array }> =
-    [];
-  for (const chunk of extra) {
-    if (chunk.id === AUDIO_REVERB_CHUNK_ID || !chunk.data) continue;
-    next.push({
-      id: chunk.id,
-      kind: chunk.kind ?? "bin",
-      mime: chunk.mime ?? "application/octet-stream",
-      data: chunk.data,
-    });
-  }
-  next.push(audioReverbChunk(bytes));
-  return next;
 }
 
 const OCCUPANCY_HEADER_BYTES = 54;

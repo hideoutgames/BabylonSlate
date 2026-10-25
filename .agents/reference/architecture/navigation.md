@@ -19,7 +19,7 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 | Graph nodes (`ctx.findPathTo`, `ctx.moveTo`, …) | [`packages/scripting-nodes/src/navigation.ts`](../../../packages/scripting-nodes/src/navigation.ts) |
 | Bake collect, modal, Save auto-bake | [`apps/editor/src/context/nav-bake-context.tsx`](../../../apps/editor/src/context/nav-bake-context.tsx), [`apps/editor/src/lib/nav-bake-save.ts`](../../../apps/editor/src/lib/nav-bake-save.ts) |
 | Chunk write (`writeSceneNavmeshChunk`) | [`apps/editor/src/services/project-service.ts`](../../../apps/editor/src/services/project-service.ts) |
-| Play bytes (`readPlayNavmeshBytes`) | [`apps/editor/src/lib/play-content.ts`](../../../apps/editor/src/lib/play-content.ts) |
+| Play bytes (Scene chunk selection in `selectedChunks`, read in `acquirePlayAssetSourcesAttempt`) | [`apps/editor/src/services/play-asset-sources.ts`](../../../apps/editor/src/services/play-asset-sources.ts) |
 | Bake collect, editor and Play overlays | [`packages/render/src/`](../../../packages/render/src/) (`nav-bake-geometry.ts`, `nav-debug-overlay.ts`, `play-navigation-overlay.ts`) |
 
 ## Formats

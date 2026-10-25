@@ -1,4 +1,5 @@
 import {
+  type Camera,
   DirectionalLight,
   FreeCamera,
   NullEngine,
@@ -9,7 +10,7 @@ import {
   Vector3,
   type Effect,
 } from "@babylonjs/core";
-import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings } from "@haptic/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, type VolumetricLightingSettings } from "@haptic/core";
 import { expect, it, vi } from "vitest";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -18,13 +19,20 @@ import {
   bindVolumetricLights,
   createVolumetricSlots,
   fillVolumetricSlots,
-  selectVolumetricLights,
   volumeShadowPlaceholders,
+  type VolumeLight,
   type VolumeShadow,
   type VolumeShadowPlaceholders,
 } from "./volumetric-lights";
 
 const NONE: VolumeShadow = { kind: "none", cascades: 0, packed: false };
+
+/** The lights taking part, in slot order. */
+function selectVolumetricLights(scene: Scene, camera: Camera, settings: VolumetricLightingSettings): VolumeLight[] {
+  const slots = createVolumetricSlots();
+  fillVolumetricSlots(slots, scene, camera, settings);
+  return slots.lights.slice(0, slots.count) as VolumeLight[];
+}
 
 /** A scene with its own engine; the sun's map compares in the sampler, as WebGL2 and WebGPU do. */
 function shadowedScene() {

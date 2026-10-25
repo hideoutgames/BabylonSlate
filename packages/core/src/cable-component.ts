@@ -1,5 +1,3 @@
-export const CABLE_COMPONENT_CLASS_ID = "CableComponent";
-
 export interface CableProperties {
   enabled: boolean;
   materialGuid: string | null;

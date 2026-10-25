@@ -483,7 +483,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayAudioSourceLoader(undefined);
     setScripts([]);
     pendingScriptsRef.current = null;
-  }, [releaseInitialSources]);
+  }, [releaseInitialSources, mergedSourceControls]);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
   const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
   const previewRequestRef = useRef(0);
@@ -728,45 +728,27 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     playRequestInputsRef.current = playRequestInputs;
   });
 
-  useEffect(() => {
-    const applyOverlay = (defaults?: Partial<PlayDebuggerOverlaySettings>) => {
-      const overlay = playDebuggerOverlayFromSettings(defaults);
-      setOverlayStatsState(overlay.overlayStats);
-      setOverlayConsoleState(overlay.overlayConsole);
-      setOverlayInspectorState(overlay.overlayInspector);
-      setOverlayProfilerState(overlay.overlayProfiler);
-      setPauseOnPlayState(overlay.pauseOnPlay);
-    };
-    const apply = (settings: {
-      renderingOverridesEnabled?: boolean;
-      postProcessingEnabled?: boolean;
-      hardwareScalingLevel?: number;
-      debuggerDefaults?: {
-        previewBuild?: boolean;
-        playFromScene?: boolean;
-      } & Partial<PlayDebuggerOverlaySettings>;
-    }) => {
-      if (typeof settings.debuggerDefaults?.previewBuild === "boolean") {
-        setPreviewBuildState(settings.debuggerDefaults.previewBuild);
-      }
-      if (typeof settings.debuggerDefaults?.playFromScene === "boolean") {
-        setPlayFromSceneState(settings.debuggerDefaults.playFromScene);
-      }
-      if (settings.debuggerDefaults) {
-        applyOverlay(settings.debuggerDefaults);
-      }
-      if (typeof settings.postProcessingEnabled === "boolean") {
-        setPostProcessingEnabled(settings.renderingOverridesEnabled !== true || settings.postProcessingEnabled);
-      }
-      if (typeof settings.hardwareScalingLevel === "number") {
-        setHardwareScalingLevel(settings.renderingOverridesEnabled === true ? settings.hardwareScalingLevel : 1);
-      }
-    };
-    setPreviewBuildState(appSettings.debuggerDefaults.previewBuild === true);
-    setPlayFromSceneState(appSettings.debuggerDefaults.playFromScene !== false);
-    applyOverlay(appSettings.debuggerDefaults);
-    apply(appSettings);
-  }, [appSettings]);
+  // Saved Debug menu defaults apply field by field: a settings write re-applies only the fields it
+  // changed, so it no longer reverts another field whose own write is still queued behind it.
+  const savedDefaults = appSettings.debuggerDefaults;
+  const savedPreviewBuild = savedDefaults.previewBuild === true;
+  const savedPlayFromScene = savedDefaults.playFromScene !== false;
+  const savedOverlay = playDebuggerOverlayFromSettings(savedDefaults);
+  useEffect(() => setPreviewBuildState(savedPreviewBuild), [savedPreviewBuild]);
+  useEffect(() => setPlayFromSceneState(savedPlayFromScene), [savedPlayFromScene]);
+  useEffect(() => setOverlayStatsState(savedOverlay.overlayStats), [savedOverlay.overlayStats]);
+  useEffect(() => setOverlayConsoleState(savedOverlay.overlayConsole), [savedOverlay.overlayConsole]);
+  useEffect(() => setOverlayInspectorState(savedOverlay.overlayInspector), [savedOverlay.overlayInspector]);
+  useEffect(() => setOverlayProfilerState(savedOverlay.overlayProfiler), [savedOverlay.overlayProfiler]);
+  useEffect(() => setPauseOnPlayState(savedOverlay.pauseOnPlay), [savedOverlay.pauseOnPlay]);
+  const savedPostProcessing = typeof appSettings.postProcessingEnabled === "boolean"
+    ? appSettings.renderingOverridesEnabled !== true || appSettings.postProcessingEnabled
+    : undefined;
+  const savedScaling = typeof appSettings.hardwareScalingLevel === "number"
+    ? (appSettings.renderingOverridesEnabled === true ? appSettings.hardwareScalingLevel : 1)
+    : undefined;
+  useEffect(() => { if (savedPostProcessing !== undefined) setPostProcessingEnabled(savedPostProcessing); }, [savedPostProcessing]);
+  useEffect(() => { if (savedScaling !== undefined) setHardwareScalingLevel(savedScaling); }, [savedScaling]);
 
   const persistDebuggerDefaults = useCallback(
     async (patch: Partial<PlayDebuggerOverlaySettings> & {
@@ -980,6 +962,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (sessionOwner.canStart()) {
       releasePlaySources();
+      // A Play Blocked prompt belongs to the preparation that just ended.
+      setPlayBlockedOpen(false);
       setEncodeQueuePauseReason("play", false);
       if (sessionState.mode === null) {
         setPlayOpen(false);
@@ -1011,10 +995,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   const launchPlay = useCallback(
     (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
-      let ticket = sessionTicketRef.current;
-      if (!ticket || !sessionOwner.isCurrent(ticket)) ticket = sessionOwner.begin("play");
-      if (!ticket || ticket.mode === "preview" || sessionOwner.getSnapshot().lifecycle !== "preparing") return;
-      sessionTicketRef.current = ticket;
+      // Only the preparation that still owns the session presents it: a ticket stopped meanwhile
+      // (device loss, its source document closed) released the sources this launch would use.
+      const ticket = sessionTicketRef.current;
+      if (!ticket || !sessionOwner.isCurrent(ticket) || ticket.mode === "preview" ||
+        sessionOwner.getSnapshot().lifecycle !== "preparing") return;
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
         sessionOwner.fail(ticket, "Play could not create Engine.");

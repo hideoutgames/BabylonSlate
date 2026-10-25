@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { particleNodeDefinition } from "./catalog";
+import { particleNodeDefinitionFor } from "./catalog";
 import { createDefaultParticleGraphDocument, newParticleNodeProperties } from "./document";
 import {
   hydrateParticleGraphForEditor,
@@ -145,7 +145,7 @@ describe("particle graph canvas adapter", () => {
     const palette = particlePaletteNodes();
     expect(palette.some((entry) => entry.id === "particle.output")).toBe(false);
     for (const entry of palette) {
-      expect(entry.defaultData.__particleRole, entry.id).toBe(particleNodeDefinition(entry.id)!.role);
+      expect(entry.defaultData.__particleRole, entry.id).toBe(particleNodeDefinitionFor({ type: entry.id, properties: {} })!.role);
       const added = hydrateParticleGraphForEditor({
         nodes: [{ id: "n", type: entry.id, position: { x: 0, y: 0 }, data: { ...entry.defaultData } }],
         edges: [],

@@ -3,7 +3,6 @@ import { PROJECT_FILE, createDefaultScene, ENGINE_VERSION, SCENE_SCHEMA_VERSION 
 import {
   createDefaultPluginSettings,
   createVfsBlobStore,
-  createEmptyProjectFiles,
   encodeHasset,
   encodeAssetDocument,
   encodePluginSettingsDocument,
@@ -11,11 +10,12 @@ import {
   writeProjectPlugin,
   buildStarterContentFiles,
   encodeProjectZip,
-  unpackEnginePluginZip,
   STARTER_ACTOR_GUID,
   STARTER_CONTENT_FOLDER,
   STARTER_CONTENT_PLUGIN_GUID,
 } from "@haptic/assets";
+import { unpackEnginePluginZip } from "../../../../packages/assets/src/test-support/engine-plugins";
+import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { EnginePluginLibrary } from "../lib/engine-plugin-library";

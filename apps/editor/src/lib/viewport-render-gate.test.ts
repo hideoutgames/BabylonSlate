@@ -3,11 +3,11 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
 import { RenderScheduler } from "@haptic/render/render-scheduler";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import {
   attachViewportRenderGate,
   applyLiveEngineSettings,
   canvasIsEditorVisible,
-  dispatchEngineSettingsChanged,
   isBlockingEditorOverlayOpen,
   watchBlockingEditorOverlay,
 } from "./viewport-render-gate";
@@ -177,7 +177,7 @@ describe("attachViewportRenderGate", () => {
     document.body.replaceChildren();
   });
 
-  it("applies the loaded frame cap and freezes when a modal opens", async () => {
+  it("applies the saved frame cap and freezes when a modal opens", async () => {
     const canvas = document.createElement("canvas");
     Object.defineProperty(canvas, "clientWidth", { value: 200 });
     Object.defineProperty(canvas, "clientHeight", { value: 120 });
@@ -185,11 +185,8 @@ describe("attachViewportRenderGate", () => {
 
     const scheduler = new RenderScheduler();
     scheduler.setAlwaysRender(true);
-    const detach = attachViewportRenderGate({
-      canvas,
-      scheduler,
-      loadFrameCap: async () => 30,
-    });
+    receiveActiveAppSettingsUpdate({ viewportFrameCap: 30 });
+    const detach = attachViewportRenderGate({ canvas, scheduler });
 
     await Promise.resolve();
     expect(scheduler.shouldRender(0)).toBe(true);
@@ -254,16 +251,13 @@ describe("attachViewportRenderGate", () => {
 
     const scheduler = new RenderScheduler();
     scheduler.setAlwaysRender(true);
-    const detach = attachViewportRenderGate({
-      canvas,
-      scheduler,
-      loadFrameCap: async () => 60,
-    });
+    receiveActiveAppSettingsUpdate({ viewportFrameCap: 60 });
+    const detach = attachViewportRenderGate({ canvas, scheduler });
     await Promise.resolve();
     scheduler.noteRendered(0);
     expect(scheduler.shouldRender(17)).toBe(true);
 
-    dispatchEngineSettingsChanged({ viewportFrameCap: 10 });
+    receiveActiveAppSettingsUpdate({ viewportFrameCap: 10 });
     expect(scheduler.shouldRender(50)).toBe(false);
     expect(scheduler.shouldRender(100)).toBe(true);
     detach();
@@ -281,11 +275,10 @@ describe("attachViewportRenderGate", () => {
     const detach = attachViewportRenderGate({
       canvas,
       scheduler,
-      loadFrameCap: async () => 60,
       setPostProcessingEnabled,
     });
     await Promise.resolve();
-    dispatchEngineSettingsChanged({
+    receiveActiveAppSettingsUpdate({
       viewportFrameCap: 60,
       renderingOverridesEnabled: true,
       postProcessingEnabled: false,

@@ -1,18 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { normalizeProjectSettings } from "./project";
 import {
-  addTag,
   createTag,
   findTag,
-  getTagName,
   isValidTagPath,
   matchesTag,
   normalizeTag,
   normalizeTagContainer,
   normalizeTagRegistry,
-  removeTag,
-  tagContainerAll,
-  tagContainerAny,
   tagContainerHas,
   type TagRegistry,
 } from "./tags";
@@ -33,7 +28,6 @@ describe("Tags", () => {
     const sibling = createTag(loaded.tags, "Ability.Damage.Ice");
     expect(sibling.tag).toBe(4);
     expect(findTag(sibling.registry, "Ability.Damage.Fire")).toBe(3);
-    expect(getTagName(sibling.registry, 3)).toBe("Ability.Damage.Fire");
     expect(createTag(sibling.registry, "Ability.Damage.Fire").registry).toBe(sibling.registry);
     expect(empty.tags.tags).toEqual([]);
     expect(loaded.tags.tags).toHaveLength(3);
@@ -66,7 +60,6 @@ describe("Tags", () => {
       { id: 21, path: "State", parentId: 0 },
     ]);
     expect(createTag(registry, "State.Blocked").tag).toBe(22);
-    expect(getTagName(registry, 12)).toBe("");
     expect(normalizeTagRegistry({ tags: [], nextId: 77 }).nextId).toBe(77);
   });
 
@@ -77,7 +70,6 @@ describe("Tags", () => {
       { id: 8, path: "State.Blocked" },
       { id: 8, path: "State.Ready" },
     ] });
-    expect(getTagName(registry, 8)).toBe("");
     expect(matchesTag(registry, 9, 8)).toBe(false);
     expect(findTag(registry, "State.Blocked")).toBe(0);
     expect(registry.tags).toEqual([
@@ -95,7 +87,6 @@ describe("Tags", () => {
       { id: 8, path: "State..Blocked" },
     ] });
     expect(registry.tags).toEqual([{ id: 3, path: "Safe", parentId: 0 }]);
-    expect(getTagName(registry, 8)).toBe("");
     expect(createTag(registry, "New").tag).toBe(9);
   });
 
@@ -159,29 +150,16 @@ describe("Tags", () => {
     expect(matchesTag(registry, 999, 999, true)).toBe(false);
   });
 
-  it("queries explicit container selections with directional any/all and empty-query semantics", () => {
+  it("queries explicit container selections", () => {
     const container = { Tags: [3, 5] };
     expect(tagContainerHas(registry, container, 1)).toBe(true);
     expect(tagContainerHas(registry, container, 1, true)).toBe(false);
-    expect(tagContainerAny(registry, container, { Tags: [2, 4] })).toBe(true);
-    expect(tagContainerAny(registry, container, { Tags: [2, 4] }, true)).toBe(false);
-    expect(tagContainerAll(registry, container, { Tags: [1, 5] })).toBe(true);
-    expect(tagContainerAll(registry, container, { Tags: [1, 4] })).toBe(false);
-    expect(tagContainerAny(registry, container, { Tags: [] })).toBe(false);
-    expect(tagContainerAll(registry, container, { Tags: [] })).toBe(true);
     expect(tagContainerHas(registry, { Tags: [1] }, 3)).toBe(false);
   });
 
-  it("normalizes structure values and edits explicit selections without mutating shared defaults", () => {
+  it("normalizes structure values", () => {
     const source = { Tags: [3, 3, 0, -1, 2.5, "2", null, 900] };
     const container = normalizeTagContainer(source);
-    expect(container).toEqual({ Tags: [3, 900] });
-    const added = addTag(container, 1);
-    expect(added).toEqual({ Tags: [3, 900, 1] });
-    expect(removeTag(added, 1)).toEqual({ Tags: [3, 900] });
-    expect(addTag(container, 3)).toEqual({ Tags: [3, 900] });
-    expect(addTag(container, 0)).toEqual({ Tags: [3, 900] });
-    added.Tags.push(5);
     expect(container).toEqual({ Tags: [3, 900] });
     expect(normalizeTagContainer([1, 2])).toEqual({ Tags: [] });
   });

@@ -76,7 +76,6 @@ import {
   type CommandResult,
   type InfiniteLoopGuard,
   type RegisteredCommand,
-  type TraceBtState,
   type TraceFrame,
   type TracePayload,
   type UserCommandDef,
@@ -1592,10 +1591,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptHost.invokeEvent(classId, event, self ?? null, args ?? {});
   }
 
-  registerUserCommand(def: UserCommandDef): void {
-    this.console.register(def);
-  }
-
   bindUserCommand(
     def: Omit<UserCommandDef, "run"> & { classId: string },
   ): void {
@@ -1612,10 +1607,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   setTimeDilation(rate: number): void {
     if (Number.isFinite(rate)) this.timeDilation = Math.min(MAX_TIME_DILATION, Math.max(0, rate));
-  }
-
-  restoreBtFromTrace(states: readonly TraceBtState[]): void {
-    this.behaviourTrees.restoreFromTrace(states);
   }
 
   /**
@@ -2130,10 +2121,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   getWorld(): World {
     return this.world;
-  }
-
-  getLogRing(): LogRingBuffer {
-    return this.logs;
   }
 
   getDiagnostics(): SessionDiagnosticAggregator {

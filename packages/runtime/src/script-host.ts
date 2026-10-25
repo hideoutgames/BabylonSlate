@@ -1469,7 +1469,7 @@ export class ScriptHost {
     this.pending.get(self)?.delete(key);
   }
 
-  clearFlowState(self: EngineObject | null | undefined): void {
+  private clearFlowState(self: EngineObject | null | undefined): void {
     if (self) this.flowStates.delete(self);
   }
 

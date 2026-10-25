@@ -1,5 +1,4 @@
 /** Runtime-only geometry; scene documents persist component settings, never these buffers. */
-export const DYNAMIC_RUNTIME_MESH_CLASS_ID = "DynamicRuntimeMeshComponent";
 
 export type DynamicMeshBounds = { min: [number, number, number]; max: [number, number, number] };
 export type DynamicMeshRange = { offset: number; data: Float32Array };

@@ -14,10 +14,7 @@ import { materialUnavailable, type MaterialLibrary } from "./material-library";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { OwnedPostProcess } from "./owned-post-process";
 import { LOGICAL_SCENE_SAMPLERS, type LogicalSceneBuffer } from "./logical-scene-texture-block";
-import type {
-  PostProcessStackDiagnostic,
-  PostProcessStackEntry,
-} from "./post-process-material";
+import type { PostProcessStackDiagnostic } from "./post-process-material";
 
 interface AuthoredPostProcessOptions {
   /** Caller-owned normalized view depth and encoded world normal, shared across entries. */
@@ -458,54 +455,5 @@ function unsupportedLogicalBuffers(
     nodeId: plan.operations.find(
       (operation) => operation.nodeType === `input.${resource}`,
     )?.id,
-  };
-}
-
-export function addAuthoredPostProcessTasks(options: {
-  logicalBuffers?: AuthoredPostProcessOptions["logicalBuffers"];
-  frameGraph: FrameGraph;
-  library: MaterialLibrary;
-  sourceTexture: FrameGraphTextureHandle;
-  stack: readonly PostProcessStackEntry[];
-  documentFor: (guid: string) => MaterialDocument | null;
-  resolutionScale?: number;
-  onDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
-}): {
-  tasks: AuthoredPostProcessTask[];
-  outputTexture: FrameGraphTextureHandle;
-  dispose: () => void;
-  whenDisposed: () => Promise<void>;
-  whenReleased: () => Promise<void>;
-} {
-  const tasks: AuthoredPostProcessTask[] = [];
-  let sourceTexture = options.sourceTexture;
-  for (const entry of [...options.stack].sort((a, b) => a.order - b.order)) {
-    const task = new AuthoredPostProcessTask(
-      `Authored Post Process ${tasks.length}`,
-      {
-        ...options,
-        materialGuid: entry.materialGuid,
-        document: options.documentFor(entry.materialGuid),
-        enabled: entry.enabled,
-        parameters: entry.parameters,
-        sourceTexture,
-        sceneColorTexture: options.sourceTexture,
-        resolutionScale: entry.scalable ? options.resolutionScale : 1,
-      },
-    );
-    options.frameGraph.addTask(task);
-    tasks.push(task);
-    sourceTexture = task.outputTexture;
-  }
-  // FrameGraph.clear()/dispose() reset tasks without disposing them. The stack
-  // owner releases these references before retiring or clearing its graph.
-  return {
-    tasks,
-    outputTexture: sourceTexture,
-    dispose: () => {
-      for (const task of tasks) task.dispose();
-    },
-    whenDisposed: () => Promise.all(tasks.map((task) => task.whenDisposed())).then(() => {}),
-    whenReleased: () => Promise.all(tasks.map((task) => task.whenReleased())).then(() => {}),
   };
 }

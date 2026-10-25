@@ -1,7 +1,7 @@
 import type { TraceInputEvent, TracePayload } from "@haptic/debugger";
 import type { RawInputEvent } from "@haptic/input";
 
-export function rawInputFromTraceEvents(
+function rawInputFromTraceEvents(
   events: readonly TraceInputEvent[] | undefined,
 ): RawInputEvent[] {
   if (!events) return [];

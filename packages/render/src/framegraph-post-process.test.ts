@@ -17,7 +17,7 @@ import {
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
-import { addAuthoredPostProcessTasks } from "./framegraph-post-process";
+import { AuthoredPostProcessTask } from "./framegraph-post-process";
 import type { PostProcessStackDiagnostic } from "./post-process-material";
 
 const dispose: Array<() => void> = [];
@@ -142,24 +142,35 @@ function host(
     source.getInternalTexture()!,
   );
   const diagnostics: PostProcessStackDiagnostic[] = [];
-  const stack = addAuthoredPostProcessTasks({
-    frameGraph: graph,
-    library,
-    sourceTexture,
-    stack: documents.map((_, order) => ({
+  // Chain one task per document, each reading the previous output, as the
+  // scene post-process graph does.
+  const tasks: AuthoredPostProcessTask[] = [];
+  let outputTexture = sourceTexture;
+  for (const [order, document] of documents.entries()) {
+    const task = new AuthoredPostProcessTask(`Authored Post Process ${order}`, {
+      frameGraph: graph,
+      library,
       materialGuid: String(order),
-      order,
+      document,
       enabled: !disabled.includes(order),
       parameters: parameters[order],
-    })),
-    documentFor: (guid) => documents[Number(guid)]!,
-    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-  });
+      sourceTexture: outputTexture,
+      sceneColorTexture: sourceTexture,
+      resolutionScale: 1,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    graph.addTask(task);
+    tasks.push(task);
+    outputTexture = task.outputTexture;
+  }
+  const disposeTasks = () => {
+    for (const task of tasks) task.dispose();
+  };
   const present = new FrameGraphCopyToBackbufferColorTask("Present", graph);
-  present.sourceTexture = stack.outputTexture;
+  present.sourceTexture = outputTexture;
   graph.addTask(present);
   dispose.push(() => {
-    stack.dispose();
+    disposeTasks();
     graph.dispose();
     library.dispose();
     scene.dispose();
@@ -173,7 +184,8 @@ function host(
     source,
     resolveTexture,
     diagnostics,
-    ...stack,
+    tasks,
+    dispose: disposeTasks,
   };
 }
 

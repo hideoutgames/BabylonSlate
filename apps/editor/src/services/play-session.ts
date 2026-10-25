@@ -272,7 +272,7 @@ export function applyPlayGraphDebugObserve(
 }
 
 /** Replace the session's node breakpoints: a worker control, or the in-process runtime directly. */
-export function applyPlayBreakpoints(
+function applyPlayBreakpoints(
   target: {
     worker?: { postControl: (message: ControlMessage) => void } | null;
     runtime?: { applyBreakpoints(breakpoints: readonly Breakpoint[]): void } | null;
@@ -370,7 +370,7 @@ export function texturesRetainedAfterPlay(
 }
 
 /** Each retained texture by name, with its size, native references and ResourceCache owner, so a leak report names the owner. */
-export function describeRetainedTextures(
+function describeRetainedTextures(
   engine: EngineHandle["engine"],
   retained: ReturnType<typeof texturesRetainedAfterPlay>,
 ): string {

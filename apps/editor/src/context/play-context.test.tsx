@@ -112,6 +112,29 @@ it("delivers logs only to their subscribers while Play controls stay live", asyn
   expect(host.diagnostics.size).toBe(0);
 });
 
+it("does not start a Play session that no preparation owns", async () => {
+  let controls!: ReturnType<typeof usePlay>;
+  function PlayConsumer() {
+    controls = usePlay();
+    return null;
+  }
+  function LogConsumer() {
+    const { lines } = useOutputLog();
+    return <output data-testid="logs">{lines.join("\n")}</output>;
+  }
+  render(
+    <PlayProvider>
+      <PlayConsumer />
+      <LogConsumer />
+    </PlayProvider>,
+  );
+  // Play Anyway after a device loss stopped the blocked preparation calls this with nothing prepared.
+  act(() => controls.launchPlay({ scripts: [] }));
+  await act(async () => {});
+  expect(controls.sessionState).toMatchObject({ generation: 0, lifecycle: "idle" });
+  expect(screen.getByTestId("logs").textContent).not.toContain("Play failed");
+});
+
 it("keeps Play controls stable across document edits while Play saves the newest dirty documents", async () => {
   const scene = {
     id: "scene:assets/Main.scene.hasset",

@@ -98,10 +98,6 @@ export function findParticleGraphCycle(graph: GraphLike): string[] | null {
  * queue order). Walks the first Emitter Output's Particle input back; a
  * broken spine returns the part that still reaches the output.
  */
-export function particleSpine(graph: GraphLike): string[] {
-  return spineOf(graph, indexParticleIncomingEdges(graph));
-}
-
 function spineOf(graph: GraphLike, incoming: ParticleIncomingEdges): string[] {
   const output = graph.nodes.find((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE);
   if (!output) return [];

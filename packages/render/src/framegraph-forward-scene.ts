@@ -36,6 +36,9 @@ import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
+import { preparePreviousEffectBindings, sceneBindsPreviousEffects } from "./fixed-light-binding";
+import { registerLightNeutralPasses } from "./light-neutral-tasks";
+import { drawsInPass, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { isRevealPending, revealRound } from "./reveal-pending";
 import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
@@ -173,6 +176,12 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 export class ForwardSceneFrameGraph {
   private measureWork = false;
   private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0 };
+  /** Geometry render pass ids that drew in a complete frame of the prepared graph (`noteCompleteFrame`). */
+  private readonly drawnGeometryPasses = new Set<number>();
+  /** Each geometry render pass id's `drawsInPass` count at the last complete frame. */
+  private readonly geometryDraws = new Map<number, number>();
+  /** Releases the prepared graph's light-neutral geometry passes. */
+  private releaseLightNeutral: (() => void) | undefined;
   /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
   readonly requestedEffects = new Set<Effect>();
 
@@ -393,6 +402,59 @@ export class ForwardSceneFrameGraph {
     return false;
   }
 
+  /** The prepared graph's geometry tasks (the spatial effects' and the authored post-process chain's geometry buffers). */
+  private *geometryTasks(): Generator<LogicalGeometryTask> {
+    for (const task of this.graph?.tasks ?? []) if (task instanceof LogicalGeometryTask) yield task;
+  }
+
+  /**
+   * WebGPU: the graph's geometry passes keep their Materials' light defines across light changes
+   * (`registerLightNeutralPasses`), so a light change creates no geometry pipeline. Such an Effect may bind a
+   * placeholder for a shadow map its light no longer has, allocated here, outside any pass.
+   */
+  private registerLightNeutralGeometry(): void {
+    const engine = this.scene.getEngine();
+    this.releaseLightNeutral?.();
+    this.releaseLightNeutral = undefined;
+    if (this.geometryTasks().next().done || !pipelinesDeferred(engine) || !sceneBindsPreviousEffects(this.scene)) return;
+    preparePreviousEffectBindings(this.scene);
+    this.releaseLightNeutral = registerLightNeutralPasses(engine, (renderPassId) => {
+      for (const task of this.geometryTasks()) if (task.objectRenderer.renderPassIds.includes(renderPassId)) return true;
+      return false;
+    });
+  }
+
+  /**
+   * The view drew a complete frame (no draw skipped). A geometry pass that ran
+   * and drew something since the last one (`drawsInPass`) has drawn the meshes
+   * it saw; one its spatial stages left idle is forgotten, since its next draws
+   * can all be new.
+   */
+  noteCompleteFrame(): void {
+    const engine = this.scene.getEngine();
+    for (const task of this.geometryTasks()) {
+      for (const id of task.objectRenderer.renderPassIds) {
+        const draws = drawsInPass(engine, id);
+        const drew = draws !== (this.geometryDraws.get(id) ?? 0);
+        this.geometryDraws.set(id, draws);
+        if (task.disabled) this.drawnGeometryPasses.delete(id);
+        else if (drew) this.drawnGeometryPasses.add(id);
+      }
+    }
+  }
+
+  /**
+   * Whether `renderPassId` is a geometry pass that drew something in a
+   * complete frame since the graph was prepared or invalidated, and has not
+   * been idle since (`noteCompleteFrame`): a frame may then present it without
+   * a draw for a few frames. Before that, its draws (a new graph, an effect
+   * switched on, a Fog Volume coming within reach, a first view of anything)
+   * can miss every mesh's pipeline at once.
+   */
+  omitsGeometryPass(renderPassId: number): boolean {
+    return this.drawnGeometryPasses.has(renderPassId);
+  }
+
   /** Actual mask/compose drawing passes, separately from clear records. */
   sharedOutlineDiagnostics(): { drawingPassCount: number; renderRecordCount: number } {
     return {
@@ -458,6 +520,8 @@ export class ForwardSceneFrameGraph {
   invalidate(): void {
     this.failure = undefined;
     this.failedOutput = undefined;
+    // A new run (a scene switch, a changed Material library) can give every mesh new geometry variants.
+    this.drawnGeometryPasses.clear();
     this.markReadinessDirty();
   }
 
@@ -1151,6 +1215,7 @@ export class ForwardSceneFrameGraph {
           }
           this.graph.addTask(this.outputCopy);
         }
+        this.registerLightNeutralGeometry();
       }
       this.assignCamera(camera);
       this.syncSceneInputs();
@@ -1545,6 +1610,10 @@ export class ForwardSceneFrameGraph {
 
   private releaseGraphResources(): void {
     this.admittedCamera = undefined;
+    this.drawnGeometryPasses.clear();
+    this.geometryDraws.clear();
+    this.releaseLightNeutral?.();
+    this.releaseLightNeutral = undefined;
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();

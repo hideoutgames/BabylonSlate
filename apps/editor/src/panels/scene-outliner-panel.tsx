@@ -744,17 +744,19 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     };
   }, [assetRegistry, loadGraphDocument, placeOpen]);
 
+  /** A Class placement waiting for its graph; a second pick meanwhile would reuse its actor id. */
+  const placingClassRef = useRef(false);
   const addActor = useCallback(
     (item: PlaceActorItem) => {
-      if (!scene) return;
-      const finish = (resolved: PlaceActorItem) => {
-        const id = nextActorId(scene);
+      if (!scene || placingClassRef.current) return;
+      const finish = (resolved: PlaceActorItem, base: SerializedScene) => {
+        const id = nextActorId(base);
         mutate({
-          ...scene,
+          ...base,
           actors: [
-            ...scene.actors,
+            ...base.actors,
             spawnPlacedActor(
-              scene,
+              base,
               resolved,
               id,
               viewportDropApi?.worldPositionAtViewCenter() ??
@@ -779,7 +781,11 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
           (entry) => entry.header.guid === kind.guid,
         );
         if (asset?.path) {
+          placingClassRef.current = true;
           void loadGraphDocument(asset.path).then((graph) => {
+            // Place into the Scene as it is when the load finishes, keeping edits made meanwhile.
+            const live = getOpenDocuments().find((entry) => entry.id === documentId);
+            if (!live || !isSceneWorkspaceKind(live.ref.kind)) return;
             finish({
               ...item,
               kind: {
@@ -800,19 +806,23 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
                   }) ??
                   (graph ? authoredPrefabComponents(graph) : kind.components),
               },
-            });
+            }, live.content as SerializedScene);
+          }).finally(() => {
+            placingClassRef.current = false;
           });
           return;
         }
       }
-      finish(item);
+      finish(item, scene);
     },
     [
       assetRegistry,
       diskGraphs,
+      documentId,
       getOpenDocuments,
       loadGraphDocument,
       mutate,
+      overlay,
       scene,
       selectActor,
       viewportDropApi,

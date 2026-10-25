@@ -739,6 +739,22 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("shows why a token could not be saved and keeps the draft", async () => {
+    sourceControl.saveToken.mockRejectedValueOnce(new Error("Set a valid repository URL before saving a token."));
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.change(screen.getByTestId("settings-source-control-token"), {
+      target: { value: "ghp_secret" },
+    });
+    fireEvent.click(screen.getByTestId("settings-source-control-save-token"));
+    expect((await screen.findByTestId("settings-source-control-token-error")).textContent).toBe(
+      "Set a valid repository URL before saving a token.",
+    );
+    expect((screen.getByTestId("settings-source-control-token") as HTMLInputElement).value).toBe("ghp_secret");
+  });
+
   it("clears the stored token and the draft field", async () => {
     sourceControl.hasToken = true;
     sourceControl.clearToken.mockImplementation(async () => {

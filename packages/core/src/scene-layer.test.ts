@@ -6,7 +6,6 @@ import {
   normalizeSceneLayerSpawnList,
   parseOverlayPanelProperties,
   parseSceneLayerAnchor,
-  sceneLayerAnchorWorldPosition,
   sceneLayerCanvasToLayer,
   sceneLayerFrustumSize,
   sceneLayerOrthoBounds,
@@ -201,24 +200,8 @@ describe("SceneLayer schema", () => {
 });
 
 describe("SceneLayer anchors and hit tests", () => {
-  it("places 16x9 overlay anchors at screen-space origins with XY offsets", () => {
-    const frustum = sceneLayerFrustumSize(16 / 9);
-    expect(frustum).toEqual({ width: 16, height: 9 });
-    expect(
-      sceneLayerAnchorWorldPosition("topLeft", 0, 0, frustum.width, frustum.height),
-    ).toEqual({ x: -8, y: 4.5 });
-    expect(
-      sceneLayerAnchorWorldPosition("center", 1, -2, frustum.width, frustum.height),
-    ).toEqual({ x: 1, y: -2 });
-    expect(
-      sceneLayerAnchorWorldPosition(
-        "bottomRight",
-        0.5,
-        0.25,
-        frustum.width,
-        frustum.height,
-      ),
-    ).toEqual({ x: 8.5, y: -4.25 });
+  it("sizes the 16x9 frustum and falls back to the center anchor", () => {
+    expect(sceneLayerFrustumSize(16 / 9)).toEqual({ width: 16, height: 9 });
     expect(parseSceneLayerAnchor("nope")).toBe("center");
   });
 

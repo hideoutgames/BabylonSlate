@@ -17,12 +17,8 @@ import {
 } from "@haptic/assets";
 import {
   collectPlayScriptDocuments,
-  overlayTextureGuidsFromScenes,
   collectAnimGraphCompileDocuments,
   playLoadTilemapsControl,
-  readPlayNavmeshBytes,
-  readPlaySceneBakes,
-  readPlayAudioReverbBytes,
   playSpritePayloadsFromGuids,
   playLoadSpritesControl,
   playLoadModelsControl,
@@ -533,44 +529,6 @@ describe("scene-referenced Play content", () => {
   });
 });
 
-describe("readPlayNavmeshBytes", () => {
-  it("collects each scene's bakes by GUID and isolates missing or failed chunks", async () => {
-    const reads: string[] = [];
-    const errors: string[] = [];
-    const result = await readPlaySceneBakes([
-      { guid: "one", path: "one.scene.hasset" }, { guid: "two", path: "two.scene.hasset" },
-      { guid: "one", path: "one.scene.hasset" }, { guid: "unsaved" },
-    ], async (path, chunkId) => {
-      reads.push(`${path}:${chunkId}`);
-      if (path.startsWith("one")) return chunkId === "navmesh" ? new Uint8Array([1]) : null;
-      if (chunkId === "navmesh") throw new Error("Unavailable");
-      return new Uint8Array([2]);
-    }, (guid, chunkId) => errors.push(`${guid}:${chunkId}`));
-    expect([...result.navmeshes]).toEqual([["one", new Uint8Array([1])]]);
-    expect([...result.audioReverbs]).toEqual([["two", new Uint8Array([2])]]);
-    expect(errors).toEqual(["two:navmesh"]);
-    expect(reads).toHaveLength(4);
-  });
-  it("reads the Scene navmesh extra chunk and never invents bytes", async () => {
-    const bytes = new Uint8Array([9, 8, 7]);
-    const readChunk = async (path: string, chunkId: string) => {
-      expect(path).toBe("assets/Main.scene.hasset");
-      expect(chunkId).toBe("navmesh");
-      return bytes;
-    };
-    expect(
-      await readPlayNavmeshBytes("assets/Main.scene.hasset", readChunk),
-    ).toEqual(bytes);
-  });
-
-  it("returns null when the scene path or chunk is missing", async () => {
-    expect(await readPlayNavmeshBytes(undefined, async () => new Uint8Array([1]))).toBeNull();
-    expect(
-      await readPlayNavmeshBytes("assets/Main.scene.hasset", async () => null),
-    ).toBeNull();
-  });
-});
-
 describe("SceneLayer Play collection", () => {
   it("collects overlay 2DTexture and 2DMaterial guids from converted layer scenes", () => {
     const layer = createDefaultSceneLayer();
@@ -616,29 +574,6 @@ describe("SceneLayer Play collection", () => {
   });
 });
 
-describe("readPlayAudioReverbBytes", () => {
-  it("reads the Scene audioReverb extra chunk and never invents bytes", async () => {
-    const bytes = new Uint8Array([4, 5, 6]);
-    const readChunk = async (path: string, chunkId: string) => {
-      expect(path).toBe("assets/Main.scene.hasset");
-      expect(chunkId).toBe("audioReverb");
-      return bytes;
-    };
-    expect(
-      await readPlayAudioReverbBytes("assets/Main.scene.hasset", readChunk),
-    ).toEqual(bytes);
-  });
-
-  it("returns null when the scene path or chunk is missing", async () => {
-    expect(
-      await readPlayAudioReverbBytes(undefined, async () => new Uint8Array([1])),
-    ).toBeNull();
-    expect(
-      await readPlayAudioReverbBytes("assets/Main.scene.hasset", async () => null),
-    ).toBeNull();
-  });
-});
-
 it("includes textures from disabled and duplicate post-process entry overrides in Play preparation", () => {
   const scene = createDefaultScene();
   scene.settings.postProcessStack = [
@@ -668,7 +603,7 @@ it("prepares retained surface textures only for the current component assignment
 describe("SceneLayer control dependencies", () => {
   it("loads assigned control visuals for Play", () => {
     const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };
-    expect(overlayTextureGuidsFromScenes([scene])).toEqual(["thumb-texture"]);
+    expect(overlayTextureGuidsFromScene(scene)).toEqual(["thumb-texture"]);
     expect(materialGuidsFromScenes([scene])).toEqual(["track-material"]);
   });
 });

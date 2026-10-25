@@ -11,7 +11,6 @@ import {
   type TilesetPayload,
 } from "@haptic/assets";
 import {
-  AUDIO_REVERB_CHUNK_ID,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   tilemapTilesetGuids,
@@ -37,7 +36,6 @@ import {
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
 } from "@haptic/shader-graph";
-import { NAVMESH_CHUNK_ID } from "@haptic/navigation/chunk";
 
 export function filterPlayScriptDocuments<
   T extends { path: string; content: SerializedGraph },
@@ -124,21 +122,6 @@ export function overlayTextureGuidsFromScene(
     found.push(guid);
   }
   return found;
-}
-
-export function overlayTextureGuidsFromScenes(
-  scenes: readonly (SerializedScene | null | undefined)[],
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const scene of scenes) {
-    for (const guid of overlayTextureGuidsFromScene(scene)) {
-      if (seen.has(guid)) continue;
-      seen.add(guid);
-      guids.push(guid);
-    }
-  }
-  return guids;
 }
 
 /** Font guids on 3D Text and overlay 2D Text / 2D Rich Text. */
@@ -485,45 +468,6 @@ export function skyboxFaceGuidsFromScene(
     }
   }
   return found;
-}
-
-/** Collect per-scene baked data without discarding other bakes after a read failure. */
-export async function readPlaySceneBakes(
-  scenes: readonly { guid: string; path?: string }[],
-  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
-  onError: (guid: string, chunkId: string, error: unknown) => void,
-): Promise<{ navmeshes: Map<string, Uint8Array>; audioReverbs: Map<string, Uint8Array> }> {
-  const navmeshes = new Map<string, Uint8Array>();
-  const audioReverbs = new Map<string, Uint8Array>();
-  // Startup may also be in the scene library. Load its authored path once.
-  const unique = new Map(scenes.filter((scene) => scene.path).map((scene) => [scene.guid, scene.path!]));
-  for (const [guid, path] of unique) {
-    for (const [chunkId, destination] of [[NAVMESH_CHUNK_ID, navmeshes], [AUDIO_REVERB_CHUNK_ID, audioReverbs]] as const) {
-      try {
-        const bytes = await readChunk(path, chunkId);
-        if (bytes?.byteLength) destination.set(guid, bytes);
-      } catch (error) { onError(guid, chunkId, error); }
-    }
-  }
-  return { navmeshes, audioReverbs };
-}
-
-/** Scene `navmesh` extra chunk for Play import. Never generates. */
-export async function readPlayNavmeshBytes(
-  path: string | undefined,
-  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
-): Promise<Uint8Array | null> {
-  if (!path) return null;
-  return readChunk(path, NAVMESH_CHUNK_ID);
-}
-
-/** Scene `audioReverb` extra chunk for Play import. Never generates. */
-export async function readPlayAudioReverbBytes(
-  path: string | undefined,
-  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
-): Promise<Uint8Array | null> {
-  if (!path) return null;
-  return readChunk(path, AUDIO_REVERB_CHUNK_ID);
 }
 
 export function playTilesetPayloadsFromGuids(

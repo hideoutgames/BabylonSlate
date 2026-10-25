@@ -15,7 +15,6 @@ import {
   managedRenderReservations,
   reserveManagedShadowBytes,
 } from "./managed-render-resources";
-import { managedLightingReservations } from "./managed-lighting-resources";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -143,7 +142,7 @@ describe("managed render-target storage", () => {
     replacement.commit(
       managedRenderTargetResources(next, { colorCategory: "postprocess" }),
     );
-    expect(managedLightingReservations(engine).clusterBytes).toBe(8);
+    expect(managedRenderReservations(engine).categoryBytes.cluster).toBe(8);
     expect(managedRenderReservations(engine).categoryBytes).toMatchObject({
       sceneColor: 32,
       postprocess: 64,

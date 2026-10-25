@@ -1274,6 +1274,17 @@ describe("DocumentProvider actions and route", () => {
     expect(seen.route).toBe("home");
   });
 
+  it("drops a project deleted outside the editor from the Homepage list when the app returns to the foreground", async () => {
+    const actions = await openProject();
+    await act(() => actions.forceCloseProject());
+    const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+    expect(listed).toBeDefined();
+
+    await new OpfsStorageAdapter().deleteProject(listed);
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => expect(documents().listedProjects.some((project) => project.id === listed.id)).toBe(false));
+  });
+
   it("stays on the Homepage while another tab has the project open, and opens it once that tab closes it", async () => {
     Object.defineProperty(navigator, "locks", { configurable: true, value: createFakeWebLocks() });
     try {

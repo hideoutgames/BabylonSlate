@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  bytesEqual,
   concatBytes,
   readU32LE,
   sha256Hex,
@@ -20,11 +19,9 @@ describe("stableStringify", () => {
 });
 
 describe("bytes helpers", () => {
-  it("compares, concatenates, and round-trips little-endian u32", () => {
+  it("concatenates and round-trips little-endian u32", () => {
     const left = new Uint8Array([1, 2, 3]);
     const right = new Uint8Array([4, 5]);
-    expect(bytesEqual(left, new Uint8Array([1, 2, 3]))).toBe(true);
-    expect(bytesEqual(left, right)).toBe(false);
     expect(Array.from(concatBytes([left, right]))).toEqual([1, 2, 3, 4, 5]);
 
     const encoded = writeU32LE(0x04030201);

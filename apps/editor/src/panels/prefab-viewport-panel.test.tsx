@@ -102,6 +102,8 @@ const {
       mode: "3d" as "3d" | "2d",
       tool: "translate" as "translate" | "rotate" | "scale",
       space: "world" as "world" | "local",
+      shading: "pbr" as "pbr" | "unlit",
+      pivotAroundCenter: false,
     },
     collectPlayWaterContent: vi.fn(async () => new Map()),
     collectPlayRenderTargets: vi.fn(async () => ({ renderTargets: new Map(), renderTargetTextures: new Map() })),
@@ -254,8 +256,8 @@ vi.mock("../context/scene-editing-context", () => ({
     gridVisible: true,
     saveEditorCameraPose: vi.fn(),
     loadEditorCameraPose: vi.fn(() => null),
-    pivotAroundCenter: false,
-    viewportShadingMode: "pbr",
+    pivotAroundCenter: viewportState.pivotAroundCenter,
+    viewportShadingMode: viewportState.shading,
     collisionsVisible: false,
     setFrameActorHandler: vi.fn(),
   }),
@@ -335,6 +337,8 @@ describe("PrefabViewportPanel engine", () => {
     viewportState.mode = "3d";
     viewportState.tool = "translate";
     viewportState.space = "world";
+    viewportState.shading = "pbr";
+    viewportState.pivotAroundCenter = false;
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
     prefabDocs.registryEpoch = 0;
@@ -597,6 +601,8 @@ describe("PrefabViewportPanel engine", () => {
   it("rebinds Prefab when the shared Engine generation changes", () => {
     viewportState.tool = "rotate";
     viewportState.space = "local";
+    viewportState.shading = "unlit";
+    viewportState.pivotAroundCenter = true;
     const first = { id: "engine-1" };
     const second = { id: "engine-2" };
     play.ensureSharedEngine.mockReturnValue(first);
@@ -616,14 +622,21 @@ describe("PrefabViewportPanel engine", () => {
       }),
     );
     handle.editor.syncSelectionDebug.mockClear();
+    expect(handle.editor.setViewportShadingMode).toHaveBeenLastCalledWith("unlit");
+    expect(handle.editor.camera.setPivotAroundCenter).toHaveBeenLastCalledWith(true);
     handle.editor.gizmos.setTool.mockClear();
     handle.editor.gizmos.setSpace.mockClear();
+    handle.editor.setViewportShadingMode.mockClear();
+    handle.editor.camera.setPivotAroundCenter.mockClear();
     play.ensureSharedEngine.mockReturnValue(second);
     play.sharedEngineGeneration = 2;
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     expect(dispose).toHaveBeenCalled();
     expect(handle.editor.gizmos.setTool).toHaveBeenCalledWith("rotate");
     expect(handle.editor.gizmos.setSpace).toHaveBeenCalledWith("local");
+    // A recreated Engine starts PBR with a fixed pivot; the viewport reapplies its own.
+    expect(handle.editor.setViewportShadingMode).toHaveBeenCalledWith("unlit");
+    expect(handle.editor.camera.setPivotAroundCenter).toHaveBeenCalledWith(true);
     expect(createEngineMock.mock.calls.at(-1)?.[1]).toMatchObject({
       sharedEngine: second,
       present: "rtt",

@@ -296,7 +296,7 @@ export class PhysicsWorldSync {
    * Whether native contact events should be requested for `actor`'s bodies: an observer exists for the actor or
    * for a static child whose solid shapes this actor's compound hosts, since the host's body raises their contacts.
    */
-  wantsContacts(actor: Actor): boolean {
+  private wantsContacts(actor: Actor): boolean {
     const observes = this.observesContacts;
     if (!observes || observes(actor)) return true;
     const hosted = this.hostedByHost.get(actor.guid);

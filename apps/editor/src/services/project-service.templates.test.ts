@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  createEmptyProjectFiles,
   encodeAssetDocument,
   encodeProjectZip,
   loadTemplateFiles,
   writeProjectTree,
 } from "@haptic/assets";
+import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
 import { SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";

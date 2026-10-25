@@ -625,6 +625,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setNeedsReconnect(await projectService.needsReconnect());
   }, [projectService, settingsStore]);
 
+  // Projects can be deleted outside the editor (e.g. in Files on iPad) while it is in the background.
+  useEffect(() => {
+    if (route !== "home") return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void refreshProjectList().catch((error: unknown) => console.warn("[editor] could not refresh the project list", error));
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, [route, refreshProjectList]);
+
   const refreshTemplates = useCallback(async () => {
     setTemplates(await loadTemplateCards());
   }, [setTemplates]);

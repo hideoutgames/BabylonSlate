@@ -20,8 +20,6 @@ import {
   resolveAudioPitch,
   collectPackedAudioClipBlobs,
   allocateAudioClipChunkId,
-  extraChunksWithAudioClip,
-  extraChunksWithoutAudioClip,
   createDefaultAudioChannelPayload,
   createDefaultAudioMixerPayload,
   createDefaultAudioPayload,
@@ -39,7 +37,7 @@ import {
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { decodeHasset, encodeHasset } from "./hasset";
-import { bytesEqual } from "./bytes";
+import { bytesEqual } from "./test-support/bytes";
 import { importAudio } from "./importers/audio";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -154,27 +152,6 @@ describe("audio payloads", () => {
             : null,
     });
     expect(blobs).toEqual([new Uint8Array([1, 2, 3]), new Uint8Array([9, 8])]);
-  });
-
-  it("adds and removes extra Audio source chunks without deleting source", () => {
-    const source = {
-      id: "source",
-      kind: "audio",
-      mime: "audio/wav",
-      data: new Uint8Array([1]),
-    };
-    const withSecond = extraChunksWithAudioClip([source], {
-      id: "source:2",
-      bytes: new Uint8Array([9, 8]),
-      mime: "audio/ogg",
-    });
-    expect(withSecond.map((chunk) => chunk.id)).toEqual(["source", "source:2"]);
-    expect(withSecond[1]?.data).toEqual(new Uint8Array([9, 8]));
-    const removed = extraChunksWithoutAudioClip(withSecond, "source:2");
-    expect(removed.map((chunk) => chunk.id)).toEqual(["source"]);
-    expect(extraChunksWithoutAudioClip(withSecond, "source").map((chunk) => chunk.id)).toEqual(
-      ["source", "source:2"],
-    );
   });
 
   it("clamps Audio volume to 0..1 and keeps nullable guids", () => {
