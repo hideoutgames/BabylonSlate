@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CommandMessage } from "@haptic/bridge";
 import { type InputAssetDefinition } from "@haptic/core";
 import { encodeInputEvents } from "@haptic/input";
 import {
@@ -8,6 +9,8 @@ import {
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
+
+type LogCommand = Extract<CommandMessage, { type: "log" }>;
 
 const assets: InputAssetDefinition[] = [
   {
@@ -122,10 +125,14 @@ describe("compiled runtime input rebinding", () => {
   );
 
   it("uses every Any Key edge to rebind and executes once per press across worker input transport", async () => {
+    const logs: LogCommand[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       inputAssets: assets,
+      onCommand: (command) => {
+        if (command.type === "log") logs.push(command);
+      },
     });
     const binding = runtime.inputBindings.getInputBindings!(jump)[0]!;
     await load(
@@ -160,19 +167,14 @@ describe("compiled runtime input rebinding", () => {
       ]),
     );
     runtime.tick();
-    expect(
-      runtime
-        .getLogRing()
-        .entries()
-        .map((entry) => entry.message),
-    ).toEqual(["KeyJ", "MouseLeft"]);
+    expect(logs.map((entry) => entry.message)).toEqual(["KeyJ", "MouseLeft"]);
     expect(runtime.inputBindings.getInputBindings!(jump)[0]).toMatchObject({
       Id: binding.Id,
       Key: "MouseLeft",
     });
     runtime.tick();
     expect(runtime.getResolvedInput().inputs.jump.held).toBe(true);
-    expect(runtime.getLogRing().entries()).toHaveLength(2);
+    expect(logs).toHaveLength(2);
     runtime.pushInput([
       { kind: "gamepad", tick: 2, gamepadIndex: 2, axes: [], buttons: [1] },
     ]);
@@ -180,17 +182,19 @@ describe("compiled runtime input rebinding", () => {
     expect(runtime.inputBindings.getInputBindings!(jump)[0].Key).toBe(
       "Gamepad3Button0",
     );
-    expect(runtime.getLogRing().entries().at(-1)?.message).toBe(
-      "Gamepad3Button0",
-    );
+    expect(logs.at(-1)?.message).toBe("Gamepad3Button0");
     runtime.stop();
   });
 
   it("adds axis options from a graph and restores exported modifications in another session", async () => {
+    const logs: LogCommand[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       inputAssets: assets,
+      onCommand: (command) => {
+        if (command.type === "log") logs.push(command);
+      },
     });
     await load(
       runtime,
@@ -219,7 +223,7 @@ describe("compiled runtime input rebinding", () => {
       x: 0,
       y: -0.5,
     });
-    const saved = runtime.getLogRing().entries().at(-1)!.message;
+    const saved = logs.at(-1)!.message;
     runtime.stop();
     const restored = createInProcessRuntime({
       seed: 2,
@@ -252,7 +256,14 @@ describe("compiled runtime input rebinding", () => {
 
 describe("compiled gamepad connection events", () => {
   it("runs On Gamepad Disconnected once with the index of the pad that disappeared", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const logs: LogCommand[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => {
+        if (command.type === "log") logs.push(command);
+      },
+    });
     await load(
       runtime,
       [
@@ -283,9 +294,7 @@ describe("compiled gamepad connection events", () => {
     runtime.tick();
     runtime.tick();
     expect(
-      runtime
-        .getLogRing()
-        .entries()
+      logs
         .filter((entry) => entry.category !== "input")
         .map((entry) => [entry.category, entry.message]),
     ).toEqual([

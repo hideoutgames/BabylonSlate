@@ -39,13 +39,13 @@ import type {
   Transform,
   WaterDefinition,
 } from "@haptic/core";
-import type { RegisteredCommand, TraceBtState, TraceFrame, TracePayload, UserCommandDef } from "@haptic/debugger";
+import type { RegisteredCommand, TraceFrame, TracePayload } from "@haptic/debugger";
 import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@haptic/input";
 import type { NavObstacleKind, NavPoint } from "@haptic/navigation";
 import type { Actor, EngineObject, DebugInspectSnapshot, SceneLayer, World } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
 import type { RuntimeDiagnostic, SessionDiagnosticAggregator } from "./diagnostics";
-import type { LogRingBuffer, LogSeverity } from "./log-ring";
+import type { LogSeverity } from "./log-ring";
 import type { PhysicsWorldSync } from "./physics-sync";
 import type { CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { AcquireRuntimeScene } from "./scene-source";
@@ -200,7 +200,6 @@ export interface RuntimeDriver {
   readonly snapshotCapacity: number;
   readonly snapshotGeneration: number;
   getWorld(): World;
-  getLogRing(): LogRingBuffer;
   getDiagnostics(): SessionDiagnosticAggregator;
   /** Add a host/native console message to both live output and dumplog. */
   reportLog(message: string, severity?: LogSeverity, category?: string): void;
@@ -301,16 +300,10 @@ export interface RuntimeDriver {
     self?: EngineObject | null,
     args?: Record<string, unknown>,
   ): void;
-  registerUserCommand(def: UserCommandDef): void;
-  bindUserCommand(
-    def: Omit<UserCommandDef, "run"> & { classId: string },
-  ): void;
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
   /** Time dilation (`slomo`) from the next tick, clamped to `0..8`; non-finite rates are ignored. */
   setTimeDilation(rate: number): void;
-  /** Behaviour tree evaluation and ownership only; `restoreFromTrace` resumes the whole frame. */
-  restoreBtFromTrace(states: readonly TraceBtState[]): void;
   /** Resume a frame's time dilation, behaviour trees, Animation Graphs, sprite clips and voices. */
   restoreFromTrace(frame: TraceFrame): void;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;

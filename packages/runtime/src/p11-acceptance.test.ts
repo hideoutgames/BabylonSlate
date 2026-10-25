@@ -477,12 +477,10 @@ describe("P11 §18 acceptance", () => {
     const payload = runtime.stopTrace();
     const last = payload?.frames.at(-1)?.bt?.[0];
     expect(last).toBeDefined();
-    runtime.restoreBtFromTrace([
-      {
-        ...last!,
-        blackboard: { ...last!.blackboard, alert: true },
-      },
-    ]);
+    runtime.restoreFromTrace({
+      ...payload!.frames.at(-1)!,
+      bt: [{ ...last!, blackboard: { ...last!.blackboard, alert: true } }],
+    });
     runtime.tick();
     const aborted = commands.filter((command) => command.type === "btState").at(-1);
     expect(aborted).toMatchObject({ type: "btState", status: "success" });
@@ -516,14 +514,13 @@ describe("P11 §18 acceptance", () => {
     runtime.executeConsoleCommand("snapshot start");
     runtime.tick();
     runtime.executeConsoleCommand("snapshot stop");
-    const last = runtime.stopTrace()?.frames.at(-1)?.bt?.[0];
+    const frame = runtime.stopTrace()!.frames.at(-1)!;
+    const last = frame.bt?.[0];
     expect(last).toBeDefined();
-    runtime.restoreBtFromTrace([
-      {
-        ...last!,
-        blackboard: { ...last!.blackboard, alert: true },
-      },
-    ]);
+    runtime.restoreFromTrace({
+      ...frame,
+      bt: [{ ...last!, blackboard: { ...last!.blackboard, alert: true } }],
+    });
     runtime.tick();
     for (let i = 0; i < 5; i += 1) runtime.tick();
     const xStopped = agentX(runtime);
@@ -676,7 +673,7 @@ describe("P11 §18 acceptance", () => {
     await replay.loadNavMesh(soloBytes);
     replay.start();
     replay.realizePlayWorld();
-    replay.restoreBtFromTrace(restoredFrames.at(-1)!.bt!);
+    replay.restoreFromTrace(restoredFrames.at(-1)!);
     replay.executeConsoleCommand("snapshot start");
     replay.tick();
     replay.executeConsoleCommand("snapshot stop");
@@ -792,12 +789,7 @@ describe("P11 §18 acceptance", () => {
     const payload = runtime.stopTrace();
     const last = payload?.frames.at(-1)?.bt?.[0];
     expect(last).toBeDefined();
-    runtime.restoreBtFromTrace([
-      {
-        ...last!,
-        blackboard: {},
-      },
-    ]);
+    runtime.restoreFromTrace({ ...payload!.frames.at(-1)!, bt: [{ ...last!, blackboard: {} }] });
     runtime.tick();
     const logs = commands.filter((command) => command.type === "log");
     expect(
