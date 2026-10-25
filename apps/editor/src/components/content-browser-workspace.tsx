@@ -1,86 +1,38 @@
 import {
   memo,
   useCallback,
-  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import {
-  ArrowUpRightIcon,
-  FolderIcon,
-  FolderPlusIcon,
-  PlusIcon,
-  UploadIcon,
-} from "lucide-react";
+import { ArrowUpRightIcon } from "lucide-react";
 import type { IndexedAsset } from "@haptic/assets";
 import {
-  isThumbnailableAssetType,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
-  pickerImportAccept,
-  resolvePluginEnabled,
-  embedGltfImportBatch,
-  groupMsdfImportBatch,
-  contentEntryNameError,
-  renamedAssetPath,
-  stripAssetFileSuffix,
 } from "@haptic/assets";
-import {
-  convertObjImportBatch,
-  convertStlImportBatch,
-  animationRetargetMatchingClips,
-} from "@haptic/render";
-import { convertFbxImportBatch } from "@haptic/render/fbx-import";
+import { animationRetargetMatchingClips } from "@haptic/render";
 import {
   ContextMenuOverlay,
-  FolderBreadcrumbs,
-  SearchInput,
-  ShortcutKeys,
-  ariaKeyShortcuts,
-  TreeView,
-  TypeVisualIcon,
-  resolveTypeVisual,
-  useContextMenu,
-  type ContextMenuItem,
   AssetPicker,
-  type TypeVisual,
-  type TreeDropPlacement,
 } from "@haptic/editor-kit";
-import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { AssetReferenceDialog } from "./asset-reference-dialog";
-import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
-import { resolvePluginIcon } from "../lib/plugin-icons";
 import {
   ASSET_DOCUMENT_KINDS,
   documentKindForAssetType,
   CONTENT_BROWSER_ID,
   type DocumentKind,
 } from "@haptic/core";
-import {
-  createAppSettingsStore,
-  isMobilePlatform,
-  pickImportFiles,
-} from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@haptic/ui/components/resizable";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@haptic/ui/components/empty";
 import { cn } from "@haptic/ui/lib/utils";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@haptic/ui/components/sheet";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   useActiveDocumentId,
@@ -96,156 +48,44 @@ import type { OpenDocument } from "../services/document-service";
 import { useOptionalPlay } from "../context/play-context";
 import {
   applyLockTransfers,
-  containedAssetPaths,
   folderMoveLockTransfers,
-  oursLockPaths,
   refuseTheirsPaths,
 } from "../lib/source-control-file-ops";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
   ASSETS_ROOT,
-  assetDependenciesIncludingOpenDocuments,
-  applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
-  classIdConflict,
-  classIdFromClassAsset,
-  classParentLookup,
-  classDocumentShowsPrefab,
-  collectFolderGuidsFromTrees,
-  contentBrowserContextActions,
-  canRetargetSelectedAssets,
-  contentBrowserDeleteListNames,
-  contentBrowserDeletingGuids,
-  contentBrowserMovePreviewName,
-  contentBrowserSelectionMoves,
-  contentBrowserTreeDropMoves,
-  lastSceneClassDeleteLines,
-  filterAssets,
-  flattenContentBrowserForest,
-  flattenFolderForest,
-  guidsOutsideSelectedFolders,
-  isCrossRootMove,
-  isFolderNameTaken,
-  isFolderTreeRoot,
-  isContentBrowserEmptyGridDoubleClickTarget,
-  isNewAssetNameTaken,
-  isRenameNameTaken,
-  moveNameCollision,
-  newAssetFileName,
-  joinAssetFolderPath,
-  listChildFoldersFromTrees,
-  parentFolderPath,
-  remapPathAfterFolderMove,
-  rootSelectedFolderPaths,
-  sortAssets,
-  sortChildFolders,
-  uniqueAssetTypes,
-  visualForIndexedAsset,
-  withAutoCollapsedNestedFolders,
-  runWithContentBrowserImportBusy,
-  openSceneViewportMode,
-  type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
-  deleteTargetFolders,
   type DeleteTarget,
 } from "../lib/content-browser-helpers";
-import {
-  canMutateContentBrowserRoot,
-  contentBrowserFolderOps,
-  contentBrowserRoots,
-  contentRootMoveWarnings,
-  filterHpluginFiles,
-  isPluginContentFolderPath,
-  PROJECT_CONTENT_ROOT_ID,
-} from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { writeRetargetedAnimations } from "../lib/animation-retarget";
-import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
-import { classIdForGraphPath } from "../services/script-compiler";
-import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
-import {
-  THUMBNAIL_SYNC_DEBOUNCE_MS,
-  syncContentBrowserThumbnailUrls,
-} from "../lib/content-browser-thumbnails";
-import { useContentBrowserGridWindow } from "../lib/use-content-browser-grid-window";
-import {
-  ContentBrowserGridTiles,
-  type ContentBrowserGridActions,
-  type ContentBrowserGridItem,
-  type ContentBrowserTileLock,
-} from "./content-browser-grid-tiles";
+import type { ContentBrowserGridActions } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
-import { ContentBrowserCopyProgressDialog, type ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
-import { ImportProgressDialog, type ImportProgress } from "./import-progress-dialog";
-import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
-import { createProjectAsset } from "../lib/create-project-asset";
+import { ContentBrowserCopyProgressDialog } from "./content-browser-copy-progress-dialog";
+import { ImportProgressDialog } from "./import-progress-dialog";
+import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { ContentBrowserDeleteDialogs } from "./content-browser-delete-dialogs";
-import { ContentBrowserFilterSortMenus } from "./content-browser-filter-sort-menus";
 import { ContentBrowserNameDialog, type NameEntry } from "./content-browser-name-dialog";
 import { ContentBrowserResultDialogs } from "./content-browser-result-dialogs";
-import { contentBrowserTileMenuItems, type CopyStep } from "./content-browser-tile-menu";
-
-type MoveTarget = {
-  operation: "move" | "copy";
-  kind: "asset" | "folder";
-  guids: string[];
-  folderPaths: string[];
-  name: string;
-  sourcePath: string;
-  folderPath: string;
-  /** Asset files of `guids`, in order. */
-  assetPaths: string[];
-  itemCount: number;
-  typeVisual: TypeVisual | null;
-};
-
-type GridItem = ContentBrowserGridItem;
-
-const NO_PATHS: readonly string[] = [];
-
-/** Folder selection after `fromFolder` moved to `toFolder`; an unchanged set is kept. */
-function remapFolderSelection(
-  selected: Set<string>,
-  fromFolder: string,
-  toFolder: string,
-): Set<string> {
-  const next = new Set([...selected].map((path) => remapPathAfterFolderMove(path, fromFolder, toFolder)));
-  return next.size === selected.size && [...next].every((path) => selected.has(path)) ? selected : next;
-}
-
-/**
- * Locks of the mounted asset tiles, serialized so the memoized grid sees a new
- * value only when one of them changes (the service mutates its locks in place).
- */
-function mountedTileLocksKey(
-  items: readonly GridItem[],
-  firstIndex: number,
-  lastIndex: number,
-  sourceControl: {
-    lockStateForPath: (path: string) => "mine" | "theirs" | null;
-    lockForPath: (path: string) => { ownerName?: string } | null | undefined;
-  },
-): string {
-  const locks: Record<string, ContentBrowserTileLock> = {};
-  const end = Math.min(lastIndex, items.length);
-  for (let index = firstIndex; index < end; index++) {
-    const item = items[index];
-    if (item?.kind !== "asset") continue;
-    const path = item.asset.path;
-    const state = sourceControl.lockStateForPath(path);
-    if (!state) continue;
-    const ownerName = sourceControl.lockForPath(path)?.ownerName;
-    locks[path] = ownerName === undefined ? { state } : { state, ownerName };
-  }
-  return JSON.stringify(locks);
-}
+import { useContentBrowserModel } from "./content-browser-model";
+import { useContentBrowserTreeState } from "./content-browser-tree-state";
+import { useContentBrowserMountedTiles } from "./content-browser-mounted-tiles";
+import { useContentBrowserDeleteFlow } from "./content-browser-delete-flow";
+import { useContentBrowserMoveFlow, type MoveTarget } from "./content-browser-move-flow";
+import { useContentBrowserImportFlow } from "./content-browser-import-flow";
+import { useContentBrowserNameFlow } from "./content-browser-name-flow";
+import { useContentBrowserNewAssetFlow } from "./content-browser-new-asset-flow";
+import { useContentBrowserContextMenus } from "./content-browser-context-menus";
+import { ContentBrowserToolbar } from "./content-browser-toolbar";
+import { ContentBrowserFolderNavigation } from "./content-browser-folder-navigation";
+import { ContentBrowserAssetPane } from "./content-browser-asset-pane";
 
 const ALL_DOCUMENT_KINDS: readonly DocumentKind[] = ["content-browser", ...ASSET_DOCUMENT_KINDS];
 const NO_DOCUMENT_KINDS: readonly DocumentKind[] = [];
@@ -325,46 +165,17 @@ function ContentBrowserWorkspaceBody({
     () => new Set(),
   );
   const [tileAnchorKey, setTileAnchorKey] = useState<string | null>(null);
-  /** Last tree row selected without a Shift range. */
-  const [treeAnchorId, setTreeAnchorId] = useState<string | null>(null);
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const userToggledFoldersRef = useRef(new Set<string>());
+  // The dialog states the flows share stay here: they decide which operation
+  // dialog is open and whether the open documents are read.
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const [classReplacementChoices, setClassReplacementChoices] = useState<Record<string, string | null>>({});
-  const [replacementPicker, setReplacementPicker] = useState<string | null>(null);
-  const [confirmReferencedDelete, setConfirmReferencedDelete] = useState(false);
-  useEffect(() => {
-    setClassReplacementChoices({});
-    setReplacementPicker(null);
-    setConfirmReferencedDelete(false);
-  }, [deleteTarget]);
-  const [newAssetMenuOpen, setNewAssetMenuOpen] = useState(false);
-  const [newAssetMenuAnchor, setNewAssetMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
     useState<CreatableAssetType>("Scene");
-  const [newAssetName, setNewAssetName] = useState("");
-  // Starts as the open folder; the dialog's Location can move it elsewhere.
-  const [newAssetFolder, setNewAssetFolder] = useState(ASSETS_ROOT);
-  const [newAssetParent, setNewAssetParent] = useState("Object");
-  const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
-  const [newWaterStarter, setNewWaterStarter] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [deleteProgress, setDeleteProgress] = useState<{
-    done: number;
-    total: number;
-    currentName: string;
-  } | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [operationError, setOperationError] = useState<string | null>(null);
-  const [copyProgress, setCopyProgress] = useState<ContentBrowserCopyProgress | null>(null);
-  const copyAbortRef = useRef<AbortController | null>(null);
   const [nameDialog, setNameDialog] = useState<NameEntry | null>(null);
-  const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [referenceGuid, setReferenceGuid] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
   // Open tabs mutate in place, so the dialogs that read their unsaved content
   // follow the document revisions, but only while one of them is showing.
   const dialogNeedsOpenDocuments = deleteTarget !== null || referenceGuid !== null ||
@@ -374,42 +185,9 @@ function ContentBrowserWorkspaceBody({
     void openDocumentsRevision;
     return dialogNeedsOpenDocuments ? getOpenDocuments() : NO_OPEN_DOCUMENTS;
   }, [dialogNeedsOpenDocuments, openDocumentsRevision, getOpenDocuments]);
-  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
-    {},
-  );
-  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
-  const importAbortRef = useRef<AbortController | null>(null);
-  /** Shows import progress; once the import is cancelled it keeps reading Canceling. */
-  const updateImportProgress = useCallback((signal: AbortSignal, patch: Partial<ImportProgress>) => {
-    setImportProgress((current) => ({
-      title: "Importing",
-      phase: "",
-      completed: 0,
-      total: 1,
-      fraction: null,
-      ...current,
-      ...patch,
-      canceling: signal.aborted,
-    }));
-  }, []);
-  const cancelImport = useCallback(() => {
-    importAbortRef.current?.abort();
-    setImportProgress((current) => current && { ...current, canceling: true });
-  }, []);
-  const [importErrors, updateImportErrors] = useState<string[] | null>(null);
-  const [importedFileCount, setImportedFileCount] = useState(0);
-  const setImportErrors = useCallback((errors: string[] | null) => {
-    updateImportErrors(errors);
-    setImportedFileCount(0);
-  }, []);
   const [retargetPickerOpen, setRetargetPickerOpen] = useState(false);
   const [retargetErrors, setRetargetErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const deleteCancelRef = useRef<HTMLButtonElement>(null);
-  // Written only with the state, by the thumbnail sync's commit: a render
-  // that still shows an older map must not put it back.
-  const thumbnailUrlsRef = useRef(thumbnailUrls);
   const menuTargetGuidsRef = useRef<string[]>([]);
   const menuTargetFoldersRef = useRef<string[]>([]);
   const operationDialog = newAssetOpen ? "create" : nameDialog ? "name" : moveTarget ? "move" : deleteTarget ? "delete" : null;
@@ -433,126 +211,41 @@ function ContentBrowserWorkspaceBody({
     clearPendingTarget();
   }, [clearPendingTarget, pendingTarget]);
 
-  const browserRoots = useMemo(
-    () =>
-      contentBrowserRoots({
-        showPluginContent,
-        plugins: pluginDescriptors.map((plugin) => ({
-          pluginGuid: plugin.pluginGuid,
-          displayName: plugin.settings.displayName,
-          contentPath: plugin.contentPath,
-          source: plugin.source,
-          enabled: resolvePluginEnabled(
-            plugin.settings.enabledByDefault,
-            projectDocument?.settings.pluginOverrides[plugin.pluginGuid]
-              ?.enabled,
-          ),
-        })),
-      }),
-    [pluginDescriptors, projectDocument, showPluginContent],
-  );
-  const rootPrefixes = useMemo(
-    () => browserRoots.map((root) => root.pathPrefix),
-    [browserRoots],
-  );
-  const readOnlyRootPrefixes = useMemo(
-    () => browserRoots.filter((root) => root.readOnly).map((root) => root.pathPrefix),
-    [browserRoots],
-  );
-  const pluginContentPrefixes = useMemo(
-    () => pluginDescriptors.map((plugin) => plugin.contentPath),
-    [pluginDescriptors],
-  );
-  const pluginRootIcons = useMemo(
-    () => new Map(pluginDescriptors.map((plugin) => [
-      plugin.contentPath,
-      resolvePluginIcon(plugin.settings.iconKey),
-    ])),
-    [pluginDescriptors],
-  );
-  const selectedRoot = useMemo(
-    () => contentBrowserFolderOps(selectedFolderPath, browserRoots),
-    [browserRoots, selectedFolderPath],
-  );
-  const selectedRootWritable = canMutateContentBrowserRoot(
-    browserRoots.find((root) => root.id === selectedRoot.rootId),
-  );
-  const folderRoot = browserRoots.find((root) => root.id === selectedRoot.rootId) ?? browserRoots[0]!;
-  const isReadOnlyFolder = useCallback(
-    (path: string) => contentBrowserFolderOps(path, browserRoots).readOnly,
-    [browserRoots],
-  );
-
-  // Layout effects, so a reveal that is not a discrete event (closing a
-  // dirty tab after Save) never paints a folder the browser is about to leave.
-  useLayoutEffect(() => {
-    if (
-      !showPluginContent &&
-      isPluginContentFolderPath(selectedFolderPath, pluginContentPrefixes)
-    ) {
-      setSelectedFolderPath(ASSETS_ROOT);
-    }
-  }, [pluginContentPrefixes, selectedFolderPath, showPluginContent]);
-
-  const folderTrees = useMemo(() => {
-    if (!assetRegistry) return [];
-    return browserRoots.flatMap((root) => {
-      if (!assetRegistry.getRoot(root.id)) return [];
-      const tree = assetRegistry.folderTree(root.id);
-      return [
-        {
-          ...tree,
-          name:
-            root.id === PROJECT_CONTENT_ROOT_ID
-              ? tree.name
-              : root.readOnly
-                ? `${root.label} (Read Only)`
-                : root.label,
-        },
-      ];
-    });
-  }, [assetRegistry, browserRoots, registryEpoch]);
-
-  useLayoutEffect(() => {
-    setCollapsedFolders((current) => {
-      const next = withAutoCollapsedNestedFolders(
-        current,
-        folderTrees,
-        userToggledFoldersRef.current,
-      );
-      if (next.size === current.size) {
-        let same = true;
-        for (const path of next) {
-          if (!current.has(path)) {
-            same = false;
-            break;
-          }
-        }
-        if (same) return current;
-      }
-      return next;
-    });
-  }, [folderTrees]);
-
-  const allAssets = useMemo(() => {
-    if (!assetRegistry) return [];
-    return browserRoots.flatMap((root) => {
-      if (!assetRegistry.getRoot(root.id)) return [];
-      return assetRegistry.list({ rootId: root.id });
-    });
-  }, [assetRegistry, browserRoots, registryEpoch]);
-
-  const referenceAssets = useMemo(
-    () => {
-      void registryEpoch;
-      return assetRegistry?.list() ?? [];
-    },
-    [assetRegistry, registryEpoch],
-  );
-  const assetsByGuid = useMemo(
-    () => new Map(allAssets.map((asset) => [asset.header.guid, asset])),
-    [allAssets],
-  );
+  const {
+    browserRoots,
+    rootPrefixes,
+    readOnlyRootPrefixes,
+    pluginRootIcons,
+    selectedRoot,
+    selectedRootWritable,
+    folderRoot,
+    isReadOnlyFolder,
+    folderTrees,
+    allAssets,
+    referenceAssets,
+    assetsByGuid,
+    classParentOf,
+    typeVisualFor,
+    gridSearch,
+    searchPending,
+    gridItems,
+    orderedTileHits,
+    existingAssetPaths,
+    existingFolderPaths,
+    existingContentPaths,
+    typeChips,
+  } = useContentBrowserModel({
+    assetRegistry,
+    registryEpoch,
+    pluginDescriptors,
+    showPluginContent,
+    projectDocument,
+    selectedFolderPath,
+    setSelectedFolderPath,
+    search,
+    typeFilters,
+    sortMode,
+  });
 
   const handleRetargetSkeleton = useCallback(
     async (skeletonGuid: string | null) => {
@@ -648,90 +341,23 @@ function ContentBrowserWorkspaceBody({
     [allAssets, sourceControl],
   );
 
-  const classParentOf = useMemo(
-    () => classParentLookup(allAssets),
-    [allAssets],
-  );
-
-  /** One type visual per asset object while the class ancestry is unchanged. */
-  const typeVisualFor = useMemo(() => {
-    const visuals = new WeakMap<IndexedAsset, TypeVisual>();
-    return (asset: IndexedAsset): TypeVisual => {
-      let visual = visuals.get(asset);
-      if (!visual) {
-        visual = visualForIndexedAsset(asset, classParentOf);
-        visuals.set(asset, visual);
-      }
-      return visual;
-    };
-  }, [classParentOf]);
-
-  const folderGuids = useMemo(() => {
-    if (folderTrees.length === 0) return null;
-    return collectFolderGuidsFromTrees(selectedFolderPath, folderTrees);
-  }, [folderTrees, selectedFolderPath]);
-
-  // Typing updates the field at once; the grid follows at low priority.
-  // Clearing the search (Clear Filters, revealing an asset) applies in the same
-  // render as the folder and type filters that change with it.
-  const deferredSearch = useDeferredValue(search);
-  const gridSearch = search.trim() ? deferredSearch : search;
-  const searchPending = search !== gridSearch;
-
-  // Sort once per list and mode. Filtering keeps that order, and the sort is a
-  // total order, so each keystroke only filters.
-  const sortedAssets = useMemo(
-    () => sortAssets(allAssets, sortMode),
-    [allAssets, sortMode],
-  );
-
-  const visibleAssets = useMemo(
-    () =>
-      filterAssets(sortedAssets, {
-        folderGuids,
-        typeFilters,
-        search: gridSearch,
-      }),
-    [gridSearch, folderGuids, sortedAssets, typeFilters],
-  );
-
-  const sortedChildFolders = useMemo(() => {
-    if (folderTrees.length === 0) return [];
-    return sortChildFolders(
-      listChildFoldersFromTrees(folderTrees, selectedFolderPath),
-      sortMode,
-    );
-  }, [folderTrees, selectedFolderPath, sortMode]);
-
-  const childFolders = useMemo(() => {
-    const needle = gridSearch.trim().toLowerCase();
-    if (!needle) return sortedChildFolders;
-    return sortedChildFolders.filter((folder) =>
-      folder.name.toLowerCase().includes(needle),
-    );
-  }, [gridSearch, sortedChildFolders]);
-
-  const gridItems = useMemo((): GridItem[] => {
-    const items: GridItem[] = childFolders.map((folder) => ({
-      kind: "folder",
-      path: folder.path,
-      name: folder.name,
-    }));
-    for (const asset of visibleAssets) {
-      items.push({ kind: "asset", asset });
-    }
-    return items;
-  }, [childFolders, visibleAssets]);
-
-  const orderedTileHits = useMemo(
-    () =>
-      gridItems.map((item) =>
-        item.kind === "folder"
-          ? ({ kind: "folder" as const, path: item.path })
-          : ({ kind: "asset" as const, guid: item.asset.header.guid }),
-      ),
-    [gridItems],
-  );
+  const {
+    browserRows,
+    treeSelectedId,
+    treeSelectedIds,
+    handleTreeSelect,
+    toggleFolderExpanded,
+  } = useContentBrowserTreeState({
+    folderTrees,
+    allAssets,
+    assetsByGuid,
+    selectedFolderPath,
+    setSelectedFolderPath,
+    selectedGuids,
+    setSelectedGuids,
+    selectedFolderPaths,
+    setSelectedFolderPaths,
+  });
 
   const selectGridTile = useCallback(
     (
@@ -758,228 +384,17 @@ function ContentBrowserWorkspaceBody({
     [orderedTileHits, selectedFolderPaths, selectedGuids, tileAnchorKey],
   );
 
-  const { scrollerRef, slice, spacerHeight } = useContentBrowserGridWindow(
-    gridItems.length,
-    hidden,
-  );
-
-  const mountedTextureGuids = useMemo(() => {
-    const guids: string[] = [];
-    for (let index = slice.firstIndex; index < slice.lastIndex; index++) {
-      const item = gridItems[index];
-      if (item?.kind === "asset" && isThumbnailableAssetType(item.asset.header.type)) {
-        const { type, parentClass } = item.asset.header;
-        if (type === "Class" && !classDocumentShowsPrefab(parentClass, classParentOf)) continue;
-        guids.push(item.asset.header.guid);
-      }
-    }
-    return guids;
-  }, [classParentOf, gridItems, slice.firstIndex, slice.lastIndex]);
-
-  const tileLocksKey = mountedTileLocksKey(
+  const { scrollerRef, slice, spacerHeight, thumbnailUrls, tileLocks } = useContentBrowserMountedTiles({
     gridItems,
-    slice.firstIndex,
-    slice.lastIndex,
+    hidden,
+    classParentOf,
     sourceControl,
-  );
-  const tileLocks = useMemo(
-    () => JSON.parse(tileLocksKey) as Record<string, ContentBrowserTileLock>,
-    [tileLocksKey],
-  );
-
-  const browserRows = useMemo(() => {
-    if (folderTrees.length === 0) return [];
-    return flattenContentBrowserForest(folderTrees, allAssets, collapsedFolders);
-  }, [allAssets, collapsedFolders, folderTrees]);
-
-  /** Primary tree row and Shift range anchor: the last clicked row while it stays selected. */
-  const treeSelectedId = useMemo(() => {
-    if (treeAnchorId && (selectedFolderPaths.has(treeAnchorId) ||
-      [...selectedGuids].some((guid) => assetsByGuid.get(guid)?.path === treeAnchorId))) {
-      return treeAnchorId;
-    }
-    if (selectedGuids.size === 1) {
-      const guid = [...selectedGuids][0]!;
-      const asset = assetsByGuid.get(guid);
-      if (asset) return asset.path;
-    }
-    return selectedFolderPath;
-  }, [assetsByGuid, selectedFolderPath, selectedFolderPaths, selectedGuids, treeAnchorId]);
-
-  const treeSelectedIds = useMemo(() => {
-    const ids: string[] = [...selectedFolderPaths];
-    for (const guid of selectedGuids) {
-      const asset = assetsByGuid.get(guid);
-      if (asset) ids.push(asset.path);
-    }
-    if (ids.length === 0 && treeSelectedId) ids.push(treeSelectedId);
-    return ids;
-  }, [assetsByGuid, selectedFolderPaths, selectedGuids, treeSelectedId]);
-
-  const treeNodes = useMemo(
-    () =>
-      browserRows.map((row) => {
-        const FolderGlyph = pluginRootIcons.get(row.id) ?? FolderIcon;
-        const asset = row.guid ? assetsByGuid.get(row.guid) : undefined;
-        const renamable =
-          !isFolderTreeRoot(row.path, rootPrefixes) &&
-          !contentBrowserFolderOps(row.path, browserRoots).readOnly;
-        return {
-          id: row.id,
-          label: row.label,
-          renamable,
-          ...(asset ? { renameValue: stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name) } : {}),
-          depth: row.depth,
-          hasChildren: row.hasChildren,
-          expanded: row.expanded,
-          icon:
-            row.kind === "folder" ? (
-              <FolderGlyph />
-            ) : asset ? (
-              <TypeVisualIcon visual={typeVisualFor(asset)} />
-            ) : undefined,
-        };
-      }),
-    [assetsByGuid, browserRoots, browserRows, pluginRootIcons, rootPrefixes, typeVisualFor],
-  );
+    thumbnailsEnabled,
+    thumbnailVersions,
+    loadAssetThumbnail,
+  });
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
-
-  const existingAssetPaths = useMemo(
-    () => allAssets.map((asset) => asset.path),
-    [allAssets],
-  );
-  const existingFolderPaths = useMemo(
-    () =>
-      flattenFolderForest(folderTrees).map((row) => row.path),
-    [folderTrees],
-  );
-  const existingContentPaths = useMemo(
-    () => new Set([...existingAssetPaths, ...existingFolderPaths]),
-    [existingAssetPaths, existingFolderPaths],
-  );
-  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
-    ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
-    : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
-  const newAssetTakenError = useMemo(() => {
-    if (!newAssetOpen) return null;
-    if (isNewAssetNameTaken(existingAssetPaths, newAssetFolder, newAssetType, newAssetName)) {
-      return "An asset with this name already exists in the folder.";
-    }
-    const fileName = newAssetType === "Class" ? newAssetFileName("Class", newAssetName) : "";
-    return fileName
-      ? classIdConflict(referenceAssets, joinAssetFolderPath(newAssetFolder, fileName))
-      : null;
-  }, [existingAssetPaths, newAssetFolder, newAssetName, newAssetOpen, newAssetType, referenceAssets]);
-  const nameEntryError = (entry: NameEntry): string | null => {
-    const invalid = contentEntryNameError(entry.value);
-    if (invalid) return invalid;
-    if (entry.kind === "rename") {
-      const asset = assetRegistry?.getByGuid(entry.guid);
-      if (!asset) return null;
-      if (isRenameNameTaken(existingAssetPaths, asset.path, entry.value)) {
-        return "That name is already used in this folder.";
-      }
-      const next = renamedAssetPath(asset.path, entry.value);
-      return asset.header.type === "Class" && next !== asset.path
-        ? classIdConflict(referenceAssets, next, asset.path)
-        : null;
-    }
-    const taken =
-      entry.kind === "folder"
-        ? isFolderNameTaken(existingFolderPaths, selectedFolderPath, entry.value)
-        : (() => {
-            const parent = parentFolderPath(entry.path);
-            const next = joinAssetFolderPath(parent, entry.value.trim());
-            if (next === entry.path) return false;
-            return isFolderNameTaken(existingFolderPaths, parent, entry.value);
-          })();
-    return taken ? "That name is already used in this folder." : null;
-  };
-  const nameDialogError = nameDialog ? nameEntryError(nameDialog) : null;
-
-  const loadedThumbnailVersionsRef = useRef<Readonly<Record<string, number>>>({});
-
-  const thumbnailSyncStartedRef = useRef(false);
-  // URLs a commit stopped showing, tagged with that commit's URL map. A URL is
-  // revoked only after the map that dropped it has rendered; revoking it when
-  // the commit is scheduled would leave an <img> pointing at a revoked URL.
-  const lastThumbnailCommitRef = useRef<Record<string, string> | null>(null);
-  const retiredThumbnailUrlsRef = useRef<Array<{ shown: Record<string, string> | null; urls: readonly string[] }>>([]);
-  useEffect(() => {
-    const retired = retiredThumbnailUrlsRef.current;
-    const rendered = retired.findLastIndex((entry) => entry.shown === thumbnailUrls);
-    if (rendered < 0) return;
-    for (const entry of retired.splice(0, rendered + 1)) {
-      for (const url of entry.urls) URL.revokeObjectURL(url);
-    }
-  }, [thumbnailUrls]);
-  useEffect(() => {
-    if (!thumbnailsEnabled) return;
-    let cancelled = false;
-    const sync = () => {
-      if (!hidden) thumbnailSyncStartedRef.current = true;
-      void syncContentBrowserThumbnailUrls({
-        mountedTextureGuids,
-        urls: thumbnailUrlsRef.current,
-        refreshGuids: new Set(mountedTextureGuids.filter((guid) =>
-          thumbnailVersions[guid] !== loadedThumbnailVersionsRef.current[guid],
-        )),
-        hidden,
-        load: loadAssetThumbnail,
-        createObjectURL: (blob) => URL.createObjectURL(blob),
-        revokeObjectURL: (url) => URL.revokeObjectURL(url),
-        isCancelled: () => cancelled,
-        retireObjectURLs: (urls) => {
-          if (urls.length > 0) {
-            retiredThumbnailUrlsRef.current.push({ shown: lastThumbnailCommitRef.current, urls });
-          }
-        },
-        commit: (next, { loaded, done }) => {
-          // A cancelled sync leaves later guids unloaded, so only a finished
-          // one may claim every version; batches record just what they read.
-          loadedThumbnailVersionsRef.current = done
-            ? thumbnailVersions
-            : {
-                ...loadedThumbnailVersionsRef.current,
-                ...Object.fromEntries(loaded.map((guid) => [guid, thumbnailVersions[guid]])),
-              };
-          thumbnailUrlsRef.current = next;
-          lastThumbnailCommitRef.current = next;
-          setThumbnailUrls(next);
-        },
-      });
-    };
-    // The first sync runs at once. Scrolling changes the mounted tiles with
-    // every row, and each change cancels the sync before it; later syncs wait
-    // for the window to settle so a fast scroll reads only the tiles it stops on.
-    if (!thumbnailSyncStartedRef.current) {
-      sync();
-      return () => {
-        cancelled = true;
-      };
-    }
-    const timer = window.setTimeout(sync, THUMBNAIL_SYNC_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailVersions, thumbnailsEnabled]);
-
-  useEffect(() => {
-    // The queue is only ever mutated in place, so this is the list the sync fills.
-    const retired = retiredThumbnailUrlsRef.current;
-    return () => {
-      for (const url of Object.values(thumbnailUrlsRef.current)) {
-        URL.revokeObjectURL(url);
-      }
-      for (const entry of retired.splice(0)) {
-        for (const url of entry.urls) URL.revokeObjectURL(url);
-      }
-    };
-  }, []);
-
-  const typeChips = useMemo(() => uniqueAssetTypes(allAssets), [allAssets]);
 
   const openIds = useMemo(() => new Set(tabOrder), [tabOrder]);
 
@@ -1002,63 +417,35 @@ function ContentBrowserWorkspaceBody({
     [openDocument, openIds, setActiveDocument],
   );
 
-  const requestDelete = useCallback((guids: string[]) => {
-    if (guids.length === 0) return;
-    setDeleteTarget({ kind: "assets", guids });
-  }, []);
-
-  const requestDeleteFolder = useCallback(
-    (path: string) => {
-      if (folderTrees.length === 0 || isFolderTreeRoot(path, rootPrefixes)) {
-        return;
-      }
-      const guids = [
-        ...collectFolderGuidsFromTrees(path, folderTrees, { recursive: true }),
-      ];
-      setDeleteTarget({ kind: "folder", path, guids });
-    },
-    [folderTrees, rootPrefixes],
-  );
-
-  const requestDeleteSnapshot = useCallback(
-    (guids: string[], folderPaths: string[]) => {
-      // A range selection can hold a folder and its descendants; delete the outermost.
-      const folders = rootSelectedFolderPaths(folderPaths.filter(
-        (path) => !isFolderTreeRoot(path, rootPrefixes),
-      ));
-      if (folderTrees.length === 0) {
-        requestDelete(guids);
-        return;
-      }
-      if (folders.length === 0) {
-        requestDelete(guids);
-        return;
-      }
-      const folderGuidsSet = new Set<string>();
-      for (const path of folders) {
-        for (const guid of collectFolderGuidsFromTrees(path, folderTrees, {
-          recursive: true,
-        })) {
-          folderGuidsSet.add(guid);
-        }
-      }
-      const extraGuids = guids.filter((guid) => !folderGuidsSet.has(guid));
-      if (folders.length === 1 && extraGuids.length === 0) {
-        requestDeleteFolder(folders[0]!);
-        return;
-      }
-      setDeleteTarget({
-        kind: "selection",
-        folders,
-        guids: extraGuids,
-      });
-    },
-    [folderTrees, requestDelete, requestDeleteFolder, rootPrefixes],
-  );
-
-  const requestDeleteSelection = useCallback(() => {
-    requestDeleteSnapshot([...selectedGuids], [...selectedFolderPaths]);
-  }, [requestDeleteSnapshot, selectedFolderPaths, selectedGuids]);
+  const {
+    requestDeleteSnapshot,
+    requestDeleteSelection,
+    dialogProps: deleteDialogProps,
+  } = useContentBrowserDeleteFlow({
+    deleteTarget,
+    setDeleteTarget,
+    assetRegistry,
+    allAssets,
+    referenceAssets,
+    openDocuments,
+    folderTrees,
+    rootPrefixes,
+    browserRoots,
+    projectDocument,
+    selectedGuids,
+    selectedFolderPaths,
+    setSelectedFolderPath,
+    setSelectedGuids,
+    setSelectedFolderPaths,
+    busy,
+    setBusy,
+    setOperationError,
+    refuseTheirsAssetPaths,
+    sourceControl,
+    closeDocumentsForPaths,
+    replaceClassReferencesBeforeDelete,
+    repairAfterAssetDelete,
+  });
 
   const repairDocumentPath = useCallback(
     (oldPath: string, newPath: string, type: string) => {
@@ -1070,958 +457,181 @@ function ContentBrowserWorkspaceBody({
     [repathDocument],
   );
 
-  /**
-   * Runs Copy to Folder or Duplicate behind the cancelable progress dialog.
-   * Cancel aborts the copy in progress and deletes the copies already made, so
-   * a canceled operation leaves the content as it was. Returns false then.
-   */
-  const runCopySteps = useCallback(async (
-    operation: ContentBrowserCopyProgress["operation"],
-    steps: readonly CopyStep[],
-  ): Promise<boolean> => {
-    const controller = new AbortController();
-    copyAbortRef.current = controller;
-    const total = steps.reduce((sum, step) => sum + step.units, 0);
-    const undo: Array<() => Promise<void>> = [];
-    let completed = 0;
-    setCopyProgress({ operation, name: steps[0]?.name ?? "", completed, total, canceling: false });
-    try {
-      for (const step of steps) {
-        controller.signal.throwIfAborted();
-        const base = completed;
-        setCopyProgress((current) => current && { ...current, name: step.name, completed: base });
-        undo.push(await step.run({
-          signal: controller.signal,
-          onProgress: (copied) => setCopyProgress((current) => current && { ...current, completed: base + copied }),
-        }));
-        completed = base + step.units;
-        setCopyProgress((current) => current && { ...current, completed });
-        step.onDone?.();
-      }
-      return true;
-    } catch (error) {
-      if (!controller.signal.aborted) throw error;
-      for (const revert of undo.reverse()) await revert();
-      return false;
-    } finally {
-      copyAbortRef.current = null;
-      setCopyProgress(null);
-    }
-  }, []);
-
-  const cancelCopy = useCallback(() => {
-    copyAbortRef.current?.abort();
-    setCopyProgress((current) => current && { ...current, canceling: true });
-  }, []);
-
-  /** Files a folder copy writes, for the progress total. */
-  const folderAssetCount = useCallback((path: string) =>
-    assetRegistry?.list().filter((asset) => asset.path.startsWith(`${path}/`)).length ?? 0,
-  [assetRegistry]);
-
-  /** Open Move… / Copy to Folder… for outermost folders and the assets outside them. */
-  const openMoveDialog = useCallback(
-    (operation: "move" | "copy", folders: string[], guids: string[], destinationPath?: string) => {
-      if (!assetRegistry || folders.length + guids.length === 0) return;
-      const names: string[] = [];
-      const assetPaths: string[] = [];
-      for (const path of folders) {
-        names.push(path.slice(path.lastIndexOf("/") + 1));
-      }
-      let typeVisual: TypeVisual | null = null;
-      for (const guid of guids) {
-        const asset = assetRegistry.getByGuid(guid);
-        if (!asset) continue;
-        names.push(asset.header.name);
-        assetPaths.push(asset.path);
-        if (guids.length === 1 && folders.length === 0) {
-          typeVisual = visualForIndexedAsset(asset, classParentOf);
-        }
-      }
-      const sourcePath =
-        folders[0] ?? (assetPaths[0] ? parentFolderPath(assetPaths[0]) : selectedFolderPath);
-      setMoveTarget({
-        operation,
-        kind: folders.length > 0 && guids.length === 0 ? "folder" : "asset",
-        guids,
-        folderPaths: folders,
-        name: contentBrowserMovePreviewName(names),
-        sourcePath,
-        folderPath: destinationPath ?? sourcePath,
-        assetPaths,
-        itemCount: folders.length + guids.length,
-        typeVisual,
-      });
-    },
-    [assetRegistry, classParentOf, selectedFolderPath],
-  );
-
-  const openMoveForSnapshot = useCallback(
-    (operation: "move" | "copy") => {
-      if (!assetRegistry) return;
-      const folders = rootSelectedFolderPaths(
-        menuTargetFoldersRef.current.filter(
-          (path) => !isFolderTreeRoot(path, rootPrefixes),
-        ),
-      );
-      const guids = guidsOutsideSelectedFolders(
-        menuTargetGuidsRef.current,
-        folders,
-        (guid) => assetRegistry.getByGuid(guid)?.path,
-      );
-      openMoveDialog(operation, folders, guids);
-    },
-    [assetRegistry, openMoveDialog, rootPrefixes],
-  );
-
-  /**
-   * How `moves` into `destinationPath` change plugin behaviour (see
-   * `contentRootMoveWarnings`); empty when every item stays in its root.
-   */
-  const crossRootMoveWarnings = useCallback(
-    (moves: readonly ContentBrowserDropMove[], destinationPath: string): string[] => {
-      if (!assetRegistry) return [];
-      const crossing = moves.filter((move) => isCrossRootMove(move.id, destinationPath, rootPrefixes));
-      if (crossing.length === 0) return [];
-      const assets = assetRegistry.list();
-      const movedGuids = crossing.flatMap((move) => move.kind === "folder"
-        ? assets.filter((asset) => asset.path.startsWith(`${move.sourcePath}/`)).map((asset) => asset.header.guid)
-        : move.guid ? [move.guid] : []);
-      return contentRootMoveWarnings({
-        movedGuids,
-        targetRootId: contentBrowserFolderOps(destinationPath, browserRoots).rootId,
-        assets,
-        showReferences: (guid) => assetRegistry.showReferences(guid),
-        plugins: pluginDescriptors.map((plugin) => ({
-          pluginGuid: plugin.pluginGuid,
-          displayName: plugin.settings.displayName,
-          enabledByDefault: plugin.settings.enabledByDefault,
-          dependencyGuids: plugin.settings.pluginDependencies.map((dependency) => dependency.guid),
-        })),
-        projectPluginOverrides: projectDocument?.settings.pluginOverrides,
-        exportPresets: projectDocument?.settings.exportPresets,
-      });
-    },
-    [assetRegistry, browserRoots, pluginDescriptors, projectDocument, rootPrefixes],
-  );
-
-  const keybinds = useKeybindings();
-  const tileContextItems = useMemo(
-    () => contentBrowserTileMenuItems({
-      menuTargetGuidsRef,
-      menuTargetFoldersRef,
-      assetRegistry,
-      projectGuid,
-      projectDocument,
-      thumbnailsEnabled,
-      selectedFolderPath,
-      browserRoots,
-      rootPrefixes,
-      busy,
-      keybinds,
-      importAbortRef,
-      openOrFocusDocument,
-      setImportErrors,
-      updateImportProgress,
-      setImportProgress,
-      refreshAssetRegistry,
-      noteAssetsCreated,
-      setBusy,
-      setOperationError,
-      folderAssetCount,
-      runCopySteps,
-      setNameDialog,
-      setRetargetPickerOpen,
-      openMoveForSnapshot,
-      setReferenceGuid,
-      requestDeleteSnapshot,
-    }),
-    [
-      assetRegistry,
-      busy,
-      projectGuid,
-      projectDocument,
-      thumbnailsEnabled,
-      folderAssetCount,
-      runCopySteps,
-      openMoveForSnapshot,
-      openOrFocusDocument,
-      noteAssetsCreated,
-      refreshAssetRegistry,
-      requestDeleteSnapshot,
-      selectedFolderPath,
-      browserRoots,
-      rootPrefixes,
-      setImportErrors,
-      updateImportProgress,
-      keybinds,
-    ],
-  );
-
-  const { menu, closeMenu, openMenuAt } = useContextMenu({
-    items: tileContextItems,
-  });
-
-  const resolveAssetName = useCallback(
-    (guid: string) => {
-      const asset = assetRegistry?.getByGuid(guid);
-      return asset?.header.name.trim() || asset?.path.split("/").at(-1) || guid;
-    },
-    [assetRegistry],
-  );
-
-  const deletingGuids = useMemo(() => contentBrowserDeletingGuids({
-    extraGuids: deleteTarget?.guids ?? [],
-    folderPaths: deleteTargetFolders(deleteTarget),
-    assets: allAssets,
-  }), [allAssets, deleteTarget]);
-  const deletingClassGuids = useMemo(() => new Set(referenceAssets
-    .filter((asset) => deletingGuids.has(asset.header.guid) && asset.header.type === "Class")
-    .map((asset) => asset.header.guid)), [deletingGuids, referenceAssets]);
-  const deleteInboundRefs = useMemo(() => {
-    if (!deleteTarget || !assetRegistry) return [];
-    // One dependency pass for the whole project, not one per deleted guid.
-    const refs = new Map<string, string[]>();
-    for (const [inbound, dependencies] of assetDependenciesIncludingOpenDocuments(referenceAssets, openDocuments)) {
-      if (deletingGuids.has(inbound)) continue;
-      const targets = dependencies.filter((guid) => deletingGuids.has(guid));
-      if (targets.length > 0) refs.set(inbound, targets);
-    }
-    const rows = [...refs].map(([guid, targets]) => {
-      const asset = assetRegistry.getByGuid(guid);
-      return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
-        type: asset?.header.type, targets: targets.map(resolveAssetName), targetGuids: targets,
-        blocksClassDelete: targets.some((target) => deletingClassGuids.has(target)) };
-    });
-    const projectClasses = new Set([
-      projectDocument?.settings.gameInstanceClass,
-      ...(projectDocument?.settings.editorUtilityObjects ?? []),
-    ]);
-    const projectAssetGuids = new Set([
-      projectDocument?.settings.startupSceneGuid,
-      projectDocument?.settings.audio?.audioMixerGuid,
-      projectDocument?.settings.fonts?.defaultFontGuid,
-    ]);
-    const projectTargets = referenceAssets.filter((asset) =>
-      deletingGuids.has(asset.header.guid) && (projectAssetGuids.has(asset.header.guid) ||
-        (deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)))),
-    );
-    if (projectTargets.length > 0) rows.push({
-      guid: "project-settings", name: "Project Settings", path: "project.json", type: undefined,
-      targets: projectTargets.map((asset) => resolveAssetName(asset.header.guid)),
-      targetGuids: projectTargets.map((asset) => asset.header.guid),
-      blocksClassDelete: projectTargets.some((asset) => deletingClassGuids.has(asset.header.guid)),
-    });
-    return rows.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
-  }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
-    deletingGuids, deletingClassGuids, projectDocument]);
-  const hasReferencedClass = deleteInboundRefs.some((ref) => ref.blocksClassDelete);
-  const deletedClasses = useMemo(() => referenceAssets.filter((asset) => deletingClassGuids.has(asset.header.guid)), [referenceAssets, deletingClassGuids]);
-  const classReplacements = useMemo(() => deletedClasses.map((asset) => {
-    const replacement = referenceAssets.find((candidate) => candidate.header.guid === classReplacementChoices[asset.header.guid]);
-    const selectedGuid = classReplacementChoices[asset.header.guid];
-    return { ...classAssetReference(asset), replacement: replacement ? classAssetReference(replacement)
-      : selectedGuid ? { guid: selectedGuid, classId: "" } : null };
-  }), [deletedClasses, referenceAssets, classReplacementChoices]);
-  const pickerSource = deletedClasses.find((asset) => asset.header.guid === replacementPicker);
-  const pickerCandidates = pickerSource ? classDeletionCandidates(pickerSource, referenceAssets, deletingGuids) : [];
-
-  const deleteListNames = useMemo(() => {
-    if (!deleteTarget) return [];
-    if (deleteTarget.kind === "folder") {
-      return contentBrowserDeleteListNames({
-        folderPaths: [deleteTarget.path],
-      });
-    }
-    const assetNames = deleteTarget.guids.map(resolveAssetName);
-    if (deleteTarget.kind === "selection") {
-      return contentBrowserDeleteListNames({
-        folderPaths: deleteTarget.folders,
-        assetNames,
-      });
-    }
-    return contentBrowserDeleteListNames({ assetNames });
-  }, [deleteTarget, resolveAssetName]);
-
-  const deleteListItems = useMemo(() => {
-    if (!deleteTarget) return [];
-    const folders = deleteTargetFolders(deleteTarget);
-    return [
-      ...folders.map((path) => {
-        const count = containedAssetPaths(allAssets, path).length;
-        return { key: path, name: path.split("/").pop() || path, detail: path,
-          count: count === 1 ? "1 Asset" : `${count} Assets`,
-          visual: { ...resolveTypeVisual({ family: "folder" }), icon: FolderIcon, iconKey: "Folder" } };
-      }),
-      ...(deleteTarget.kind === "folder" ? [] : deleteTarget.guids).map((guid) => {
-        const asset = assetRegistry?.getByGuid(guid);
-        return { key: guid, name: resolveAssetName(guid), detail: asset?.path ?? guid,
-          count: null, visual: resolveTypeVisual({ assetType: asset?.header.type }) };
-      }),
-    ];
-  }, [allAssets, assetRegistry, deleteTarget, resolveAssetName]);
-
-  const deleteLastSceneClassLines = useMemo(
-    () => deleteTarget ? lastSceneClassDeleteLines(allAssets, deletingGuids) : [],
-    [allAssets, deleteTarget, deletingGuids],
-  );
-
-  const confirmDelete = useCallback(async () => {
-    if (busy || !assetRegistry || !deleteTarget) return;
-    const paths = new Set<string>();
-    for (const guid of deleteTarget.guids) {
-      const path = assetRegistry.getByGuid(guid)?.path;
-      if (path) paths.add(path);
-    }
-    const folders = deleteTargetFolders(deleteTarget);
-    for (const folder of folders) {
-      for (const path of containedAssetPaths(allAssets, folder)) {
-        paths.add(path);
-      }
-    }
-    const readOnly =
-      folders.find((path) => contentBrowserFolderOps(path, browserRoots).readOnly) ??
-      [...paths].find((path) => contentBrowserFolderOps(parentFolderPath(path), browserRoots).readOnly);
-    if (readOnly) {
-      setDeleteTarget(null);
-      setDeleteError(`${readOnly} is read-only and cannot be deleted.`);
-      return;
-    }
-    if (refuseTheirsAssetPaths([...paths, ...deleteInboundRefs.filter((ref) => ref.blocksClassDelete && ref.guid !== "project-settings").map((ref) => ref.path)])) return;
-    const oursToRelease = oursLockPaths([...paths], (path) =>
-      sourceControl.lockStateForPath(path),
-    );
-    const individualGuids = deleteTarget.kind === "folder"
-      ? []
-      : deleteTarget.guids.filter((guid) => {
-          const path = assetRegistry.getByGuid(guid)?.path;
-          return path && !folders.some((folder) => path.startsWith(`${folder}/`));
-        });
-    const total = folders.length + individualGuids.length + 1;
-    let done = 0;
-    const reportProgress = async (currentName: string) => {
-      setDeleteProgress({ done, total, currentName });
-      // Allow React and the browser to paint before the next work slice.
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    };
-    const removedGuids = new Set<string>();
-    const removedFolders: string[] = [];
-    setBusy(true);
-    setDeleteTarget(null);
-    setDeleteProgress({ done, total, currentName: "Preparing Deletion" });
-    setOperationError(null);
-    try {
-      await reportProgress("Preparing Deletion");
-      if (classReplacements.length > 0) {
-        validateClassDeletionReplacements(classReplacements, referenceAssets, deletingGuids);
-        await replaceClassReferencesBeforeDelete(classReplacements, deletingGuids, (name) =>
-          reportProgress(`Updating Class References: ${name}`));
-      }
-      try {
-        // Each item's tabs close just before it is deleted, so a failure keeps
-        // the unsaved edits of every item that was not reached.
-        for (const path of folders) {
-          const from = contentBrowserFolderOps(path, browserRoots);
-          await reportProgress(path);
-          closeDocumentsForPaths(containedAssetPaths(allAssets, path));
-          await assetRegistry.deleteFolder(from.rootId, from.relative);
-          removedFolders.push(path);
-          for (const asset of allAssets) {
-            if (asset.path.startsWith(`${path}/`)) removedGuids.add(asset.header.guid);
-          }
-          done += 1;
-          setSelectedFolderPath((current) =>
-            current === path || current.startsWith(`${path}/`)
-              ? parentFolderPath(path, from.pathPrefix)
-              : current,
-          );
-        }
-        for (const guid of individualGuids) {
-          const asset = assetRegistry.getByGuid(guid);
-          if (asset) {
-            await reportProgress(asset.header.name);
-            closeDocumentsForPaths([asset.path]);
-            await assetRegistry.deleteAsset(guid);
-            removedGuids.add(guid);
-          }
-          done += 1;
-        }
-      } finally {
-        // Repair successful removals even if a later file operation fails.
-        if (removedGuids.size > 0 || done > 0) {
-          await reportProgress("Updating References");
-          for (const path of oursToRelease) {
-            if (allAssets.some((asset) => asset.path === path && removedGuids.has(asset.header.guid))) {
-              await sourceControl.releasePath(path);
-            }
-          }
-          // Stored Class references and parentClass use the compile id, not the display name.
-          const removedClassNames = new Set(allAssets
-            .filter((asset) => removedGuids.has(asset.header.guid) && asset.header.type === "Class")
-            .map(classIdFromClassAsset));
-          await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
-            reportProgress(`Updating References: ${name}`), removedFolders,
-          );
-        }
-      }
-      setSelectedGuids(new Set());
-      setSelectedFolderPaths(new Set());
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setDeleteProgress(null);
-      setBusy(false);
-    }
-  }, [
-    allAssets,
+  const {
+    runCopySteps,
+    folderAssetCount,
+    openMoveForSnapshot,
+    handleTreeReparent,
+    copyProgressDialogProps,
+    dialogKey: moveDialogKey,
+    dialogProps: moveDialogProps,
+  } = useContentBrowserMoveFlow({
+    moveTarget,
+    setMoveTarget,
     assetRegistry,
+    allAssets,
+    folderTrees,
+    browserRows,
     browserRoots,
+    rootPrefixes,
+    readOnlyRootPrefixes,
+    existingContentPaths,
+    classParentOf,
+    pluginDescriptors,
+    projectDocument,
+    selectedFolderPath,
+    setSelectedFolderPath,
+    selectedGuids,
+    selectedFolderPaths,
+    setSelectedFolderPaths,
+    menuTargetGuidsRef,
+    menuTargetFoldersRef,
     busy,
-    closeDocumentsForPaths,
-    deleteTarget,
-    deleteInboundRefs,
-    classReplacements,
-    referenceAssets,
-    deletingGuids,
-    replaceClassReferencesBeforeDelete,
-    repairAfterAssetDelete,
-    refuseTheirsAssetPaths,
-    sourceControl,
-  ]);
-
-  /**
-   * Imports files behind the cancelable Importing dialog. Cancel stops the
-   * file in progress (its importer, or the import worker running it) and
-   * deletes the assets earlier files made, so the folder is left as it was.
-   */
-  const importPickedFiles = useCallback(
-    async (
-      files: Array<{ name: string; bytes: Uint8Array }>,
-      controller: AbortController = new AbortController(),
-    ) => {
-      if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
-      const { signal } = controller;
-      const errors: string[] = [];
-      const createdGuids: string[] = [];
-      let importedCount = 0;
-      const incoming = filterHpluginFiles(files);
-      if (incoming.length === 0) return;
-      importAbortRef.current = controller;
-      const conversion = {
-        signal,
-        onFile: (name: string) => updateImportProgress(signal, { phase: `Converting ${name}`, completed: 0, total: 1, fraction: null }),
-      };
-      const createdModels: Array<{
-        guid: string;
-        path: string;
-        payload: Record<string, unknown>;
-        type: "Model" | "Animation";
-      }> = [];
-      await runWithContentBrowserImportBusy(
-        setBusy,
-        () => setImportProgress(null),
-        async () => {
-          try {
-            const fbx = await convertFbxImportBatch(incoming, conversion);
-            errors.push(...fbx.errors);
-            const { files: converted, errors: convertErrors } =
-              await convertObjImportBatch(fbx.files, {
-                ...conversion,
-                engine: play?.ensureSharedEngine() ?? undefined,
-              });
-            errors.push(...convertErrors);
-            const stl = await convertStlImportBatch(converted, {
-              ...conversion,
-              engine: play?.ensureSharedEngine() ?? undefined,
-            });
-            errors.push(...stl.errors);
-            const embedded = embedGltfImportBatch(stl.files);
-            errors.push(...embedded.warnings);
-            const prepared = groupMsdfImportBatch(
-              embedded.files.filter((file) => !fbx.consumedSidecars.includes(file.name)),
-            );
-            if (prepared.length === 0) return;
-            const folder = selectedRoot.relative;
-            const { modelImportDefaultScale, hdrImportFaceSize } = await createAppSettingsStore().load();
-            for (let index = 0; index < prepared.length; index += 1) {
-              signal.throwIfAborted();
-              const file = prepared[index]!;
-              updateImportProgress(signal, { phase: file.name, completed: index, total: prepared.length, fraction: null });
-              try {
-                const created = await assetRegistry.importFile(
-                  selectedRoot.rootId,
-                  folder,
-                  file.name,
-                  file.bytes,
-                  {
-                    modelImportScale: modelImportDefaultScale,
-                    hdrFaceSize: hdrImportFaceSize,
-                    sidecars: file.sidecars,
-                    signal,
-                    onProgress: (fraction) => updateImportProgress(signal, { fraction }),
-                  },
-                );
-                importedCount += 1;
-                for (const asset of created) {
-                  createdGuids.push(asset.header.guid);
-                  if (asset.header.type !== "Model" && asset.header.type !== "Animation") continue;
-                  createdModels.push({
-                    guid: asset.header.guid,
-                    path: asset.path,
-                    payload: asset.header.payload ?? {},
-                    type: asset.header.type,
-                  });
-                }
-              } catch (err) {
-                if (signal.aborted) throw err;
-                errors.push(
-                  `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
-                );
-              }
-              updateImportProgress(signal, { completed: index + 1, fraction: null });
-            }
-          } catch (err) {
-            if (!signal.aborted) errors.push(err instanceof Error ? err.message : String(err));
-          }
-          if (signal.aborted) {
-            for (const guid of createdGuids.reverse()) {
-              try {
-                await assetRegistry.deleteAsset(guid);
-              } catch {
-                // Left for the user to delete; the rest of the cancel still applies.
-              }
-            }
-          }
-          await refreshAssetRegistry();
-        },
-      );
-      if (importAbortRef.current === controller) importAbortRef.current = null;
-      if (signal.aborted) return;
-      if (errors.length) {
-        setImportErrors(errors);
-        setImportedFileCount(importedCount);
-      }
-      enqueueModelThumbnailJobs(createdModels);
-    },
-    [assetRegistry, play, refreshAssetRegistry, selectedRoot, setImportErrors, updateImportProgress],
-  );
-
-  const submitNameEntry = useCallback(async (nameDialog: NameEntry) => {
-    if (!assetRegistry || busy) return;
-    setOperationError(null);
-    setBusy(true);
-    try {
-      if (nameDialog.kind === "folder") {
-        if (selectedRoot.readOnly) return;
-        const relative = selectedRoot.relative
-          ? `${selectedRoot.relative}/${nameDialog.value.trim()}`
-          : nameDialog.value.trim();
-        if (!relative) return;
-        await assetRegistry.createFolder(selectedRoot.rootId, relative);
-        // The mounted registry recorded the folder on write: no rescan.
-        noteAssetsCreated();
-        setSelectedFolderPath(`${selectedRoot.pathPrefix}/${relative}`);
-      } else if (nameDialog.kind === "rename-folder") {
-        const fromPath = nameDialog.path;
-        const from = contentBrowserFolderOps(fromPath, browserRoots);
-        if (from.readOnly) return;
-        const destPath = parentFolderPath(fromPath, from.pathPrefix);
-        const dest = contentBrowserFolderOps(destPath, browserRoots);
-        const newName = nameDialog.value.trim();
-        if (!newName) return;
-        const nextFolder = `${destPath}/${newName}`;
-        const contained = allAssets.filter(
-          (asset) =>
-            asset.path === fromPath || asset.path.startsWith(`${fromPath}/`),
-        );
-        if (refuseTheirsAssetPaths(contained.map((asset) => asset.path))) {
-          return;
-        }
-        await assetRegistry.moveFolder(
-          from.rootId,
-          from.relative,
-          dest.relative,
-          newName,
-        );
-        repathProjectFolder(fromPath, nextFolder);
-        for (const asset of contained) {
-          repairDocumentPath(
-            asset.path,
-            remapPathAfterFolderMove(asset.path, fromPath, nextFolder),
-            asset.header.type,
-          );
-        }
-        setSelectedFolderPath((current) =>
-          remapPathAfterFolderMove(current, fromPath, nextFolder),
-        );
-        setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
-        await refreshAssetRegistry();
-        setNameDialog(null);
-        await transferFolderLocks(fromPath, nextFolder);
-      } else if (nameDialog.kind === "rename") {
-        const before = assetRegistry.getByGuid(nameDialog.guid);
-        if (!before) return;
-        if (refuseTheirsAssetPaths([before.path])) return;
-        const renamed = await renameAsset(
-          nameDialog.guid,
-          nameDialog.value.trim(),
-        );
-        repairDocumentPath(before.path, renamed.path, renamed.header.type);
-        await refreshAssetRegistry();
-        setNameDialog(null);
-        await applyLockTransfers(
-          [{ from: before.path, to: renamed.path }],
-          (path) => sourceControl.lockStateForPath(path),
-          (from, to) => sourceControl.transferLock(from, to),
-        );
-      }
-      setNameDialog(null);
-    } catch (error) {
-      setOperationError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    assetRegistry,
-    busy,
-    renameAsset,
-    allAssets,
-    noteAssetsCreated,
-    refreshAssetRegistry,
+    setBusy,
+    operationError,
+    setOperationError,
     refuseTheirsAssetPaths,
     repairDocumentPath,
-    repathProjectFolder,
-    selectedFolderPath,
-    selectedRoot,
-    browserRoots,
-    sourceControl,
     transferFolderLocks,
-  ]);
-
-  const confirmNameDialog = () => {
-    if (!nameDialog || nameDialogError) return Promise.resolve();
-    return submitNameEntry(nameDialog);
-  };
-
-  /** Inline tree renames commit directly; an invalid name reopens in the dialog with its error. */
-  const finishTreeRename = (id: string, name: string | null) => {
-    setTreeRenamingId(null);
-    if (name === null || !assetRegistry) return;
-    const row = browserRows.find((item) => item.id === id);
-    if (!row) return;
-    const entry: NameEntry | null =
-      row.kind === "folder"
-        ? { kind: "rename-folder", path: row.path, value: name }
-        : row.guid
-          ? { kind: "rename", guid: row.guid, value: name }
-          : null;
-    if (!entry) return;
-    if (nameEntryError(entry)) setNameDialog(entry);
-    else void submitNameEntry(entry);
-  };
-
-  const applyRegistryMoves = useCallback(
-    async (moves: ContentBrowserDropMove[], onMoved?: (move: ContentBrowserDropMove) => void) => {
-      if (!assetRegistry || moves.length === 0) return;
-      const destPath = moves[0]!.destinationPath;
-      const dest = contentBrowserFolderOps(destPath, browserRoots);
-      if (dest.readOnly) return;
-      const destRelative = dest.relative;
-      const paths: string[] = [];
-      for (const move of moves) {
-        if (move.kind === "folder") {
-          paths.push(...containedAssetPaths(allAssets, move.sourcePath));
-        } else if (move.guid) {
-          const path = assetRegistry.getByGuid(move.guid)?.path;
-          if (path) paths.push(path);
-        }
-      }
-      if (refuseTheirsAssetPaths(paths)) return;
-      for (const move of moves) {
-        if (move.kind === "folder") {
-          const fromPath = move.sourcePath;
-          const from = contentBrowserFolderOps(fromPath, browserRoots);
-          if (from.readOnly) continue;
-          const folderName = fromPath.slice(fromPath.lastIndexOf("/") + 1);
-          const nextFolder = `${destPath}/${folderName}`;
-          const contained = allAssets.filter(
-            (asset) =>
-              asset.path === fromPath ||
-              asset.path.startsWith(`${fromPath}/`),
-          );
-          if (from.rootId === dest.rootId) {
-            await assetRegistry.moveFolder(from.rootId, from.relative, destRelative);
-          } else {
-            await assetRegistry.moveFolder(from.rootId, from.relative, destRelative, undefined, dest.rootId);
-          }
-          repathProjectFolder(fromPath, nextFolder);
-          onMoved?.(move);
-          setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
-          for (const asset of contained) {
-            repairDocumentPath(
-              asset.path,
-              remapPathAfterFolderMove(asset.path, fromPath, nextFolder),
-              asset.header.type,
-            );
-          }
-          setSelectedFolderPath(nextFolder);
-          await transferFolderLocks(fromPath, nextFolder);
-        } else if (move.guid) {
-          const before = assetRegistry.getByGuid(move.guid);
-          if (!before) continue;
-          const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
-          const relative = destRelative
-            ? `${destRelative}/${fileName}`
-            : fileName;
-          const moved = await assetRegistry.moveAsset(
-            move.guid,
-            dest.rootId,
-            relative,
-          );
-          onMoved?.(move);
-          repairDocumentPath(before.path, moved.path, moved.header.type);
-          setSelectedFolderPath(destPath);
-          await applyLockTransfers(
-            [{ from: before.path, to: moved.path }],
-            (path) => sourceControl.lockStateForPath(path),
-            (from, to) => sourceControl.transferLock(from, to),
-          );
-        }
-      }
-    },
-    [
-      allAssets,
-      assetRegistry,
-      browserRoots,
-      refuseTheirsAssetPaths,
-      repairDocumentPath,
-      repathProjectFolder,
-      sourceControl,
-      transferFolderLocks,
-    ],
-  );
-
-  /**
-   * The moves of a Move… / Copy to Folder… at its chosen destination, under
-   * the tree drop's rules: items that cannot change root (read-only content,
-   * or any other root for a Copy) and, for Move, items already in the
-   * destination stay where they are.
-   */
-  const planMoveTarget = useCallback((target: MoveTarget) => {
-    const guidByPath = new Map(target.guids.flatMap((guid) => {
-      const path = assetRegistry?.getByGuid(guid)?.path;
-      return path ? [[path, guid] as const] : [];
-    }));
-    const plan = contentBrowserSelectionMoves({
-      destinationPath: target.folderPath,
-      operation: target.operation,
-      assetPaths: [...guidByPath.keys()],
-      folderPaths: target.folderPaths,
-      rootPaths: rootPrefixes,
-      readOnlyRootPaths: readOnlyRootPrefixes,
-      existingPaths: existingContentPaths,
-    });
-    return {
-      error: plan.error,
-      moves: plan.moves.map((move) =>
-        move.kind === "asset" ? { ...move, guid: guidByPath.get(move.id) } : move),
-    };
-  }, [assetRegistry, existingContentPaths, readOnlyRootPrefixes, rootPrefixes]);
-
-  /** The source's root, plus for a Move every writable root it may go to. */
-  const moveFolderTrees = useMemo(() => {
-    const sourcePrefix = contentBrowserFolderOps(moveTarget?.sourcePath ?? ASSETS_ROOT, browserRoots).pathPrefix;
-    const crossRoot = moveTarget?.operation === "move";
-    const trees = folderTrees.filter((tree) => tree.path === sourcePrefix ||
-      (crossRoot && !readOnlyRootPrefixes.includes(tree.path)));
-    return trees.length > 0 ? trees : folderTrees.slice(0, 1);
-  }, [browserRoots, folderTrees, moveTarget?.operation, moveTarget?.sourcePath, readOnlyRootPrefixes]);
-
-  const moveWarnings = useMemo(() => {
-    if (!moveTarget || moveTarget.operation !== "move") return [];
-    const plan = planMoveTarget(moveTarget);
-    return plan.error ? [] : crossRootMoveWarnings(plan.moves, moveTarget.folderPath);
-  }, [crossRootMoveWarnings, moveTarget, planMoveTarget]);
-
-  const confirmMove = useCallback(async () => {
-    if (!assetRegistry || !moveTarget) return;
-    const destPath = moveTarget.folderPath;
-    const dest = contentBrowserFolderOps(destPath, browserRoots);
-    if (dest.readOnly) {
-      setOperationError(`${destPath} is read-only. Choose a folder in project content.`);
-      return;
-    }
-    const plan = planMoveTarget(moveTarget);
-    if (plan.error) {
-      setOperationError(plan.error);
-      return;
-    }
-    const { moves } = plan;
-    setBusy(true);
-    setOperationError(null);
-    const remainingGuids = new Set(moves.flatMap((move) => move.guid ? [move.guid] : []));
-    const remainingFolders = new Set(moves.flatMap((move) => move.kind === "folder" ? [move.sourcePath] : []));
-    const total = remainingGuids.size + remainingFolders.size;
-    try {
-      if (moveTarget.operation === "copy") {
-        const steps = moves.flatMap((move): CopyStep[] => {
-          if (move.kind === "folder") {
-            const from = contentBrowserFolderOps(move.sourcePath, browserRoots);
-            return [{
-              name: move.sourcePath.slice(move.sourcePath.lastIndexOf("/") + 1),
-              units: folderAssetCount(move.sourcePath),
-              run: async (options) => {
-                const copy = await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative, options);
-                return () => assetRegistry.deleteFolder(from.rootId, copy);
-              },
-              onDone: () => remainingFolders.delete(move.sourcePath),
-            }];
-          }
-          const guid = move.guid;
-          if (!guid) return [];
-          return [{
-            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
-            units: 1,
-            run: async (options) => {
-              const copy = await assetRegistry.copyAsset(guid, dest.rootId, dest.relative, options);
-              return () => assetRegistry.deleteAsset(copy.header.guid);
-            },
-            onDone: () => remainingGuids.delete(guid),
-          }];
-        });
-        if (!(await runCopySteps("copy", steps))) {
-          // Canceled: every copy was removed again, so nothing remains to retry.
-          await refreshAssetRegistry();
-          setMoveTarget(null);
-          return;
-        }
-      } else {
-        await applyRegistryMoves(moves, (move) => {
-          if (move.kind === "folder") remainingFolders.delete(move.sourcePath);
-          else if (move.guid) remainingGuids.delete(move.guid);
-        });
-      }
-      await refreshAssetRegistry();
-      setMoveTarget(null);
-    } catch (error) {
-      const remaining = remainingGuids.size + remainingFolders.size;
-      await refreshAssetRegistry();
-      const completed = total - remaining;
-      const message = error instanceof Error ? error.message : String(error);
-      if (completed > 0) {
-        const guids = [...remainingGuids];
-        const folders = [...remainingFolders];
-        setMoveTarget(remaining > 0 ? {
-          ...moveTarget,
-          guids,
-          folderPaths: folders,
-          assetPaths: guids.flatMap((guid) => {
-            const asset = assetRegistry.getByGuid(guid);
-            return asset ? [asset.path] : [];
-          }),
-          itemCount: remaining,
-          kind: guids.length === 0 ? "folder" : "asset",
-          name: contentBrowserMovePreviewName([
-            ...folders.map((path) => path.split("/").at(-1) ?? path),
-            ...guids.map((guid) => assetRegistry.getByGuid(guid)?.header.name ?? guid),
-          ]),
-        } : null);
-      }
-      setOperationError(completed > 0
-        ? `${completed} item${completed === 1 ? "" : "s"} ${moveTarget.operation === "copy" ? "copied" : "moved"}. ${message}${remaining > 0 ? " Retry to process only the remaining items." : " The file operation completed; the follow-up step failed."}`
-        : message);
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    applyRegistryMoves,
-    assetRegistry,
-    moveTarget,
-    planMoveTarget,
+    repathProjectFolder,
     refreshAssetRegistry,
+    sourceControl,
+  });
+
+  const {
+    importAbortRef,
+    updateImportProgress,
+    setImportProgress,
+    setImportErrors,
+    importErrors,
+    importedFileCount,
+    importInputRef,
+    handleImport,
+    handleImportInputChange,
+    progressDialogProps: importProgressDialogProps,
+  } = useContentBrowserImportFlow({
+    assetRegistry,
+    selectedRoot,
+    play,
+    busy,
+    setBusy,
+    refreshAssetRegistry,
+  });
+
+  const {
+    treeRenamingId,
+    setTreeRenamingId,
+    finishTreeRename,
+    dialogProps: nameDialogProps,
+  } = useContentBrowserNameFlow({
+    nameDialog,
+    setNameDialog,
+    assetRegistry,
+    allAssets,
+    referenceAssets,
+    existingAssetPaths,
+    existingFolderPaths,
+    browserRows,
     browserRoots,
+    selectedFolderPath,
+    setSelectedFolderPath,
+    setSelectedFolderPaths,
+    selectedRoot,
+    busy,
+    setBusy,
+    operationError,
+    setOperationError,
+    noteAssetsCreated,
+    refreshAssetRegistry,
+    renameAsset,
+    repathProjectFolder,
+    refuseTheirsAssetPaths,
+    repairDocumentPath,
+    transferFolderLocks,
+    sourceControl,
+  });
+
+  const {
+    openNewAssetMenu,
+    menuProps: newAssetMenuProps,
+    dialogProps: newAssetDialogProps,
+  } = useContentBrowserNewAssetFlow({
+    newAssetOpen,
+    setNewAssetOpen,
+    newAssetType,
+    setNewAssetType,
+    assetRegistry,
+    allAssets,
+    referenceAssets,
+    openDocuments,
+    existingAssetPaths,
+    browserRoots,
+    folderTrees,
+    isReadOnlyFolder,
+    classParentOf,
+    selectedFolderPath,
+    setSelectedFolderPath,
+    setSelectedGuids,
+    setSelectedFolderPaths,
+    selectedRootWritable,
+    activeDocumentId,
+    getOpenDocuments,
+    busy,
+    setBusy,
+    operationError,
+    setOperationError,
+    noteAssetsCreated,
+    openOrFocusDocument,
+  });
+
+  const keybinds = useKeybindings();
+  const {
+    menu,
+    closeMenu,
+    emptyGridMenu,
+    closeEmptyGridMenu,
+    emptyGridBind,
+    openTileMenu,
+    openFolderMenu,
+    runSelectionAction,
+  } = useContentBrowserContextMenus({
+    menuTargetGuidsRef,
+    menuTargetFoldersRef,
+    assetRegistry,
+    projectGuid,
+    projectDocument,
+    thumbnailsEnabled,
+    selectedFolderPath,
+    browserRoots,
+    rootPrefixes,
+    busy,
+    keybinds,
+    importAbortRef,
+    openOrFocusDocument,
+    setImportErrors,
+    updateImportProgress,
+    setImportProgress,
+    refreshAssetRegistry,
+    noteAssetsCreated,
+    setBusy,
+    setOperationError,
     folderAssetCount,
     runCopySteps,
-  ]);
-
-  const handleImport = useCallback(async () => {
-    if (isMobilePlatform()) {
-      try {
-        const files = await pickImportFiles({
-          multiple: true,
-          accept: pickerImportAccept(),
-        });
-        await importPickedFiles(files);
-      } catch (err) {
-        setImportErrors([
-          err instanceof Error ? err.message : String(err),
-        ]);
-      }
-      return;
-    }
-    importInputRef.current?.click();
-  }, [importPickedFiles, setImportErrors]);
-
-  const openNewAssetMenu = useCallback((anchor: { x: number; y: number } | null = null) => {
-    if (busy || !selectedRootWritable) return;
-    setNewAssetMenuAnchor(anchor);
-    setNewAssetMenuOpen(true);
-  }, [busy, selectedRootWritable]);
-  const openNewAssetDialog = useCallback((type: CreatableAssetType) => {
-    if (busy || !selectedRootWritable) return;
-    setNewAssetType(type);
-    setNewAssetName("");
-    setNewAssetFolder(selectedFolderPath);
-    setNewAssetOpen(true);
-  }, [busy, selectedFolderPath, selectedRootWritable]);
-  const emptyGridMenuPointRef = useRef<{ x: number; y: number } | null>(null);
-
-  // Disabled like the toolbar buttons, so a read-only root offers no action
-  // that would then do nothing.
-  const creationDisabled = busy || !selectedRootWritable;
-  const emptyGridItems = useMemo(
-    () => [
-      {
-        id: "new-folder",
-        label: "New Folder",
-        shortcut: keybinds.get("edit.newFolder")?.[0],
-        icon: <FolderPlusIcon />,
-        disabled: creationDisabled,
-        onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
-      },
-      {
-        id: "new-asset",
-        label: "New Asset",
-        shortcut: keybinds.get("browser.newAsset")?.[0],
-        icon: <PlusIcon />,
-        disabled: creationDisabled,
-        onSelect: () => openNewAssetMenu(emptyGridMenuPointRef.current),
-      },
-      {
-        id: "import",
-        label: "Import",
-        shortcut: keybinds.get("browser.import")?.[0],
-        icon: <UploadIcon />,
-        disabled: creationDisabled,
-        onSelect: () => {
-          void handleImport();
-        },
-      },
-    ],
-    [creationDisabled, handleImport, openNewAssetMenu, keybinds],
-  );
-  const {
-    menu: emptyGridMenu,
-    closeMenu: closeEmptyGridMenu,
-    openMenuAt: openEmptyGridMenuAt,
-  } = useContextMenu({ items: emptyGridItems });
-  const emptyGridBind = useLongPressMenu({
-    onMenu: (clientX, clientY) => {
-      closeMenu();
-      emptyGridMenuPointRef.current = { x: clientX, y: clientY };
-      openEmptyGridMenuAt(clientX, clientY);
-    },
+    setNameDialog,
+    setRetargetPickerOpen,
+    openMoveForSnapshot,
+    setReferenceGuid,
+    requestDeleteSnapshot,
+    selectedRootWritable,
+    classParentOf,
+    selectedGuids,
+    selectedFolderPaths,
+    setSelectedGuids,
+    setSelectedFolderPaths,
+    openNewAssetMenu,
+    handleImport,
   });
+
   const applyTileSelection = useCallback(
     (next: { guids: Set<string>; folderPaths: Set<string> }) => {
       setSelectedGuids(next.guids);
@@ -2036,99 +646,6 @@ function ContentBrowserWorkspaceBody({
   } = useContentBrowserPaintSelect({
     onPaint: applyTileSelection,
   });
-
-  const selectionActionIds = useCallback(
-    (guids: string[], folders: string[]) =>
-      new Set<string>(
-        contentBrowserContextActions({
-          assetCount: guids.length,
-          folderCount: folders.length,
-          canGenerateThumbnails: Boolean(projectGuid && thumbnailsEnabled) && guids.every((guid) => {
-            const asset = assetRegistry?.getByGuid(guid);
-            if (!asset) return false;
-            const type = asset.header.type;
-            return type === "Model" || type === "Animation" || type === "Material" ||
-              (type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, classParentOf));
-          }),
-          singleAssetType:
-            guids.length === 1 && folders.length === 0
-              ? assetRegistry?.getByGuid(guids[0]!)?.header.type
-              : undefined,
-          canRetarget: canRetargetSelectedAssets(
-            guids.flatMap((guid) => {
-              const asset = assetRegistry?.getByGuid(guid);
-              if (!asset) return [];
-              return [{ type: asset.header.type, payload: asset.header.payload }];
-            }),
-          ),
-        }),
-      ),
-    [assetRegistry, classParentOf, projectGuid, thumbnailsEnabled],
-  );
-
-  const openSelectionMenu = useCallback(
-    (
-      clientX: number,
-      clientY: number,
-      extra: { guid?: string; folderPath?: string },
-    ) => {
-      if (extra.folderPath && isFolderTreeRoot(extra.folderPath, rootPrefixes)) {
-        return;
-      }
-      closeEmptyGridMenu();
-      let guids = [...selectedGuids];
-      let folders = [...selectedFolderPaths].filter(
-        (path) => !isFolderTreeRoot(path, rootPrefixes),
-      );
-      if (extra.guid && !guids.includes(extra.guid)) {
-        guids = [extra.guid];
-        folders = [];
-        setSelectedGuids(new Set(guids));
-        setSelectedFolderPaths(new Set());
-      }
-      if (extra.folderPath && !folders.includes(extra.folderPath)) {
-        guids = [];
-        folders = [extra.folderPath];
-        setSelectedGuids(new Set());
-        setSelectedFolderPaths(new Set(folders));
-      }
-      menuTargetGuidsRef.current = guids;
-      menuTargetFoldersRef.current = folders;
-      const actionIds = selectionActionIds(guids, folders);
-      const items: ContextMenuItem[] = tileContextItems.filter((item) =>
-        actionIds.has(item.id),
-      ).map((item) => item.id === "generate-thumbnail"
-        ? { ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" }
-        : item);
-      const deleteIndex = items.findIndex((item) => item.id === "delete");
-      if (deleteIndex > 0)
-        items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });
-      openMenuAt(clientX, clientY, items);
-    },
-    [
-      closeEmptyGridMenu,
-      openMenuAt,
-      rootPrefixes,
-      selectedFolderPaths,
-      selectedGuids,
-      tileContextItems,
-      selectionActionIds,
-    ],
-  );
-
-  const openTileMenu = useCallback(
-    (guid: string, clientX: number, clientY: number) => {
-      openSelectionMenu(clientX, clientY, { guid });
-    },
-    [openSelectionMenu],
-  );
-
-  const openFolderMenu = useCallback(
-    (path: string, clientX: number, clientY: number) => {
-      openSelectionMenu(clientX, clientY, { folderPath: path });
-    },
-    [openSelectionMenu],
-  );
 
   // Tiles receive reference-stable handlers that forward to the handlers of
   // the latest committed render, so memoized tiles skip unrelated renders.
@@ -2172,17 +689,6 @@ function ContentBrowserWorkspaceBody({
 
   const workspaceRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const runSelectionAction = (actionId: "duplicate" | "rename" | "delete" | "show-references") => {
-    const guids = [...selectedGuids];
-    const folders = [...selectedFolderPaths].filter(
-      (path) => !isFolderTreeRoot(path, rootPrefixes),
-    );
-    if (guids.length + folders.length === 0) return;
-    if (!selectionActionIds(guids, folders).has(actionId)) return;
-    menuTargetGuidsRef.current = guids;
-    menuTargetFoldersRef.current = folders;
-    tileContextItems.find((item) => item.id === actionId)?.onSelect();
-  };
   const selectionKeys = { enabled: !busy, focusWithinRef: workspaceRef };
   useKeybindCommand("edit.duplicate", () => runSelectionAction("duplicate"), selectionKeys);
   useKeybindCommand("edit.rename", () => runSelectionAction("rename"), selectionKeys);
@@ -2199,198 +705,6 @@ function ContentBrowserWorkspaceBody({
     setFoldersOpen(false);
     setNameDialog({ kind: "folder", value: "NewFolder" });
   }, creationKeys);
-
-  const handleTreeSelect = useCallback(
-    (id: string, options?: { additive?: boolean; range?: boolean }) => {
-      const next = applyContentBrowserTreeSelect(id, options, browserRows, {
-        selectedGuids,
-        selectedFolderPaths,
-        selectedFolderPath,
-        anchorId: treeSelectedId,
-      });
-      setSelectedGuids(next.selectedGuids);
-      setSelectedFolderPaths(next.selectedFolderPaths);
-      setSelectedFolderPath(next.selectedFolderPath);
-      if (!options?.range) setTreeAnchorId(id);
-    },
-    [
-      browserRows,
-      selectedFolderPath,
-      selectedFolderPaths,
-      selectedGuids,
-      treeSelectedId,
-    ],
-  );
-
-  const handleTreeReparent = useCallback(
-    (
-      dragId: string,
-      targetId: string | null,
-      placement?: TreeDropPlacement,
-    ) => {
-      if (!assetRegistry || busy) return;
-      const moves = contentBrowserTreeDropMoves({
-        dragId,
-        targetId,
-        rows: browserRows,
-        selectedGuids,
-        selectedFolderPaths,
-        rootPaths: rootPrefixes,
-        readOnlyRootPaths: readOnlyRootPrefixes,
-        resolvePath: (guid) => assetRegistry.getByGuid(guid)?.path,
-        placement,
-      });
-      if (moves.length === 0) return;
-      // Refuse before moving anything, so a taken name cannot stop the drop halfway.
-      const collision = moveNameCollision(moves, existingContentPaths);
-      if (collision) {
-        setOperationError(collision);
-        return;
-      }
-      // A drop that changes plugin behaviour asks first: file moves cannot be undone.
-      const destinationPath = moves[0]!.destinationPath;
-      if (crossRootMoveWarnings(moves, destinationPath).length > 0) {
-        openMoveDialog(
-          "move",
-          moves.flatMap((move) => move.kind === "folder" ? [move.sourcePath] : []),
-          moves.flatMap((move) => move.guid ? [move.guid] : []),
-          destinationPath,
-        );
-        return;
-      }
-      void (async () => {
-        setBusy(true);
-        setOperationError(null);
-        try {
-          try {
-            await applyRegistryMoves(moves);
-          } finally {
-            await refreshAssetRegistry();
-          }
-        } catch (error) {
-          setOperationError(error instanceof Error ? error.message : String(error));
-        } finally {
-          setBusy(false);
-        }
-      })();
-    },
-    [
-      applyRegistryMoves,
-      assetRegistry,
-      browserRows,
-      busy,
-      crossRootMoveWarnings,
-      existingContentPaths,
-      openMoveDialog,
-      readOnlyRootPrefixes,
-      refreshAssetRegistry,
-      rootPrefixes,
-      selectedFolderPaths,
-      selectedGuids,
-    ],
-  );
-
-  const handleImportInputChange = useCallback(
-    async (fileList: FileList | null) => {
-      if (!fileList?.length || busy) return;
-      const controller = new AbortController();
-      importAbortRef.current = controller;
-      setBusy(true);
-      setImportErrors(null);
-      let readingName: string | null = null;
-      try {
-        const selected = Array.from(fileList);
-        const files: Array<{ name: string; bytes: Uint8Array }> = [];
-        for (const file of selected) {
-          controller.signal.throwIfAborted();
-          readingName = file.name;
-          updateImportProgress(controller.signal, { phase: `Reading ${file.name}`, completed: files.length, total: selected.length, fraction: null });
-          files.push({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
-        }
-        readingName = null;
-        controller.signal.throwIfAborted();
-        await importPickedFiles(files, controller);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          const message = error instanceof Error ? error.message : String(error);
-          setImportErrors([readingName ? `${readingName}: ${message}` : message]);
-        }
-      } finally {
-        if (importAbortRef.current === controller) importAbortRef.current = null;
-        setImportProgress(null);
-        setBusy(false);
-      }
-    },
-    [busy, importPickedFiles, setImportErrors, updateImportProgress],
-  );
-
-  const handleCreateAsset = useCallback(async () => {
-    const destination = contentBrowserFolderOps(newAssetFolder, browserRoots);
-    if (!assetRegistry || newAssetTakenError || destination.readOnly) return;
-    const name = newAssetName.trim();
-    if (!name || contentEntryNameError(name)) return;
-    setBusy(true);
-    setOperationError(null);
-    try {
-      const type = newAssetType;
-      const created = await createProjectAsset({
-        registry: assetRegistry,
-        rootId: destination.rootId,
-        folderRelative: destination.relative,
-        type,
-        name,
-        parentClass: type === "Class" ? newAssetParent : null,
-        waterMaterial: type === "Material" && newWaterStarter ? true : undefined,
-        defaultDefinitionGuid: newDataDefinition,
-        typeSchemas: type === "DataDefinition" || type === "DataTree" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
-        classParentOf,
-        parentGraphs:
-          type === "Class"
-            ? collectClassGraphsForPalette({
-                assets: allAssets,
-                openDocuments: getOpenDocuments(),
-                classIdForPath: classIdForGraphPath,
-              })
-            : undefined,
-        viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
-      });
-      setNewAssetOpen(false);
-      // A Location changed in the dialog shows the folder the asset went to.
-      if (newAssetFolder !== selectedFolderPath) {
-        setSelectedFolderPath(newAssetFolder);
-        setSelectedGuids(new Set());
-        setSelectedFolderPaths(new Set());
-      }
-      // The mounted registry indexed the asset on write; a remount would
-      // rescan every root while the new tile waits.
-      noteAssetsCreated();
-      if (type === "Scene" || type === "DataDefinition" || type === "DataTree") {
-        await openOrFocusDocument(created);
-      }
-    } catch (error) {
-      setOperationError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    activeDocumentId,
-    allAssets,
-    assetRegistry,
-    browserRoots,
-    classParentOf,
-    newAssetFolder,
-    newAssetName,
-    newAssetTakenError,
-    newAssetParent,
-    newDataDefinition,
-    newDataTypes,
-    newWaterStarter,
-    newAssetType,
-    getOpenDocuments,
-    noteAssetsCreated,
-    openOrFocusDocument,
-    selectedFolderPath,
-  ]);
 
   if (!projectDocument) {
     return (
@@ -2431,62 +745,33 @@ function ContentBrowserWorkspaceBody({
   };
 
   const folderNavigation = (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              size={touchSizing ? "touch" : "sm"}
-              className="w-full justify-start"
-              data-testid="content-browser-new-folder"
-              aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.newFolder")?.[0] ?? "")}
-              disabled={busy || !selectedRootWritable}
-              onClick={() => {
-                setFoldersOpen(false);
-                setNameDialog({ kind: "folder", value: "NewFolder" });
-              }}
-            >
-              <FolderPlusIcon data-icon="inline-start" />
-              New Folder
-            </Button>
-          }
-        />
-        <TooltipContent>
-          New Folder <ShortcutKeys chord={keybinds.get("edit.newFolder")?.[0]} decorative />
-        </TooltipContent>
-      </Tooltip>
-      <div className="min-h-0 flex-1">
-        <TreeView
-          nodes={treeNodes}
-          selectedId={treeSelectedId}
-          selectedIds={treeSelectedIds}
-          rowHeight={touchSizing ? 44 : undefined}
-          onSelect={(id, options) => {
-            handleTreeSelect(id, options);
-            if (phone) setFoldersOpen(false);
-          }}
-          onToggleExpanded={(id) => {
-            const row = browserRows.find((item) => item.id === id);
-            if (!row || row.kind !== "folder" || !row.hasChildren) return;
-            userToggledFoldersRef.current.add(id);
-            setCollapsedFolders((current) => {
-              const next = new Set(current);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              return next;
-            });
-          }}
-          onReparent={handleTreeReparent}
-          renamingId={treeRenamingId}
-          onRenameRequest={setTreeRenamingId}
-          onRenameDone={finishTreeRename}
-          emptyLabel="No Folders"
-          data-testid="content-browser-folder-tree"
-        />
-      </div>
-    </>
+    <ContentBrowserFolderNavigation
+      touchSizing={touchSizing}
+      keybinds={keybinds}
+      busy={busy}
+      selectedRootWritable={selectedRootWritable}
+      onNewFolder={() => {
+        setFoldersOpen(false);
+        setNameDialog({ kind: "folder", value: "NewFolder" });
+      }}
+      browserRows={browserRows}
+      assetsByGuid={assetsByGuid}
+      browserRoots={browserRoots}
+      rootPrefixes={rootPrefixes}
+      pluginRootIcons={pluginRootIcons}
+      typeVisualFor={typeVisualFor}
+      treeSelectedId={treeSelectedId}
+      treeSelectedIds={treeSelectedIds}
+      onSelect={(id, options) => {
+        handleTreeSelect(id, options);
+        if (phone) setFoldersOpen(false);
+      }}
+      onToggleExpanded={toggleFolderExpanded}
+      onReparent={handleTreeReparent}
+      renamingId={treeRenamingId}
+      onRenameRequest={setTreeRenamingId}
+      onRenameDone={finishTreeRename}
+    />
   );
 
   return (
@@ -2502,154 +787,39 @@ function ContentBrowserWorkspaceBody({
           <Button variant="outline" size="sm" onClick={() => setOperationError(null)}>Dismiss</Button>
         </Alert>
       ) : null}
-      <div
-        className={cn(
-          "flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel-header px-2 py-1.5",
-          phone && "px-2",
-        )}
-      >
-        {phone ? (
-          <Sheet open={foldersOpen && !hidden} onOpenChange={setFoldersOpen}>
-            <SheetTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size={touchSizing ? "touch" : "sm"}
-                  className="min-w-0 flex-1 justify-start"
-                  aria-label="Browse Folders"
-                  data-testid="content-browser-browse-folders"
-                />
-              }
-            >
-              <FolderIcon data-icon="inline-start" />
-              <span className="truncate">
-                {browserRows.find((row) => row.id === selectedFolderPath)?.label ??
-                  selectedFolderPath.split("/").at(-1) ??
-                  "Content"}
-              </span>
-            </SheetTrigger>
-            <SheetContent
-              side="left"
-              bodyClassName="gap-0"
-              data-testid="content-browser-folders-sheet"
-            >
-              <SheetHeader>
-                <SheetTitle>Folders</SheetTitle>
-                <SheetDescription>Choose a folder to browse.</SheetDescription>
-              </SheetHeader>
-              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
-                {folderNavigation}
-              </div>
-            </SheetContent>
-          </Sheet>
-        ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size={phone ? phoneIconSize : "sm"}
-                aria-label="Import"
-                data-testid="content-browser-import"
-                aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.import")?.[0] ?? "")}
-                disabled={busy || !selectedRootWritable}
-                onClick={() => void handleImport()}
-              >
-                <UploadIcon data-icon="inline-start" />
-                {!phone ? "Import" : null}
-              </Button>
-            }
-          />
-          <TooltipContent>
-            Import <ShortcutKeys chord={keybinds.get("browser.import")?.[0]} decorative />
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <ContentBrowserNewAssetMenu
-            open={newAssetMenuOpen}
-            onOpenChange={(open) => {
-              if (open) setNewAssetMenuAnchor(null);
-              setNewAssetMenuOpen(open);
-            }}
-            anchor={newAssetMenuAnchor}
-            onSelect={openNewAssetDialog}
-          >
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size={touchSizing ? "touch" : "sm"}
-                  data-testid="content-browser-new-asset"
-                  aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.newAsset")?.[0] ?? "")}
-                  disabled={busy || !selectedRootWritable}
-                >
-                  <PlusIcon data-icon="inline-start" />
-                  New Asset
-                </Button>
-              }
-            />
-          </ContentBrowserNewAssetMenu>
-          <TooltipContent>
-            New Asset <ShortcutKeys chord={keybinds.get("browser.newAsset")?.[0]} decorative />
-          </TooltipContent>
-        </Tooltip>
-        <div
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2",
-            phone && "basis-full",
-          )}
-        >
-          <SearchInput
-            ref={searchRef}
-            value={search}
-            onChange={setSearch}
-            placeholder="Search assets…"
-            aria-label="Search Assets"
-            aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.find")?.[0] ?? "")}
-            className={cn(
-              "min-h-[var(--chrome-row,28px)]",
-              phone ? "min-w-0" : "min-w-40",
-              touchSizing && "h-11",
-            )}
-            data-testid="content-browser-search"
-          />
-          <ContentBrowserFilterSortMenus
-            phone={phone}
-            phoneIconSize={phoneIconSize}
-            typeChips={typeChips}
-            typeFilters={typeFilters}
-            setTypeFilters={setTypeFilters}
-            sortMode={sortMode}
-            setSortMode={setSortMode}
-          />
-        </div>
-        {!phone ? (
-          <ContentBrowserSelectionActions
-            selectionCount={selectionCount}
-            busy={busy}
-            onOpen={canOpenSelection ? openSelection : undefined}
-            onDeselectAll={() => {
-              setSelectedGuids(new Set());
-              setSelectedFolderPaths(new Set());
-            }}
-            onRequestDelete={() => requestDeleteSelection()}
-          />
-        ) : null}
-        <input
-          ref={importInputRef}
-          type="file"
-          multiple
-          disabled={busy}
-          className="hidden"
-          data-testid="content-browser-import-input"
-          accept={pickerImportAccept()}
-          onChange={(event) => {
-            void handleImportInputChange(event.target.files);
-            event.target.value = "";
-          }}
-        />
-      </div>
+      <ContentBrowserToolbar
+        phone={phone}
+        touchSizing={touchSizing}
+        phoneIconSize={phoneIconSize}
+        hidden={hidden}
+        foldersOpen={foldersOpen}
+        setFoldersOpen={setFoldersOpen}
+        browserRows={browserRows}
+        selectedFolderPath={selectedFolderPath}
+        folderNavigation={folderNavigation}
+        busy={busy}
+        selectedRootWritable={selectedRootWritable}
+        keybinds={keybinds}
+        onImport={handleImport}
+        newAssetMenu={newAssetMenuProps}
+        search={search}
+        setSearch={setSearch}
+        searchRef={searchRef}
+        typeChips={typeChips}
+        typeFilters={typeFilters}
+        setTypeFilters={setTypeFilters}
+        sortMode={sortMode}
+        setSortMode={setSortMode}
+        selectionCount={selectionCount}
+        onOpenSelection={canOpenSelection ? openSelection : undefined}
+        onDeselectAll={() => {
+          setSelectedGuids(new Set());
+          setSelectedFolderPaths(new Set());
+        }}
+        onRequestDelete={requestDeleteSelection}
+        importInputRef={importInputRef}
+        onImportFiles={handleImportInputChange}
+      />
 
       <ResizablePanelGroup
         // A changed pane set remounts the group so panes register in tree order.
@@ -2686,99 +856,50 @@ function ContentBrowserWorkspaceBody({
           className="content-browser-pane flex h-full min-h-0 min-w-0 flex-col"
           style={{ overflow: "hidden" }}
         >
-          <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
-            <FolderBreadcrumbs
-              root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_CONTENT_ROOT_ID ? "Content" : folderRoot.label }}
-              path={selectedFolderPath}
-              touch={touchSizing}
-              onNavigate={(path) => {
-                setSelectedFolderPath(path);
-                setSelectedGuids(new Set());
-                setSelectedFolderPaths(new Set());
-              }}
-            />
-          </div>
-          <div
-            ref={scrollerRef}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
-            data-testid="content-browser-asset-grid"
-            aria-busy={searchPending || undefined}
-            style={paintBind.style}
-            tabIndex={0}
-            onClick={() => {
-              if (consumeSelectClick()) return;
+          <ContentBrowserAssetPane
+            folderRoot={folderRoot}
+            selectedFolderPath={selectedFolderPath}
+            touchSizing={touchSizing}
+            onNavigate={(path) => {
+              setSelectedFolderPath(path);
               setSelectedGuids(new Set());
               setSelectedFolderPaths(new Set());
             }}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.defaultPrevented) return;
-              const target = event.target;
-              if (
-                target instanceof HTMLElement &&
-                (target.tagName === "INPUT" ||
-                  target.tagName === "TEXTAREA" ||
-                  target.isContentEditable)
-              ) {
-                return;
-              }
-              // The toolbar Open action: open one asset or enter one folder.
-              if (!canOpenSelection) return;
-              event.preventDefault();
-              openSelection();
+            scrollerRef={scrollerRef}
+            searchPending={searchPending}
+            paintBind={paintBind}
+            emptyGridBind={emptyGridBind}
+            consumeSelectClick={consumeSelectClick}
+            onClearSelection={() => {
+              setSelectedGuids(new Set());
+              setSelectedFolderPaths(new Set());
             }}
-            onDoubleClick={(event) => {
-              if (!isContentBrowserEmptyGridDoubleClickTarget(event.target)) {
-                return;
-              }
-              openNewAssetMenu({ x: event.clientX, y: event.clientY });
+            canOpenSelection={canOpenSelection}
+            onOpenSelection={openSelection}
+            onOpenNewAssetMenu={openNewAssetMenu}
+            onImport={handleImport}
+            gridItems={gridItems}
+            gridSearch={gridSearch}
+            typeFilters={typeFilters}
+            onClearFilters={() => {
+              setSearch("");
+              setTypeFilters([]);
             }}
-            onContextMenu={emptyGridBind.onContextMenu}
-            onPointerDown={emptyGridBind.onPointerDown}
-            onPointerMove={emptyGridBind.onPointerMove}
-            onPointerUp={emptyGridBind.onPointerUp}
-            onPointerCancel={emptyGridBind.onPointerCancel}
-            onPointerDownCapture={paintBind.onPointerDownCapture}
-            onPointerMoveCapture={paintBind.onPointerMoveCapture}
-            onPointerUpCapture={paintBind.onPointerUpCapture}
-            onPointerCancelCapture={paintBind.onPointerCancelCapture}
-          >
-            {gridItems.length === 0 ? (
-              <Empty data-testid="content-browser-empty-copy" className="border-0 py-10">
-                <EmptyHeader>
-                  <EmptyTitle>{gridSearch.trim() || typeFilters.length ? "No Matching Assets" : "This Folder Is Empty"}</EmptyTitle>
-                  <EmptyDescription>{gridSearch.trim() || typeFilters.length ? "Try another search or clear the filters." : "Add an asset or import files to get started."}</EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  {gridSearch.trim() || typeFilters.length ? (
-                    <Button variant="outline" size={touchSizing ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
-                  ) : selectedRootWritable ? (
-                    <div className="flex items-center gap-2">
-                      <Button size={touchSizing ? "touch" : "sm"} disabled={busy} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); openNewAssetMenu({ x: rect.left, y: rect.bottom + 4 }); }}><PlusIcon data-icon="inline-start" />New Asset</Button>
-                      <Button variant="outline" size={touchSizing ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
-                    </div>
-                  ) : null}
-                </EmptyContent>
-              </Empty>
-            ) : (
-              <ContentBrowserGridTiles
-                items={gridItems}
-                firstIndex={slice.firstIndex}
-                lastIndex={slice.lastIndex}
-                columnCount={slice.columnCount}
-                height={spacerHeight}
-                selectedGuids={selectedGuids}
-                selectedFolderPaths={selectedFolderPaths}
-                thumbnailUrls={thumbnailUrls}
-                compileErrors={compileErrorGuids}
-                encodingTextures={encodingTextures}
-                typeVisualFor={typeVisualFor}
-                folderIcons={pluginRootIcons}
-                sourceControlEnabled={sourceControl.enabled}
-                locks={tileLocks}
-                actions={gridActions}
-              />
-            )}
-          </div>
+            selectedRootWritable={selectedRootWritable}
+            busy={busy}
+            slice={slice}
+            spacerHeight={spacerHeight}
+            selectedGuids={selectedGuids}
+            selectedFolderPaths={selectedFolderPaths}
+            thumbnailUrls={thumbnailUrls}
+            compileErrorGuids={compileErrorGuids}
+            encodingTextures={encodingTextures}
+            typeVisualFor={typeVisualFor}
+            pluginRootIcons={pluginRootIcons}
+            sourceControlEnabled={sourceControl.enabled}
+            tileLocks={tileLocks}
+            gridActions={gridActions}
+          />
         </ResizablePanel>
       </ResizablePanelGroup>
 
@@ -2815,118 +936,15 @@ function ContentBrowserWorkspaceBody({
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <ContextMenuOverlay menu={emptyGridMenu} onClose={closeEmptyGridMenu} />
 
-      <ContentBrowserNewAssetDialog
-        open={newAssetOpen}
-        onOpenChange={(open) => {
-          setNewAssetOpen(open);
-          if (open) setNewAssetName("");
-        }}
-        type={newAssetType}
-        name={newAssetName}
-        onNameChange={setNewAssetName}
-        parentClass={newAssetParent}
-        waterStarter={newWaterStarter}
-        onWaterStarterChange={setNewWaterStarter}
-        definitionGuid={newDataDefinition}
-        onDefinitionGuidChange={setNewDataDefinition}
-        definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}
-        onParentClassChange={setNewAssetParent}
-        classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
-        takenNameError={newAssetTakenError}
-        destinationFolder={newAssetFolder}
-        onDestinationFolderChange={setNewAssetFolder}
-        folderTrees={folderTrees}
-        isFolderDisabled={isReadOnlyFolder}
-        error={operationError}
-        busy={busy}
-        onCreate={() => {
-          void handleCreateAsset();
-        }}
-      />
+      <ContentBrowserNewAssetDialog {...newAssetDialogProps} />
 
-      <ContentBrowserDeleteDialogs
-        deleteTarget={deleteTarget}
-        setDeleteTarget={setDeleteTarget}
-        confirmReferencedDelete={confirmReferencedDelete}
-        setConfirmReferencedDelete={setConfirmReferencedDelete}
-        replacementPicker={replacementPicker}
-        setReplacementPicker={setReplacementPicker}
-        classReplacementChoices={classReplacementChoices}
-        setClassReplacementChoices={setClassReplacementChoices}
-        deleteCancelRef={deleteCancelRef}
-        deleteInboundRefs={deleteInboundRefs}
-        deleteListItems={deleteListItems}
-        deleteListNames={deleteListNames}
-        hasReferencedClass={hasReferencedClass}
-        deleteLastSceneClassLines={deleteLastSceneClassLines}
-        deletedClasses={deletedClasses}
-        pickerCandidates={pickerCandidates}
-        classReplacements={classReplacements}
-        resolveAssetName={resolveAssetName}
-        busy={busy}
-        confirmDelete={confirmDelete}
-        deleteProgress={deleteProgress}
-        deleteError={deleteError}
-        setDeleteError={setDeleteError}
-      />
+      <ContentBrowserDeleteDialogs {...deleteDialogProps} />
 
-      <ContentBrowserNameDialog
-        nameDialog={nameDialog}
-        setNameDialog={setNameDialog}
-        nameDialogError={nameDialogError}
-        selectedFolderPath={selectedFolderPath}
-        operationError={operationError}
-        busy={busy}
-        confirmNameDialog={confirmNameDialog}
-      />
+      <ContentBrowserNameDialog {...nameDialogProps} />
 
-      <ContentBrowserCopyProgressDialog progress={copyProgress} onCancel={cancelCopy} />
+      <ContentBrowserCopyProgressDialog {...copyProgressDialogProps} />
 
-      <ContentBrowserMoveDialog
-        key={
-          moveTarget
-            ? `${moveTarget.operation}:${moveTarget.guids.join(",")}:${moveTarget.folderPaths.join(",")}`
-            : "closed"
-        }
-        open={moveTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setMoveTarget(null);
-        }}
-        kind={moveTarget?.kind ?? "asset"}
-        operation={moveTarget?.operation ?? "move"}
-        name={moveTarget?.name ?? ""}
-        currentFolderPath={
-          moveTarget
-            ? moveTarget.kind === "folder"
-              ? parentFolderPath(
-                  moveTarget.sourcePath,
-                  contentBrowserFolderOps(moveTarget.sourcePath, browserRoots)
-                    .pathPrefix,
-                )
-              : moveTarget.assetPaths[0]
-                ? parentFolderPath(moveTarget.assetPaths[0])
-                : moveTarget.sourcePath
-            : ASSETS_ROOT
-        }
-        folderTrees={moveFolderTrees}
-        destinationPath={moveTarget?.folderPath ?? ASSETS_ROOT}
-        onDestinationChange={(path) =>
-          setMoveTarget((current) =>
-            current ? { ...current, folderPath: path } : current,
-          )
-        }
-        onConfirm={() => void confirmMove()}
-        busy={busy}
-        error={operationError}
-        typeVisual={moveTarget?.typeVisual ?? null}
-        itemCount={moveTarget?.itemCount}
-        assetPaths={moveTarget?.assetPaths ?? NO_PATHS}
-        folderPaths={moveTarget?.folderPaths ?? NO_PATHS}
-        rootPaths={rootPrefixes}
-        readOnlyRootPaths={readOnlyRootPrefixes}
-        existingPaths={existingContentPaths}
-        warnings={moveWarnings}
-      />
+      <ContentBrowserMoveDialog key={moveDialogKey} {...moveDialogProps} />
 
       {referenceGuid ? (
         <AssetReferenceDialog
@@ -2940,7 +958,7 @@ function ContentBrowserWorkspaceBody({
       ) : null}
 
 
-      <ImportProgressDialog progress={importProgress} onCancel={cancelImport} />
+      <ImportProgressDialog {...importProgressDialogProps} />
 
       <AssetPicker
         open={retargetPickerOpen}
