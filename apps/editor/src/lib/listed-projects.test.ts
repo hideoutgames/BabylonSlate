@@ -78,6 +78,20 @@ describe("listedProjectsFromRecents", () => {
     });
   });
 
+  it("omits recents whose app storage folder was deleted outside the editor", () => {
+    expect(
+      listedProjectsFromRecents(
+        [
+          { id: "documents:Deleted", name: "Deleted", tier: "documents" },
+          { id: "documents:Kept", name: "Kept", tier: "documents" },
+          { id: "opfs:Gone", name: "Gone", tier: "opfs" },
+          { id: "ext-1", name: "External", tier: "external" },
+        ],
+        [{ id: "documents:Kept", name: "Kept", tier: "documents" }],
+      ).map((project) => project.id),
+    ).toEqual(["documents:Kept", "ext-1"]);
+  });
+
   it("omits stored projects that are not in recents", () => {
     expect(
       listedProjectsFromRecents(

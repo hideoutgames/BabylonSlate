@@ -54,7 +54,7 @@ From a project card's **Project Actions** menu:
 | Apps | **Remove From List** | Removes the card. The project files stay on the device. |
 | Web | **Delete** | Permanently deletes the project from browser storage. |
 
-The apps never delete project folders. On iPad, iPhone and desktop you can delete a project's folder yourself in the Files app or your file manager.
+The apps never delete project folders. On iPad, iPhone and desktop you can delete a project's folder yourself in the Files app or your file manager. Its card leaves the project list when you return to Haptic. A project in a folder you chose yourself keeps its card, because Haptic can't check that folder until you open it.
 
 ## Game saves
 

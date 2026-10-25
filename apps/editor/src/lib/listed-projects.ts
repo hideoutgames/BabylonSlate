@@ -66,7 +66,8 @@ export function listedProjectsFromRecents(
   stored: ProjectFolderHandle[],
 ): ListedProject[] {
   const byId = new Map(stored.map((project) => [project.id, project]));
-  return recents.map((recent) => {
+  // Storage enumerates every app-owned folder, so a missing one was deleted (e.g. in Files); external folders cannot be enumerated.
+  return recents.filter((recent) => recent.tier === "external" || byId.has(recent.id)).map((recent) => {
     const handle = byId.get(recent.id) ?? {
       id: recent.id,
       name: recent.name,
