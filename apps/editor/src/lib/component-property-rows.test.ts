@@ -1037,6 +1037,19 @@ describe("componentPropertyRows", () => {
   });
 
   it.each([
+    { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 } } },
+    { id: "mesh", classId: "MeshComponent", properties: { meshKind: "box", collisionMode: "simple" } },
+  ])("shows $classId Collision Preset and its filter values once", (component) => {
+    const { rows } = rowsFor(
+      { ...component, properties: { ...component.properties, layer: 1, mask: 1, overlapMask: 0, collisionPreset: "custom" } },
+      { collisionLayers: ["Default"], physicsWorld: "3d" },
+    );
+    const ids = rows.map((row) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(rows.filter((row) => /-(collisionPreset|layer|mask|overlapMask)$/.test(row.id)).map((row) => row.kind)).toEqual(["enum", "enum"]);
+  });
+
+  it.each([
     [0, "None"],
     [0b11, "Default, Enemy"],
     [0b100, "Layer 3"],
