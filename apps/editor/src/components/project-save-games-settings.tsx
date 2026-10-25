@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
+import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, validateSaveGameId, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
 import { createSaveGameStorage, pickImportFiles } from "@haptic/vfs";
 import { AssetPicker, AssetPickerControl } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
@@ -8,7 +8,7 @@ import { Switch } from "@haptic/ui/components/switch";
 import { Badge } from "@haptic/ui/components/badge";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import {
   useDocumentActions,
@@ -28,6 +28,12 @@ function displayValue(value: SaveGameValue): string {
   if (Array.isArray(value)) return value.map(displayValue).join(", ") || "Empty Array";
   if (typeof value === "object") return Object.entries(value).map(([key, entry]) => `${key}: ${displayValue(entry)}`).join(" · ");
   return String(value);
+}
+
+/** Play's service rejects a default it cannot store; the preview service below never receives the defaults. */
+function saveIdError(value: string): string | null {
+  try { validateSaveGameId(value); return null; }
+  catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
 }
 
 function downloadSave(text: string, slot: string) {
@@ -108,6 +114,7 @@ export function ProjectSaveGamesSettings() {
   };
   if (!settings) return null;
   const disabled = pending || !service;
+  const defaultSlotError = saveIdError(settings.defaultSlot);
   return <FieldGroup className="min-w-0" data-testid="settings-save-games-panel">
     <FieldSet className="min-w-0">
       <FieldLegend>Save Games</FieldLegend>
@@ -115,7 +122,7 @@ export function ProjectSaveGamesSettings() {
         <AssetPickerControl value={settings.definitionGuid}><Button id="settings-save-definition" variant="outline" className="w-full justify-start pointer-coarse:min-h-11" onClick={() => setPickerOpen(true)}>{definitionAsset?.header.name ?? "Choose Save Game"}</Button></AssetPickerControl>
         <FieldDescription>Create a Save Game asset with typed fields and defaults, then select it here. Save Game and Load Game use the default slot automatically.</FieldDescription>
       </Field>
-      <Field><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><Input id="settings-save-slot" value={settings.defaultSlot} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} /></Field>
+      <Field data-invalid={defaultSlotError ? true : undefined}><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><Input id="settings-save-slot" value={settings.defaultSlot} aria-invalid={defaultSlotError ? true : undefined} aria-describedby={defaultSlotError ? "settings-save-slot-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} />{defaultSlotError ? <FieldError id="settings-save-slot-error">{defaultSlotError}</FieldError> : null}</Field>
       <Field><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><Input id="settings-save-profile" value={settings.defaultProfile} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} /></Field>
       {/* Reserve the Switch's expanded hit area without clipping it at the panel edge. */}
       <Field orientation="horizontal" className="pr-3"><FieldContent className="min-w-0"><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel><FieldDescription>Clear this project's local preview profiles before each Play session. Exported game saves use a separate namespace.</FieldDescription></FieldContent><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>

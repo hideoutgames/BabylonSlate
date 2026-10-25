@@ -70,6 +70,18 @@ describe("Preview Saves manager", () => {
     expect(screen.getByRole("button", { name: "Inspect default" })).toBeTruthy();
   });
 
+  it("flags a Default Slot too long to store until it is shortened", async () => {
+    harness.defaultSlot = "x".repeat(121);
+    const { rerender } = render(<ProjectSaveGamesSettings />);
+    const input = screen.getByLabelText("Default Slot");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent).toBe("A project, profile or slot ID is too long.");
+    harness.defaultSlot = "checkpoint";
+    rerender(<ProjectSaveGamesSettings />);
+    expect(input.hasAttribute("aria-invalid")).toBe(false);
+    expect(screen.queryByText("A project, profile or slot ID is too long.")).toBeNull();
+  });
+
   it("confirms destructive reset, removes all preview profiles, and retains exported-game data", async () => {
     render(<ProjectSaveGamesSettings />);
     await screen.findByRole("button", { name: "Inspect default" });

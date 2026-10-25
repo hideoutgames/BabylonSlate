@@ -8,7 +8,7 @@ A Save Game stores a player's progress, such as coins or the last checkpoint, in
 2. In **Fields**, choose **Add Field** and enter a name.
 3. Select the field. In the **Inspector**, set its **Type**, **Container** (**Single** or **Array**) and **Default Value**.
 4. Under **Save Setup**, choose **Use As Project Default**. You can also pick it in **Project Settings > Save Games > Default Definition**.
-5. Optionally change **Default Slot** and **Default Profile**. Use profiles to keep several players' saves apart, and slots for manual saves.
+5. Optionally change **Default Slot** and **Default Profile**. Use profiles to keep several players' saves apart, and slots for manual saves. Keep the names short: **Project Settings > Save Games** marks a **Default Slot** that is too long to store.
 
 Fields can be Boolean, Integer, Float, String, Vector 3, Actor Reference or Asset Reference, or an array of one of these. Renaming a field keeps existing saves working. When an older save loads, fields it does not have get their default value.
 
