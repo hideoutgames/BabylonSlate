@@ -77,7 +77,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const handle = {
     engine: { onEndFrameObservable: { add: (callback: () => void) => (endFrame.add(callback), callback), remove: (callback: () => void) => { endFrame.delete(callback); } } },
     loadScene: vi.fn(),
-    acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(),
+    acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(), setCommandSourceLoader: vi.fn<(loader: rendering.CommandSourceLoader | null) => void>(),
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(), whenReleased: vi.fn(async () => {}),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
@@ -598,6 +598,25 @@ describe("player startup and Stop ownership", () => {
     worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "retry", ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
     await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "retry", success: true, progress: 1 } }));
     expect(state()).toBe("ready");
+  });
+  it.each(["command source", "audio"] as const)("publishes the ready state when a %s load completes", async (path) => {
+    const { game, canvas, handle } = await fixture();
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const state = () => {
+      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "assetLoadStates");
+      return message?.channel === "control" && message.payload.type === "assetLoadStates" ? message.payload.states.find(entry => entry.guid === "world")?.state : undefined;
+    };
+    // A Scene change released the startup sources.
+    game.releaseStartup!();
+    game.assets.trim({ force: true });
+    await vi.waitFor(() => expect(state()).toBe("unloaded"));
+    const request = { slotId: 1, consumer: "test", signal: new AbortController().signal };
+    const release = path === "audio"
+      ? await vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.prepareAudioAsset!("world", request)
+      : await handle.setCommandSourceLoader.mock.calls[0]![0]!(["world"], request);
+    expect(state()).toBe("ready");
+    release();
   });
   it.each(["gameplay", "preload", "background"] as const)("schedules a %s priority asset load that way in the loader and the renderer", async priority => {
     const { game, canvas, handle } = await fixture();

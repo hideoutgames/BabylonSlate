@@ -287,6 +287,7 @@ function initializePlayer(
         clearResourceFailures(requiredGameAssets(manifest, [guid]));
         await refreshSourceContent();
         request.signal.throwIfAborted();
+        publishAssetStates();
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     } : undefined,
@@ -833,6 +834,7 @@ function initializePlayer(
       clearResourceFailures(requiredGameAssets(manifest, ids));
       await refreshSourceContent();
       request.signal.throwIfAborted();
+      publishAssetStates();
       return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
     } catch (error) { releaseRender?.(); source.release(); throw error; }
   });
