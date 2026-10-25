@@ -1,22 +1,12 @@
-import type { SimulationDocumentTransaction } from "../services/simulation-document";
-import { type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
-import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
-import type { InputAssetDefinition } from "@haptic/core";
-import type { DockviewApi } from "dockview-react";
-import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
+import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
-  type Context,
   type ReactNode,
-  type RefObject,
 } from "react";
 import { DocumentSubscriptions, sameDocumentRef } from "./document-subscriptions";
 import { flushSync } from "react-dom";
@@ -24,24 +14,19 @@ import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import type {
   AssetDocumentKind,
-  DocumentKind,
   DocumentRef,
   ProjectDocument,
   PluginEnableOverride,
   ProjectFolderHandle,
   ProjectMetadata,
-  Result,
   SerializedGraph,
   SerializedScene,
   SerializedSceneLayer,
 } from "@haptic/core";
-import { ASSET_DOCUMENT_KINDS, createDocumentRef, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
+import { ASSET_DOCUMENT_KINDS, createDocumentRef, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import {
   appendJournalLines,
   discardSealedJournal,
-  getTile,
-  normalizeTilemapPayload,
-  readJournalLines,
   readSealedJournalLines,
   readThumbnail,
   sealJournalForRecovery,
@@ -53,24 +38,14 @@ import {
   replaceClassAssetReferences,
   renamedAssetPath,
   type ClassAssetReplacement,
-  type AssetRegistry,
   type AssetLoadScope,
   type AssetLoadPriority,
   type AssetLoadState,
   type MigrationPending,
-  type PluginDescriptor,
-  type PluginDiagnostic,
-  type ProjectSearchIndex,
   type ProjectTemplateCatalogEntry,
-  type SpriteAnimationPayload,
-  type SpritePayload,
-  type TilemapPayload,
-  type TilesetPayload,
   newAssetGuid,
   listTraceDocuments,
-  playerFilesHaveKtx2Transcoder,
   pruneTraceDocuments,
-  type TraceDocumentEntry,
 } from "@haptic/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -100,15 +75,13 @@ import {
   DocumentService,
   documentKindsRevision,
   type DocumentIdentityListener,
-  type DocumentRevisions,
   type OpenDocument,
 } from "../services/document-service";
 import { DocumentEditingService } from "../services/document-editing-service";
-import { createPlayContentService, GRAPH_SIGNATURE_KINDS, type PlayScriptCompileOptions } from "../services/play-content-service";
+import { createPlayContentService, GRAPH_SIGNATURE_KINDS } from "../services/play-content-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
-import { ProjectService, type PluginImportResult } from "../services/project-service";
+import { ProjectService } from "../services/project-service";
 import { DocumentTransitionGate } from "../services/document-transition-gate";
-import type { GitConfigPrefill } from "@haptic/source-control";
 import {
   readGitPrefill,
   SourceControlService,
@@ -117,14 +90,12 @@ import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { requeueWithEditLock } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
-import { moveKeyedEntry } from "../lib/move-keyed-entry";
 import { documentContentIdentity } from "../lib/document-content-identity";
-import { advanceTestIdleClock } from "../lib/document-working-set";
 import {
   recordedTraceFileName,
   spillRecordedTraceDocument,
 } from "../lib/play-trace-spill";
-import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
+import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
@@ -137,52 +108,18 @@ import { playBundlesNeedCollect } from "../services/play-preview-prepare";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ExportArtifact } from "@haptic/exporter";
 import {
-  assetsFromIndexed,
-  collectAndExportGame,
-  resolveExportPluginGraph,
   zipGameArtifact,
 } from "../services/export-game";
-import { loadExportDocuments } from "../services/export-game-inputs";
-import { loadPlayerDistFiles } from "../services/load-player-files";
-import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
+import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
   flushNavBakeForSave,
-  lastNavBakeSaveResult,
 } from "../lib/nav-bake-save";
-import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
-import {
-  capturePanelPlacement,
-  isDockWindowOpen as isDockWindowOpenOnApi,
-  listDockPanels,
-  toggleDockWindow as toggleDockWindowOnApi,
-  type DockWindowApi,
-} from "../shell/dock-window-ops";
-import { isFunctionGraphPanelId } from "../shell/function-graph-panels";
-import {
-  isDockviewDocumentKind,
-  listDockWindows,
-  type DockWindowOptions,
-} from "../shell/window-catalog";
-import {
-  applyPreFocusToAnimLayout,
-  parseAnimDocumentLayout,
-  serializeAnimDocumentLayout,
-  type AnimEditorMode,
-} from "../shell/anim-document-layout";
 import {
   dockviewApiKey,
-  dockviewApiKeyPairs,
-  dockviewApiKeysForDocument,
-  dockviewSurfaceForAnimMode,
-  type DockviewSurface,
-  type PreFocusSnapshot,
 } from "../shell/dockview-surface";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
-  classDocumentShowsPrefab,
   classIdFromClassAsset,
-  classParentLookup,
-  registryClassParentLookup,
 } from "../lib/class-asset-lookup";
 import {
   editorTabContentForKind,
@@ -192,7 +129,6 @@ import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   createProjectPluginAndRevealContent,
   isPluginDocumentReadOnly,
-  playSceneLibraryPaths,
 } from "../lib/plugin-ui";
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import { ProjectSaveState } from "../lib/project-save-state";
@@ -217,652 +153,83 @@ import {
 } from "../lib/editor-utility-scripts";
 import {
   beginSaveAllProgress,
-  clearDocumentDirtyTrace,
-  documentDirtyTrace,
   recordSaveAllTrace,
-  saveAllProgress,
-  saveAllTrace,
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import {
   createAssetThumbnailRevisionIndex,
   type AssetThumbnailWriteIdentity,
 } from "../lib/asset-thumbnail-revision";
-import {
-  renderProfile,
-  resetRenderProfile,
-  type RenderProfile,
-} from "../lib/render-profile";
-import type {
-  MaterialDocument,
-  MaterialFunctionDocument,
-} from "@haptic/shader-graph";
 import { useDebugMode } from "./app-settings-context";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
-import { shownCompressionState, unfinishedTextureEncodePaths } from "../lib/texture-encode-state";
-export type AppRoute = "home" | "editor";
-
-/**
- * `closeProject`: closed, held by unsaved work (nothing was written; a
- * session was stopped only when its stop left that work, as Simulation's Keep
- * Changes does), or refused by a running Play / Simulate session.
- */
-export type CloseProjectResult =
-  | { outcome: "closed" }
-  | { outcome: "unsaved"; dirty: OpenDocument[]; projectDirty: boolean }
-  | { outcome: "refused" };
-
-interface DocumentContextValue {
-  registerBeforeTransition: DocumentTransitionGate["register"];
-  /** Protect in-memory authoring; the owner must release its lease on every exit. */
-  lockAuthoring: DocumentService["lockAuthoring"];
-  beginSimulationDocument: (id: string) => SimulationDocumentTransaction;
-  getAuthoringLock: DocumentService["getAuthoringLock"];
-  subscribeAuthoringLock: DocumentService["onAuthoringLockChange"];
-  lockAuthoringWrites: ProjectService["lockAuthoringWrites"];
-  withSceneWrite: ProjectService["withSceneWrite"];
-  route: AppRoute;
-  projectDocument: ProjectDocument | null;
-  projectName: string | null;
-  assetRegistry: AssetRegistry | null;
-  extensionService: ProjectService["extensions"];
-  projectGuid: string | null;
-  /**
-   * Registry epoch: changes only when what `assetRegistry` reports changes
-   * (its generation: imports, saves, deletes, moves, encodes, remounts) or a
-   * registry-adjacent ProjectService change arrives (plugins, search index,
-   * Show Plugin Content). Document edits, tab changes, saves' dirty-state
-   * changes and other per-edit context updates leave it alone, so key
-   * registry-derived memos and effects on it instead of on the context value.
-   * Monotonic; never repeats.
-   */
-  registryEpoch: number;
-  /**
-   * Textures whose encode is running. The file stays `pending` until the
-   * encode commits, so this memory-only set is the only record that it started
-   * (`shownCompressionState`). A new set at each change, which also advances
-   * `registryEpoch`.
-   */
-  encodingTextures: ReadonlySet<string>;
-  refreshAssetRegistry: () => Promise<void>;
-  /**
-   * Re-reads the project's scene/graph lists and re-renders after assets were
-   * created through the mounted registry, which indexes them on write. Much
-   * cheaper than `refreshAssetRegistry`, which remounts and rescans every root.
-   */
-  noteAssetsCreated: () => void;
-  pluginDescriptors: PluginDescriptor[];
-  pluginDiagnostics: PluginDiagnostic[];
-  showPluginContent: boolean;
-  setShowPluginContent: (show: boolean) => void;
-  applyPluginOverrides: (
-    overrides: Record<string, PluginEnableOverride>,
-  ) => Promise<void>;
-  createProjectPlugin: (displayName: string) => Promise<PluginDescriptor>;
-  deleteProjectPlugin: (guid: string) => Promise<void>;
-  exportPlugin: (guid: string) => Promise<Uint8Array>;
-  importPlugin: (
-    bytes: Uint8Array,
-    decision?: "keep" | "replace",
-  ) => Promise<PluginImportResult>;
-  /**
-   * Retarget open tabs after a file move or rename. Undo history, dock Focus
-   * state, Anim mode and session view state follow the document to its new id.
-   */
-  repathDocument: (
-    kind: AssetDocumentKind,
-    oldPath: string,
-    newPath: string,
-  ) => void;
-  /**
-   * Follow a Content Browser folder rename or move in the project settings
-   * that name folders (Always Package Folders).
-   */
-  repathProjectFolder: (fromFolder: string, toFolder: string) => void;
-  renameAsset: ProjectService["renameAsset"];
-  /** Document opens and renames, for session state keyed by document id. */
-  subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
-  /**
-   * A file of a project's editor state in app-private derived storage (outside the project folder,
-   * never exported), or null when there is none.
-   */
-  readProjectDerivedText: (projectGuid: string, name: string) => Promise<string | null>;
-  /** Writes a file of a project's editor state in derived storage. */
-  writeProjectDerivedText: (projectGuid: string, name: string, text: string) => Promise<void>;
-  retryFailedTextureEncoding: () => Promise<number>;
-  prepareAreaEmission: ProjectService["prepareAreaEmission"];
-  /** Converts an environment Texture's kept `.hdr` again at another Face Size; false when nothing was written. */
-  reconvertHdrEnvironment: ProjectService["reconvertHdrEnvironment"];
-  collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@haptic/assets").AreaEmissionPixels>>;
-  retryTextureEncoding: (
-    guid: string,
-    options?: { maxDimension?: number; force?: boolean; usage?: string },
-  ) => Promise<boolean>;
-  /**
-   * A `compressed` Texture whose committed encode the alignment policy would
-   * change and nothing re-encodes yet: Texture Details offers Retry Encoding.
-   */
-  textureAlignmentStale: ProjectService["textureAlignmentStale"];
-  /**
-   * Why an edit or re-encode from outside the Texture tab cannot write this
-   * Texture, as a sentence (a read-only root or plugin, or another user's
-   * lock); null when it can. Reads live lock and tab state, so call it while
-   * rendering.
-   */
-  textureUsageBlockedReason: (guid: string) => string | null;
-  onSessionDiagnostic: (listener: (line: string) => void) => () => void;
-  /**
-   * Canonical open documents in tab order, including background working
-   * documents used by utilities. Navigation omits `background`.
-   * The array keeps its identity until a
-   * document revision advances or the tab order changes, so registry-only
-   * updates, tab switches and other context updates leave it alone. Its
-   * entries are mutated in place (content, dirty, layout), so entry identity
-   * is not a change signal: key memos on `documentRevisions`.
-   */
-  openDocuments: OpenDocument[];
-  /**
-   * The open documents at call time, read from the document service. Stable
-   * identity: handlers, guards and async continuations use it instead of a
-   * render-time `openDocuments` snapshot, so they stay correct without
-   * re-rendering on every edit.
-   */
-  getOpenDocuments: () => OpenDocument[];
-  /**
-   * One revision per document kind, advanced when a document of that kind
-   * opens, closes, moves, is reordered, edited (including Undo / Redo,
-   * reloads and patches), relaid out or changes dirty state. Memos that read
-   * other documents key on the kinds they read (`documentKindsRevision`,
-   * `useOpenDocumentsOfKinds`) instead of on `openDocuments`.
-   */
-  documentRevisions: DocumentRevisions;
-  /** Advances when the open set, the tab order or the active tab changes. */
-  tabsRevision: number;
-  /** Keeps its identity while the tab ids and their order are unchanged. */
-  tabOrder: string[];
-  activeDocumentId: string | null;
-  listedProjects: ListedProject[];
-  needsReconnect: boolean;
-  recoveryAvailable: boolean;
-  /** Recomputed only when a document revision advances. */
-  dirtyDocuments: OpenDocument[];
-  projectDirty: boolean;
-  autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
-  migrationPending: MigrationPending[];
-  /** Advances each time a Save All the user asked for is refused for pending migrations. */
-  migrationPromptRequest: number;
-  templates: ProjectTemplateCatalogEntry[];
-  homepageReady: boolean;
-  refreshTemplates: () => Promise<void>;
-  openProject: (source?: "folder" | "zip") => Promise<void>;
-  createEmptyProject: (
-    name: string,
-    options?: CreateProjectOptions,
-  ) => Promise<void>;
-  createFromTemplate: (
-    templateId: string,
-    name: string,
-    options?: CreateProjectOptions,
-  ) => Promise<void>;
-  openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
-  updateListedProject: (
-    handle: ProjectFolderHandle,
-    details: UpdateListedProjectOptions,
-  ) => Promise<void>;
-  removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
-  reconnectProject: () => Promise<void>;
-  saveProject: () => Promise<boolean>;
-  /**
-   * Hold the auto-save timer while a prompt lists unsaved work, so the choice
-   * it asks for applies to that work. Resuming starts a new interval when
-   * something is still unsaved.
-   */
-  setAutoSavePaused: (paused: boolean) => void;
-  saveAll: () => Promise<boolean>;
-  /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
-  approveMigrationsAndSave: () => Promise<boolean>;
-  /** Closes a clean project; unsaved work returns it without asking a session to stop. */
-  closeProject: () => Promise<CloseProjectResult>;
-  /**
-   * Ask a running Play or Simulate session to stop before the close prompt's
-   * Save All, whose writes the session's authoring lock refuses.
-   */
-  releaseSessionsForProjectClose: () => Promise<boolean>;
-  /** Close without saving once sessions stop and queued writes finish; false when a session refused. */
-  forceCloseProject: () => Promise<boolean>;
-  exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
-  exportGameArtifact: (options?: {
-    projectSnapshot?: ProjectDocument;
-    previewBuild?: boolean;
-    playerFiles?: Map<string, Uint8Array>;
-    onPhase?: (phase: "Compiling" | "Writing Pack") => void;
-    startupSceneGuid?: string | null;
-    transcoderAvailable?: boolean;
-  }) => Promise<Result<ExportArtifact, string>>;
-  zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
-  dismissRecovery: () => Promise<void>;
-  keepRecovery: () => void;
-  openDocument: (ref: DocumentRef) => Promise<void>;
-  /** Loads a canonical working document without creating or activating a tab. */
-  ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
-  /**
-   * Spill a finished Play recorder payload and open the read-only Trace tab. With `keep`, older traces
-   * beyond that many are then deleted, except ones open in a tab.
-   */
-  openRecordedTrace: (payload: TracePayload, options?: { keep?: number }) => Promise<void>;
-  /** The project's recorded traces, newest first. */
-  listRecentTraces: () => Promise<TraceDocumentEntry[]>;
-  /** Open a recorded trace again in a read-only Trace tab. */
-  openTraceDocument: (path: string) => Promise<void>;
-  pendingExclusiveScene: DocumentRef | null;
-  confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
-  cancelExclusiveSceneOpen: () => void;
-  closeDocument: (id: string) => void;
-  closeDocumentsForPaths: (paths: Iterable<string>) => void;
-  replaceClassReferencesBeforeDelete: (
-    replacements: readonly ClassAssetReplacement[],
-    deletingGuids: ReadonlySet<string>,
-    onProgress?: (currentName: string) => Promise<void>,
-  ) => Promise<void>;
-  repairAfterAssetDelete: (
-    deletedGuids: ReadonlySet<string>,
-    deletedClassNames?: ReadonlySet<string>,
-    onProgress?: (currentName: string) => Promise<void>,
-    /** Storage folders the operation deleted. */
-    deletedFolders?: readonly string[],
-  ) => Promise<void>;
-  setActiveDocument: (id: string) => void;
-  reorderTabs: (fromIndex: number, toIndex: number) => void;
-  reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
-  /** Apply a graph edit through the command layer (marks dirty + undoable). */
-  applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
-  /**
-   * Change Class `header.parentClass` without rewriting the graph payload.
-   * Returns an error string when the reparent is rejected.
-   */
-  reparentClassDocument: (
-    id: string,
-    newParentId: string,
-  ) => Promise<string | null>;
-  /** Apply a scene edit through the command layer (marks dirty + undoable). */
-  applySceneChange: (
-    id: string,
-    next: SerializedScene,
-    options?: { prefabSync?: boolean },
-  ) => Promise<boolean>;
-  applyAssetDocumentChange: (
-    id: string,
-    next: Record<string, unknown>,
-    mergeKey?: string,
-  ) => Promise<boolean>;
-  /** Scene, runtime object, and explicit preload ownership. */
-  createAssetLoadScope: (owner: string) => AssetLoadScope;
-  getAssetLoadState: (guid: string) => AssetLoadState;
-  /** Font source / other binary chunks. */
-  readAssetChunk: (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) => Promise<Uint8Array | null>;
-  writeAudioClipChunk: (
-    path: string,
-    chunkId: string,
-    bytes: Uint8Array,
-    mime: string,
-    payload: Record<string, unknown>,
-  ) => Promise<void>;
-  removeAudioClipChunk: (
-    path: string,
-    chunkId: string,
-    payload: Record<string, unknown>,
-  ) => Promise<void>;
-  /** Write Recast bake bytes onto the Scene asset extra chunk. */
-  writeSceneNavmeshChunk: (
-    path: string,
-    bytes: Uint8Array,
-    payload: Record<string, unknown>,
-  ) => Promise<void>;
-  writeSceneAudioReverbChunk: (
-    path: string,
-    bytes: Uint8Array,
-    payload: Record<string, unknown>,
-  ) => Promise<void>;
-  /** Persist project.json settings (Input, 2D units, textures, …). */
-  updateProjectVersion: (version: string) => void;
-  updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
-  sourceControl: SourceControlService;
-  prefillSourceControlFromGit: () => Promise<GitConfigPrefill>;
-  externalChangePrompt: ExternalChangeClassification | null;
-  confirmExternalChangeReloadProject: () => Promise<void>;
-  confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
-  dismissExternalChange: () => void;
-  undoActiveDocument: () => void;
-  redoActiveDocument: () => void;
-  canUndoActiveDocument: boolean;
-  canRedoActiveDocument: boolean;
-  /**
-   * Set when an edit was larger than the Undo memory limit: it applied, but
-   * its document's Undo history was cleared. Once per gesture; `sequence`
-   * advances for each new notice.
-   */
-  undoHistoryNotice: { documentId: string; sequence: number } | null;
-  dismissUndoHistoryNotice: () => void;
-  registerDockviewApi: (
-    id: string,
-    api: DockviewApi,
-    surface?: DockviewSurface,
-  ) => void;
-  unregisterDockviewApi: (id: string, surface?: DockviewSurface) => void;
-  captureLayoutForId: (id: string) => void;
-  animEditorMode: AnimEditorMode;
-  setAnimEditorMode: (id: string, mode: AnimEditorMode) => void;
-  sceneMode: SceneMode;
-  setSceneMode: (id: string, mode: SceneMode) => void;
-  activateDockPanel: (panelId: string) => void;
-  toggleDockWindow: (panelId: string) => void;
-  isDockWindowOpen: (panelId: string) => boolean;
-  getOpenDockWindowCount: () => number;
-  isLayoutFocused: boolean;
-  toggleLayoutFocus: () => void;
-  /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
-  loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
-  writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity) => Promise<void>;
-  thumbnailVersions: Readonly<Record<string, number>>;
-  thumbnailsEnabled: boolean;
-  /** Compile requested Play graphs, or every graph for explicit project compilation. */
-  collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument, compileOptions?: PlayScriptCompileOptions) => Promise<{
-    bundles: ScriptBundleEntry[];
-    diagnostics: Diagnostic[];
-  }>;
-  collectEditorUtilityScripts: () => Promise<ScriptBundleEntry[]>;
-  loadAssetDocument: (
-    kind: AssetDocumentKind,
-    path: string,
-  ) => Promise<unknown | null>;
-  /** Sprite payloads referenced by the Play scene for clip UV seeks. */
-  collectPlaySpritePayloads: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<Map<string, SpritePayload>>;
-  collectPlayWaterContent: (requiredGuids?: ReadonlySet<string>) => Promise<Map<string, WaterDefinition>>;
-  collectPlayRenderTargets: (requiredGuids?: ReadonlySet<string>) => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
-  collectPlayTilemapContent: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<{
-    tilemaps: Map<string, TilemapPayload>;
-    tilesets: Map<string, TilesetPayload>;
-  }>;
-  /** GPU texture bytes (KTX2 or LOD-downsampled source) for sprite, tileset, and material `textureGuid`s. */
-  collectPlayTextureBytes: (
-    sprites: ReadonlyMap<string, SpritePayload>,
-    tilesets: ReadonlyMap<string, TilesetPayload>,
-    extraGuids?: readonly string[],
-    spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
-    includeMaterialParameterTextures?: boolean,
-  ) => Promise<Map<string, Uint8Array>>;
-  /** Authored Texture payload pixels for overlay 2DTexture world size. */
-  collectPlayTexturePixelSizes: (
-    sprites: ReadonlyMap<string, SpritePayload>,
-    tilesets: ReadonlyMap<string, TilesetPayload>,
-    extraGuids?: readonly string[],
-    spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
-  ) => Map<string, { width: number; height: number }>;
-  /** Facetype JSON bytes for Text3DComponent Font references. */
-  collectPlayFontFacetypeBytes: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<Map<string, Uint8Array>>;
-  /** MSDF JSON + PNG pairs for overlay 2D Text. */
-  collectPlayFontMsdfPair: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<Map<string, { json: Uint8Array; png: Uint8Array }>>;
-  /** FontFace source bytes for Bitmap 2D Text. */
-  collectPlayFontFaceEntries: (requiredGuids?: ReadonlySet<string>) => Promise<
-    import("@haptic/render").FontAssetEntry[]
-  >;
-  /** Compiled CSS stacks for Bitmap overlay 2D Text. */
-  collectPlayFontCssStacks: () => {
-    fontCssStack: string;
-    fontCssStackByGuid: Map<string, string>;
-  };
-  /** Model source bytes for scene MeshComponent `assetGuid`s. */
-  collectPlayModelBytes: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-    requiredGuids?: ReadonlySet<string>,
-  ) => Promise<Map<string, Uint8Array>>;
-  /** Model material slots for Play and the editor viewport. */
-  collectPlayModelPayloads: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<Map<string, import("@haptic/assets").ModelPayload>>;
-  /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
-  collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>) => Promise<InputAssetDefinition[]>;
-  collectPlayAudio: (requiredGuids?: ReadonlySet<string>) => Promise<{
-    library: import("../lib/play-audio").PlayAudioLibrary;
-    loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
-  }>;
-  /** Surface, post-process, and particle materials plus transitive Material Functions. */
-  collectPlayMaterialLibrary: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-    extraMaterialGuids?: readonly string[],
-  ) => Promise<{
-    documents: Map<string, MaterialDocument>;
-    functions: Map<string, MaterialFunctionDocument>;
-    textureGuids: string[];
-  }>;
-  /** Class graph payload from an open tab or disk. */
-  loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
-  /**
-   * True when Play's stored full-project bundles do not match the current
-   * open-graph fingerprint (or Play has not collected this session).
-   * Distinct from `graphsNeedCompile` / editor Compile.
-   */
-  scriptsStale: boolean;
-  /** True when Compile should run: never compiled this session, or open graphs changed. */
-  graphsNeedCompile: boolean;
-  /**
-   * Open-graph compile fingerprint (node positions omitted). Recomputed only
-   * when Class graph or Input Action / Axis documents change, or the registry
-   * epoch advances.
-   */
-  currentGraphSignature: string;
-  /** Last full-project bundles written by an explicit toolbar Compile. */
-  playPreviewBundles: ScriptBundleEntry[];
-  playPreviewDiagnostics: Diagnostic[];
-  playLoadedSignature: string | null;
-  /** Project-wide search index (headers + Scene/Graph documents). */
-  searchIndex: ProjectSearchIndex | null;
-}
-
-type DocumentActionName = {
-  [K in keyof DocumentContextValue]: DocumentContextValue[K] extends (
-    ...args: never[]
-  ) => unknown
-    ? K
-    : never;
-}[keyof DocumentContextValue];
-
-/**
- * Every callback of the document context. Each keeps its identity for the
- * provider's lifetime and reads documents, the project, Anim modes and other
- * provider state when it runs. A component that calls one while rendering
- * (`isDockWindowOpen`, `textureUsageBlockedReason`, …) and shows the result
- * must also subscribe to the state it depends on through a narrow hook (or
- * `useDocuments()`).
- */
-export type DocumentActions = Pick<DocumentContextValue, DocumentActionName>;
-
-/*
- * Narrow slices of the document context. Each object keeps its identity until
- * one of its fields changes, so its readers re-render only for that state.
- * Field names match `useDocuments()`, so a component moves to a slice by
- * changing only the hook it calls.
- */
-
-/** `useProjectState()`: changes when the project document is replaced. */
-export type ProjectState = Pick<DocumentContextValue, "projectDocument" | "projectName">;
-/**
- * `useRegistryState()`: the asset registry and the registry-adjacent state
- * that advances `registryEpoch`. Document edits and tab changes leave it.
- */
-export type RegistryState = Pick<
+import type {
+  ActiveDocumentState,
+  CloseProjectResult,
+  CompileState,
+  DocumentActions,
   DocumentContextValue,
-  | "assetRegistry"
-  | "registryEpoch"
-  | "encodingTextures"
-  | "projectGuid"
-  | "extensionService"
-  | "pluginDescriptors"
-  | "pluginDiagnostics"
-  | "showPluginContent"
-  | "searchIndex"
->;
-/** `useActiveDocumentState()`: the active tab and its chrome state. */
-export type ActiveDocumentState = Pick<
-  DocumentContextValue,
-  | "activeDocumentId"
-  | "animEditorMode"
-  | "sceneMode"
-  | "isLayoutFocused"
-  | "canUndoActiveDocument"
-  | "canRedoActiveDocument"
->;
-/**
- * `useSaveState()`: unsaved work, edits still waiting for Recover or Discard,
- * and Auto-Save. `dirtyDocuments` keeps its identity while the same documents
- * (with the same labels) are dirty, so further edits of an already dirty
- * document do not change it.
- */
-export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
-/** `useCompileState()`: compile staleness and the Play preview bundles. */
-export type CompileState = Pick<
-  DocumentContextValue,
-  | "graphsNeedCompile"
-  | "scriptsStale"
-  | "currentGraphSignature"
-  | "playPreviewBundles"
-  | "playPreviewDiagnostics"
-  | "playLoadedSignature"
->;
-/** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */
-export type EditorShellState = Pick<
-  DocumentContextValue,
-  | "listedProjects"
-  | "needsReconnect"
-  | "recoveryAvailable"
-  | "migrationPending"
-  | "migrationPromptRequest"
-  | "templates"
-  | "homepageReady"
-  | "pendingExclusiveScene"
-  | "externalChangePrompt"
-  | "undoHistoryNotice"
-  | "thumbnailVersions"
-  | "thumbnailsEnabled"
->;
-/** `useSourceControl()`: a new object whenever source control state changes. */
-export type SourceControlState = Pick<DocumentContextValue, "sourceControl">;
+  EditorShellState,
+  ProjectState,
+  RegistryState,
+  SaveState,
+  SourceControlState,
+  AppRoute,
+} from "./document-context-types";
+import {
+  ActiveDocumentStateContext,
+  AppRouteContext,
+  CompileStateContext,
+  DockWindowTickContext,
+  DocumentActionsContext,
+  DocumentContext,
+  DocumentSubscriptionsContext,
+  EditorShellStateContext,
+  ProjectStateContext,
+  RegistryStateContext,
+  SaveStateContext,
+  SourceControlStateContext,
+} from "./document-context-hooks";
+import { animEditorModeForDocument, useDocumentDockLayouts } from "./use-document-dock-layouts";
+import { useRefState } from "./use-ref-state";
+import { installEditorTestHooks } from "./document-test-hooks";
+import { exportProjectGameArtifact, type ExportGameArtifactOptions } from "../services/export-game-artifact";
 
-/**
- * React state mirrored in `ref` for callbacks that read it when they run.
- * The setter writes both together, never during render, so a callback called
- * later in the same event (or from a child's layout effect before this
- * provider commits) already sees the new value without depending on it.
- */
-function useRefState<T>(
-  ref: RefObject<T>,
-): [T, (next: T | ((current: T) => T)) => void] {
-  const [state, setState] = useState(ref.current);
-  const set = useCallback(
-    (next: T | ((current: T) => T)) => {
-      const value =
-        typeof next === "function"
-          ? (next as (current: T) => T)(ref.current)
-          : next;
-      ref.current = value;
-      setState(value);
-    },
-    [ref],
-  );
-  return [state, set];
-}
-
-const DocumentContext = createContext<DocumentContextValue | null>(null);
-/** Created once per provider: action-only consumers never re-render through it. */
-const DocumentActionsContext = createContext<DocumentActions | null>(null);
-/** Changes only when the app moves between Homepage and the editor. */
-const AppRouteContext = createContext<AppRoute | null>(null);
-/** Created once per provider; the per-document hooks read the service through it. */
-const DocumentSubscriptionsContext = createContext<DocumentSubscriptions | null>(null);
-const ProjectStateContext = createContext<ProjectState | null>(null);
-const RegistryStateContext = createContext<RegistryState | null>(null);
-const ActiveDocumentStateContext = createContext<ActiveDocumentState | null>(null);
-const SaveStateContext = createContext<SaveState | null>(null);
-const CompileStateContext = createContext<CompileState | null>(null);
-const EditorShellStateContext = createContext<EditorShellState | null>(null);
-const SourceControlStateContext = createContext<SourceControlState | null>(null);
+export type {
+  ActiveDocumentState,
+  AppRoute,
+  CloseProjectResult,
+  CompileState,
+  DocumentActions,
+  EditorShellState,
+  ProjectState,
+  RegistryState,
+  SaveState,
+  SourceControlState,
+} from "./document-context-types";
+// Context modules intentionally export the provider plus consumer hooks.
+/* eslint-disable react-refresh/only-export-components -- context module */
+export {
+  useActiveDocumentId,
+  useActiveDocumentState,
+  useAppRoute,
+  useCompileState,
+  useDockWindowTick,
+  useDocumentActions,
+  useDocumentDirty,
+  useDocumentKindsRevision,
+  useDocuments,
+  useEditorShellState,
+  useOpenDocument,
+  useOpenDocumentTabs,
+  useProjectState,
+  useRegistryState,
+  useSaveState,
+  useSourceControl,
+  useTabOrder,
+} from "./document-context-hooks";
+/* eslint-enable react-refresh/only-export-components */
 
 const THUMBNAIL_DECODE_LRU_ENTRIES = 64;
-
-/** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
-const DockWindowTickContext = createContext(0);
-
-function asDockWindowApi(api: DockviewApi): DockWindowApi {
-  return api as unknown as DockWindowApi;
-}
-
-function dockOptionsForIndexed(
-  kind: string,
-  indexed:
-    | { header: { type: string; parentClass?: string | null } }
-    | undefined,
-  parentOf: (id: string) => string | null | undefined,
-  sourceControlEnabled = false,
-  animEditorMode?: AnimEditorMode,
-  sceneMode?: SceneMode,
-): DockWindowOptions {
-  return {
-    actorPrefab:
-      kind !== "graph" ||
-      !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
-    sourceControl: sourceControlEnabled,
-    sceneMode: kind === "scene" ? (sceneMode ?? "design") : undefined,
-    animEditorMode:
-      kind === "anim-graph" ? (animEditorMode ?? "stateMachine") : undefined,
-  };
-}
-
-function animEditorModeForDocument(
-  id: string,
-  modes: Record<string, AnimEditorMode>,
-  doc: OpenDocument | undefined,
-): AnimEditorMode {
-  if (modes[id]) return modes[id];
-  if (doc?.ref.kind === "anim-graph") {
-    return parseAnimDocumentLayout(doc.layout).animEditorMode;
-  }
-  return "stateMachine";
-}
-
-function findWindowDefinition(
-  kind: string,
-  panelId: string,
-  dockOptions: DockWindowOptions = {},
-) {
-  if (!isDockviewDocumentKind(kind)) return undefined;
-  return listDockWindows(kind, dockOptions).find((entry) => entry.id === panelId);
-}
-
-function restorePreFocusSnapshot(
-  id: string,
-  snapshot: PreFocusSnapshot,
-  apis: Map<string, DockviewApi>,
-): void {
-  const api =
-    apis.get(dockviewApiKey(id, snapshot.surface)) ?? apis.get(id);
-  api?.fromJSON(snapshot.layout as never);
-}
 
 export function DocumentProvider({ children }: { children: ReactNode }) {
   const projectStorage = useMemo(() => createStorage(), []);
@@ -901,18 +268,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
-  const dockviewApisRef = useRef(new Map<string, DockviewApi>());
-  const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
-  const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
-  const sceneFocusedLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
-  // Actions keep their identity across edits: the state they read when they
-  // run (Anim modes, the project document, templates, the pending exclusive
-  // scene) lives in refs written by these setters, never during render.
-  const animEditorModesRef = useRef<Record<string, AnimEditorMode>>({});
-  const [animEditorModes, setAnimEditorModes] = useRefState(animEditorModesRef);
-  const [focusedLayoutIds, setFocusedLayoutIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavePausedRef = useRef(false);
   /** An auto-save came due while a game covered the editor. */
@@ -936,6 +291,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const thumbnailsEnabledRef = useRef(true);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
+  // Actions keep their identity across edits: the state they read when they
+  // run (the project document, templates, the pending exclusive scene) lives
+  // in refs written by these setters, never during render.
   const [route, setRoute] = useState<AppRoute>("home");
   const projectDocumentRef = useRef<ProjectDocument | null>(null);
   const [projectDocument, setProjectDocument] = useRefState(projectDocumentRef);
@@ -992,7 +350,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, [thumbnailRevisionIndex]);
-  const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
   const pendingExclusiveSceneRef = useRef<DocumentRef | null>(null);
   const [pendingExclusiveScene, setPendingExclusiveScene] = useRefState(
@@ -1077,9 +434,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   useEffect(() => documentService.onAuthoringLockChange(bump), [bump, documentService]);
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
   const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), [setRegistryTick]);
-  const bumpDockWindows = useCallback(() => {
-    setDockWindowTick((v) => v + 1);
-  }, []);
+  const {
+    animEditorModes,
+    setAnimEditorModes,
+    focusedLayoutIds,
+    dockWindowTick,
+    captureLayoutForId,
+    captureAllLayouts,
+    resetDockLayouts,
+    moveDockLayouts,
+    forgetDockLayouts,
+    registerDockviewApi,
+    unregisterDockviewApi,
+    setAnimEditorMode,
+    setSceneMode,
+    activateDockPanel,
+    toggleDockWindow,
+    isDockWindowOpen,
+    getOpenDockWindowCount,
+    toggleLayoutFocus,
+  } = useDocumentDockLayouts({ documentService, projectService, sourceControlRef, settingsStore, bump });
   useEffect(() => attachEditGestureBoundaries(() => {
     const id = documentService.getState().activeDocumentId;
     if (id) editSessionRef.current.getStack(id).endGesture();
@@ -1197,20 +571,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const disposeDockSubscriptions = useCallback((id?: string) => {
-    const keys = id
-      ? [id, ...dockviewApiKeysForDocument(id)].filter(
-          (key, index, all) => all.indexOf(key) === index,
-        )
-      : [...dockSubscriptionsRef.current.keys()];
-    for (const key of keys) {
-      for (const sub of dockSubscriptionsRef.current.get(key) ?? []) {
-        sub.dispose();
-      }
-      dockSubscriptionsRef.current.delete(key);
-    }
-    if (!id) dockSubscriptionsRef.current.clear();
-  }, []);
 
   const ensureDerived = useCallback(async () => {
     if (!derivedStorageRef.current) {
@@ -1302,72 +662,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bumpRegistry, projectService],
   );
 
-  const captureLayoutForId = useCallback(
-    (id: string) => {
-      const doc = documentService.getDocument(id);
-      if (doc?.ref.kind === "scene") {
-        const layout = parseSceneDocumentLayout(doc.layout);
-        for (const mode of SCENE_MODES) {
-          const key = dockviewApiKey(id, mode);
-          const api = dockviewApisRef.current.get(key);
-          const beforeFocus = preFocusLayoutsRef.current.get(key);
-          if (api) {
-            const live = captureAdaptiveDockviewLayout(api);
-            layout[mode] = beforeFocus?.layout ?? live;
-            if (beforeFocus) sceneFocusedLayoutsRef.current.set(key, api.toJSON() as unknown as Record<string, unknown>);
-          } else if (beforeFocus) layout[mode] = beforeFocus.layout;
-        }
-        documentService.setLayout(id, layout);
-        return;
-      }
-      if (doc?.ref.kind === "anim-graph") {
-        const parsed = parseAnimDocumentLayout(doc.layout);
-        const mode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
-        const stateApi = dockviewApisRef.current.get(
-          dockviewApiKey(id, "stateMachine"),
-        );
-        const objectApi = dockviewApisRef.current.get(
-          dockviewApiKey(id, "animationObject"),
-        );
-        const live = {
-          animEditorMode: mode,
-          stateMachine: stateApi
-            ? captureAdaptiveDockviewLayout(stateApi)
-            : parsed.stateMachine,
-          animationObject: objectApi
-            ? captureAdaptiveDockviewLayout(objectApi)
-            : parsed.animationObject,
-        };
-        const animPreFocus = preFocusLayoutsRef.current.get(id);
-        documentService.setLayout(
-          id,
-          serializeAnimDocumentLayout(
-            animPreFocus
-              ? applyPreFocusToAnimLayout(live, animPreFocus)
-              : live,
-          ),
-        );
-        return;
-      }
-      const preFocus = preFocusLayoutsRef.current.get(id);
-      if (preFocus) {
-        documentService.setLayout(id, preFocus.layout);
-        return;
-      }
-      const api = dockviewApisRef.current.get(id);
-      if (api) {
-        documentService.setLayout(id, captureAdaptiveDockviewLayout(api));
-      }
-    },
-    [documentService],
-  );
-
-  const captureAllLayouts = useCallback(() => {
-    const { tabOrder } = documentService.getState();
-    for (const id of tabOrder) {
-      captureLayoutForId(id);
-    }
-  }, [captureLayoutForId, documentService]);
 
   const noteAssetsCreated = useCallback(() => {
     const paths = projectService.registry?.listDocumentPaths({ rootId: "project" });
@@ -1574,52 +868,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             journalRepathLine(oldId, newId, new Date().toISOString()),
           );
         }
-        // Live dock handles belong to the workspace unmounting under the old
-        // id. Release them as closeDocument does, so its teardown cannot write
-        // placements back under the old id; the remount registers new ones.
-        for (const key of dockviewApiKeysForDocument(oldId)) {
-          dockviewApisRef.current.delete(key);
-        }
-        disposeDockSubscriptions(oldId);
-        const pairs = dockviewApiKeyPairs(oldId, newId);
-        for (const [from, to] of pairs) {
-          moveKeyedEntry(preFocusLayoutsRef.current, from, to);
-          moveKeyedEntry(sceneFocusedLayoutsRef.current, from, to);
-        }
-        setFocusedLayoutIds((current) => {
-          if (!pairs.some(([from, to]) => current.has(from) || current.has(to))) {
-            return current;
-          }
-          const next = new Set(current);
-          for (const [from, to] of pairs) {
-            next.delete(to);
-            if (current.has(from)) {
-              next.delete(from);
-              next.add(to);
-            }
-          }
-          return next;
-        });
-        setAnimEditorModes((current) => {
-          if (!(oldId in current) && !(newId in current)) return current;
-          const next = { ...current };
-          const mode = next[oldId];
-          delete next[oldId];
-          delete next[newId];
-          if (mode) next[newId] = mode;
-          return next;
-        });
+        moveDockLayouts(oldId, newId);
       }
       bump();
     },
     [
       bump,
       captureLayoutForId,
-      disposeDockSubscriptions,
       documentService,
       journalBuffer,
+      moveDockLayouts,
       projectService,
-      setAnimEditorModes,
     ],
   );
 
@@ -1703,11 +962,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       cancelSceneDocumentLoad();
       const sceneLoadController = new AbortController();
       sceneDocumentLoadRef.current = sceneLoadController;
-      dockviewApisRef.current.clear();
-      disposeDockSubscriptions();
-      preFocusLayoutsRef.current.clear();
-      sceneFocusedLayoutsRef.current.clear();
-      setFocusedLayoutIds(new Set());
+      resetDockLayouts();
       editSessionRef.current.clear();
       thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
       requestedThumbnailRevisionsRef.current.clear();
@@ -1770,11 +1025,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [
       bump,
-      disposeDockSubscriptions,
       documentService,
       ensureDerived,
       projectService,
       recordRecent,
+      resetDockLayouts,
       refreshProjectList,
       captureMtimeSnapshot,
       clearPlayPreviewScripts,
@@ -2234,11 +1489,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
     sourceControlRef.current.dispose();
     projectService.setDerivedStorage(null);
-    dockviewApisRef.current.clear();
-    disposeDockSubscriptions();
-    preFocusLayoutsRef.current.clear();
-    sceneFocusedLayoutsRef.current.clear();
-    setFocusedLayoutIds(new Set());
+    resetDockLayouts();
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
     projectSaveState.current.reset(null);
@@ -2258,7 +1509,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [
     bump,
     captureAllLayouts,
-    disposeDockSubscriptions,
     documentService,
     enqueueProjectWrite,
     ensureDerived,
@@ -2268,6 +1518,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     clearPlayPreviewScripts,
     cancelSceneDocumentLoad,
     playContent,
+    resetDockLayouts,
     setAnimEditorModes,
     setPendingExclusiveScene,
     setProjectDocument,
@@ -2292,127 +1543,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [projectService]);
 
   const exportGameArtifact = useCallback(
-    async (options?: {
-      projectSnapshot?: ProjectDocument;
-      previewBuild?: boolean;
-      playerFiles?: Map<string, Uint8Array>;
-      onPhase?: (phase: "Compiling" | "Writing Pack") => void;
-      startupSceneGuid?: string | null;
-      /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
-      transcoderAvailable?: boolean;
-    }) => {
-      const exportDocument =
-        options?.projectSnapshot ?? projectDocumentRef.current;
-      // Export consumes persisted sources even when a tab contains unsaved edits.
-      // A Scene the bake cannot read, or whose changed result it cannot save
-      // (writes locked or failing), fails the export only if the game reaches it.
-      const reverbScenes = await collectAudioReverbFlushScenes({
-        paths: playSceneLibraryPaths(exportDocument?.scenes ?? [], projectService.registry?.list() ?? []),
-        load: (path) => projectService.loadDocument("scene", path),
-      });
-      const reverbUnsaved = await flushAudioReverbForSave(reverbScenes.scenes);
-      const preset =
-        exportDocument?.settings.exportPresets[0] ?? defaultExportPreset();
-      const plugins = projectService.plugins;
-      const projectPluginOverrides =
-        exportDocument?.settings.pluginOverrides ?? {};
-      const pluginGraph = resolveExportPluginGraph(
-        plugins,
-        projectPluginOverrides,
-        preset,
-      );
-      const pluginErrors = pluginGraph.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
-      if (pluginErrors.length > 0) {
-        return {
-          ok: false as const,
-          error: pluginErrors
-            .map((diagnostic) => diagnostic.message)
-            .join("\n"),
-        };
-      }
-      const list = await projectService.listExportAssets(
-        new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid)),
-      );
-      const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
-      const loaded = await loadExportDocuments({
-        assets: list,
-        loadDocument: (kind, path) =>
-          projectService.loadDocument(
-            kind as Parameters<ProjectService["loadDocument"]>[0],
-            path,
-          ),
-        loadDocumentWithChunks: (kind, path, chunks) =>
-          projectService.loadDocumentWithChunks(
-            kind as Parameters<ProjectService["loadDocumentWithChunks"]>[0],
-            path,
-            chunks,
-          ),
-        readAssetChunk: (path, chunkId) =>
-          projectService.readAssetChunk(path, chunkId),
-        transcoderAvailable:
-          options?.transcoderAvailable ??
-          playerFilesHaveKtx2Transcoder(playerFiles),
-        audioReverbBakeFailures: new Map<string, unknown>([...reverbScenes.unreadable, ...reverbUnsaved]),
-      });
-      const startupSceneGuid =
-        typeof options?.startupSceneGuid === "string" &&
-        options.startupSceneGuid.trim() !== ""
-          ? options.startupSceneGuid.trim()
-          : (exportDocument?.settings.startupSceneGuid ?? null);
-      return collectAndExportGame({
-        startupSceneGuid,
-        project: exportDocument?.metadata,
-        projectId: projectService.guid ?? undefined,
-        saveGameSettings: exportDocument?.settings.saveGame,
-        defaultFontGuid: exportDocument?.settings.fonts.defaultFontGuid ?? null,
-        gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
-        audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
-        occlusionEnabled:
-          exportDocument?.settings.audio.occlusionEnabled !== false,
-        reverbWetScale: exportDocument?.settings.audio.reverbWetScale,
-        reverbDecayScale: exportDocument?.settings.audio.reverbDecayScale,
-        reverbDampingScale: exportDocument?.settings.audio.reverbDampingScale,
-        alwaysPackageFolders: exportDocument?.settings.alwaysPackageFolders,
-        assets: assetsFromIndexed(list),
-        plugins,
-        projectPluginOverrides,
-        preset,
-        parentOf: classParentLookup(list),
-        sceneByGuid: loaded.sceneByGuid,
-        graphByGuid: loaded.graphByGuid,
-        payloadByGuid: loaded.payloadByGuid,
-        bytesByGuid: loaded.bytesByGuid,
-        fontFacetypeBytesByGuid: loaded.fontFacetypeBytesByGuid,
-        areaEmissionBytesByGuid: loaded.areaEmissionBytesByGuid,
-        fontMsdfJsonByGuid: loaded.fontMsdfJsonByGuid,
-        fontMsdfPngByGuid: loaded.fontMsdfPngByGuid,
-        navmeshByGuid: loaded.navmeshByGuid,
-        audioReverbByGuid: loaded.audioReverbByGuid,
-        renderSettings:
-          exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
-        playFrameCap:
-          exportDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
-        touchMinTargetPx:
-          exportDocument?.settings.touchMinTargetPx ?? 44,
-        pixelsPerUnit: exportDocument?.settings.twoD.pixelsPerUnit ?? 100,
-        sortingLayers: exportDocument?.settings.twoD.sortingLayers,
-        pixelPerfect: exportDocument?.settings.twoD.pixelPerfect === true,
-        physicsWorld:
-          loaded.sceneByGuid(startupSceneGuid ?? "")?.settings.physicsWorld ===
-          "2d"
-            ? "2d"
-            : "3d",
-        collisionPresets: exportDocument?.settings.physics.collisionPresets,
-        infiniteLoopDetection:
-          exportDocument?.settings.infiniteLoopDetection,
-        loopCount: exportDocument?.settings.loopCount,
-        focusNavigation: exportDocument?.settings.focusNavigation,
-        tagRegistry: exportDocument?.settings.tags,
-        playerFiles,
-        previewBuild: options?.previewBuild,
-        onPhase: options?.onPhase,
-      });
-    },
+    (options?: ExportGameArtifactOptions) =>
+      exportProjectGameArtifact(projectService, projectDocumentRef.current, options),
     [projectService],
   );
 
@@ -2450,24 +1582,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (doc && doc.ref.kind !== "content-browser" && guid) {
         journalBuffer.append(guid, journalDiscardLine(id, new Date().toISOString()));
       }
-      for (const key of dockviewApiKeysForDocument(id)) {
-        dockviewApisRef.current.delete(key);
-        preFocusLayoutsRef.current.delete(key);
-        sceneFocusedLayoutsRef.current.delete(key);
-      }
-      disposeDockSubscriptions(id);
-      preFocusLayoutsRef.current.delete(id);
-      setAnimEditorModes((current) => {
-        if (!(id in current)) return current;
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-      setFocusedLayoutIds((current) => {
-        const next = new Set(current);
-        for (const key of dockviewApiKeysForDocument(id)) next.delete(key);
-        return next;
-      });
+      forgetDockLayouts(id);
       documentService.closeDocument(id);
       if (doc?.content && !doc.dirty) {
         // Saved content: a reopen that loads the same content resumes Undo.
@@ -2485,11 +1600,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [
       bump,
-      disposeDockSubscriptions,
       documentService,
+      forgetDockLayouts,
       journalBuffer,
       projectService,
-      setAnimEditorModes,
     ],
   );
 
@@ -3260,355 +2374,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
-    const host = globalThis as {
-      __hapticTest?: {
-        ensureMainGraphOpen: () => Promise<boolean>;
-        nudgeActiveGraphNode: () => Promise<boolean>;
-        cancelDebouncedSave: () => void;
-        /** A game covers the editor, so its background work waits (`editor-quiet`). */
-        editorQuiet: () => boolean;
-        assetLoading: () => { sources: ReturnType<import("@haptic/assets").AssetLoadingService["snapshot"]>; storage: import("@haptic/core").StorageReadMetrics | null; chunks: ReturnType<import("@haptic/assets").AccountedPayloadLoader["snapshot"]> | null; requestedPayloadBytes: number };
-        trimAssetSources: () => void;
-        activeGraphNodePosition: () => { x: number; y: number } | null;
-        hasRecoveryJournal: () => Promise<boolean>;
-        /** Move the first scene actor by a fixed delta through the command layer. */
-        nudgeActiveSceneActor: () => Promise<boolean>;
-        activeSceneActorPosition: () => [number, number, number] | null;
-        injectTestGamepad: (pad: {
-          index?: number;
-          axes?: number[];
-          buttons?: number[];
-        } | null) => void;
-        injectTestTouchAxis: (axes: Record<string, number> | null) => void;
-        setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
-        setMainGraphComponents: (
-          components: SerializedGraph["components"],
-        ) => Promise<boolean>;
-        setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
-        activeSceneContent: () => SerializedScene | null;
-        advanceIdleClock: (ms: number) => void;
-        guidForPath: (path: string) => string | null;
-        readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
-        lastNavBake: () => {
-          ok: boolean;
-          path: string | null;
-          byteLength: number;
-          error: string | null;
-        } | null;
-        projectStartupSceneGuid: () => string;
-        pluginGuids: () => string[];
-        enginePluginLoad: () => {
-          entries: number;
-          errors: string[];
-        };
-        seedMissingPluginOverride: (guid: string) => Promise<{
-          guid: string;
-          type: string;
-          path: string;
-          placeholder: boolean;
-        } | null>;
-        activeTilemapTile: (gx: number, gy: number) => number | null;
-        touchAssetOnDisk: (path: string) => Promise<void>;
-        runForegroundRescan: () => Promise<void>;
-        documentDirtyTrace: () => { kind: string; id: string; via?: string }[];
-        clearDocumentDirtyTrace: () => void;
-        saveAllProgress: typeof saveAllProgress;
-        saveAllTrace: () => {
-          ok: boolean;
-          reason: string;
-          dirtyBefore: number;
-          dirtyAfter: number;
-          error?: string;
-        } | null;
-        dirtyDocuments: () => { kind: string; id: string }[];
-        /** Per-region React commits since the last reset (editor-edit profiling builds). */
-        renderProfile: () => RenderProfile;
-        resetRenderProfile: () => void;
-        /** Texture alignment passes run and queued, and the Textures they requeued. */
-        textureAlignment: () => { runs: number; pending: number; requeued: string[] };
-        /** Texture paths whose KTX2 encode is still pending or running. */
-        pendingTextureEncodes: () => string[];
-        textureEncodeState: (path: string) => {
-          compressionState: string | null;
-          encodeError: string | null;
-          hasPixels: boolean;
-          /** Committed encode (`payload.ktx2ChunkId`) for reading its KTX2 header. */
-          ktx2ChunkId: string | null;
-        } | null;
-      };
-      __hapticSourceControl?: SourceControlService;
-    };
-    host.__hapticSourceControl = sourceControlRef.current;
-    host.__hapticTest = {
-      assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, chunks: projectService.registry?.payloadLoader.snapshot() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
-      trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
-      editorQuiet,
+    return installEditorTestHooks({
+      projectService,
+      documentService,
+      sourceControl: sourceControlRef.current,
+      journalBuffer,
+      ensureDerived,
+      bump,
       cancelDebouncedSave: () => {
         if (saveDebounceRef.current) {
           clearTimeout(saveDebounceRef.current);
           saveDebounceRef.current = null;
         }
       },
-      activeGraphNodePosition: () => {
-        const doc = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "graph" && entry.content,
-        );
-        const graph = doc?.content as SerializedGraph | undefined;
-        return graph?.nodes[0]?.position
-          ? { ...graph.nodes[0].position }
-          : null;
-      },
-      hasRecoveryJournal: async () => {
-        const guid = projectService.guid;
-        if (!guid) return false;
-        const derived = await ensureDerived();
-        return journalBuffer.afterFlush(guid, async () =>
-          resolveJournalLines(await readJournalLines(derived, guid)).length > 0,
-        );
-      },
-      /** Open main graph without activating it (avoids GraphEditor stomping edits). */
-      ensureMainGraphOpen: async () => {
-        const candidates = [
-          "assets/Mannequin.class.hasset",
-          "assets/main.class.hasset",
-        ];
-        const existing = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "graph",
-        );
-        if (existing?.content != null) return true;
-        const registry = projectService.registry;
-        const path =
-          existing?.ref.path ?? candidates.find((candidate) =>
-            registry?.list().some((asset) => asset.path === candidate),
-          ) ?? candidates[0]!;
-        const id = `graph:${path}`;
-        if (documentService.getState().openDocuments.get(id)?.content == null) {
-          await documentService.openDocument(
-            projectService,
-            { kind: "graph", path, label: path.split("/").pop() ?? path },
-            null,
-            false,
-          );
-          bump();
-        }
-        return documentService.getState().openDocuments.get(id)?.content != null;
-      },
-      nudgeActiveGraphNode: async () => {
-        const openDocuments = documentService.getState().openDocuments;
-        const id = [...openDocuments.values()].find((d) => d.ref.kind === "graph")
-          ?.id;
-        if (!id) return false;
-        const doc = openDocuments.get(id);
-        if (!doc?.content) return false;
-        const graph = structuredClone(doc.content as SerializedGraph);
-        if (!graph.nodes[0]) return false;
-        graph.nodes[0] = {
-          ...graph.nodes[0],
-          position: {
-            x: graph.nodes[0].position.x + 42,
-            y: graph.nodes[0].position.y + 17,
-          },
-        };
-        return applyGraphChange(id, graph);
-      },
-      activeSceneActorPosition: () => {
-        const doc = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "scene" && entry.content,
-        );
-        const scene = doc?.content as SerializedScene | undefined;
-        const position = scene?.actors[0]?.transform.position;
-        return position ? [...position] : null;
-      },
-      nudgeActiveSceneActor: async () => {
-        const openDocuments = documentService.getState().openDocuments;
-        const id = [...openDocuments.values()].find((d) => d.ref.kind === "scene")
-          ?.id;
-        if (!id) return false;
-        const doc = openDocuments.get(id);
-        if (!doc?.content) return false;
-        const scene = structuredClone(doc.content as SerializedScene);
-        const actor = scene.actors[0];
-        if (!actor) return false;
-        const [x, y, z] = actor.transform.position;
-        scene.actors[0] = {
-          ...actor,
-          transform: {
-            ...actor.transform,
-            position: [x + 1.5, y, z],
-          },
-        };
-        return applySceneChange(id, scene);
-      },
-      injectTestGamepad: (pad) => {
-        const globalHost = globalThis as {
-          __hapticTestGamepad?: {
-            index: number;
-            axes: number[];
-            buttons: number[];
-          };
-        };
-        if (!pad) {
-          delete globalHost.__hapticTestGamepad;
-          return;
-        }
-        globalHost.__hapticTestGamepad = {
-          index: pad.index ?? 0,
-          axes: pad.axes ?? [0, 0, 0, 0],
-          buttons: pad.buttons ?? [0, 0, 0, 0],
-        };
-      },
-      injectTestTouchAxis: (axes) => {
-        const globalHost = globalThis as {
-          __hapticTestTouchAxes?: Record<string, number>;
-        };
-        if (!axes) {
-          delete globalHost.__hapticTestTouchAxes;
-          return;
-        }
-        globalHost.__hapticTestTouchAxes = { ...axes };
-      },
-      /** Replace the main graph so Preview compiles a known script. */
-      setMainGraphContent: async (graph: SerializedGraph) => {
-        const candidates = [
-          "assets/Mannequin.class.hasset",
-          "assets/main.class.hasset",
-        ];
-        const openGraph = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "graph",
-        );
-        const path =
-          openGraph?.ref.path ??
-          candidates.find((candidate) =>
-            projectService.registry
-              ?.list()
-              .some((asset) => asset.path === candidate),
-          ) ??
-          candidates[0]!;
-        const id = `graph:${path}`;
-        if (!documentService.getState().openDocuments.has(id)) {
-          await documentService.openDocument(
-            projectService,
-            { kind: "graph", path, label: path.split("/").pop() ?? path },
-            null,
-            false,
-          );
-        }
-        documentService.updateGraph(id, graph);
-        bump();
-        return true;
-      },
-      setMainGraphComponents: async (components) => {
-        const openGraph = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "graph" && entry.content,
-        );
-        if (!openGraph?.content) return false;
-        const graph = structuredClone(openGraph.content as SerializedGraph);
-        graph.components = structuredClone(components);
-        return applyGraphChange(openGraph.id, graph);
-      },
-      activeSceneContent: () => {
-        const scene = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "scene",
-        )?.content;
-        return scene ? structuredClone(scene as SerializedScene) : null;
-      },
-      setActiveSceneContent: async (scene) => {
-        const openScene = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "scene",
-        );
-        if (!openScene) return false;
-        return applySceneChange(openScene.id, structuredClone(scene));
-      },
-      advanceIdleClock: (ms: number) => {
-        advanceTestIdleClock(ms);
-      },
-      guidForPath: (path: string) => projectService.guidForPath(path),
-      readAssetChunk: (path: string, chunkId: string) =>
-        projectService.readAssetChunk(path, chunkId),
-      lastNavBake: () => lastNavBakeSaveResult(),
-      textureAlignment: () => projectService.textureAlignmentState,
-      pendingTextureEncodes: () =>
-        unfinishedTextureEncodePaths(projectService.registry?.list() ?? [], projectService.textureEncodingGuids),
-      textureEncodeState: (path: string) => {
-        const asset = projectService.registry
-          ?.list()
-          .find((entry) => entry.path === path);
-        if (!asset) return null;
-        const state = shownCompressionState(
-          asset.header.payload.compressionState,
-          projectService.textureEncodingGuids.has(asset.header.guid),
-        );
-        const encodeError = asset.header.payload.encodeError;
-        const ktx2ChunkId = asset.header.payload.ktx2ChunkId;
-        return {
-          compressionState: state,
-          encodeError: typeof encodeError === "string" ? encodeError : null,
-          hasPixels: asset.header.chunks.some(
-            (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
-          ),
-          ktx2ChunkId: typeof ktx2ChunkId === "string" ? ktx2ChunkId : null,
-        };
-      },
-      projectStartupSceneGuid: () =>
-        projectDocumentRef.current?.settings.startupSceneGuid?.trim() ?? "",
-      pluginGuids: () =>
-        projectService.plugins.map((plugin) => plugin.pluginGuid),
-      enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
-      seedMissingPluginOverride: async (guid: string) => {
-        const current =
-          projectDocumentRef.current?.settings.pluginOverrides ?? {};
-        const next = { ...current, [guid]: { enabled: true } };
-        updateProjectSettings({ pluginOverrides: next });
-        await projectService.applyPluginOverrides(next);
-        bump();
-        const asset = projectService.registry?.getByGuid(guid);
-        if (!asset) return null;
-        return {
-          guid: asset.header.guid,
-          type: asset.header.type,
-          path: asset.path,
-          placeholder: asset.placeholder === true,
-        };
-      },
-      activeTilemapTile: (gx: number, gy: number) => {
-        const doc = [...documentService.getState().openDocuments.values()].find(
-          (entry) => entry.ref.kind === "tilemap" && entry.content,
-        );
-        if (!doc?.content) return null;
-        const map = normalizeTilemapPayload(doc.content);
-        const layerId = map.layers[0]?.id;
-        if (!layerId) return null;
-        return getTile(map, layerId, gx, gy);
-      },
-      touchAssetOnDisk: async (path: string) => {
-        const storage = projectService.storagePort;
-        if (!(await storage.exists(path))) return;
-        const bytes = await storage.readBinary(path);
-        await storage.writeBinary(path, bytes);
-      },
+      projectDocument: () => projectDocumentRef.current,
+      isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
       runForegroundRescan: () => runForegroundRescanRef.current(),
-      documentDirtyTrace,
-      clearDocumentDirtyTrace,
-      saveAllProgress,
-      saveAllTrace,
-      renderProfile,
-      resetRenderProfile,
-      dirtyDocuments: () => [
-        ...documentService.getDirtyDocuments().map((doc) => ({
-          kind: doc.ref.kind,
-          id: doc.id,
-        })),
-        ...(projectSaveState.current.isDirty(projectDocumentRef.current) ? [{ kind: "project", id: "project" }] : []),
-      ],
-    };
-    return () => {
-      delete host.__hapticTest;
-      delete host.__hapticSourceControl;
-      delete (globalThis as { __hapticTestGamepad?: unknown })
-        .__hapticTestGamepad;
-      delete (globalThis as { __hapticTestTouchAxes?: unknown })
-        .__hapticTestTouchAxes;
-    };
+      applyGraphChange,
+      applySceneChange,
+      updateProjectSettings,
+    });
   }, [
     applyGraphChange,
     reparentClassDocument,
@@ -3630,274 +2415,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     editing.stepHistory("redo");
   }, [editing]);
 
-  const registerDockviewApi = useCallback((
-    id: string,
-    api: DockviewApi,
-    surface: DockviewSurface = "default",
-  ) => {
-    const key = dockviewApiKey(id, surface);
-    dockviewApisRef.current.set(key, api);
-    const sceneFocusedLayout = sceneFocusedLayoutsRef.current.get(key);
-    if (preFocusLayoutsRef.current.has(key) && sceneFocusedLayout) {
-      api.fromJSON(sceneFocusedLayout as never);
-    }
-    for (const sub of dockSubscriptionsRef.current.get(key) ?? []) {
-      sub.dispose();
-    }
-    dockSubscriptionsRef.current.delete(key);
-    // Drags and resizes fire layout changes continuously: the Class parent
-    // lookup is rebuilt only when the registry changes.
-    let parentLookup: { generation: number; parentOf: ReturnType<typeof classParentLookup> } | null = null;
-    const rememberPlacements = () => {
-      if (preFocusLayoutsRef.current.has(key) || preFocusLayoutsRef.current.has(id) || isPhoneDockLayout(api)) return;
-      const dock = asDockWindowApi(api);
-      const doc = documentService.getDocument(id);
-      const kind = doc?.ref.kind;
-      const indexed = doc ? projectService.registry?.getByPath(doc.ref.path) : undefined;
-      const generation = projectService.registryGeneration;
-      if (parentLookup?.generation !== generation) {
-        parentLookup = { generation, parentOf: classParentLookup(projectService.registry?.list() ?? []) };
-      }
-      const parentOf = parentLookup.parentOf;
-      const animSurfaceMode: AnimEditorMode | undefined =
-        surface === "animationObject"
-          ? "animationObject"
-          : surface === "stateMachine"
-            ? "stateMachine"
-            : undefined;
-      const dockOptions = dockOptionsForIndexed(
-        kind ?? "",
-        indexed,
-        parentOf,
-        sourceControlRef.current.enabled,
-        animSurfaceMode,
-        surface === "design" || surface === "landscape" || surface === "foliage" ? surface : undefined,
-      );
-      for (const panel of listDockPanels(dock)) {
-        // Function graph tabs persist in the DockView snapshot, not as
-        // remembered catalog placements.
-        if (isFunctionGraphPanelId(panel.id)) continue;
-        const def = isDockviewDocumentKind(kind)
-          ? findWindowDefinition(kind, panel.id, dockOptions)
-          : undefined;
-        const placement = capturePanelPlacement(dock, panel.id, def);
-        if (placement) {
-          documentService.setPanelPlacement(id, kind === "scene" ? `${surface}:${panel.id}` : panel.id, placement);
-        }
-      }
-    };
-    dockSubscriptionsRef.current.set(key, [
-      api.onDidAddPanel(() => bumpDockWindows()),
-      api.onDidRemovePanel(() => bumpDockWindows()),
-      api.onDidLayoutChange(rememberPlacements),
-    ]);
-    rememberPlacements();
-    bumpDockWindows();
-  }, [bumpDockWindows, documentService, projectService]);
-
-  const unregisterDockviewApi = useCallback(
-    (id: string, surface: DockviewSurface = "default") => {
-      const key = dockviewApiKey(id, surface);
-      dockviewApisRef.current.delete(key);
-      for (const sub of dockSubscriptionsRef.current.get(key) ?? []) {
-        sub.dispose();
-      }
-      dockSubscriptionsRef.current.delete(key);
-    },
-    [],
-  );
-
-  const activeDockApi = useCallback((): DockviewApi | undefined => {
-    const { activeDocumentId } = documentService.getState();
-    if (!activeDocumentId) return undefined;
-    const doc = documentService.getDocument(activeDocumentId);
-    if (!doc) return undefined;
-    if (doc.ref.kind === "scene") {
-      return dockviewApisRef.current.get(dockviewApiKey(activeDocumentId, parseSceneDocumentLayout(doc.layout).sceneMode));
-    }
-    if (doc.ref.kind === "anim-graph") {
-      const mode = animEditorModeForDocument(
-        activeDocumentId,
-        animEditorModesRef.current,
-        doc,
-      );
-      return (
-        dockviewApisRef.current.get(
-          dockviewApiKey(activeDocumentId, dockviewSurfaceForAnimMode(mode)),
-        ) ?? dockviewApisRef.current.get(activeDocumentId)
-      );
-    }
-    return dockviewApisRef.current.get(activeDocumentId);
-  }, [documentService]);
-
-  const setAnimEditorMode = useCallback(
-    (id: string, mode: AnimEditorMode) => {
-      captureLayoutForId(id);
-      const doc = documentService.getDocument(id);
-      const currentMode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
-      if (currentMode !== mode) {
-        const snapshot = preFocusLayoutsRef.current.get(id);
-        if (snapshot) {
-          restorePreFocusSnapshot(id, snapshot, dockviewApisRef.current);
-          preFocusLayoutsRef.current.delete(id);
-          setFocusedLayoutIds((current) => {
-            if (!current.has(id)) return current;
-            const next = new Set(current);
-            next.delete(id);
-            return next;
-          });
-        }
-      }
-      setAnimEditorModes((current) =>
-        current[id] === mode ? current : { ...current, [id]: mode },
-      );
-      if (doc?.ref.kind === "anim-graph") {
-        const parsed = parseAnimDocumentLayout(doc.layout);
-        if (parsed.animEditorMode !== mode) {
-          documentService.setLayout(
-            id,
-            serializeAnimDocumentLayout({ ...parsed, animEditorMode: mode }),
-          );
-        }
-      }
-      bumpDockWindows();
-    },
-    [bumpDockWindows, captureLayoutForId, documentService, setAnimEditorModes],
-  );
-
-  const setSceneMode = useCallback((id: string, mode: SceneMode) => {
-    if (documentService.getDocument(id)?.ref.kind !== "scene") return;
-    captureLayoutForId(id);
-    const layout = parseSceneDocumentLayout(documentService.getDocument(id)?.layout);
-    documentService.setLayout(id, { ...layout, sceneMode: mode });
-    bump();
-    bumpDockWindows();
-  }, [bump, bumpDockWindows, captureLayoutForId, documentService]);
-
-  const activateDockPanel = useCallback((panelId: string) => {
-    activeDockApi()?.getPanel(panelId)?.api.setActive();
-  }, [activeDockApi]);
-
-  const toggleDockWindow = useCallback((panelId: string) => {
-    const { activeDocumentId } = documentService.getState();
-    if (!activeDocumentId) return;
-    const doc = documentService.getDocument(activeDocumentId);
-    if (!doc || !isDockviewDocumentKind(doc.ref.kind)) {
-      return;
-    }
-    const api = activeDockApi();
-    if (!api) return;
-    const indexed = projectService.registry?.getByPath(doc.ref.path);
-    const parentOf = registryClassParentLookup(projectService.registry);
-    const dockOptions = dockOptionsForIndexed(
-      doc.ref.kind,
-      indexed,
-      parentOf,
-      sourceControlRef.current.enabled,
-      doc.ref.kind === "anim-graph"
-        ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
-        : undefined,
-      doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined,
-    );
-    const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
-    if (!def) return;
-    const placementKey = doc.ref.kind === "scene" ? `${dockOptions.sceneMode}:${panelId}` : panelId;
-    const placements = documentService.getPanelPlacements(activeDocumentId);
-    const remembered = placements[placementKey] ?? (dockOptions.sceneMode === "design" ? placements[panelId] : null) ?? null;
-    const result = toggleDockWindowOnApi(
-      asDockWindowApi(api),
-      def,
-      remembered,
-    );
-    if (result.placement && !isPhoneDockLayout(api)) {
-      documentService.setPanelPlacement(
-        activeDocumentId,
-        placementKey,
-        result.placement,
-      );
-    }
-    bumpDockWindows();
-  }, [activeDockApi, bumpDockWindows, documentService, projectService]);
-
-  const isDockWindowOpen = useCallback((panelId: string) => {
-    const api = activeDockApi();
-    return api ? isDockWindowOpenOnApi(asDockWindowApi(api), panelId) : false;
-  }, [activeDockApi]);
-
-  const getOpenDockWindowCount = useCallback(() => {
-    const api = activeDockApi();
-    return api ? listDockPanels(asDockWindowApi(api)).length : 0;
-  }, [activeDockApi]);
-
-  const toggleLayoutFocus = useCallback(async () => {
-    const { activeDocumentId } = documentService.getState();
-    if (!activeDocumentId) return;
-    const doc = documentService
-      .getOpenDocumentsOrdered()
-      .find((entry) => entry.id === activeDocumentId);
-    if (!doc || !isDockviewDocumentKind(doc.ref.kind)) {
-      return;
-    }
-    const api = activeDockApi();
-    if (!api) return;
-
-    const sceneMode = doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined;
-    const focusKey = sceneMode ? dockviewApiKey(activeDocumentId, sceneMode) : activeDocumentId;
-    if (preFocusLayoutsRef.current.has(focusKey)) {
-      const snapshot = preFocusLayoutsRef.current.get(focusKey);
-      preFocusLayoutsRef.current.delete(focusKey);
-      sceneFocusedLayoutsRef.current.delete(focusKey);
-      if (snapshot) {
-        restorePreFocusSnapshot(
-          activeDocumentId,
-          snapshot,
-          dockviewApisRef.current,
-        );
-      }
-      setFocusedLayoutIds((current) => {
-        const next = new Set(current);
-        next.delete(focusKey);
-        return next;
-      });
-      return;
-    }
-
-    const settings = await settingsStore.load();
-    if (preFocusLayoutsRef.current.has(focusKey) || activeDockApi() !== api) {
-      return;
-    }
-    const dock = api;
-    const indexed = projectService.registry?.getByPath(doc.ref.path);
-    const parentOf = registryClassParentLookup(projectService.registry);
-    const animMode =
-      doc.ref.kind === "anim-graph"
-        ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
-        : undefined;
-    const dockOptions = dockOptionsForIndexed(
-      doc.ref.kind,
-      indexed,
-      parentOf,
-      sourceControlRef.current.enabled,
-      animMode,
-      sceneMode,
-    );
-
-    preFocusLayoutsRef.current.set(focusKey, {
-      layout: dock.toJSON() as unknown as Record<string, unknown>,
-      surface: sceneMode ?? (animMode ? dockviewSurfaceForAnimMode(animMode) : "default"),
-    });
-    applyFocusLayout(
-      doc.ref.kind,
-      dock,
-      focusKeepPanelIds(settings, doc.ref.kind, dockOptions),
-      dockOptions,
-    );
-    setFocusedLayoutIds((current) => {
-      const next = new Set(current);
-      next.add(focusKey);
-      return next;
-    });
-  }, [activeDockApi, documentService, projectService, settingsStore]);
 
   // Every callback above keeps its identity for the provider's lifetime (the
   // state it reads lives in refs or services), so this object is created once
@@ -4387,151 +2904,3 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     </DocumentActionsContext.Provider>
   );
 }
-
-// Context modules intentionally export the provider plus consumer hooks.
-/* eslint-disable react-refresh/only-export-components -- context module */
-/**
- * Everything: the stable actions plus documents, project and registry state.
- *
- * @deprecated The value changes after every edit, tab change and save, so
- * every caller re-renders with it. Use `useDocumentActions()` for callbacks
- * and the narrow hooks below for state (see "Document revisions and
- * subscriptions" in .agents/reference/architecture/command-layer.md).
- */
-export function useDocuments(): DocumentContextValue {
-  const context = useContext(DocumentContext);
-  if (!context) {
-    throw new Error("useDocuments must be used within DocumentProvider");
-  }
-  return context;
-}
-
-/**
- * The document callbacks only. The object and each callback keep their
- * identity while the provider is mounted, so a component that only acts on
- * documents does not re-render when they change; each callback reads the
- * current documents, project and Anim modes when it runs.
- */
-export function useDocumentActions(): DocumentActions {
-  const actions = useContext(DocumentActionsContext);
-  if (!actions) {
-    throw new Error("useDocumentActions must be used within DocumentProvider");
-  }
-  return actions;
-}
-
-/** Homepage or editor; its callers re-render only when the route changes. */
-export function useAppRoute(): AppRoute {
-  const route = useContext(AppRouteContext);
-  if (route === null) {
-    throw new Error("useAppRoute must be used within DocumentProvider");
-  }
-  return route;
-}
-
-export function useDockWindowTick(): number {
-  return useContext(DockWindowTickContext);
-}
-
-function useSlice<T>(context: Context<T | null>, name: string): T {
-  const value = useContext(context);
-  if (value === null) {
-    throw new Error(`${name} must be used within DocumentProvider`);
-  }
-  return value;
-}
-
-/** `projectDocument` and `projectName`; changes when the project document does. */
-export function useProjectState(): ProjectState {
-  return useSlice(ProjectStateContext, "useProjectState");
-}
-
-/**
- * `assetRegistry`, `registryEpoch` and the registry-adjacent project state
- * (GUID, extensions, plugins, Show Plugin Content, search index). Changes
- * when `registryEpoch` advances, never on document edits or tab changes, so
- * reading the registry while rendering stays current.
- */
-export function useRegistryState(): RegistryState {
-  return useSlice(RegistryStateContext, "useRegistryState");
-}
-
-/** The active tab with its Anim / Scene mode, Focus and Undo / Redo state. */
-export function useActiveDocumentState(): ActiveDocumentState {
-  return useSlice(ActiveDocumentStateContext, "useActiveDocumentState");
-}
-
-/** Dirty documents (stable while the dirty set is), project dirty and Auto-Save. */
-export function useSaveState(): SaveState {
-  return useSlice(SaveStateContext, "useSaveState");
-}
-
-/** Compile staleness and Play preview bundles; changes on Compile, not per edit. */
-export function useCompileState(): CompileState {
-  return useSlice(CompileStateContext, "useCompileState");
-}
-
-/** Homepage lists, recovery, migration and exclusive Scene prompts, thumbnails. */
-export function useEditorShellState(): EditorShellState {
-  return useSlice(EditorShellStateContext, "useEditorShellState");
-}
-
-/** The source control service; a new object whenever its state changes. */
-export function useSourceControl(): SourceControlState {
-  return useSlice(SourceControlStateContext, "useSourceControl");
-}
-
-/** The active tab's id. Re-renders only when another tab becomes active. */
-export function useActiveDocumentId(): string | null {
-  const subscriptions = useSlice(DocumentSubscriptionsContext, "useActiveDocumentId");
-  return useSyncExternalStore(subscriptions.subscribe, subscriptions.activeDocumentId);
-}
-
-/** Tab ids in order; re-renders only when a tab opens, closes or moves. */
-export function useTabOrder(): readonly string[] {
-  const subscriptions = useSlice(DocumentSubscriptionsContext, "useTabOrder");
-  return useSyncExternalStore(subscriptions.subscribe, subscriptions.tabOrderSnapshot);
-}
-
-/**
- * Open documents in tab order, for tab strips and lists of open documents.
- * Re-renders when a document opens, closes, moves or changes its label,
- * layout, dirty state or background flag; content edits do not. Read
- * content through `useOpenDocument`.
- */
-export function useOpenDocumentTabs(): OpenDocument[] {
-  const subscriptions = useSlice(DocumentSubscriptionsContext, "useOpenDocumentTabs");
-  return useSyncExternalStore(subscriptions.subscribe, subscriptions.tabsSnapshot);
-}
-
-/**
- * One open document: the same entry `openDocuments` holds. Re-renders when
- * that document opens, closes or changes its content, label, layout or dirty
- * state; edits of other documents and tab switches do not. The entry is
- * mutated in place, so key memos on `document.content`, not on the entry.
- */
-export function useOpenDocument(id: string | null | undefined): OpenDocument | undefined {
-  const subscriptions = useSlice(DocumentSubscriptionsContext, "useOpenDocument");
-  const key = useSyncExternalStore(subscriptions.subscribe, () =>
-    id ? subscriptions.documentKey(id) : undefined,
-  );
-  return key?.document;
-}
-
-/** Whether one open document has unsaved edits; false when it is not open. */
-export function useDocumentDirty(id: string | null | undefined): boolean {
-  const subscriptions = useSlice(DocumentSubscriptionsContext, "useDocumentDirty");
-  return useSyncExternalStore(subscriptions.subscribe, () =>
-    id ? subscriptions.dirty(id) : false,
-  );
-}
-
-/**
- * `documentKindsRevision` for `kinds`: changes exactly when a document of one
- * of them changes. Key memos that read those documents on it.
- */
-export function useDocumentKindsRevision(kinds: readonly DocumentKind[]): number {
-  const subscriptions = useSlice(DocumentSubscriptionsContext, "useDocumentKindsRevision");
-  return useSyncExternalStore(subscriptions.subscribe, () => subscriptions.kindsRevision(kinds));
-}
-/* eslint-enable react-refresh/only-export-components */
