@@ -178,15 +178,31 @@ describe("light-neutral geometry defines", () => {
     expect({ drawn: before !== null, kept: effect() === before }).toEqual({ drawn: true, kept });
   });
 
-  it("prepares the light defines again when the Material's lighting changes, not only its lights", async () => {
+  it.each([
+    ["the Material's lighting changes", (_scene: Scene, material: PBRMaterial) => { material.disableLighting = true; }],
+    // The Unlit viewport mode: PBR and Standard surfaces then bind no lights at all.
+    ["the Scene's lights are switched off", (scene: Scene) => { scene.lightsEnabled = false; }],
+  ] as const)("prepares the light defines again when %s, not only its lights", async (_what, change) => {
     const f = fixture(true);
     const material = new PBRMaterial("pbr", f.scene);
     f.mesh.material = material;
     const effect = await geometryWorld(f, [NORMALS], true);
     const lit = effect()!;
-    material.disableLighting = true;
+    change(f.scene, material);
     f.frames();
     expect({ litBefore: /#define LIGHT0\b/.test(lit.defines), lightsAfter: /#define LIGHT0\b/.test(effect()!.defines) })
       .toEqual({ litBefore: true, lightsAfter: false });
+  });
+
+  it("prepares a Standard surface's light defines while no light reaches it, so its first light gives it vertex normals", async () => {
+    const f = fixture(true);
+    for (const light of f.lights) light.setEnabled(false);
+    const effect = await geometryWorld(f, [NORMALS], true);
+    const unlit = effect()!;
+    f.lights[2]!.setEnabled(true);
+    f.frames();
+    const normals = (defines: string) => /^#define NORMAL$/m.test(defines);
+    expect({ normalsBefore: normals(unlit.defines), normalsAfter: normals(effect()!.defines) })
+      .toEqual({ normalsBefore: false, normalsAfter: true });
   });
 });

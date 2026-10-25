@@ -1,6 +1,7 @@
 import {
   Constants,
   MaterialDefines,
+  Observable,
   type AbstractEngine,
   type AbstractMesh,
   type Effect,
@@ -138,7 +139,8 @@ function install(engine: AbstractEngine): WarmupState {
     makeCold(state, effect);
     return effect;
   };
-  const released = engine._onReleaseRenderPassObservable?.add((id) => {
+  // Babylon creates the observable on first use, as its own observers do.
+  const released = (engine._onReleaseRenderPassObservable ??= new Observable()).add((id) => {
     const warm = state.warmPasses.get(id);
     if (warm === undefined) return;
     state.warmPasses.delete(id);
@@ -147,7 +149,7 @@ function install(engine: AbstractEngine): WarmupState {
   engine.onDisposeObservable.addOnce(() => {
     if (own) target.createEffect = create;
     else delete (target as Partial<EffectEngine>).createEffect;
-    if (released) engine._onReleaseRenderPassObservable?.remove(released);
+    engine._onReleaseRenderPassObservable?.remove(released);
     states.delete(engine);
   });
   return state;

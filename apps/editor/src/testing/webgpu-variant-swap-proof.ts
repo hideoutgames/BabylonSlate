@@ -122,7 +122,8 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
       await tick();
     }
   };
-  // Bounded, as the material proof's time limit is shared: at most 3 × FRAME_LIMIT frames.
+  // Bounded, as the material proof's time limit is shared: four loops of at most FRAME_LIMIT passes each, the first
+  // drawing up to two frames a pass, so at most 5 × FRAME_LIMIT frames.
   const FRAME_LIMIT = 120;
   const started = performance.now();
   try {
@@ -162,7 +163,7 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
       done: !isRevealPending(spawned) && geometryDrawn(), frames, held, hiddenFrames, leftOutFrames, pipelines: { ...counts },
     };
     // The sun switching off: the floor swaps to its unlit colour variant, while the geometry pass keeps its geometry
-    // Effect (no geometry attachment reads the lights).
+    // Effect (the opaque PBR floor's geometry attachments read no light).
     const pass = (name: string) => engine.getRenderPassNames().lastIndexOf(name);
     const effectIn = (name: string) => floor.subMeshes[0]!._getDrawWrapper(pass(name))?.effect ?? null;
     const lit = effectIn("Forward objects#0");

@@ -447,8 +447,10 @@ export function installFixedLightBinding(scene: Scene, table: FixedLightTableSou
     prepareDefinesForLights(_scene, mesh, defines, specularSupported, maxSimultaneousLights, disableLighting) {
       const current = table();
       // A light-neutral geometry pass keeps the light defines it prepared; `bindLights` binds that Effect by its own.
-      if (keepsLightDefines(scene.getEngine(), mesh, defines, specularSupported, maxSimultaneousLights, disableLighting,
-        !current && sceneBindsPreviousEffects(scene))) return defines._needNormals;
+      // Scene lights switched off (the Unlit viewport mode) count as disabled lighting: PBR and Standard surfaces bind
+      // no lights then, so an Effect kept with lights would read buffers nothing binds.
+      if (keepsLightDefines(scene.getEngine(), mesh, defines, specularSupported, maxSimultaneousLights,
+        disableLighting || !scene.lightsEnabled, !current && sceneBindsPreviousEffects(scene))) return defines._needNormals;
       if (!current || disableLighting || !scene.lightsEnabled || !bindsBySeat(scene, defines)) {
         clearSeatDefines(defines);
         return undefined;

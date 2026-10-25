@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import { Observable, type AbstractEngine } from "@babylonjs/core";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 
 /**
@@ -52,6 +52,8 @@ type Scope = {
   hits: number;
   /** The pending pipelines its skipped draws wait for. */
   nodes: Set<CacheNode>;
+  /** Of `nodes`, those only left-out draws counted at `close()` wait for: each is given up after its own stall. */
+  leftOut: Set<CacheNode>;
   /** Warm scopes: the cache nodes its draws looked up (found or started), each one Effect's pipeline for one state. */
   tokens: Map<CacheNode, object>;
 };
@@ -161,6 +163,7 @@ function install(engine: AbstractEngine): DeferralState {
       } else {
         scope.skipped += 1;
         scope.nodes.add(node);
+        scope.leftOut.delete(node);
       }
       return DEFERRED;
     };
@@ -179,8 +182,10 @@ function install(engine: AbstractEngine): DeferralState {
       }
       throw skip();
     }
-    // The hold cap bounds held frames, and an omitted draw holds none, so its miss always starts asynchronously.
-    if (!omitted && !scopes.filter((open) => !open.warm).every((open) => open.startsDeferrals))
+    // The hold cap bounds held frames. An omitted draw holds none while its pass draws something else, so past the cap
+    // its miss still starts asynchronously; in a pass that has drawn nothing yet in the scope it compiles synchronously,
+    // since leaving it out could hold the view for it (`close()`).
+    if ((!omitted || !scope.drew.has(pass)) && !scopes.filter((open) => !open.warm).every((open) => open.startsDeferrals))
       return create.call(this, effect, topology, sampleCount);
     defer(this, node, effect, topology, sampleCount);
     throw skip();
@@ -209,12 +214,13 @@ function install(engine: AbstractEngine): DeferralState {
       if (error !== DEFERRED) throw error;
     }
   };
-  const released = engine._onReleaseRenderPassObservable?.add((id) => state.passDraws.delete(id));
+  // Babylon creates the observable on first use, as its own observers do.
+  const released = (engine._onReleaseRenderPassObservable ??= new Observable()).add((id) => state.passDraws.delete(id));
   engine.onDisposeObservable.addOnce(() => {
     cache._createRenderPipeline = create;
     cache.getRenderPipeline = lookup;
     target._draw = draw;
-    if (released) engine._onReleaseRenderPassObservable?.remove(released);
+    engine._onReleaseRenderPassObservable?.remove(released);
     states.delete(engine);
   });
   return state;
@@ -265,13 +271,16 @@ export type PipelineDeferral = {
  * ignore it, so the owner may present), and its pipeline starts creating
  * asynchronously whatever `startsDeferrals`, since it holds nothing. A pass
  * whose every draw in the scope was left out counts them as skips at
- * `close()`, so its output is never presented empty. The stall rule still
- * applies: once no deferred pipeline has started or finished for
- * `PIPELINE_DEFERRAL_STALL_MS` the pending ones compile synchronously at their
- * next draw, and a left-out draw's own creation is given up after that long
- * whatever else progresses (each started or finished creation renews the
- * Engine's stall); a failed creation compiles synchronously too, so a pipeline
- * that never arrives cannot leave the draw out for good.
+ * `close()`, so its output is never presented empty; so past the hold cap
+ * (`startsDeferrals: false`) a miss in an omitted pass that has drawn nothing
+ * yet in the scope compiles synchronously, as any other miss there does. The
+ * stall rule still applies: once no deferred pipeline has started or finished
+ * for `PIPELINE_DEFERRAL_STALL_MS` the pending ones compile synchronously at
+ * their next draw, and a left-out draw's own creation is given up after that
+ * long whatever else progresses (each started or finished creation renews the
+ * Engine's stall; `waiting()` gives up such a pipeline counted at `close()` as
+ * well); a failed creation compiles synchronously too, so a pipeline that never
+ * arrives cannot leave the draw out for good.
  */
 export function beginPipelineDeferral(
   engine: AbstractEngine,
@@ -287,7 +296,7 @@ export function beginPipelineDeferral(
   const omits = warm ? undefined : options.omits;
   const scope: Scope = {
     allows, omits, omitted: new Map(), drew: new Set(), startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0,
-    lookups: 0, hits: 0, nodes: new Set(), tokens: new Map(),
+    lookups: 0, hits: 0, nodes: new Set(), leftOut: new Set(), tokens: new Map(),
   };
   scopes.push(scope);
   if (omits) state.omitting += 1;
@@ -303,18 +312,28 @@ export function beginPipelineDeferral(
       for (const [pass, { draws, nodes }] of scope.omitted) {
         if (scope.drew.has(pass)) continue;
         scope.skipped += draws;
-        for (const node of nodes) scope.nodes.add(node);
+        for (const node of nodes) {
+          if (!scope.nodes.has(node)) scope.leftOut.add(node);
+          scope.nodes.add(node);
+        }
       }
       const parent = scopes[index - 1];
       if (parent && !warm) {
         parent.skipped += scope.skipped;
+        for (const node of scope.leftOut) if (!parent.nodes.has(node)) parent.leftOut.add(node);
         for (const node of scope.nodes) parent.nodes.add(node);
       }
       return scope.skipped;
     },
     waiting: () => {
-      if (!warm && performance.now() - state.progressAt >= PIPELINE_DEFERRAL_STALL_MS) return false;
-      for (const node of scope.nodes) if (state.pending.has(node)) return true;
+      const now = performance.now();
+      if (!warm && now - state.progressAt >= PIPELINE_DEFERRAL_STALL_MS) return false;
+      for (const node of scope.nodes) {
+        if (!state.pending.has(node)) continue;
+        // As at its draw: a left-out draw's creation is given up after its own stall, whatever else progresses.
+        if (scope.leftOut.has(node) && now - (state.startedAt.get(node) ?? now) >= PIPELINE_DEFERRAL_STALL_MS) continue;
+        return true;
+      }
       return false;
     },
     warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,

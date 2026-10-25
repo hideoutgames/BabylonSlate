@@ -233,6 +233,39 @@ describe("beginPipelineDeferral", () => {
     expect(deferredPipelineCount(engine)).toBe(1);
   });
 
+  it("past the hold cap compiles a miss synchronously in an omitted pass that has drawn nothing yet, which would hold", () => {
+    const { engine, device, drawn, draw } = withFloor();
+    const capped = beginPipelineDeferral(engine, admitted, { startsDeferrals: false, omits })!;
+    draw(7, geometryPass);
+    expect({ skipped: capped.close(), waiting: capped.waiting(), drawn: drawn.length })
+      .toEqual({ skipped: 0, waiting: false, drawn: 1 });
+    expect(device.createRenderPipelineAsync).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting for a left-out draw counted at close after its own stall time, while other creations progress", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine, device, draw } = withFloor();
+    // The geometry pass draws nothing else: the frame holds for its left-out draw.
+    const held = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(7, geometryPass);
+    expect(held.close()).toBe(1);
+    // Another view's miss starts a creation later, so the Engine-wide stall is not reached when this one's is.
+    now += PIPELINE_DEFERRAL_STALL_MS / 2;
+    const other = beginPipelineDeferral(engine, objectPass)!;
+    draw(9);
+    other.close();
+    now += PIPELINE_DEFERRAL_STALL_MS / 2 - 1;
+    expect(held.waiting()).toBe(true);
+    now += 1;
+    expect({ held: held.waiting(), other: other.waiting() }).toEqual({ held: false, other: true });
+    // The next frame draws it with a synchronous pipeline.
+    const next = beginPipelineDeferral(engine, admitted, { omits })!;
+    draw(7, geometryPass);
+    expect(next.close()).toBe(0);
+    expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+  });
+
   it("warms a pipeline without drawing: a miss starts it asynchronously past the hold cap, a hit is skipped too, and the view counts neither", async () => {
     const { engine, device, drawn, draw, resolve } = webGpuEngine();
     const warmPass = (pass: number) => pass === 9;

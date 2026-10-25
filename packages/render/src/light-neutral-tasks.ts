@@ -37,14 +37,18 @@ export class LightNeutralGeometryRendererTask extends FrameGraphGeometryRenderer
  * carries the Material's light defines, so a light switching on or off or a
  * shadow starting or stopping asks every lit receiver for a new geometry
  * variant, and on WebGPU for a new render pipeline (about 200 ms each on
- * D3D12, a second on WebKit). None of the geometry attachments these passes
- * write (depth, normals, velocity, PBR, graph and CEL reflectivity) reads the
- * lights, so in a registered pass a Material keeps the light defines it was
+ * D3D12, a second on WebKit). An opaque surface's geometry attachments in these
+ * passes (depth, normals, velocity, PBR, graph and CEL reflectivity) read no
+ * light, so in a registered pass a Material keeps the light defines it was
  * prepared with while only its lights change: its Effect stays, and the
  * Scene's light hooks bind it by its own compiled lights
- * (`fixed-light-binding.ts`). A Standard surface's reflectivity follows its
- * specular light term (`SPECULARTERM`, `standard-reflectivity.ts`), so a pass
- * writing reflectivity prepares its lights as before.
+ * (`fixed-light-binding.ts`). Exceptions: a Standard surface's reflectivity
+ * follows its specular light term (`SPECULARTERM`, `standard-reflectivity.ts`),
+ * so a pass writing reflectivity prepares its lights as before, and so does a
+ * Standard surface no light has reached (its normals, below). A translucent PBR
+ * or graph surface writes geometry where its final alpha, which includes its
+ * lights' specular (specular over alpha), passes `ALPHATESTVALUE`, so its
+ * coverage there follows the lights its kept Effect binds.
  */
 
 /** Per Engine, the registered tests for light-neutral render passes. */
@@ -77,7 +81,8 @@ function lightNeutralPass(engine: AbstractEngine, renderPassId: number): boolean
 /**
  * Whether `defines`, prepared in the current render pass, keep their light defines instead of preparing them again:
  * in a light-neutral pass, once prepared there with the same mesh and light inputs (a light change, not another
- * Material or lighting mode). Otherwise records these inputs, and the caller prepares the lights. `eligible`: the
+ * Material or lighting mode; `disableLighting` includes the Scene's lights being off), and for a Standard surface once a
+ * light has reached it. Otherwise records these inputs, and the caller prepares the lights. `eligible`: the
  * Scene binds an Effect by its own compiled lights (Babylon's light path, not seats); a pass that is not forgets.
  */
 export function keepsLightDefines(
@@ -96,7 +101,12 @@ export function keepsLightDefines(
   }
   const last = prepared.get(defines);
   if (last && last.mesh === mesh && last.specularSupported === specularSupported &&
-    last.maxSimultaneousLights === maxSimultaneousLights && last.disableLighting === disableLighting) return true;
+    last.maxSimultaneousLights === maxSimultaneousLights && last.disableLighting === disableLighting) {
+    // A Standard surface last prepared with no light compiled without vertex normals (`_needNormals`, which a light or
+    // a Fresnel parameter sets and Babylon keeps), so it writes derivative normals: its lights are prepared as before
+    // until one reaches it.
+    return !(defines instanceof StandardMaterialDefines) || defines._needNormals;
+  }
   prepared.set(defines, { mesh, specularSupported, maxSimultaneousLights, disableLighting });
   return false;
 }

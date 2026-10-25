@@ -2160,9 +2160,10 @@ describe("compile holds after the first frame", () => {
     expect({ ...record, drewNothingBefore: drawn > 0 && drew.every((count) => count === 0) }).toEqual({ ...HELD, drewNothingBefore: true });
   });
 
-  it("a geometry pass whose every draw would be left out holds the view for its pipelines: webgpu", async () => {
-    // The floor and the crate get new geometry variants at once: with both left out the pass's buffers would be empty,
-    // so the view waits for their pipelines.
+  it("a steady frame whose deferral counts a geometry pass's left-out draws holds and reports the hold: webgpu", async () => {
+    // The floor and the crate get new geometry variants at once, so every draw of the pass is left out. Whether those
+    // count is the deferral's rule (`close()`, modelled here and tested in `webgpu-pipeline-deferral.test.ts`); this
+    // covers the view's response to a steady frame that counts them: it holds, reports the hold, waits and recovers.
     const world = playWorld("webgpu", []);
     withGeometryPass(world);
     const materials = ownMaterials(world, "actor-1", "actor-2");
