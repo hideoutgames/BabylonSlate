@@ -27,6 +27,7 @@ import {
   SPRING_ARM_COMPONENT_CLASS_ID,
   supportsOverlayVisualStyle,
   waterKindForClass,
+  type SerializedComponent,
   type SerializedScene,
   type Transform,
 } from "@haptic/core";
@@ -145,48 +146,40 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   }
 
   emitActorFogVolumes(actor: Actor, slotId: number): void {
-    const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
-      !component.destroyed && component.classId === "FogVolumeComponent");
-    if (!hasVolume && !this.state.fogVolumeSlots.has(slotId)) return;
-    const volumes = hasVolume ? fogVolumeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
-      const { position, rotation, scale } = component.transform;
-      const size = component.getVariable("size");
-      return {
-        id: component.guid, classId: component.classId, parentId: component.parentId,
-        properties: component.classId === "FogVolumeComponent" ? {
-          enabled: component.getVariable("enabled"), shape: component.getVariable("shape"),
-          size: size == null ? undefined : rgbTuple(size), density: component.getVariable("density"),
-          edgeFalloff: component.getVariable("edgeFalloff"),
-        } : {},
-        transform: { position: [position.x, position.y, position.z] as [number, number, number],
-          rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number],
-          scale: [scale.x, scale.y, scale.z] as [number, number, number] },
-      };
-    })) : [];
-    this.host.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes });
-    if (volumes.length) this.state.fogVolumeSlots.add(slotId); else this.state.fogVolumeSlots.delete(slotId);
+    this.emitComponentBindings(slotId, this.state.fogVolumeSlots,
+      !actor.sceneLayerId && hasLiveComponent(actor, "FogVolumeComponent"),
+      () => fogVolumeBindings(liveBindingInputs(actor, "FogVolumeComponent", (component) => ({
+        enabled: component.getVariable("enabled"), shape: component.getVariable("shape"), size: sizeTuple(component),
+        density: component.getVariable("density"), edgeFalloff: component.getVariable("edgeFalloff"),
+      }))),
+      (volumes) => this.host.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes }));
   }
 
   emitActorReflectionProbes(actor: Actor, slotId: number): void {
-    const hasProbe = !actor.sceneLayerId && actor.components.some((component) =>
-      !component.destroyed && component.classId === "ReflectionProbeComponent");
-    if (!hasProbe && !this.state.reflectionProbeSlots.has(slotId)) return;
-    const probes = hasProbe ? reflectionProbeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
-      const { position, rotation, scale } = component.transform;
-      const size = component.getVariable("size");
-      return {
-        id: component.guid, classId: component.classId, parentId: component.parentId,
-        properties: component.classId === "ReflectionProbeComponent" ? {
-          enabled: component.getVariable("enabled"), size: size == null ? undefined : rgbTuple(size),
-          resolution: component.getVariable("resolution"),
-        } : {},
-        transform: { position: [position.x, position.y, position.z] as [number, number, number],
-          rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number],
-          scale: [scale.x, scale.y, scale.z] as [number, number, number] },
-      };
-    })) : [];
-    this.host.emit({ type: "setReflectionProbes", slotId, actorId: actor.guid, probes });
-    if (probes.length) this.state.reflectionProbeSlots.add(slotId); else this.state.reflectionProbeSlots.delete(slotId);
+    this.emitComponentBindings(slotId, this.state.reflectionProbeSlots,
+      !actor.sceneLayerId && hasLiveComponent(actor, "ReflectionProbeComponent"),
+      () => reflectionProbeBindings(liveBindingInputs(actor, "ReflectionProbeComponent", (component) => ({
+        enabled: component.getVariable("enabled"), size: sizeTuple(component), resolution: component.getVariable("resolution"),
+      }))),
+      (probes) => this.host.emit({ type: "setReflectionProbes", slotId, actorId: actor.guid, probes }));
+  }
+
+  // A separate component command also handles actors with meshes, multiple
+  // emitters and asynchronous model loading. It uses the same view owner.
+  private emitActorAreaLights(actor: Actor, slotId: number): void {
+    this.emitComponentBindings(slotId, this.state.areaLightSlots, hasLiveComponent(actor, "AreaRectLightComponent"),
+      () => areaRectLightBindings(liveBindingInputs(actor, "AreaRectLightComponent", (component) => Object.fromEntries(
+        ["enabled", "width", "height", "color", "intensity", "textureGuid"].map((key) =>
+          [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])))),
+      (lights) => this.host.emit({ type: "setAreaLights", slotId, lights }));
+  }
+
+  /** Send the slot's bindings when it `has` any, or the empty list when its last send (in `slots`) had some. */
+  private emitComponentBindings<T>(slotId: number, slots: Set<number>, has: boolean, bind: () => T[], emit: (bindings: T[]) => void): void {
+    if (!has && !slots.has(slotId)) return;
+    const bindings = has ? bind() : [];
+    emit(bindings);
+    if (bindings.length) slots.add(slotId); else slots.delete(slotId);
   }
 
   private cameraAssignPayload(
@@ -239,21 +232,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
     this.emitActorReflectionProbes(actor, slotId);
-    const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
-    if (hasAreaLight || this.state.areaLightSlots.has(slotId)) {
-    const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
-      const { position, rotation, scale } = component.transform;
-      return {
-        id: component.guid, classId: component.classId, parentId: component.parentId,
-        properties: component.classId === "AreaRectLightComponent" ? Object.fromEntries(["enabled", "width", "height", "color", "intensity", "textureGuid"].map((key) => [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])) : {},
-        transform: { position: [position.x, position.y, position.z] as [number, number, number], rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number], scale: [scale.x, scale.y, scale.z] as [number, number, number] },
-      };
-    })) : [];
-    // A separate component command also handles actors with meshes, multiple
-    // emitters and asynchronous model loading. It uses the same view owner.
-    this.host.emit({ type: "setAreaLights", slotId, lights });
-    if (lights.length) this.state.areaLightSlots.add(slotId); else this.state.areaLightSlots.delete(slotId);
-    }
+    this.emitActorAreaLights(actor, slotId);
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.host.world());
@@ -498,6 +477,26 @@ function overlayButtonHasParentVisual(actor: Actor, world: World): boolean {
   if (!parentId) return false;
   const parent = world.findActor(parentId);
   return parent ? overlayActorHasVisual(parent) : false;
+}
+
+const hasLiveComponent = (actor: Actor, classId: string): boolean =>
+  actor.components.some((component) => !component.destroyed && component.classId === classId);
+
+/** The actor's live components as a core binding builder reads them; only `classId` ones carry properties. */
+function liveBindingInputs(actor: Actor, classId: string, properties: (component: ActorComponent) => Record<string, unknown>): SerializedComponent[] {
+  return actor.components.filter((component) => !component.destroyed).map((component) => {
+    const { position, rotation, scale } = component.transform;
+    return {
+      id: component.guid, classId: component.classId, parentId: component.parentId,
+      properties: component.classId === classId ? properties(component) : {},
+      transform: { position: [position.x, position.y, position.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale: [scale.x, scale.y, scale.z] },
+    };
+  });
+}
+
+function sizeTuple(component: ActorComponent): [number, number, number] | undefined {
+  const size = component.getVariable("size");
+  return size == null ? undefined : rgbTuple(size);
 }
 
 export function liveOverlayButtons(actor: Actor): ActorComponent[] {
