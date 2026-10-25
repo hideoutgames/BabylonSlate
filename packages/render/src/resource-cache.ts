@@ -714,6 +714,12 @@ export class ResourceCache {
     }
   }
 
+  /**
+   * Set an entry's accounted bytes and evict to the ceiling. Production only
+   * re-measures acquired entries; an unknown key creates an accounting-only
+   * entry holding one reference (released with `releaseAccounting`), which
+   * tests use to drive eviction and budgets without allocating textures.
+   */
   account(assetGuid: string, bytes: number): void {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) {
@@ -900,8 +906,8 @@ export interface ResourceLease<T> {
   release(): void;
 }
 
-/** The public ResourceCache surface a per-view owner forwards. */
-export type TextureResources = Pick<ResourceCache, keyof ResourceCache>;
+/** The public ResourceCache surface a per-view owner forwards; raw accounting stays on the cache. */
+export type TextureResources = Omit<ResourceCache, "account" | "releaseAccounting">;
 
 /** A view retains only its currently outstanding leases, never acquisition history. */
 export class ResourceCacheOwner implements TextureResources {
@@ -931,8 +937,6 @@ export class ResourceCacheOwner implements TextureResources {
   setBudgetEnabled(enabled: boolean) { this.inner.setClientBudgetEnabled(this, enabled); }
   setClientBudget(...args: Parameters<ResourceCache["setClientBudget"]>) { this.inner.setClientBudget(...args); }
   setClientBudgetEnabled(...args: Parameters<ResourceCache["setClientBudgetEnabled"]>) { this.inner.setClientBudgetEnabled(...args); }
-  account(...args: Parameters<ResourceCache["account"]>) { this.inner.account(...args); }
-  releaseAccounting(key: string) { this.inner.releaseAccounting(key); }
   accountedBytes() { return this.inner.accountedBytes(); }
   resourceStats() { return this.inner.resourceStats(); }
   evictToCeiling() { this.inner.evictToCeiling(); }
