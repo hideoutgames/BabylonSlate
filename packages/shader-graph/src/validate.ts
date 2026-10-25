@@ -29,7 +29,7 @@ import type {
   MaterialGraphEdge,
   MaterialGraphNode,
 } from "./document";
-import { createTypeResolver } from "./resolve";
+import { callDefinition, createTypeResolver } from "./resolve";
 import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
 import { vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { validateMaterialParameterNames } from "./parameters";
@@ -201,24 +201,13 @@ export function functionCallDefinition(
   if (!base) return undefined;
   const guid = node.properties.functionGuid;
   const fn = typeof guid === "string" ? functions[guid] : undefined;
-  if (!fn) return base;
-  return {
-    ...base,
-    title: fn.name,
-    inputs: fn.inputs.map((pin) => ({
-      id: pin.id,
-      name: pin.name,
-      type: { kind: pin.type },
-      ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
-    })),
-    outputs: fn.outputs.map((pin) => ({
-      id: pin.id,
-      name: pin.name,
-      type: { kind: pin.type },
-    })),
-  };
+  return fn ? callDefinition(base, fn) : base;
 }
 
+/**
+ * Unlike the resolver's plumbing pins, these carry no declared defaults, so a
+ * texture Function Output pin must be wired even when the interface gives it one.
+ */
 export function functionPlumbingDefinition(
   type: "function.input" | "function.output",
   fn: MaterialFunctionDocument | undefined,

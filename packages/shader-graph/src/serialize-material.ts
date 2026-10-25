@@ -13,7 +13,7 @@ import {
 import { isNumericType, typesAreAssignable, type MaterialValueType } from "./types";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
-import { createTypeResolver } from "./resolve";
+import { callDefinition, createTypeResolver, plumbingDefinition } from "./resolve";
 import { vectorMaskDefinition } from "./vector-mask";
 
 /** Pin shape the shared graph shell renders and connects. */
@@ -57,46 +57,18 @@ export function pinsForMaterialNode(
   type: string,
   context: MaterialPinContext = {},
 ): MaterialGraphPin[] {
+  let definition = materialNodeDefinition(type);
   if (type === "function.call") {
     const fn = context.functionGuid
       ? context.functions?.[context.functionGuid]
       : undefined;
-    if (!fn) return [];
-    return [
-      ...fn.inputs.map((pin) =>
-        toPin(
-          {
-            id: pin.id,
-            name: pin.name,
-            type: { kind: pin.type },
-            ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
-          },
-          "in",
-        ),
-      ),
-      ...fn.outputs.map((pin) =>
-        toPin({ id: pin.id, name: pin.name, type: { kind: pin.type } }, "out"),
-      ),
-    ];
-  }
-  if (type === "function.input" || type === "function.output") {
+    if (!fn || !definition) return [];
+    definition = callDefinition(definition, fn);
+  } else if (type === "function.input" || type === "function.output") {
     const fn = context.functionInterface;
-    if (!fn) return [];
-    const pins = type === "function.input" ? fn.inputs : fn.outputs;
-    const direction = type === "function.input" ? "out" : "in";
-    return pins.map((pin) =>
-      toPin(
-        {
-          id: pin.id,
-          name: pin.name,
-          type: { kind: pin.type },
-          ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
-        },
-        direction,
-      ),
-    );
+    if (!fn || !definition) return [];
+    definition = plumbingDefinition(definition, type, fn);
   }
-  let definition = materialNodeDefinition(type);
   if (definition && type === "vector.mask") definition = vectorMaskDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties ?? {} }, definition);
   if (definition && type === "custom.glsl" && context.properties) {
     definition = customGlslDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties }, definition);
