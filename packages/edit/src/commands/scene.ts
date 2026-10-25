@@ -21,6 +21,7 @@ import type {
   SetSceneOverlayEditorCommand,
 } from "./scene-fields";
 import { snapshotBytes } from "../snapshot-bytes";
+import { replaceActor, replaceComponent } from "./scene-actor";
 
 /** `undefined` clears the key, as saving to JSON would. */
 function withProperty(
@@ -31,22 +32,6 @@ function withProperty(
   const next = { ...properties, [key]: value };
   if (value === undefined) delete next[key];
   return next;
-}
-
-/** Returns `doc` itself when `update` keeps the actor, so the stack sees a no-op. */
-function replaceActor(
-  doc: SerializedScene,
-  actorId: string,
-  update: (actor: SerializedActor) => SerializedActor,
-): SerializedScene {
-  let changed = false;
-  const actors = doc.actors.map((actor) => {
-    if (actor.id !== actorId) return actor;
-    const next = update(actor);
-    changed ||= next !== actor;
-    return next;
-  });
-  return changed ? { ...doc, actors } : doc;
 }
 
 export class AddActorCommand implements EditCommand<SerializedScene> {
@@ -463,13 +448,9 @@ export class ReparentComponentCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) =>
-        component.id === this.componentId
-          ? { ...component, parentId: this.to }
-          : component,
-      ),
+    return replaceComponent(doc, this.actorId, this.componentId, (component) => ({
+      ...component,
+      parentId: this.to,
     }));
   }
 
@@ -517,11 +498,8 @@ export class SetComponentLinkageCommand implements EditCommand<SerializedScene> 
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) => component.id === this.componentId
-        ? withComponentLinkage(component, this.to) : component),
-    }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) =>
+      withComponentLinkage(component, this.to));
   }
 
   invert(): SetComponentLinkageCommand {
@@ -567,18 +545,12 @@ export class SetComponentPropertyCommand
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) =>
-        component.id === this.componentId
-          ? withComponentLinkage({
-              ...component,
-              // A copy, so an in-place write to the live value cannot reach the snapshot.
-              properties: withProperty(component.properties, this.property, structuredClone(this.to)),
-            }, this.linkage?.to)
-          : component,
-      ),
-    }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) =>
+      withComponentLinkage({
+        ...component,
+        // A copy, so an in-place write to the live value cannot reach the snapshot.
+        properties: withProperty(component.properties, this.property, structuredClone(this.to)),
+      }, this.linkage?.to));
   }
 
   invert(): SetComponentPropertyCommand {
@@ -623,21 +595,15 @@ export class SetComponentTransformCommand
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) =>
-        component.id === this.componentId && component.classId !== "2DAnchorComponent"
-          ? withComponentLinkage({
-              ...component,
-              transform: {
-                position: [...this.to.position],
-                rotation: [...this.to.rotation],
-                scale: [...this.to.scale],
-              },
-            }, this.linkage?.to)
-          : component,
-      ),
-    }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) =>
+      component.classId === "2DAnchorComponent" ? component : withComponentLinkage({
+        ...component,
+        transform: {
+          position: [...this.to.position],
+          rotation: [...this.to.rotation],
+          scale: [...this.to.scale],
+        },
+      }, this.linkage?.to));
   }
 
   invert(): SetComponentTransformCommand {
