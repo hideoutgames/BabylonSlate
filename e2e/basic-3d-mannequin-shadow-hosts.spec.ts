@@ -24,10 +24,12 @@ const diagnostics = (canvas: Locator, host: Host) => canvas.evaluate((_node, nam
 const presented = (canvas: Locator, host: Host) => canvas.evaluate((_node, name) => (window as unknown as Record<string, Api>)[name]!.rendering()!.presentation.drawn, apiName(host));
 async function settings(canvas: Locator, host: Host, value: RenderShadingSettings) {
   await canvas.evaluate((_node, { name, value }) => (window as unknown as Record<string, Api>)[name]!.setRenderSettings(value), { name: apiName(host), value });
+  // The settings apply synchronously, but the next frame recompiles the materials and,
+  // on software GL, its shader links can hold the page's thread past 5 s before it answers.
   await expect.poll(async () => {
     const state = await diagnostics(canvas, host);
     return [state?.surfaceMode, state?.requestedShadows.enabled];
-  }).toEqual([value.mode, value.shadows!.enabled]);
+  }, { timeout: 30_000 }).toEqual([value.mode, value.shadows!.enabled]);
   const frame = await presented(canvas, host);
   await expect.poll(() => presented(canvas, host), { timeout: 30_000 }).toBeGreaterThan(frame + 2);
 }

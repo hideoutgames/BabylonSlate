@@ -71,6 +71,11 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
     }
     return false;
   };
+  // Whether a point on a triangle's plane lies within it (to 1e-5), for either winding.
+  const within = (tri: typeof triangles[number], point: V) => {
+    const sides = [[tri.a, tri.b], [tri.b, tri.c], [tri.c, tri.a]].map(([p, q]) => dot(cross(sub(q!, p!), sub(point, p!)), tri.normal) / Math.hypot(...sub(q!, p!)));
+    return sides.every(side => side >= -1e-5) || sides.every(side => side <= 1e-5);
+  };
   const sun = state.lights.find(light => light.type === "DirectionalLight")!;
   const toLight = unit(sun.worldDirection!.map(v => -v!));
   const camera = state.camera!.position as V;
@@ -108,6 +113,11 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
         [matrix[1]! - cy * matrix[3]!, matrix[5]! - cy * matrix[7]!, matrix[9]! - cy * matrix[11]!],
         tri.normal, [cx * matrix[15]! - matrix[12]!, cy * matrix[15]! - matrix[13]!, dot(tri.normal, point)],
       );
+      // A face seen almost edge-on spans 1-2 px, so the centre often lands on its
+      // plane beyond its edges, where the pixel shows something else. Keep centres
+      // on the face: this part's coplanar triangles, so a shared diagonal stays.
+      if (!triangles.some(other => other.name === tri.name && dot(other.normal, tri.normal) > 1 - 1e-5
+        && Math.abs(dot(tri.normal, sub(other.a, tri.a))) < 1e-5 && within(other, center))) continue;
       const toCamera = sub(camera, center);
       if (hit(center, unit(toCamera), Math.hypot(...toCamera))) continue;
       let blocked = 0;
