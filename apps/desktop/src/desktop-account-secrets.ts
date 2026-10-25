@@ -119,8 +119,12 @@ export class DesktopAccountSecretStore {
       // earlier run remains, and this run's token is already gone.
       try {
         await this.deleteStored(key);
-      } catch {
-        // Sign-out must still succeed.
+      } catch (error) {
+        // Sign-out must still succeed; a later secure run could restore it.
+        console.warn(
+          "Could not remove an older encrypted account token after signing out:",
+          error,
+        );
       }
     });
   }

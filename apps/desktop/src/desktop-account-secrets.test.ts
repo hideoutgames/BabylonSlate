@@ -98,8 +98,15 @@ describe("desktop account credentials", () => {
       h.files[failure].mockRejectedValueOnce(
         Object.assign(new Error("permission denied"), { code: "EACCES" }),
       );
-      await expect(memory.delete("clerk")).resolves.toBeUndefined();
-      expect(await memory.get("clerk")).toBeNull();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await expect(memory.delete("clerk")).resolves.toBeUndefined();
+        expect(await memory.get("clerk")).toBeNull();
+        // The older token stays behind, so the failure must be diagnosable.
+        expect(warn).toHaveBeenCalledOnce();
+      } finally {
+        warn.mockRestore();
+      }
     },
   );
 
