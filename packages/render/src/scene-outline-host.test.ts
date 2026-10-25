@@ -237,7 +237,7 @@ describe("authored scene outline host", () => {
     expect(host.view.meshesForGroup("strict")).toEqual([a, c, d]);
     setSceneRenderSettings(scene, { mode: "cel" });
     host.refreshSettings();
-    expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a", "renamed", "d"]);
+    expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a", "d", "renamed"]);
   });
 
   it("keeps editor guides out of gameplay masks and removes only global CEL on a mode change", () => {
