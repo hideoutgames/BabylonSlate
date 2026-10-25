@@ -60,16 +60,22 @@ export function groupMsdfImportBatch(
 
 /**
  * Why an Import MSDF Atlas… pick cannot attach to a Font, or null when it can.
- * It needs a JSON and a PNG, and every PNG must pair with an MSDF JSON: an
- * unpaired one would import on its own and attach to the Font as a Texture
- * chunk or as a second atlas.
+ * It needs one MSDF JSON and a PNG it pairs with: each JSON in a pick attaches
+ * to the same Font chunks, so a second one would replace the first, and an
+ * unpaired PNG would import on its own and attach as a Texture chunk.
  */
 export function msdfAtlasPickError(files: ImportFileBytes[]): string | null {
   const hasJson = files.some((file) => extensionOf(file.name) === "json");
   const hasPng = files.some((file) => extensionOf(file.name) === "png");
   if (!hasJson || !hasPng) return "MSDF needs both JSON and PNG.";
+  const msdfJsons = files.filter((file) => isMsdfJsonFile(file.name, file.bytes));
+  if (msdfJsons.length > 1) {
+    return `Pick one MSDF JSON at a time: ${msdfJsons.map((file) => file.name).join(", ")} would each replace the Font's MSDF atlas.`;
+  }
   const unpaired = groupMsdfImportBatch(files).find(
     (file) => extensionOf(file.name) === "png",
   );
-  return unpaired ? `${unpaired.name} is not the atlas PNG for the MSDF JSON.` : null;
+  return unpaired
+    ? `${unpaired.name} is not the atlas PNG for the MSDF JSON. Pick the PNG the JSON names; a JSON that names no atlas page pairs only with a PNG of the same name that contains "msdf".`
+    : null;
 }

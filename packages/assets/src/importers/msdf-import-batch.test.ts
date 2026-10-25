@@ -57,4 +57,14 @@ describe("msdfAtlasPickError", () => {
     expect(msdfAtlasPickError([json, other])).toContain("hero.png");
     expect(msdfAtlasPickError([json, atlas, other])).toContain("hero.png");
   });
+
+  it("refuses a second MSDF JSON, which would replace the first atlas on the Font", () => {
+    const hud = {
+      name: "Hud-msdf.json",
+      bytes: new TextEncoder().encode(JSON.stringify({ pages: ["Hud-msdf.png"], chars: [] })),
+    };
+    const hudAtlas = { name: "Hud-msdf.png", bytes: new Uint8Array([3]) };
+    expect(msdfAtlasPickError([json, atlas, hud, hudAtlas])).toContain("Hud-msdf.json");
+    expect(msdfAtlasPickError([json, atlas, hud])).toContain("Hud-msdf.json");
+  });
 });
