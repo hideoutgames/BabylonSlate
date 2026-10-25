@@ -76,7 +76,8 @@ function install(): void {
         const revision = view ? revisions.get(view) ?? 0 : 0;
         const last = lastBound.get(this);
         if (last && last.view === view && last.revision === revision) return;
-        lastBound.set(this, { view, revision });
+        // Shared materials can switch on many draws a frame: update the record in place.
+        if (last) { last.view = view; last.revision = revision; } else lastBound.set(this, { view, revision });
         if (subMesh._drawWrapper) subMesh._drawWrapper._forceRebindOnNextCall = true;
       });
     };
