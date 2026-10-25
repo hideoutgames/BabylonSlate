@@ -1692,15 +1692,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
         : [];
       const schemas = collectGraphTypeSchemas();
+      const definitionFields = (definitionGuid: string) => schemas.structs?.[definitionGuid]?.fields;
       const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
         if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
-        const walked = replaceClassAssetReferences(doc.content, replacements, (definitionGuid) => schemas.structs?.[definitionGuid]?.fields);
+        const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
         if (!walked.changed) return [];
         const asset = registry.list().find((entry) => entry.path === doc.ref.path);
         if ((asset && registry.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
           throw new Error(`${doc.ref.path} is read-only and still references this Class.`);
         }
-        return [{ doc, content: walked.value }];
+        return [{ doc }];
       });
       const renamed = await projectService.renameAsset(guid, newName, {
         beforeWrite: async (paths) => {
@@ -1724,8 +1725,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       // The rename moved files and may have rewritten project.json: neither is external.
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-      for (const { doc, content } of openChanges) {
-        documentService.applyFileRewrite(doc.id, content);
+      for (const { doc } of openChanges) {
+        // From the tab's current content: it can change while the rename writes.
+        const open = documentService.getDocument(doc.id);
+        const walked = open?.content ? replaceClassAssetReferences(open.content, replacements, definitionFields) : null;
+        if (walked?.changed) documentService.applyFileRewrite(doc.id, walked.value);
         // Content Browser file operations are not undoable. Old edit commands
         // must not reintroduce the Class id that no longer exists.
         editSessionRef.current.dropDocument(doc.id);

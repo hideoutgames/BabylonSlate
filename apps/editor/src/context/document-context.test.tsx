@@ -465,6 +465,40 @@ describe("DocumentProvider actions and route", () => {
     } finally { release(); save.mockRestore(); }
   });
 
+  it("keeps a scene edit made while a Class rename writes its files", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("hero", "Hero", { classId: "Hero" })],
+    }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const original = ProjectService.prototype.renameAsset;
+    const rename = vi.spyOn(ProjectService.prototype, "renameAsset").mockImplementation(async function(this: ProjectService, ...args) {
+      started = true;
+      await held;
+      return original.apply(this, args);
+    });
+    try {
+      let renaming!: ReturnType<DocumentActions["renameAsset"]>;
+      act(() => { renaming = actions.renameAsset(asset.header.guid, "Champion"); });
+      await waitFor(() => expect(started).toBe(true));
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+        ...openScene(MAIN_SCENE_ID), actors: [...openScene(MAIN_SCENE_ID).actors, createActor("late", "Late Hero", { classId: "Hero" })],
+      }));
+      await act(async () => { release(); await renaming; });
+    } finally { release(); rename.mockRestore(); }
+    expect(openScene(MAIN_SCENE_ID).actors.map(({ id, classId }) => ({ id, classId }))).toEqual([
+      { id: "hero", classId: "Champion" },
+      { id: "late", classId: "Champion" },
+    ]);
+    expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
+  });
+
   it("does not write back an asset the Content Browser deletes between two Save All writes", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;
