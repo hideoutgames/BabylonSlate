@@ -91,6 +91,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 - Undo goes through `@haptic/edit` commands (`graph.setFunctionGraphs`, members, components); position drags commit once per gesture.
 - Large lists (palette, Compiler Results) use the existing windowing components; do not add a virtualizer library.
 - Play never writes unsaved edits without asking (Save & Play / Play Without Saving / Cancel).
+- Class members are pure functions over `SerializedGraph`. [`lib/class-members.ts`](../../../apps/editor/src/lib/class-members.ts) owns member add, rename, patch, prune and remove plus `DEFAULT_FUNCTION_PINS` and `seedFunctionGraph`, and re-exports the public names of five sibling modules: native event and script catalog legality per class lineage (`class-event-catalog.ts`), Class tree sections and new-member defaults (`class-member-sections.ts`), Get/Set and Call nodes bound to members (`class-member-nodes.ts`), event node seeding and Call Parent wiring (`class-event-nodes.ts`) and Class tree drops onto a graph (`class-member-drop.ts`). The five must not import `class-members.ts`, so no import cycle can reach their module-level tables; anything they need from it moves down into one of them.
 
 ### Class member copy and paste
 
