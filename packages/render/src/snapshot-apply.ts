@@ -68,6 +68,7 @@ import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
   isEditorModelPlaceholder,
+  isSlotModelInstalled,
   invalidateSlotAnimLoad,
   publishModelHierarchyAnimations,
 } from "./glb-anim";
@@ -899,9 +900,8 @@ function retainWorkingMaterialOwners(binding: SnapshotSceneBinding, slotId: numb
   const slots = retainedMaterialOwners.get(binding) ?? new Map<number, Map<string, string>>();
   retainedMaterialOwners.set(binding, slots);
   if (slots.has(slotId)) return;
-  const prefix = `${slotId}|`;
-  slots.set(slotId, new Map(hasPredecessor ? [...binding.materialParameters]
-    .filter(([key]) => key.startsWith(prefix)).map(([key, state]) => [key, state.materialAssetGuid]) : []));
+  slots.set(slotId, new Map(hasPredecessor ? [...slotKeysOf(binding.materialParameters, slotId)]
+    .map((key) => [key, binding.materialParameters.get(key)!.materialAssetGuid]) : []));
 }
 
 function releaseRetainedMaterialOwners(binding: SnapshotSceneBinding, slotId: number, retiringSlot = false): void {
@@ -999,12 +999,12 @@ function assignMeshVisual(
   const retireRemovedMaterials = () => {
     if (!componentIds) return;
     const prefix = `${command.slotId}|`;
+    // Only this slot's keys; the copy keeps iteration stable while the loop deletes.
     const keys = new Set([
-      ...binding.componentMaterialGuids.keys(),
-      ...binding.materialParameters.keys(),
+      ...slotKeysOf(binding.componentMaterialGuids, command.slotId),
+      ...slotKeysOf(binding.materialParameters, command.slotId),
     ]);
     for (const key of keys) {
-      if (!key.startsWith(prefix)) continue;
       const id = key.slice(prefix.length);
       if (!id || componentIds.has(id)) continue;
       binding.componentMaterialGuids.delete(key);
@@ -1115,6 +1115,19 @@ function assignMeshVisual(
   if (existing && existing.getScene() === scene && isEditorModelPlaceholder(existing) &&
     modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
     const guid = command.meshAssetGuid;
+    if (isSlotModelInstalled(binding, guid, modelSource, existing)) {
+      // Nothing loads, so register no preparation: same-tick material commands apply directly.
+      stampOverlayPick(existing, command);
+      applyPlayVisualSorting(existing, command.slotId, binding);
+      if (retainedMaterialOwners.get(binding)?.has(command.slotId)) {
+        // A superseded replacement deferred material commands for this instance.
+        applyMaterialToActorMeshes(binding, command.slotId, existing);
+        retireRemovedMaterials();
+        releaseRetainedMaterialOwners(binding, command.slotId);
+        binding.onVisualChanged?.(command.slotId);
+      }
+      return;
+    }
     const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
     pendingMaterialPreparations.set(binding, refreshes);
     // A material command restarts the preparation for the same assignment: it rebuilds, whatever the slot shows.

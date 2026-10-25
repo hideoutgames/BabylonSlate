@@ -2,10 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { NullEngine, RawTexture, Scene, Constants } from "@babylonjs/core";
 import {
   limitManagedLightingBytes,
-  managedLightingReservations,
   reserveManagedShadowBytes,
 } from "./managed-lighting-resources";
-import { beginManagedRenderAllocation } from "./managed-render-resources";
+import { beginManagedRenderAllocation, managedRenderReservations } from "./managed-render-resources";
 import { managedTextureResource } from "./clustered-resource-cost";
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -30,20 +29,20 @@ describe("managed lighting allocation transactions", () => {
       { handle: texture, bytes: 30, category: "cluster" },
     ]);
     const next = beginManagedRenderAllocation(engine, 50)!;
-    expect(managedLightingReservations(engine).reservedBytes).toBe(100);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(100);
     expect(beginManagedRenderAllocation(engine, 1)).toBeUndefined();
     next.release();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(50);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(50);
     const borrower = beginManagedRenderAllocation(engine, 30)!;
     borrower.commit([{ handle: texture, bytes: 30, category: "cluster" }]);
-    expect(managedLightingReservations(engine).clusterBytes).toBe(30);
+    expect(managedRenderReservations(engine).categoryBytes.cluster).toBe(30);
     first.release();
     first.release();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(50);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(50);
     borrower.release();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(20);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(20);
     reserveManagedShadowBytes(engine, shadowOwner, 0);
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
   it("keeps an underestimated candidate reserved until caller confirms cleanup", () => {
     const engine = fixture(50);
@@ -52,9 +51,9 @@ describe("managed lighting allocation transactions", () => {
       candidate.commit([{ handle: {}, bytes: 41, category: "cluster" }]),
     ).toThrow(/reserved peak/);
     expect(beginManagedRenderAllocation(engine, 11)).toBeUndefined();
-    expect(managedLightingReservations(engine).pendingBytes).toBe(40);
+    expect(managedRenderReservations(engine).pendingBytes).toBe(40);
     candidate.release();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
   it("derives float formats, rectangular mip chains and multisample resolve storage from actual textures", () => {
     const engine = fixture(10000);

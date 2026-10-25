@@ -306,31 +306,6 @@ export function allocateAudioClipChunkId(
   return null;
 }
 
-type AudioExtraChunkLike = {
-  id: string;
-  kind?: string;
-  mime?: string;
-  data?: Uint8Array;
-};
-
-function keepAudioExtraChunks(
-  extra: Iterable<AudioExtraChunkLike>,
-  skipId?: string,
-): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
-  const next: Array<{ id: string; kind: string; mime: string; data: Uint8Array }> =
-    [];
-  for (const chunk of extra) {
-    if (!chunk.data || chunk.id === skipId) continue;
-    next.push({
-      id: chunk.id,
-      kind: chunk.kind ?? "audio",
-      mime: chunk.mime ?? "application/octet-stream",
-      data: chunk.data,
-    });
-  }
-  return next;
-}
-
 /** The chunk an Audio clip is stored in. */
 export function audioClipChunk(clip: { id: string; bytes: Uint8Array; mime: string }): {
   id: string;
@@ -341,25 +316,9 @@ export function audioClipChunk(clip: { id: string; bytes: Uint8Array; mime: stri
   return { id: clip.id, kind: "audio", mime: clip.mime, data: clip.bytes };
 }
 
-export function extraChunksWithAudioClip(
-  extra: Iterable<AudioExtraChunkLike>,
-  clip: { id: string; bytes: Uint8Array; mime: string },
-): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
-  const next = keepAudioExtraChunks(extra, clip.id);
-  next.push(audioClipChunk(clip));
-  return next;
-}
-
 /** The chunk removing clip `chunkId` drops: none for the default `source`, which is never removed. */
 export function audioClipChunkToDrop(chunkId: string): string | null {
   return chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? null : chunkId;
-}
-
-export function extraChunksWithoutAudioClip(
-  extra: Iterable<AudioExtraChunkLike>,
-  chunkId: string,
-): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
-  return keepAudioExtraChunks(extra, audioClipChunkToDrop(chunkId) ?? undefined);
 }
 
 function normalizeChannelEffect(value: unknown): AudioChannelEffect | null {

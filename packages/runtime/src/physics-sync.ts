@@ -211,13 +211,10 @@ export class PhysicsWorldSync {
       normalisedTime: number;
     }
   >();
-  private tilemapCollidersByActor = new Map<
-    string,
-    {
-      component: ActorComponent;
-      assetGuid: string | null;
-      colliders: readonly ColliderDesc[];
-    }
+  /** Tilemap chains per component; a destroyed component's entry goes with it. */
+  private tilemapCollidersByComponent = new WeakMap<
+    ActorComponent,
+    { assetGuid: string | null; colliders: readonly ColliderDesc[] }
   >();
   private models = new Map<string, ModelPayload>();
   private complexMeshes = new Map<string, CollisionTriangleMesh>();
@@ -296,7 +293,7 @@ export class PhysicsWorldSync {
    * Whether native contact events should be requested for `actor`'s bodies: an observer exists for the actor or
    * for a static child whose solid shapes this actor's compound hosts, since the host's body raises their contacts.
    */
-  wantsContacts(actor: Actor): boolean {
+  private wantsContacts(actor: Actor): boolean {
     const observes = this.observesContacts;
     if (!observes || observes(actor)) return true;
     const hosted = this.hostedByHost.get(actor.guid);
@@ -349,7 +346,7 @@ export class PhysicsWorldSync {
     this.tileInstallation++;
     this.tilemaps = tilemaps;
     this.tilesets = tilesets;
-    this.tilemapCollidersByActor.clear();
+    this.tilemapCollidersByComponent = new WeakMap();
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
@@ -372,7 +369,7 @@ export class PhysicsWorldSync {
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       if (this.pixelsPerUnit !== options.pixelsPerUnit) {
         this.tileInstallation++;
-        this.tilemapCollidersByActor.clear();
+        this.tilemapCollidersByComponent = new WeakMap();
       }
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
@@ -471,7 +468,7 @@ export class PhysicsWorldSync {
     this.readbackWorld.clear();
     this.appliedBodyProperties.clear();
     this.modelContentIdentities.clear();
-    this.tilemapCollidersByActor.clear();
+    this.tilemapCollidersByComponent = new WeakMap();
     this.spriteClipByActor = new WeakMap();
     this.models.clear();
     this.complexMeshes.clear();
@@ -1079,7 +1076,6 @@ export class PhysicsWorldSync {
     this.movementControllerDescriptors.delete(actorId);
     if (owner) this.spriteClipByActor.delete(owner);
     this.preparedByActor.delete(actorId);
-    this.tilemapCollidersByActor.delete(actorId);
   }
 
   /**
@@ -1306,8 +1302,11 @@ export class PhysicsWorldSync {
 
   addImpulse(actorId: string, impulse: Vec3, strength?: number): void {
     const bodyId = this.bodyByActor.get(actorId);
-    if (!bodyId) return;
-    this.backend.addImpulse(bodyId, impulse, strength);
+    // Dropped like an impulse at a point, so a non-finite input cannot corrupt the body's velocity and pose.
+    // A 2D impulse may omit z.
+    const vector = { x: impulse?.x, y: impulse?.y, z: impulse?.z ?? 0 };
+    if (!bodyId || ![vector.x, vector.y, vector.z, strength ?? 1].every(Number.isFinite)) return;
+    this.backend.addImpulse(bodyId, vector as Vec3, strength);
   }
 
   /** Steering updates velocity through physics without replacing its pose. */
@@ -1640,7 +1639,6 @@ export class PhysicsWorldSync {
     } catch (error) {
       this.backend.destroyBody(bodyId);
       this.preparedByActor.delete(actor.guid);
-      this.tilemapCollidersByActor.delete(actor.guid);
       throw error;
     }
   }
@@ -1766,16 +1764,12 @@ export class PhysicsWorldSync {
     );
     if (tilemap) {
       const assetGuid = componentAssetGuid(tilemap);
-      let prepared = this.tilemapCollidersByActor.get(actor.guid);
-      if (prepared?.component !== tilemap || prepared.assetGuid !== assetGuid) {
+      let prepared = this.tilemapCollidersByComponent.get(tilemap);
+      if (prepared?.assetGuid !== assetGuid) {
         const collected = new Map<string, ColliderDesc>();
         this.collectTilemapColliders(actor, bodyId, tilemap, collected);
-        prepared = {
-          component: tilemap,
-          assetGuid,
-          colliders: [...collected.values()],
-        };
-        this.tilemapCollidersByActor.set(actor.guid, prepared);
+        prepared = { assetGuid, colliders: [...collected.values()] };
+        this.tilemapCollidersByComponent.set(tilemap, prepared);
       }
       // Chains follow the component's local transform and the actor's scale,
       // as the tilemap's visual does.
@@ -1783,8 +1777,6 @@ export class PhysicsWorldSync {
         const baked = this.geometry(tilemap, collider.id).prepare(collider.shape, tilemap.transform, scale);
         colliders.set(collider.id, { ...collider, bodyId, ...baked });
       }
-    } else {
-      this.tilemapCollidersByActor.delete(actor.guid);
     }
     this.collectSpriteColliders(actor, bodyId, scale, colliders);
     this.collectMeshColliders(actor, bodyId, scale, colliders);

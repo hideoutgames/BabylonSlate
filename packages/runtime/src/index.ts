@@ -4,7 +4,6 @@ export {
   type RuntimeDriverOptions,
   type RuntimeSaveGameOptions,
 } from "./driver";
-export { replayTracePayload, rawInputFromTraceEvents } from "./trace-replay";
 export {
   applyInspectSelectionToConsoleLine,
   formatDumpActors,

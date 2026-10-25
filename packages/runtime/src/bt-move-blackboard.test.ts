@@ -159,7 +159,7 @@ describe("Move To Blackboard Key", () => {
     runtime.executeConsoleCommand("snapshot stop");
     const trace = runtime.stopTrace()!;
     expect(() => JSON.stringify(trace)).not.toThrow();
-    runtime.restoreBtFromTrace(trace.frames.at(-1)!.bt!);
+    runtime.restoreFromTrace(trace.frames.at(-1)!);
     target.transform.position.x = 1;
     for (let i = 0; i < 90; i += 1) runtime.tick();
     expect(runtime.getWorld().findActor("guard")!.transform.position.x).toBeLessThan(5.8);

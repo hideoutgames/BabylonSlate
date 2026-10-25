@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { decodeAssetDocument } from "./asset-document";
 import { readHassetHeader } from "./hasset";
-import { bytesEqual } from "./bytes";
+import { bytesEqual } from "./test-support/bytes";
 import { discoverEnginePlugins } from "./plugin-host";
 import { PLUGIN_SETTINGS_TYPE } from "./plugin-settings";
 import {

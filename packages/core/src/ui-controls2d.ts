@@ -3,7 +3,7 @@ import { parseOverlayVisualStyle, type OverlayVisualStyle } from "./overlay-visu
 export { UI_CONTROL_2D_CLASS_IDS, isUIControl2DClass, isInteractiveUIControl2DClass, type UIControl2DClassId } from "./ui-controls2d-classes";
 
 export const UI_CONTROL_2D_VISUAL_PARTS = ["background", "track", "fill", "thumb", "indicator"] as const;
-export type UIControl2DVisualPart = (typeof UI_CONTROL_2D_VISUAL_PARTS)[number];
+type UIControl2DVisualPart = (typeof UI_CONTROL_2D_VISUAL_PARTS)[number];
 type VisualAssets = Record<`${UIControl2DVisualPart}${"Material" | "Texture"}Guid`, string | null>;
 
 /** Shared serialized control state. Dimensions and font size use SceneLayer units. */
@@ -109,12 +109,4 @@ export function parseUIControl2DProperties(classId: string, source: Partial<UICo
     fontSize: positive(source.fontSize, 0.32),
     textColor: typeof source.textColor === "string" && /^#[\da-f]{6}$/i.test(source.textColor) ? source.textColor : "#ffffff",
   };
-}
-
-/** A material owns the part's appearance when both kinds of asset are assigned. */
-export function uiControl2DVisualAsset(properties: UIControl2DProperties, part: UIControl2DVisualPart): { kind: "material" | "texture"; guid: string } | null {
-  const material = properties[`${part}MaterialGuid`];
-  if (material) return { kind: "material", guid: material };
-  const texture = properties[`${part}TextureGuid`];
-  return texture ? { kind: "texture", guid: texture } : null;
 }

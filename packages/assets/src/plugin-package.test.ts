@@ -7,7 +7,7 @@ import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { encodeHasset, readHassetHeader } from "./hasset";
 import { decodeProjectZip, encodeProjectZip, readProjectTree } from "./hproject";
-import { bytesEqual } from "./bytes";
+import { bytesEqual } from "./test-support/bytes";
 import {
   createDefaultPluginSettings,
   encodePluginSettingsDocument,
@@ -19,11 +19,10 @@ import {
   planPluginImport,
   pluginFolderSlug,
   uniquePluginFolderName,
-  unpackEnginePluginZip,
   installEnginePluginDefaults,
 } from "./plugin-package";
+import { unpackEnginePluginZip } from "./test-support/engine-plugins";
 import {
-  discoverEnginePlugins,
   discoverProjectPlugins,
   writeProjectPlugin,
 } from "./plugin-host";
@@ -510,49 +509,11 @@ describe("replace conflict", () => {
   });
 });
 
-describe("engine plugin pack and unpack", () => {
-  it("unpacks a .hplugin at the engine storage root, not under plugins/", async () => {
-    const storage = new MemoryStorageAdapter("opfs");
-    await storage.openDocumentsProject("engine-plugins");
-    const descriptor = await unpackEnginePluginZip(
-      storage,
-      await vitePackedStarterContent(),
-      STARTER_CONTENT_FOLDER,
-    );
-    expect(descriptor.folderPath).toBe("starter-content");
-    expect(descriptor.source).toBe("engine");
-    expect(descriptor.readOnly).toBe(true);
-    expect(
-      await storage.exists(
-        "starter-content/assets/StarterActor.class.hasset",
-      ),
-    ).toBe(true);
-    expect(await storage.exists("plugins/starter-content")).toBe(false);
-    expect(
-      readHassetHeader(
-        await storage.readBinary(
-          "starter-content/assets/StarterActor.class.hasset",
-        ),
-      ).guid,
-    ).toBe(STARTER_ACTOR_GUID);
-    const discovered = await discoverEnginePlugins(storage);
-    expect(discovered.map((plugin) => plugin.pluginGuid)).toEqual([
-      STARTER_CONTENT_PLUGIN_GUID,
-    ]);
-  });
-
+describe("engine plugin archives", () => {
   it("inspects a fflate zip packed the same way as the Vite plugin", async () => {
     const zip = await vitePackedStarterContent();
     const inspected = await inspectHplugin(zip);
     expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
-    const storage = new MemoryStorageAdapter("opfs");
-    await storage.openDocumentsProject("engine-plugins");
-    const descriptor = await unpackEnginePluginZip(
-      storage,
-      zip,
-      STARTER_CONTENT_FOLDER,
-    );
-    expect(descriptor.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
   });
 });
 

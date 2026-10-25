@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  animClipCatalogFromAssets,
-  modelClipAnimationGuidsFromAssets,
-} from "./anim-clip-catalog";
+import { animClipCatalogFromAssets } from "./anim-clip-catalog";
 
 describe("animClipCatalogFromAssets", () => {
   it("reads Model clipNames and Animation clipName from payload", () => {
@@ -195,37 +192,5 @@ describe("animClipCatalogFromAssets", () => {
         durationMs: 80,
       }),
     ]);
-  });
-
-  it("maps native Model clip names to Animation guids and skips retargeted rows", () => {
-    expect(
-      modelClipAnimationGuidsFromAssets([
-        {
-          header: {
-            guid: "idle",
-            type: "Animation",
-            name: "Hero_Idle",
-            payload: {
-              clipName: "Idle",
-              modelGuid: "hero-model",
-            },
-          },
-        },
-        {
-          header: {
-            guid: "retargeted",
-            type: "Animation",
-            name: "Mixamo_Idle",
-            payload: {
-              clipName: "Idle",
-              modelGuid: "hero-model",
-              sourceAnimationGuid: "mixamo-idle",
-            },
-          },
-        },
-      ]),
-    ).toEqual(
-      new Map([["hero-model", new Map([["Idle", "idle"]])]]),
-    );
   });
 });

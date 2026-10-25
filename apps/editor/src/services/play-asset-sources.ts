@@ -74,21 +74,6 @@ export interface PlayAssetSourceHost {
   compile: (required: ReadonlySet<string>) => Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;
 }
 
-/** Catalog closure only. A SceneStreamingComponent's target is a deferred edge. */
-export function requiredPlayAssets(registry: AssetRegistry, roots: readonly string[]): Set<string> {
-  const result = new Set<string>();
-  const pending = [...roots];
-  while (pending.length) {
-    const guid = pending.pop()!;
-    if (result.has(guid)) continue;
-    const asset = registry.getByGuid(guid);
-    if (!asset || asset.placeholder) throw new Error(`Required asset is missing: ${guid}`);
-    result.add(guid);
-    pending.push(...registry.requiredDependenciesFor(guid, asset.header));
-  }
-  return result;
-}
-
 const assetFormats = createDefaultMigrationRegistry();
 
 /**

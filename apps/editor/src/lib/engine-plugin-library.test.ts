@@ -4,9 +4,9 @@ import {
   discoverEnginePlugins,
   exportPluginZip,
   inspectHplugin,
-  unpackEnginePluginZip,
   writeProjectPlugin,
 } from "@haptic/assets";
+import { unpackEnginePluginZip } from "../../../../packages/assets/src/test-support/engine-plugins";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EnginePluginLibrary } from "./engine-plugin-library";
 

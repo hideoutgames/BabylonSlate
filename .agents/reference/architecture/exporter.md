@@ -16,7 +16,7 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 
 | Area | Source |
 | --- | --- |
-| Roots and reachability (`selectExportRoots`, `collectExportReachability`, `collectHeaderReachability`) | [`closure.ts`](../../../packages/exporter/src/closure.ts) |
+| Roots and reachability (`collectExportReachability`, `collectHeaderReachability`) | [`closure.ts`](../../../packages/exporter/src/closure.ts) |
 | `exportGame`, `zipExport`, `parseGameManifest` | [`export-game.ts`](../../../packages/exporter/src/export-game.ts) |
 | Physics/transcoder file selection | [`player-files.ts`](../../../packages/exporter/src/player-files.ts) |
 | Sidecar types, guid prefixes, file-count defaults | [`constants.ts`](../../../packages/exporter/src/constants.ts) |

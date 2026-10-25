@@ -132,10 +132,6 @@ function tagIndex(registry: TagRegistry): TagIndex {
   return index;
 }
 
-export function getTagName(registry: TagRegistry, tag: Tag): string {
-  return tagIndex(registry).byId.get(tag)?.path ?? "";
-}
-
 export function findTag(registry: TagRegistry, path: string): Tag {
   return tagIndex(registry).byPath.get(path) ?? 0;
 }
@@ -206,35 +202,4 @@ export function tagContainerHas(
   exact = false,
 ): boolean {
   return container.Tags.some((tag) => matchesTag(registry, tag, query, exact));
-}
-
-export function tagContainerAny(
-  registry: TagRegistry,
-  container: TagContainer,
-  queries: TagContainer,
-  exact = false,
-): boolean {
-  return queries.Tags.some((query) => tagContainerHas(registry, container, query, exact));
-}
-
-export function tagContainerAll(
-  registry: TagRegistry,
-  container: TagContainer,
-  queries: TagContainer,
-  exact = false,
-): boolean {
-  return queries.Tags.every((query) => tagContainerHas(registry, container, query, exact));
-}
-
-/** Returns a detached structure so changing it cannot mutate a class default. */
-export function addTag(container: TagContainer, value: Tag): TagContainer {
-  const normalized = normalizeTagContainer(container);
-  const tag = normalizeTag(value);
-  if (tag && !normalized.Tags.includes(tag)) normalized.Tags.push(tag);
-  return normalized;
-}
-
-/** Removes the explicit selection only; ancestor matching is unchanged. */
-export function removeTag(container: TagContainer, tag: Tag): TagContainer {
-  return { Tags: normalizeTagContainer(container).Tags.filter((value) => value !== tag) };
 }

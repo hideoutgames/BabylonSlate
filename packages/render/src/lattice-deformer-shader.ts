@@ -4,6 +4,7 @@ import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { checkedShader } from "./checked-shader";
 
 export const LATTICE_UNIFORMS = ["lattice_cellSize", "lattice_min", "lattice_max", "lattice_resolution", "lattice_position", "slateWorldToLattice", "slateLatticeToWorld", "slateLatticeEnabled"];
+/** Must match the 3D texture sampler of Babylon's stock `LatticePluginMaterial`, whose vertex code this borrows. */
 export const LATTICE_SAMPLER = "latticeData";
 
 /** Shader generation uses the public stock plugin without allocating its texture. */
@@ -100,7 +101,7 @@ export function latticeNormalShaderFunction(language: ShaderLanguage): string {
 
 export function latticeShaderDeclarations(language: ShaderLanguage, uniforms = true): string {
   const wgsl = language === ShaderLanguage.WGSL;
-  return `#ifdef SLATE_LATTICE\n${wgsl ? "var latticeData: texture_3d<f32>;" : "precision highp sampler3D;\nuniform sampler3D latticeData;"}
+  return `#ifdef SLATE_LATTICE\n${wgsl ? `var ${LATTICE_SAMPLER}: texture_3d<f32>;` : `precision highp sampler3D;\nuniform sampler3D ${LATTICE_SAMPLER};`}
 ${uniforms ? LATTICE_UNIFORMS.map((name) => {
     const type = name.startsWith("slate") ? name.endsWith("Enabled") ? "float" : "mat4" : "vec3";
     return wgsl ? `uniform ${name}: ${type === "float" ? "f32" : type === "mat4" ? "mat4x4f" : "vec3f"};` : `uniform ${type} ${name};`;

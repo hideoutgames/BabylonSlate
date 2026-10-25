@@ -709,7 +709,7 @@ describe("P19 behaviour tree task hosts", () => {
     const replay = graphAndPlayAnimationRuntime(replayCommands);
     replay.start();
     replay.realizePlayWorld();
-    replay.restoreBtFromTrace(frame.bt!);
+    replay.restoreFromTrace(frame);
     replayCommands.length = 0;
     replay.tick();
     expect(replayCommands.filter((command) => command.type === "animState")).toEqual(uninterrupted);
@@ -732,8 +732,10 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = graphAndPlayAnimationRuntime(commands);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.executeConsoleCommand("snapshot start");
     runtime.tick();
-    runtime.restoreBtFromTrace([]);
+    runtime.executeConsoleCommand("snapshot stop");
+    runtime.restoreFromTrace({ ...runtime.stopTrace()!.frames[0]!, bt: [] });
     commands.length = 0;
     runtime.tick();
     expect(stateIds(commands)).toEqual(firstTick);

@@ -7,7 +7,7 @@ import { bumpFragment } from "@babylonjs/core/Shaders/ShadersInclude/bumpFragmen
 import { bumpFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/bumpFragment";
 import { bindMeshLatticeDeformerBuffer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { checkedShader } from "./checked-shader";
-import { LATTICE_WORLD_POSITION_PATTERN, latticeNormalShaderFunction, latticeShaderDeclarations, latticeShaderFunctions, latticeWorldPositionCode } from "./lattice-deformer-shader";
+import { LATTICE_SAMPLER, LATTICE_WORLD_POSITION_PATTERN, latticeNormalShaderFunction, latticeShaderDeclarations, latticeShaderFunctions, latticeWorldPositionCode } from "./lattice-deformer-shader";
 
 /** Attached on demand to the materials an active cage draws. Per-mesh defines
  * keep ordinary draws of a shared or frozen material free of a vertex sampler. */
@@ -29,7 +29,7 @@ export class LatticeDeformerPlugin extends MaterialPluginBase {
     if (!(subMesh.materialDefines as (MaterialDefines & { SLATE_LATTICE?: boolean }) | null)?.SLATE_LATTICE) return;
     bindMeshLatticeDeformerBuffer(buffer, subMesh.getEffectiveMesh());
   }
-  override getSamplers(samplers: string[]): void { samplers.push("latticeData"); }
+  override getSamplers(samplers: string[]): void { samplers.push(LATTICE_SAMPLER); }
   override getUniforms(language: ShaderLanguage = 0) {
     const uniforms = ["lattice_cellSize", "lattice_min", "lattice_max", "lattice_resolution", "lattice_position"].map((name) => ({ name, size: 3, type: "vec3" }));
     uniforms.push({ name: "slateWorldToLattice", size: 16, type: "mat4" }, { name: "slateLatticeToWorld", size: 16, type: "mat4" }, { name: "slateLatticeEnabled", size: 1, type: "float" });

@@ -44,10 +44,8 @@ import {
 import { compileMaterialPlan } from "./material-compiler";
 import { isSceneFrameReady } from "./scene-perf";
 
-import {
-  limitManagedLightingBytes,
-  managedLightingReservations,
-} from "./managed-lighting-resources";
+import { limitManagedLightingBytes } from "./managed-lighting-resources";
+import { managedRenderReservations } from "./managed-render-resources";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -164,7 +162,7 @@ describe("explicit clustered light ownership", () => {
     expect(owner.status().fallbackReason).toContain("reserved peak");
     expect(scene.textures).toEqual(before);
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
     expect(
       lights.every(
         (light) =>
@@ -197,9 +195,9 @@ describe("explicit clustered light ownership", () => {
     owner.dispose();
     waiting.sync();
     expect(waiting.status().clustered).toBe(2);
-    expect(managedLightingReservations(first.engine).reservedBytes).toBe(18224);
+    expect(managedRenderReservations(first.engine).reservedBytes).toBe(18224);
     waiting.dispose();
-    expect(managedLightingReservations(first.engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(first.engine).reservedBytes).toBe(0);
   });
 
   it("reserves replacement peaks and retains high-water bytes on shrink without reallocating settled frames", () => {
@@ -213,7 +211,7 @@ describe("explicit clustered light ownership", () => {
       .getMockImplementation()!;
     vi.spyOn(engine, "createRenderTargetTexture").mockImplementation(
       (...args) => {
-        peak = managedLightingReservations(engine).reservedBytes;
+        peak = managedRenderReservations(engine).reservedBytes;
         return allocate(...args);
       },
     );
@@ -229,27 +227,27 @@ describe("explicit clustered light ownership", () => {
       owner.target(scene.activeCamera!);
     }
     expect(owner.target(scene.activeCamera!)).toBe(grown);
-    expect(managedLightingReservations(engine)).toMatchObject({
-      clusterBytes: 54672,
+    expect(managedRenderReservations(engine)).toMatchObject({
+      categoryBytes: { cluster: 54672 },
       pendingBytes: 0,
     });
     owner.setLights([]);
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
 
   it("keeps released WebGPU cluster textures reserved until the native end-frame drain", async () => {
     const { engine, scene, lights } = fixture();
     const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
-    const bytes = managedLightingReservations(engine).clusterBytes;
+    const bytes = managedRenderReservations(engine).categoryBytes.cluster;
     expect(bytes).toBeGreaterThan(0);
     // Babylon selects its container layout at construction; flip only the
     // release boundary, where WebGPU defers physical texture destruction.
     Object.defineProperty(engine, "isWebGPU", { get: () => true });
     owner.dispose();
     await Promise.resolve();
-    expect(managedLightingReservations(engine).clusterBytes).toBe(bytes);
+    expect(managedRenderReservations(engine).categoryBytes.cluster).toBe(bytes);
     engine.endFrame();
-    expect(managedLightingReservations(engine).clusterBytes).toBe(0);
+    expect(managedRenderReservations(engine).categoryBytes.cluster).toBe(0);
   });
 
   it("preserves same-scene shadow reservations while clusters contend and recover after context restoration", () => {
@@ -279,7 +277,7 @@ describe("explicit clustered light ownership", () => {
     });
     const shadows = sceneShadowController(scene);
     shadows.sync();
-    const shadowBytes = managedLightingReservations(engine).shadowBytes;
+    const shadowBytes = managedRenderReservations(engine).shadowBytes;
     expect(shadowBytes).toBeGreaterThan(0);
     const generator = shadows.generator(key);
     limitManagedLightingBytes(engine, shadowBytes + 18224);
@@ -288,26 +286,26 @@ describe("explicit clustered light ownership", () => {
     expect(owner.limits().join()).toContain("Shared managed lighting memory");
     shadows.sync();
     expect(shadows.generator(key)).toBe(generator);
-    expect(managedLightingReservations(engine).reservedBytes).toBe(
+    expect(managedRenderReservations(engine).reservedBytes).toBe(
       shadowBytes + 18224,
     );
     engine.onContextRestoredObservable.notifyObservers(engine);
     // Native shadow maps rebuild in place; their reservation must survive while
     // the cluster owner releases its old mask and later constructs a new one.
-    expect(managedLightingReservations(engine)).toMatchObject({
+    expect(managedRenderReservations(engine)).toMatchObject({
       reservedBytes: shadowBytes,
-      clusterBytes: 0,
+      categoryBytes: { cluster: 0 },
       pendingBytes: 0,
     });
     shadows.sync();
     owner.sync();
     expect(owner.status().clustered).toBe(23);
     expect(shadows.generator(key)).not.toBeNull();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(
+    expect(managedRenderReservations(engine).reservedBytes).toBe(
       shadowBytes + 18224,
     );
     scene.dispose();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
 
   it("does not re-admit the removed cluster proxy when Babylon delivers its deferred mesh-added notification", async () => {
@@ -941,7 +939,7 @@ describe("explicit clustered light ownership", () => {
     owner.setLights(lights);
     expect(owner.status().clustered).toBe(0);
     expect(owner.limits().join()).toContain("Larger mask allocation rejected");
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
     expect(
       scene.textures.some((texture) => texture.name === "TileMaskTexture"),

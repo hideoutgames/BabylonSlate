@@ -1,5 +1,5 @@
 import { unzipSync, zipSync } from "fflate";
-import { ENGINE_VERSION, type ProjectStorage, type ProjectDocument } from "@haptic/core";
+import type { ProjectStorage, ProjectDocument } from "@haptic/core";
 import { stableStringify } from "./bytes";
 
 export type ManifestKind = "project" | "plugin";
@@ -25,10 +25,6 @@ export const LAYOUT_FILE = "layout.json";
 export const ASSETS_DIR = "assets";
 export const BLOBS_DIR = "assets/.blobs";
 export const PLUGINS_DIR = "plugins";
-
-export function manifestFileFor(kind: ManifestKind): string {
-  return kind === "plugin" ? PLUGIN_MANIFEST_FILE : PROJECT_MANIFEST_FILE;
-}
 
 /**
  * Directory backend: read/write project tree through ProjectStorage.
@@ -93,38 +89,6 @@ export function decodeProjectZip(bytes: Uint8Array): ProjectTreeFile[] {
   return Object.entries(record)
     .map(([path, data]) => ({ path, data }))
     .sort((a, b) => a.path.localeCompare(b.path));
-}
-
-export function createEmptyProjectFiles(options: {
-  kind?: ManifestKind;
-  guid: string;
-  name: string;
-  engineVersion?: string;
-}): ProjectTreeFile[] {
-  const kind = options.kind ?? "project";
-  const manifest: HprojectManifest = {
-    kind,
-    guid: options.guid,
-    name: options.name,
-    engineVersion: options.engineVersion ?? ENGINE_VERSION,
-    version: 1,
-    startupScene: kind === "project" ? "assets/main.scene.hasset" : undefined,
-  };
-  const files: ProjectTreeFile[] = [
-    {
-      path: manifestFileFor(kind),
-      data: new TextEncoder().encode(stableStringify(manifest)),
-    },
-  ];
-  if (kind === "project") {
-    files.push({
-      path: LAYOUT_FILE,
-      data: new TextEncoder().encode(
-        stableStringify({ documents: {}, tabOrder: [] }),
-      ),
-    });
-  }
-  return files;
 }
 
 /** Export Project: directory tree → zip bytes (ignores derived data by construction). */

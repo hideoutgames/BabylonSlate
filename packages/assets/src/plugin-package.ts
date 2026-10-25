@@ -478,28 +478,6 @@ export async function applyPluginImport(
   }
 }
 
-export async function unpackEnginePluginZip(
-  storage: ProjectStorage,
-  zip: Uint8Array,
-  folderName: string,
-): Promise<PluginDescriptor> {
-  validatePluginPath(folderName);
-  if (folderName.includes("/")) throw new Error("Plugin folder must be a single name");
-  const incoming = await inspectHplugin(zip);
-  const out: ProjectTreeFile[] = incoming.files.map((file) => ({
-    path: `${folderName}/${file.path}`,
-    data: file.data,
-  }));
-  await storage.mkdir(`${folderName}/${ASSETS_DIR}`, true);
-  await writeProjectTree(storage, out);
-  const discovered = await discoverEnginePlugins(storage);
-  const imported = discovered.find((plugin) => plugin.folderName === folderName);
-  if (!imported) {
-    throw new Error(`Failed to unpack engine plugin into ${folderName}`);
-  }
-  return imported;
-}
-
 export async function installEnginePluginDefaults(
   projectStorage: ProjectStorage,
   engineStorage: ProjectStorage,

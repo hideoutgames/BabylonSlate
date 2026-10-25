@@ -160,22 +160,6 @@ export function fillVolumetricSlots(
   for (let i = count; i < previous; i++) slots.lights[i] = undefined;
 }
 
-/** Shared by the query below; it keeps no light between calls. */
-const queried = createVolumetricSlots();
-
-/** The lights taking part, in slot order. */
-export function selectVolumetricLights(
-  scene: Scene,
-  camera: Camera,
-  settings: VolumetricLightingSettings,
-): VolumeLight[] {
-  fillVolumetricSlots(queried, scene, camera, settings);
-  const lights = queried.lights.slice(0, queried.count) as VolumeLight[];
-  for (let i = 0; i < queried.count; i++) queried.lights[i] = undefined;
-  queried.count = 0;
-  return lights;
-}
-
 /**
  * The map a march drawn for `camera` samples for `light`. Only an admitted map counts: a standby or released one is
  * none, so the march never binds it. A view with its own sun maps (a Full Quality capture, `attachView`) samples the

@@ -11,7 +11,6 @@ export {
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
   isParticleSpineRole,
-  particleNodeDefinition,
   particleNodeDefinitionFor,
   particleNodeValueType,
   particlePaletteEntries,
@@ -95,7 +94,6 @@ export {
 } from "./types";
 export {
   findParticleGraphCycle,
-  particleSpine,
   validateParticleGraphDocument,
   type ParticleDiagnosticSeverity,
   type ParticleGraphDiagnostic,

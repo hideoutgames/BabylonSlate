@@ -11,7 +11,7 @@ import {
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
-import { embedGlbExternalImages } from "@haptic/assets";
+import { embedGlbExternalImages, encodeGlbJsonBin } from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
@@ -1167,6 +1167,86 @@ describe("EditorSceneSync", () => {
     expect(visuals.some((part) => part.getTotalVertices() > 0)).toBe(true);
     expect(visuals.some((part) => isEditorModelPlaceholder(part))).toBe(false);
     expect(visuals).not.toContain(root);
+  });
+
+  it("loads every Model MeshComponent of an actor, after a primitive and through a staged replacement", async () => {
+    const { scene } = createHandle();
+    const box = createMeshComponent("box", "box");
+    const first = createMeshComponent("first", "box");
+    first.properties.assetGuid = "model-1";
+    const second = createMeshComponent("second", "box");
+    second.properties.assetGuid = "model-2";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()], ["model-2", encodeTriangleGlb()]]),
+    });
+    const modelTriangles = (componentId: string) =>
+      visualMeshes(scene.getMeshByName(editorComponentMeshName("hero", componentId))!).filter((part) => part.getTotalVertices() === 3);
+    sync.apply(sceneWith([createActor("hero", "Hero", { components: [box, first] })]));
+    await sync.whenEditorModelsReady();
+    await vi.waitFor(() => expect(modelTriangles("first").length).toBeGreaterThan(0));
+    // Adding a second Model rebuilds the actor's visual; it publishes once both parts load.
+    sync.apply(sceneWith([createActor("hero", "Hero", { components: [box, first, second] })]));
+    await sync.whenEditorModelsReady();
+    await vi.waitFor(() => {
+      expect(modelTriangles("first").length).toBeGreaterThan(0);
+      expect(modelTriangles("second").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("binds each Model MeshComponent's own Materials, not a sibling's slots or override", async () => {
+    const { scene } = createHandle();
+    const slotA = new StandardMaterial("slot-a", scene);
+    const slotB = new StandardMaterial("slot-b", scene);
+    const red = new StandardMaterial("red", scene);
+    const box = createMeshComponent("box", "box");
+    box.properties.materialGuid = "red";
+    const first = createMeshComponent("first", "box");
+    first.properties.assetGuid = "model-1";
+    const second = createMeshComponent("second", "box");
+    second.properties.assetGuid = "model-2";
+    const materials = new Map([["mat-a", slotA], ["mat-b", slotB], ["red", red]]);
+    const sync = new EditorSceneSync(scene, undefined, { resolveMaterial: (guid) => materials.get(guid) ?? null });
+    const payload = (materialGuid: string) => ({ clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+      materialSlots: [{ index: 0, name: "Mat", materialGuid }] });
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()], ["model-2", encodeTriangleGlb()]]),
+      modelPayloads: new Map([["model-1", payload("mat-a")], ["model-2", payload("mat-b")]]) as never,
+    });
+    const modelTriangles = (componentId: string) =>
+      visualMeshes(scene.getMeshByName(editorComponentMeshName("hero", componentId))!).filter((part) => part.getTotalVertices() === 3);
+    sync.apply(sceneWith([createActor("hero", "Hero", { components: [box, first, second] })]));
+    await sync.whenEditorModelsReady();
+    await vi.waitFor(() => {
+      expect(modelTriangles("first").length).toBeGreaterThan(0);
+      expect(modelTriangles("second").length).toBeGreaterThan(0);
+    });
+    for (const part of modelTriangles("first")) expect(part.material).toBe(slotA);
+    for (const part of modelTriangles("second")) expect(part.material).toBe(slotB);
+  });
+
+  it("reports one Model's failed load through readiness without an unhandled rejection", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { scene } = createHandle();
+    const first = createMeshComponent("first", "box");
+    first.properties.assetGuid = "good";
+    const second = createMeshComponent("second", "box");
+    second.properties.assetGuid = "broken";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["good", encodeTriangleGlb()], ["broken", encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array())]]),
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      sync.apply(sceneWith([createActor("hero", "Hero", { components: [first, second] })]));
+      await expect(sync.whenEditorModelsReady()).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
   });
 
   it("loads the Model GLB under the MeshComponent child when a collider forces an origin", async () => {

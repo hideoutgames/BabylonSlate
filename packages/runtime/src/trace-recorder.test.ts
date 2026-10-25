@@ -5,7 +5,7 @@ import {
   stringifyWorldSnapshot,
 } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
-import { replayTracePayload } from "./trace-replay";
+import { replayTracePayload } from "./testing/trace-replay";
 
 describe("runtime trace recorder", () => {
   it("records each tick's script messages and diagnostics on its own trace frame", async () => {

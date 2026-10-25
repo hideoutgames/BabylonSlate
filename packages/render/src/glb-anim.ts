@@ -153,7 +153,7 @@ function modelSourceKey(guid: string, source: Blob, payload?: unknown, packed?: 
 }
 
 /** Child of the actor placeholder so scene TRS and import scale stay independent. */
-export function applyModelImportScale(
+function applyModelImportScale(
   placeholder: AbstractMesh,
   scale: number,
 ): TransformNode {
@@ -210,7 +210,7 @@ function bumpSlotAnimEpoch(
   return next;
 }
 
-export function disposeSlotAnimationGroups(
+function disposeSlotAnimationGroups(
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
@@ -707,6 +707,41 @@ function prepareModelInstance(
   }
 }
 
+/** The identity a model load installs under: source, payload, packing, import scale, LOD and animations. */
+function slotModelLoadKey(binding: ModelAnimLoadBinding, clipAssetGuid: string, bytes: Blob) {
+  const payload = binding.modelPayloads?.get(clipAssetGuid);
+  const importScale = normalizeModelImportScale(payload?.importScale);
+  const autoLod = payload?.autoLod !== false;
+  const packed = packedSlimProof(binding);
+  const animations = JSON.stringify({
+    clips: [...(binding.modelClipAnimationGuids?.get(clipAssetGuid) ?? [])],
+    retargets: (binding.retargetAnimationLoads?.get(clipAssetGuid) ?? []).map((row) => {
+      const source = binding.modelSources?.get(row.sourceModelGuid);
+      return [row, source ? installedAssetIdentity(source) : null];
+    }),
+  });
+  const settings = `:scale=${importScale}:lod=${autoLod}:${animations}`;
+  return {
+    importScale, autoLod, packed,
+    key: `${modelSourceKey(clipAssetGuid, bytes, payload, packed)}${settings}`,
+    fullDetailKey: `${modelSourceKey(clipAssetGuid, bytes, payload, null)}${settings}`,
+  };
+}
+
+/** The placeholder already holds an instance of this load; a full-detail instance also satisfies a slim request. */
+function installedLoadSatisfies(binding: ModelAnimLoadBinding, meta: ModelPlaceholderMeta, key: string, fullDetailKey: string): boolean {
+  return Boolean(meta[MODEL_INSTANCE_KEY]) && (meta[MODEL_LOAD_KEY] === key ||
+    (Boolean(binding.reuseFullDetailInstance) && meta[MODEL_LOAD_KEY] === fullDetailKey));
+}
+
+/** Whether `beginSlotModelAnimLoad` would find this model already installed on `placeholder` and adopt nothing. */
+export function isSlotModelInstalled(binding: ModelAnimLoadBinding, clipAssetGuid: string, bytes: Blob, placeholder: AbstractMesh): boolean {
+  const meta = placeholder.metadata as ModelPlaceholderMeta | null | undefined;
+  if (!meta) return false;
+  const { key, fullDetailKey } = slotModelLoadKey(binding, clipAssetGuid, bytes);
+  return installedLoadSatisfies(binding, meta, key, fullDetailKey);
+}
+
 /**
  * Acquire a scene-local installed source generation, stage independent nodes,
  * materials and animation bindings, then publish to the winning actor epoch.
@@ -723,30 +758,9 @@ export function beginSlotModelAnimLoad(
   prepareInstance?: (root: Mesh) => void | Promise<void>,
   priority?: NativePreparationPriority,
 ): Promise<void> {
-  const importScale = normalizeModelImportScale(
-    binding.modelPayloads?.get(clipAssetGuid)?.importScale,
-  );
-  const autoLod = binding.modelPayloads?.get(clipAssetGuid)?.autoLod !== false;
-  const packed = packedSlimProof(binding);
-  const animations = JSON.stringify({
-    clips: [...(binding.modelClipAnimationGuids?.get(clipAssetGuid) ?? [])],
-    retargets: (binding.retargetAnimationLoads?.get(clipAssetGuid) ?? []).map((row) => {
-      const source = binding.modelSources?.get(row.sourceModelGuid);
-      return [row, source ? installedAssetIdentity(source) : null];
-    }),
-  });
-  const payload = binding.modelPayloads?.get(clipAssetGuid);
-  const settings = `:scale=${importScale}:lod=${autoLod}:${animations}`;
-  const key = `${modelSourceKey(clipAssetGuid, bytes, payload, packed)}${settings}`;
+  const { importScale, autoLod, packed, key, fullDetailKey } = slotModelLoadKey(binding, clipAssetGuid, bytes);
   const meta = asPlaceholderMeta(placeholder);
-  if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
-    return Promise.resolve();
-  }
-  // A full-detail instance already satisfies a slim request; the reverse still reloads.
-  if (binding.reuseFullDetailInstance && meta[MODEL_INSTANCE_KEY] &&
-    meta[MODEL_LOAD_KEY] === `${modelSourceKey(clipAssetGuid, bytes, payload, null)}${settings}`) {
-    return Promise.resolve();
-  }
+  if (installedLoadSatisfies(binding, meta, key, fullDetailKey)) return Promise.resolve();
   const pending = pendingModelLoads.get(placeholder);
   if (pending?.key === key && pending.isCurrent()) {
     const adopted = pending.promise.then(() => {

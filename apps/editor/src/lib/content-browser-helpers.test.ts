@@ -46,7 +46,6 @@ import {
   guidsOutsideSelectedFolders,
   rootSelectedFolderPaths,
   listChildFolders,
-  matchesAssetSearch,
   newAssetFileName,
   remapPathAfterFolderMove,
   visualForIndexedAsset,
@@ -223,10 +222,11 @@ describe("content-browser-helpers", () => {
   it("matches search across name, path, and type", () => {
     // Each needle occurs in exactly one field, so every field is checked.
     const item = asset({ name: "Crate", type: "Model", path: "assets/props/box.hasset" });
-    expect(matchesAssetSearch(item, "crate")).toBe(true);
-    expect(matchesAssetSearch(item, "props")).toBe(true);
-    expect(matchesAssetSearch(item, "model")).toBe(true);
-    expect(matchesAssetSearch(item, "missing")).toBe(false);
+    const search = (query: string) => filterAssets([item], { folderGuids: null, typeFilters: null, search: query });
+    expect(search("crate")).toHaveLength(1);
+    expect(search("props")).toHaveLength(1);
+    expect(search("model")).toHaveLength(1);
+    expect(search("missing")).toHaveLength(0);
   });
 
   it("sorts assets by name case-insensitively", () => {

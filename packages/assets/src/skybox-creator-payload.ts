@@ -220,34 +220,6 @@ export function defaultSkyboxCreatorSourcePlacement(
   };
 }
 
-export function letterboxSize(
-  hostWidth: number,
-  hostHeight: number,
-  aspect = SKYBOX_CREATOR_NET_ASPECT,
-): { width: number; height: number; x: number; y: number } {
-  const width = Math.max(0, hostWidth);
-  const height = Math.max(0, hostHeight);
-  if (width === 0 || height === 0 || aspect <= 0) {
-    return { width: 0, height: 0, x: 0, y: 0 };
-  }
-  if (width / height > aspect) {
-    const fittedWidth = height * aspect;
-    return {
-      width: fittedWidth,
-      height,
-      x: (width - fittedWidth) / 2,
-      y: 0,
-    };
-  }
-  const fittedHeight = width / aspect;
-  return {
-    width,
-    height: fittedHeight,
-    x: 0,
-    y: (height - fittedHeight) / 2,
-  };
-}
-
 export function resizeSkyboxCreatorSourcePlacement(
   start: SkyboxCreatorSourcePlacement,
   handle: SkyboxCreatorSourcePlacementHandle,

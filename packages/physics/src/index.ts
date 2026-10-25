@@ -32,7 +32,6 @@ export type {
   DebugColliderShape,
 } from "./debug-colliders";
 export {
-  debugColliderFromDesc,
   listDebugCollidersFromRecords,
 } from "./debug-colliders";
 export { SoftwarePhysicsBackend } from "./software-backend";

@@ -14,7 +14,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     });
     try {
       expect(runtime.listConsoleCommands().some(command => command.name === "heal")).toBe(true);
-      expect(runtime.executeConsoleCommand("help").success).toBe(true);
+      expect(runtime.executeConsoleCommand("help").output).toContain("heal");
       expect(commands.some(command => command.type === "assetPreload")).toBe(false);
       expect(runtime.executeConsoleCommand("heal 4").output).toContain("executeConsoleCommandAsync");
       const operation = runtime.executeConsoleCommandAsync("heal 4");
@@ -259,30 +259,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
-  it("runs a user DebugCommand from the console without the debug tier", () => {
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-      includeDebugCommands: false,
-    });
-    runtime.registerUserCommand({
-      name: "heal",
-      description: "Heal the player",
-      category: "game",
-      parameters: [{ name: "amount", type: "float" }],
-      run: (args) => ({ success: true, output: `healed ${args.amount}` }),
-    });
-    expect(runtime.executeConsoleCommand("heal 10")).toEqual({
-      success: true,
-      output: "healed 10",
-    });
-    expect(runtime.listConsoleCommands().some((c) => c.name === "heal")).toBe(
-      true,
-    );
-    runtime.stop();
-  });
-
   it("emits sessionPaused from pause and resume without treating overlay pause as a console command", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -346,34 +322,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.getWorld().clock.tickIndex).toBe(before + 1);
     runtime.tick();
     expect(runtime.getWorld().clock.tickIndex).toBe(before + 1);
-    runtime.stop();
-  });
-
-  it("lists user commands from help and refuses a reserved overwrite", () => {
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-    });
-    runtime.registerUserCommand({
-      name: "heal",
-      description: "Heal the player",
-      category: "game",
-      parameters: [],
-      run: () => ({ success: true, output: "healed" }),
-    });
-    runtime.registerUserCommand({
-      name: "pause",
-      description: "User pause",
-      category: "game",
-      parameters: [],
-      run: () => ({ success: true, output: "user" }),
-    });
-    const listed = runtime.executeConsoleCommand("help");
-    expect(listed.success).toBe(true);
-    expect(listed.output).toContain("heal");
-    expect(listed.output).toContain("pause");
-    expect(runtime.executeConsoleCommand("pause").output).toBe("paused");
     runtime.stop();
   });
 

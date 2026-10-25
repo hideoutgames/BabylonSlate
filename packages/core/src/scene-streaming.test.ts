@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createActor, normalizeScene } from "./scene";
-import { cloneSceneStreamingActors, remapSceneStreamingReferences } from "./scene-streaming";
+import { cloneSceneStreamingActorsSteps, remapSceneStreamingReferences } from "./scene-streaming";
 import { createDefaultRenderTargetCaptureProperties } from "./render-target";
+
+/** Run the runtime's stepwise clone to completion. */
+function cloneSceneStreamingActors(...args: Parameters<typeof cloneSceneStreamingActorsSteps>) {
+  const steps = cloneSceneStreamingActorsSteps(...args);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
 
 describe("scene streaming instances", () => {
   it("honors explicit cleared references without changing unmapped assets or labels", () => {

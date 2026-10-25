@@ -11,7 +11,7 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
 } from "@haptic/assets";
-import { collectExportReachability, collectHeaderReachability, selectExportRoots } from "./closure";
+import { collectExportReachability, collectHeaderReachability } from "./closure";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type { ExportIndexedAsset } from "./types";
 
@@ -1362,18 +1362,6 @@ describe("Always Package Folders", () => {
 
   it("ignores assets without a storage path", () => {
     expect(closure([scene, asset({ guid: "loose", name: "Loose", type: "Texture" })], ["assets"])).toEqual(["scene"]);
-  });
-
-  it("selects the same roots for every packaged set, sorted by guid", () => {
-    const assets = [scene,
-      withPath("assets/Input/Jump.inputaction.hasset", { guid: "jump", name: "Jump", type: "InputAction" }),
-      withPath("assets/Weapons/B.class.hasset", { guid: "b", name: "B", type: "Class" }),
-      withPath("assets/Weapons/A.class.hasset", { guid: "a", name: "A", type: "Class" })];
-    expect(selectExportRoots({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null, assets,
-      gameInstanceClass: " Game ", alwaysPackageFolders: ["assets/Weapons"] })).toEqual({
-      startupRefs: ["jump", "Game"],
-      alwaysPackageGuids: ["a", "b"],
-    });
   });
 });
 

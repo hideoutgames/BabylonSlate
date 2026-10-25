@@ -432,7 +432,7 @@ function parentStreamingComponentOf(
   );
 }
 
-export function isIdentitySerializedTransform(
+function isIdentitySerializedTransform(
   transform: SerializedTransform | undefined,
 ): boolean {
   const value = transform ?? identitySerializedTransform();
@@ -1070,7 +1070,7 @@ function attachMeshCollisionDashes(
   }
 }
 
-export function disposeMeshCollisionDashes(mesh: Mesh): void {
+function disposeMeshCollisionDashes(mesh: Mesh): void {
   for (const child of [...mesh.getChildren()]) {
     if (
       child instanceof Mesh &&
@@ -1591,17 +1591,21 @@ export function syncEditorCablePreviews(scene: Scene, actors: readonly Serialize
   if (bound) pruneEditorCables(scene, bound);
 }
 
-/** GLB instantiate target: MeshComponent child under an origin, else the actor root. */
+/** Every MeshComponent that names a Model, in component order: each loads into its own placeholder. */
+export function modelMeshComponentsOf(actor: SerializedActor): Array<{ component: SerializedComponent; guid: string }> {
+  return actor.components.flatMap((component) => {
+    const guid = component.classId === "MeshComponent" ? component.properties.assetGuid : undefined;
+    return typeof guid === "string" && guid.length > 0 ? [{ component, guid }] : [];
+  });
+}
+
+/** GLB instantiate target for a model MeshComponent: its child under an origin, else the actor root. */
 export function editorModelLoadTarget(
   root: Mesh,
   actor: SerializedActor,
+  component: SerializedComponent,
 ): Mesh {
-  const component = actor.components.find((entry) => {
-    if (entry.classId !== "MeshComponent") return false;
-    const guid = entry.properties.assetGuid;
-    return typeof guid === "string" && guid.length > 0;
-  });
-  if (!component || !isEditorActorOrigin(root)) return root;
+  if (!isEditorActorOrigin(root)) return root;
   const name = editorComponentMeshName(actor.id, component.id);
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? root;
 }
@@ -1660,20 +1664,16 @@ export function applySceneToBabylonScene(
     applyActorTransform(mesh, actor);
     applyActorComponentSorting(mesh, actor, assets?.sortingLayers ?? ["Background", "Default", "Foreground", "UI"]);
     meshes.set(actor.id, mesh);
-    const guid = actor.components.find(
-      (component) => component.classId === "MeshComponent",
-    )?.properties.assetGuid;
-    const bytes =
-      typeof guid === "string" ? meshAssets.modelSources?.get(guid) : undefined;
-    if (typeof guid === "string" && bytes) {
-      const placeholder = editorModelLoadTarget(mesh, actor);
+    for (const { component, guid } of modelMeshComponentsOf(actor)) {
+      const bytes = meshAssets.modelSources?.get(guid);
+      if (!bytes) continue;
       void beginSlotModelAnimLoad(
         scene,
         loadBinding,
         ++loadSlot,
         guid,
         bytes,
-        placeholder,
+        editorModelLoadTarget(mesh, actor, component),
         () => {
           applyActorTransform(mesh, actor);
           applyAuthoredActorMaterialInstances(mesh, actor, meshAssets);

@@ -141,7 +141,7 @@ export class RuntimeConsole {
     }
   }
 
-  register(def: UserCommandDef): void {
+  private register(def: UserCommandDef): void {
     this.commands.register(createUserCommand(def));
   }
 

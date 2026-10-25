@@ -6,13 +6,11 @@ import {
   AUDIO_OCCUPANCY_GRID_MAX_Z,
 } from "./audio-payload";
 import {
-  AUDIO_REVERB_CHUNK_ID,
   AUDIO_REVERB_VERSION,
   bakeAudioReverb,
   collectStaticAudioGeometry,
   decodeAudioReverbChunk,
   encodeAudioReverbChunk,
-  extraChunksWithAudioReverb,
   geometryHashForAudioBake,
   interpolateAudioReverb,
   isDryAudioReverbFallback,
@@ -131,30 +129,6 @@ describe("audio reverb chunk", () => {
         decodeAudioReverbChunk(legacy)?.occupancy ?? null,
       ),
     ).toBe(0);
-  });
-
-  it("replaces the audioReverb extra chunk and keeps navmesh", () => {
-    const bytes = encodeAudioReverbChunk({
-      version: AUDIO_REVERB_VERSION,
-      dryFallback: true,
-      geometryHash: "h",
-      probes: [],
-    });
-    const extra = extraChunksWithAudioReverb(
-      [
-        {
-          id: "navmesh",
-          kind: "navmesh",
-          mime: "application/octet-stream",
-          data: new Uint8Array([1]),
-        },
-      ],
-      bytes,
-    );
-    expect(extra.some((chunk) => chunk.id === "navmesh")).toBe(true);
-    expect(extra.filter((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)).toHaveLength(
-      1,
-    );
   });
 });
 

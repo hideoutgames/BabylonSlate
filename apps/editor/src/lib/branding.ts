@@ -1,7 +1,5 @@
 /** Public paths for the Haptic marks copied from `engine-logos/` into `public/branding/`. */
 
-export const BRAND_NAME = "Haptic";
-
 /** Haptic is dark only, so the light-ink dark-mode marks are the only ones served. */
 export const BRAND_ICON = "branding/HapticMark-DarkMode.png";
 /** The wordmark with the chromatic fringes of haptic.no's title. */

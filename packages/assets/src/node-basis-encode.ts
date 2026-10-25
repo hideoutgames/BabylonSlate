@@ -2,7 +2,6 @@
  * Node/Vitest Basis encode path using worker_threads and the editor's vendored
  * encoder in apps/editor/public/basis. Browser editor uses createWorkerEncodeFn instead.
  */
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -118,13 +117,4 @@ export function syntheticRgbaForSize(size: number): {
     }
   }
   return { rgba, width: size, height: size };
-}
-
-export function readVendoredBasisPresent(): boolean {
-  try {
-    readFileSync(join(basisDir(), "basis_encoder.wasm"));
-    return true;
-  } catch {
-    return false;
-  }
 }
