@@ -173,6 +173,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 export class ForwardSceneFrameGraph {
   private measureWork = false;
   private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0 };
+  /** Geometry render pass ids that drew in a complete frame of the prepared graph (`noteCompleteFrame`). */
+  private readonly drawnGeometryPasses = new Set<number>();
   /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
   readonly requestedEffects = new Set<Effect>();
 
@@ -393,6 +395,28 @@ export class ForwardSceneFrameGraph {
     return false;
   }
 
+  /**
+   * The view drew a complete frame (no draw skipped): the geometry passes that
+   * ran in it (the spatial effects' and the authored post-process chain's
+   * geometry buffers) have drawn the meshes they saw.
+   */
+  noteCompleteFrame(): void {
+    for (const task of this.graph?.tasks ?? [])
+      if (task instanceof LogicalGeometryTask && !task.disabled)
+        for (const id of task.objectRenderer.renderPassIds) this.drawnGeometryPasses.add(id);
+  }
+
+  /**
+   * Whether `renderPassId` is a geometry pass that drew in a complete frame
+   * since the graph was prepared or invalidated (`noteCompleteFrame`): a frame
+   * may then present it without a draw for a few frames. Before that, its
+   * first draws (a new graph, an effect switched on, a Fog Volume coming into
+   * view) can miss every mesh's pipeline at once.
+   */
+  omitsGeometryPass(renderPassId: number): boolean {
+    return this.drawnGeometryPasses.has(renderPassId);
+  }
+
   /** Actual mask/compose drawing passes, separately from clear records. */
   sharedOutlineDiagnostics(): { drawingPassCount: number; renderRecordCount: number } {
     return {
@@ -458,6 +482,8 @@ export class ForwardSceneFrameGraph {
   invalidate(): void {
     this.failure = undefined;
     this.failedOutput = undefined;
+    // A new run (a scene switch, a changed Material library) can give every mesh new geometry variants.
+    this.drawnGeometryPasses.clear();
     this.markReadinessDirty();
   }
 
@@ -1545,6 +1571,7 @@ export class ForwardSceneFrameGraph {
 
   private releaseGraphResources(): void {
     this.admittedCamera = undefined;
+    this.drawnGeometryPasses.clear();
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();

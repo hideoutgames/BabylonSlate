@@ -76,7 +76,10 @@ export type SceneRenderCoordinatorOptions = {
    * frames in a row, new misses compile synchronously again. Only for a view
    * that draws every frame and presents only rendered frames: the world view
    * and its Full Quality captures, never previews or thumbnails. An auxiliary
-   * view defers only while its owner's frame does.
+   * view defers only while its owner's frame does. A steady frame (one that
+   * tolerates variant swaps) instead leaves such a draw out of a geometry pass
+   * that has drawn a complete frame, and still draws: its pipeline arrives
+   * without holding the view.
    *
    * On any backend, such a view also reports `holdingForPipelines` while its
    * frames wait for effects its own readiness probes requested and the driver
@@ -116,6 +119,7 @@ export class SceneRenderCoordinator {
   /** The run ended without a drawn frame (a stall, a failed link, the ceiling): it holds the image but no longer the game. */
   private compileHoldReleased = false;
   private readonly ownsPass = (renderPassId: number) => this.graph.ownsObjectPass(renderPassId);
+  private readonly omitsGeometryPass = (renderPassId: number) => this.graph.omitsGeometryPass(renderPassId);
   private failedAt = 0;
   private warnedFailure: string | undefined;
 
@@ -413,13 +417,15 @@ export class SceneRenderCoordinator {
     // validates a presentation waits for every requested variant.
     const tolerate = !validatePresentation && this.toleratesVariantSwaps();
     if (tolerate) this.graph.recheckVariantSwaps();
-    const result = probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation));
+    const result = probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation, tolerate));
     // After a drawn steady frame, outside it: compile ahead what a light about to be admitted asks for.
     if (tolerate && result.rendered) predictLightVariants(this.scene, this.graph.predictionPasses());
     return result;
   }
 
-  private renderFrame(validatePresentation: boolean): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
+  private renderFrame(
+    validatePresentation: boolean, steady: boolean,
+  ): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
     this.refreshOutline();
     // Re-derived every frame: a frame that draws, throws, or cannot draw for any
     // other reason (no camera, a failure, a paused redraw) ends the compile hold.
@@ -448,10 +454,16 @@ export class SceneRenderCoordinator {
       return { path: "frameGraph", reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
     // Draw on readiness's admission; graph preparation or invalidation re-admits.
     // An auxiliary view defers only inside its owner's deferring frame, which then holds too.
+    // A steady frame leaves a draw whose pipeline is still being created out of a geometry pass that has drawn a
+    // complete frame, instead of holding: a few frames of spatial-effect artefacts on that mesh. A geometry pass yet to
+    // draw one (a new graph, an effect switched on, an invalidation, a Fog Volume first within reach) can miss every
+    // mesh's pipeline at once, so it holds as before; so do validated presentations (loading, a frame report) and
+    // auxiliary views, whose captures publish what they draw.
     const deferral = this.deferPipelines
       ? beginPipelineDeferral(this.scene.getEngine(), this.ownsPass, {
         startsDeferrals: this.deferredSince === undefined || performance.now() - this.deferredSince < PIPELINE_DEFERRAL_HOLD_CAP_MS,
         nested: this.auxiliaryCamera !== undefined,
+        omits: steady ? this.omitsGeometryPass : undefined,
       })
       : undefined;
     let result: ReturnType<ForwardSceneFrameGraph["render"]>;
@@ -465,6 +477,7 @@ export class SceneRenderCoordinator {
     }
     if (this.deferral)
       return { ...result, reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
+    if (deferral && result.rendered !== false) this.graph.noteCompleteFrame();
     // A graph that is still preparing or probing its passes' variants holds the
     // image as an unready scene does; a skipped draw for any other reason does not.
     if (result.rendered === false && !status.ready) this.compileHold = this.holdsForCompiles(holding, status);

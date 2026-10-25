@@ -37,6 +37,8 @@ type DrawEngine = {
 
 type Scope = {
   allows: (renderPassId: number) => boolean;
+  /** Admitted passes whose draws a missing pipeline leaves out without counting a skip (`omits`). */
+  omits: ((renderPassId: number) => boolean) | undefined;
   startsDeferrals: boolean;
   /** A warm scope (`warm`): skips every draw, starts any missing pipeline asynchronously, never synchronously. */
   warm: boolean;
@@ -132,20 +134,28 @@ function install(engine: AbstractEngine): DeferralState {
     if (!scope || this.disabled || !node || target._snapshotRendering.record || state.synchronous.has(node))
       return create.call(this, effect, topology, sampleCount);
     const now = performance.now();
+    // An omitted draw is left out of its pass and holds nothing: the scope neither counts nor waits for it.
+    const omitted = scope.omits?.(target.currentRenderPassId) === true;
     if (state.pending.has(node)) {
       if (now - state.progressAt < PIPELINE_DEFERRAL_STALL_MS) {
-        scope.skipped += 1;
-        scope.nodes.add(node);
+        if (!omitted) {
+          scope.skipped += 1;
+          scope.nodes.add(node);
+        }
         throw DEFERRED;
       }
       for (const stalled of state.pending) state.synchronous.add(stalled);
       state.pending.clear();
       return create.call(this, effect, topology, sampleCount);
     }
-    if (!scopes.filter((open) => !open.warm).every((open) => open.startsDeferrals)) return create.call(this, effect, topology, sampleCount);
+    // The hold cap bounds held frames, and an omitted draw holds none, so its miss always starts asynchronously.
+    if (!omitted && !scopes.filter((open) => !open.warm).every((open) => open.startsDeferrals))
+      return create.call(this, effect, topology, sampleCount);
     defer(this, node, effect, topology, sampleCount);
-    scope.skipped += 1;
-    scope.nodes.add(node);
+    if (!omitted) {
+      scope.skipped += 1;
+      scope.nodes.add(node);
+    }
     throw DEFERRED;
   };
   // A warm draw looks its pipeline up (a miss starts it above) and is skipped either way.
@@ -214,11 +224,21 @@ export type PipelineDeferral = {
  * whatever the enclosing scopes' `startsDeferrals` or a stall (a warm draw
  * never compiles synchronously), and `warmed()` reports whether every draw
  * found its pipeline. Its skips never count in an enclosing scope.
+ *
+ * `omits` names admitted passes whose output may miss a draw for a few frames
+ * (a world view's geometry passes in its steady frames): a draw there whose
+ * pipeline is missing is left out without counting (`close()` and `waiting()`
+ * ignore it, so the owner may present), and its pipeline starts creating
+ * asynchronously whatever `startsDeferrals`, since it holds nothing. The stall
+ * rule still applies: once no deferred pipeline has started or finished for
+ * `PIPELINE_DEFERRAL_STALL_MS`, it compiles synchronously at its next draw, as
+ * does one whose creation failed, so a pipeline that never arrives cannot
+ * leave the draw out for good.
  */
 export function beginPipelineDeferral(
   engine: AbstractEngine,
   allows: (renderPassId: number) => boolean,
-  options: { startsDeferrals?: boolean; nested?: boolean; warm?: boolean } = {},
+  options: { startsDeferrals?: boolean; nested?: boolean; warm?: boolean; omits?: (renderPassId: number) => boolean } = {},
 ): PipelineDeferral | undefined {
   if (!engine.isWebGPU) return undefined;
   if (options.nested && !states.get(engine)?.scopes.length) return undefined;
@@ -227,7 +247,8 @@ export function beginPipelineDeferral(
   const scopes = state.scopes;
   const warm = options.warm === true;
   const scope: Scope = {
-    allows, startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0, lookups: 0, hits: 0, nodes: new Set(), tokens: new Map(),
+    allows, omits: options.omits, startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0, lookups: 0, hits: 0,
+    nodes: new Set(), tokens: new Map(),
   };
   scopes.push(scope);
   let closed = false;

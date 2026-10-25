@@ -24,7 +24,7 @@ import {
   type Mesh,
   type ShadowGenerator,
 } from "@babylonjs/core";
-import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
@@ -38,7 +38,7 @@ import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-ill
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { pruneWebGpuCachesNow, webGpuPipelinesOutside } from "../../../../packages/render/src/webgpu-cache-pruning";
-import { deferredPipelineCount } from "../../../../packages/render/src/webgpu-pipeline-deferral";
+import { deferredPipelineCount, effectDrawn } from "../../../../packages/render/src/webgpu-pipeline-deferral";
 import { PREDICTION_EXPIRY_MS } from "../../../../packages/render/src/variant-prediction";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
 
@@ -75,6 +75,92 @@ export async function proveWebGpuRehearsedChanges(engine: AbstractEngine) {
   const result = await webGpuWorld(engine, true);
   if (!("report" in result)) throw new Error("The rehearsal proof did not rehearse.");
   return result;
+}
+
+/**
+ * A world view with a geometry pass (temporal anti-aliasing's view depth and velocity, which no warm draw warms): a
+ * spawn with a variant nothing compiled stays hidden until its colour pipelines exist, and is then left out of the
+ * geometry pass alone, with no frame held and no pipeline created synchronously, until its geometry pipeline exists.
+ */
+export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
+  const scene = new Scene(engine);
+  scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
+  const camera = new FreeCamera("camera", new Vector3(0, 3, -6), scene);
+  camera.setTarget(Vector3.Zero());
+  scene.activeCamera = camera;
+  setFixedShapeLightingWorldScene(scene);
+  setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS,
+    temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
+  const floorMaterial = new PBRMaterial("floor", scene);
+  floorMaterial.albedoColor = new Color3(0.8, 0.8, 0.8);
+  floorMaterial.metallic = 0;
+  MeshBuilder.CreateGround("floor", { width: 6, height: 6 }, scene).material = floorMaterial;
+  authored(new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene), [1, 0.95, 0.85], 1);
+  const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
+  const device = (engine as DeviceEngine)._device;
+  const createRenderPipeline = device.createRenderPipeline;
+  const createRenderPipelineAsync = device.createRenderPipelineAsync;
+  const counts: PipelineCounts = { synchronous: 0, asynchronous: 0 };
+  device.createRenderPipeline = function (descriptor) {
+    counts.synchronous++;
+    return createRenderPipeline.call(this, descriptor);
+  };
+  device.createRenderPipelineAsync = function (descriptor) {
+    counts.asynchronous++;
+    return createRenderPipelineAsync.call(this, descriptor);
+  };
+  const frame = async (strict = false) => {
+    engine.beginFrame();
+    try {
+      return coordinator.render(strict).rendered;
+    } finally {
+      engine.endFrame();
+      await tick();
+    }
+  };
+  try {
+    await coordinator.prepare();
+    for (let attempt = 0; attempt < 300; attempt++) {
+      if (!coordinator.isReady()) await tick();
+      else if (await frame(true) && await frame(true)) break;
+    }
+    // Steady frames of this graph build, which then draws complete frames.
+    let settled = 0;
+    for (let index = 0; index < 300 && settled < 4; index++) settled = await frame() ? settled + 1 : 0;
+    const geometryPass = engine.getRenderPassNames().lastIndexOf("Spatial Geometry#0");
+    // Unlit: a colour and a geometry variant no other mesh draws with.
+    const material = new PBRMaterial("spawned", scene);
+    material.albedoColor = new Color3(0.1, 0.8, 0.2);
+    material.unlit = true;
+    const spawned = MeshBuilder.CreateBox("spawned", { size: 0.6 }, scene);
+    spawned.position.y = 0.3;
+    spawned.material = material;
+    /** Whether the spawn has drawn into the geometry buffers: a draw drew its geometry variant. */
+    const geometryDrawn = () => {
+      const effect = spawned.subMeshes[0]?._getDrawWrapper(geometryPass)?.effect;
+      return !!effect && effectDrawn(engine, effect);
+    };
+    counts.synchronous = counts.asynchronous = 0;
+    let frames = 0;
+    let held = 0;
+    let hiddenFrames = 0;
+    let leftOutFrames = 0;
+    while (frames < 300 && (isRevealPending(spawned) || !geometryDrawn())) {
+      if (!(await frame())) held++;
+      frames++;
+      if (isRevealPending(spawned)) hiddenFrames++;
+      else if (!geometryDrawn()) leftOutFrames++;
+    }
+    return {
+      geometryPass: geometryPass >= 0, settled: settled >= 4,
+      done: !isRevealPending(spawned) && geometryDrawn(), frames, held, hiddenFrames, leftOutFrames, pipelines: { ...counts },
+    };
+  } finally {
+    device.createRenderPipeline = createRenderPipeline;
+    device.createRenderPipelineAsync = createRenderPipelineAsync;
+    coordinator.dispose();
+    scene.dispose();
+  }
 }
 
 /** An admission a light's approach brings on WebGPU: what it compiled and created, and how long previous variants drew. */

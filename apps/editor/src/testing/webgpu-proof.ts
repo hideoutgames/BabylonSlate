@@ -36,7 +36,9 @@ import {
   text2DMeshLayout,
 } from "@haptic/render";
 import { normalizeShadowSettings } from "@haptic/core";
-import { proveWebGpuPredictedAdmissions, proveWebGpuRehearsedChanges, proveWebGpuVariantSwap } from "./webgpu-variant-swap-proof";
+import {
+  proveWebGpuGeometrySpawn, proveWebGpuPredictedAdmissions, proveWebGpuRehearsedChanges, proveWebGpuVariantSwap,
+} from "./webgpu-variant-swap-proof";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
@@ -56,6 +58,7 @@ export async function runWebGpuProof() {
   let cancelledEngineReleased = false;
   let variantSwap: Awaited<ReturnType<typeof proveWebGpuVariantSwap>> | null = null;
   let rehearsedChanges: Awaited<ReturnType<typeof proveWebGpuRehearsedChanges>> | null = null;
+  let geometrySpawn: Awaited<ReturnType<typeof proveWebGpuGeometrySpawn>> | null = null;
   for (const backend of ["webgl2", "webgpu"] as const) {
     if (backend === "webgpu" && !(await WebGPUEngine.IsSupportedAsync))
       throw new Error("The local browser did not provide a WebGPU adapter.");
@@ -203,6 +206,7 @@ export async function runWebGpuProof() {
       if (backend === "webgpu") {
         variantSwap = await proveWebGpuVariantSwap(engine);
         rehearsedChanges = await proveWebGpuRehearsedChanges(engine);
+        geometrySpawn = await proveWebGpuGeometrySpawn(engine);
       }
     } finally {
       engine.dispose();
@@ -219,6 +223,7 @@ export async function runWebGpuProof() {
     cancelledEngineReleased,
     variantSwap,
     rehearsedChanges,
+    geometrySpawn,
     retainedEngines: EngineStore.Instances.length - initialEngines,
   };
 }
