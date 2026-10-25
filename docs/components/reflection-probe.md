@@ -25,7 +25,7 @@ Select an actor, then choose **Add Component > Rendering > Reflection Probe**. Y
 ## Notes
 
 - World scenes only.
-- Actor and component scale change the size. The box stays aligned with the world axes; rotation is ignored.
+- Actor and component scale change the size. The box stays aligned with the world axes: rotating the probe grows it to enclose the turned box.
 - Instanced copies of a mesh reflect the probe around the first copy.
 - Static actors of streamed scenes are not captured.
 
