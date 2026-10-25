@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@haptic/core";
-import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@haptic/scripting";
+import { createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, reconcileDataEntry, type StructField } from "@haptic/scripting";
 import { normalizeTag, type TagContainer } from "@haptic/core";
 import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type NestedMenuItem, type TreeViewNode } from "@haptic/editor-kit";
 import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
@@ -38,10 +38,10 @@ function DefinitionButton({ label, name, assigned, disabled, onClick, testId, to
 type TreeState = ReturnType<typeof useDataAssetEditing>;
 type Migration = ReturnType<typeof reconcileDataEntry> | null | undefined;
 function migrationBlocked(migration: Migration): boolean {
-  return Boolean(migration?.issues.some((issue) => ["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"].includes(issue.code)));
+  return Boolean(migration && dataEntryStructuralIssue(migration));
 }
 function requiresApply(migration: Migration): boolean {
-  return Boolean(migration?.changes.some((change) => change.kind === "added" || change.kind === "renamed"));
+  return Boolean(migration && dataEntryNeedsDefinitionApply(migration));
 }
 function pickerEntries(index: TreeState["index"]) {
   return index?.orderedEntries.map((entry) => ({ id: entry.id, path: index.pathById.get(entry.id)!, effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null })) ?? [];

@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDataTreeIndex, createDataTreeEntry, isDataTreeAsset, type DataTreeAsset, type DataTreeEntry, type DataTreeIndex } from "@haptic/core";
-import { createDataEntryForDefinition, reconcileDataEntry, validateDataDefinition, validateDataEntry, type DataValidationIssue } from "@haptic/scripting";
+import {
+  createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, reconcileDataEntry,
+  validateDataDefinition, validateDataEntry, type DataValidationIssue,
+} from "@haptic/scripting";
 import {
   useDocumentActions,
   useRegistryState,
@@ -13,9 +16,6 @@ import { duplicateBaseName } from "../lib/scene-actor-names";
 
 type Placement = "before" | "into" | "after";
 type Migration = ReturnType<typeof reconcileDataEntry>;
-const CONFLICT_CODES = new Set(["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"]);
-function blocked(migration: Migration): boolean { return migration.issues.some((issue) => CONFLICT_CODES.has(issue.code)); }
-function needsApply(migration: Migration): boolean { return migration.changes.some((change) => change.kind === "added" || change.kind === "renamed"); }
 function preserveAuthoredFields(previous: unknown, next: unknown, depth = 0): unknown {
   if (depth > 64 || !previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return next;
   const before = previous as Record<string, unknown>;
@@ -224,7 +224,7 @@ function useDataTreeState() {
       const definition = guid ? definitions.get(guid) : undefined;
       if (!definition) throw new Error("Choose an available Data Definition before editing values.");
       const migration = reconcileDataEntry(entry, guid, definition.fields, schemas);
-      if (needsApply(migration) || blocked(migration)) throw new Error(`${entry.name}: Apply the Definition changes before editing values.`);
+      if (dataEntryNeedsDefinitionApply(migration) || dataEntryStructuralIssue(migration)) throw new Error(`${entry.name}: Apply the Definition changes before editing values.`);
       const values = { ...entry.values };
       for (const [key, value] of Object.entries(update.values)) {
         if (!definition.fields.some((field) => field.name === key)) throw new Error(`The field '${key}' is not in this entry's Definition.`);
@@ -245,7 +245,8 @@ function useDataTreeState() {
     const definition = guid ? definitions.get(guid) : undefined;
     if (!entry || !definition) throw new Error("This entry or its Definition is no longer available.");
     const migration = reconcileDataEntry(entry, guid, definition.fields, schemas);
-    if (blocked(migration)) throw new Error(migration.issues.find((issue) => CONFLICT_CODES.has(issue.code))?.message ?? "Resolve Definition conflicts first.");
+    const conflict = dataEntryStructuralIssue(migration);
+    if (conflict) throw new Error(conflict.message);
     if (JSON.stringify(migration.entry) === JSON.stringify(entry)) return current;
     return { ...current, entries: current.entries.map((item) => item.id === id ? migration.entry : item) };
   });
