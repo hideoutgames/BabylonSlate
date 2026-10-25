@@ -516,7 +516,7 @@ export function resolveActorTypeVisual(actor: {
   });
 }
 
-export const TYPE_VISUAL_ICON_CHROME_SIZE = 16;
+const TYPE_VISUAL_ICON_CHROME_SIZE = 16;
 /** A multiple of Lucide's 24-unit grid, so whole and half units land on whole pixels. */
 export const TYPE_VISUAL_ICON_TILE_SIZE = 48;
 /** Lucide design stroke in CSS px when `absoluteStrokeWidth` is set on tiles. */

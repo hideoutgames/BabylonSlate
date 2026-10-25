@@ -80,7 +80,7 @@ export function parseChord(chord: KeyChord): ParsedChord | null {
   };
 }
 
-export function formatChord(parsed: ParsedChord): KeyChord {
+function formatChord(parsed: ParsedChord): KeyChord {
   return [...parsed.modifiers, parsed.key].join("+");
 }
 

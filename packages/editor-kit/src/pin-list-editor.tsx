@@ -132,7 +132,7 @@ function moveRow(
 }
 
 /** `NewField`, then `NewField_1`, … so new rows never collide with existing names. */
-export function nextPinRowName(rows: readonly PinListRow[], itemLabel: string): string {
+function nextPinRowName(rows: readonly PinListRow[], itemLabel: string): string {
   return nextCopyName(`New${itemLabel.replace(/\s+/g, "")}`, rows.map((row) => row.name));
 }
 

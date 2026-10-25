@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PinListEditor, type PinListRow } from "./pin-list-editor";
 
-export const PARAMETER_VALUE_TYPES = [
+const PARAMETER_VALUE_TYPES = [
   "string",
   "float",
   "int",

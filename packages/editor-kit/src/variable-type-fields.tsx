@@ -20,8 +20,7 @@ import {
 import { pinPickerKeepsTypeClassId } from "./pin-types";
 import { useState } from "react";
 
-export const VARIABLE_CONTAINERS = ["single", "array", "map"] as const;
-export type VariableContainer = (typeof VARIABLE_CONTAINERS)[number];
+export type VariableContainer = "single" | "array" | "map";
 
 export type VariableTypeFieldsValue = {
   typeId: string;
