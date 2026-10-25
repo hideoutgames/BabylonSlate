@@ -130,6 +130,7 @@ import {
 } from "./project-document-meta";
 import { ProjectTextureEncoding, type TextureEncodingOptions } from "./project-texture-encoding";
 import { ProjectPlugins, type PluginImportResult } from "./project-plugins";
+import { resetAreaEmissionPreparations } from "../lib/area-emission-preparation";
 import {
   assertEmptyProjectFolder,
   createInputAssets,
@@ -777,6 +778,7 @@ export class ProjectService {
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
     this.projectPlugins.reset();
+    resetAreaEmissionPreparations();
   }
 
   /** Compatibility wrapper for display-name-only callers. */
