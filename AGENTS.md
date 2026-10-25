@@ -69,4 +69,5 @@ Work spanning engine and React UI uses both the BabylonJS and the editor UI skil
 
 - The rules and skills in `.agents/` are canonical and maintained in this repository; none track an upstream copy.
 - `.claude/skills/babylonjs/SKILL.md` and `.claude/skills/handoff/SKILL.md` are discovery entry points for Claude Code; keep their names and descriptions identical to the canonical skills.
+- `.claude/settings.json` lets Claude Code start workflows (the Workflow tool) without a permission prompt; keep it to permission rules, with no hooks, environment or credentials.
 - After changing rules or skills, check that every relative link resolves with exact filename case.
