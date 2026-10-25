@@ -197,7 +197,8 @@ export class AssetLoadingService {
   private readonly rootRequests = new Map<Acquisition, RootRequestState>();
   /** `rootRequests` grouped by asset id, so a load-state read scans only that asset's live requests. */
   private readonly rootRequestsByAsset = new Map<string, Set<RootRequestState>>();
-  private readonly rootFailures = new Map<string, RootRequestState>();
+  /** Latest failed root request per asset id and representation key; an asset leaves when its last failure does. */
+  private readonly rootFailures = new Map<string, Map<string | undefined, RootRequestState>>();
   private readonly queue: CacheEntry[] = [];
   private readonly budgets: AssetLoadingBudgets;
   private readonly now: () => number;
@@ -238,7 +239,7 @@ export class AssetLoadingService {
       if ((!representation || entry.representation.key === representation)
         && (!latest || entry.order > latest.order)) latest = entry;
     }
-    const failure = [...this.rootFailures.values()].filter(matches).sort((a, b) => b.order - a.order)[0];
+    const failure = [...this.rootFailures.get(assetId)?.values() ?? []].filter(matches).sort((a, b) => b.order - a.order)[0];
     const newestReady = Math.max(latest?.order ?? -1, ...requests.map(request => request.order));
     if (failure && failure.order > newestReady) return "failed";
     if (latest?.state === "ready") {
@@ -258,6 +259,11 @@ export class AssetLoadingService {
     const assetRequests = this.rootRequestsByAsset.get(request.assetId);
     assetRequests?.delete(request);
     if (!assetRequests?.size) this.rootRequestsByAsset.delete(request.assetId);
+  }
+
+  private deleteRootFailure(assetId: string, representation: string | undefined): void {
+    const failures = this.rootFailures.get(assetId);
+    if (failures?.delete(representation) && !failures.size) this.rootFailures.delete(assetId);
   }
 
   snapshot(): AssetLoadingSnapshot {
@@ -283,8 +289,10 @@ export class AssetLoadingService {
         this.evict(entry);
       }
     }
-    for (const [key, failure] of this.rootFailures) {
-      if (options.force || failure.lastUsed <= before) this.rootFailures.delete(key);
+    for (const failures of [...this.rootFailures.values()]) {
+      for (const failure of [...failures.values()]) {
+        if (options.force || failure.lastUsed <= before) this.deleteRootFailure(failure.assetId, failure.representation);
+      }
     }
   }
 
@@ -354,13 +362,13 @@ export class AssetLoadingService {
       check();
       request.state = "ready";
       root!.preparedDependencies = [...ticket.entries].filter(entry => entry !== root).map(entry => entry.key);
-      this.rootFailures.delete(JSON.stringify([assetId, request.representation]));
+      this.deleteRootFailure(assetId, request.representation);
       return root!.result!.value as T;
     } catch (error) {
       if (!signal.aborted && !this.disposed) {
-        this.rootFailures.set(JSON.stringify([assetId, request.representation]), {
-          ...request, state: "failed", order: this.order++, lastUsed: this.now(),
-        });
+        let failures = this.rootFailures.get(assetId);
+        if (!failures) this.rootFailures.set(assetId, failures = new Map());
+        failures.set(request.representation, { ...request, state: "failed", order: this.order++, lastUsed: this.now() });
       }
       throw error;
     }
