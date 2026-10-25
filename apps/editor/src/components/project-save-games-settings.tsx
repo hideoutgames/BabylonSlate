@@ -86,6 +86,8 @@ export function ProjectSaveGamesSettings() {
 
   useEffect(() => {
     let cancelled = false;
+    // An open inspection belongs to the profile it was loaded from.
+    setInspection(null);
     if (service) void service.listSaves({ profile }).then((result) => {
       if (cancelled) return;
       if (result.ok) { setSaves(result.value); setError(null); }

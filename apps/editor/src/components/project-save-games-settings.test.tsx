@@ -57,6 +57,7 @@ describe("Preview Saves manager", () => {
     fireEvent.change(screen.getByLabelText("Profile", { exact: true }), { target: { value: "guest" } });
     await screen.findByRole("button", { name: "Inspect checkpoint" });
     expect(screen.queryByRole("button", { name: "Inspect default" })).toBeNull();
+    expect(screen.queryByText("Saved Fields · default")).toBeNull();
   });
 
   it("keeps the open inspection while the default slot is edited", async () => {
