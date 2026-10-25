@@ -57,7 +57,7 @@ Closing a tab, closing the project or opening another scene while something is u
 - **Discard** drops the unsaved changes and continues.
 - **Cancel** keeps everything open.
 
-While a Simulation runs or Play is stopped in the editor, documents with unsaved changes cannot close. **Could Not Close Documents** says why, and the other tabs still close. Stop the session, then close them.
+While a Simulation runs, or while Play is stopped at a breakpoint or error ([Stop in Play](../debugging/index.md#stop-in-play)), Scenes and documents with unsaved changes cannot close. Closing the scene a Simulation runs in ends the Simulation first. **Could Not Close Documents** says why, and the other tabs still close. Stop the session, then close them.
 
 ## Recovery after a crash
 
