@@ -10,7 +10,10 @@ import {
   type PreviewSessionReportProps,
 } from "./preview-session-report";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function entry(overrides: Partial<SessionReportEntry>): SessionReportEntry {
   return {
@@ -312,6 +315,23 @@ it("keeps a refused open readable instead of failing silently", async () => {
   expect((await screen.findByTestId("session-report-notice")).textContent).toContain(
     "Read-only during Simulation Play",
   );
+});
+
+it("says Copy Failed instead of failing silently when the clipboard refuses the report", async () => {
+  const writeText = vi.fn(async () => {
+    throw new Error("Clipboard access denied");
+  });
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  // The fallback copy is refused too.
+  Object.defineProperty(document, "execCommand", { configurable: true, value: vi.fn(() => false) });
+  try {
+    renderReport([entry({ assetGuid: HERO.path, nodeId: "print", message: "Hero exploded" })], sources());
+    fireEvent.click(screen.getByTestId("session-report-copy"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Hero exploded"));
+    await waitFor(() => expect(screen.getByTestId("session-report-copy").textContent).toBe("Copy Failed"));
+  } finally {
+    Reflect.deleteProperty(document, "execCommand");
+  }
 });
 
 it("shows an empty report as such when the last session reported nothing", () => {

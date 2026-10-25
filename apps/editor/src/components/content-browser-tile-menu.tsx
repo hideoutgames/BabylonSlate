@@ -38,6 +38,7 @@ import {
   rootSelectedFolderPaths,
 } from "../lib/content-browser-helpers";
 import { contentBrowserFolderOps } from "../lib/plugin-ui";
+import { copyText } from "../lib/diagnostic-info";
 import type { ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
 import type { ImportProgress } from "./import-progress-dialog";
 import type { NameEntry } from "./content-browser-name-dialog";
@@ -379,7 +380,9 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       onSelect: () => {
         const guid = menuTargetGuidsRef.current[0];
         if (!guid) return;
-        void navigator.clipboard.writeText(guid);
+        void copyText(guid).then((ok) => {
+          if (!ok) setOperationError("Could not copy the asset reference.");
+        });
       },
     },
     {

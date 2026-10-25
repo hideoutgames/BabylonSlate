@@ -24,6 +24,7 @@ import {
   EmptyTitle,
 } from "@haptic/ui/components/empty";
 import type { SessionReportEntry } from "@haptic/runtime";
+import { copyText } from "../lib/diagnostic-info";
 import {
   EMPTY_SESSION_REPORT_LABELS,
   NO_SOURCE_LABEL,
@@ -253,7 +254,15 @@ export function PreviewSessionReport({
       ? sessionReportNavigation(entry, (ref) => locationSources.findAsset(ref)).document !== undefined
       : Boolean(entry.assetGuid);
 
-  const copyReport = async () => {
+  // Copy Report shows its result briefly in place of its label.
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => {
+    if (copyState === "idle") return;
+    const timer = setTimeout(() => setCopyState("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [copyState]);
+  // Builds the text before the write so it stays inside the tap.
+  const copyReport = () => {
     const text = entries
       .map((e) => {
         const nodeId = sessionReportNodeId(e);
@@ -265,7 +274,7 @@ export function PreviewSessionReport({
         );
       })
       .join("\n");
-    await navigator.clipboard.writeText(text);
+    void copyText(text).then((ok) => setCopyState(ok ? "copied" : "failed"));
   };
 
   return (
@@ -341,9 +350,9 @@ export function PreviewSessionReport({
           <Button
             variant="secondary"
             data-testid="session-report-copy"
-            onClick={() => void copyReport()}
+            onClick={copyReport}
           >
-            Copy Report
+            {copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy Failed" : "Copy Report"}
           </Button>
           <Button
             data-testid="session-report-close"
