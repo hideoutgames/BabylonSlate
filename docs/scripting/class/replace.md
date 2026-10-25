@@ -24,3 +24,4 @@ Replaces every occurrence of the search text in a string with new text.
 
 - Matching is case-sensitive.
 - An empty **Search** leaves **In** unchanged.
+- **Replacement** is inserted exactly as written; characters such as `$` have no special meaning.
