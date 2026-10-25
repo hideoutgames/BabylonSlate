@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { componentPropertyRows } from "./component-property-rows";
+import { applyPrefabPropertyDefaults, componentPropertyRows } from "./component-property-rows";
 import { saveGameVariableNames } from "./save-game-property-rows";
 
 describe("Save Game component selection", () => {
@@ -17,6 +17,18 @@ describe("Save Game component selection", () => {
     expect(update).toHaveBeenLastCalledWith("actorVariables", ["Health", "Level"]);
     items.onChange(true);
     expect(update).toHaveBeenLastCalledWith("componentVariables", { inventory: ["Coins", "Items"] });
+  });
+
+  it("gives no prefab default to a variable row named like a Save Game property", () => {
+    const properties = { saveTransform: true, persistDestruction: true, actorVariables: [], componentVariables: {} };
+    const rows = componentPropertyRows("hero", { id: "save", classId: "SaveGameComponent", sourceId: "tpl", properties }, vi.fn(), {
+      sortingLayers: [], collisionLayers: [], assetLabel: () => undefined, physicsWorld: "3d", onPickAsset: () => undefined,
+      actorVariableNames: () => ["saveTransform"],
+    });
+    const withDefaults = applyPrefabPropertyDefaults(rows, { id: "tpl", classId: "SaveGameComponent", properties });
+    const row = withDefaults.find((entry) => entry.id === "save-actor-variable-saveTransform");
+    expect(row).toBeDefined();
+    expect(row?.defaultValue).toBeUndefined();
   });
 
   it("offers inherited persistent variables once while excluding functions and their locals", () => {
