@@ -12,6 +12,7 @@ import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
+  type DocumentRef,
 } from "@haptic/core";
 import type { CloseProjectResult } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
@@ -32,6 +33,11 @@ const state = vi.hoisted(() => ({
   closeDocument: vi.fn((id: string) => {
     state.documents = state.documents.filter((doc) => doc.id !== id);
   }),
+  pendingExclusiveScene: null as DocumentRef | null,
+  cancelExclusiveSceneOpen: vi.fn(() => {
+    state.pendingExclusiveScene = null;
+  }),
+  openDocument: vi.fn<(ref: DocumentRef) => Promise<void>>(async () => {}),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -43,9 +49,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   forceCloseProject: state.forceCloseProject,
   migrationPending: [],
   migrationPromptRequest: state.migrationPromptRequest,
-  pendingExclusiveScene: null,
+  pendingExclusiveScene: state.pendingExclusiveScene,
   externalChangePrompt: null,
-  cancelExclusiveSceneOpen: vi.fn(),
+  cancelExclusiveSceneOpen: state.cancelExclusiveSceneOpen,
+  openDocument: state.openDocument,
   saveAll: state.saveAll,
   setAutoSavePaused: state.setAutoSavePaused,
   approveMigrationsAndSave: state.approveMigrationsAndSave,
@@ -166,6 +173,9 @@ beforeEach(() => {
   state.play = {};
   state.closeDocument.mockReset();
   state.setAutoSavePaused.mockClear();
+  state.pendingExclusiveScene = null;
+  state.cancelExclusiveSceneOpen.mockClear();
+  state.openDocument.mockClear();
 });
 afterEach(cleanup);
 
@@ -475,6 +485,22 @@ describe("project close requests", () => {
     fireEvent.click(await screen.findByTestId("migrate-approve"));
     await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+  });
+});
+
+describe("exclusive Scene open", () => {
+  it("opens the Scene without the prompt once everything listed was saved meanwhile", async () => {
+    const ref = createDocumentRef("scene", "assets/Level.scene.hasset");
+    state.pendingExclusiveScene = ref;
+    const { rerender } = render(<EditorRoute />);
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Main Scene"]);
+    state.documents.forEach((doc) => { doc.dirty = false; });
+    rerender(<EditorRoute />);
+    expect(state.openDocument).toHaveBeenCalledExactlyOnceWith(ref);
+    // The provider re-renders once the pending request ends.
+    rerender(<EditorRoute />);
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(false);
   });
 });
 

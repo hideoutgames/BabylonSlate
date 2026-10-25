@@ -258,6 +258,7 @@ function EditorChromeAndPrompts() {
     saveAll,
     confirmExclusiveSceneOpen,
     cancelExclusiveSceneOpen,
+    openDocument,
     approveMigrationsAndSave,
     closeDocument,
     getOpenDocuments,
@@ -380,7 +381,7 @@ function EditorChromeAndPrompts() {
   }, [closePromptOpen, setAutoSavePaused]);
 
   // Everything listed was saved anyway (an auto-save that began before the
-  // prompt opened): close as if nothing had been unsaved.
+  // prompt opened): close, or open the Scene, as if nothing had been unsaved.
   const nothingListed = promptNames.length === 0;
   useEffect(() => {
     if (!nothingListed || savingBeforeClose) return;
@@ -392,10 +393,16 @@ function EditorChromeAndPrompts() {
     } else if (projectClosePrompt) {
       setProjectClosePrompt(false);
       void requestClose().catch(reportCloseFailure);
+    } else if (pendingExclusiveScene) {
+      // The normal open, not Discard: a Scene the replace gate's stop leaves
+      // dirty asks again instead of being dropped.
+      const ref = pendingExclusiveScene;
+      cancelExclusiveSceneOpen();
+      void openDocument(ref).catch((error: unknown) => console.error("[editor] could not open the Scene", error));
     }
     // The handlers only read refs and live state, so they need not retrigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nothingListed, savingBeforeClose, pendingTabClose, projectClosePrompt]);
+  }, [nothingListed, savingBeforeClose, pendingTabClose, projectClosePrompt, pendingExclusiveScene]);
 
   const saveBeforeClose = () => {
     const request = ++closeRequest.current;
