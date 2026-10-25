@@ -463,12 +463,6 @@ export interface DocumentContextValue {
   }>;
   /** Class graph payload from an open tab or disk. */
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
-  /**
-   * True when Play's stored full-project bundles do not match the current
-   * open-graph fingerprint (or Play has not collected this session).
-   * Distinct from `graphsNeedCompile` / editor Compile.
-   */
-  scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
   graphsNeedCompile: boolean;
   /**
@@ -477,10 +471,6 @@ export interface DocumentContextValue {
    * epoch advances.
    */
   currentGraphSignature: string;
-  /** Last full-project bundles written by an explicit toolbar Compile. */
-  playPreviewBundles: ScriptBundleEntry[];
-  playPreviewDiagnostics: Diagnostic[];
-  playLoadedSignature: string | null;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
@@ -545,16 +535,8 @@ export type ActiveDocumentState = Pick<
  * document do not change it.
  */
 export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
-/** `useCompileState()`: compile staleness and the Play preview bundles. */
-export type CompileState = Pick<
-  DocumentContextValue,
-  | "graphsNeedCompile"
-  | "scriptsStale"
-  | "currentGraphSignature"
-  | "playPreviewBundles"
-  | "playPreviewDiagnostics"
-  | "playLoadedSignature"
->;
+/** `useCompileState()`: compile staleness. */
+export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile" | "currentGraphSignature">;
 /** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */
 export type EditorShellState = Pick<
   DocumentContextValue,

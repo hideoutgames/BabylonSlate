@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { createActor, createDefaultScene, type DocumentRef, type SerializedGraph } from "@haptic/core";
-import type { ScriptBundleEntry } from "@haptic/bridge";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
 import type { ProjectService } from "./project-service";
@@ -38,13 +37,13 @@ function createPlayContent(assets: readonly Asset[], readAssetChunk: (path: stri
     loadDocument: vi.fn(async (_kind: string, path: string) => fromDisk(files.get(path))),
     guidForPath: (path: string) => assets.find((asset) => asset.path === path)?.guid ?? null,
   } as unknown as ProjectService;
-  const compiled: Array<{ signature: string; bundles: ScriptBundleEntry[] }> = [];
+  const compiled: string[] = [];
   const playContent = createPlayContentService({
     documents,
     project,
     readAssetChunk,
     projectDocument: () => null,
-    onPreviewScriptsCompiled: (signature, bundles) => compiled.push({ signature, bundles }),
+    onPreviewScriptsCompiled: (signature) => compiled.push(signature),
   });
   const open = (ref: DocumentRef) => documents.openDocument(project, ref, null, true);
   return { documents, project, playContent, compiled, open };
@@ -62,10 +61,10 @@ describe("createPlayContentService", () => {
 
     const { bundles } = await playContent.collectPlayPreviewScripts();
     expect(bundles.map((bundle) => bundle.classId)).toContain("Hero");
-    expect(compiled).toEqual([{ signature: playContent.graphSignature(undefined), bundles }]);
+    expect(compiled).toEqual([playContent.graphSignature(undefined)]);
 
     documents.updateGraph(id, logGraph("edited"));
-    expect(playContent.graphSignature(undefined)).not.toBe(compiled[0]!.signature);
+    expect(playContent.graphSignature(undefined)).not.toBe(compiled[0]);
   });
 
   it("makes the compiled signature stale when an open Animation Graph's compiled graph changes", async () => {

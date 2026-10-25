@@ -103,8 +103,8 @@ export interface PlayContentServiceOptions {
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** The open project's settings and scene list, read when a loader runs. */
   projectDocument: () => ProjectDocument | null;
-  /** A whole-project Play compile finished; the owner stores its bundles and signature. */
-  onPreviewScriptsCompiled: (signature: string, bundles: ScriptBundleEntry[], diagnostics: Diagnostic[]) => void;
+  /** A whole-project Play compile finished; the owner records the open graphs' signature it compiled. */
+  onPreviewScriptsCompiled: (signature: string) => void;
 }
 
 export type PlayContentService = ReturnType<typeof createPlayContentService>;
@@ -190,10 +190,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       collectDataGraphAssets(assets, openDocuments),
       collectGraphTypeSchemas(assets, openDocuments),
     );
-  };
-
-  const recordPlayPreviewScripts = (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
-    options.onPreviewScriptsCompiled(graphSignature(options.projectDocument()?.settings.tags), bundles, nextDiagnostics);
   };
 
   /**
@@ -438,7 +434,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         tagRegistry: (sourceProject ?? options.projectDocument())?.settings.tags,
       }),
     ];
-    if (!requiredGuids) recordPlayPreviewScripts(bundles, diagnostics);
+    if (!requiredGuids) options.onPreviewScriptsCompiled(graphSignature(options.projectDocument()?.settings.tags));
     return { bundles, diagnostics };
   };
 

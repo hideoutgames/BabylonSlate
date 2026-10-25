@@ -68,8 +68,6 @@ import {
   type EngineSettings,
 } from "@haptic/vfs";
 import type { ProjectStorage } from "@haptic/core";
-import type { ScriptBundleEntry } from "@haptic/bridge";
-import type { Diagnostic } from "@haptic/scripting";
 import type { TracePayload } from "@haptic/debugger";
 import {
   DocumentService,
@@ -104,7 +102,6 @@ import {
   classIdForGraphPath,
   graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
-import { playBundlesNeedCollect } from "../services/play-preview-prepare";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ExportArtifact } from "@haptic/exporter";
 import {
@@ -367,15 +364,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
-  const [playLoadedSignature, setPlayLoadedSignature] = useState<string | null>(
-    null,
-  );
-  const [playPreviewBundles, setPlayPreviewBundles] = useState<
-    ScriptBundleEntry[]
-  >([]);
-  const [playPreviewDiagnostics, setPlayPreviewDiagnostics] = useState<
-    Diagnostic[]
-  >([]);
   const documentService = documentServiceRef.current;
   const readAssetChunk = useCallback(
     (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) =>
@@ -395,12 +383,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         project: projectService,
         readAssetChunk,
         projectDocument: () => projectDocumentRef.current,
-        onPreviewScriptsCompiled: (signature, bundles, nextDiagnostics) => {
-          setLastCompiledSignature(signature);
-          setPlayLoadedSignature(signature);
-          setPlayPreviewBundles(bundles);
-          setPlayPreviewDiagnostics(nextDiagnostics);
-        },
+        onPreviewScriptsCompiled: setLastCompiledSignature,
       }),
     [documentService, projectService, readAssetChunk],
   );
@@ -425,11 +408,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectPlayAudio,
     collectPlayMaterialLibrary,
   } = playContent;
-  const clearPlayPreviewScripts = useCallback(() => {
-    setPlayLoadedSignature(null);
-    setPlayPreviewBundles([]);
-    setPlayPreviewDiagnostics([]);
-  }, []);
 
   const bump = useCallback(() => setContextTick((v) => v + 1), []);
   const lockAuthoring = useCallback((reason: string) => documentService.lockAuthoring(reason), [documentService]);
@@ -1006,7 +984,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
-      clearPlayPreviewScripts();
       playContent.clearCompileCache();
       // A reload as soon as editing starts must still find this project on Homepage.
       await recordRecent(
@@ -1048,7 +1025,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       resetDockLayouts,
       refreshProjectList,
       captureMtimeSnapshot,
-      clearPlayPreviewScripts,
       cancelSceneDocumentLoad,
       playContent,
       setAnimEditorModes,
@@ -1508,7 +1484,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
     setMigrationPending([]);
     setLastCompiledSignature(null);
-    clearPlayPreviewScripts();
     playContent.clearCompileCache();
     setRoute("home");
     setAnimEditorModes({});
@@ -1527,7 +1502,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     journalBuffer,
     projectService,
     refreshProjectList,
-    clearPlayPreviewScripts,
     cancelSceneDocumentLoad,
     playContent,
     resetDockLayouts,
@@ -2179,14 +2153,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
       }
-      // The graph signature does not cover the header's parent, so Compile and
-      // Play's stored bundles would otherwise keep the previous parent.
+      // The graph signature does not cover the header's parent, so Compile
+      // would otherwise keep the previous parent.
       setLastCompiledSignature(null);
-      clearPlayPreviewScripts();
       bump();
       return null;
     },
-    [bump, clearPlayPreviewScripts, documentService, editing, projectService],
+    [bump, documentService, editing, projectService],
   );
 
   const beginSimulationDocument = useCallback<DocumentContextValue["beginSimulationDocument"]>(
@@ -2794,17 +2767,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         lastCompiledSignature,
       ),
       currentGraphSignature,
-      scriptsStale: playBundlesNeedCollect({
-        playLoadedSignature,
-        currentGraphSignature,
-        scriptsLength: playPreviewBundles.length,
-        editorCompileSignature: lastCompiledSignature,
-      }),
-      playPreviewBundles,
-      playPreviewDiagnostics,
-      playLoadedSignature,
     }),
-    [currentGraphSignature, lastCompiledSignature, playLoadedSignature, playPreviewBundles, playPreviewDiagnostics],
+    [currentGraphSignature, lastCompiledSignature],
   );
   const editorShellState = useMemo<EditorShellState>(
     () => ({
