@@ -29,9 +29,9 @@ import { hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed,
 import { casterPipelinesWarm } from "./shadow-caster-warm";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { pipelinesWarm, requestPipelineWarm } from "./variant-pipeline-warmup";
-// Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
-// graph must import these from the leaves, or they close an import cycle back
-// through this file.
+// Re-exported for in-package importers of this module. Modules in scene-perf's
+// transitive import graph must import these from the leaves, or they close an
+// import cycle back through this file.
 export { markSceneReadinessDirty, onSceneReadinessDirty, withSceneReadinessState } from "./scene-readiness-signal";
 export {
   createStallDeadline,
