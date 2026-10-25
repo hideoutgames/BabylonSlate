@@ -1,9 +1,6 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
-  modelClipAnimationGuidsFromAnimations,
-  normalizeAnimationPayload,
   parseSpriteAnimationPayload,
-  retargetAnimationLoadsFromAnimations,
   spriteAnimationDurationMs,
 } from "@haptic/assets";
 
@@ -83,32 +80,4 @@ export function animClipCatalogFromAssets(
       ...(modelGuid ? { modelGuid } : {}),
     };
   });
-}
-
-/** Native (non-retargeted) clipName → Animation guid, keyed by owning Model. */
-export function modelClipAnimationGuidsFromAssets(
-  assets: ReadonlyArray<CatalogAsset>,
-): Map<string, Map<string, string>> {
-  return modelClipAnimationGuidsFromAnimations(
-    assets
-      .filter((asset) => asset.header.type === "Animation")
-      .map((asset) => ({
-        guid: asset.header.guid,
-        payload: normalizeAnimationPayload(asset.header.payload),
-      })),
-  );
-}
-
-/** Retargeted Animation loads keyed by the actor (target) Model guid. */
-export function retargetAnimationLoadsFromAssets(
-  assets: ReadonlyArray<CatalogAsset>,
-): Map<string, import("@haptic/assets").RetargetAnimationLoad[]> {
-  return retargetAnimationLoadsFromAnimations(
-    assets
-      .filter((asset) => asset.header.type === "Animation")
-      .map((asset) => ({
-        guid: asset.header.guid,
-        payload: normalizeAnimationPayload(asset.header.payload),
-      })),
-  );
 }

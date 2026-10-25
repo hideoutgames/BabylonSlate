@@ -5,7 +5,7 @@ import type { IndexedAsset } from "@haptic/assets";
 import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { importEnvironmentTexture, AREA_EMISSION_EDGE, areaEmissionChunkId, encodeAreaEmission } from "@haptic/assets";
-import { assetHeaderDependencies, assetReferencesIncludingOpenDocuments } from "../lib/content-browser-helpers";
+import { assetHeaderDependencies } from "../lib/content-browser-helpers";
 
 function textureAsset(): IndexedAsset {
   return {
@@ -119,8 +119,6 @@ describe("loadExportDocuments", () => {
     const payload = scene as unknown as Record<string, unknown>;
     const dependencies = assetHeaderDependencies("Scene", payload);
     expect(dependencies).toContain(imported!.guid);
-    const sceneAsset = { ...asset, path: "assets/main.scene.hasset", header: { ...asset.header, guid: "scene-1", type: "Scene", payload: {}, dependencies: [] } };
-    expect(assetReferencesIncludingOpenDocuments(imported!.guid, [asset, sceneAsset], [{ ref: { path: sceneAsset.path }, content: payload }]).inbound).toEqual(["scene-1"]);
     scene.settings.environmentTextureGuid = null;
     expect(assetHeaderDependencies("Scene", payload)).not.toContain(imported!.guid);
   });

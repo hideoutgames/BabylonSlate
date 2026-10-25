@@ -645,12 +645,6 @@ function assetMatchesNeedle(asset: IndexedAsset, needle: string): boolean {
   );
 }
 
-export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return true;
-  return assetMatchesNeedle(asset, needle);
-}
-
 /**
  * Keeps the input order, so filtering a list already sorted by `sortAssets`
  * yields the same order as sorting the filtered list.
@@ -2071,19 +2065,6 @@ export function assetDependenciesIncludingOpenDocuments(
     result.set(asset.header.guid, [...dependencies].sort());
   }
   return result;
-}
-
-/** Include already-loaded edits without reading any closed document payloads. */
-export function assetReferencesIncludingOpenDocuments(
-  guid: string,
-  assets: readonly IndexedAsset[],
-  openDocuments: ReadonlyArray<{ ref: { path: string }; content: unknown }>,
-): { inbound: string[]; outbound: string[] } {
-  const dependencies = assetDependenciesIncludingOpenDocuments(assets, openDocuments);
-  return {
-    inbound: [...dependencies].filter(([, refs]) => refs.includes(guid)).map(([id]) => id).sort(),
-    outbound: dependencies.get(guid) ?? [],
-  };
 }
 
 /** Header payload fields Content Browser / pickers can read without loading the document. */
