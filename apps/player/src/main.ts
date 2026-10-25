@@ -6,6 +6,7 @@ import {
 import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
+import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
@@ -250,17 +251,7 @@ async function launchLoaded(
   }
   if (window.parent !== window) {
     window.parent.postMessage(
-      {
-        type: PREVIEW_CONSOLE_CATALOG_MESSAGE,
-        commands: game.scripts.flatMap((script) =>
-          script.command ? [script.command] : [],
-        ),
-        scenes: [...game.scenes.entries()].flatMap(([guid, scene]) => [
-          guid,
-          scene.name,
-        ]),
-        actors: [],
-      },
+      { type: PREVIEW_CONSOLE_CATALOG_MESSAGE, ...previewConsoleCatalog(game), actors: [] },
       previewHostOrigin,
     );
     window.parent.postMessage(

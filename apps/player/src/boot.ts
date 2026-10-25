@@ -37,6 +37,7 @@ import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedSce
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { playerDecoderPaths } from "./decoder-paths";
+import { manifestConsoleCommands } from "./console-catalog";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
   applyPlayerActiveScene,
@@ -520,11 +521,7 @@ function initializePlayer(
       const classId = entry.type === "Class" ? entry.classId ?? (entry.assetPath ? classIdForAssetPath(entry.assetPath) : undefined) : undefined;
       return classId ? [[classId, entry.guid]] : [];
     })),
-    consoleCommands: manifest.assets.flatMap(entry => {
-      if (!entry.consoleCommand) return [];
-      const classId = entry.classId ?? game.scripts.find(script => script.assetGuid === entry.guid)?.classId ?? entry.name ?? entry.guid;
-      return [{ ...entry.consoleCommand, name: entry.consoleCommand.name || classId.toLowerCase(), classId, assetGuid: entry.guid }];
-    }),
+    consoleCommands: manifestConsoleCommands(manifest, game.scripts),
     ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
