@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
+import { DocumentOpenErrorDialog } from "./document-open-error-dialog";
 
 interface ContentBrowserResultDialogsProps {
   retargetErrors: string[] | null;
@@ -53,29 +54,12 @@ export function ContentBrowserResultDialogs({
           {importErrors?.length} issue{importErrors?.length === 1 ? "" : "s"} need attention. Successfully imported assets remain in the project.
         </>}
       />
-      <AlertDialog
-        open={openError !== null}
-        onOpenChange={(open) => {
-          if (!open) setOpenError(null);
-        }}
-      >
-        <AlertDialogContent data-testid="content-browser-open-error">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Could Not Open Asset</AlertDialogTitle>
-            <AlertDialogDescription>
-              {openError ?? "The asset could not be opened."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="content-browser-open-error-dismiss"
-              onClick={() => setOpenError(null)}
-            >
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DocumentOpenErrorDialog
+        error={openError}
+        onClose={() => setOpenError(null)}
+        testId="content-browser-open-error"
+        dismissTestId="content-browser-open-error-dismiss"
+      />
     </>
   );
 }

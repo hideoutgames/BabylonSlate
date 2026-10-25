@@ -8,8 +8,18 @@ import {
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
 
-/** A selected tab whose asset could not be read, as the Content Browser reports one it cannot open. */
-export function DocumentOpenErrorDialog({ error, onClose }: { error: string | null; onClose: () => void }) {
+/** **Could Not Open Asset** with the reason while `error` is set: an asset the Content Browser or a selected tab could not open. */
+export function DocumentOpenErrorDialog({
+  error,
+  onClose,
+  testId,
+  dismissTestId,
+}: {
+  error: string | null;
+  onClose: () => void;
+  testId: string;
+  dismissTestId: string;
+}) {
   return (
     <AlertDialog
       open={error !== null}
@@ -17,13 +27,13 @@ export function DocumentOpenErrorDialog({ error, onClose }: { error: string | nu
         if (!open) onClose();
       }}
     >
-      <AlertDialogContent data-testid="document-open-error">
+      <AlertDialogContent data-testid={testId}>
         <AlertDialogHeader>
           <AlertDialogTitle>Could Not Open Asset</AlertDialogTitle>
           <AlertDialogDescription>{error ?? "The asset could not be opened."}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogAction data-testid="document-open-error-dismiss" onClick={onClose}>
+          <AlertDialogAction data-testid={dismissTestId} onClick={onClose}>
             Close
           </AlertDialogAction>
         </AlertDialogFooter>

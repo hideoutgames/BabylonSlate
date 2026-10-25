@@ -2884,7 +2884,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                               progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
                             }) : undefined}
                           />
-                          <DocumentOpenErrorDialog error={documentOpenError} onClose={() => setDocumentOpenError(null)} />
+                          <DocumentOpenErrorDialog
+                            error={documentOpenError}
+                            onClose={() => setDocumentOpenError(null)}
+                            testId="document-open-error"
+                            dismissTestId="document-open-error-dismiss"
+                          />
                         </DocumentContext.Provider>
                       </SourceControlStateContext.Provider>
                     </EditorShellStateContext.Provider>
