@@ -34,7 +34,7 @@ const harness = vi.hoisted(() => ({
   assetListReads: 0,
   keybindReads: 0,
   registryEpoch: 0,
-  loadGraphDocument: (_path: string): Promise<unknown> => Promise.resolve(null),
+  loadGraphDocument: (() => Promise.resolve(null)) as (path: string) => Promise<unknown>,
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
