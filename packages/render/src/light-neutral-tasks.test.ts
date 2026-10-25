@@ -6,6 +6,8 @@ import {
   Light,
   MeshBuilder,
   NullEngine,
+  NullEngineOptions,
+  PBRMaterial,
   PointLight,
   Scene,
   SpotLight,
@@ -17,6 +19,8 @@ import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/R
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
+import { registerLightNeutralPasses } from "./light-neutral-tasks";
 import { SharedOutlineOwner } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 
@@ -31,8 +35,11 @@ afterEach(() => {
   while (disposers.length) disposers.pop()!();
 });
 
-function fixture() {
-  const engine = adaptNullEngineFrameGraph(new NullEngine());
+function fixture(uniformBuffers = false) {
+  const options = new NullEngineOptions();
+  // Babylon's headless multiview option supplies the CPU-side uniform buffer path that world Scenes bind lights by.
+  options.enableMultiview = uniformBuffers;
+  const engine = adaptNullEngineFrameGraph(new NullEngine(options));
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, textureFloatRender: true, textureHalfFloatRender: true, blendFloat: true });
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
@@ -50,12 +57,13 @@ function fixture() {
   disposers.push(() => { graph.dispose(); scene.dispose(); engine.dispose(); });
   const lightDirty = vi.spyOn(Light.prototype, "_markMeshesAsLightDirty");
   const flags = () => lights.map((light) => light.shadowEnabled);
+  // Readiness is polled every frame, then the pass executes.
+  const frames = () => { for (let pass = 0; pass < 3; pass += 1) { graph.isReady(); graph.execute(); } };
   const render = async () => {
     await graph.buildAsync(false);
-    // Readiness is polled every frame, then the pass executes.
-    for (let pass = 0; pass < 3; pass += 1) { graph.isReady(); graph.execute(); }
+    frames();
   };
-  return { engine, scene, camera, lights, mesh, graph, lightDirty, flags, render };
+  return { engine, scene, camera, lights, mesh, graph, lightDirty, flags, render, frames };
 }
 type Fixture = ReturnType<typeof fixture>;
 
@@ -128,5 +136,57 @@ describe("light-neutral passes", () => {
     await f.render();
     expect(f.lightDirty).not.toHaveBeenCalled();
     expect(f.flags()).toEqual([false, true, true]);
+  });
+});
+
+describe("light-neutral geometry defines", () => {
+  /**
+   * A world Scene (its light hooks on Babylon's light path, uniform buffers) whose geometry pass writes `outputs` for the
+   * box, registered light-neutral or not; returns the Effect the box draws with there.
+   */
+  async function geometryWorld(f: Fixture, outputs: readonly number[], neutral: boolean) {
+    setFixedShapeLightingWorldScene(f.scene);
+    const clear = clearedDepth(f, "geometry depth");
+    const geometry = new LogicalGeometryTask("Geometry", f.graph, f.scene, { doNotChangeAspectRatio: false });
+    geometry.camera = f.camera; geometry.objectList = { meshes: [f.mesh], particleSystems: [] };
+    geometry.depthTexture = clear.outputDepthTexture;
+    geometry.size = { width: 16, height: 8 }; geometry.sizeIsPercentage = false; geometry.samples = 1;
+    for (const type of outputs)
+      geometry.textureDescriptions.push({ type, textureType: Constants.TEXTURETYPE_UNSIGNED_BYTE, textureFormat: Constants.TEXTUREFORMAT_RGBA });
+    f.graph.addTask(geometry);
+    if (neutral) disposers.push(registerLightNeutralPasses(f.engine, (pass) => geometry.objectRenderer.renderPassIds.includes(pass)));
+    await f.render();
+    return () => f.mesh.subMeshes[0]!._getDrawWrapper(geometry.objectRenderer.renderPassId)?.effect ?? null;
+  }
+  const NORMALS = Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE;
+  const REFLECTIVITY = Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE;
+
+  it.each([
+    ["keeps", "a PBR surface's light defines in a pass writing normals and reflectivity", "pbr", [NORMALS, REFLECTIVITY], true, true],
+    ["keeps", "a Standard surface's light defines in a pass writing normals", "standard", [NORMALS], true, true],
+    // A Standard surface writes reflectivity only with a specular light term (`SPECULARTERM`, a light define).
+    ["prepares", "a Standard surface's light defines in a pass writing reflectivity", "standard", [REFLECTIVITY], true, false],
+    ["prepares", "the light defines in a pass not registered", "pbr", [NORMALS], false, false],
+  ] as const)("%s %s when a light switches off", async (_verb, _what, kind, outputs, neutral, kept) => {
+    const f = fixture(true);
+    if (kind === "pbr") f.mesh.material = new PBRMaterial("pbr", f.scene);
+    const effect = await geometryWorld(f, outputs, neutral);
+    const before = effect();
+    // Frames of the built graph: a rebuild would give the pass fresh draw wrappers.
+    f.lights[2]!.setEnabled(false);
+    f.frames();
+    expect({ drawn: before !== null, kept: effect() === before }).toEqual({ drawn: true, kept });
+  });
+
+  it("prepares the light defines again when the Material's lighting changes, not only its lights", async () => {
+    const f = fixture(true);
+    const material = new PBRMaterial("pbr", f.scene);
+    f.mesh.material = material;
+    const effect = await geometryWorld(f, [NORMALS], true);
+    const lit = effect()!;
+    material.disableLighting = true;
+    f.frames();
+    expect({ litBefore: /#define LIGHT0\b/.test(lit.defines), lightsAfter: /#define LIGHT0\b/.test(effect()!.defines) })
+      .toEqual({ litBefore: true, lightsAfter: false });
   });
 });

@@ -22,6 +22,7 @@ import {
 import type { FixedLightKind, FixedLightLayout } from "@haptic/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import type { FixedLightSeat } from "./fixed-light-seats";
+import { keepsLightDefines } from "./light-neutral-tasks";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import {
   existingShadowSamplerPlaceholders,
@@ -445,6 +446,9 @@ export function installFixedLightBinding(scene: Scene, table: FixedLightTableSou
   const hooks: MaterialLightHooks = {
     prepareDefinesForLights(_scene, mesh, defines, specularSupported, maxSimultaneousLights, disableLighting) {
       const current = table();
+      // A light-neutral geometry pass keeps the light defines it prepared; `bindLights` binds that Effect by its own.
+      if (keepsLightDefines(scene.getEngine(), mesh, defines, specularSupported, maxSimultaneousLights, disableLighting,
+        !current && sceneBindsPreviousEffects(scene))) return defines._needNormals;
       if (!current || disableLighting || !scene.lightsEnabled || !bindsBySeat(scene, defines)) {
         clearSeatDefines(defines);
         return undefined;

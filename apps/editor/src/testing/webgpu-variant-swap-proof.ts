@@ -81,6 +81,7 @@ export async function proveWebGpuRehearsedChanges(engine: AbstractEngine) {
  * A world view with a geometry pass (temporal anti-aliasing's view depth and velocity, which no warm draw warms): a
  * spawn with a variant nothing compiled stays hidden until its colour pipelines exist, and is then left out of the
  * geometry pass alone, with no frame held and no pipeline created synchronously, until its geometry pipeline exists.
+ * A light switching off then swaps the floor's colour variant and keeps its geometry Effect.
  */
 export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
   const scene = new Scene(engine);
@@ -94,8 +95,10 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
   const floorMaterial = new PBRMaterial("floor", scene);
   floorMaterial.albedoColor = new Color3(0.8, 0.8, 0.8);
   floorMaterial.metallic = 0;
-  MeshBuilder.CreateGround("floor", { width: 6, height: 6 }, scene).material = floorMaterial;
-  authored(new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene), [1, 0.95, 0.85], 1);
+  const floor = MeshBuilder.CreateGround("floor", { width: 6, height: 6 }, scene);
+  floor.material = floorMaterial;
+  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
+  authored(sun, [1, 0.95, 0.85], 1);
   const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
   const device = (engine as DeviceEngine)._device;
   const createRenderPipeline = device.createRenderPipeline;
@@ -118,15 +121,18 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
       await tick();
     }
   };
+  // Bounded, as the material proof's time limit is shared: at most 3 × FRAME_LIMIT frames.
+  const FRAME_LIMIT = 120;
+  const started = performance.now();
   try {
     await coordinator.prepare();
-    for (let attempt = 0; attempt < 300; attempt++) {
+    for (let attempt = 0; attempt < FRAME_LIMIT; attempt++) {
       if (!coordinator.isReady()) await tick();
       else if (await frame(true) && await frame(true)) break;
     }
-    // Steady frames of this graph build, which then draws complete frames.
+    // Steady frames that draw complete frames, so the geometry pass has drawn the floor.
     let settled = 0;
-    for (let index = 0; index < 300 && settled < 4; index++) settled = await frame() ? settled + 1 : 0;
+    for (let index = 0; index < FRAME_LIMIT && settled < 4; index++) settled = await frame() ? settled + 1 : 0;
     const geometryPass = engine.getRenderPassNames().lastIndexOf("Spatial Geometry#0");
     // Unlit: a colour and a geometry variant no other mesh draws with.
     const material = new PBRMaterial("spawned", scene);
@@ -145,15 +151,34 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
     let held = 0;
     let hiddenFrames = 0;
     let leftOutFrames = 0;
-    while (frames < 300 && (isRevealPending(spawned) || !geometryDrawn())) {
+    while (frames < FRAME_LIMIT && (isRevealPending(spawned) || !geometryDrawn())) {
       if (!(await frame())) held++;
       frames++;
       if (isRevealPending(spawned)) hiddenFrames++;
       else if (!geometryDrawn()) leftOutFrames++;
     }
-    return {
-      geometryPass: geometryPass >= 0, settled: settled >= 4,
+    const spawn = {
       done: !isRevealPending(spawned) && geometryDrawn(), frames, held, hiddenFrames, leftOutFrames, pipelines: { ...counts },
+    };
+    // The sun switching off: the floor swaps to its unlit colour variant, while the geometry pass keeps its geometry
+    // Effect (no geometry attachment reads the lights).
+    const pass = (name: string) => engine.getRenderPassNames().lastIndexOf(name);
+    const effectIn = (name: string) => floor.subMeshes[0]!._getDrawWrapper(pass(name))?.effect ?? null;
+    const lit = effectIn("Forward objects#0");
+    const geometry = effectIn("Spatial Geometry#0");
+    setAuthoredLightEnabled(sun, false);
+    let lightFrames = 0;
+    let lightHeld = 0;
+    while (lightFrames < FRAME_LIMIT && effectIn("Forward objects#0") === lit) {
+      if (!(await frame())) lightHeld++;
+      lightFrames++;
+    }
+    const lightOff = {
+      done: effectIn("Forward objects#0") !== lit, held: lightHeld, frames: lightFrames,
+      geometryKept: geometry !== null && effectIn("Spatial Geometry#0") === geometry,
+    };
+    return {
+      geometryPass: geometryPass >= 0, settled: settled >= 4, ...spawn, lightOff, ms: Math.round(performance.now() - started),
     };
   } finally {
     device.createRenderPipeline = createRenderPipeline;
