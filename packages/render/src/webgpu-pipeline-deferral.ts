@@ -71,6 +71,8 @@ type Scope = {
   warm: boolean;
   /** A lookup scope (`lookup`, a warm scope): starts no pipeline either, and its draws start no GPU pass. */
   lookup: boolean;
+  /** An isolated scope (`isolated`): a miss always starts asynchronously, and its skips never reach a parent. */
+  isolated: boolean;
   skipped: number;
   /** Draws that looked their pipeline up (warm scopes), and those that found it. */
   lookups: number;
@@ -203,9 +205,9 @@ function install(engine: AbstractEngine): DeferralState {
         state.pending.clear();
         return create.call(this, effect, topology, sampleCount);
       }
-      // Any creation finishing renews the Engine's stall, which a left-out draw (it holds no view) may then never
-      // reach: past the stall time its own creation is given up and it compiles synchronously.
-      if (omitted && now - (state.startedAt.get(node) ?? now) >= PIPELINE_DEFERRAL_STALL_MS) {
+      // Any creation finishing renews the Engine's stall, which a left-out or isolated draw (it holds no view) may
+      // then never reach: past the stall time its own creation is given up and it compiles synchronously.
+      if ((omitted || scope.isolated) && now - (state.startedAt.get(node) ?? now) >= PIPELINE_DEFERRAL_STALL_MS) {
         state.pending.delete(node);
         state.synchronous.add(node);
         return create.call(this, effect, topology, sampleCount);
@@ -214,8 +216,9 @@ function install(engine: AbstractEngine): DeferralState {
     }
     // The hold cap bounds held frames. An omitted draw holds none while its pass draws something else, so past the cap
     // its miss still starts asynchronously; in a pass that has drawn nothing yet in the scope it compiles synchronously,
-    // since leaving it out could hold the view for it (`close()`).
-    if ((!omitted || !scope.drew.has(pass)) && !scopes.filter((open) => !open.warm).every((open) => open.startsDeferrals))
+    // since leaving it out could hold the view for it (`close()`). An isolated draw holds nothing either.
+    if (!scope.isolated && (!omitted || !scope.drew.has(pass)) &&
+      !scopes.filter((open) => !open.warm).every((open) => open.startsDeferrals))
       return create.call(this, effect, topology, sampleCount);
     defer(this, node, effect, topology, sampleCount);
     throw skip();
@@ -386,12 +389,22 @@ export type PipelineDeferral = {
  * Engine's stall; `waiting()` gives up such a pipeline counted at `close()` as
  * well); a failed creation compiles synchronously too, so a pipeline that never
  * arrives cannot leave the draw out for good.
+ *
+ * `isolated` opens a scope for draws its owner may leave out of output that
+ * holds nothing (a drawn shadow map's casters new to it, `shadow-caster-warm.ts`):
+ * a draw whose pipeline exists draws, and one whose pipeline is missing is
+ * skipped and starts it asynchronously whatever the enclosing scopes'
+ * `startsDeferrals`. Its skips never count in an enclosing scope. The stall
+ * rule applies as to a left-out draw: past the Engine's stall, or that long
+ * after its own creation started, the next draw compiles it synchronously, and
+ * `waiting()` no longer waits for it.
  */
 export function beginPipelineDeferral(
   engine: AbstractEngine,
   allows: (renderPassId: number) => boolean,
   options: {
-    startsDeferrals?: boolean; nested?: boolean; warm?: boolean; lookup?: PipelineTarget; omits?: (renderPassId: number) => boolean;
+    startsDeferrals?: boolean; nested?: boolean; warm?: boolean; lookup?: PipelineTarget; isolated?: boolean;
+    omits?: (renderPassId: number) => boolean;
   } = {},
 ): PipelineDeferral | undefined {
   if (!engine.isWebGPU) return undefined;
@@ -401,12 +414,13 @@ export function beginPipelineDeferral(
   const scopes = state.scopes;
   const lookup = options.lookup !== undefined;
   const warm = options.warm === true || lookup;
-  const omits = warm ? undefined : options.omits;
+  const isolated = !warm && options.isolated === true;
+  const omits = warm || isolated ? undefined : options.omits;
   const restoreTarget = options.lookup && replayTarget(engine, options.lookup);
   if (lookup && !restoreTarget) return undefined;
   const scope: Scope = {
-    allows, omits, omitted: new Map(), drew: new Set(), startsDeferrals: options.startsDeferrals ?? true, warm, lookup, skipped: 0,
-    lookups: 0, hits: 0, nodes: new Set(), leftOut: new Set(), tokens: new Map(),
+    allows, omits, omitted: new Map(), drew: new Set(), startsDeferrals: options.startsDeferrals ?? true, warm, lookup, isolated,
+    skipped: 0, lookups: 0, hits: 0, nodes: new Set(), leftOut: new Set(), tokens: new Map(),
   };
   scopes.push(scope);
   if (omits) state.omitting += 1;
@@ -433,7 +447,7 @@ export function beginPipelineDeferral(
         }
       }
       const parent = scopes[index - 1];
-      if (parent && !warm) {
+      if (parent && !warm && !isolated) {
         parent.skipped += scope.skipped;
         for (const node of scope.leftOut) if (!parent.nodes.has(node)) parent.leftOut.add(node);
         for (const node of scope.nodes) parent.nodes.add(node);
@@ -445,8 +459,10 @@ export function beginPipelineDeferral(
       if (!warm && now - state.progressAt >= PIPELINE_DEFERRAL_STALL_MS) return false;
       for (const node of scope.nodes) {
         if (!state.pending.has(node)) continue;
-        // As at its draw: a left-out draw's creation is given up after its own stall, whatever else progresses.
-        if (scope.leftOut.has(node) && now - (state.startedAt.get(node) ?? now) >= PIPELINE_DEFERRAL_STALL_MS) continue;
+        // As at its draw: a left-out or isolated draw's creation is given up after its own stall, whatever else
+        // progresses.
+        if ((isolated || scope.leftOut.has(node)) && now - (state.startedAt.get(node) ?? now) >= PIPELINE_DEFERRAL_STALL_MS)
+          continue;
         return true;
       }
       return false;

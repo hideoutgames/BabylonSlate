@@ -175,7 +175,8 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // no pipeline at all. The first spawn built again (a visual a script's write rebuilds) is revealed in its first frame
   // and creates none; the same Effect with another vertex layout waits hidden for its own pipeline, holding nothing. A
   // new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth pipelines exist,
-  // creating none synchronously.
+  // creating none synchronously, and a spawn into the drawn sun map with a caster depth variant no caster drew is
+  // revealed once that pipeline exists, so the map's redraw with it creates none synchronously either.
   const swap = result.variantSwap!;
   expect({
     swap: { done: swap.swap.done, held: swap.swap.held, previous: swap.swap.previousFrames > 0, ...swap.swap.pipelines,
@@ -194,6 +195,8 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     staged: { done: swap.staged.done, held: swap.staged.held, ...swap.staged.pipelines,
       asynchronous: swap.staged.pipelines.asynchronous > 0 },
     warmSpawn: { done: swap.warmSpawn.done, held: swap.warmSpawn.held, ...swap.warmSpawn.pipelines },
+    casterSpawn: { done: swap.casterSpawn.done, held: swap.casterSpawn.held, hidden: swap.casterSpawn.hiddenFrames > 0,
+      synchronous: swap.casterSpawn.pipelines.synchronous },
   }, JSON.stringify(swap)).toEqual({
     swap: { done: true, held: 0, previous: true, synchronous: 0, asynchronous: true },
     shadowGain: { done: true, held: 0, synchronous: 0 },
@@ -204,6 +207,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     layout: { done: true, held: 0, hidden: true, sameEffect: true, synchronous: 0, asynchronous: true },
     staged: { done: true, held: 0, synchronous: 0, asynchronous: true },
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
+    casterSpawn: { done: true, held: 0, hidden: true, synchronous: 0 },
   });
   // After a load rehearsal of the lights' changes (each drawn once behind the loading screen), a point switching off
   // and a spot starting to cast shadows create no pipeline at all.

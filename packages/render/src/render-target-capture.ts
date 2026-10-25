@@ -30,6 +30,7 @@ import { registerSceneAuxiliaryViews } from "./scene-auxiliary-views";
 import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
 import { findSceneShadowController, type ViewShadows } from "./shadow-controller";
 import { isFirstDrawHeld, setFirstDrawsUrgent } from "./shadow-first-draw";
+import { leavesOutCasters } from "./shadow-caster-warm";
 
 export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 
@@ -355,14 +356,16 @@ export class RenderTargetCaptures {
         if (settings.captureOnlyActors && this.refreshRoots()) this.refreshOutlineFilters();
         this.pendingFullQuality.push({ actorId, guid, capture, target });
         // It draws after the frame's shadow maps and publishes what they show: a new map draws for it now, rather
-        // than wait, neutral, for its casters' pipelines (`firstDrawsUrgent`).
+        // than wait, neutral, for its casters' pipelines, and a drawn map draws again with every caster it left out
+        // for theirs (`firstDrawsUrgent`).
         if (!settings.captureEveryFrame) setFirstDrawsUrgent(this.scene, true);
         continue;
       }
       // A manual Fast colour capture draws here, before the frame's shadow maps: one that would publish a new map
-      // whose first draw a steady frame held back for its casters' pipelines waits one frame, in which that map draws.
+      // whose first draw, or a drawn map whose new casters, a steady frame held back for their pipelines waits one
+      // frame, in which those maps draw with every caster.
       if (!settings.captureEveryFrame && !target.depth && !target.normals && !capture.waitedForShadows &&
-        this.shadowFirstDrawHeld()) {
+        this.shadowsHeldBack()) {
         capture.waitedForShadows = true;
         setFirstDrawsUrgent(this.scene, true);
         continue;
@@ -525,13 +528,18 @@ export class RenderTargetCaptures {
     const owner = this.ownerOf(mesh);
     return owner !== undefined && capture.includeIds.has(owner);
   }
-  /** Whether an admitted shadow map awaits a first draw a steady frame held back for its casters' pipelines (WebGPU). */
-  private shadowFirstDrawHeld(): boolean {
+  /**
+   * Whether a steady frame held back part of an admitted shadow map for its casters' pipelines (WebGPU): a first draw
+   * (`isFirstDrawHeld`), or casters new to a drawn map (`leavesOutCasters`). A light switched off, or casting none,
+   * draws no map in the frame the capture would wait for.
+   */
+  private shadowsHeldBack(): boolean {
     const controller = findSceneShadowController(this.scene);
     if (!controller) return false;
     for (const light of this.scene.lights) {
+      if (!light.isEnabled() || !light.shadowEnabled) continue;
       const map = controller.generator(light);
-      if (map && isFirstDrawHeld(map)) return true;
+      if (map && (isFirstDrawHeld(map) || leavesOutCasters(map))) return true;
     }
     return false;
   }
