@@ -128,10 +128,7 @@ export function createPlayVisualBindings({
     if (!actorId || !root) return;
     // Runtime transforms are normally world-space. If a caller attaches actor
     // roots, descendants still belong to their own actor's outline identity.
-    // The slot roots are gathered only when a part is checked, so a root without
-    // child meshes never walks every slot.
-    let roots: ReadonlySet<AbstractMesh> | undefined;
-    const otherRoots = { has: (mesh: AbstractMesh) => mesh !== root && (roots ??= new Set<AbstractMesh>(binding.meshes.values())).has(mesh) };
+    const otherRoots = { has: (mesh: AbstractMesh) => mesh !== root && binding.meshes.hasRoot(mesh) };
     const meshes = visualMeshes(root, otherRoots);
     outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
     outlineActorBySlot.set(slotId, actorId);
