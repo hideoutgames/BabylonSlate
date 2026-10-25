@@ -6,6 +6,7 @@ import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpu
 import {
   beginPipelineDeferral,
   deferredPipelineCount,
+  deferredPipelinesStalled,
   PIPELINE_DEFERRAL_STALL_MS,
 } from "./webgpu-pipeline-deferral";
 import { DriverCompileWatch } from "./driver-compile";
@@ -215,7 +216,11 @@ describe("beginPipelineDeferral", () => {
     const first = beginPipelineDeferral(engine, warmPass, { warm: true })!;
     draw(3, 9);
     first.close();
-    now += PIPELINE_DEFERRAL_STALL_MS;
+    // The stall its waiters stop at: none while a creation started less than the stall time ago.
+    now += PIPELINE_DEFERRAL_STALL_MS - 1;
+    expect(deferredPipelinesStalled(engine)).toBe(false);
+    now += 1;
+    expect(deferredPipelinesStalled(engine)).toBe(true);
     const later = beginPipelineDeferral(engine, warmPass, { warm: true })!;
     draw(3, 9);
     later.close();
@@ -223,6 +228,11 @@ describe("beginPipelineDeferral", () => {
     expect(later.warmed()).toBe(false);
     expect(device.createRenderPipeline).not.toHaveBeenCalled();
     expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(1);
+    // Another creation starting is progress again.
+    const next = beginPipelineDeferral(engine, warmPass, { warm: true })!;
+    draw(4, 9);
+    next.close();
+    expect(deferredPipelinesStalled(engine)).toBe(false);
   });
 
   it("does nothing on WebGL", () => {

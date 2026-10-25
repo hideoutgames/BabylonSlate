@@ -62,7 +62,7 @@ import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
-import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
+import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
@@ -1571,6 +1571,8 @@ export class SceneShadowController {
     map?.onAfterRenderObservable.add((face) => {
       if (!clearedForDraw) return;
       clearedForDraw = false;
+      // A warm render (`shadow-map-warm.ts`) skips its draws: it is no first draw.
+      if (isWarmShadowRender(generator)) return;
       // A new, moved or resumed map samples neutrally until its last face is drawn.
       if (awaitsFirstDraw(generator) && face === (map.isCube ? 5 : 0)) {
         setAwaitingFirstDraw(generator, false);

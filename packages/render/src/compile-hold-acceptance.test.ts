@@ -41,6 +41,7 @@ import {
   Material,
   PBRMaterial,
   PointLight,
+  RenderTargetTexture,
   Scene,
   ShadowGenerator,
   SpotLight,
@@ -82,7 +83,9 @@ import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
-import { beginPipelineDeferral, effectDrawn, pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import {
+  beginPipelineDeferral, deferredPipelinesStalled, effectDrawn, PIPELINE_DEFERRAL_STALL_MS, pipelinesDeferred,
+} from "./webgpu-pipeline-deferral";
 
 // NullEngine is not WebGPU, so the real deferral never engages; the `webgpu` model replaces it.
 vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
@@ -92,6 +95,7 @@ vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
     beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral),
     pipelinesDeferred: vi.fn(actual.pipelinesDeferred),
     effectDrawn: vi.fn(actual.effectDrawn),
+    deferredPipelinesStalled: vi.fn(actual.deferredPipelinesStalled),
   };
 });
 // The load's light rehearsal pre-compiles the variants these causes ask for; a case that measures a swap leaves it out
@@ -121,8 +125,10 @@ vi.mock("./variant-prediction", async (importOriginal) => {
   };
 });
 let predictAhead = false;
-const { beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn } =
-  await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
+const {
+  beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn,
+  deferredPipelinesStalled: actualDeferredPipelinesStalled,
+} = await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 type Model = "sync" | "parallel" | "webgpu";
 type Vec3 = [number, number, number];
@@ -154,6 +160,7 @@ afterEach(() => {
   vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
   vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   vi.mocked(effectDrawn).mockImplementation(actualEffectDrawn);
+  vi.mocked(deferredPipelinesStalled).mockImplementation(actualDeferredPipelinesStalled);
   rehearseLoad = false;
   predictAhead = false;
   frameMs = FRAME_MS;
@@ -197,6 +204,12 @@ function driverModel(engine: NullEngine, model: Model) {
   const known = new Set<Effect>();
   const created: Effect[] = [];
   const pending = new Set<Effect>();
+  /** WebGPU model: when a pipeline last started or finished (the deferral's stall measures from it). */
+  let progressAt = performance.now();
+  const start = (effect: Effect) => {
+    pending.add(effect);
+    progressAt = performance.now();
+  };
   let armed = false;
   let holding = false;
   /** Set by `lagOnly`: the only new Effects the driver still keeps pending. */
@@ -209,7 +222,7 @@ function driverModel(engine: NullEngine, model: Model) {
     known.add(effect);
     created.push(effect);
     if (model === "sync" || !holding || (lags && !lags(effect))) return effect;
-    pending.add(effect);
+    start(effect);
     if (model === "parallel") {
       // A link the driver has not finished: Babylon and the app's waits read it through isReady().
       const isReady = effect.isReady.bind(effect);
@@ -232,6 +245,7 @@ function driverModel(engine: NullEngine, model: Model) {
   if (model === "webgpu") {
     vi.mocked(pipelinesDeferred).mockReturnValue(true);
     vi.mocked(effectDrawn).mockImplementation((_engine, effect) => drawnEffects.has(effect as Effect));
+    vi.mocked(deferredPipelinesStalled).mockImplementation(() => performance.now() - progressAt >= PIPELINE_DEFERRAL_STALL_MS);
     vi.mocked(beginPipelineDeferral).mockImplementation((_engine, allows, options = {}) => {
       if (options.nested && !scopes.length) return undefined;
       const warm = options.warm === true;
@@ -267,7 +281,7 @@ function driverModel(engine: NullEngine, model: Model) {
         // An Effect's first draw needs its pipeline: at once before arming or after release, pending in between (an
         // Effect the load compiled without drawing it, such as a spawnable's, has none yet).
         if (effect && !pipelineReady.has(effect) && !pending.has(effect)) {
-          if (armed && holding) pending.add(effect);
+          if (armed && holding) start(effect);
           else pipelineReady.add(effect);
         }
         const missing = !!effect && pending.has(effect);
@@ -305,6 +319,7 @@ function driverModel(engine: NullEngine, model: Model) {
     /** The driver finishes everything pending; later requests compile at once again. */
     release: () => {
       pending.clear();
+      progressAt = performance.now();
       holding = false;
       lags = undefined;
     },
@@ -312,6 +327,7 @@ function driverModel(engine: NullEngine, model: Model) {
     lagOnly: (lagging: (effect: Effect) => boolean) => {
       lags = lagging;
       for (const effect of [...pending]) if (!lagging(effect)) pending.delete(effect);
+      progressAt = performance.now();
     },
     isPending: (effect: Effect) => pending.has(effect),
     /** Every pending link fails, with no fallback left: those Effects never become ready. */
@@ -325,6 +341,8 @@ function driverModel(engine: NullEngine, model: Model) {
     warmPipelines,
     /** WebGPU model: Effects whose pipeline a shadow map's draw created synchronously (the shadow pass defers none). */
     synchronous,
+    /** WebGPU model: a warm scope is open (draws in its passes only create pipelines). */
+    warming: () => scopes.some((scope) => scope.warm),
   };
 }
 
@@ -339,6 +357,10 @@ const light = (kind: "point" | "spot" | "directional" | "hemispheric", propertie
   })] });
 /** Rotates +Z (a light's forward) to straight down. */
 const DOWN: Quat = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+/** The world's sun (slot 3), whose shadow map, when it casts, is cascaded. */
+const sun = (properties: Partial<PlayLightProperties> = {}): Actor => ({
+  slotId: 3, guid: "sun", position: [5, 8, -5], rotation: [0.3827, 0, 0, 0.9239], assign: light("directional", { intensity: 1.5, ...properties }),
+});
 
 /**
  * A Play world: a crate on a floor, a sun, a camera, plus the scenario's own actors. Every actor is posed through
@@ -362,7 +384,7 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
   const world: Actor[] = [
     { slotId: 1, guid: "floor", position: [0, 0, 0], scale: [12, 0.2, 12], assign: { meshAssetGuid: null, meshKind: "box" } },
     { slotId: 2, guid: "crate", position: [0, 1, 0], assign: { meshAssetGuid: null, meshKind: "box" } },
-    { slotId: 3, guid: "sun", position: [5, 8, -5], rotation: [0.3827, 0, 0, 0.9239], assign: light("directional", { intensity: 1.5 }) },
+    sun(),
     { slotId: 4, guid: "camera", position: [0, 3, -10], assign: { meshAssetGuid: null, meshKind: null, parts: [part("lens", "camera", { camera: { fieldOfView: 60, isDefault: true } })] } },
   ];
   let frameId = 0;
@@ -1394,27 +1416,109 @@ describe("compile holds after the first frame", () => {
     }, JSON.stringify(adoptedPerFrame)).toEqual({ allAdopted: true, atMostPerFrame: true, spread: true });
   });
 
-  it.each(MODELS)("a spot light starts casting shadows: %s", async (model) => {
+  /**
+   * Shadow starts nothing rehearsed or predicted: each light's actors before, the light casting, its slot, and whether
+   * its map renders several passes (a cube's faces, a sun's cascades).
+   */
+  const shadowStarts = {
+    "a spot light": { actors: [spot(10, [0, 5, 0])], cast: () => spot(10, [0, 5, 0], { castShadows: true }), slotId: 10, passes: false },
+    "a point light": { actors: [point(10, [0, 4, 0])], cast: () => point(10, [0, 4, 0], { castShadows: true }), slotId: 10, passes: true },
+    "the sun (its first, cascaded map)": { actors: [], cast: () => sun({ castShadows: true }), slotId: 3, passes: true },
+  } as const;
+
+  it.each((Object.keys(shadowStarts) as (keyof typeof shadowStarts)[]).flatMap((kind) => MODELS.map((model) => [kind, model] as const)))(
+    "%s starts casting shadows: %s", async (kind, model) => {
     // The floor receives the crate's shadow. The view keeps drawing while the receivers' shadowed variants and the
-    // casters' depth variants for the new map compile: the map samples neutrally (lit) until it first draws, which it
-    // does once every caster is ready.
-    const world = playWorld(model, [spot(10, [0, 5, 0])], [], "actor-1");
-    const spotLight = () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!;
-    const map = () => spotLight().getShadowGenerator() as ShadowGenerator | null;
+    // casters' depth variants for the new map compile (on WebGPU, while the casters' depth pipelines are created
+    // asynchronously, which the map's draw would otherwise create synchronously): the map samples neutrally (lit) until
+    // it first draws, which it does once every caster is ready.
+    const start = shadowStarts[kind];
+    const world = playWorld(model, [...start.actors], [], "actor-1");
+    const shadowLight = () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${start.slotId}`)!;
+    const map = () => shadowLight().getShadowGenerator() as ShadowGenerator | null;
     let neutralWhilePending = true;
-    const record = await measure(world, () => world.place(spot(10, [0, 5, 0], { castShadows: true })), undefined, () => {
+    const record = await measure(world, () => world.place(start.cast()), undefined, () => {
       const generator = map();
-      // Only a pending compile keeps the map from drawing; a synchronous link draws it in the change's frame.
-      if (model === "parallel") neutralWhilePending &&= !!generator && awaitsFirstDraw(generator) && generator.getDarkness() === 1;
+      // Only a pending compile or pipeline keeps the map from drawing; a synchronous link draws it in the change's frame.
+      if (model !== "sync") neutralWhilePending &&= !!generator && awaitsFirstDraw(generator) && generator.getDarkness() === 1;
     });
     const generator = map();
     const shadow = {
+      passes: (generator?.getShadowMap()?.renderPassIds.length ?? 0) > 1,
       neutralWhilePending,
       drawn: !!generator && !awaitsFirstDraw(generator) && generator.getDarkness() === 0,
       received: /#define SHADOW\d/.test(world.subjectEffect()?.defines ?? ""),
+      // WebGPU: the map's draw created none of its casters' depth pipelines synchronously.
+      synchronousPipelines: world.driver.synchronous.size,
     };
-    expect(shadow, JSON.stringify(record)).toEqual({ neutralWhilePending: true, drawn: true, received: true });
+    expect(shadow, JSON.stringify(record)).toEqual({
+      passes: start.passes, neutralWhilePending: true, drawn: true, received: true, synchronousPipelines: 0,
+    });
     expectSwapped(record, model);
+  });
+
+  it("a first shadow map whose casters' pipelines never arrive draws at the deferral's stall, and the view never holds", async () => {
+    // WebGPU: the new spot map waits, neutral, for the pipelines its warm render started, which never arrive. Once no
+    // pipeline has started or finished for the stall time, it draws anyway, creating them synchronously.
+    const world = playWorld("webgpu", [spot(10, [0, 5, 0])], [], "actor-1");
+    const map = () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!.getShadowGenerator() as ShadowGenerator | null;
+    await settle(world);
+    world.driver.arm();
+    world.place(spot(10, [0, 5, 0], { castShadows: true }));
+    // Frames on the usual clock, so the receivers' warm draws keep their cold variants waiting meanwhile.
+    let held = 0;
+    let waitedFrames = 0;
+    for (let index = 0; index < 1.5 * PIPELINE_DEFERRAL_STALL_MS / FRAME_MS; index++) {
+      const { view } = await world.frame();
+      if (view?.rendered !== true) held++;
+      const generator = map();
+      if (!generator || !awaitsFirstDraw(generator)) break;
+      waitedFrames++;
+    }
+    const generator = map();
+    expect({ held, waitedPastStall: waitedFrames >= PIPELINE_DEFERRAL_STALL_MS / FRAME_MS, drawn: !!generator && !awaitsFirstDraw(generator),
+      synchronous: world.driver.synchronous.size > 0 }, JSON.stringify({ waitedFrames })).toEqual({
+      held: 0, waitedPastStall: true, drawn: true, synchronous: true,
+    });
+  });
+
+  it("a first shadow map whose warm render throws mid-draw throws nothing out of a frame, is reported once and then draws", async () => {
+    // WebGPU: the new spot map's warm render throws with the map's target bound. The frame goes on, the target is
+    // unbound (the graph would refuse the next frame otherwise), the failure is reported, and the map is not
+    // warm-rendered again: it draws as it would without one, creating its casters' pipelines then.
+    const world = playWorld("webgpu", [spot(10, [0, 5, 0])], [], "actor-1");
+    const map = () => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!.getShadowGenerator() as ShadowGenerator | null;
+    await settle(world);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const prototype = RenderTargetTexture.prototype as unknown as { _prepareFrame(...args: unknown[]): void };
+    const prepareFrame = prototype._prepareFrame;
+    let thrown = 0;
+    prototype._prepareFrame = function (this: RenderTargetTexture, ...args: unknown[]) {
+      // Once the map's target is bound.
+      prepareFrame.apply(this, args);
+      if (!world.driver.warming()) return;
+      thrown++;
+      throw new Error("injected warm shadow render failure");
+    };
+    cleanups.push(() => { prototype._prepareFrame = prepareFrame; warn.mockRestore(); });
+    world.driver.arm();
+    world.place(spot(10, [0, 5, 0], { castShadows: true }));
+    let escaped = 0;
+    const drawn: boolean[] = [];
+    for (let index = 0; index < 6; index++) {
+      try {
+        const { view } = await world.frame();
+        drawn.push(view?.rendered === true);
+      } catch {
+        escaped++;
+      }
+    }
+    const generator = map();
+    const reports = warn.mock.calls.filter(([message]) => String(message).includes("Shadow map warm render failed")).length;
+    expect({ thrown, escaped, drawn: drawn.every(Boolean), reports, mapDrawn: !!generator && !awaitsFirstDraw(generator),
+      synchronous: world.driver.synchronous.size > 0 }).toEqual({
+      thrown: 1, escaped: 0, drawn: true, reports: 1, mapDrawn: true, synchronous: true,
+    });
   });
 
   it.each(MODELS)("a spawned actor's Material the load warmed compiles nothing when it spawns: %s", async (model) => {
