@@ -464,6 +464,40 @@ describe("DocumentProvider actions and route", () => {
     } finally { release(); save.mockRestore(); }
   });
 
+  it("does not write back an asset the Content Browser deletes between two Save All writes", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const stats = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "DataDefinition", name: "Stats" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    await act(() => actions.openDocument({ kind: "data-definition", path: stats.path, label: "Stats" }));
+    await act(() => actions.applyAssetDocumentChange(documentId({ kind: "data-definition", path: stats.path }), {
+      kind: "dataDefinition", fields: [{ id: "hp", name: "HP", typeId: "number", defaultValue: 10 }],
+    }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const original = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(async function(this: ProjectService, kind, path, content, options) {
+      if (path === MAIN_SCENE_FILE && !started) { started = true; await held; }
+      return original.call(this, kind, path, content, options);
+    });
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(started).toBe(true));
+      // As Content Browser Delete does: close the tab, then delete the file.
+      act(() => actions.closeDocumentsForPaths([stats.path]));
+      await act(() => registry.deleteAsset(stats.header.guid));
+      await act(async () => { release(); await saving; });
+    } finally { release(); save.mockRestore(); }
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    expect(await storage.exists(stats.path)).toBe(false);
+    expect(documents().assetRegistry!.getByGuid(stats.header.guid)).toBeUndefined();
+  });
+
   it.each([false, true])("refuses Class renames when a referring scene is locked by another user (open: %s)", async (keepOpen) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

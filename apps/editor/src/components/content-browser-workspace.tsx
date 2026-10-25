@@ -150,6 +150,8 @@ import {
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
+  deleteTargetFolders,
+  type DeleteTarget,
 } from "../lib/content-browser-helpers";
 import {
   canMutateContentBrowserRoot,
@@ -184,7 +186,7 @@ import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./cont
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
-import { ContentBrowserDeleteDialogs, type DeleteTarget } from "./content-browser-delete-dialogs";
+import { ContentBrowserDeleteDialogs } from "./content-browser-delete-dialogs";
 import { ContentBrowserFilterSortMenus } from "./content-browser-filter-sort-menus";
 import { ContentBrowserNameDialog, type NameEntry } from "./content-browser-name-dialog";
 import { ContentBrowserResultDialogs } from "./content-browser-result-dialogs";
@@ -405,8 +407,9 @@ function ContentBrowserWorkspaceBody({
   const [openError, setOpenError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  // Written only with the state, by the thumbnail sync's commit: a render
+  // that still shows an older map must not put it back.
   const thumbnailUrlsRef = useRef(thumbnailUrls);
-  thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
   const menuTargetFoldersRef = useRef<string[]>([]);
   const operationDialog = newAssetOpen ? "create" : nameDialog ? "name" : moveTarget ? "move" : deleteTarget ? "delete" : null;
@@ -1269,9 +1272,7 @@ function ContentBrowserWorkspaceBody({
 
   const deletingGuids = useMemo(() => contentBrowserDeletingGuids({
     extraGuids: deleteTarget?.guids ?? [],
-    folderPaths: deleteTarget?.kind === "folder"
-      ? [deleteTarget.path]
-      : deleteTarget?.kind === "selection" ? deleteTarget.folders : [],
+    folderPaths: deleteTargetFolders(deleteTarget),
     assets: allAssets,
   }), [allAssets, deleteTarget]);
   const deletingClassGuids = useMemo(() => new Set(referenceAssets
@@ -1344,8 +1345,7 @@ function ContentBrowserWorkspaceBody({
 
   const deleteListItems = useMemo(() => {
     if (!deleteTarget) return [];
-    const folders = deleteTarget.kind === "folder" ? [deleteTarget.path]
-      : deleteTarget.kind === "selection" ? deleteTarget.folders : [];
+    const folders = deleteTargetFolders(deleteTarget);
     return [
       ...folders.map((path) => {
         const count = containedAssetPaths(allAssets, path).length;
@@ -1361,23 +1361,10 @@ function ContentBrowserWorkspaceBody({
     ];
   }, [allAssets, assetRegistry, deleteTarget, resolveAssetName]);
 
-  const deleteLastSceneClassLines = useMemo(() => {
-    if (!deleteTarget) return [];
-    const folderPaths =
-      deleteTarget.kind === "folder"
-        ? [deleteTarget.path]
-        : deleteTarget.kind === "selection"
-          ? deleteTarget.folders
-          : [];
-    return lastSceneClassDeleteLines(
-      allAssets,
-      contentBrowserDeletingGuids({
-        extraGuids: deleteTarget.guids,
-        folderPaths,
-        assets: allAssets,
-      }),
-    );
-  }, [allAssets, deleteTarget]);
+  const deleteLastSceneClassLines = useMemo(
+    () => deleteTarget ? lastSceneClassDeleteLines(allAssets, deletingGuids) : [],
+    [allAssets, deleteTarget, deletingGuids],
+  );
 
   const confirmDelete = useCallback(async () => {
     if (busy || !assetRegistry || !deleteTarget) return;
@@ -1386,12 +1373,7 @@ function ContentBrowserWorkspaceBody({
       const path = assetRegistry.getByGuid(guid)?.path;
       if (path) paths.add(path);
     }
-    const folders =
-      deleteTarget.kind === "folder"
-        ? [deleteTarget.path]
-        : deleteTarget.kind === "selection"
-          ? deleteTarget.folders
-          : [];
+    const folders = deleteTargetFolders(deleteTarget);
     for (const folder of folders) {
       for (const path of containedAssetPaths(allAssets, folder)) {
         paths.add(path);
@@ -2126,6 +2108,7 @@ function ContentBrowserWorkspaceBody({
     [
       closeEmptyGridMenu,
       openMenuAt,
+      rootPrefixes,
       selectedFolderPaths,
       selectedGuids,
       tileContextItems,

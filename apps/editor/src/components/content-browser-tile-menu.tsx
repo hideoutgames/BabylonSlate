@@ -158,6 +158,8 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       label: "Import MSDF Atlas…",
       icon: <FileInputIcon />,
       onSelect: () => {
+        // One import at a time: another would replace the Cancel target and progress.
+        if (busy) return;
         void (async () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
@@ -177,6 +179,7 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
             if (browse.readOnly) return;
             const controller = new AbortController();
             importAbortRef.current = controller;
+            setBusy(true);
             try {
               for (const [index, file] of prepared.entries()) {
                 updateImportProgress(controller.signal, { phase: file.name, completed: index, total: prepared.length, fraction: null });
@@ -195,7 +198,11 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
             } finally {
               if (importAbortRef.current === controller) importAbortRef.current = null;
               setImportProgress(null);
-              await refreshAssetRegistry();
+              try {
+                await refreshAssetRegistry();
+              } finally {
+                setBusy(false);
+              }
             }
           } catch (err) {
             if (err instanceof DOMException && err.name === "AbortError") return;

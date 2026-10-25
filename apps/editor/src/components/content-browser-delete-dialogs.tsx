@@ -42,12 +42,7 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
-import { classIdFromClassAsset } from "../lib/content-browser-helpers";
-
-export type DeleteTarget =
-  | { kind: "assets"; guids: string[] }
-  | { kind: "folder"; path: string; guids: string[] }
-  | { kind: "selection"; folders: string[]; guids: string[] };
+import { classIdFromClassAsset, type DeleteTarget } from "../lib/content-browser-helpers";
 
 export interface DeleteListItem {
   key: string;
