@@ -296,34 +296,6 @@ describe("ProjectSearchIndex", () => {
     ).toBe(true);
   });
 
-  it("upserts in-memory document content and removes deleted assets", async () => {
-    const storage = await createStorage();
-    await writeDocument(storage, "assets/main.scene.hasset", {
-      guid: "scene-1",
-      type: "Scene",
-      name: "Main",
-      payload: {
-        actors: [{ id: "actor-1", name: "Cube", classId: "Actor", components: [] }],
-      },
-    });
-    const registry = new AssetRegistry(storage);
-    await registry.mountRoot(projectContentRoot());
-    const index = new ProjectSearchIndex(storage);
-    await index.rebuild(registry);
-
-    const asset = registry.getByGuid("scene-1")!;
-    index.upsertDocument(asset, {
-      actors: [{ id: "actor-2", name: "SphereHero", classId: "Actor", components: [] }],
-    });
-
-    expect(index.query("cube")).toEqual([]);
-    expect(index.query("spherehero").some((hit) => hit.kind === "actor")).toBe(true);
-
-    index.removeAsset("assets/main.scene.hasset");
-    expect(index.query("spherehero")).toEqual([]);
-    expect(index.query("main").every((hit) => hit.kind !== "asset")).toBe(true);
-  });
-
   it("caps result count and prefers label prefix matches", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
@@ -724,19 +696,25 @@ describe("ProjectSearchIndex ranking", () => {
     },
   };
 
-  function indexActors(
+  async function indexActors(
     actors: Array<{ id: string; name: string; classId?: string }>,
     limit?: number,
-  ): ProjectSearchIndex {
+  ): Promise<ProjectSearchIndex> {
     const index = new ProjectSearchIndex(new MemoryStorageAdapter("documents"), {
       limit,
     });
-    index.upsertDocument(scene, {
-      actors: actors.map((actor) => ({
-        classId: "Actor",
-        components: [],
-        ...actor,
-      })),
+    const registry = { list: () => [scene] } as unknown as AssetRegistry;
+    await index.rebuild(registry, {
+      openDocuments: [{
+        path: scene.path,
+        payload: {
+          actors: actors.map((actor) => ({
+            classId: "Actor",
+            components: [],
+            ...actor,
+          })),
+        },
+      }],
     });
     return index;
   }
@@ -744,8 +722,8 @@ describe("ProjectSearchIndex ranking", () => {
   const actorIds = (hits: ReturnType<ProjectSearchIndex["query"]>) =>
     hits.map((hit) => (hit.target.kind === "scene-actor" ? hit.target.actorId : hit.id));
 
-  it("ranks exact, prefix, label, description, then keyword hits, by label with ties in index order", () => {
-    const index = indexActors([
+  it("ranks exact, prefix, label, description, then keyword hits, by label with ties in index order", async () => {
+    const index = await indexActors([
       { id: "a1", name: "Stone" },
       { id: "a2", name: "stone" },
       { id: "a3", name: "Gravestone" },
@@ -771,7 +749,7 @@ describe("ProjectSearchIndex ranking", () => {
     expect(actorIds(index.query("stone", 5))).toEqual(["a2", "a1", "a4", "a8", "a5"]);
   });
 
-  it("selects the same first hits as ranking every match when many entries match", () => {
+  it("selects the same first hits as ranking every match when many entries match", async () => {
     const words = ["Core", "core", "Ore", "ore", "Ore Cart", "ore cart", "Store", "Score", "Chore", "Explorer", "Ore", "Adore"];
     let seed = 7;
     const next = () => {
@@ -784,7 +762,7 @@ describe("ProjectSearchIndex ranking", () => {
       if (roll === 1) return { id: `a${index}`, name: `Cart ${index % 5}`, classId: "OreCart" };
       return { id: `a${index}`, name: words[next() % words.length]! };
     });
-    const index = indexActors(actors);
+    const index = await indexActors(actors);
     const every = index.query("ore", Number.POSITIVE_INFINITY);
     expect(every.length).toBeGreaterThan(300);
 

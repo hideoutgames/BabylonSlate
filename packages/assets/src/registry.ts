@@ -1,195 +1,73 @@
-import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@haptic/core";
-import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
+import type { ProjectStorage, StorageReadOptions } from "@haptic/core";
+import { ENGINE_VERSION, SourceRevisionChangedError } from "@haptic/core";
 import {
   ASSET_DEPENDENCY_METADATA_VERSION,
-  decodeHasset,
-  encodeHasset,
-  isCarriedChunk,
-  readHassetHeader,
   type HassetHeader,
-  type ChunkEntry,
-  type ChunkInput,
-  type EncodableChunk,
 } from "./hasset";
-import { carryStoredChunks } from "./hasset-carry";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
-import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
-import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
-import { newAssetGuid } from "./guid";
-import { isEnvironmentTexturePayload, readEnvironmentTextureInfo } from "./environment-texture";
+import type { EncodeJobGuard, EncodeJobResult, EncodeQueue } from "./encode-queue";
+import type { HdrEnvironmentConverter } from "./hdr-environment";
 import {
-  HDR_SOURCE_CHUNK_ID,
-  normalizeHdrEnvironmentFaceSize,
-  type HdrEnvironmentConverter,
-} from "./hdr-environment";
-import {
-  applyImportGuidRemap,
   importByExtension,
-  remapImportResultGuids,
-  type ImportOptions,
   type ImportResult,
   type ImportRunner,
 } from "./importers";
-import { replaceClassAssetReferences, type ClassAssetReplacement } from "./class-asset-refs";
-import type { DataDefinitionFieldsResolver } from "./data-asset-refs";
-import { mergeFontAttachPayload } from "./font-payload";
 import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetSourceLocator } from "./payload-loader";
+import { DOCUMENT_CHUNK_ID, type AssetDocument } from "./asset-document";
+import type { ImageSize } from "./image-size";
 import {
-  assetFileSuffix,
-  nextCopyName,
-  stripAssetFileSuffix,
-} from "./unique-names";
-import { DOCUMENT_CHUNK_ID, stampDocumentChunkName, type AssetDocument } from "./asset-document";
-import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
-import { sniffSourceImageSize, type ImageSize } from "./image-size";
-import { sniffKtx2Size } from "./ktx2-info";
-import { clampDimension,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
-  effectiveTextureMaxDimension,
-  encodeSettingsHash,
-  ktx2ChunkId,
-  shouldCompressTexture,
-  TEXTURE_BLOCK_EDGE,
-  textureEncodeChunkId,
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
-import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-texture";
-import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
-import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
-import { sha256Hex, stableStringify } from "./bytes";
-import { copyStorageTree, moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
-import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
+import type { AreaEmissionProgress } from "./area-emission";
 import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAliasIndex } from "./catalog-class-dependencies";
+import { createAssetUnlocked, importFile, type ImportFileExtras } from "./registry-import";
+import { copyFolder, duplicateAssetUnlocked } from "./registry-copy";
+import { createFolderUnlocked, deleteFolderUnlocked, moveFolderUnlocked } from "./registry-folders";
+import { moveAssetUnlocked, renameAssetUnlocked } from "./registry-asset-moves";
+import {
+  alignCreatedTextures,
+  isTextureAlignmentStale,
+  reconcileTextureAlignment,
+  requeueUncompressedTextures,
+  retryTextureEncoding,
+  type TextureAlignmentOptions,
+} from "./registry-texture-encoding";
+import { commitCompressedTexture, prepareAreaEmission, reconvertHdrEnvironment, setCompressionState } from "./registry-texture-rewrite";
+import { walkRoot } from "./registry-scan";
+import { AtlasReferrerIndex } from "./registry-atlas";
+import { buildFolderTree, isWithinFolder } from "./registry-paths";
+import {
+  RegistryGenerationClock,
+  type AreaEmissionProcessor,
+  type AssetCopyOptions,
+  type AssetImportControl,
+  type AssetRegistryOptions,
+  type FolderNode,
+  type GuidConflict,
+  type IndexedAsset,
+  type OwnAssetWrite,
+  type RegistryHost,
+  type ThumbnailWriter,
+} from "./registry-types";
 
-const textEncoder = new TextEncoder();
+export { FOLDER_MARKER_NAME, RegistryGenerationClock } from "./registry-types";
+export type {
+  AreaEmissionProcessor,
+  AssetCopyOptions,
+  AssetImportControl,
+  AssetRegistryOptions,
+  FolderNode,
+  GuidConflict,
+  IndexedAsset,
+  OwnAssetWrite,
+  ThumbnailWriter,
+} from "./registry-types";
+export { contentEntryNameError, renamedAssetPath } from "./registry-paths";
+
 const textDecoder = new TextDecoder();
-
-/** Header reads requested at once within a run of files while a root is scanned (a folder being walked has one such run active). */
-const SCAN_CATALOG_READS = 8;
-
-export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
-
-/** Index entry: header-only, never a decoded payload (engineplan §2.4). */
-/** Cancellation and progress for asset and folder copies. */
-export interface AssetCopyOptions {
-  signal?: AbortSignal;
-  /** Folder copies only: files copied so far out of the folder's total. */
-  onProgress?: (copied: number, total: number) => void;
-}
-
-export interface IndexedAsset {
-  rootId: string;
-  path: string;
-  header: HassetHeader;
-  /** Storage snapshot for bounded payload reads; populated on scan or first request. */
-  locator?: AssetSourceLocator;
-  /** Missing plugin/dependency guid kept so references do not drop. */
-  placeholder?: boolean;
-  /** Filesystem mtime in ms, from `DirEntry` / `stat` when known. */
-  mtime?: number | null;
-}
-
-export type ThumbnailWriter = (
-  assetGuid: string,
-  bytes: Uint8Array,
-) => Promise<void>;
-
-/** A Texture file edit: the header and chunks to write back, or null to write nothing. */
-type TextureRewrite = (
-  header: Omit<HassetHeader, "chunks">,
-  chunks: Map<string, EncodableChunk>,
-  /** The header as read from disk, chunk sha256s included. */
-  current: HassetHeader,
-) => Promise<{
-  header: Omit<HassetHeader, "chunks">;
-  chunks: Map<string, EncodableChunk>;
-} | null>;
-
-/**
- * The registry rewrote an asset file itself (Texture encode state, committed
- * encode, derived chunk): its mtime just before and after that write.
- */
-export interface OwnAssetWrite {
-  path: string;
-  previousMtime: number | null;
-  mtime: number | null;
-}
-
-/** Marker file so empty folders survive Git and remount scans. */
-export const FOLDER_MARKER_NAME = ".haptic-folder";
-
-export interface FolderNode {
-  name: string;
-  path: string;
-  children: FolderNode[];
-  assets: string[];
-}
-
-/**
- * An asset file a scan left out of the index because an already indexed file
- * (`indexedPath`) has the same guid, such as a copy made outside the editor.
- */
-export interface GuidConflict {
-  rootId: string;
-  path: string;
-  guid: string;
-  indexedPath: string;
-}
-
-/**
- * Change counter behind `AssetRegistry.generation`. Registries that share one
- * clock (every remount of a project) advance it together, so a registry that
- * replaces another never reports an earlier or repeated generation.
- */
-export class RegistryGenerationClock {
-  private current = 0;
-
-  get value(): number {
-    return this.current;
-  }
-
-  /** Record a change to what a registry sharing this clock reports. */
-  advance(): void {
-    this.current += 1;
-  }
-}
-
-export interface AssetRegistryOptions {
-  payloadLoader?: AccountedPayloadLoader;
-  blobs?: BlobStore;
-  /**
-   * Shared change counter. Pass the same clock to every remount so the
-   * generation keeps rising when a new registry replaces the previous one.
-   */
-  generationClock?: RegistryGenerationClock;
-  /**
-   * Textures an alignment check is requeuing right now. Pass the same set to
-   * every remount that shares one encode queue, so a check on the previous
-   * registry and one on the next skip each other's Texture.
-   */
-  alignmentRequeues?: Set<string>;
-  /**
-   * Runs each file's importer for `importFile`; defaults to
-   * `importByExtension`. The editor passes one that imports slow, pure-CPU
-   * formats on a Web Worker.
-   */
-  runImport?: ImportRunner;
-}
-
-/** Progress and cancellation for one `importFile` or HDR reconversion. */
-export interface AssetImportControl {
-  /**
-   * Abort before or during the conversion writes nothing; an abort that lands
-   * while the file's assets are written deletes the ones already made.
-   */
-  signal?: AbortSignal;
-  /** Fraction of the file's conversion done, from 0 to 1. */
-  onProgress?: (fraction: number) => void;
-}
-
-const BLOBS_DIR_NAME = ".blobs";
 
 /**
  * Content-root-aware asset registry (.agents/reference/architecture/asset-registry.md).
@@ -225,14 +103,8 @@ export class AssetRegistry {
    * overlapping writers cannot both pass the check before either indexes.
    */
   private readonly pathReservations = new Set<string>();
-  /** Atlas referrer (Tileset, Sprite, Sprite Animation) guid -> textures it samples. */
-  private readonly atlasByReferrer = new Map<string, readonly string[]>();
-  /** Texture guid -> atlas referrers sampling it. */
-  private readonly atlasReferrers = new Map<string, Set<string>>();
-  private atlasStatusListener: ((textureGuids: string[]) => void) | null = null;
-  /** Texture guid -> atlas status before the changes not yet reported. */
-  private readonly atlasStatusBefore = new Map<string, boolean>();
-  private atlasFlushScheduled = false;
+  /** Textures the indexed atlas referrers (Tileset, Sprite, Sprite Animation) sample. */
+  private readonly atlas = new AtlasReferrerIndex(() => this.changed());
   private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
   private createdTextureListener: ((asset: IndexedAsset) => void) | null = null;
   /**
@@ -243,6 +115,8 @@ export class AssetRegistry {
   private readonly alignmentRequeues: Set<string>;
   private readonly clock: RegistryGenerationClock;
   private readonly runImport: ImportRunner;
+  /** This registry as its `registry-*.ts` operation modules reach it (`createHost`). */
+  private readonly host: RegistryHost;
   /** Class alias index of the catalog as of `generation`; dropped when any index change advances it. */
   private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
   /** Symbolic inbound references of the catalog as of `generation`; dropped like `classAliasMemo`. */
@@ -256,6 +130,61 @@ export class AssetRegistry {
     this.alignmentRequeues = options.alignmentRequeues ?? new Set();
     this.clock = options.generationClock ?? new RegistryGenerationClock();
     this.runImport = options.runImport ?? importByExtension;
+    this.host = this.createHost();
+  }
+
+  /**
+   * Built once the constructor has set every field it passes on. Methods
+   * call through `this` when they run, so they read reassigned fields then
+   * and reach a public method replaced on the instance; never `.bind`.
+   */
+  private createHost(): RegistryHost {
+    return {
+      byGuid: this.byGuid,
+      byPath: this.byPath,
+      roots: this.roots,
+      knownFolders: this.knownFolders,
+      guidConflicts: this.guidConflicts,
+      alignmentRequeues: this.alignmentRequeues,
+      textureWriteChain: this.textureWriteChain,
+      loader: this.loader,
+      encodeQueue: () => this.encodeQueue,
+      encodeSettings: () => this.encodeSettings,
+      thumbnailWriter: () => this.thumbnailWriter,
+      writeThumbnail: (assetGuid, bytes) => this.thumbnailWriter!(assetGuid, bytes),
+      reportOwnWrite: (write) => this.ownWriteListener?.(write),
+      runImport: (...args) => this.runImport(...args),
+      list: (...args) => this.list(...args),
+      readChunk: (...args) => this.readChunk(...args),
+      getAssetLocator: (...args) => this.getAssetLocator(...args),
+      isAtlasTexture: (...args) => this.isAtlasTexture(...args),
+      withAssetWrite: (...args) => this.withAssetWrite(...args),
+      createAsset: (...args) => this.createAsset(...args),
+      deleteAsset: (...args) => this.deleteAsset(...args),
+      createFolder: (...args) => this.createFolder(...args),
+      deleteFolder: (...args) => this.deleteFolder(...args),
+      setCompressionState: (...args) => this.setCompressionState(...args),
+      retryTextureEncoding: (...args) => this.retryTextureEncoding(...args),
+      reconcileTextureAlignment: (...args) => this.reconcileTextureAlignment(...args),
+      changed: () => this.changed(),
+      addKnownFolder: (path) => this.addKnownFolder(path),
+      removeKnownFolder: (path) => this.removeKnownFolder(path),
+      isPathReserved: (path) => this.isPathReserved(path),
+      reservePath: (path, conflict) => this.reservePath(path, conflict),
+      withReservedPath: (path, conflict, work) => this.withReservedPath(path, conflict, work),
+      withCreationWrite: (work) => this.withCreationWrite(work),
+      indexHeader: (...args) => this.indexHeader(...args),
+      indexCreatedHeader: (...args) => this.indexCreatedHeader(...args),
+      repathGuidConflicts: (map) => this.repathGuidConflicts(map),
+      deleteAssetUnlocked: (guid) => this.deleteAssetUnlocked(guid),
+      getRootOrThrow: (rootId) => this.getRootOrThrow(rootId),
+      assertWritable: (root) => this.assertWritable(root),
+      storageOf: (root) => this.storageOf(root),
+      blobsOf: (root) => this.blobsOf(root),
+      storageForAsset: (asset) => this.storageForAsset(asset),
+      blobsForAsset: (asset) => this.blobsForAsset(asset),
+      statMtime: (storage, path) => this.statMtime(storage, path),
+    };
   }
 
   /**
@@ -481,8 +410,8 @@ export class AssetRegistry {
     const storage = this.storageOf(root);
     try {
       if (storage.withReadScope) {
-        await storage.withReadScope((reader) => this.walk(root, root.pathPrefix, reader));
-      } else await this.walk(root, root.pathPrefix, storage);
+        await storage.withReadScope((reader) => walkRoot(this.host, root, root.pathPrefix, reader));
+      } else await walkRoot(this.host, root, root.pathPrefix, storage);
     } catch (error) {
       // A remount of this id meanwhile owns the root now.
       if (this.roots.get(root.id) === root) this.unmountRoot(root.id);
@@ -623,51 +552,7 @@ export class AssetRegistry {
 
   folderTree(rootId: string): FolderNode {
     const root = this.getRootOrThrow(rootId);
-    const rootNode: FolderNode = {
-      name: root.pathPrefix.split("/").pop() ?? root.pathPrefix,
-      path: root.pathPrefix,
-      children: [],
-      assets: [],
-    };
-    const nodes = new Map<string, FolderNode>([[root.pathPrefix, rootNode]]);
-
-    const ensureNode = (path: string): FolderNode => {
-      const existing = nodes.get(path);
-      if (existing) return existing;
-      const parentPath = path.includes("/")
-        ? path.slice(0, path.lastIndexOf("/"))
-        : root.pathPrefix;
-      const parent = parentPath === path ? rootNode : ensureNode(parentPath);
-      const node: FolderNode = {
-        name: path.slice(path.lastIndexOf("/") + 1),
-        path,
-        children: [],
-        assets: [],
-      };
-      parent.children.push(node);
-      nodes.set(path, node);
-      return node;
-    };
-
-    for (const folderPath of this.knownFolders) {
-      if (
-        folderPath === root.pathPrefix ||
-        folderPath.startsWith(`${root.pathPrefix}/`)
-      ) {
-        ensureNode(folderPath);
-      }
-    }
-
-    for (const asset of this.list({ rootId })) {
-      const dir = asset.path.includes("/")
-        ? asset.path.slice(0, asset.path.lastIndexOf("/"))
-        : root.pathPrefix;
-      const node = dir === root.pathPrefix ? rootNode : ensureNode(dir);
-      node.assets.push(asset.header.guid);
-    }
-
-    sortFolderTree(rootNode);
-    return rootNode;
+    return buildFolderTree(root, this.knownFolders, this.list({ rootId }));
   }
 
   /** Resolve symbolic classes alongside GUID edges without reading any payloads. */
@@ -687,70 +572,7 @@ export class AssetRegistry {
     relativePath: string,
     result: ImportResult,
   ): Promise<IndexedAsset> {
-    return this.withCreationWrite(() => this.createAssetUnlocked(rootId, relativePath, result));
-  }
-
-  private async createAssetUnlocked(rootId: string, relativePath: string, result: ImportResult): Promise<IndexedAsset> {
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    const path = joinRootPath(root, relativePath);
-    const conflict = `Asset already exists: ${path}`;
-    return this.withReservedPath(path, conflict, () => this.writeCreatedAsset(root, path, result, conflict));
-  }
-
-  private async writeCreatedAsset(root: ContentRoot, path: string, result: ImportResult, conflict: string): Promise<IndexedAsset> {
-    const storage = this.storageOf(root);
-    if (await storage.exists(path)) throw new Error(conflict);
-    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    if (dir) {
-      await storage.mkdir(dir, true);
-    }
-
-    const body = result.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-    const dependencyPayload = body
-      ? JSON.parse(textDecoder.decode(body.data)) as Record<string, unknown>
-      : result.payload;
-    const classes: AssetDependencyClass[] = this.list()
-      .filter((asset) => asset.header.type === "Class")
-      .map((asset) => ({
-        guid: asset.header.guid,
-        classId: typeof asset.header.payload.classId === "string" ? asset.header.payload.classId
-          : classIdForAssetPath(asset.path),
-        parentClassId: asset.header.parentClass,
-        requiredVariableNames: asset.header.requiredVariableNames,
-        members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]
-          : Array.isArray(asset.header.payload.variables) ? asset.header.payload.variables.map((variable) => ({ ...(variable as Record<string, unknown>), kind: "variable" })) as unknown as AssetDependencyClass["members"] : undefined,
-      }));
-    const dependencies = collectAssetDependencyMetadata(result.type, dependencyPayload, {
-      dependencies: result.dependencies, parentClass: result.parentClass, classes,
-    });
-    if (result.dependencyMetadataVersion === dependencies.dependencyMetadataVersion && result.requiredVariableNames) {
-      dependencies.requiredVariableNames = [...new Set([...(dependencies.requiredVariableNames ?? []), ...result.requiredVariableNames])].sort();
-    }
-    if (result.dependencyMetadataVersion === dependencies.dependencyMetadataVersion && result.requiredDependencies) {
-      dependencies.requiredDependencies = [...new Set([...dependencies.requiredDependencies, ...result.requiredDependencies])].sort();
-      dependencies.dependencies = [...new Set([...dependencies.dependencies, ...result.requiredDependencies])].sort();
-    }
-
-    const bytes = await encodeHasset({
-      header: {
-        guid: result.guid,
-        type: result.type,
-        name: result.name,
-        engineVersion: ENGINE_VERSION,
-        version: result.version,
-        mode: "thin",
-        ...dependencies,
-        parentClass: result.parentClass ?? null,
-        payload: result.payload,
-      },
-      chunks: result.chunks,
-      writeBlob: (sha256, data) => this.blobsOf(root).writeBlob(sha256, data),
-    });
-    await storage.writeBinary(path, bytes);
-    const header = readHassetHeader(bytes);
-    const mtime = await this.statMtime(storage, path);
-    return this.indexCreatedHeader(root.id, path, header, mtime);
+    return this.withCreationWrite(() => createAssetUnlocked(this.host, rootId, relativePath, result));
   }
 
   /** Re-read a .hasset header after an in-place save so catalog fields stay current. */
@@ -787,69 +609,11 @@ export class AssetRegistry {
   }
 
   async deleteFolder(rootId: string, relativeFolder: string): Promise<void> {
-    return this.withFolderWrite(() => this.deleteFolderUnlocked(rootId, relativeFolder));
-  }
-
-  private async deleteFolderUnlocked(rootId: string, relativeFolder: string): Promise<void> {
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    const storage = this.storageOf(root);
-    const folderPath = joinRootPath(root, relativeFolder);
-    // The recursive remove below would also delete files the index does not show.
-    const hidden = [...this.guidConflicts.values()].find((conflict) =>
-      conflict.rootId === rootId && isWithinFolder(conflict.path, folderPath));
-    if (hidden) {
-      throw new Error(`Cannot delete ${folderPath}: it holds ${hidden.path}, which is not listed because ${hidden.indexedPath} has the same asset id. Remove that file outside the editor first.`);
-    }
-    for (const asset of [...this.byGuid.values()]) {
-      if (asset.rootId === rootId && isWithinFolder(asset.path, folderPath)) {
-        await this.deleteAssetUnlocked(asset.header.guid);
-      }
-    }
-    await storage.remove(folderPath);
-    for (const known of [...this.knownFolders]) {
-      if (isWithinFolder(known, folderPath)) {
-        this.removeKnownFolder(known);
-      }
-    }
+    return this.withFolderWrite(() => deleteFolderUnlocked(this.host, rootId, relativeFolder));
   }
 
   async createFolder(rootId: string, relativeFolder: string): Promise<void> {
-    return this.withCreationWrite(() => this.createFolderUnlocked(rootId, relativeFolder));
-  }
-
-  private async createFolderUnlocked(rootId: string, relativeFolder: string): Promise<void> {
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    const folderPath = joinRootPath(root, relativeFolder);
-    if (!relativeFolder.replace(/^\/+|\/+$/g, "")) {
-      throw new Error("Cannot create the assets root folder");
-    }
-    const conflict = `Folder already exists: ${folderPath}`;
-    if (this.knownFolders.has(folderPath)) throw new Error(conflict);
-    return this.withReservedPath(folderPath, conflict, () => this.writeCreatedFolder(root, folderPath, conflict));
-  }
-
-  private async writeCreatedFolder(root: ContentRoot, folderPath: string, conflict: string): Promise<void> {
-    const storage = this.storageOf(root);
-    if (await storage.exists(folderPath)) throw new Error(conflict);
-    await storage.mkdir(folderPath, true);
-    await storage.writeText(
-      `${folderPath}/${FOLDER_MARKER_NAME}`,
-      "# Haptic folder marker\n",
-    );
-    this.addKnownFolder(folderPath);
-    // Ensure parent folders are visible even without their own markers.
-    let parent = folderPath.includes("/")
-      ? folderPath.slice(0, folderPath.lastIndexOf("/"))
-      : "";
-    while (parent && parent.startsWith(root.pathPrefix)) {
-      this.addKnownFolder(parent);
-      if (parent === root.pathPrefix) break;
-      parent = parent.includes("/")
-        ? parent.slice(0, parent.lastIndexOf("/"))
-        : "";
-    }
+    return this.withCreationWrite(() => createFolderUnlocked(this.host, rootId, relativeFolder));
   }
 
   async moveAsset(
@@ -857,69 +621,7 @@ export class AssetRegistry {
     rootId: string,
     newRelativePath: string,
   ): Promise<IndexedAsset> {
-    return this.withAssetWrite(guid, () => this.moveAssetUnlocked(guid, rootId, newRelativePath));
-  }
-
-  private async moveAssetUnlocked(guid: string, rootId: string, newRelativePath: string): Promise<IndexedAsset> {
-    const asset = this.byGuid.get(guid);
-    if (!asset) throw new Error(`Unknown asset ${guid}`);
-    if (asset.rootId !== rootId) return this.moveAssetAcrossRoots(asset, rootId, newRelativePath);
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    const storage = this.storageOf(root);
-    const newPath = joinRootPath(root, newRelativePath);
-    if (newPath === asset.path) return asset;
-    return this.withReservedPath(newPath, `Target path already exists: ${newPath}`, async () => {
-      const bytes = await storage.readBinary(asset.path);
-      await moveStorageFile(storage, asset.path, newPath, bytes);
-      // Keep inbound refs: guid identity is unchanged, only the storage path moves.
-      if (this.byPath.get(asset.path) === asset) {
-        this.byPath.delete(asset.path);
-      }
-      // A locator names the old path; the next read resolves the moved file.
-      const moved: IndexedAsset = { ...asset, path: newPath, locator: undefined };
-      this.byGuid.set(guid, moved);
-      this.byPath.set(newPath, moved);
-      this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
-      this.changed();
-      return moved;
-    });
-  }
-
-  /**
-   * Move a file into another writable content root, keeping its guid so every
-   * reference to it still resolves. The bytes are copied as they are; first
-   * every chunk is verified and each blob chunk is written to the target
-   * root's blob store, so no blob locator dangles there. Then the copy is
-   * written, the source removed and the index entry moved to the new root.
-   * Blobs stay in the source store, where other assets may share them.
-   */
-  private async moveAssetAcrossRoots(asset: IndexedAsset, rootId: string, newRelativePath: string): Promise<IndexedAsset> {
-    if (asset.placeholder) throw new Error(`A missing asset cannot be moved: ${asset.header.guid}`);
-    const source = this.getRootOrThrow(asset.rootId);
-    const target = this.getRootOrThrow(rootId);
-    // A move removes the source file, so both roots must take writes.
-    this.assertWritable(source);
-    this.assertWritable(target);
-    const newPath = joinRootPath(target, newRelativePath);
-    const conflict = `Target path already exists: ${newPath}`;
-    return this.withReservedPath(newPath, conflict, async () => {
-      const sourceStorage = this.storageOf(source);
-      const targetStorage = this.storageOf(target);
-      if (await targetStorage.exists(newPath)) throw new Error(conflict);
-      const bytes = await sourceStorage.readBinary(asset.path);
-      const header = await copyBlobChunks(bytes, this.blobsOf(source), this.blobsOf(target));
-      if (header.guid !== asset.header.guid) {
-        throw new SourceRevisionChangedError(`Asset changed on disk before it could be moved: ${asset.path}`);
-      }
-      const dir = parentPath(newPath);
-      if (dir) await targetStorage.mkdir(dir, true);
-      await targetStorage.writeBinary(newPath, bytes);
-      // If removal fails, the complete copy remains for recovery.
-      await sourceStorage.remove(asset.path);
-      this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
-      return this.indexHeader(target.id, newPath, header, false, await this.statMtime(targetStorage, newPath));
-    });
+    return this.withAssetWrite(guid, () => moveAssetUnlocked(this.host, guid, rootId, newRelativePath));
   }
 
   /** Keep recorded guid conflicts pointing at files a move relocated. */
@@ -933,54 +635,7 @@ export class AssetRegistry {
   }
 
   async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
-    return this.withAssetWrite(guid, () => this.renameAssetUnlocked(guid, newName));
-  }
-
-  private async renameAssetUnlocked(guid: string, newName: string): Promise<IndexedAsset> {
-    const asset = this.byGuid.get(guid);
-    if (!asset) throw new Error(`Unknown asset ${guid}`);
-    const root = this.roots.get(asset.rootId);
-    if (root) this.assertWritable(root);
-    const safe = newName.trim();
-    const newPath = renamedAssetPath(asset.path, safe);
-    if (newPath === asset.path) return this.rewriteRenamedAsset(asset, safe, newPath);
-    return this.withReservedPath(newPath, `Target path already exists: ${newPath}`, () => this.rewriteRenamedAsset(asset, safe, newPath));
-  }
-
-  private async rewriteRenamedAsset(asset: IndexedAsset, safe: string, newPath: string): Promise<IndexedAsset> {
-    const storage = this.storageForAsset(asset);
-    const blobs = this.blobsForAsset(asset);
-    const fileBytes = await storage.readBinary(asset.path);
-    const decoded = await decodeHasset(fileBytes, (sha256) =>
-      blobs.readBlob(sha256),
-    );
-    const chunksById = new Map<string, ChunkInput>();
-    for (const entry of decoded.header.chunks) {
-      const data = decoded.chunks.get(entry.id);
-      if (data) {
-        chunksById.set(entry.id, {
-          id: entry.id,
-          kind: entry.kind,
-          mime: entry.mime,
-          data,
-        });
-      }
-    }
-    const { chunks, ...headerRest } = decoded.header;
-    void chunks;
-    stampDocumentChunkName(chunksById, safe);
-    const encoded = await encodeHasset({
-      header: { ...headerRest, name: safe },
-      chunks: [...chunksById.values()],
-      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
-    });
-    if (newPath !== asset.path) {
-      await moveStorageFile(storage, asset.path, newPath, fileBytes, encoded);
-      this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
-      return this.indexHeader(asset.rootId, newPath, readHassetHeader(encoded), false, await this.statMtime(storage, newPath));
-    }
-    await storage.writeBinary(asset.path, encoded);
-    return this.indexHeader(asset.rootId, asset.path, readHassetHeader(encoded), false, await this.statMtime(storage, asset.path));
+    return this.withAssetWrite(guid, () => renameAssetUnlocked(this.host, guid, newName));
   }
 
   /** With `signal`, an abort before the copy is written throws and writes nothing. */
@@ -991,104 +646,9 @@ export class AssetRegistry {
     options: AssetCopyOptions = {},
   ): Promise<IndexedAsset> {
     options.signal?.throwIfAborted();
-    const duplicate = await this.withCreationWrite(() => this.duplicateAssetUnlocked(guid, rootId, targetFolderRelative, options.signal));
-    await this.alignCreatedTextures([duplicate]);
+    const duplicate = await this.withCreationWrite(() => duplicateAssetUnlocked(this.host, guid, rootId, targetFolderRelative, options.signal));
+    await alignCreatedTextures(this.host, [duplicate]);
     return duplicate;
-  }
-
-  private async duplicateAssetUnlocked(guid: string, rootId: string, targetFolderRelative: string, signal?: AbortSignal): Promise<IndexedAsset> {
-    signal?.throwIfAborted();
-    const asset = this.byGuid.get(guid);
-    if (!asset) throw new Error(`Unknown asset ${guid}`);
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    const sourceStorage = this.storageForAsset(asset);
-    const sourceBlobs = this.blobsForAsset(asset);
-    const destStorage = this.storageOf(root);
-    const destBlobs = this.blobsOf(root);
-    const fileBytes = await sourceStorage.readBinary(asset.path);
-    const decoded = await decodeHasset(fileBytes, (sha256) =>
-      sourceBlobs.readBlob(sha256),
-    );
-    signal?.throwIfAborted();
-    const chunksById = new Map<string, ChunkInput>();
-    for (const entry of decoded.header.chunks) {
-      const data = decoded.chunks.get(entry.id);
-      if (data) {
-        chunksById.set(entry.id, {
-          id: entry.id,
-          kind: entry.kind,
-          mime: entry.mime,
-          data,
-        });
-      }
-    }
-    const newGuid = newAssetGuid();
-    const fileName = asset.path.includes("/")
-      ? asset.path.slice(asset.path.lastIndexOf("/") + 1)
-      : asset.path;
-    const suffix = assetFileSuffix(fileName);
-    const stemSource = sanitizeFileName(
-      stripAssetFileSuffix(fileName) || decoded.header.name || "asset",
-    );
-    const targetFolderPath = joinRootPath(root, targetFolderRelative);
-    const siblingStems: string[] = [];
-    for (const other of this.byPath.values()) {
-      if (other.rootId !== rootId) continue;
-      const parent = other.path.includes("/")
-        ? other.path.slice(0, other.path.lastIndexOf("/"))
-        : "";
-      if (parent !== targetFolderPath) continue;
-      const otherFile = other.path.includes("/")
-        ? other.path.slice(other.path.lastIndexOf("/") + 1)
-        : other.path;
-      siblingStems.push(stripAssetFileSuffix(otherFile));
-    }
-    // A Class's file stem is its class id, which no other Class in any root may use.
-    const classIds = decoded.header.type === "Class"
-      ? new Set([...this.byGuid.values()]
-        .filter((other) => !other.placeholder && other.header.type === "Class")
-        .map((other) => classIdForAssetPath(other.path)))
-      : null;
-    // Pick and claim the copy's name together, skipping names another write
-    // holds and unindexed files already on disk.
-    let uniqueName: string;
-    let candidate: string;
-    let release: () => void;
-    for (;;) {
-      uniqueName = nextCopyName(stemSource, siblingStems);
-      candidate = joinRootPath(root, joinRelative(targetFolderRelative, `${uniqueName}${suffix}`));
-      siblingStems.push(uniqueName);
-      if (this.isPathReserved(candidate) || this.byPath.has(candidate)) continue;
-      if (classIds?.has(classIdForAssetPath(candidate))) continue;
-      release = this.reservePath(candidate, `Asset already exists: ${candidate}`);
-      let free = false;
-      try {
-        free = !(await destStorage.exists(candidate));
-      } finally {
-        if (!free) release();
-      }
-      if (free) break;
-    }
-    try {
-      const { chunks, ...headerRest } = decoded.header;
-      void chunks;
-      stampDocumentChunkName(chunksById, uniqueName);
-      const encoded = await encodeHasset({
-        header: { ...headerRest, guid: newGuid, name: uniqueName },
-        chunks: [...chunksById.values()],
-        writeBlob: (sha256, data) => destBlobs.writeBlob(sha256, data),
-      });
-      signal?.throwIfAborted();
-      const dir = candidate.includes("/")
-        ? candidate.slice(0, candidate.lastIndexOf("/"))
-        : "";
-      if (dir) await destStorage.mkdir(dir, true);
-      await destStorage.writeBinary(candidate, encoded);
-      return this.indexCreatedHeader(rootId, candidate, readHassetHeader(encoded), await this.statMtime(destStorage, candidate));
-    } finally {
-      release();
-    }
   }
 
   /** Copy into a folder (same as duplicate with an explicit destination folder). */
@@ -1105,208 +665,13 @@ export class AssetRegistry {
    * With `signal`, an abort stops the copy between files and deletes the
    * partly written copy before throwing, so a canceled copy leaves nothing.
    */
-  async copyFolder(
+  copyFolder(
     rootId: string,
     relativeFolder: string,
     targetParentRelative: string,
     options: AssetCopyOptions = {},
   ): Promise<string> {
-    const { signal, onProgress } = options;
-    signal?.throwIfAborted();
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    const storage = this.storageOf(root);
-    const fromPath = joinRootPath(root, relativeFolder);
-    if (
-      !this.knownFolders.has(fromPath) &&
-      !(await storage.exists(fromPath))
-    ) {
-      throw new Error(`Unknown folder ${relativeFolder}`);
-    }
-    const folderName = relativeFolder.includes("/")
-      ? relativeFolder.slice(relativeFolder.lastIndexOf("/") + 1)
-      : relativeFolder;
-    const destParentPath = joinRootPath(root, targetParentRelative);
-    const siblingNames: string[] = [];
-    for (const folder of this.knownFolders) {
-      const parent = folder.includes("/")
-        ? folder.slice(0, folder.lastIndexOf("/"))
-        : "";
-      if (parent === destParentPath) {
-        siblingNames.push(folder.slice(folder.lastIndexOf("/") + 1));
-      }
-    }
-    if (isWithinFolder(destParentPath, fromPath)) {
-      throw new Error("Cannot copy a folder into itself");
-    }
-    // Pick and claim the copy's name together, skipping names another copy
-    // holds and folders on disk the index does not know (made outside the
-    // editor since the scan), as Duplicate does for files.
-    let destRelative: string;
-    let destPath: string;
-    let release: () => void;
-    for (;;) {
-      const uniqueName = nextCopyName(folderName, siblingNames);
-      siblingNames.push(uniqueName);
-      destRelative = joinRelative(targetParentRelative, uniqueName);
-      destPath = joinRootPath(root, destRelative);
-      if (this.isPathReserved(destPath) || this.knownFolders.has(destPath)) continue;
-      release = this.reservePath(destPath, `Folder already exists: ${destPath}`);
-      let free = false;
-      try {
-        free = !(await storage.exists(destPath));
-      } finally {
-        if (!free) release();
-      }
-      if (free) break;
-    }
-    try {
-      const conflict = `Folder already exists: ${destPath}`;
-      await this.withCreationWrite(() => this.writeCreatedFolder(root, destPath, conflict));
-    } finally {
-      release();
-    }
-
-    const assets = [...this.byGuid.values()].filter(
-      (asset) =>
-        asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
-    );
-    try {
-      const nested = [...this.knownFolders].filter(
-        (folder) => folder !== fromPath && isWithinFolder(folder, fromPath),
-      );
-      nested.sort((a, b) => a.length - b.length);
-      for (const folder of nested) {
-        signal?.throwIfAborted();
-        const suffix = folder.slice(fromPath.length + 1);
-        await this.createFolder(rootId, joinRelative(destRelative, suffix));
-      }
-
-      const copies: Array<{ source: IndexedAsset; copy: IndexedAsset }> = [];
-      onProgress?.(0, assets.length);
-      for (const asset of assets) {
-        const parent = asset.path.includes("/")
-          ? asset.path.slice(0, asset.path.lastIndexOf("/"))
-          : "";
-        const suffix =
-          parent === fromPath ? "" : parent.slice(fromPath.length + 1);
-        const destFolder = suffix
-          ? joinRelative(destRelative, suffix)
-          : destRelative;
-        const copy = await this.withCreationWrite(() => this.duplicateAssetUnlocked(asset.header.guid, rootId, destFolder, signal));
-        copies.push({ source: asset, copy });
-        onProgress?.(copies.length, assets.length);
-      }
-      signal?.throwIfAborted();
-      const remapped = await this.remapFolderCopyReferences(copies);
-      // After the remap, so a copied Sprite or Tileset already samples its copied Texture.
-      await this.alignCreatedTextures(remapped);
-    } catch (error) {
-      if (signal?.aborted) await this.deleteFolder(rootId, destRelative);
-      throw error;
-    }
-    return destRelative;
-  }
-
-  /**
-   * Point each folder copy's references to another asset in the copied folder
-   * at that asset's copy (guids, and Class ids, which follow the copies' file
-   * stems), as a `.hasset` import does for colliding guids. References to
-   * assets outside the folder are left as they were.
-   */
-  private async remapFolderCopyReferences(
-    copies: ReadonlyArray<{ source: IndexedAsset; copy: IndexedAsset }>,
-  ): Promise<IndexedAsset[]> {
-    const guids = new Map(copies.map(({ source, copy }) => [source.header.guid, copy.header.guid]));
-    const classes: ClassAssetReplacement[] = copies
-      .filter(({ source }) => source.header.type === "Class")
-      .map(({ source, copy }) => ({
-        guid: source.header.guid,
-        classId: classIdForAssetPath(source.path),
-        replacement: { guid: copy.header.guid, classId: classIdForAssetPath(copy.path) },
-      }));
-    const classIds = new Map(classes.map((entry) => [entry.classId, entry.replacement!.classId]));
-    // Definitions keep a header snapshot of their fields; the copies' Data
-    // values name originals until remapped and copies after.
-    const definitionFields: DataDefinitionFieldsResolver = (guid) => {
-      const header = this.byGuid.get(guid)?.header;
-      return header && (header.type === "DataDefinition" || header.type === "Structure") && Array.isArray(header.payload.fields)
-        ? header.payload.fields : undefined;
-    };
-    const remapped: IndexedAsset[] = [];
-    for (const { copy } of copies) {
-      const guid = copy.header.guid;
-      remapped.push(await this.withAssetWrite(guid, () => this.rewriteCopiedReferences(guid, guids, classes, classIds, definitionFields)));
-    }
-    return remapped;
-  }
-
-  private async rewriteCopiedReferences(
-    guid: string,
-    guids: ReadonlyMap<string, string>,
-    classes: readonly ClassAssetReplacement[],
-    classIds: ReadonlyMap<string, string>,
-    definitionFields: DataDefinitionFieldsResolver,
-  ): Promise<IndexedAsset> {
-    const asset = this.byGuid.get(guid);
-    if (!asset) throw new Error(`Unknown asset ${guid}`);
-    const storage = this.storageForAsset(asset);
-    const blobs = this.blobsForAsset(asset);
-    const decoded = await decodeHasset(await storage.readBinary(asset.path), (sha256) => blobs.readBlob(sha256));
-    const { chunks: entries, ...header } = decoded.header;
-    const chunks: ChunkInput[] = entries.flatMap((entry) => {
-      const data = decoded.chunks.get(entry.id);
-      return data ? [{ id: entry.id, kind: entry.kind, mime: entry.mime, data }] : [];
-    });
-    let result: ImportResult;
-    try {
-      [result] = applyImportGuidRemap([{
-        type: header.type,
-        name: header.name,
-        guid: header.guid,
-        version: header.version,
-        dependencies: header.dependencies,
-        requiredDependencies: header.requiredDependencies,
-        classReferences: header.classReferences,
-        requiredClassReferences: header.requiredClassReferences,
-        payload: header.payload,
-        chunks,
-      }], guids, definitionFields) as [ImportResult];
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`Copied ${asset.path}, but could not point its references at the folder's copies: ${reason}`, { cause: error });
-    }
-    const replaceClasses = <T>(value: T): T =>
-      classes.length > 0 ? replaceClassAssetReferences(value, classes, definitionFields).value : value;
-    const classIdsOf = (entries: readonly string[] | undefined) => entries?.map((entry) => classIds.get(entry) ?? entry);
-    const next: Omit<HassetHeader, "chunks"> = {
-      ...header,
-      dependencies: result.dependencies,
-      ...(result.requiredDependencies ? { requiredDependencies: result.requiredDependencies } : {}),
-      ...(result.classReferences ? { classReferences: classIdsOf(result.classReferences) } : {}),
-      ...(result.requiredClassReferences ? { requiredClassReferences: classIdsOf(result.requiredClassReferences) } : {}),
-      ...(header.parentClass != null ? { parentClass: replaceClasses({ parentClass: header.parentClass }).parentClass } : {}),
-      payload: replaceClasses(result.payload),
-    };
-    let changed = stableStringify(next) !== stableStringify(header);
-    const nextChunks = result.chunks.map((chunk, index) => {
-      if (chunk.id !== DOCUMENT_CHUNK_ID) return chunk;
-      const original = chunks[index]!;
-      const decode = (data: Uint8Array): unknown => JSON.parse(textDecoder.decode(data));
-      const document = replaceClasses(decode(chunk.data));
-      // Keep the copied bytes when nothing in the document named the folder's assets.
-      if (stableStringify(document) === stableStringify(decode(original.data))) return original;
-      changed = true;
-      return { ...chunk, data: textEncoder.encode(JSON.stringify(document)) };
-    });
-    if (!changed) return asset;
-    const encoded = await encodeHasset({
-      header: next,
-      chunks: nextChunks,
-      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
-    });
-    await storage.writeBinary(asset.path, encoded);
-    return this.indexHeader(asset.rootId, asset.path, readHassetHeader(encoded), false, await this.statMtime(storage, asset.path));
+    return copyFolder(this.host, rootId, relativeFolder, targetParentRelative, options);
   }
 
   async duplicateFolder(
@@ -1331,175 +696,17 @@ export class AssetRegistry {
     newName?: string,
     targetRootId = rootId,
   ): Promise<void> {
-    return this.withFolderWrite(() => this.moveFolderUnlocked(rootId, relativeFolder, newParentRelative, newName, targetRootId));
+    return this.withFolderWrite(() => moveFolderUnlocked(this.host, rootId, relativeFolder, newParentRelative, newName, targetRootId));
   }
 
-  private async moveFolderUnlocked(rootId: string, relativeFolder: string, newParentRelative: string, newName: string | undefined, targetRootId: string): Promise<void> {
-    const root = this.getRootOrThrow(rootId);
-    this.assertWritable(root);
-    if (targetRootId !== rootId) {
-      return this.moveFolderAcrossRoots(root, this.getRootOrThrow(targetRootId), relativeFolder, newParentRelative, newName);
-    }
-    const storage = this.storageOf(root);
-    const fromPath = joinRootPath(root, relativeFolder);
-    const currentName = relativeFolder.includes("/")
-      ? relativeFolder.slice(relativeFolder.lastIndexOf("/") + 1)
-      : relativeFolder;
-    const folderName = newName?.trim() || currentName;
-    const toRelative = joinRelative(newParentRelative, folderName);
-    const toPath = joinRootPath(root, toRelative);
-    if (fromPath === toPath) return;
-    if (isWithinFolder(toPath, fromPath)) {
-      throw new Error("Cannot move a folder into itself");
-    }
-
-    const assets = [...this.byGuid.values()].filter(
-      (asset) =>
-        asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
-    );
-    const folders = await moveStorageTree(storage, fromPath, toPath);
-    const relocate = (path: string) => isWithinFolder(path, fromPath) ? `${toPath}${path.slice(fromPath.length)}` : path;
-    for (const asset of assets) {
-      const path = relocate(asset.path);
-      this.byPath.delete(asset.path);
-      // A locator names the old path; the next read resolves the moved file.
-      const moved = { ...asset, path, locator: undefined };
-      this.byGuid.set(asset.header.guid, moved);
-      this.byPath.set(path, moved);
-    }
-    this.repathGuidConflicts(relocate);
-    if (assets.length > 0) this.changed();
-    for (const folder of [...this.knownFolders]) {
-      if (isWithinFolder(folder, fromPath)) this.removeKnownFolder(folder);
-    }
-    for (const folder of folders) this.addKnownFolder(folder ? `${toPath}/${folder}` : toPath);
-  }
-
-  /**
-   * A folder move into another root: the blob chunks of every listed asset
-   * in the folder are verified and written to the target root's blob store,
-   * then the whole tree (markers and unlisted files included) is copied and
-   * the source removed. Guids stay unchanged. A failed copy removes the
-   * partial destination and leaves the source as it was.
-   */
-  private async moveFolderAcrossRoots(source: ContentRoot, target: ContentRoot, relativeFolder: string, newParentRelative: string, newName?: string): Promise<void> {
-    this.assertWritable(target);
-    const relative = relativeFolder.replace(/^\/+|\/+$/g, "");
-    if (!relative) throw new Error("Cannot move the assets root folder");
-    const fromPath = joinRootPath(source, relative);
-    const folderName = newName?.trim() || relative.slice(relative.lastIndexOf("/") + 1);
-    const toPath = joinRootPath(target, joinRelative(newParentRelative, folderName));
-    // The copy would carry an unlisted file whose guid another file holds.
-    const hidden = [...this.guidConflicts.values()].find((conflict) =>
-      conflict.rootId === source.id && isWithinFolder(conflict.path, fromPath));
-    if (hidden) {
-      throw new Error(`Cannot move ${fromPath} to another content root: it holds ${hidden.path}, which is not listed because ${hidden.indexedPath} has the same asset id. Remove that file outside the editor first.`);
-    }
-    const sourceStorage = this.storageOf(source);
-    const targetStorage = this.storageOf(target);
-    if (!this.knownFolders.has(fromPath) && !(await sourceStorage.exists(fromPath))) {
-      throw new Error(`Unknown folder ${relativeFolder}`);
-    }
-    if (this.isPathReserved(toPath) || this.knownFolders.has(toPath) || await targetStorage.exists(toPath)) {
-      throw new Error(`Target path already exists: ${toPath}`);
-    }
-    const assets = [...this.byGuid.values()].filter(
-      (asset) => asset.rootId === source.id && isWithinFolder(asset.path, fromPath),
-    );
-    const sourceBlobs = this.blobsOf(source);
-    const targetBlobs = this.blobsOf(target);
-    const headers = new Map<string, HassetHeader>();
-    for (const asset of assets) {
-      const header = await copyBlobChunks(await sourceStorage.readBinary(asset.path), sourceBlobs, targetBlobs);
-      if (header.guid !== asset.header.guid) {
-        throw new SourceRevisionChangedError(`Asset changed on disk before it could be moved: ${asset.path}`);
-      }
-      headers.set(asset.path, header);
-    }
-    let folders: string[];
-    try {
-      folders = await copyStorageTree(sourceStorage, fromPath, toPath, targetStorage);
-    } catch (error) {
-      try { await targetStorage.remove(toPath); } catch { /* The source is intact; a leftover copy is only clutter. */ }
-      throw error;
-    }
-    // If removal fails, the complete copy remains for recovery.
-    await sourceStorage.remove(fromPath);
-    const relocate = (path: string) => isWithinFolder(path, fromPath) ? `${toPath}${path.slice(fromPath.length)}` : path;
-    for (const asset of assets) {
-      const path = relocate(asset.path);
-      this.indexHeader(target.id, path, headers.get(asset.path)!, false, await this.statMtime(targetStorage, path));
-    }
-    this.repathGuidConflicts(relocate);
-    for (const folder of [...this.knownFolders]) {
-      if (isWithinFolder(folder, fromPath)) this.removeKnownFolder(folder);
-    }
-    for (const folder of folders) this.addKnownFolder(folder ? `${toPath}/${folder}` : toPath);
-  }
-
-  async importFile(
+  importFile(
     rootId: string,
     folderRelative: string,
     fileName: string,
     bytes: Uint8Array,
-    extras?: AssetImportControl & {
-      modelImportScale?: number;
-      sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
-      attachToGuid?: string;
-      /** Largest cube face for an `.hdr` panorama (128, 256 or 512). */
-      hdrFaceSize?: number;
-    },
+    extras?: ImportFileExtras,
   ): Promise<IndexedAsset[]> {
-    const signal = extras?.signal;
-    signal?.throwIfAborted();
-    this.assertWritable(this.getRootOrThrow(rootId));
-    const options: ImportOptions = {
-      fileName,
-      existingGuids: new Set(this.byGuid.keys()),
-      fontGuidsByName: this.fontGuidsByName(rootId, folderRelative),
-      modelImportScale: extras?.modelImportScale,
-      sidecars: extras?.sidecars,
-      attachToGuid: extras?.attachToGuid,
-      hdrFaceSize: extras?.hdrFaceSize,
-      signal,
-      onProgress: extras?.onProgress,
-    };
-    const rawResults = await this.runImport(fileName, bytes, options);
-    // Nothing is written for an import cancelled during its conversion.
-    signal?.throwIfAborted();
-    const results = remapImportResultGuids(rawResults, options.existingGuids).map(
-      (result) =>
-        extras?.attachToGuid
-          ? { ...result, attachToGuid: extras.attachToGuid, guid: extras.attachToGuid }
-          : result,
-    );
-
-    const created: Array<{ asset: IndexedAsset; result: ImportResult }> = [];
-    try {
-      for (const result of results) {
-        if (result.attachToGuid) {
-          await this.attachToExistingAsset(result.attachToGuid, result);
-          continue;
-        }
-        const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.hasset`);
-        created.push({ asset: await this.createAsset(rootId, relativePath, result), result });
-        signal?.throwIfAborted();
-      }
-    } catch (error) {
-      // A file imports whole or not at all: a cancel or failure partway removes its assets.
-      for (const { asset } of created.reverse()) {
-        try { await this.deleteAsset(asset.header.guid); } catch { /* Already gone or unwritable; the import still fails. */ }
-      }
-      throw error;
-    }
-    for (const { asset, result } of created) {
-      await this.maybeWriteThumbnail(asset, result);
-      await this.maybeEnqueueTextureEncode(asset);
-    }
-    const assets = created.map(({ asset }) => asset);
-    // After every result is indexed, so a bundled Tileset counts.
-    await this.alignCreatedTextures(assets);
-    return assets;
+    return importFile(this.host, rootId, folderRelative, fileName, bytes, extras);
   }
 
   /**
@@ -1508,95 +715,25 @@ export class AssetRegistry {
    * Texture is read-only, gone, or its `.hdr` changed meanwhile). Throws when
    * it keeps no `.hdr` (imported before sources were kept, or from DDS/ENV).
    */
-  async reconvertHdrEnvironment(
+  reconvertHdrEnvironment(
     guid: string,
     faceSize: number,
     convert: HdrEnvironmentConverter,
     control: AssetImportControl = {},
   ): Promise<boolean> {
-    const { signal, onProgress } = control;
-    signal?.throwIfAborted();
-    const asset = this.byGuid.get(guid);
-    if (!asset || asset.placeholder || asset.header.type !== "Texture" || !isEnvironmentTexturePayload(asset.header.payload)) {
-      throw new Error("Face Size applies only to environment cube Textures.");
-    }
-    this.assertWritable(this.getRootOrThrow(asset.rootId));
-    const sourceEntry = asset.header.chunks.find((chunk) => chunk.id === HDR_SOURCE_CHUNK_ID);
-    if (!sourceEntry) throw new Error("This Texture does not keep its .hdr file. Import the .hdr again to change its Face Size.");
-    const size = normalizeHdrEnvironmentFaceSize(faceSize);
-    const source = await this.readChunk(guid, sourceEntry.id, undefined, { signal });
-    const dds = await convert(source, { faceSize: size, signal, onProgress });
-    signal?.throwIfAborted();
-    const info = readEnvironmentTextureInfo(dds);
-    const sourceMime = asset.header.chunks.find((chunk) => chunk.id === "source")?.mime ?? "image/vnd-ms.dds";
-    return this.withAssetWrite(guid, () => this.rewriteTexture(guid, async (header, chunks, current) => {
-      // Converted from this `.hdr` only: a newer import or copy over the file keeps its own cube.
-      if (current.chunks.find((chunk) => chunk.id === HDR_SOURCE_CHUNK_ID)?.sha256 !== sourceEntry.sha256) return null;
-      chunks.set("source", { id: "source", kind: "source", mime: sourceMime, data: dds });
-      header.payload = { ...header.payload, ...info, hdrFaceSize: size };
-      return { header, chunks };
-    }, () => signal?.throwIfAborted(), () => false));
-  }
-
-  /**
-   * A Texture created with an encode already committed (a `.hasset` import
-   * or a Duplicate) is a new file, not an older one teammates may share:
-   * align it now, as an image import pads its first encode, whatever the
-   * editor's rule for re-encoding older Textures in the background.
-   */
-  private async alignCreatedTextures(assets: readonly IndexedAsset[]): Promise<void> {
-    const guids = assets
-      .filter((asset) => asset.header.type === "Texture" && asset.header.payload.compressionState === "compressed")
-      .map((asset) => asset.header.guid);
-    if (guids.length > 0) await this.reconcileTextureAlignment({ guids });
-  }
-
-  private async maybeWriteThumbnail(
-    asset: IndexedAsset,
-    result: ImportResult,
-  ): Promise<void> {
-    if (!this.thumbnailWriter) return;
-    if (asset.header.type !== "Texture") return;
-    const pixels = result.chunks.find(
-      (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
-    );
-    if (!pixels?.data?.byteLength) return;
-    const thumb = await generateThumbnailBytes(
-      pixels.data,
-      DEFAULT_THUMBNAIL_MAX_EDGE,
-      pixels.mime,
-    );
-    if (!thumb) return;
-    await this.thumbnailWriter(asset.header.guid, thumb);
+    return reconvertHdrEnvironment(this.host, guid, faceSize, convert, control);
   }
 
   /**
    * `canWrite`, when set, is asked right before the write with the header of
    * the file on disk it would replace; false skips it.
    */
-  async setCompressionState(
+  setCompressionState(
     guid: string,
     state: TextureCompressionState,
     options?: { error?: string; canWrite?: (guid: string, current: HassetHeader) => boolean },
   ): Promise<void> {
-    await this.enqueueTextureWrite(guid, async () => {
-      // Header only: the chunk table is reused as it is, so the source pixels
-      // and encodes are neither read nor decoded for a state change.
-      await this.rewriteTexture(guid, async (header, chunks, current) => {
-        if (options?.canWrite && !options.canWrite(guid, current)) return null;
-        const payload: Record<string, unknown> = {
-          ...header.payload,
-          compressionState: state,
-        };
-        if (state === "encode_failed") {
-          if (options?.error) payload.encodeError = options.error;
-        } else {
-          delete payload.encodeError;
-        }
-        header.payload = payload;
-        return { header, chunks };
-      }, undefined, () => false);
-    });
+    return setCompressionState(this.host, guid, state, options);
   }
 
   /**
@@ -1615,106 +752,12 @@ export class AssetRegistry {
    * on disk now: `encodeJobMayWrite`).
    */
   commitCompressedTexture(result: EncodeJobResult): Promise<boolean> {
-    // Entered at once: a pass that awaits this Texture's writes reads the commit.
-    return this.withAssetWrite(result.assetGuid, async () => {
-      const chunkId =
-        result.chunkId ?? ktx2ChunkId(await encodeSettingsHash(result.settings));
-      const size = sniffKtx2Size(result.ktx2);
-      const blockAlign = result.settings.blockAlign;
-      const sha256 = await sha256Hex(result.ktx2);
-      const dropsOffGrid = isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid);
-      const isRetainedKtx2 = (chunk: { id: string; kind: string }) =>
-        chunk.id !== chunkId && (chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"));
-      // Only the older encodes are read, and only to size them; the source
-      // pixels and every other chunk are carried over from the chunk table.
-      return this.rewriteTexture(result.assetGuid, async (header, chunks, current) => {
-        // A background job commits only while its guard still allows it for
-        // the file it replaces, and only onto the source it encoded.
-        if (!encodeJobMayWrite(result, current)) return null;
-        if (dropsOffGrid) {
-          for (const [id, chunk] of chunks) {
-            if (!isRetainedKtx2(chunk) || isCarriedChunk(chunk)) continue;
-            const retained = sniffKtx2Size(chunk.data);
-            if (retained && !isOnBlockGrid(retained)) chunks.delete(id);
-          }
-        }
-        chunks.set(chunkId, {
-          id: chunkId,
-          kind: "ktx2",
-          mime: "image/ktx2",
-          data: result.ktx2,
-        });
-        const payload: Record<string, unknown> = {
-          ...header.payload,
-          compressionState: "compressed",
-          encodeWallMs: result.wallMs,
-          ktx2ChunkId: chunkId,
-        };
-        delete payload.encodeError;
-        delete payload.ktx2Width;
-        delete payload.ktx2Height;
-        delete payload.ktx2BlockAlign;
-        if (size) {
-          payload.ktx2Width = size.width;
-          payload.ktx2Height = size.height;
-        }
-        if (blockAlign && blockAlign > 1) payload.ktx2BlockAlign = blockAlign;
-        payload.ktx2Sha256 = sha256;
-        header.payload = payload;
-        return { header, chunks };
-      }, undefined, (entry) => dropsOffGrid && isRetainedKtx2(entry));
-    });
+    return commitCompressedTexture(this.host, result);
   }
 
   /** Explicit asset processing/build work. Gameplay only consumes the committed chunk. */
-  async prepareAreaEmission(guid: string, process: AreaEmissionProcessor, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<Uint8Array> {
-    if (!this.encodeQueue) throw new Error("Texture processing queue is unavailable.");
-    options.signal?.throwIfAborted();
-    options.onProgress?.({ phase: "queued", progress: 0 });
-    return this.encodeQueue.enqueueDerived(async (signal) => {
-      const asset = this.byGuid.get(guid);
-      if (!asset || asset.header.type !== "Texture" || isEnvironmentTexturePayload(asset.header.payload)) throw new Error("Area emission requires a raster Texture asset.");
-      const locator = await this.getAssetLocator(guid, { signal });
-      const header = this.byGuid.get(guid)!.header;
-      const sourceEntry = header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-      if (!sourceEntry) throw new Error("The Texture has no retained source pixels.");
-      const cached = currentAreaEmissionChunk(header);
-      if (cached) {
-        try {
-          const bytes = await this.loader.loadChunk(locator, cached, this.blobsForAsset(asset), this.storageForAsset(asset), { signal });
-          if (bytes) {
-            await decodeAreaEmission(bytes, sourceEntry.sha256);
-            signal.throwIfAborted();
-            return bytes;
-          }
-        } catch {
-          // This is an explicit processing request. Rebuild a corrupt derived
-          // representation from the retained source, never in gameplay.
-          signal.throwIfAborted();
-        }
-      }
-      this.assertWritable(this.getRootOrThrow(asset.rootId));
-      const source = await this.loader.loadChunk(locator, sourceEntry, this.blobsForAsset(asset), this.storageForAsset(asset), { signal });
-      if (!source || await sha256Hex(source) !== sourceEntry.sha256) throw new Error("The emission source is missing or corrupt.");
-      const bytes = await process({ source, sourceHash: sourceEntry.sha256, mime: sourceEntry.mime }, signal, options.onProgress);
-      signal.throwIfAborted();
-      await decodeAreaEmission(bytes, sourceEntry.sha256);
-      options.onProgress?.({ phase: "saving", progress: 1 });
-      await this.enqueueTextureWrite(guid, async () => {
-        if (!this.byGuid.has(guid)) throw new Error("The Texture was removed during emission processing.");
-        await this.rewriteTexture(guid, async (current, chunks) => {
-          signal.throwIfAborted();
-          const pixels = [...chunks.values()].find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-          // Every chunk is decoded here (no `load`), so none is carried without its bytes.
-          if (!pixels || isCarriedChunk(pixels) || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
-          for (const [id, chunk] of chunks) if (chunk.kind === AREA_EMISSION_CHUNK_KIND) chunks.delete(id);
-          const id = areaEmissionChunkId(sourceEntry.sha256);
-          chunks.set(id, { id, kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-haptic-area-emission", data: bytes });
-          return { header: current, chunks };
-        }, () => signal.throwIfAborted());
-      });
-      return bytes;
-    }, options.signal);
+  prepareAreaEmission(guid: string, process: AreaEmissionProcessor, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<Uint8Array> {
+    return prepareAreaEmission(this.host, guid, process, options);
   }
 
   /**
@@ -1731,63 +774,11 @@ export class AssetRegistry {
    * that last case), true when the Texture is queued, running or about to be
    * committed for this request.
    */
-  async retryTextureEncoding(
+  retryTextureEncoding(
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string; guard?: EncodeJobGuard },
   ): Promise<boolean> {
-    const asset = this.byGuid.get(guid);
-    if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
-      return false;
-    }
-    // A read-only root or plugin is never rewritten, not even to `pending`.
-    const root = this.roots.get(asset.rootId);
-    if (asset.placeholder || !root || root.readOnly) return false;
-    const state = asset.header.payload.compressionState;
-    const recoverable =
-      state === "encode_failed" ||
-      state === "fallback_uncompressed" ||
-      state === "pending" ||
-      state === "encoding";
-    if (!recoverable && options?.force !== true) {
-      return false;
-    }
-    const usage = options?.usage ?? String(asset.header.payload.usage ?? "albedo");
-    if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
-    const latest = this.byGuid.get(guid) ?? asset;
-    // A guarded job wrote no state, so a missing source leaves the Texture as it was.
-    const source = options?.guard ? await this.loadSourcePixels(latest) : await this.encodeSource(latest);
-    if (!source) return false;
-    const settings = this.encodeSettingsFor(latest, usage, {
-      sourceSize: sniffSourceImageSize(source.bytes),
-      ...(options?.maxDimension
-        ? { maxDimension: effectiveTextureMaxDimension(options.maxDimension, this.encodeSettings.maxDimension) }
-        : {}),
-    });
-    const chunkId = await textureEncodeChunkId(settings, usage);
-    const queue = this.encodeQueue;
-    if (!queue) return false;
-    const outcome = queue.enqueue({
-      assetGuid: guid,
-      source: source.bytes,
-      mime: source.mime,
-      settings,
-      chunkId,
-      usage,
-      sourceSha256: source.sha256,
-      ...(options?.guard ? { guard: options.guard } : {}),
-    });
-    if (outcome === "yielded") return false;
-    // The queue chose the job synchronously above, so an older encode it
-    // replaced can no longer commit over the pending mark written here (its
-    // commit is refused, or already landed ahead of this write in the
-    // Texture's write order). A request the Texture already has needs no mark
-    // of its own: its job wrote it, or is about to commit past it.
-    if (outcome !== "duplicate" && !options?.guard) {
-      await this.setCompressionState(guid, "pending", {
-        canWrite: (_guid, current) => current.payload.compressionState !== "pending",
-      });
-    }
-    return true;
+    return retryTextureEncoding(this.host, guid, options);
   }
 
   /**
@@ -1795,36 +786,8 @@ export class AssetRegistry {
    * whose `pending` / `encoding` job an earlier session left behind. A Texture
    * the queue already holds a job for is left to it (a remount rescans).
    */
-  async requeueUncompressedTextures(): Promise<number> {
-    const queue = this.encodeQueue;
-    if (!queue) return 0;
-    let count = 0;
-    for (const { header } of this.list({ type: "Texture" })) {
-      const asset = await this.settledTexture(header.guid);
-      if (!asset || queue.has(header.guid)) continue;
-      const state = asset.header.payload.compressionState;
-      if (
-        state === "fallback_uncompressed" ||
-        state === "pending" ||
-        state === "encoding"
-      ) {
-        try {
-          if (await this.retryTextureEncoding(header.guid)) count += 1;
-        } catch (error) {
-          // One Texture replaced on disk mid-pass must not stop the others;
-          // the next rescan indexes the new file. Any other failure is real.
-          if (!(error instanceof SourceRevisionChangedError)) throw error;
-        }
-      }
-    }
-    return count;
-  }
-
-  /** A Texture's index entry once its queued writes (such as a commit) have landed. */
-  private async settledTexture(guid: string): Promise<IndexedAsset | undefined> {
-    const writes = this.textureWriteChain.get(guid);
-    if (writes) await writes;
-    return this.byGuid.get(guid);
+  requeueUncompressedTextures(): Promise<number> {
+    return requeueUncompressedTextures(this.host);
   }
 
   /** Paths of Scene and Class assets for ProjectDocument reconciliation. */
@@ -1840,66 +803,9 @@ export class AssetRegistry {
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
-  /**
-   * The Font each family name attaches an imported representation to: the
-   * Font of that name in the import folder, else the only one in the import's
-   * root. A name several Fonts there share attaches to none, so the import
-   * makes its own Font rather than joining whichever one the index lists last.
-   */
-  private fontGuidsByName(rootId: string, folderRelative: string): Map<string, string> {
-    const root = this.roots.get(rootId);
-    const folder = root ? joinRootPath(root, folderRelative) : null;
-    const byName = new Map<string, IndexedAsset[]>();
-    for (const asset of this.byGuid.values()) {
-      if (asset.placeholder || asset.header.type !== "Font" || asset.rootId !== rootId) continue;
-      const fonts = byName.get(asset.header.name) ?? [];
-      fonts.push(asset);
-      byName.set(asset.header.name, fonts);
-    }
-    const map = new Map<string, string>();
-    for (const [name, fonts] of byName) {
-      const local = fonts.filter((font) => parentPath(font.path) === folder);
-      const font = local.length > 0 ? (local.length === 1 ? local[0] : undefined) : fonts.length === 1 ? fonts[0] : undefined;
-      if (font) map.set(name, font.header.guid);
-    }
-    return map;
-  }
-
-  private async maybeEnqueueTextureEncode(asset: IndexedAsset): Promise<void> {
-    if (asset.header.type !== "Texture" || !this.encodeQueue) return;
-    const usage = String(asset.header.payload.usage ?? "albedo");
-    if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return;
-    if (asset.header.payload.compressionState !== "pending") return;
-    const source = await this.encodeSource(asset);
-    if (!source) return;
-    const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffSourceImageSize(source.bytes) });
-    const chunkId = await textureEncodeChunkId(settings, usage);
-    this.encodeQueue?.enqueue({
-      assetGuid: asset.header.guid,
-      source: source.bytes,
-      mime: source.mime,
-      settings,
-      chunkId,
-      usage,
-      sourceSha256: source.sha256,
-    });
-  }
-
-  /** Encode settings with the texture's current atlas status. */
-  private encodeSettingsFor(
-    asset: IndexedAsset,
-    usage = String(asset.header.payload.usage ?? "albedo"),
-    context: { sourceSize?: ImageSize | null; maxDimension?: number } = {},
-  ): TextureEncodeSettings {
-    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage, {
-      ...context,
-      atlas: this.isAtlasTexture(asset.header.guid),
-    });
-  }
-
   /** A Tileset, Sprite or Sprite Animation samples this texture as an atlas. */
   isAtlasTexture(guid: string): boolean {
-    return (this.atlasReferrers.get(guid)?.size ?? 0) > 0;
+    return this.atlas.isAtlasTexture(guid);
   }
 
   /**
@@ -1908,8 +814,7 @@ export class AssetRegistry {
    * scan.
    */
   setAtlasStatusListener(listener: ((textureGuids: string[]) => void) | null): void {
-    this.atlasStatusListener = listener;
-    this.atlasStatusBefore.clear();
+    this.atlas.setListener(listener);
   }
 
   /**
@@ -1920,52 +825,8 @@ export class AssetRegistry {
    * re-encodes). An aligned texture is never requeued. Returns the requeued
    * guids.
    */
-  async reconcileTextureAlignment(options: {
-    guids?: Iterable<string>;
-    /**
-     * Asked before the requeue, when the job starts, and before its commit
-     * with the header of the file on disk it would replace (`EncodeJobGuard`).
-     */
-    canWrite?: (guid: string, current?: HassetHeader) => boolean;
-    /**
-     * Usage to check and re-encode with instead of the saved one: an open
-     * Texture tab's, which an unsaved Details edit may have changed.
-     */
-    usageFor?: (guid: string) => string | undefined;
-    /**
-     * Sizes the pass read, kept across registry remounts: KTX2 base sizes by
-     * chunk sha256, and sniffed source sizes by `source:` + chunk sha256.
-     */
-    ktx2SizeCache?: Map<string, ImageSize | null>;
-  } = {}): Promise<string[]> {
-    if (!this.encodeQueue) return [];
-    const guids = options.guids
-      ? [...new Set(options.guids)]
-      : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
-    const canWrite = options.canWrite ?? (() => true);
-    const guard: EncodeJobGuard = { canWrite };
-    const queue = this.encodeQueue;
-    const requeued: string[] = [];
-    for (const guid of guids) {
-      const asset = await this.settledTexture(guid);
-      // Already queued (an earlier pass, or a remount's): one job is enough.
-      if (queue.has(guid) || this.alignmentRequeues.has(guid) || !asset) continue;
-      const usage = options.usageFor?.(guid) ?? String(asset.header.payload.usage ?? "albedo");
-      if (!this.isAlignmentCandidate(asset, usage) || !canWrite(guid)) continue;
-      this.alignmentRequeues.add(guid);
-      try {
-        if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
-        // Asked again after the (possibly reading) staleness check, just
-        // before the requeue, so a refusal meanwhile still stops it.
-        if (!canWrite(guid) || queue.has(guid)) continue;
-        if (await this.retryTextureEncoding(guid, { force: true, usage, guard })) requeued.push(guid);
-      } catch {
-        // One unreadable texture must not stop the pass.
-      } finally {
-        this.alignmentRequeues.delete(guid);
-      }
-    }
-    return requeued;
+  reconcileTextureAlignment(options: TextureAlignmentOptions = {}): Promise<string[]> {
+    return reconcileTextureAlignment(this.host, options);
   }
 
   /**
@@ -1974,154 +835,11 @@ export class AssetRegistry {
    * policy, and no encode for it waits or runs. Texture Details offers
    * **Retry Encoding** for it, the user's own re-encode.
    */
-  async isTextureAlignmentStale(
+  isTextureAlignmentStale(
     guid: string,
     options: { usage?: string; ktx2SizeCache?: Map<string, ImageSize | null> } = {},
   ): Promise<boolean> {
-    const queue = this.encodeQueue;
-    if (!queue) return false;
-    const asset = await this.settledTexture(guid);
-    if (!asset || queue.has(guid) || this.alignmentRequeues.has(guid)) return false;
-    const usage = options.usage ?? String(asset.header.payload.usage ?? "albedo");
-    if (!this.isAlignmentCandidate(asset, usage)) return false;
-    try {
-      return await this.isAlignmentStale(asset, usage, options.ktx2SizeCache);
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * A writable `compressed` Texture of a compressed Usage with source pixels
-   * to re-encode from: one the alignment pass checks.
-   */
-  private isAlignmentCandidate(asset: IndexedAsset, usage: string): boolean {
-    const payload = asset.header.payload;
-    if (asset.placeholder || asset.header.type !== "Texture") return false;
-    if (payload.compressionState !== "compressed") return false;
-    if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) return false;
-    // Without source pixels a forced retry would strand it `pending`.
-    if (!asset.header.chunks.some((chunk) => chunk.kind === "pixels")) return false;
-    return !this.roots.get(asset.rootId)?.readOnly;
-  }
-
-  private async isAlignmentStale(
-    asset: IndexedAsset,
-    usage: string,
-    cache?: Map<string, ImageSize | null>,
-  ): Promise<boolean> {
-    // Particle keys its alignment into the chunk id: always on the grid.
-    if (usage === "particle") return false;
-    const padded = (committedEncodeRecord(asset.header)?.blockAlign ?? 0) > 1;
-    if (this.isAtlasTexture(asset.header.guid)) return padded;
-    if (padded) return false;
-    const size = await this.committedKtx2Size(asset, usage, cache);
-    if (size === null || isOnBlockGrid(size)) return false;
-    // Requeue only if the re-encode can differ: padded, or under other
-    // settings. Otherwise (a payload or sniffed size that disagrees with the
-    // decoded source) it would land off the grid again and repeat after every
-    // commit. Built as the requeue builds them: without a payload size, the
-    // sniffed source decides the padding.
-    const sourceSize = payloadPixelSize(asset.header.payload)
-      ? undefined
-      : await this.sniffedSourceSize(asset, cache);
-    const settings = this.encodeSettingsFor(asset, usage, { sourceSize });
-    if (settings.blockAlign !== undefined) return true;
-    return asset.header.payload.ktx2ChunkId !== (await textureEncodeChunkId(settings, usage));
-  }
-
-  /** `sniffSourceImageSize` of the source pixels, cached by chunk sha256 under `source:`. */
-  private async sniffedSourceSize(
-    asset: IndexedAsset,
-    cache?: Map<string, ImageSize | null>,
-  ): Promise<ImageSize | null> {
-    const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
-    if (!pixels) return null;
-    const key = `source:${pixels.sha256}`;
-    const cached = cache?.get(key);
-    if (cached !== undefined) return cached;
-    const source = await this.loadSourcePixels(asset);
-    const size = source ? sniffSourceImageSize(source.bytes) : null;
-    cache?.set(key, size);
-    return size;
-  }
-
-  /**
-   * Base size of the committed KTX2: the recorded size; else, for an encode
-   * committed under today's id without a record, the clamped source size when
-   * it is on the grid (padding then changes nothing); else the chunk's KTX2
-   * header, which also tells a padded encode whose record was dropped (by an
-   * editor that predates it) from an unpadded one.
-   */
-  private async committedKtx2Size(
-    asset: IndexedAsset,
-    usage: string,
-    cache?: Map<string, ImageSize | null>,
-  ): Promise<ImageSize | null> {
-    const payload = asset.header.payload;
-    const recorded = committedEncodeRecord(asset.header)?.size;
-    if (recorded) return recorded;
-    const committed = payload.ktx2ChunkId;
-    if (typeof committed !== "string") return null;
-    const source = payloadPixelSize(payload);
-    if (source) {
-      const settings = this.encodeSettingsFor(asset, usage);
-      if (committed === (await textureEncodeChunkId(settings, usage))) {
-        const clamped = clampDimension(source.width, source.height, settings.maxDimension);
-        if (isOnBlockGrid(clamped)) return { width: clamped.width, height: clamped.height };
-      }
-    }
-    const entry = asset.header.chunks.find((chunk) => chunk.id === committed);
-    if (!entry) return null;
-    const cached = cache?.get(entry.sha256);
-    if (cached !== undefined) return cached;
-    const bytes = await this.readChunk(asset.header.guid, entry.id);
-    const size = bytes ? sniffKtx2Size(bytes) : null;
-    cache?.set(entry.sha256, size);
-    return size;
-  }
-
-  /**
-   * Source pixels for an encode job the Texture's `pending` state announced.
-   * When it has no pixels chunk, or the chunk cannot be read, the Texture is
-   * marked `encode_failed` with the reason rather than left `pending` with no
-   * job to finish it.
-   */
-  private async encodeSource(asset: IndexedAsset): Promise<{ bytes: Uint8Array; mime?: string; sha256: string } | null> {
-    let error = "The Texture has no source pixels to encode.";
-    try {
-      const source = await this.loadSourcePixels(asset);
-      if (source) return source;
-    } catch (cause) {
-      // Replaced on disk meanwhile: the next rescan indexes the new file.
-      if (cause instanceof SourceRevisionChangedError) throw cause;
-      error = `The Texture's source pixels could not be read: ${cause instanceof Error ? cause.message : String(cause)}`;
-    }
-    await this.setCompressionState(asset.header.guid, "encode_failed", { error });
-    return null;
-  }
-
-  /** Source pixels with their sha256, which an encode job's commit checks the file against. */
-  private async loadSourcePixels(
-    asset: IndexedAsset,
-  ): Promise<{ bytes: Uint8Array; mime?: string; sha256: string } | null> {
-    // Encode callbacks can queue a state rewrite while a retry is obtaining its
-    // source. Share their write fence so the snapshot remains valid through the
-    // asynchronous hash/revision checks, without relaxing stale-read rejection.
-    return this.withAssetWrite(asset.header.guid, async () => {
-      const current = this.byGuid.get(asset.header.guid);
-      const pixels = current?.header.chunks.find((chunk) => chunk.kind === "pixels");
-      if (!pixels) return null;
-      const bytes = await this.readChunk(asset.header.guid, pixels.id);
-      return { bytes, mime: pixels.mime, sha256: await sha256Hex(bytes) };
-    });
-  }
-
-  private enqueueTextureWrite(
-    guid: string,
-    work: () => Promise<void>,
-  ): Promise<void> {
-    return this.withAssetWrite(guid, work);
+    return isTextureAlignmentStale(this.host, guid, options);
   }
 
   /** Serialize read/modify/write with derived chunks, document saves and moves. */
@@ -2150,127 +868,6 @@ export class AssetRegistry {
     const next = Promise.all(pending).then(work);
     this.folderWriteChain = next.then(() => undefined, () => undefined);
     return next;
-  }
-
-  /**
-   * Read-modify-write of a Texture file. By default every chunk is decoded
-   * and verified. With `load`, only the chunks it selects are read; the others
-   * (the source pixels and older encodes, which a state or metadata change
-   * cannot affect) are carried over from the chunk table and reach `mutate`
-   * as carried entries without `data`. Anything that cannot be carried safely
-   * (a missing or short blob, a changed file) is decoded in full instead.
-   */
-  private async rewriteTexture(
-    guid: string,
-    mutate: TextureRewrite,
-    assertCurrent: () => void = () => {},
-    load?: (entry: ChunkEntry) => boolean,
-  ): Promise<boolean> {
-    const asset = this.byGuid.get(guid);
-    // Encode state and derived chunks are never written into a read-only root.
-    const root = asset ? this.roots.get(asset.rootId) : undefined;
-    if (!asset || asset.placeholder || !root || root.readOnly) return false;
-    const storage = this.storageForAsset(asset);
-    const blobs = this.blobsForAsset(asset);
-    const previousMtime = await this.statMtime(storage, asset.path);
-    const { header: stored, chunks: chunksById } = await this.readForRewrite(storage, blobs, asset.path, load);
-    const { chunks, ...headerRest } = stored;
-    void chunks;
-    const next = await mutate({ ...headerRest }, chunksById, stored);
-    // Nothing to write (a refused guard).
-    if (!next) return false;
-    const bytes = await encodeHasset({
-      header: next.header,
-      chunks: [...next.chunks.values()],
-      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
-    });
-    assertCurrent();
-    await storage.writeBinary(asset.path, bytes);
-    const mtime = await this.statMtime(storage, asset.path);
-    const header = readHassetHeader(bytes);
-    this.indexHeader(asset.rootId, asset.path, header, false, mtime);
-    this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
-    return true;
-  }
-
-  /** The stored header and chunks of a file about to be rewritten; see `rewriteTexture`. */
-  private async readForRewrite(
-    storage: ProjectStorage,
-    blobs: BlobStore,
-    path: string,
-    load?: (entry: ChunkEntry) => boolean,
-  ): Promise<{ header: HassetHeader; chunks: Map<string, EncodableChunk> }> {
-    if (load) {
-      try {
-        const stored = await readAssetCatalog(storage, path);
-        const carried = await carryStoredChunks(storage, blobs, stored, { load });
-        if (carried) return { header: stored.header, chunks: new Map(carried.map((chunk) => [chunk.id, chunk])) };
-      } catch {
-        // Decoded in full below, which reports an unreadable file as it always has.
-      }
-    }
-    const decoded = await decodeHasset(await storage.readBinary(path), (sha256) => blobs.readBlob(sha256));
-    const chunks = new Map<string, EncodableChunk>();
-    for (const entry of decoded.header.chunks) {
-      const data = decoded.chunks.get(entry.id);
-      if (data) chunks.set(entry.id, { id: entry.id, kind: entry.kind, mime: entry.mime, data });
-    }
-    return { header: decoded.header, chunks };
-  }
-
-  /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */
-  private async attachToExistingAsset(guid: string, result: ImportResult): Promise<void> {
-    return this.withAssetWrite(guid, () => this.attachToExistingAssetUnlocked(guid, result));
-  }
-
-  private async attachToExistingAssetUnlocked(guid: string, result: ImportResult): Promise<void> {
-    const asset = this.byGuid.get(guid);
-    if (!asset || asset.placeholder) {
-      throw new Error(`Cannot attach representation: no asset for guid ${guid}`);
-    }
-    // The target's own root decides, whatever root the import was started in.
-    this.assertWritable(this.getRootOrThrow(asset.rootId));
-    const storage = this.storageForAsset(asset);
-    const blobs = this.blobsForAsset(asset);
-    const fileBytes = await storage.readBinary(asset.path);
-    const decoded = await decodeHasset(fileBytes, (sha256) => blobs.readBlob(sha256));
-
-    const chunksById = new Map<string, ChunkInput>();
-    for (const entry of decoded.header.chunks) {
-      const data = decoded.chunks.get(entry.id);
-      if (data) {
-        chunksById.set(entry.id, { id: entry.id, kind: entry.kind, mime: entry.mime, data });
-      }
-    }
-    for (const chunk of result.chunks) {
-      chunksById.set(chunk.id, chunk);
-    }
-
-    const { chunks, ...headerRest } = decoded.header;
-    void chunks;
-    // A Font saved from its editor keeps its payload in the document chunk,
-    // which readers prefer: merge into that payload and store it there too.
-    const documentChunk = chunksById.get(DOCUMENT_CHUNK_ID);
-    const current = documentChunk
-      ? JSON.parse(textDecoder.decode(documentChunk.data)) as Record<string, unknown>
-      : headerRest.payload;
-    const familyFallback = typeof current.family === "string" ? current.family : asset.header.name;
-    const merged =
-      asset.header.type === "Font"
-        ? (mergeFontAttachPayload(current, result.payload, familyFallback) as unknown as Record<string, unknown>)
-        : { ...current, ...result.payload };
-    if (documentChunk) {
-      chunksById.set(DOCUMENT_CHUNK_ID, { ...documentChunk, data: textEncoder.encode(stableStringify(merged)) });
-    }
-    const bytes = await encodeHasset({
-      // Header readers (font stacks, an open Font editor) see the same payload.
-      header: { ...headerRest, payload: { ...headerRest.payload, ...merged } },
-      chunks: [...chunksById.values()],
-      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
-    });
-    await storage.writeBinary(asset.path, bytes);
-    const header = readHassetHeader(bytes);
-    this.indexHeader(asset.rootId, asset.path, header, false, await this.statMtime(storage, asset.path));
   }
 
   private storageOf(root: ContentRoot): ProjectStorage {
@@ -2317,70 +914,6 @@ export class AssetRegistry {
     return root;
   }
 
-  private async walk(root: ContentRoot, dir: string, storage: ProjectStorageReader): Promise<void> {
-    let entries;
-    try {
-      entries = await storage.readdir(dir);
-    } catch (error) {
-      // Missing (a root without content yet, or a folder removed since its
-      // parent was listed) is empty. Any other failure fails the scan.
-      if (isStorageNotFound(error)) return;
-      throw error;
-    }
-    // The header reads of a run of files overlap (bounded), but each result is consumed in
-    // directory order. Guid-conflict resolution (the first indexed file keeps a shared guid),
-    // folder registration and the first scan error therefore stay those of a serial scan.
-    // A run ends at a subfolder that will be walked: reads never start ahead across that walk,
-    // so a header is not read long before it is indexed (a `reindexPath` in between would
-    // otherwise be overwritten by the older header).
-    const slots: Array<{ run: string[]; index: number }> = [];
-    let run: string[] = [];
-    for (const entry of entries) {
-      const path = `${dir}/${entry.name}`;
-      if (entry.isDir) {
-        if (!(entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX))) run = [];
-      } else if (entry.name !== FOLDER_MARKER_NAME && path.endsWith(".hasset")) {
-        run.push(path);
-        slots.push({ run, index: run.length - 1 });
-      }
-    }
-    const readCatalog = createReadAhead(SCAN_CATALOG_READS, (path: string) => readScannedCatalog(storage, path));
-    let nextSlot = 0;
-    try {
-      for (const entry of entries) {
-        // A remount of this id replaced the root: its own scan indexes the folder.
-        if (this.roots.get(root.id) !== root) break;
-        const path = `${dir}/${entry.name}`;
-        if (entry.isDir) {
-          if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
-          this.addKnownFolder(path);
-          await this.walk(root, path, storage);
-          continue;
-        }
-        if (entry.name === FOLDER_MARKER_NAME) {
-          this.addKnownFolder(dir);
-          continue;
-        }
-        if (!path.endsWith(".hasset")) continue;
-        const slot = slots[nextSlot++]!;
-        const { header, locator } = await readCatalog(slot.run, slot.index);
-        if (this.roots.get(root.id) !== root) break;
-        const indexed = this.byGuid.get(header.guid);
-        if (indexed && !indexed.placeholder && indexed.path !== path) {
-          // A second file with an indexed guid (a copy made outside the editor)
-          // must not evict the first one's entry; it is recorded instead.
-          this.guidConflicts.set(path, { rootId: root.id, path, guid: header.guid, indexedPath: indexed.path });
-          this.changed();
-          continue;
-        }
-        this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
-      }
-    } finally {
-      // Reads left running must not outlive the scan: the read scope ends when it returns.
-      await readCatalog.settle();
-    }
-  }
-
   private indexHeader(
     rootId: string,
     path: string,
@@ -2408,66 +941,8 @@ export class AssetRegistry {
       }
       set.add(header.guid);
     }
-    if (!placeholder && ATLAS_REFERRER_TYPES.has(header.type)) {
-      // Every document save lists the atlases in the header. A referrer whose
-      // payload is still its header (created or imported, not yet saved as a
-      // document) names them in that payload.
-      const inHeader = !header.chunks.some((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-      this.setAtlasReferrer(
-        header.guid,
-        headerAtlasTextureGuids(header.payload) ?? (inHeader ? atlasTextureGuids(header.type, header.payload) : []),
-      );
-    }
+    if (!placeholder) this.atlas.indexReferrer(header);
     return indexed;
-  }
-
-  private setAtlasReferrer(referrer: string, textures: readonly string[]): void {
-    const previous = this.atlasByReferrer.get(referrer) ?? [];
-    const next = [...new Set(textures)];
-    if (previous.length === 0 && next.length === 0) return;
-    this.changed();
-    this.noteAtlasStatus([...previous, ...next]);
-    for (const guid of previous) {
-      const set = this.atlasReferrers.get(guid);
-      set?.delete(referrer);
-      if (set && set.size === 0) this.atlasReferrers.delete(guid);
-    }
-    if (next.length > 0) this.atlasByReferrer.set(referrer, next);
-    else this.atlasByReferrer.delete(referrer);
-    for (const guid of next) {
-      let set = this.atlasReferrers.get(guid);
-      if (!set) {
-        set = new Set();
-        this.atlasReferrers.set(guid, set);
-      }
-      set.add(referrer);
-    }
-  }
-
-  /** Remember each texture's atlas status before a change, for the listener. */
-  private noteAtlasStatus(textureGuids: readonly string[]): void {
-    if (!this.atlasStatusListener) return;
-    for (const guid of textureGuids) {
-      if (!this.atlasStatusBefore.has(guid)) {
-        this.atlasStatusBefore.set(guid, this.isAtlasTexture(guid));
-      }
-    }
-    this.scheduleAtlasStatusFlush();
-  }
-
-  private scheduleAtlasStatusFlush(): void {
-    if (!this.atlasStatusListener || this.atlasFlushScheduled) return;
-    this.atlasFlushScheduled = true;
-    queueMicrotask(() => void this.flushAtlasStatus());
-  }
-
-  private flushAtlasStatus(): void {
-    this.atlasFlushScheduled = false;
-    const changed = [...this.atlasStatusBefore]
-      .filter(([guid, before]) => this.isAtlasTexture(guid) !== before)
-      .map(([guid]) => guid);
-    this.atlasStatusBefore.clear();
-    if (changed.length > 0) this.atlasStatusListener?.(changed);
   }
 
   private removeFromIndex(asset: IndexedAsset, preserveInbound = false): void {
@@ -2476,7 +951,7 @@ export class AssetRegistry {
       this.byPath.delete(asset.path);
     }
     this.changed();
-    this.setAtlasReferrer(asset.header.guid, []);
+    this.atlas.setReferrer(asset.header.guid, []);
     for (const dep of asset.header.dependencies) {
       const set = this.inbound.get(dep);
       set?.delete(asset.header.guid);
@@ -2486,103 +961,5 @@ export class AssetRegistry {
     // (`ProjectService.clearDeletedAssetReferences`), not here — Skybox
     // Creator replace deletes then recreates the same guid.
     if (!preserveInbound) this.inbound.delete(asset.header.guid);
-  }
-}
-
-/**
- * Verify every chunk of an asset file read from a root using `from` and write
- * each blob chunk to `to`, so the same bytes read in full from a root using
- * `to`. Returns the file's header. Throws, before any file is written, when a
- * chunk is missing or does not match its recorded length and sha256.
- */
-async function copyBlobChunks(bytes: Uint8Array, from: BlobStore, to: BlobStore): Promise<HassetHeader> {
-  const decoded = await decodeHasset(bytes, (sha256) => from.readBlob(sha256));
-  for (const entry of decoded.header.chunks) {
-    if ("blob" in entry.locator) await to.writeBlob(entry.locator.blob, decoded.chunks.get(entry.id)!);
-  }
-  return decoded.header;
-}
-
-function isOnBlockGrid(size: ImageSize | null): boolean {
-  return size !== null && size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0;
-}
-
-/**
- * What a commit recorded about the committed encode, while `ktx2Sha256` still
- * matches the committed chunk. A writer that replaced the encode but kept the
- * fields (an editor from before they existed) leaves them describing other
- * bytes, so they are ignored.
- */
-function committedEncodeRecord(
-  header: HassetHeader,
-): { size: ImageSize | null; blockAlign: number | null } | null {
-  const payload = header.payload;
-  const committed = header.chunks.find((chunk) => chunk.id === payload.ktx2ChunkId);
-  if (!committed || typeof payload.ktx2Sha256 !== "string" || committed.sha256 !== payload.ktx2Sha256) {
-    return null;
-  }
-  const { ktx2Width: width, ktx2Height: height, ktx2BlockAlign: blockAlign } = payload;
-  return {
-    size: typeof width === "number" && typeof height === "number" ? { width, height } : null,
-    blockAlign: typeof blockAlign === "number" ? blockAlign : null,
-  };
-}
-
-function sortFolderTree(node: FolderNode): void {
-  node.children.sort((a, b) => a.name.localeCompare(b.name));
-  node.assets.sort();
-  for (const child of node.children) sortFolderTree(child);
-}
-
-function joinRootPath(root: ContentRoot, relativePath: string): string {
-  const trimmed = relativePath.replace(/^\/+/, "");
-  return trimmed ? `${root.pathPrefix}/${trimmed}` : root.pathPrefix;
-}
-
-function joinRelative(folderRelative: string, fileName: string): string {
-  const trimmed = folderRelative.replace(/^\/+|\/+$/g, "");
-  return trimmed ? `${trimmed}/${fileName}` : fileName;
-}
-
-function parentPath(path: string): string {
-  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-}
-
-function isWithinFolder(path: string, folder: string): boolean {
-  return path === folder || path.startsWith(`${folder}/`);
-}
-
-function sanitizeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_.-]+/g, "_");
-}
-
-/** Validate a single visible Content Browser name without changing Unicode. */
-export function contentEntryNameError(name: string): string | null {
-  const trimmed = name.trim();
-  if (!trimmed) return "Enter a name.";
-  if (trimmed === "." || trimmed === "..") return "Choose a name other than . or ...";
-  if (/[\\/:*?"<>|]/.test(trimmed) || Array.from(trimmed).some((character) => character.charCodeAt(0) < 32)) {
-    return "Names cannot contain path separators or these characters: : * ? \" < > |.";
-  }
-  if (trimmed.endsWith(".")) return "Names cannot end with a period.";
-  return null;
-}
-
-/** Rename the display stem while retaining the asset's complete container suffix. */
-export function renamedAssetPath(currentPath: string, newName: string): string {
-  const error = contentEntryNameError(newName);
-  if (error) throw new Error(error);
-  const dir = currentPath.includes("/") ? currentPath.slice(0, currentPath.lastIndexOf("/") + 1) : "";
-  const suffix = assetFileSuffix(currentPath);
-  return `${dir}${newName.trim()}${suffix}`;
-}
-
-/** A save can land between a scan's bounded header reads; read that file again. */
-async function readScannedCatalog(storage: ProjectStorageReader, path: string) {
-  for (let attempt = 1; ; attempt++) {
-    try { return await readAssetCatalog(storage, path); }
-    catch (error) {
-      if (!(error instanceof SourceRevisionChangedError) || attempt === 3) throw error;
-    }
   }
 }

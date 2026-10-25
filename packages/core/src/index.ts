@@ -5,7 +5,6 @@ export {
   ENGINE_COMPONENT_DESCRIPTORS,
   ENGINE_COMPONENT_CLASS_IDS,
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
-  engineComponentPlacement,
   type EngineComponentClassId,
   type EngineComponentPlacement,
 } from "./engine-components";

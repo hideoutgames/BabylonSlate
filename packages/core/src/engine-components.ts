@@ -89,7 +89,3 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS: readonly DescriptorFor<"wor
   ENGINE_COMPONENT_DESCRIPTORS.flatMap((descriptor) => descriptor.placement === "world" ? [descriptor.classId] : []) as DescriptorFor<"world">["classId"][];
 export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS: readonly DescriptorFor<"overlay">["classId"][] =
   ENGINE_COMPONENT_DESCRIPTORS.flatMap((descriptor) => descriptor.placement === "overlay" ? [descriptor.classId] : []) as DescriptorFor<"overlay">["classId"][];
-
-export function engineComponentPlacement(classId: string): EngineComponentPlacement | undefined {
-  return ENGINE_COMPONENT_DESCRIPTORS.find((descriptor) => descriptor.classId === classId)?.placement;
-}

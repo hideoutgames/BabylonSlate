@@ -430,10 +430,6 @@ export class ScriptDebugObserver {
     this.host = host;
   }
 
-  get observing(): boolean {
-    return this.target !== null;
-  }
-
   /** Applies the editor's request; it replaces the previous one. */
   observe(target: DebugObserveTarget | null, instanceId: string | null): void {
     const changed = !sameDebugObserveTarget(target, this.target);

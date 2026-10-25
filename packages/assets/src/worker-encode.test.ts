@@ -322,6 +322,42 @@ describe("createWorkerEncodeFn", () => {
     await next.catch(() => undefined);
   });
 
+  it("terminates a worker whose init stalls when its encode is aborted and starts a fresh one next", async () => {
+    const workers: FakeWorker[] = [];
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          const worker = new FakeWorker();
+          // The first worker never reports "loaded" (a stalled wasm fetch).
+          if (workers.length === 0) worker.postMessage = vi.fn<(msg: HostMessage) => void>();
+          workers.push(worker);
+          return worker;
+        }
+      },
+    );
+    const encode = createWorkerEncodeFn({ workerUrl: "/basis/encode-worker.js" });
+    const settings = { format: "uastc" as const, quality: 2, maxDimension: 64, generateMipmaps: true };
+    const controller = new AbortController();
+    const stalled = encode(new Uint8Array([1]), settings, "image/png", controller.signal);
+    expect(workers[0]!.postMessage).toHaveBeenCalledWith({ type: "init" });
+    controller.abort(new Error("timed out"));
+    await expect(stalled).rejects.toThrow("timed out");
+    expect(workers[0]!.terminate).toHaveBeenCalled();
+
+    const next = encode(new Uint8Array([2]), settings, "image/png");
+    await vi.waitFor(() => {
+      expect(workers[1]?.postMessage.mock.calls.some((call) => call[0]?.type === "encode")).toBe(true);
+    });
+    const request = workers[1]!.postMessage.mock.calls.find((call) => call[0].type === "encode")![0];
+    if (request.type !== "encode") throw new Error("expected an encode request");
+    workers[1]!.dispatchEvent(new MessageEvent("message", {
+      data: { type: "encoded", id: request.id, ktx2: new Uint8Array([9]).buffer, wallMs: 1 },
+    }));
+    await expect(next).resolves.toMatchObject({ wallMs: 1 });
+    encode.dispose();
+  });
+
   it("can use a Worker even when OffscreenCanvas is missing on the main thread", () => {
     vi.stubGlobal("Worker", class {});
     vi.stubGlobal("createImageBitmap", undefined);

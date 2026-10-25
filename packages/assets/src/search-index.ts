@@ -149,8 +149,7 @@ export class ProjectSearchIndex {
       } else {
         const read = reads.get(asset);
         reads.delete(asset);
-        // Registry entries are unique; a fresh snapshot needs no repeated removal scan.
-        await snapshot.indexAsset(asset, registry, false, read);
+        await snapshot.indexAsset(asset, registry, read);
       }
       checkCurrent();
       if (performance.now() - sliceStarted >= 8) {
@@ -162,25 +161,6 @@ export class ProjectSearchIndex {
     snapshot.addCatalogClasses();
     checkCurrent();
     this.records = snapshot.records;
-  }
-
-  async upsertAsset(registry: AssetRegistry, path: string): Promise<void> {
-    const asset = registry.getByPath(path) ?? registry.getByGuid(path);
-    if (!asset) {
-      this.removeAsset(path);
-      return;
-    }
-    await this.indexAsset(asset, registry);
-  }
-
-  upsertDocument(asset: IndexedAsset, payload: Record<string, unknown>): void {
-    this.removeBySource(asset.header.guid, asset.path);
-    this.addHeaderEntries(asset);
-    this.addDocumentEntries(asset, payload);
-  }
-
-  removeAsset(pathOrGuid: string): void {
-    this.removeBySource(pathOrGuid, pathOrGuid);
   }
 
   /**
@@ -214,10 +194,8 @@ export class ProjectSearchIndex {
   private async indexAsset(
     asset: IndexedAsset,
     registry?: AssetRegistry,
-    replaceExisting = true,
     read?: Promise<AssetDocument>,
   ): Promise<void> {
-    if (replaceExisting) this.removeBySource(asset.header.guid, asset.path);
     this.addHeaderEntries(asset);
     if (!readsDocument(asset)) return;
     try {
@@ -421,12 +399,6 @@ export class ProjectSearchIndex {
       });
       existing.add(classId);
     }
-  }
-
-  private removeBySource(guid: string, path: string): void {
-    this.records = this.records.filter(
-      ({ entry }) => entry.sourceGuid !== guid && entry.sourcePath !== path,
-    );
   }
 }
 

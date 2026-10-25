@@ -51,6 +51,12 @@ export function componentOwners(world: World, classId: string): readonly Actor[]
   return worldComponentIndex(world).owners(classId);
 }
 
+/** `componentOwners` while the cached index matches the world structure; undefined, without a rebuild, once it is stale. */
+export function currentComponentOwners(world: World, classId: string): readonly Actor[] | undefined {
+  const entry = indexes.get(world);
+  return entry?.revision === world.structuralRevision ? entry.index.owners(classId) : undefined;
+}
+
 /**
  * `visit` for each actor owning a `classId` component, in world order, as
  * `for (const actor of world.getActors())` would reach them. For a visit that

@@ -269,6 +269,20 @@ describe("scene schema", () => {
     expect(new Set(scene.folders.map((folder) => folder.id)).size).toBe(2);
   });
 
+  it("never gives a duplicated folder the id a later folder owns, so that folder keeps its actors", () => {
+    const scene = normalizeScene({
+      folders: [
+        { id: "a", name: "A" },
+        { id: "a", name: "B" },
+        { id: "a-2", name: "C" },
+      ],
+      actors: [{ id: "x", folderId: "a-2" }],
+    });
+    expect(new Set(scene.folders.map((folder) => folder.id)).size).toBe(3);
+    const home = scene.folders.find((folder) => folder.id === scene.actors[0]!.folderId);
+    expect(home?.name).toBe("C");
+  });
+
   it("keeps the grid visible unless showGrid is explicitly false", () => {
     expect(normalizeScene({}).settings.grid.showGrid).toBe(true);
     expect(

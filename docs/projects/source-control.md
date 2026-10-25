@@ -19,7 +19,7 @@ Haptic handles locks only. Clone, commit, pull and push with your Git app, such 
 | Setting | Description |
 | --- | --- |
 | Enable | Turns locking on for this project. |
-| Repository URL | The repository's HTTPS or SSH address. Haptic always talks to it over HTTPS. |
+| Repository URL | The repository's HTTPS or SSH address. Haptic always talks to it over HTTPS; for an SSH address it uses the same host on the standard HTTPS port. |
 | Branch | The branch the locks belong to. Default `main`. |
 | Auto-Lock On First Edit | Lock a file the first time you edit it in this session. On by default. |
 | Poll Interval (Seconds) | How often Haptic checks other people's locks. Default 60. |

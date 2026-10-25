@@ -36,12 +36,16 @@ export function createWorkerEncodeFn(
   const recycleAfter = options.recycleAfter ?? 5;
   let worker: Worker | null = null;
   let ready: Promise<void> | null = null;
+  /** Rejects `ready` while the worker is still initializing; null once it has loaded. */
+  let rejectReady: ((error: unknown) => void) | null = null;
   let nextId = 1;
   let completed = 0;
   let recycled = 0;
   const pending = new Map<number, PendingEncode>();
 
   const failPending = (error: unknown) => {
+    rejectReady?.(error);
+    rejectReady = null;
     for (const entry of pending.values()) {
       entry.reject(error);
     }
@@ -100,16 +104,17 @@ export function createWorkerEncodeFn(
     if (ready) return ready;
     worker = new Worker(workerUrl);
     ready = new Promise<void>((resolve, reject) => {
+      rejectReady = reject;
       const onMessage = (event: MessageEvent) => {
         const msg = event.data as EncodeWorkerReply;
         if (msg.type === "loaded") {
+          // Clear the slot only while it still belongs to this init.
+          if (rejectReady === reject) rejectReady = null;
           resolve();
           return;
         }
         if (msg.type === "error" && msg.id == null) {
-          const error = new Error(msg.error ?? "worker init failed");
-          reject(error);
-          failPending(error);
+          failPending(new Error(msg.error ?? "worker init failed"));
           return;
         }
         if (msg.type === "encoded" && msg.id != null) {
@@ -137,14 +142,10 @@ export function createWorkerEncodeFn(
       };
       worker!.addEventListener("message", onMessage);
       worker!.addEventListener("error", (err) => {
-        const error = err.error ?? new Error("encode worker error");
-        reject(error);
-        failPending(error);
+        failPending(err.error ?? new Error("encode worker error"));
       });
       worker!.addEventListener("messageerror", () => {
-        const error = new Error("encode worker messageerror");
-        reject(error);
-        failPending(error);
+        failPending(new Error("encode worker messageerror"));
       });
       worker!.postMessage({ type: "init" });
     });
@@ -169,7 +170,17 @@ export function createWorkerEncodeFn(
     signal?: AbortSignal,
   ) => {
     signal?.throwIfAborted();
-    await ensureWorker();
+    // An init that never loads (a stalled wasm fetch) is torn down on abort,
+    // so the next encode starts a fresh worker instead of awaiting it too.
+    const abortInit = () => {
+      if (rejectReady) failPending(signal?.reason ?? new Error("encode aborted"));
+    };
+    signal?.addEventListener("abort", abortInit, { once: true });
+    try {
+      await ensureWorker();
+    } finally {
+      signal?.removeEventListener("abort", abortInit);
+    }
     signal?.throwIfAborted();
     const id = nextId++;
     // A Basis encode cannot be interrupted inside the worker: an aborted job

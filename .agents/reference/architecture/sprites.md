@@ -20,7 +20,7 @@ Sprite and Sprite Animation assets and `SpriteComponent`, rendered as UV-baked q
 | Animation frame apply (`applySpriteAnimFrame`, `applySpriteAnimationAssetFrame`) | [`packages/render/src/anim-apply.ts`](../../../packages/render/src/anim-apply.ts) |
 | Pixel-art sampling wrapper | [`packages/render/src/resource-cache.ts`](../../../packages/render/src/resource-cache.ts) |
 | Albedo binding and alpha mode (`applyAlbedoTexture`) | [`packages/render/src/mesh-assets.ts`](../../../packages/render/src/mesh-assets.ts) |
-| Box2D collider sync (`PhysicsWorldSync`) | [`packages/runtime/src/physics-sync.ts`](../../../packages/runtime/src/physics-sync.ts) |
+| Box2D collider sync (`SpriteTileColliders`) | [`packages/runtime/src/physics-sprite-tile-colliders.ts`](../../../packages/runtime/src/physics-sprite-tile-colliders.ts) |
 
 ## Sprite asset
 

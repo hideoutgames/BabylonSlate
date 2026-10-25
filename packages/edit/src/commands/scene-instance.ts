@@ -1,6 +1,7 @@
 import type { MaterialInstanceOverrides, SerializedScene } from "@haptic/core";
 import type { EditCommand } from "../command";
 import { snapshotBytes } from "../snapshot-bytes";
+import { replaceActor, replaceComponent } from "./scene-actor";
 
 export class SetActorSuppressedComponentsCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorSuppressedComponents";
@@ -16,13 +17,12 @@ export class SetActorSuppressedComponentsCommand implements EditCommand<Serializ
     this.actorId = actorId; this.from = from; this.to = to;
   }
   apply(doc: SerializedScene): SerializedScene {
-    return { ...doc, actors: doc.actors.map((actor) => {
-      if (actor.id !== this.actorId) return actor;
+    return replaceActor(doc, this.actorId, (actor) => {
       const next = { ...actor };
       if (this.to === undefined) delete next.suppressedComponentSourceIds;
       else next.suppressedComponentSourceIds = [...this.to];
       return next;
-    }) };
+    });
   }
   invert(): SetActorSuppressedComponentsCommand {
     return new SetActorSuppressedComponentsCommand(this.actorId, this.to, this.from);
@@ -45,15 +45,12 @@ export class SetComponentMaterialInstanceCommand implements EditCommand<Serializ
     this.actorId = actorId; this.componentId = componentId; this.from = from; this.to = to;
   }
   apply(doc: SerializedScene): SerializedScene {
-    return { ...doc, actors: doc.actors.map((actor) => actor.id !== this.actorId ? actor : {
-      ...actor, components: actor.components.map((component) => {
-        if (component.id !== this.componentId) return component;
-        const next = { ...component };
-        if (this.to === undefined) delete next.materialInstance;
-        else next.materialInstance = structuredClone(this.to);
-        return next;
-      }),
-    }) };
+    return replaceComponent(doc, this.actorId, this.componentId, (component) => {
+      const next = { ...component };
+      if (this.to === undefined) delete next.materialInstance;
+      else next.materialInstance = structuredClone(this.to);
+      return next;
+    });
   }
   invert(): SetComponentMaterialInstanceCommand {
     return new SetComponentMaterialInstanceCommand(this.actorId, this.componentId, this.to, this.from);

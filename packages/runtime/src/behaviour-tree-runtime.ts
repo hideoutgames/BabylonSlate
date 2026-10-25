@@ -565,9 +565,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     return result;
   }
 
+  /** Report once per actor and reason, so a tree that goes missing differently later is still reported. */
   private emitMissing(actorGuid: string, message: string): void {
-    if (this.missingWarned.has(actorGuid)) return;
-    this.missingWarned.add(actorGuid);
+    const key = `${actorGuid}\0${message}`;
+    if (this.missingWarned.has(key)) return;
+    this.missingWarned.add(key);
     const frameId = this.host.frameId();
     const diag: RuntimeDiagnostic = {
       code: "bt.missing_tree",
@@ -599,19 +601,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const slotId = this.host.slot(actor);
     if (slotId === undefined) return;
     const component = evaluatedBehaviourTreeComponent(actor);
-    if (!component) {
-      // A removed BehaviourTreeComponent takes its tree's running work with it.
+    const guid = component ? behaviourTreeGuidOf(component) : null;
+    const document = guid ? this.documents.get(guid) : undefined;
+    if (!component || !guid || !document) {
+      // A removed BehaviourTreeComponent, or one switched to no tree or to one that is not
+      // loaded, takes its old tree's running work with it.
       if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
-      return;
-    }
-    const guid = behaviourTreeGuidOf(component);
-    if (!guid) {
-      this.emitMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
-      return;
-    }
-    const document = this.documents.get(guid);
-    if (!document) {
-      this.emitMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
+      if (component) this.emitMissing(actor.guid, guid ? `Behaviour tree not loaded: ${guid}` : "BehaviourTreeComponent has no treeGuid");
       return;
     }
     const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
@@ -739,9 +735,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   }
 
   /**
-   * The slot's BehaviourTreeComponent, tree or Blackboard changed: abort the
-   * old tree's running tasks and drop its evaluation, so the new source starts
-   * at its root with fresh Blackboard defaults.
+   * The slot's BehaviourTreeComponent, tree or Blackboard changed, or it has
+   * no loaded tree any more: abort the old tree's running tasks and drop its
+   * evaluation and Play Animation ownership, so a new source starts at its
+   * root with fresh Blackboard defaults. A tree the source catalog already
+   * dropped has no nodes left to abort, so its navigation agent and `onAbort`
+   * handlers are not reached; its Play Sound voices still stop, as on slot
+   * release, and its slot state still clears.
    */
   private resetEvaluation(actor: Actor, slotId: number, dtSeconds: number): void {
     const previous = this.evalBySlot.get(slotId);
@@ -755,6 +755,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
         }
       }
       this.assetGuid = null;
+    } else if (previous) {
+      this.stopPlaySound(actor.guid);
     }
     this.evalBySlot.delete(slotId);
     this.sourceBySlot.delete(slotId);

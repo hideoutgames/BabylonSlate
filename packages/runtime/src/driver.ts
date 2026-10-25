@@ -1749,10 +1749,6 @@ class InProcessRuntime implements RuntimeDriver {
     return this.navigation.addObstacle(kind, pose, size);
   }
 
-  removeNavObstacle(id: string): void {
-    this.navigation.removeObstacle(id);
-  }
-
   stopNavAgent(actorGuid: string): void {
     this.navigation.stopAgent(actorGuid);
   }

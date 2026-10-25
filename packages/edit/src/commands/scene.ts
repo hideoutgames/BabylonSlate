@@ -20,10 +20,8 @@ import type {
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
 } from "./scene-fields";
-
-function byteSizeOf(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
-}
+import { snapshotBytes } from "../snapshot-bytes";
+import { replaceActor, replaceComponent } from "./scene-actor";
 
 /** `undefined` clears the key, as saving to JSON would. */
 function withProperty(
@@ -36,22 +34,6 @@ function withProperty(
   return next;
 }
 
-/** Returns `doc` itself when `update` keeps the actor, so the stack sees a no-op. */
-function replaceActor(
-  doc: SerializedScene,
-  actorId: string,
-  update: (actor: SerializedActor) => SerializedActor,
-): SerializedScene {
-  let changed = false;
-  const actors = doc.actors.map((actor) => {
-    if (actor.id !== actorId) return actor;
-    const next = update(actor);
-    changed ||= next !== actor;
-    return next;
-  });
-  return changed ? { ...doc, actors } : doc;
-}
-
 export class AddActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.addActor";
   readonly actor: SerializedActor;
@@ -59,7 +41,7 @@ export class AddActorCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.actor));
+    return (this.#byteSize ??= snapshotBytes(this.actor));
   }
 
   constructor(actor: SerializedActor, index = -1) {
@@ -100,7 +82,7 @@ export class RemoveActorCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.actor));
+    return (this.#byteSize ??= snapshotBytes(this.actor));
   }
 
   constructor(actor: SerializedActor, index = -1) {
@@ -333,7 +315,7 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.component));
+    return (this.#byteSize ??= snapshotBytes(this.component));
   }
 
   constructor(
@@ -378,7 +360,7 @@ export class RemoveComponentCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.component));
+    return (this.#byteSize ??= snapshotBytes(this.component));
   }
 
   constructor(actorId: string, component: SerializedComponent, index = -1) {
@@ -466,13 +448,9 @@ export class ReparentComponentCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) =>
-        component.id === this.componentId
-          ? { ...component, parentId: this.to }
-          : component,
-      ),
+    return replaceComponent(doc, this.actorId, this.componentId, (component) => ({
+      ...component,
+      parentId: this.to,
     }));
   }
 
@@ -520,11 +498,8 @@ export class SetComponentLinkageCommand implements EditCommand<SerializedScene> 
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) => component.id === this.componentId
-        ? withComponentLinkage(component, this.to) : component),
-    }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) =>
+      withComponentLinkage(component, this.to));
   }
 
   invert(): SetComponentLinkageCommand {
@@ -549,7 +524,7 @@ export class SetComponentPropertyCommand
    * spline points); measured on first read and memoised.
    */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
   }
 
   constructor(
@@ -570,18 +545,12 @@ export class SetComponentPropertyCommand
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) =>
-        component.id === this.componentId
-          ? withComponentLinkage({
-              ...component,
-              // A copy, so an in-place write to the live value cannot reach the snapshot.
-              properties: withProperty(component.properties, this.property, structuredClone(this.to)),
-            }, this.linkage?.to)
-          : component,
-      ),
-    }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) =>
+      withComponentLinkage({
+        ...component,
+        // A copy, so an in-place write to the live value cannot reach the snapshot.
+        properties: withProperty(component.properties, this.property, structuredClone(this.to)),
+      }, this.linkage?.to));
   }
 
   invert(): SetComponentPropertyCommand {
@@ -626,21 +595,15 @@ export class SetComponentTransformCommand
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
-      ...actor,
-      components: actor.components.map((component) =>
-        component.id === this.componentId && component.classId !== "2DAnchorComponent"
-          ? withComponentLinkage({
-              ...component,
-              transform: {
-                position: [...this.to.position],
-                rotation: [...this.to.rotation],
-                scale: [...this.to.scale],
-              },
-            }, this.linkage?.to)
-          : component,
-      ),
-    }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) =>
+      component.classId === "2DAnchorComponent" ? component : withComponentLinkage({
+        ...component,
+        transform: {
+          position: [...this.to.position],
+          rotation: [...this.to.rotation],
+          scale: [...this.to.scale],
+        },
+      }, this.linkage?.to));
   }
 
   invert(): SetComponentTransformCommand {
@@ -666,7 +629,7 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
    * post-process stack); measured on first read and memoised.
    */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
   }
 
   constructor(
@@ -723,7 +686,7 @@ export class AddFolderCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.folder));
+    return (this.#byteSize ??= snapshotBytes(this.folder));
   }
 
   constructor(folder: SerializedOutlinerFolder, index = -1) {
@@ -760,7 +723,7 @@ export class RemoveFolderCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.folder));
+    return (this.#byteSize ??= snapshotBytes(this.folder));
   }
 
   constructor(folder: SerializedOutlinerFolder, index = -1) {

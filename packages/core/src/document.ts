@@ -394,7 +394,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.hasset$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water)\.hasset$/i,
         "",
       )
       .replace(/\.hasset$/i, "")

@@ -460,32 +460,32 @@ function normalizeActor(value: unknown, index: number, takenIds: Set<string>): S
 
 /**
  * Folders are editor metadata, so a malformed row is dropped rather than
- * repaired into a phantom group. Surviving rows get unique ids, and parent
+ * repaired into a phantom group. Surviving rows get unique ids (a repeated id
+ * never takes one a later folder owns, so its actors stay put), and parent
  * links that dangle or form a cycle fall back to the root so no folder can
  * become unreachable in the Outliner.
  */
 function normalizeFolders(value: unknown): SerializedOutlinerFolder[] {
   if (!Array.isArray(value)) return [];
-  const taken = new Set<string>();
-  const folders: SerializedOutlinerFolder[] = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object") continue;
+  const rows = value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
     const source = entry as Record<string, unknown>;
     const id = asNullableString(source.id);
     const name = asNullableString(source.name);
-    if (!id || !name) continue;
+    return id && name ? [{ id, name, parentFolderId: asNullableString(source.parentFolderId) }] : [];
+  });
+  const authored = new Set(rows.map((row) => row.id));
+  const taken = new Set<string>();
+  const folders: SerializedOutlinerFolder[] = [];
+  for (const { id, name, parentFolderId } of rows) {
     let unique = id;
     let suffix = 2;
-    while (taken.has(unique)) {
+    while (taken.has(unique) || (unique !== id && authored.has(unique))) {
       unique = `${id}-${suffix}`;
       suffix += 1;
     }
     taken.add(unique);
-    folders.push({
-      id: unique,
-      name,
-      parentFolderId: asNullableString(source.parentFolderId),
-    });
+    folders.push({ id: unique, name, parentFolderId });
   }
 
   const byId = new Map(folders.map((folder) => [folder.id, folder]));

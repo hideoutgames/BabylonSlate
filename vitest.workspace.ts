@@ -103,6 +103,10 @@ export default defineConfig({
         // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
         // coverage of the Babylon/Havok wasm surface is environment-dependent.
         "**/havok-backend.ts",
+        "**/havok-records.ts",
+        "**/havok-queries.ts",
+        "**/havok-contacts.ts",
+        "**/havok-characters.ts",
         "**/havok-loader.ts",
         "**/rapier-backend.ts",
         // Browser Worker + OffscreenCanvas encode path; covered by editor wiring

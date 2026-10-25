@@ -1,29 +1,10 @@
-import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
+import type { SerializedScene, SerializedTransform } from "@haptic/core";
 import type { EditCommand } from "../command";
 import { snapshotBytes } from "../snapshot-bytes";
+import { replaceActor, replaceComponent } from "./scene-actor";
 
 // Deltas for scene fields the original command set did not cover, so
 // `diffSceneCommands` can represent every authored field.
-
-function updateActor(
-  doc: SerializedScene,
-  actorId: string,
-  update: (actor: SerializedActor) => SerializedActor,
-): SerializedScene {
-  return { ...doc, actors: doc.actors.map((actor) => actor.id === actorId ? update(actor) : actor) };
-}
-
-function updateComponent(
-  doc: SerializedScene,
-  actorId: string,
-  componentId: string,
-  update: (component: SerializedComponent) => SerializedComponent,
-): SerializedScene {
-  return updateActor(doc, actorId, (actor) => ({
-    ...actor,
-    components: actor.components.map((component) => component.id === componentId ? update(component) : component),
-  }));
-}
 
 /** Per-instance actor variable overrides, including SceneLayer switcher entries. */
 export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
@@ -46,7 +27,7 @@ export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return updateActor(doc, this.actorId, (actor) => {
+    return replaceActor(doc, this.actorId, (actor) => {
       const next = { ...actor };
       if (this.to === undefined) delete next.properties;
       else next.properties = structuredClone(this.to);
@@ -87,7 +68,7 @@ export class SetActorClassCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return updateActor(doc, this.actorId, (actor) => ({ ...actor, classId: this.to }));
+    return replaceActor(doc, this.actorId, (actor) => ({ ...actor, classId: this.to }));
   }
 
   invert(): SetActorClassCommand {
@@ -116,7 +97,7 @@ export class SetComponentClassCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return updateComponent(doc, this.actorId, this.componentId, (component) => ({ ...component, classId: this.to }));
+    return replaceComponent(doc, this.actorId, this.componentId, (component) => ({ ...component, classId: this.to }));
   }
 
   invert(): SetComponentClassCommand {
@@ -145,7 +126,7 @@ export class SetComponentNameCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return updateComponent(doc, this.actorId, this.componentId, (component) => {
+    return replaceComponent(doc, this.actorId, this.componentId, (component) => {
       const next = { ...component };
       if (this.to === undefined) delete next.name;
       else next.name = this.to;
@@ -187,7 +168,7 @@ export class SetComponentTransformPresenceCommand implements EditCommand<Seriali
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return updateComponent(doc, this.actorId, this.componentId, (component) => {
+    return replaceComponent(doc, this.actorId, this.componentId, (component) => {
       if (this.to !== undefined && component.classId === "2DAnchorComponent") return component;
       const next = { ...component };
       if (this.to === undefined) delete next.transform;
