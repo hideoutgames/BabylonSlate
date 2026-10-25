@@ -107,6 +107,8 @@ export class SourceControlService {
   private refreshRevision = 0;
   private providerRevision = 0;
   private configureRevision = 0;
+  /** Bumped whenever a create or unlock reply changes `locksByPath`, so a verify that predates it is not applied. */
+  private lockMutations = 0;
   private lockRefreshState: LockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
   private lastOperationError: string | null = null;
 
@@ -335,8 +337,15 @@ export class SourceControlService {
     this.lockRefreshState = { ...this.lockRefreshState, status: "refreshing", error: null };
     this.emit();
     try {
-      const result = await provider.verify();
-      if (revision !== this.refreshRevision) return;
+      let result;
+      let mutations;
+      // The server may have answered before a lock this editor created or
+      // released meanwhile; that list would revive or drop it, so ask again.
+      do {
+        mutations = this.lockMutations;
+        result = await provider.verify();
+        if (revision !== this.refreshRevision) return;
+      } while (isOk(result) && mutations !== this.lockMutations);
       if (!isOk(result)) {
         this.lockRefreshState = {
           ...this.lockRefreshState,
@@ -411,6 +420,7 @@ export class SourceControlService {
     if (revision !== this.providerRevision) return;
     if (isOk(result)) {
       this.locksByPath.set(path, result.value);
+      this.lockMutations += 1;
       this.banners.delete(path);
       this.editMode.set(path, "editable");
       this.emit();
@@ -419,6 +429,7 @@ export class SourceControlService {
     if (result.error.kind === "conflict" && result.error.lock) {
       const lock = result.error.lock;
       this.locksByPath.set(path, lock);
+      this.lockMutations += 1;
       if (lock.ours) {
         this.banners.delete(path);
         this.editMode.set(path, "editable");
@@ -473,6 +484,7 @@ export class SourceControlService {
       throw new Error(message, { cause: error });
     }
     this.locksByPath.set(newPath, lock);
+    this.lockMutations += 1;
     this.banners.delete(newPath);
     this.editMode.set(newPath, "editable");
     this.autoLockAttempted.add(newPath);
@@ -489,6 +501,7 @@ export class SourceControlService {
       throw new Error(message, { cause: error });
     }
     this.locksByPath.delete(oldPath);
+    this.lockMutations += 1;
     this.autoLockAttempted.delete(oldPath);
     this.banners.delete(oldPath);
     this.editMode.delete(oldPath);
@@ -558,6 +571,7 @@ export class SourceControlService {
     for (const [path, lock] of this.locksByPath) {
       if (lock.id === id) {
         this.locksByPath.delete(path);
+        this.lockMutations += 1;
         this.autoLockAttempted.delete(path);
         this.editMode.delete(path);
         this.banners.delete(path);

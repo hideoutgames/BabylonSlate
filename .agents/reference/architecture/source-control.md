@@ -58,7 +58,7 @@ Linux without a keyring stores new values with an explicit plaintext tag (accept
 - Moves, renames and deletes are path-keyed over every contained asset: ours → lock new, then unlock old (`transferLock`, never releasing first); delete of ours unlocks (`releasePath`); theirs → refuse with the holder before mutating. Copy never transfers locks. A failed transfer is reported and never undoes the file move.
 - While enabled, the Texture alignment pass never re-encodes older Textures in the background (it would race a teammate for the file); only user-initiated re-encodes run, and they count as edits for auto-lock.
 - The Locks DockView window exists only when `sourceControl: true` is passed to `listDockWindows`. Content Browser tiles expose `data-lock-state` `mine` / `theirs`.
-- `LockPollScheduler` ticks on subscribe, then every `pollIntervalMs`; pause/resume follow background/foreground and ticks never overlap. Failed checks keep the cached list as the last known result; superseded replies never replace current state.
+- `LockPollScheduler` ticks on subscribe, then every `pollIntervalMs`; pause/resume follow background/foreground and ticks never overlap. Failed checks keep the cached list as the last known result; superseded replies never replace current state, and a verify reply that a local create or unlock overtook is requested again before it replaces the list.
 
 ## External change
 
