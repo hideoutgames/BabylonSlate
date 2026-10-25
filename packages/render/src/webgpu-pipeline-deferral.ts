@@ -77,6 +77,8 @@ type DeferralState = {
   startedAt: WeakMap<CacheNode, number>;
   /** Open scopes with `omits`. */
   omitting: number;
+  /** Open warm scopes: with none, the pipeline lookup needs no scope. */
+  warmOpen: number;
 };
 
 /** Babylon 9.29 pipeline-cache statistics a synchronous creation updates. */
@@ -97,7 +99,7 @@ function install(engine: AbstractEngine): DeferralState {
     throw new Error("Unsupported Babylon WebGPU pipeline cache layout: _draw, getRenderPipeline, _createRenderPipeline or _buildRenderPipelineDescriptor is missing.");
   const state: DeferralState = {
     scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0, settled: 0, drawn: new WeakSet(), passDraws: new Map(),
-    startedAt: new WeakMap(), omitting: 0,
+    startedAt: new WeakMap(), omitting: 0, warmOpen: 0,
   };
   /** The innermost open scope that admits the current render pass. */
   const scopeOfPass = (): Scope | undefined => {
@@ -195,7 +197,9 @@ function install(engine: AbstractEngine): DeferralState {
   };
   // A warm draw looks its pipeline up (a miss starts it above) and is skipped either way.
   cache.getRenderPipeline = function (this: PipelineCache, ...args) {
-    const scope = state.scopes.length ? scopeOfPass() : undefined;
+    // Only a warm scope changes the lookup; without one, no draw needs its pass's scope found.
+    if (!state.warmOpen) return lookup.apply(this, args);
+    const scope = scopeOfPass();
     if (!scope?.warm) return lookup.apply(this, args);
     scope.lookups += 1;
     scope.skipped += 1;
@@ -315,6 +319,7 @@ export function beginPipelineDeferral(
   };
   scopes.push(scope);
   if (omits) state.omitting += 1;
+  if (warm) state.warmOpen += 1;
   let closed = false;
   return {
     close: () => {
@@ -323,6 +328,7 @@ export function beginPipelineDeferral(
       const index = scopes.lastIndexOf(scope);
       if (index >= 0) scopes.splice(index, 1);
       if (omits) state.omitting -= 1;
+      if (warm) state.warmOpen -= 1;
       // A pass that drew nothing but left-out draws would present empty: it holds for them as an unadmitted pass does.
       for (const [pass, { draws, nodes }] of scope.omitted) {
         if (scope.drew.has(pass)) continue;
