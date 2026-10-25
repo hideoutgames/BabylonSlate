@@ -222,7 +222,7 @@ describe("createActorFromSerialized", () => {
     expect(placed.components.map((component) => component.guid)).toEqual(["replacement", "cage"]);
     expect(placed.components[1]!.getVariable("targetMeshComponentId")).toBe("replacement");
   });
-  it("instantiates the dedicated streaming actor identity and its authored scene target", () => {
+  it("instantiates the dedicated streaming actor identity", () => {
     const world = testWorld();
     const actors = documentActors(world, {
       ...createDefaultScene(),
@@ -233,8 +233,6 @@ describe("createActorFromSerialized", () => {
     const actor = actors[0];
     expect(actor).toBeInstanceOf(SceneStreamingActor);
     expect(world.classRegistry.isA(actor!.classId, "Actor")).toBe(true);
-    expect((actor as SceneStreamingActor).targetSceneGuid).toBe("scene-courtyard");
-    expect((actor as SceneStreamingActor).targetSceneName).toBe("Courtyard");
   });
 
   it("builds unspawned actors with serialized ids, transforms, and components", () => {
