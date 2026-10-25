@@ -30,10 +30,17 @@ function displayValue(value: SaveGameValue): string {
   return String(value);
 }
 
-/** Play's service rejects a default it cannot store; the preview service below never receives the defaults. */
-function saveIdError(value: string): string | null {
+/**
+ * Play's service rejects a default it cannot store; the preview service below never receives the defaults.
+ * The core check decides; its message covers every kind of save ID, so name the field instead.
+ */
+function saveIdError(label: string, value: string): string | null {
   try { validateSaveGameId(value); return null; }
-  catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
+  catch {
+    if (!value.trim()) return `${label} must not be empty.`;
+    try { encodeURIComponent(value); } catch { return `${label} contains characters a save cannot store.`; }
+    return `${label} is too long to store.`;
+  }
 }
 
 function downloadSave(text: string, slot: string) {
@@ -118,7 +125,8 @@ export function ProjectSaveGamesSettings() {
   };
   if (!settings) return null;
   const disabled = pending || !service;
-  const defaultSlotError = saveIdError(settings.defaultSlot);
+  const defaultSlotError = saveIdError("Default Slot", settings.defaultSlot);
+  const defaultProfileError = saveIdError("Default Profile", settings.defaultProfile);
   return <FieldGroup className="min-w-0" data-testid="settings-save-games-panel">
     <FieldSet className="min-w-0">
       <FieldLegend>Save Games</FieldLegend>
@@ -127,7 +135,7 @@ export function ProjectSaveGamesSettings() {
         <FieldDescription>Create a Save Game asset with typed fields and defaults, then select it here. Save Game and Load Game use the default slot automatically.</FieldDescription>
       </Field>
       <Field data-invalid={defaultSlotError ? true : undefined}><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><Input id="settings-save-slot" value={settings.defaultSlot} aria-invalid={defaultSlotError ? true : undefined} aria-describedby={defaultSlotError ? "settings-save-slot-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} />{defaultSlotError ? <FieldError id="settings-save-slot-error">{defaultSlotError}</FieldError> : null}</Field>
-      <Field><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><Input id="settings-save-profile" value={settings.defaultProfile} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} /></Field>
+      <Field data-invalid={defaultProfileError ? true : undefined}><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><Input id="settings-save-profile" value={settings.defaultProfile} aria-invalid={defaultProfileError ? true : undefined} aria-describedby={defaultProfileError ? "settings-save-profile-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} />{defaultProfileError ? <FieldError id="settings-save-profile-error">{defaultProfileError}</FieldError> : null}</Field>
       {/* Reserve the Switch's expanded hit area without clipping it at the panel edge. */}
       <Field orientation="horizontal" className="pr-3"><FieldContent className="min-w-0"><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel><FieldDescription>Clear this project's local preview profiles before each Play session. Exported game saves use a separate namespace.</FieldDescription></FieldContent><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>
     </FieldSet>

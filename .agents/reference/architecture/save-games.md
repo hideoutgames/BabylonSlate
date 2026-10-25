@@ -49,7 +49,7 @@ Typed Save Game definitions, the save/load service shared by Play, Preview Build
 | `apply-failed` | Validated data could not be restored to the runtime |
 
 - Namespace: `save-games/<projectId>/<preview|game>/<profile>/<slot>`, keyed by the stable project id so renames never change save identity. Editor previews and exported players never share a namespace; Reset only works on preview saves.
-- Each ID is a URI-encoded segment of at most 120 encoded characters; `validateSaveGameId` applies that rule. The settings save manager names the profile and slot on every call and builds its service without the project defaults (editing them never rebuilds it), so it checks Default Slot with `validateSaveGameId` instead of the constructor.
+- Each ID is a URI-encoded segment of at most 120 encoded characters; `validateSaveGameId` applies that rule. The settings save manager names the profile and slot on every call and builds its service without the project defaults (editing them never rebuilds it), so it checks Default Slot and Default Profile with `validateSaveGameId` instead of the constructor, and words each failure for its field.
 - Capture runs at the runtime simulation boundary (`atBoundary`); encoding, hashing and storage run afterwards. Async completion is not zero frame cost.
 - Conflicting operations are serialized; on web, Web Locks cover the full read/choose/write transaction across same-origin tabs. Native hosts need equivalent host-owned coordination.
 - Loads validate format, definition, schema, field values and runtime state before applying; a failed load never replaces the current data. New Game and Load replace contents but keep the identity of the record from Get Save Data.

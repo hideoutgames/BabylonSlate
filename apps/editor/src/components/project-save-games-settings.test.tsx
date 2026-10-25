@@ -89,16 +89,23 @@ describe("Preview Saves manager", () => {
     expect(screen.queryByText("Saved Fields · default")).toBeNull();
   });
 
-  it("flags a Default Slot too long to store until it is shortened", async () => {
+  it("flags a Default Slot too long to store and an empty Default Profile until they are fixed", async () => {
     harness.defaultSlot = "x".repeat(121);
+    harness.defaultProfile = " ";
     const { rerender } = render(<ProjectSaveGamesSettings />);
-    const input = screen.getByLabelText("Default Slot");
-    expect(input.getAttribute("aria-invalid")).toBe("true");
-    expect(document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent).toBe("A project, profile or slot ID is too long.");
+    const slot = screen.getByLabelText("Default Slot");
+    const profile = screen.getByLabelText("Default Profile");
+    expect(slot.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(slot.getAttribute("aria-describedby") ?? "")?.textContent).toBe("Default Slot is too long to store.");
+    expect(profile.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(profile.getAttribute("aria-describedby") ?? "")?.textContent).toBe("Default Profile must not be empty.");
     harness.defaultSlot = "checkpoint";
+    harness.defaultProfile = "guest";
     rerender(<ProjectSaveGamesSettings />);
-    expect(input.hasAttribute("aria-invalid")).toBe(false);
-    expect(screen.queryByText("A project, profile or slot ID is too long.")).toBeNull();
+    expect(slot.hasAttribute("aria-invalid")).toBe(false);
+    expect(profile.hasAttribute("aria-invalid")).toBe(false);
+    expect(screen.queryByText("Default Slot is too long to store.")).toBeNull();
+    expect(screen.queryByText("Default Profile must not be empty.")).toBeNull();
   });
 
   it("confirms destructive reset, removes all preview profiles, and retains exported-game data", async () => {
