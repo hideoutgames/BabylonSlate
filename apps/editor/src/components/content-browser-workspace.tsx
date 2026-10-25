@@ -9,33 +9,15 @@ import {
   useState,
 } from "react";
 import {
-  ArrowRightIcon,
-  ArrowUpDownIcon,
   ArrowUpRightIcon,
-  BoneIcon,
-  ChevronsUpDownIcon,
-  CircleCheckIcon,
-  CopyIcon,
-  CopyPlusIcon,
-  FileInputIcon,
   FolderIcon,
-  FolderInputIcon,
   FolderPlusIcon,
-  ImageIcon,
-  LinkIcon,
-  ListFilterIcon,
-  PaintbrushIcon,
-  PencilIcon,
   PlusIcon,
-  Trash2Icon,
-  TriangleAlertIcon,
   UploadIcon,
-  WaypointsIcon,
 } from "lucide-react";
-import type { AssetCopyOptions, IndexedAsset } from "@haptic/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import {
   isThumbnailableAssetType,
-  newAssetGuid,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
   pickerImportAccept,
@@ -58,20 +40,16 @@ import {
   SearchInput,
   ShortcutKeys,
   ariaKeyShortcuts,
-  SelectableText,
   TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
   useContextMenu,
   type ContextMenuItem,
   AssetPicker,
-  ClassPicker,
-  PickerIdentity,
   type TypeVisual,
   type TreeDropPlacement,
 } from "@haptic/editor-kit";
-import { enqueueModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
-import { createAssetThumbnailRevisionIndex } from "../lib/asset-thumbnail-revision";
+import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { AssetReferenceDialog } from "./asset-reference-dialog";
 import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
@@ -103,43 +81,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@haptic/ui/components/sheet";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@haptic/ui/components/dropdown-menu";
-import { Input } from "@haptic/ui/components/input";
-import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
-import { Badge } from "@haptic/ui/components/badge";
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from "@haptic/ui/components/progress";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@haptic/ui/components/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogMedia,
-  AlertDialogTitle,
-} from "@haptic/ui/components/alert-dialog";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -181,7 +123,6 @@ import {
   contentBrowserSelectionMoves,
   contentBrowserTreeDropMoves,
   lastSceneClassDeleteLines,
-  CONTENT_BROWSER_SORT_OPTIONS,
   filterAssets,
   flattenContentBrowserForest,
   flattenFolderForest,
@@ -205,8 +146,6 @@ import {
   visualForIndexedAsset,
   withAutoCollapsedNestedFolders,
   runWithContentBrowserImportBusy,
-  buildMaterialInstanceAssetResult,
-  materialInstanceNameFor,
   openSceneViewportMode,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
@@ -245,20 +184,11 @@ import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./cont
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
-
-type DeleteTarget =
-  | { kind: "assets"; guids: string[] }
-  | { kind: "folder"; path: string; guids: string[] }
-  | { kind: "selection"; folders: string[]; guids: string[] };
-
-/** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
-type CopyStep = {
-  name: string;
-  /** Files the step writes, for the progress total. */
-  units: number;
-  run: (options: AssetCopyOptions) => Promise<() => Promise<void>>;
-  onDone?: () => void;
-};
+import { ContentBrowserDeleteDialogs, type DeleteTarget } from "./content-browser-delete-dialogs";
+import { ContentBrowserFilterSortMenus } from "./content-browser-filter-sort-menus";
+import { ContentBrowserNameDialog, type NameEntry } from "./content-browser-name-dialog";
+import { ContentBrowserResultDialogs } from "./content-browser-result-dialogs";
+import { contentBrowserTileMenuItems, type CopyStep } from "./content-browser-tile-menu";
 
 type MoveTarget = {
   operation: "move" | "copy";
@@ -1274,283 +1204,35 @@ function ContentBrowserWorkspaceBody({
 
   const keybinds = useKeybindings();
   const tileContextItems = useMemo(
-    () => [
-      {
-        id: "open" as const,
-        label: "Open",
-        icon: <ArrowUpRightIcon />,
-        onSelect: () => {
-          const guid = menuTargetGuidsRef.current[0];
-          if (!guid || !assetRegistry) return;
-          const asset = assetRegistry.getByGuid(guid);
-          if (!asset) return;
-          void openOrFocusDocument(asset);
-        },
-      },
-      {
-        id: "generate-thumbnail" as const,
-        label: "Generate Thumbnail",
-        icon: <ImageIcon />,
-        onSelect: () => {
-          if (!assetRegistry || !projectGuid || !thumbnailsEnabled) return;
-          const guids = [...menuTargetGuidsRef.current];
-          const revisions = createAssetThumbnailRevisionIndex(
-            assetRegistry.list(), projectDocument?.settings.twoD?.pixelsPerUnit,
-          );
-          void (async () => {
-            const jobs: ModelThumbnailJob[] = [];
-            for (const guid of guids) {
-              const asset = assetRegistry.getByGuid(guid);
-              if (!asset) continue;
-              const type = asset.header.type;
-              if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class") continue;
-              jobs.push({
-                guid, path: asset.path, type, payload: asset.header.payload,
-                projectGuid, cacheKey: await revisions.cacheKey(guid) ?? guid,
-              });
-            }
-            enqueueModelThumbnailJobs(jobs);
-          })().catch((error) => setImportErrors([error instanceof Error ? error.message : String(error)]));
-        },
-      },
-      {
-        id: "import-msdf-atlas" as const,
-        label: "Import MSDF Atlas…",
-        icon: <FileInputIcon />,
-        onSelect: () => {
-          void (async () => {
-            const guid = menuTargetGuidsRef.current[0];
-            if (!guid || !assetRegistry) return;
-            const asset = assetRegistry.getByGuid(guid);
-            if (!asset || asset.header.type !== "Font") return;
-            try {
-              const files = await pickImportFiles({
-                multiple: true,
-                accept: ".json,.png",
-              });
-              if (!files.length) return;
-              const prepared = groupMsdfImportBatch(files);
-              const browse = contentBrowserFolderOps(
-                selectedFolderPath,
-                browserRoots,
-              );
-              if (browse.readOnly) return;
-              const controller = new AbortController();
-              importAbortRef.current = controller;
-              try {
-                for (const [index, file] of prepared.entries()) {
-                  updateImportProgress(controller.signal, { phase: file.name, completed: index, total: prepared.length, fraction: null });
-                  await assetRegistry.importFile(
-                    asset.rootId,
-                    browse.relative,
-                    file.name,
-                    file.bytes,
-                    {
-                      sidecars: file.sidecars,
-                      attachToGuid: guid,
-                      signal: controller.signal,
-                    },
-                  );
-                }
-              } finally {
-                if (importAbortRef.current === controller) importAbortRef.current = null;
-                setImportProgress(null);
-                await refreshAssetRegistry();
-              }
-            } catch (err) {
-              if (err instanceof DOMException && err.name === "AbortError") return;
-              setImportErrors([
-                err instanceof Error ? err.message : String(err),
-              ]);
-            }
-          })();
-        },
-      },
-      {
-        id: "create-material-instance" as const,
-        label: "Create Material Instance",
-        icon: <PaintbrushIcon />,
-        onSelect: () => {
-          if (busy) return;
-          void (async () => {
-            const guid = menuTargetGuidsRef.current[0];
-            const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
-            if (!assetRegistry || !parent) return;
-            // Beside its parent, so a Material and its instances stay together.
-            const folder = parentFolderPath(parent.path);
-            const browse = contentBrowserFolderOps(folder, browserRoots);
-            if (browse.readOnly) return;
-            const paths = assetRegistry.list().map((asset) => asset.path);
-            const name = materialInstanceNameFor(parent.header.name, (candidate) =>
-              isNewAssetNameTaken(paths, folder, "MaterialInstance", candidate));
-            const fileName = newAssetFileName("MaterialInstance", name);
-            if (!fileName) return;
-            setBusy(true);
-            setOperationError(null);
-            try {
-              const created = await assetRegistry.createAsset(
-                browse.rootId,
-                browse.relative ? `${browse.relative}/${fileName}` : fileName,
-                buildMaterialInstanceAssetResult(parent.header, newAssetGuid(), name),
-              );
-              // The mounted registry indexed the instance on write: no rescan.
-              noteAssetsCreated();
-              await openOrFocusDocument(created);
-            } catch (error) {
-              setOperationError(error instanceof Error ? error.message : String(error));
-            } finally {
-              setBusy(false);
-            }
-          })();
-        },
-      },
-      {
-        id: "duplicate" as const,
-        label: "Duplicate",
-        icon: <CopyPlusIcon />,
-        shortcut: keybinds.get("edit.duplicate")?.[0],
-        onSelect: () => {
-          if (busy || !assetRegistry) return;
-          const folders = rootSelectedFolderPaths(
-            menuTargetFoldersRef.current.filter(
-              (path) => !isFolderTreeRoot(path, rootPrefixes),
-            ),
-          );
-          const guids = guidsOutsideSelectedFolders(
-            menuTargetGuidsRef.current,
-            folders,
-            (guid) => assetRegistry.getByGuid(guid)?.path,
-          );
-          // Each copy is written beside its source, as folder duplicates are.
-          const sources = [
-            ...folders.map((path) => ({ guid: null, path, from: contentBrowserFolderOps(path, browserRoots) })),
-            ...guids.flatMap((guid) => {
-              const path = assetRegistry.getByGuid(guid)?.path;
-              return path ? [{ guid, path, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
-            }),
-          ];
-          const readOnly = sources.find(({ from }) => from.readOnly);
-          if (readOnly) {
-            setOperationError(`${readOnly.from.pathPrefix} is read-only.`);
-            return;
-          }
-          const steps: CopyStep[] = sources.map(({ guid, path, from }) => guid
-            ? {
-              name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
-              units: 1,
-              run: async (options) => {
-                const copy = await assetRegistry.duplicateAsset(guid, from.rootId, from.relative, options);
-                return () => assetRegistry.deleteAsset(copy.header.guid);
-              },
-            }
-            : {
-              name: path.slice(path.lastIndexOf("/") + 1),
-              units: folderAssetCount(path),
-              run: async (options) => {
-                const copy = await assetRegistry.duplicateFolder(from.rootId, from.relative, options);
-                return () => assetRegistry.deleteFolder(from.rootId, copy);
-              },
-            });
-          void (async () => {
-            setBusy(true);
-            setOperationError(null);
-            try {
-              try {
-                await runCopySteps("duplicate", steps);
-              } finally {
-                await refreshAssetRegistry();
-              }
-            } catch (error) {
-              setOperationError(error instanceof Error ? error.message : String(error));
-            } finally {
-              setBusy(false);
-            }
-          })();
-        },
-      },
-      {
-        id: "rename" as const,
-        label: "Rename",
-        icon: <PencilIcon />,
-        shortcut: keybinds.get("edit.rename")?.[0],
-        onSelect: () => {
-          const folders = menuTargetFoldersRef.current.filter(
-            (path) => !isFolderTreeRoot(path, rootPrefixes),
-          );
-          const guids = menuTargetGuidsRef.current;
-          if (folders.length === 1 && guids.length === 0) {
-            const path = folders[0]!;
-            setNameDialog({
-              kind: "rename-folder",
-              path,
-              value: path.slice(path.lastIndexOf("/") + 1),
-            });
-            return;
-          }
-          const guid = guids[0];
-          if (!guid || !assetRegistry) return;
-          const asset = assetRegistry.getByGuid(guid);
-          if (!asset) return;
-          setNameDialog({
-            kind: "rename",
-            guid,
-            value: stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name),
-          });
-        },
-      },
-      {
-        id: "retarget" as const,
-        label: "Retarget…",
-        icon: <BoneIcon />,
-        testId: "content-browser-retarget",
-        onSelect: () => setRetargetPickerOpen(true),
-      },
-      {
-        id: "move" as const,
-        label: "Move…",
-        icon: <FolderInputIcon />,
-        onSelect: () => openMoveForSnapshot("move"),
-      },
-      {
-        id: "copy" as const,
-        label: "Copy to Folder…",
-        icon: <CopyIcon />,
-        onSelect: () => openMoveForSnapshot("copy"),
-      },
-      {
-        id: "copy-asset-reference" as const,
-        label: "Copy Asset Reference",
-        icon: <LinkIcon />,
-        onSelect: () => {
-          const guid = menuTargetGuidsRef.current[0];
-          if (!guid) return;
-          void navigator.clipboard.writeText(guid);
-        },
-      },
-      {
-        id: "show-references" as const,
-        label: "Show References",
-        shortcut: keybinds.get("browser.references")?.[0],
-        icon: <WaypointsIcon />,
-        onSelect: () => {
-          const guid = menuTargetGuidsRef.current[0];
-          if (!guid || !assetRegistry) return;
-          setReferenceGuid(guid);
-        },
-      },
-      {
-        id: "delete" as const,
-        label: "Delete",
-        icon: <Trash2Icon />,
-        variant: "destructive" as const,
-        shortcut: keybinds.get("edit.delete")?.[0],
-        onSelect: () =>
-          requestDeleteSnapshot(
-            menuTargetGuidsRef.current,
-            menuTargetFoldersRef.current,
-          ),
-      },
-    ],
+    () => contentBrowserTileMenuItems({
+      menuTargetGuidsRef,
+      menuTargetFoldersRef,
+      assetRegistry,
+      projectGuid,
+      projectDocument,
+      thumbnailsEnabled,
+      selectedFolderPath,
+      browserRoots,
+      rootPrefixes,
+      busy,
+      keybinds,
+      importAbortRef,
+      openOrFocusDocument,
+      setImportErrors,
+      updateImportProgress,
+      setImportProgress,
+      refreshAssetRegistry,
+      noteAssetsCreated,
+      setBusy,
+      setOperationError,
+      folderAssetCount,
+      runCopySteps,
+      setNameDialog,
+      setRetargetPickerOpen,
+      openMoveForSnapshot,
+      setReferenceGuid,
+      requestDeleteSnapshot,
+    }),
     [
       assetRegistry,
       busy,
@@ -2949,103 +2631,15 @@ function ContentBrowserWorkspaceBody({
             )}
             data-testid="content-browser-search"
           />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  variant={typeFilters.length > 0 ? "secondary" : "outline"}
-                  size={phone ? phoneIconSize : "sm"}
-                  data-testid="content-browser-filter"
-                  aria-label={
-                    typeFilters.length > 0
-                      ? `Filter (${typeFilters.length})`
-                      : "Filter"
-                  }
-                />
-              }
-            >
-              <ListFilterIcon data-icon="inline-start" />
-              {!phone
-                ? `Filter${typeFilters.length > 0 ? ` (${typeFilters.length})` : ""}`
-                : null}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="min-w-44"
-              data-testid="content-browser-filter-menu"
-            >
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Asset Types</DropdownMenuLabel>
-                {typeChips.map((type) => (
-                  <DropdownMenuCheckboxItem
-                    key={type}
-                    checked={typeFilters.includes(type)}
-                    data-testid={`content-browser-filter-${type}`}
-                    onCheckedChange={(checked) => {
-                      setTypeFilters((current) =>
-                        checked === true
-                          ? current.includes(type)
-                            ? current
-                            : [...current, type]
-                          : current.filter((entry) => entry !== type),
-                      );
-                    }}
-                  >
-                    <TypeVisualIcon
-                      visual={resolveTypeVisual({ assetType: type })}
-                      className="size-4"
-                    />
-                    {type}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={phone ? phoneIconSize : "sm"}
-                  data-testid="content-browser-sort"
-                  aria-label="Sort"
-                />
-              }
-            >
-              <ArrowUpDownIcon data-icon="inline-start" />
-              {!phone ? "Sort" : null}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="min-w-44"
-              data-testid="content-browser-sort-menu"
-            >
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Sort By</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={sortMode}
-                  onValueChange={(value) => {
-                    const next = CONTENT_BROWSER_SORT_OPTIONS.find(
-                      (option) => option.mode === value,
-                    );
-                    if (next) setSortMode(next.mode);
-                  }}
-                >
-                  {CONTENT_BROWSER_SORT_OPTIONS.map((option) => (
-                    <DropdownMenuRadioItem
-                      key={option.mode}
-                      value={option.mode}
-                      data-testid={`content-browser-sort-${option.mode}`}
-                    >
-                      {option.label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ContentBrowserFilterSortMenus
+            phone={phone}
+            phoneIconSize={phoneIconSize}
+            typeChips={typeChips}
+            typeFilters={typeFilters}
+            setTypeFilters={setTypeFilters}
+            sortMode={sortMode}
+            setSortMode={setSortMode}
+          />
         </div>
         {!phone ? (
           <ContentBrowserSelectionActions
@@ -3267,268 +2861,41 @@ function ContentBrowserWorkspaceBody({
         }}
       />
 
-      <AlertDialog
-        open={deleteTarget !== null && !confirmReferencedDelete && !replacementPicker}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-      >
-        <AlertDialogContent
-          variant="destructive"
-          className="editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0"
-          initialFocus={deleteCancelRef}
-          data-testid="content-browser-delete-dialog"
-          data-has-references={deleteInboundRefs.length > 0}
-        >
-          <AlertDialogHeader className="flex shrink-0 items-start gap-3 px-4 pt-4 pb-1">
-            <AlertDialogMedia className="mb-0 size-8 shrink-0" data-testid="content-browser-delete-media">
-              <Trash2Icon className="size-4" />
-            </AlertDialogMedia>
-            <div className="flex min-w-0 flex-col gap-1">
-              <AlertDialogTitle className="break-words">
-                {deleteListItems.length === 1
-                  ? `Delete ${deleteListItems[0]!.name}?`
-                  : deleteTarget?.kind === "selection" && deleteTarget.folders.length > 0
-                    ? `Delete ${deleteListNames.length} Items`
-                    : `Delete ${deleteListNames.length} Assets`}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {hasReferencedClass ? "Choose a replacement for each referenced Class, or leave None to clear its usages. This cannot be undone."
-                  : deleteInboundRefs.length > 0
-                  ? `${deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`} will lose references. This cannot be undone.`
-                  : "This cannot be undone."}
-              </AlertDialogDescription>
-            </div>
-          </AlertDialogHeader>
-          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-y-contain px-4 py-3 touch-pan-y"
-            tabIndex={0} role="region" aria-label="Assets And References"
-            data-testid="content-browser-delete-body">
-            {deleteLastSceneClassLines.length > 0 && (
-              <Alert variant="destructive" className="bg-destructive/5">
-                <TriangleAlertIcon />
-                {deleteLastSceneClassLines.map((line) => (
-                  <AlertTitle key={line} data-testid="content-browser-delete-last-warning">{line}</AlertTitle>
-                ))}
-              </Alert>
-            )}
-            <section className="flex min-w-0 flex-col gap-1.5" aria-label="Selected For Deletion">
-              <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                Deleting <Badge variant="secondary" className="tabular-nums">{deleteListNames.length}</Badge>
-              </h3>
-              <ul className="flex flex-col divide-y rounded-md border" data-testid="content-browser-delete-list">
-                {deleteListItems.map((item) => (
-                  <li key={item.key} className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-2 px-2.5 py-1.5 text-sm">
-                    <TypeVisualIcon visual={item.visual} />
-                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-                      <SelectableText className="font-medium break-words">{item.name}</SelectableText>
-                      <SelectableText className="text-xs text-muted-foreground break-all">{item.detail}</SelectableText>
-                    </div>
-                    {item.count ? <Badge variant="outline" className="tabular-nums">{item.count}</Badge> : null}
-                  </li>
-                ))}
-              </ul>
-              {deleteInboundRefs.length === 0 && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CircleCheckIcon className="size-3.5 shrink-0" />
-                  Nothing else references {deleteListItems.length === 1 ? "this item" : "these items"}.
-                </p>
-              )}
-            </section>
-            {hasReferencedClass && (
-              <section className="flex min-w-0 flex-col gap-1.5" aria-label="Replace Class">
-                <h3 className="text-xs font-medium text-muted-foreground">Replace Class</h3>
-                <ul className="flex flex-col divide-y rounded-md border">
-                  {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => {
-                    const usages = deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length;
-                    return (
-                      <li key={asset.header.guid}>
-                        <Field orientation="horizontal" className="flex-wrap items-center gap-2 px-2.5 py-1.5">
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <TypeVisualIcon visual={resolveTypeVisual({ family: "class" })} />
-                            <FieldLabel htmlFor={`replace-class-${asset.header.guid}`} className="min-w-0 truncate">
-                              <span className="sr-only">Replace </span>{resolveAssetName(asset.header.guid)}
-                            </FieldLabel>
-                            <Badge variant="secondary" className="tabular-nums">{usages === 1 ? "1 Usage" : `${usages} Usages`}</Badge>
-                            <ArrowRightIcon className="ml-auto hidden size-3.5 shrink-0 text-muted-foreground sm:block" />
-                          </div>
-                          <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
-                            className="min-h-[var(--touch-target,28px)] w-full shrink-0 justify-between sm:w-48"
-                            onClick={() => setReplacementPicker(asset.header.guid)}>
-                            {classReplacementChoices[asset.header.guid]
-                              ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} />
-                              : <span className="text-muted-foreground">None</span>}
-                            <ChevronsUpDownIcon data-icon="inline-end" className="text-muted-foreground" />
-                          </Button>
-                        </Field>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-            {deleteInboundRefs.length > 0 && (
-              <section className="flex min-w-0 flex-col gap-1.5" aria-label="Referenced By">
-                <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  Referenced By <Badge variant="secondary" className="tabular-nums">{deleteInboundRefs.length}</Badge>
-                </h3>
-                <ul className="flex min-w-0 flex-col divide-y rounded-md border bg-muted/20">
-                  {deleteInboundRefs.map((ref) => (
-                    <li key={ref.guid} className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-2 px-2.5 py-1.5 text-sm">
-                      <TypeVisualIcon visual={resolveTypeVisual({ assetType: ref.type })} />
-                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-                        <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
-                        <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
-                      </div>
-                      {deleteListItems.length > 1 || ref.targets.length > 1 ? (
-                        <span className="max-w-[40%] shrink-0 text-right text-xs break-words">
-                          <span className="text-muted-foreground">Uses </span>{ref.targets.join(", ")}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </div>
-          <AlertDialogFooter className="m-0 shrink-0 pt-3">
-            <AlertDialogCancel
-              ref={deleteCancelRef}
-              disabled={busy}
-              className="pointer-coarse:h-[var(--touch-target,44px)]"
-              data-testid="content-browser-delete-cancel"
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              className="pointer-coarse:h-[var(--touch-target,44px)]"
-              disabled={busy}
-              data-testid="content-browser-delete-confirm"
-              onClick={(event) => {
-                event.preventDefault();
-                // The second step shows the Class replacements; other assets
-                // have nothing more to choose, so this Delete updates references.
-                if (hasReferencedClass) setConfirmReferencedDelete(true);
-                else void confirmDelete();
-              }}
-            >
-              {busy ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ContentBrowserDeleteDialogs
+        deleteTarget={deleteTarget}
+        setDeleteTarget={setDeleteTarget}
+        confirmReferencedDelete={confirmReferencedDelete}
+        setConfirmReferencedDelete={setConfirmReferencedDelete}
+        replacementPicker={replacementPicker}
+        setReplacementPicker={setReplacementPicker}
+        classReplacementChoices={classReplacementChoices}
+        setClassReplacementChoices={setClassReplacementChoices}
+        deleteCancelRef={deleteCancelRef}
+        deleteInboundRefs={deleteInboundRefs}
+        deleteListItems={deleteListItems}
+        deleteListNames={deleteListNames}
+        hasReferencedClass={hasReferencedClass}
+        deleteLastSceneClassLines={deleteLastSceneClassLines}
+        deletedClasses={deletedClasses}
+        pickerCandidates={pickerCandidates}
+        classReplacements={classReplacements}
+        resolveAssetName={resolveAssetName}
+        busy={busy}
+        confirmDelete={confirmDelete}
+        deleteProgress={deleteProgress}
+        deleteError={deleteError}
+        setDeleteError={setDeleteError}
+      />
 
-      <ClassPicker open={replacementPicker !== null} onOpenChange={(open) => { if (!open) setReplacementPicker(null); }}
-        title="Replacement Class" classes={pickerCandidates.map((asset) => ({ id: asset.header.guid,
-          name: classIdFromClassAsset(asset), description: asset.path }))}
-        onPick={(guid) => {
-          if (replacementPicker) setClassReplacementChoices((current) => ({ ...current, [replacementPicker]: guid }));
-          setReplacementPicker(null);
-        }} />
-      <AlertDialog open={confirmReferencedDelete && deleteTarget !== null}
-        onOpenChange={(open) => { if (!open) setConfirmReferencedDelete(false); }}>
-        <AlertDialogContent variant="destructive" className="data-[size=default]:sm:max-w-md"
-          data-testid="content-browser-delete-references-confirmation">
-          <AlertDialogHeader>
-            <AlertDialogMedia>
-              <Trash2Icon />
-            </AlertDialogMedia>
-            <AlertDialogTitle>Delete Referenced Assets?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Updates references in {deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`}. This cannot be undone.
-              With None, placed actors keep their data on a base Class and child Classes fall back to Object.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <ul className="max-h-60 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm">
-            {classReplacements.map((entry) => <li key={entry.guid} className="px-3 py-1.5">{resolveAssetName(entry.guid)} → {entry.replacement ? resolveAssetName(entry.replacement.guid) : "None"}</li>)}
-          </ul>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Back</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={busy}
-              data-testid="content-browser-delete-references-confirm" onClick={(event) => { event.preventDefault(); void confirmDelete(); }}>
-              Delete And Update References
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={nameDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setNameDialog(null);
-        }}
-      >
-        <AlertDialogContent data-testid="content-browser-name-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {nameDialog?.kind === "folder"
-                ? "New Folder"
-                : nameDialog?.kind === "rename-folder"
-                  ? "Rename Folder"
-                  : "Rename Asset"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {nameDialog?.kind === "folder"
-                ? `Create a folder in ${selectedFolderPath}.`
-                : nameDialog?.kind === "rename-folder"
-                  ? "Rename the folder. References to its assets stay connected."
-                  : "Rename the asset file. References to it stay connected."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Field data-invalid={Boolean(nameDialogError) || undefined}>
-          <FieldLabel htmlFor="content-browser-name-input">Name</FieldLabel>
-          <Input
-            id="content-browser-name-input"
-            className="min-h-[var(--touch-target,44px)]"
-            data-testid="content-browser-name-input"
-              aria-describedby={
-                nameDialogError ? "content-browser-name-error" : undefined
-              }
-            aria-invalid={Boolean(nameDialogError) || undefined}
-            value={nameDialog?.value ?? ""}
-            onChange={(event) =>
-              setNameDialog((current) =>
-                current ? { ...current, value: event.target.value } : current,
-              )
-            }
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-              event.preventDefault();
-              void confirmNameDialog();
-            }}
-          />
-          </Field>
-          {nameDialogError ? (
-            <p
-              className="text-sm text-destructive"
-              data-testid="content-browser-name-taken"
-                id="content-browser-name-error"
-                role="alert"
-            >
-              {nameDialogError}
-            </p>
-          ) : null}
-          {operationError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could Not Save Name</AlertTitle>
-              <AlertDescription>{operationError}</AlertDescription>
-            </Alert>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy || Boolean(nameDialogError)}
-              data-testid="content-browser-name-confirm"
-              onClick={(event) => {
-                event.preventDefault();
-                void confirmNameDialog();
-              }}
-            >
-              {busy ? "Saving…" : nameDialog?.kind === "folder" ? "Create Folder" : "Rename"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ContentBrowserNameDialog
+        nameDialog={nameDialog}
+        setNameDialog={setNameDialog}
+        nameDialogError={nameDialogError}
+        selectedFolderPath={selectedFolderPath}
+        operationError={operationError}
+        busy={busy}
+        confirmNameDialog={confirmNameDialog}
+      />
 
       <ContentBrowserCopyProgressDialog progress={copyProgress} onCancel={cancelCopy} />
 
@@ -3589,32 +2956,6 @@ function ContentBrowserWorkspaceBody({
         />
       ) : null}
 
-      <Dialog open={deleteProgress !== null}>
-        <DialogContent showCloseButton={false} data-testid="deleting-overlay">
-          <DialogHeader>
-            <DialogTitle>Deleting Assets</DialogTitle>
-            <DialogDescription>Removing files and updating their references.</DialogDescription>
-          </DialogHeader>
-          {deleteProgress ? (
-            <Progress value={Math.round(100 * deleteProgress.done / deleteProgress.total)}>
-              <ProgressLabel>{deleteProgress.currentName}</ProgressLabel>
-              <ProgressValue />
-            </Progress>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={deleteError !== null} onOpenChange={(open) => { if (!open) setDeleteError(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Failed</AlertDialogTitle>
-            <AlertDialogDescription>{deleteError}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setDeleteError(null)}>Close</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <ImportProgressDialog progress={importProgress} onCancel={cancelImport} />
 
@@ -3636,91 +2977,15 @@ function ContentBrowserWorkspaceBody({
         data-testid="content-browser-retarget-picker"
       />
 
-      <AlertDialog
-        open={retargetErrors !== null}
-        onOpenChange={(open) => {
-          if (!open) setRetargetErrors(null);
-        }}
-      >
-        <AlertDialogContent data-testid="content-browser-retarget-errors">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Retarget Failed</AlertDialogTitle>
-            <AlertDialogDescription>
-              Retargeting could not complete for the items below.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {retargetErrors?.map((message) => (
-              <li key={message}>
-                <SelectableText>{message}</SelectableText>
-              </li>
-            ))}
-          </ul>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="content-browser-retarget-errors-dismiss"
-              onClick={() => setRetargetErrors(null)}
-            >
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={importErrors !== null}
-        onOpenChange={(open) => {
-          if (!open) setImportErrors(null);
-        }}
-      >
-        <AlertDialogContent data-testid="import-errors-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{importedFileCount > 0 ? "Import Partially Completed" : "Import Failed"}</AlertDialogTitle>
-            <AlertDialogDescription data-testid="import-result-summary">
-              {importedFileCount > 0 ? `${importedFileCount} file${importedFileCount === 1 ? "" : "s"} imported successfully. ` : ""}
-              {importErrors?.length} issue{importErrors?.length === 1 ? "" : "s"} need attention. Successfully imported assets remain in the project.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {importErrors?.map((message) => (
-              <li key={message}>
-                <SelectableText>{message}</SelectableText>
-              </li>
-            ))}
-          </ul>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="import-errors-dismiss"
-              onClick={() => setImportErrors(null)}
-            >
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
-        open={openError !== null}
-        onOpenChange={(open) => {
-          if (!open) setOpenError(null);
-        }}
-      >
-        <AlertDialogContent data-testid="content-browser-open-error">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Could Not Open Asset</AlertDialogTitle>
-            <AlertDialogDescription>
-              {openError ?? "The asset could not be opened."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="content-browser-open-error-dismiss"
-              onClick={() => setOpenError(null)}
-            >
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ContentBrowserResultDialogs
+        retargetErrors={retargetErrors}
+        setRetargetErrors={setRetargetErrors}
+        importErrors={importErrors}
+        setImportErrors={setImportErrors}
+        importedFileCount={importedFileCount}
+        openError={openError}
+        setOpenError={setOpenError}
+      />
     </div>
   );
 }
@@ -3737,10 +3002,6 @@ const MemoContentBrowserWorkspaceBody = memo(
   (previous, next) => previous.hidden && next.hidden,
 );
 
-type NameEntry =
-  | { kind: "rename"; guid: string; value: string }
-  | { kind: "folder"; value: string }
-  | { kind: "rename-folder"; path: string; value: string };
 
 export function ContentBrowserWorkspace({
   hidden = false,
