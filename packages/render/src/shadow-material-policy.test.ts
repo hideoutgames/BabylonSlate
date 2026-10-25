@@ -140,11 +140,14 @@ describe("shadow material cache policy", () => {
     expect(canCacheShadowMaterial(material, mesh)).toBe(false);
   });
 
-  it.each(["skeleton", "morph", "baked", "instance", "render-hook"] as const)(
-    "keeps %s deformation on live shadow refresh",
+  it.each(["skeleton", "morph", "baked", "render-hook"] as const)(
+    "keeps %s deformation on live shadow refresh, for the mesh and its instances",
     (kind) => {
       const { scene, mesh } = fixture();
       const material = new PBRMaterial("native", scene);
+      // An instance draws its source's geometry at its own pose: both cache until the source deforms.
+      const instance = mesh.createInstance("instance");
+      expect([canCacheShadowMaterial(material, mesh), canCacheShadowMaterial(material, instance)]).toEqual([true, true]);
       if (kind === "skeleton")
         mesh.skeleton = new Skeleton("rig", "rig", scene);
       if (kind === "morph")
@@ -153,9 +156,8 @@ describe("shadow material cache policy", () => {
         mesh.bakedVertexAnimationManager = new BakedVertexAnimationManager(
           scene,
         );
-      if (kind === "instance") mesh.createInstance("instance");
       if (kind === "render-hook") mesh.onBeforeRenderObservable.add(() => {});
-      expect(canCacheShadowMaterial(material, mesh)).toBe(false);
+      expect([canCacheShadowMaterial(material, mesh), canCacheShadowMaterial(material, instance)]).toEqual([false, false]);
     },
   );
 

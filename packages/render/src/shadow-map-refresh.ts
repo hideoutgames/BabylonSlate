@@ -2,6 +2,7 @@ import {
   Camera,
   CascadedShadowGenerator,
   DirectionalLight,
+  InstancedMesh,
   Matrix,
   Mesh,
   RenderTargetTexture,
@@ -134,7 +135,10 @@ export class ShadowMapRefresh {
         };
         this.casters.set(mesh, record);
       }
-      const geometry = mesh instanceof Mesh ? mesh.geometry : null;
+      // An instance draws its source's geometry, sub-meshes and material at its own world matrix: its shadow content is
+      // its source's, posed and shown by the instance itself.
+      const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+      const geometry = source instanceof Mesh ? source.geometry : null;
       if (record.geometry !== geometry) {
         if (record.geometry) unwatchGeometry(record.geometry);
         record.geometry = geometry;
@@ -160,9 +164,9 @@ export class ShadowMapRefresh {
       state.value(enabled);
       state.value(mesh.isVisible);
       state.value(mesh.visibility);
-      state.value(mesh instanceof Mesh ? mesh.sideOrientation : undefined);
-      state.value(mesh.skeleton);
-      state.value(mesh.morphTargetManager);
+      state.value(source instanceof Mesh ? source.sideOrientation : undefined);
+      state.value(source.skeleton);
+      state.value(source.morphTargetManager);
       state.value(mesh.subMeshes);
       // Babylon leaves this unset on empty model/tilemap roots until geometry
       // creates their first SubMesh. Keep tracking the later populated list.
@@ -200,22 +204,23 @@ export class ShadowMapRefresh {
       // Babylon 9.29 has no public index-mutability getter. updateIndices skips
       // onGeometryUpdated for an existing dynamic buffer, including GPU-only
       // updates, so only the known immutable state is eligible for caching.
-      const trackedDynamic = mesh instanceof Mesh && hasRevisionTrackedDynamicMesh(mesh);
+      const trackedDynamic = source instanceof Mesh && hasRevisionTrackedDynamicMesh(source);
       let dynamicGeometry =
         !trackedDynamic && (!geometry || Reflect.get(geometry, "_indexBufferIsUpdatable") !== false);
       const buffers = geometry?.getVertexBuffers();
-      const trackedCable = mesh instanceof Mesh && hasRevisionTrackedCableGeometry(mesh);
+      const trackedCable = source instanceof Mesh && hasRevisionTrackedCableGeometry(source);
       if (buffers)
         for (const kind in buffers)
           if (buffers[kind]?.isUpdatable() && !trackedDynamic && !(trackedCable && (kind === VertexBuffer.PositionKind || kind === VertexBuffer.NormalKind))) dynamicGeometry = true;
+      // An instance of a mesh with levels of detail draws the level its source selects: it keeps refreshing.
       const safeMesh =
-        mesh instanceof Mesh &&
+        source instanceof Mesh &&
         !dynamicGeometry &&
         !mesh.infiniteDistance &&
         mesh.billboardMode === Mesh.BILLBOARDMODE_NONE &&
-        (autoLod || !mesh.getLODLevels().length) &&
-        !mesh.onBeforeRenderObservable.hasObservers() &&
-        !mesh.onBeforeDrawObservable.hasObservers() &&
+        (source === mesh ? autoLod || !source.getLODLevels().length : !source.getLODLevels().length) &&
+        !source.onBeforeRenderObservable.hasObservers() &&
+        !source.onBeforeDrawObservable.hasObservers() &&
         (!geometry || geometryWatch !== null);
       state.value(safeMesh);
       state.end();

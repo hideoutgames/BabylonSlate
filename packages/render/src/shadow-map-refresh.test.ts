@@ -302,7 +302,6 @@ describe("local shadow refresh", () => {
     "skeleton",
     "morph",
     "alpha",
-    "instances",
     "updatable",
     "unknown",
   ] as const)("keeps %s caster content refreshing", async (kind) => {
@@ -318,9 +317,6 @@ describe("local shadow refresh", () => {
         break;
       case "alpha":
         material.transparencyMode = Material.MATERIAL_ALPHATEST;
-        break;
-      case "instances":
-        mesh.createInstance("moving instance");
         break;
       case "updatable":
         mesh.setVerticesData(
@@ -338,6 +334,66 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(6);
     expect(render()).toBe(6);
   });
+
+  it("caches an instance's shadow as its source's and refreshes when the instance or its source changes", async () => {
+    const { mesh, material, render } = await fixture();
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    const instance = mesh.createInstance("instance");
+    instance.position.set(1.5, 0, 0);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    instance.position.x = 2.5;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    instance.isVisible = false;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    instance.isVisible = true;
+    expect(render()).toBe(6);
+    // Hidden, the source still gives the instance its geometry and depth state.
+    mesh.isVisible = false;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    const positions = [...mesh.getVerticesData(VertexBuffer.PositionKind)!];
+    positions[0] = positions[0]! + 1;
+    mesh.setVerticesData(VertexBuffer.PositionKind, positions, false);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    material.backFaceCulling = false;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    instance.dispose();
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
+
+  it.each(["skeleton", "morph", "updatable", "levels of detail"] as const)(
+    "keeps a hidden source's instance refreshing for its source's %s content",
+    async (kind) => {
+      const { scene, mesh, render } = await fixture();
+      mesh.isVisible = false;
+      mesh.createInstance("instance").position.set(1.5, 0, 0);
+      expect(render()).toBe(6);
+      expect(render()).toBe(0);
+      switch (kind) {
+        case "skeleton":
+          mesh.skeleton = new Skeleton("rig", "rig", scene);
+          break;
+        case "morph":
+          mesh.morphTargetManager = new MorphTargetManager(scene);
+          break;
+        case "updatable":
+          mesh.setVerticesData(VertexBuffer.PositionKind, mesh.getVerticesData(VertexBuffer.PositionKind)!, true);
+          break;
+        case "levels of detail":
+          mesh.addLODLevel(50, MeshBuilder.CreateBox("coarse", { size: 1 }, scene));
+          break;
+      }
+      expect(render()).toBe(6);
+      expect(render()).toBe(6);
+    },
+  );
 
   it("invalidates local depth changes while a single-map sun, whose custom projection follows the camera, renders every frame", async () => {
     const { scene, camera, light, controller, generator, render } =
