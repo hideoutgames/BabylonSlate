@@ -41,6 +41,7 @@ import { ModelThumbnailCaptureHost } from "../components/model-thumbnail-capture
 import { TestAudioHostStats } from "../lib/test-audio-host-stats";
 import { TestParticleHostStats } from "../lib/test-particle-host-stats";
 import { profileRegion } from "../lib/render-profile";
+import { useRetainedValue } from "../lib/use-retained-value";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -158,6 +159,8 @@ function CloseErrorDialog({
   error: CloseError | null;
   onDismiss: () => void;
 }) {
+  // Kept while the dialog fades out.
+  const shown = useRetainedValue<CloseError | null>(error, null);
   return (
     <AlertDialog
       open={error !== null}
@@ -167,8 +170,8 @@ function CloseErrorDialog({
     >
       <AlertDialogContent data-testid="close-error-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>{error?.title}</AlertDialogTitle>
-          <AlertDialogDescription>{error?.message}</AlertDialogDescription>
+          <AlertDialogTitle>{shown?.title}</AlertDialogTitle>
+          <AlertDialogDescription>{shown?.message}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogAction data-testid="close-error-ok" onClick={onDismiss}>
