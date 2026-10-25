@@ -149,27 +149,29 @@ function MigrationPrompt({
   );
 }
 
-function CloseProjectErrorDialog({
-  message,
+type CloseError = { title: string; message: string };
+
+function CloseErrorDialog({
+  error,
   onDismiss,
 }: {
-  message: string | null;
+  error: CloseError | null;
   onDismiss: () => void;
 }) {
   return (
     <AlertDialog
-      open={message !== null}
+      open={error !== null}
       onOpenChange={(next) => {
         if (!next) onDismiss();
       }}
     >
-      <AlertDialogContent data-testid="close-project-error-dialog">
+      <AlertDialogContent data-testid="close-error-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Could Not Close Project</AlertDialogTitle>
-          <AlertDialogDescription>{message}</AlertDialogDescription>
+          <AlertDialogTitle>{error?.title}</AlertDialogTitle>
+          <AlertDialogDescription>{error?.message}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogAction data-testid="close-project-error-ok" onClick={onDismiss}>
+          <AlertDialogAction data-testid="close-error-ok" onClick={onDismiss}>
             OK
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -177,6 +179,9 @@ function CloseProjectErrorDialog({
     </AlertDialog>
   );
 }
+
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+const projectCloseError = (message: string): CloseError => ({ title: "Could Not Close Project", message });
 
 const SESSION_KEPT_PROJECT_OPEN =
   "The running Play or Simulate session did not stop, so the project stays open.";
@@ -270,7 +275,7 @@ function EditorChromeAndPrompts() {
   const closeRequest = useRef(0);
   /** The close request whose Save All pending migrations refused; Migrate On Save resumes it. */
   const closeAwaitingMigration = useRef<number | null>(null);
-  const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<CloseError | null>(null);
   const [savingBeforeClose, setSavingBeforeClose] = useState(false);
   const [showMigrate, setShowMigrate] = useState(false);
   /** The tabs a close request will close, listed by whichever of them are unsaved. */
@@ -294,7 +299,7 @@ function EditorChromeAndPrompts() {
   const reportCloseFailure = (error: unknown) => {
     console.error("[editor] Close Project failed", error);
     setProjectClosePrompt(false);
-    setCloseError(error instanceof Error ? error.message : String(error));
+    setCloseError(projectCloseError(errorMessage(error)));
   };
 
   const requestClose = async () => {
@@ -304,7 +309,24 @@ function EditorChromeAndPrompts() {
       return;
     }
     setProjectClosePrompt(false);
-    if (result.outcome === "refused") setCloseError(SESSION_KEPT_PROJECT_OPEN);
+    if (result.outcome === "refused") setCloseError(projectCloseError(SESSION_KEPT_PROJECT_OPEN));
+  };
+
+  /**
+   * An authoring lock (a Simulation, or Play stopped in the editor) refuses to
+   * close unsaved documents and Scenes; the other tabs still close.
+   */
+  const closeTabs = (ids: readonly string[]) => {
+    let refusal: string | null = null;
+    for (const id of ids) {
+      try {
+        closeDocument(id);
+      } catch (error) {
+        console.error("[editor] document close was refused", error);
+        refusal ??= errorMessage(error);
+      }
+    }
+    if (refusal !== null) setCloseError({ title: "Could Not Close Documents", message: refusal });
   };
 
   const exclusiveDirtyNames = pendingExclusiveScene
@@ -332,7 +354,7 @@ function EditorChromeAndPrompts() {
       setPendingTabClose([doc.id]);
       return;
     }
-    closeDocument(id);
+    closeTabs([id]);
   };
 
   const requestCloseAllDocuments = () => {
@@ -342,7 +364,7 @@ function EditorChromeAndPrompts() {
       setPendingTabClose(tabs.map((doc) => doc.id));
       return;
     }
-    for (const doc of tabs) closeDocument(doc.id);
+    closeTabs(tabs.map((doc) => doc.id));
   };
 
   const closePromptOpen =
@@ -366,7 +388,7 @@ function EditorChromeAndPrompts() {
       const tabs = getOpenDocuments().filter((doc) => pendingTabClose.includes(doc.id));
       if (tabs.some((doc) => doc.dirty)) return;
       setPendingTabClose(null);
-      for (const doc of tabs) closeDocument(doc.id);
+      closeTabs(tabs.map((doc) => doc.id));
     } else if (projectClosePrompt) {
       setProjectClosePrompt(false);
       void requestClose().catch(reportCloseFailure);
@@ -392,7 +414,7 @@ function EditorChromeAndPrompts() {
         if (projectClosePrompt && !await releaseSessionsForProjectClose()) {
           if (request !== closeRequest.current) return;
           setProjectClosePrompt(false);
-          setCloseError(SESSION_KEPT_PROJECT_OPEN);
+          setCloseError(projectCloseError(SESSION_KEPT_PROJECT_OPEN));
           return;
         }
         if (request !== closeRequest.current) return;
@@ -412,7 +434,7 @@ function EditorChromeAndPrompts() {
             return;
           }
           setPendingTabClose(null);
-          for (const doc of tabs) closeDocument(doc.id);
+          closeTabs(tabs.map((doc) => doc.id));
         } else await requestClose().catch(reportCloseFailure);
       } catch (error) {
         // The documents stay dirty and the prompt stays open to retry or discard.
@@ -450,8 +472,8 @@ function EditorChromeAndPrompts() {
           closeRequest.current += 1;
           closeAwaitingMigration.current = null;
           if (pendingTabClose) {
-            for (const id of pendingTabClose) closeDocument(id);
             setPendingTabClose(null);
+            closeTabs(pendingTabClose);
             return;
           }
           if (pendingExclusiveScene) {
@@ -460,12 +482,12 @@ function EditorChromeAndPrompts() {
           }
           setProjectClosePrompt(false);
           void forceCloseProject().then((closed) => {
-            if (!closed) setCloseError(SESSION_KEPT_PROJECT_OPEN);
+            if (!closed) setCloseError(projectCloseError(SESSION_KEPT_PROJECT_OPEN));
           }, reportCloseFailure);
         }}
         onSave={saveBeforeClose}
       />
-      <CloseProjectErrorDialog message={closeError} onDismiss={() => setCloseError(null)} />
+      <CloseErrorDialog error={closeError} onDismiss={() => setCloseError(null)} />
       <MigrationPrompt
         paths={migrationPending.map((p) => p.path)}
         open={showMigrate}

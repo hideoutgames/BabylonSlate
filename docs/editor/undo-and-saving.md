@@ -57,6 +57,8 @@ Closing a tab, closing the project or opening another scene while something is u
 - **Discard** drops the unsaved changes and continues.
 - **Cancel** keeps everything open.
 
+While a Simulation runs or Play is stopped in the editor, documents with unsaved changes cannot close. **Could Not Close Documents** says why, and the other tabs still close. Stop the session, then close them.
+
 ## Recovery after a crash
 
 Haptic records your edits as you work. If the app closes before you save, you can get them back:
