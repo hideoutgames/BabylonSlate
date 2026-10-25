@@ -632,13 +632,18 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   dispose(): void {
-    // Recast's query wrapper does not release its separately allocated filter, the crowd's included. Freeing the
-    // crowd frees its query, so only that filter is released here.
-    if (this.crowd) Raw.destroy(this.crowd.navMeshQuery.defaultFilter.raw);
+    // Recast's NavMeshQuery.destroy frees only the native query, leaving its C++ wrapper and default filter allocated,
+    // and the crowd holds a second such wrapper and filter. Deleting a wrapper never frees the query it points to, so
+    // the crowd's wrapper is released here while freeing the crowd frees that query.
+    if (this.crowd) {
+      Raw.destroy(this.crowd.navMeshQuery.defaultFilter.raw);
+      Raw.destroy(this.crowd.navMeshQuery.raw);
+    }
     this.crowd?.destroy();
     if (this.query) {
       this.query.destroy();
       Raw.destroy(this.query.defaultFilter.raw);
+      Raw.destroy(this.query.raw);
     }
     this.tileCache?.destroy();
     this.navMesh?.destroy();

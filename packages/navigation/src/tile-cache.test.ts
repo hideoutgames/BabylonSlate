@@ -194,12 +194,19 @@ describe("tile-cache obstacles and static carve", () => {
       nav.dispose();
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toEqual([]);
       expect(destroyQuery).toHaveBeenCalledTimes(1);
-      const filter = (destroyQuery.mock.contexts[0] as NavMeshQuery | undefined)?.defaultFilter.raw;
-      expect(destroyNative.mock.calls.filter(([resource]) => resource === filter)).toHaveLength(1);
-      // The crowd's own query wrapper allocates a filter that freeing the crowd leaves behind.
       expect(destroyCrowd).toHaveBeenCalledTimes(1);
-      const crowdFilter = (destroyCrowd.mock.contexts[0] as Crowd | undefined)?.navMeshQuery.defaultFilter.raw;
-      expect(destroyNative.mock.calls.filter(([resource]) => resource === crowdFilter)).toHaveLength(1);
+      // Recast's destroys leave each query's wrapper and default filter behind, the crowd's own query included.
+      const query = destroyQuery.mock.contexts[0] as NavMeshQuery | undefined;
+      const crowdQuery = (destroyCrowd.mock.contexts[0] as Crowd | undefined)?.navMeshQuery;
+      const leftovers = {
+        query: query?.raw,
+        queryFilter: query?.defaultFilter.raw,
+        crowdQuery: crowdQuery?.raw,
+        crowdFilter: crowdQuery?.defaultFilter.raw,
+      };
+      for (const [name, leftover] of Object.entries(leftovers)) {
+        expect(destroyNative.mock.calls.filter(([resource]) => resource === leftover), name).toHaveLength(1);
+      }
       nav.importNavMesh(bytes);
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
     } finally {
