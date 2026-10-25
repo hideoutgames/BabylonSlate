@@ -14,9 +14,8 @@ import {
 } from "@haptic/core";
 import {
   ownedVisualTexturePreparation,
-  installedMeshAssets,
   meshAssetFingerprint,
-  sameInstalledMeshAssets,
+  meshAssetInstallRevision,
   type MeshAssetContext,
 } from "./mesh-assets";
 import {
@@ -91,11 +90,14 @@ export function disposeRejectedAssignments(binding: SnapshotSceneBinding): void 
 }
 
 /**
- * What each assignment built: the installed assets it read (`installedMeshAssets`), the visual it built or is
- * preparing, and whether that visual's model load failed.
+ * What each assignment built: the install revision of the assets it read (`meshAssetInstallRevision`, which holds no
+ * asset map), the visual it built or is preparing, held weakly (an assignment the slot keeps must not keep a visual
+ * since disposed), and whether building it failed (its staged construction threw, or its model load failed).
  */
-type BuiltVisual = { assets: readonly unknown[]; visual: Mesh | undefined; failed: boolean };
+type BuiltVisual = { revision: number; visual: WeakRef<Mesh> | undefined; failed: boolean };
 const builtVisuals = new WeakMap<AssignMeshCommand, BuiltVisual>();
+/** Assignments whose staged visual's construction threw: nothing was built for them. */
+const failedConstructions = new WeakSet<AssignMeshCommand>();
 
 /** Hash a request and its installed assets only to compare or record a rejection. */
 function rejectionKey(command: AssignMeshCommand, assets: MeshAssetContext, suffix = ""): () => string {
@@ -143,18 +145,21 @@ export function applyAssignMesh(
 function showsAssignment(scene: Scene, binding: SnapshotSceneBinding, command: AssignMeshCommand): boolean {
   const current = visualAssignmentOf(binding, command.slotId);
   const built = current && builtVisuals.get(current);
-  if (!current || !built?.visual || built.failed || !sameInstalledMeshAssets(built.assets, binding)) return false;
+  const visual = built?.visual?.deref();
+  if (!current || !built || !visual || built.failed || built.revision !== meshAssetInstallRevision(binding)) return false;
   const shown = pendingVisualReplacement(binding, command.slotId) ?? binding.meshes.get(command.slotId);
-  if (shown !== built.visual || shown.isDisposed() || shown.getScene() !== scene) return false;
+  if (shown !== visual || shown.isDisposed() || shown.getScene() !== scene) return false;
   return current === command || JSON.stringify(current) === JSON.stringify(command);
 }
 
 /** Builds the slot's visual for `command`, then records what it built (`builtVisuals`). */
 function assignVisual(scene: Scene, binding: SnapshotSceneBinding, command: AssignMeshCommand): void {
+  // A material command's restart builds the same assignment again.
+  failedConstructions.delete(command);
   assignMeshVisual(scene, binding, command);
+  const visual = pendingVisualReplacement(binding, command.slotId) ?? binding.meshes.get(command.slotId);
   const built: BuiltVisual = {
-    assets: installedMeshAssets(binding), failed: false,
-    visual: pendingVisualReplacement(binding, command.slotId) ?? binding.meshes.get(command.slotId),
+    revision: meshAssetInstallRevision(binding), failed: failedConstructions.has(command), visual: visual && new WeakRef(visual),
   };
   builtVisuals.set(command, built);
   // Observed without turning the slot's load into a success: a readiness wait on it must still reject.
@@ -416,6 +421,8 @@ function stagePreparedVisual(
     } catch (error) {
       candidate?.dispose(); releaseProvisional();
       if (!stagesModels) rejected.set(command.slotId, descriptor());
+      // Nothing was staged: the same assignment builds again (a rejected one returns above until its assets change).
+      failedConstructions.add(command);
       console.warn(`[render] Visual preparation failed: ${String(error)}`);
       return true;
     }

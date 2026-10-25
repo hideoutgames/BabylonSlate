@@ -413,21 +413,23 @@ function warmDraw(
   const warmPass = warmPassId(engine, state, realPass);
   const scope = beginPipelineDeferral(engine, (pass) => pass === warmPass, lookup ? { warm: true, lookup } : { warm: true });
   if (!scope) return !lookup;
-  // The defines text keys the Effect cache in the order the defines object gained its keys, so a fresh object can
-  // name the same variant differently: the warm draw prepares a copy of the real pass's defines. A lookup keeps a warm
-  // wrapper that holds the real draw's Effect already: a fresh copy would ask the cache for it again, one more
-  // reference that the wrapper's one release never gives back.
-  const real = subMesh._getDrawWrapper(realPass);
-  if (real?.defines instanceof MaterialDefines) {
-    const warm = subMesh._getDrawWrapper(warmPass, true)!;
-    if (!(lookup && warm.effect && warm.effect === real.effect)) warm.defines = copyDefines(real.defines);
-  }
-  engine.currentRenderPassId = warmPass;
-  engine.setColorWrite(colour);
-  engine.setAlphaMode(Constants.ALPHA_DISABLE);
-  state.warming = true;
   let drawn: number;
+  // Everything after the scope opens closes it: a lookup scope replays its target's state and, while open, starts no
+  // GPU pass for any draw on the Engine.
   try {
+    // The defines text keys the Effect cache in the order the defines object gained its keys, so a fresh object can
+    // name the same variant differently: the warm draw prepares a copy of the real pass's defines. A lookup keeps a
+    // warm wrapper that holds the real draw's Effect already: a fresh copy would ask the cache for it again, one more
+    // reference that the wrapper's one release never gives back.
+    const real = subMesh._getDrawWrapper(realPass);
+    if (real?.defines instanceof MaterialDefines) {
+      const warm = subMesh._getDrawWrapper(warmPass, true)!;
+      if (!(lookup && warm.effect && warm.effect === real.effect)) warm.defines = copyDefines(real.defines);
+    }
+    engine.currentRenderPassId = warmPass;
+    engine.setColorWrite(colour);
+    engine.setAlphaMode(Constants.ALPHA_DISABLE);
+    state.warming = true;
     subMesh.render(blended);
   } finally {
     state.warming = false;

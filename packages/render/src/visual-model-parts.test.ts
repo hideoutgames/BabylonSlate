@@ -3,6 +3,7 @@ import { NullEngine, Scene, StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeParentedAnimatedTriangleGlb } from "./glb-test-fixtures";
 import * as modelContainer from "./model-container";
+import * as visualFactory from "./snapshot-visual-factory";
 import { applyAssignMesh, applyAssignMaterial, applySetMaterialParameter, createSnapshotSceneBinding, disposeSnapshotBinding, retirePlaySlot, type AssignMeshCommand } from "./snapshot-apply";
 
 function deferred<T>() {
@@ -117,6 +118,23 @@ describe("Play multipart model publication", () => {
       } else disposeSnapshotBinding(f.binding);
       expect(retained.release).toHaveBeenCalledOnce();
       expect(f.scene.materials).not.toContain(retained.material);
+    } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
+  });
+
+  it("builds a staged visual again for the same assignment after its construction threw", async () => {
+    // Nothing was staged, so the slot holds an empty actor root: the same command, as a script's write re-sends it,
+    // builds the visual instead of keeping that root.
+    const f = fixture();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const construct = vi.spyOn(visualFactory, "createPlayVisual").mockImplementationOnce(() => {
+      throw new Error("Controlled construction failure");
+    });
+    try {
+      applyAssignMesh(f.scene, f.binding, parts());
+      applyAssignMesh(f.scene, f.binding, parts());
+      await f.binding.slotAnimLoads?.get(1);
+      const models = f.binding.meshes.get(1)?.getChildMeshes().filter((mesh) => mesh.getTotalVertices() === 3) ?? [];
+      expect({ constructions: construct.mock.calls.length, models: models.length }).toEqual({ constructions: 2, models: 2 });
     } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
   });
 

@@ -467,6 +467,9 @@ function driverModel(engine: NullEngine, model: Model) {
     synchronous,
     /** WebGPU model: a warm scope is open (draws in its passes only create pipelines). */
     warming: () => scopes.some((scope) => scope.warm),
+    /** WebGPU model: a lookup scope is open (`lookUpPipelines`), and how many scopes of any kind are. */
+    lookingUp: () => scopes.some((scope) => scope.lookup),
+    openScopes: () => scopes.length,
     /** WebGPU model: a draw that was not skipped has drawn with `effect`. */
     drewWith: (effect: Effect) => drawnEffects.has(effect),
   };
@@ -3073,6 +3076,40 @@ describe("a visual re-sent every tick", () => {
       shownAfter, held, viewPipelines: pipelines.size, synchronous: synchronous.size, warmed: warmPipelines.size > 0,
     }).toEqual({
       sameEffect: true, lookedUp: true, hiddenWhilePending: true, shownAfter: 0, held: 0, viewPipelines: 0, synchronous: 0, warmed: true,
+    });
+  });
+
+  it("a lookup whose preparation throws leaves no deferral scope open, and the mesh still appears: webgpu", async () => {
+    // Preparing the lookup ahead of a hidden mesh's draws (its warm draw wrapper) throws once. The lookup scope, which
+    // replays its pass's target and, while open, starts no GPU pass for any draw on the Engine, is closed all the same;
+    // the failure is reported once, and the mesh's warm draws reveal it instead.
+    const world = playWorld("webgpu", []);
+    await settle(world);
+    const scene = world.handle.scene;
+    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const getDrawWrapper = SubMesh.prototype._getDrawWrapper;
+    let thrown = 0;
+    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockImplementation(function (this: SubMesh, ...args) {
+      if (args[1] === true && world.driver.lookingUp() && thrown++ === 0) throw new Error("injected lookup preparation failure");
+      return getDrawWrapper.apply(this, args);
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    world.driver.arm();
+    // Beside the crate, with its Material: the same variant, whose pipelines exist, so its probe looks them up.
+    const spawned = MeshBuilder.CreateBox("spawned", { size: 1 }, scene);
+    spawned.material = crate.material;
+    spawned.position.set(1.5, 1, 0);
+    let held = 0;
+    const open: number[] = [];
+    let shownAfter = -1;
+    for (let index = 0; index < 4 && shownAfter < 0; index++) {
+      if (!(await world.frame()).view?.rendered) held++;
+      open.push(world.driver.openScopes());
+      if (!isRevealPending(spawned)) shownAfter = index;
+    }
+    const reports = warn.mock.calls.filter(([message]) => String(message).includes("warm draws failed")).length;
+    expect({ thrown: thrown > 0, open, reports, held, shown: shownAfter >= 0 }, JSON.stringify({ shownAfter })).toEqual({
+      thrown: true, open: open.map(() => 0), reports: 1, held: 0, shown: true,
     });
   });
 });
