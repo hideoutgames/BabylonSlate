@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { SelectableText } from "@haptic/editor-kit";
 import {
   AlertDialog,
@@ -31,68 +32,27 @@ export function ContentBrowserResultDialogs({
 }: ContentBrowserResultDialogsProps) {
   return (
     <>
-      <AlertDialog
-        open={retargetErrors !== null}
-        onOpenChange={(open) => {
-          if (!open) setRetargetErrors(null);
-        }}
-      >
-        <AlertDialogContent data-testid="content-browser-retarget-errors">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Retarget Failed</AlertDialogTitle>
-            <AlertDialogDescription>
-              Retargeting could not complete for the items below.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {retargetErrors?.map((message) => (
-              <li key={message}>
-                <SelectableText>{message}</SelectableText>
-              </li>
-            ))}
-          </ul>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="content-browser-retarget-errors-dismiss"
-              onClick={() => setRetargetErrors(null)}
-            >
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ErrorListDialog
+        errors={retargetErrors}
+        onClose={() => setRetargetErrors(null)}
+        testId="content-browser-retarget-errors"
+        dismissTestId="content-browser-retarget-errors-dismiss"
+        title="Retarget Failed"
+        description="Retargeting could not complete for the items below."
+      />
 
-      <AlertDialog
-        open={importErrors !== null}
-        onOpenChange={(open) => {
-          if (!open) setImportErrors(null);
-        }}
-      >
-        <AlertDialogContent data-testid="import-errors-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{importedFileCount > 0 ? "Import Partially Completed" : "Import Failed"}</AlertDialogTitle>
-            <AlertDialogDescription data-testid="import-result-summary">
-              {importedFileCount > 0 ? `${importedFileCount} file${importedFileCount === 1 ? "" : "s"} imported successfully. ` : ""}
-              {importErrors?.length} issue{importErrors?.length === 1 ? "" : "s"} need attention. Successfully imported assets remain in the project.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {importErrors?.map((message) => (
-              <li key={message}>
-                <SelectableText>{message}</SelectableText>
-              </li>
-            ))}
-          </ul>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="import-errors-dismiss"
-              onClick={() => setImportErrors(null)}
-            >
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ErrorListDialog
+        errors={importErrors}
+        onClose={() => setImportErrors(null)}
+        testId="import-errors-dialog"
+        dismissTestId="import-errors-dismiss"
+        title={importedFileCount > 0 ? "Import Partially Completed" : "Import Failed"}
+        descriptionTestId="import-result-summary"
+        description={<>
+          {importedFileCount > 0 ? `${importedFileCount} file${importedFileCount === 1 ? "" : "s"} imported successfully. ` : ""}
+          {importErrors?.length} issue{importErrors?.length === 1 ? "" : "s"} need attention. Successfully imported assets remain in the project.
+        </>}
+      />
       <AlertDialog
         open={openError !== null}
         onOpenChange={(open) => {
@@ -117,5 +77,55 @@ export function ContentBrowserResultDialogs({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/** A blocking list of failure messages with one Close action. */
+function ErrorListDialog({
+  errors,
+  onClose,
+  testId,
+  dismissTestId,
+  title,
+  description,
+  descriptionTestId,
+}: {
+  errors: readonly string[] | null;
+  onClose: () => void;
+  testId: string;
+  dismissTestId: string;
+  title: string;
+  description: ReactNode;
+  descriptionTestId?: string;
+}) {
+  return (
+    <AlertDialog
+      open={errors !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <AlertDialogContent data-testid={testId}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription data-testid={descriptionTestId}>
+            {description}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+          {/* Two files can fail with the same message. */}
+          {errors?.map((message, index) => (
+            <li key={`${index}:${message}`}>
+              <SelectableText>{message}</SelectableText>
+            </li>
+          ))}
+        </ul>
+        <AlertDialogFooter>
+          <AlertDialogAction data-testid={dismissTestId} onClick={onClose}>
+            Close
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

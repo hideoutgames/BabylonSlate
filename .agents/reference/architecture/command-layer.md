@@ -52,6 +52,8 @@ interface EditCommand<TDoc = unknown> {
 - `setAutoSavePaused(true)` holds the timer while an Unsaved Documents close prompt is open (tab close, Close Project, exclusive Scene open), so Discard drops what the prompt lists; resuming starts a new interval when anything is unsaved. The prompt lists live dirty state and closes without asking when everything listed was saved by a save already in flight.
 - Only dirty documents write. Queued writes resolve the asset's current path from its guid, so a queued save cannot resurrect a moved or deleted path.
 - `lockAuthoringWrites(reason)` closes project-write admission (Save All, autosave, registry, blob, extension writes) and its lease's `ready` resolves after admitted operations drain. Simulation preparation takes its baseline behind it.
+- Save All writes each dirty document from its snapshot only while the tab still has that path: a Content Browser delete or move landing between two writes would otherwise recreate the file at its old path. `markAllClean` skips the same documents, so a moved one stays dirty for the next save.
+- Every `project.json` write the editor makes outside Save All (Class reference replacement and delete repair) goes through the same project write queue (`saveProjectNow`), so it lands after a Save All already running instead of being overwritten by its older document.
 
 ## Journal format
 

@@ -82,6 +82,14 @@ async function planClassReferenceReplacements(
   return plans;
 }
 
+/** The current bytes of each planned referrer, to restore if a later write fails. */
+function backupFiles(host: ReferenceRepairHost, plans: ReadonlyArray<{ path: string }>) {
+  return Promise.all(plans.map(async ({ path }) => {
+    const storage = host.storageFor(path);
+    return { path, storage, bytes: await storage.readBinary(path) };
+  }));
+}
+
 /** Validate all referrers before writing replacements; never delete a Class here. */
 export async function replaceClassReferencesBeforeDelete(
   host: ReferenceRepairHost,
@@ -94,11 +102,7 @@ export async function replaceClassReferencesBeforeDelete(
   validateClassDeletionReplacements(replacements, registry.list(), deletingGuids);
   const plans = await planClassReferenceReplacements(host, replacements, deletingGuids, onProgress);
   // Like a Class rename, the referrers are rewritten together or not at all.
-  const backups = await Promise.all(plans.map(async (plan) => ({
-    path: plan.path,
-    storage: host.storageFor(plan.path),
-    bytes: await host.storageFor(plan.path).readBinary(plan.path),
-  })));
+  const backups = await backupFiles(host, plans);
   let attempted = 0;
   try {
     for (const plan of plans) {
@@ -150,11 +154,7 @@ export async function renameAsset(host: ReferenceRepairHost, guid: string, newNa
   }
   const replacements = [{ guid, classId, replacement: { guid, classId: nextClassId } }];
   const plans = await planClassReferenceReplacements(host, replacements, new Set());
-  const backups = await Promise.all(plans.map(async (plan) => ({
-    path: plan.path,
-    storage: host.storageFor(plan.path),
-    bytes: await host.storageFor(plan.path).readBinary(plan.path),
-  })));
+  const backups = await backupFiles(host, plans);
   const original = await host.storageFor(before.path).readBinary(before.path);
   const projectText = await host.storage.readText(PROJECT_FILE);
   const project = JSON.parse(projectText) as ProjectDocument;

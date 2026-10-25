@@ -2311,6 +2311,18 @@ export function isFolderNameTaken(
 }
 
 /** Names shown in Delete (N) confirm — selected folders and assets, not flattened contents. */
+/** What a Content Browser delete was asked for: assets, one folder, or a mixed selection. */
+export type DeleteTarget =
+  | { kind: "assets"; guids: string[] }
+  | { kind: "folder"; path: string; guids: string[] }
+  | { kind: "selection"; folders: string[]; guids: string[] };
+
+/** The folders a delete removes, with everything in them. */
+export function deleteTargetFolders(target: DeleteTarget | null): string[] {
+  if (target?.kind === "folder") return [target.path];
+  return target?.kind === "selection" ? target.folders : [];
+}
+
 export function contentBrowserDeleteListNames(options: {
   folderPaths?: readonly string[];
   assetNames?: readonly string[];

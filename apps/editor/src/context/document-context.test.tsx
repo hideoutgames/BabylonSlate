@@ -4,6 +4,7 @@ import {
   DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
+  PROJECT_FILE,
   createActor,
   documentId,
   isProjectOpenElsewhere,
@@ -462,6 +463,87 @@ describe("DocumentProvider actions and route", () => {
       expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
       expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
     } finally { release(); save.mockRestore(); }
+  });
+
+  it("does not write back an asset the Content Browser deletes between two Save All writes", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const stats = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "DataDefinition", name: "Stats" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    await act(() => actions.openDocument({ kind: "data-definition", path: stats.path, label: "Stats" }));
+    await act(() => actions.applyAssetDocumentChange(documentId({ kind: "data-definition", path: stats.path }), {
+      kind: "dataDefinition", fields: [{ id: "hp", name: "HP", typeId: "number", defaultValue: 10 }],
+    }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const original = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(async function(this: ProjectService, kind, path, content, options) {
+      if (path === MAIN_SCENE_FILE && !started) { started = true; await held; }
+      return original.call(this, kind, path, content, options);
+    });
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(started).toBe(true));
+      // As Content Browser Delete does: close the tab, then delete the file.
+      act(() => actions.closeDocumentsForPaths([stats.path]));
+      await act(() => registry.deleteAsset(stats.header.guid));
+      await act(async () => { release(); await saving; });
+    } finally { release(); save.mockRestore(); }
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    expect(await storage.exists(stats.path)).toBe(false);
+    expect(documents().assetRegistry!.getByGuid(stats.header.guid)).toBeUndefined();
+  });
+
+  it("writes a delete repair's Project Settings after a Save All already running", async () => {
+    const actions = await openProject();
+    const level = await createScene(actions, "Level");
+    act(() => actions.updateProjectSettings({ startupSceneGuid: level.header.guid }));
+    await act(() => actions.saveAll());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const originalSave = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(async function(this: ProjectService, kind, path, content, options) {
+      if (path === MAIN_SCENE_FILE && !started) { started = true; await held; }
+      return originalSave.call(this, kind, path, content, options);
+    });
+    const startupScenes: Array<string | null | undefined> = [];
+    const originalProject = ProjectService.prototype.saveProject;
+    const project = vi.spyOn(ProjectService.prototype, "saveProject").mockImplementation(function(this: ProjectService, document, layouts) {
+      startupScenes.push(document.settings.startupSceneGuid);
+      return originalProject.call(this, document, layouts);
+    });
+    let remounted = false;
+    const originalRemount = ProjectService.prototype.remountRegistry;
+    const remount = vi.spyOn(ProjectService.prototype, "remountRegistry").mockImplementation(async function(this: ProjectService) {
+      const registry = await originalRemount.call(this);
+      remounted = true;
+      return registry;
+    });
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(started).toBe(true));
+      await act(() => documents().assetRegistry!.deleteAsset(level.header.guid));
+      let repairing!: Promise<void>;
+      act(() => { repairing = actions.repairAfterAssetDelete(new Set([level.header.guid])); });
+      await waitFor(() => expect(remounted).toBe(true));
+      // The repair's settings write, if it does not wait, starts in this tick.
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+      await act(async () => { release(); await saving; await repairing; });
+    } finally { release(); save.mockRestore(); project.mockRestore(); remount.mockRestore(); }
+    expect(startupScenes).toEqual([level.header.guid, null]);
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const manifest = JSON.parse(await storage.readText(PROJECT_FILE)) as { settings: { startupSceneGuid?: string | null } };
+    expect(manifest.settings.startupSceneGuid ?? null).toBeNull();
   });
 
   it.each([false, true])("refuses Class renames when a referring scene is locked by another user (open: %s)", async (keepOpen) => {

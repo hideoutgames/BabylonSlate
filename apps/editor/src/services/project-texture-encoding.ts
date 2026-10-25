@@ -90,7 +90,7 @@ export class ProjectTextureEncoding {
    * or pull that replaces it ends the exemption, even for a job queued before.
    */
   private readonly sessionEncodes = new Map<string, string>();
-  /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
+  /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts of one project. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
   /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
   readonly alignmentRequeues = new Set<string>();
@@ -250,6 +250,9 @@ export class ProjectTextureEncoding {
     this.encodingJobs.clear();
     this.encodingSnapshot = new Set();
     this.sessionEncodes.clear();
+    // Sizes are keyed by chunk sha256, so none is wrong in another project,
+    // but kept across projects the cache only grows.
+    this.ktx2SizeCache.clear();
   }
 
   /** Close Project, second step: the writes that must land in the closing project's folder. */
@@ -492,37 +495,38 @@ export class ProjectTextureEncoding {
   async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {
     const registry = this.host.registry();
     if (!registry) throw new Error("Open a project before processing emission textures.");
-    options.signal?.throwIfAborted();
-    const controller = new AbortController();
-    const cancel = () => controller.abort(options.signal?.reason);
-    options.signal?.addEventListener("abort", cancel, { once: true });
-    this.emissionJobs.add(controller);
-    try {
-      await registry.prepareAreaEmission(guid, this.processAreaEmission, { ...options, signal: controller.signal });
+    await this.runEmissionJob(options.signal, async (signal) => {
+      await registry.prepareAreaEmission(guid, this.processAreaEmission, { ...options, signal });
       if (this.host.registry() === registry) this.host.emitRegistryChange();
-    } finally {
-      this.emissionJobs.delete(controller);
-      options.signal?.removeEventListener("abort", cancel);
-    }
+    });
   }
 
   /** See `ProjectService.reconvertHdrEnvironment`. */
   async reconvertHdrEnvironment(guid: string, faceSize: number, options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {}): Promise<boolean> {
     const registry = this.host.registry();
     if (!registry) throw new Error("Open a project before converting environment textures.");
-    options.signal?.throwIfAborted();
-    const controller = new AbortController();
-    const cancel = () => controller.abort(options.signal?.reason);
-    options.signal?.addEventListener("abort", cancel, { once: true });
-    // Closing the project cancels it with the emission jobs.
-    this.emissionJobs.add(controller);
-    try {
-      const written = await registry.reconvertHdrEnvironment(guid, faceSize, convertHdrEnvironmentOffMainThread, { ...options, signal: controller.signal });
+    return this.runEmissionJob(options.signal, async (signal) => {
+      const written = await registry.reconvertHdrEnvironment(guid, faceSize, convertHdrEnvironmentOffMainThread, { ...options, signal });
       if (written && this.host.registry() === registry) this.host.emitRegistryChange();
       return written;
+    });
+  }
+
+  /**
+   * Runs `work` with a signal that the caller's `signal` and Close Project
+   * (`cancelEmissionJobs`) both abort.
+   */
+  private async runEmissionJob<T>(signal: AbortSignal | undefined, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    signal?.throwIfAborted();
+    const controller = new AbortController();
+    const cancel = () => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", cancel, { once: true });
+    this.emissionJobs.add(controller);
+    try {
+      return await work(controller.signal);
     } finally {
       this.emissionJobs.delete(controller);
-      options.signal?.removeEventListener("abort", cancel);
+      signal?.removeEventListener("abort", cancel);
     }
   }
 

@@ -888,6 +888,15 @@ export class DocumentService {
   }
 
   /**
+   * Follow a rewrite of the document's file (a repaired or replaced reference):
+   * unsaved edits keep their dirty state, a clean tab reloads as saved.
+   */
+  applyFileRewrite(id: string, content: DocumentContent): void {
+    if (this.state.openDocuments.get(id)?.dirty) this.patchLoadedContent(id, content);
+    else this.replaceLoadedContent(id, content);
+  }
+
+  /**
    * Follow a registry rename. A payload that carries a `name` titles its tab
    * and is written back on save, so it takes the asset's new name now; the
    * registry has already stamped the file. Scenes keep their path-derived title.

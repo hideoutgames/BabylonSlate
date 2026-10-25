@@ -111,7 +111,8 @@ export function createEditorViewportTools({
 }: EditorViewportToolsContext): {
   editor: EditorTools;
   debugOverlay: EditorDebugOverlay;
-  disposeGestures: () => void;
+  /** Stops gestures, fly keys, the Game Camera pilot and pending tap picks. */
+  disposeInput: () => void;
   /** The selected actors, kept so a scene reload or mesh rebuild reselects them. */
   selectedActorIds: () => string[];
 } {
@@ -422,9 +423,14 @@ export function createEditorViewportTools({
             navigationActive() && options.editorFlyEnabled?.() !== false,
         });
   onRollback(() => flyKeys?.dispose());
-  const disposeGestures = () => {
+  // A handle being disposed takes no more input: a piloted move still waiting
+  // for its commit lands now, and a tap pick still reading back is dropped.
+  const disposeInput = () => {
     gestures.dispose();
     flyKeys?.dispose();
+    pilot.flush();
+    pilot.dispose();
+    tapPickSequence += 1;
   };
 
   const editor: EditorTools = {
@@ -547,7 +553,7 @@ export function createEditorViewportTools({
   return {
     editor,
     debugOverlay: debugOverlayInstance,
-    disposeGestures,
+    disposeInput,
     selectedActorIds: () => lastSelectedActorIds,
   };
 }

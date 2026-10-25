@@ -16,6 +16,8 @@ import {
   createActor,
   areaRectLightBindings,
   fogVolumeBindings,
+  reflectionProbeBindings,
+  REFLECTION_PROBE_CLASS_ID,
   outlineBindings,
   createDefaultScene,
   createDefaultRenderTargetCaptureProperties,
@@ -57,6 +59,7 @@ import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
+import { findSceneReflectionProbes } from "./reflection-probes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
@@ -4865,6 +4868,20 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "mist" });
     expect(hasFogVolumes(handle.scene)).toBe(false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("forgets a despawned actor's reflection probes before another actor reuses its slot", () => {
+    const { handle } = playHandle(sharedEngine());
+    const probes = reflectionProbeBindings([{ id: "probe", classId: REFLECTION_PROBE_CLASS_ID, properties: {} }]);
+    const probeActors = () => findSceneReflectionProbes(handle.scene)?.diagnostics().map((probe) => probe.actorId) ?? [];
+    handle.applyCommand({ type: "setReflectionProbes", slotId: 7, actorId: "lamp", probes });
+    handle.applyCommand({ type: "assignMesh", slotId: 7, actorGuid: "lamp", meshAssetGuid: null, meshKind: null });
+    expect(probeActors()).toEqual(["lamp"]);
+    handle.applyCommand({ type: "despawn", slotId: 7, actorGuid: "lamp" });
+    expect(probeActors()).toEqual([]);
+    // The runtime sends no empty probe list for a new actor without probes.
+    handle.applyCommand({ type: "assignMesh", slotId: 7, actorGuid: "crate", meshAssetGuid: null, meshKind: null });
+    expect(probeActors()).toEqual([]);
   });
 
   it("waits for shared fog rendering preparation without letting one canceled stream fail its sibling", async () => {

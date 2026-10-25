@@ -269,6 +269,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Drops the pending auto-save; the next edit or resume starts a new interval. */
+  const cancelDebouncedSave = useCallback(() => {
+    if (!saveDebounceRef.current) return;
+    clearTimeout(saveDebounceRef.current);
+    saveDebounceRef.current = null;
+  }, []);
   const autoSavePausedRef = useRef(false);
   /** An auto-save came due while a game covered the editor. */
   const autoSaveDeferredRef = useRef(false);
@@ -1216,10 +1222,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       if (options.approveMigrations) projectService.approveMigrateOnSave();
-      if (saveDebounceRef.current) {
-        clearTimeout(saveDebounceRef.current);
-        saveDebounceRef.current = null;
-      }
+      cancelDebouncedSave();
       // Buffered journal records start writing as Save begins, so a Save that
       // fails part-way leaves them recoverable. The clear below awaits them.
       void journalBuffer.flush();
@@ -1235,6 +1238,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
         progress.phase("documents");
         for (const doc of dirtyDocs) {
+          // A Content Browser delete or move between two saves leaves this
+          // snapshot's path behind; writing it would bring the file back.
+          // `markAllClean` skips the same documents, so a moved one stays dirty.
+          const live = documentService.getDocument(doc.id);
+          if (!live || live.ref.path !== doc.ref.path) continue;
           if (
             isAssetDocumentKind(doc.ref.kind) &&
             doc.ref.kind !== "trace" &&
@@ -1319,6 +1327,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
     });
   }, [
+    cancelDebouncedSave,
     enqueueProjectWrite,
     bump,
     captureAllLayouts,
@@ -1371,17 +1380,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (autoSavePausedRef.current === paused) return;
     autoSavePausedRef.current = paused;
     if (paused) {
-      if (saveDebounceRef.current) {
-        clearTimeout(saveDebounceRef.current);
-        saveDebounceRef.current = null;
-      }
+      cancelDebouncedSave();
     } else if (
       projectService.guid &&
       (documentService.getDirtyDocuments().length > 0 || projectSaveState.current.isDirty(projectDocumentRef.current))
     ) {
       scheduleDebouncedSave();
     }
-  }, [documentService, projectService, scheduleDebouncedSave]);
+  }, [cancelDebouncedSave, documentService, projectService, scheduleDebouncedSave]);
 
   useEffect(() => subscribeEditorQuiet(() => {
     if (editorQuiet() || !autoSaveDeferredRef.current) return;
@@ -1462,16 +1468,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     cancelSceneDocumentLoad();
     exclusiveSceneRequest.current += 1;
     setPendingExclusiveScene(null);
-    const clearDebouncedSave = () => {
-      if (!saveDebounceRef.current) return;
-      clearTimeout(saveDebounceRef.current);
-      saveDebounceRef.current = null;
-    };
-    clearDebouncedSave();
+    cancelDebouncedSave();
     // A Save All or rename already admitted finishes before the journal is
     // cleared and the folder released; later queued saves find no project.
     await enqueueProjectWrite(async () => {
-      clearDebouncedSave();
+      cancelDebouncedSave();
       if (clean && !projectService.authoringWriteBlockedReason) {
         captureAllLayouts();
         // Layout is a convenience: a failed write must not keep the project open.
@@ -1507,6 +1508,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
     return { outcome: "closed" };
   }, [
+    cancelDebouncedSave,
     bump,
     captureAllLayouts,
     documentService,
@@ -1637,7 +1639,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [performCloseDocument, documentService],
   );
-  closeDocumentsForPathsRef.current = closeDocumentsForPaths;
+  useLayoutEffect(() => {
+    closeDocumentsForPathsRef.current = closeDocumentsForPaths;
+  }, [closeDocumentsForPaths]);
+
+  /**
+   * Writes `project.json` now, in the project write queue: a Save All already
+   * running finishes first instead of overwriting it with its older document.
+   */
+  const saveProjectNow = useCallback((next: ProjectDocument) => enqueueProjectWrite(async () => {
+    const projectSave = projectSaveState.current.capture(next);
+    await projectService.saveProject(next, documentService.buildLayouts());
+    await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+    projectSaveState.current.complete(projectSave);
+  }), [captureMtimeSnapshot, documentService, enqueueProjectWrite, projectService]);
 
   const replaceClassReferencesBeforeDelete = useCallback(async (
     replacements: readonly ClassAssetReplacement[],
@@ -1667,8 +1682,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!open?.content) continue;
       const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
       if (!walked.changed) continue;
-      if (open.dirty) documentService.patchLoadedContent(open.id, walked.value);
-      else documentService.replaceLoadedContent(open.id, walked.value);
+      documentService.applyFileRewrite(open.id, walked.value);
     }
     bump();
     const current = projectDocumentRef.current;
@@ -1677,17 +1691,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (settings.changed) {
         await onProgress?.("Project Settings");
         const next = { ...current, settings: settings.value };
-        const projectSave = projectSaveState.current.capture(next);
-        await projectService.saveProject(next, documentService.buildLayouts());
-        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-        projectSaveState.current.complete(projectSave);
+        await saveProjectNow(next);
         setProjectDocument(next);
       }
     }
-  }, [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
+  }, [bump, collectGraphTypeSchemas, documentService, projectService, saveProjectNow, setProjectDocument]);
 
   const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
-    if (saveDebounceRef.current) { clearTimeout(saveDebounceRef.current); saveDebounceRef.current = null; }
+    cancelDebouncedSave();
     try {
       const registry = projectService.registry;
       const before = registry?.getByGuid(guid);
@@ -1730,8 +1741,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // The rename moved files and may have rewritten project.json: neither is external.
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       for (const { doc, content } of openChanges) {
-        if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
-        else documentService.replaceLoadedContent(doc.id, content);
+        documentService.applyFileRewrite(doc.id, content);
         // Content Browser file operations are not undoable. Old edit commands
         // must not reintroduce the Class id that no longer exists.
         editSessionRef.current.dropDocument(doc.id);
@@ -1750,7 +1760,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     } finally {
       if (documentService.getDirtyDocuments().length || projectSaveState.current.isDirty(projectDocumentRef.current)) scheduleDebouncedSave();
     }
-  }), [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
+  }), [bump, cancelDebouncedSave, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (
@@ -1775,11 +1785,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           definitionFields,
         );
         if (!walked.changed) continue;
-        if (doc.dirty) {
-          documentService.patchLoadedContent(doc.id, walked.value);
-        } else {
-          documentService.replaceLoadedContent(doc.id, walked.value);
-        }
+        documentService.applyFileRewrite(doc.id, walked.value);
       }
       const current = projectDocumentRef.current;
       await onProgress?.("Refreshing Assets");
@@ -1805,10 +1811,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
         setProjectDocument(next);
         captureAllLayouts();
-        const projectSave = projectSaveState.current.capture(next);
-        await projectService.saveProject(next, documentService.buildLayouts());
-        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-        projectSaveState.current.complete(projectSave);
+        await saveProjectNow(next);
       }
       bump();
       // Everything else is repaired first; the delete then reports what was not.
@@ -1823,10 +1826,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [
       bump,
       captureAllLayouts,
-      captureMtimeSnapshot,
       collectGraphTypeSchemas,
       documentService,
       projectService,
+      saveProjectNow,
       setProjectDocument,
     ],
   );
@@ -2381,12 +2384,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       journalBuffer,
       ensureDerived,
       bump,
-      cancelDebouncedSave: () => {
-        if (saveDebounceRef.current) {
-          clearTimeout(saveDebounceRef.current);
-          saveDebounceRef.current = null;
-        }
-      },
+      cancelDebouncedSave,
       projectDocument: () => projectDocumentRef.current,
       isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
       runForegroundRescan: () => runForegroundRescanRef.current(),
@@ -2395,6 +2393,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateProjectSettings,
     });
   }, [
+    cancelDebouncedSave,
     applyGraphChange,
     reparentClassDocument,
     applySceneChange,
