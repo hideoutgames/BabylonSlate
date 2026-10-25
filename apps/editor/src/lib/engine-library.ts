@@ -10,8 +10,10 @@ interface NamedLibraryEntry {
   settings: { displayName: string };
 }
 
+export type LibraryQueue = <T>(operation: () => Promise<T>) => Promise<T>;
+
 /** Runs library operations one at a time; a failed operation never blocks the next. */
-export function createLibraryQueue(): <T>(operation: () => Promise<T>) => Promise<T> {
+export function createLibraryQueue(): LibraryQueue {
   let tail: Promise<unknown> = Promise.resolve();
   return <T>(operation: () => Promise<T>): Promise<T> => {
     const next = tail.then(operation, operation);

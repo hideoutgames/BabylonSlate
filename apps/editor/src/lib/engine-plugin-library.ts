@@ -19,6 +19,7 @@ import {
 import {
   captureLibraryFile, createLibraryQueue, LIBRARY_DEFAULTS_FILE, readLibraryDefaults,
   resolveLibraryImport, restoreLibraryFiles, sameLibraryIdentity, writeLibraryDefaults,
+  type LibraryQueue,
 } from "./engine-library";
 import { ensureEnginePluginStorage, isCachedEnginePluginStorage } from "./engine-plugins";
 
@@ -51,16 +52,19 @@ const pluginGuidOf = (entry: EnginePluginEntry) => entry.pluginGuid;
 
 /** App-owned immutable plugin generations and creation defaults, separate from project copies. */
 export class EnginePluginLibrary {
-  private readonly serialize = createLibraryQueue();
+  private readonly serialize: LibraryQueue;
   private readonly bundledStorage: ProjectStorage;
   private readonly libraryStorage: ProjectStorage;
 
+  /** Instances over the same library folder must share `serialize`. */
   constructor(
     bundledStorage: ProjectStorage,
     libraryStorage: ProjectStorage,
+    serialize: LibraryQueue = createLibraryQueue(),
   ) {
     this.bundledStorage = bundledStorage;
     this.libraryStorage = libraryStorage;
+    this.serialize = serialize;
   }
 
   private async readRecords(): Promise<StoredPlugin[]> {
@@ -232,6 +236,8 @@ export class EnginePluginLibrary {
 }
 
 let cachedLibrary: Promise<EnginePluginLibrary> | null = null;
+// One queue for the app-owned folder, so uncached fallback instances stay ordered too.
+const libraryQueue = createLibraryQueue();
 
 export function ensureEnginePluginLibrary(): Promise<EnginePluginLibrary> {
   if (!cachedLibrary) {
@@ -242,7 +248,7 @@ export function ensureEnginePluginLibrary(): Promise<EnginePluginLibrary> {
       // Never pin the session to the empty fallback: New Project would copy no
       // bundled plugins until reload. The next call retries the bundled index.
       if (!isCachedEnginePluginStorage(bundled)) cachedLibrary = null;
-      return new EnginePluginLibrary(bundled, library);
+      return new EnginePluginLibrary(bundled, library, libraryQueue);
     });
     void cachedLibrary.catch(() => { cachedLibrary = null; });
   }

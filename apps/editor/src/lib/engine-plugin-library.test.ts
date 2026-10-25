@@ -14,13 +14,20 @@ import { MemoryStorageAdapter } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
 import { EnginePluginLibrary } from "./engine-plugin-library";
 
+// Like app storage, every call reaches the same folder contents.
+const templateFolders = vi.hoisted(() => new Map<string, MemoryStorageAdapter>());
+
 vi.mock("@haptic/vfs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/vfs")>();
   return {
     ...actual,
     createTemplateStorage: async (folder: string) => {
-      const result = new actual.MemoryStorageAdapter("opfs");
-      await result.openDocumentsProject(folder);
+      let result = templateFolders.get(folder);
+      if (!result) {
+        result = new actual.MemoryStorageAdapter("opfs");
+        await result.openDocumentsProject(folder);
+        templateFolders.set(folder, result);
+      }
       return result;
     },
   };
@@ -238,6 +245,42 @@ describe("ensureEnginePluginLibrary", () => {
     } finally {
       vi.unstubAllGlobals();
       rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("orders operations from separate calls while the bundled catalog stays unavailable", async () => {
+    vi.stubGlobal("fetch", async () => new Response("unavailable", { status: 503 }));
+    try {
+      templateFolders.clear();
+      vi.resetModules();
+      const { ensureEnginePluginLibrary, ENGINE_PLUGIN_LIBRARY_ROOT } = await import("./engine-plugin-library");
+      const incoming = await archive("user-guid", "User Pack");
+      const exportDialog = await ensureEnginePluginLibrary();
+      const settingsPage = await ensureEnginePluginLibrary();
+      const saved = templateFolders.get(ENGINE_PLUGIN_LIBRARY_ROOT)!;
+      const writeText = saved.writeText.bind(saved);
+      let reachCatalogWrite!: () => void;
+      const catalogWriteReached = new Promise<void>((resolve) => { reachCatalogWrite = resolve; });
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      vi.spyOn(saved, "writeText").mockImplementation(async (path, value) => {
+        if (path === "catalog.json") {
+          reachCatalogWrite();
+          await held;
+        }
+        return writeText(path, value);
+      });
+
+      const importing = exportDialog.import(incoming);
+      await catalogWriteReached;
+      const listing = settingsPage.list();
+      await Promise.race([listing, new Promise((resolve) => setTimeout(resolve, 0))]);
+      release();
+
+      expect((await listing).map((entry) => entry.pluginGuid)).toEqual(["user-guid"]);
+      expect(await importing).toMatchObject({ status: "imported" });
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });
