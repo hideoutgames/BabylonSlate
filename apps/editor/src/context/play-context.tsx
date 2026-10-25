@@ -980,6 +980,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (sessionOwner.canStart()) {
       releasePlaySources();
+      // A Play Blocked prompt belongs to the preparation that just ended.
+      setPlayBlockedOpen(false);
+      setBlockedDiagnostics([]);
       setEncodeQueuePauseReason("play", false);
       if (sessionState.mode === null) {
         setPlayOpen(false);
@@ -1011,10 +1014,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   const launchPlay = useCallback(
     (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
-      let ticket = sessionTicketRef.current;
-      if (!ticket || !sessionOwner.isCurrent(ticket)) ticket = sessionOwner.begin("play");
-      if (!ticket || ticket.mode === "preview" || sessionOwner.getSnapshot().lifecycle !== "preparing") return;
-      sessionTicketRef.current = ticket;
+      // Only the preparation that still owns the session presents it: a ticket stopped meanwhile
+      // (device loss, its source document closed) released the sources this launch would use.
+      const ticket = sessionTicketRef.current;
+      if (!ticket || !sessionOwner.isCurrent(ticket) || ticket.mode === "preview" ||
+        sessionOwner.getSnapshot().lifecycle !== "preparing") return;
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
         sessionOwner.fail(ticket, "Play could not create Engine.");

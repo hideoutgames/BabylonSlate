@@ -405,6 +405,7 @@ export function SettingsModal({
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [mixerPickerOpen, setMixerPickerOpen] = useState(false);
   const [lutPickerOpen, setLutPickerOpen] = useState(false);
@@ -1730,9 +1731,19 @@ export function SettingsModal({
                 type="password"
                 autoComplete="off"
                 value={tokenDraft}
-                onChange={(event) => setTokenDraft(event.target.value)}
+                aria-invalid={tokenError ? true : undefined}
+                aria-describedby={tokenError ? "settings-source-control-token-error" : undefined}
+                onChange={(event) => {
+                  setTokenError(null);
+                  setTokenDraft(event.target.value);
+                }}
                 data-testid="settings-source-control-token"
               />
+              {tokenError ? (
+                <FieldError id="settings-source-control-token-error" data-testid="settings-source-control-token-error">
+                  {tokenError}
+                </FieldError>
+              ) : null}
               <FieldDescription data-testid="settings-source-control-token-help">
                 Create one in{" "}
                 <a
@@ -1757,9 +1768,10 @@ export function SettingsModal({
                 data-testid="settings-source-control-save-token"
                 disabled={!tokenDraft}
                 onClick={() => {
+                  setTokenError(null);
                   void sourceControl.saveToken(tokenDraft).then(() => {
                     setTokenDraft("");
-                  });
+                  }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
                 }}
               >
                 Save Token
@@ -1770,9 +1782,10 @@ export function SettingsModal({
                   className="min-h-[var(--chrome-row,28px)]"
                 data-testid="settings-source-control-clear-token"
                 onClick={() => {
+                  setTokenError(null);
                   void sourceControl.clearToken().then(() => {
                     setTokenDraft("");
-                  });
+                  }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
                 }}
               >
                 Clear Token
