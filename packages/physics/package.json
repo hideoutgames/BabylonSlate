@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./component-props": "./src/component-props.ts"
+    "./component-props": "./src/component-props.ts",
+    "./havok-backend": "./src/havok-backend.ts",
+    "./rapier-backend": "./src/rapier-backend.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
