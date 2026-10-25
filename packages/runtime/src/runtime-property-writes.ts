@@ -42,11 +42,12 @@ interface RuntimePropertyWritesHost {
   renderSlots(): Pick<RenderSlots, "recordedSlot">;
   renderEmitter(): Pick<RenderCommandEmitter,
     "rendersComponent" | "queueDeformers" | "emitActorDeformers" | "emitMaterialAssignments" |
-    "emitRenderTargetCapture" | "emitActorOutlines" | "emitActorFogVolumes" | "emitActorReflectionProbes" | "emitComponentTransforms" | "emitMeshAssignment">;
+    "emitRenderTargetCapture" | "emitActorOutlines" | "emitActorFogVolumes" | "emitActorReflectionProbes" | "queueComponentTransforms" | "emitComponentTransforms" |
+    "emitMeshAssignment">;
   uiControls(): Pick<UIControls2DRuntime, "refresh">;
   overlay(): Pick<SceneLayerOverlay, "applyLayouts" | "refreshComponent">;
   textAppear(): Pick<Text2DAppearRuntime, "refresh">;
-  /** Deformer changes made during a tick are sent after it. */
+  /** Deformer and component transform changes made during a tick are sent after it. */
   ticks(): Pick<TickPipeline, "processing">;
   audioParticles(): Pick<AudioParticleEmitter, "emitParticles" | "emitVoiceGain">;
   navigation(): Pick<RuntimeNavigation, "updateAgentParams">;
@@ -133,7 +134,10 @@ export class RuntimePropertyWrites {
       else if (component.classId === "OutlineComponent") renderEmitter.emitActorOutlines(owner, slotId);
       else if (component.classId === "FogVolumeComponent") renderEmitter.emitActorFogVolumes(owner, slotId);
       else if (component.classId === "ReflectionProbeComponent") renderEmitter.emitActorReflectionProbes(owner, slotId);
-      else if (propertyName === "transform") renderEmitter.emitComponentTransforms(owner, slotId);
+      else if (propertyName === "transform") {
+        if (this.host.ticks().processing) renderEmitter.queueComponentTransforms(owner);
+        else renderEmitter.emitComponentTransforms(owner, slotId);
+      }
       else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") renderEmitter.emitMeshAssignment(owner, slotId);
     }
     if (component.classId === "ParticleComponent") {

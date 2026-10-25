@@ -494,7 +494,8 @@ export function syncAuthoredCamerasFromMeshes(
   meshForActor: (actorId: string) => AbstractMesh | null,
 ): void {
   const state = stateByScene.get(scene);
-  if (!state) return;
+  // Gizmo drags call this on every pointer move; most scenes author no camera.
+  if (!state || state.cameras.size === 0) return;
   for (const actor of sceneData.actors) {
     const mesh = meshForActor(actor.id);
     if (!mesh) continue;

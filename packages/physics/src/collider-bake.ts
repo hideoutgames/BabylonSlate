@@ -64,16 +64,35 @@ export function bakeColliderLocal(
   };
 }
 
-/** Fixed-size TRS decomposition, independent of collision vertex data. */
-export function colliderLocalPose(
+const PLANAR_KINDS: ReadonlySet<ColliderShape["kind"]> = new Set(["box2d", "circle", "capsule2d", "polygon", "chain"]);
+/** The rotated axes `checkColliderLocal` writes, scaled by the parent: x, y, z of each in turn. */
+const axesScratch = new Float64Array(9);
+
+/**
+ * Validates a collider's local pose under `actorScale` (a finite position and a nonzero quaternion, finite nonzero
+ * scales, no shear from a nonuniform parent scale under an oblique rotation) and writes the parent-scaled rotated axes
+ * into `axes`. Returns whether `kind` is planar. Allocation-free: physics validates every parented actor each step.
+ */
+function checkColliderLocal(
   kind: ColliderShape["kind"],
   local: ColliderLocalTransform,
   actorScale: Vec3,
-): { scale: Vec3; translation: Vec3; rotation: Quat } {
-  const pose = normalizedPhysicsPose(local);
-  const is2d = ["box2d", "circle", "capsule2d", "polygon", "chain"].includes(
-    kind,
-  );
+  axes: Float64Array,
+): boolean {
+  const q = local.rotation;
+  const length = Math.hypot(q.x, q.y, q.z, q.w);
+  if (
+    !Number.isFinite(local.position.x) ||
+    !Number.isFinite(local.position.y) ||
+    !Number.isFinite(local.position.z) ||
+    !Number.isFinite(length) ||
+    length < 1e-12
+  ) {
+    throw new Error(
+      "Physics pose must contain a finite position and a nonzero quaternion",
+    );
+  }
+  const is2d = PLANAR_KINDS.has(kind);
   for (const axis of is2d
     ? (["x", "y"] as const)
     : (["x", "y", "z"] as const)) {
@@ -88,29 +107,53 @@ export function colliderLocalPose(
   }
   // A rigid attachment cannot represent shear induced by non-uniform ancestor
   // scaling and an oblique local rotation. Do not silently approximate it.
-  const parentScale = is2d ? { ...actorScale, z: 1 } : actorScale;
-  const axes = [
-    { x: 1, y: 0, z: 0 },
-    { x: 0, y: 1, z: 0 },
-    { x: 0, y: 0, z: 1 },
-  ].map((axis) => {
-    const v = rotateQuatVec(pose.rotation, axis);
-    return {
-      x: v.x * parentScale.x,
-      y: v.y * parentScale.y,
-      z: v.z * parentScale.z,
-    };
-  });
+  const x = q.x / length, y = q.y / length, z = q.z / length, w = q.w / length;
+  const sx = actorScale.x, sy = actorScale.y, sz = is2d ? 1 : actorScale.z;
+  for (let i = 0; i < 3; i++) {
+    // `rotateQuatVec` of the unit axis i.
+    const ox = i === 0 ? 1 : 0, oy = i === 1 ? 1 : 0, oz = i === 2 ? 1 : 0;
+    const tx = 2 * (y * oz - z * oy);
+    const ty = 2 * (z * ox - x * oz);
+    const tz = 2 * (x * oy - y * ox);
+    axes[i * 3] = (ox + w * tx + (y * tz - z * ty)) * sx;
+    axes[i * 3 + 1] = (oy + w * ty + (z * tx - x * tz)) * sy;
+    axes[i * 3 + 2] = (oz + w * tz + (x * ty - y * tx)) * sz;
+  }
   for (let i = 0; i < (is2d ? 2 : 3); i++)
     for (let j = i + 1; j < (is2d ? 2 : 3); j++) {
-      const a = axes[i]!,
-        b = axes[j]!;
+      const ax = axes[i * 3]!, ay = axes[i * 3 + 1]!, az = axes[i * 3 + 2]!;
+      const bx = axes[j * 3]!, by = axes[j * 3 + 1]!, bz = axes[j * 3 + 2]!;
       const relativeDot =
-        (a.x * b.x + a.y * b.y + a.z * b.z) /
-        (Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z));
+        (ax * bx + ay * by + az * bz) /
+        (Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz));
       if (Math.abs(relativeDot) > 1e-6)
         throw new Error("Collider transform contains unsupported shear");
     }
+  return is2d;
+}
+
+/** Throws exactly where `colliderLocalPose` would, without building the pose. */
+export function assertColliderLocalPose(
+  kind: ColliderShape["kind"],
+  local: ColliderLocalTransform,
+  actorScale: Vec3,
+): void {
+  checkColliderLocal(kind, local, actorScale, axesScratch);
+}
+
+/** Fixed-size TRS decomposition, independent of collision vertex data. */
+export function colliderLocalPose(
+  kind: ColliderShape["kind"],
+  local: ColliderLocalTransform,
+  actorScale: Vec3,
+): { scale: Vec3; translation: Vec3; rotation: Quat } {
+  const is2d = checkColliderLocal(kind, local, actorScale, axesScratch);
+  const parentScale = is2d ? { ...actorScale, z: 1 } : actorScale;
+  const axes = [0, 1, 2].map((i) => ({
+    x: axesScratch[i * 3]!,
+    y: axesScratch[i * 3 + 1]!,
+    z: axesScratch[i * 3 + 2]!,
+  }));
   // Decompose S_parent * R_local into an orthonormal attachment and the
   // canonical geometry scale. A quarter-turn permutes nonuniform scale axes.
   // Put any reflection on X so the attachment remains a proper rotation.

@@ -372,7 +372,7 @@ export function copyTransform(value: Transform): Transform {
   };
 }
 
-function copyTransformInto(value: Transform, out: Transform): Transform {
+export function copyTransformInto(value: Transform, out: Transform): Transform {
   out.position.x = value.position.x;
   out.position.y = value.position.y;
   out.position.z = value.position.z;
@@ -417,6 +417,16 @@ export function composeParentChildTransform(
   const world = identityTransform();
   composeWorldPoseInto(parent, undefined, local, world);
   return world;
+}
+
+/** `composeParentChildTransform` into `out`, which is distinct from both inputs. */
+export function composeParentChildTransformInto(
+  parent: Transform,
+  local: Transform,
+  out: Transform,
+): Transform {
+  composeWorldPoseInto(parent, undefined, local, out);
+  return out;
 }
 
 /**

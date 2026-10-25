@@ -134,8 +134,7 @@ export function createEditorViewportTools({
   let multiSelectDrag: GizmoMultiSelectDrag | null = null;
   let pointDrag: ShapeHandlesHost<never> | null = null;
   const parentIdOf = (id: string): string | null =>
-    editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
-      ?.parentId ?? null;
+    editorSync.lastSceneActor(id)?.parentId ?? null;
   const selectedActorTransforms = () => {
     const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
     const live: Array<{
@@ -272,9 +271,7 @@ export function createEditorViewportTools({
     const attachId = pickGizmoAttachActorId(lastSelectedActorIds, parentIdOf, (id) => {
       const mesh = editorSync.meshForActor(id);
       if (!mesh) return false;
-      const locked = editorSync
-        .serializedScene()
-        ?.actors.find((actor) => actor.id === id)?.locked;
+      const locked = editorSync.lastSceneActor(id)?.locked;
       if (locked) return false;
       return mesh.isPickable || isEditorModelPlaceholder(mesh);
     });
