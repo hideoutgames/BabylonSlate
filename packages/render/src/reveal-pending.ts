@@ -13,7 +13,9 @@ import type { AbstractMesh, Material, Node, Scene } from "@babylonjs/core";
  * that has drawn) and, on WebGPU, whether its first draws' pipelines are known to exist; a world view's readiness round
  * (`revealRound`) reveals at its end, before the frame draws, only what no pass found unready and whose pipelines some
  * probe, or a lookup in the round (`noteRevealPipelines`), found. A mesh that has drawn with its Material is never
- * hidden again (`hasDrawn`): a later variant change hot-swaps it like any drawn mesh.
+ * hidden again (`hasDrawn`): a later variant change hot-swaps it like any drawn mesh. A Play visual rebuilt in place of
+ * one that had shown is marked (`noteReplacesDrawnVisual`) until it draws, so its reveal skips the wait for drawn
+ * shadow maps to list it (`shadow-caster-warm.ts`).
  */
 const pending = new WeakSet<AbstractMesh>();
 /** Hidden meshes drawn only to create pipelines ahead (`hideForPipelineWarmup`): never revealed. */
@@ -25,6 +27,11 @@ const groupOf = new WeakMap<AbstractMesh, Node>();
 const groups = new WeakMap<Node, Set<AbstractMesh>>();
 /** The Material each mesh last drew with (a probe found it ready, or it was revealed). */
 const drawnWith = new WeakMap<AbstractMesh, Material | null>();
+/**
+ * Meshes of a visual that took the place of a slot's visual that had drawn (`noteReplacesDrawnVisual`), until they draw
+ * themselves (their reveal included). A disposed mesh's mark goes with it.
+ */
+const replacing = new WeakSet<AbstractMesh>();
 const revealListeners = new WeakMap<Scene, Set<(mesh: AbstractMesh) => void>>();
 
 /**
@@ -65,6 +72,33 @@ export function hasDrawn(mesh: AbstractMesh): boolean {
 /** A probe found `mesh` ready to draw with its current Material. */
 export function noteDrawn(mesh: AbstractMesh): void {
   drawnWith.set(mesh, mesh.material ?? null);
+  // A hidden mesh draws once revealed: a strict probe that finds it ready leaves it waiting for its round.
+  if (!pending.has(mesh)) replacing.delete(mesh);
+}
+
+/**
+ * Whether the visual at `root` has shown: some mesh of it drew, or is a replacement of a visual that had (a visual
+ * rebuilt twice before a frame drew either). Asked before the visual is disposed.
+ */
+export function visualHasShown(root: AbstractMesh | undefined): boolean {
+  if (!root) return false;
+  for (const mesh of [root, ...root.getChildMeshes(false)]) if (drawnWith.has(mesh) || replacing.has(mesh)) return true;
+  return false;
+}
+
+/**
+ * The visual at `root` takes the place of a slot's visual that had shown (`visualHasShown`): a script's write rebuilt
+ * it (a Text3D whose text changes every tick). Until each of its meshes draws, its reveal does not wait for the drawn
+ * shadow maps it casts into to create its depth pipelines (`replacesDrawnVisual`): the slot held a caster already, and
+ * a map's redraw with a caster new to it leaves out, holding nothing, a draw whose pipeline is missing.
+ */
+export function noteReplacesDrawnVisual(root: AbstractMesh): void {
+  for (const mesh of [root, ...root.getChildMeshes(false)]) replacing.add(mesh);
+}
+
+/** Whether `mesh` belongs to a visual that replaced one that had shown, and has not drawn itself yet. */
+export function replacesDrawnVisual(mesh: AbstractMesh): boolean {
+  return replacing.has(mesh);
 }
 
 /**

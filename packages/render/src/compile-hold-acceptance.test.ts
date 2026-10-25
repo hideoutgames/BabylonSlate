@@ -95,6 +95,7 @@ import { managedRenderReservations } from "./managed-render-resources";
 import { shadowBytesPerTexel } from "./shadow-admission";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
@@ -2920,6 +2921,114 @@ describe("a visual re-sent every tick", () => {
     const { created, pipelines, warmPipelines, synchronous } = world.driver;
     expect({ rows, compiled: created.length, pipelines: [pipelines.size, warmPipelines.size, synchronous.size] }).toEqual({
       rows: rowsOf({ kept: false, drawn: true, hidden: false, held: false }), compiled: 0, pipelines: [0, 0, 0],
+    });
+  });
+
+  /** A light over the re-sent visual whose shadows drew: a spot's map, or the sun's cascaded one. */
+  const shadowing = (kind: "spot" | "sun", intensity: number) => kind === "spot"
+    ? spot(10, [0, 6, -4], { castShadows: true, intensity }) : sun({ castShadows: true, intensity });
+  const shadowMapOf = (world: PlayWorld, kind: "spot" | "sun") => world.handle.scene.lights
+    .find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${kind === "spot" ? 10 : 3}`)!.getShadowGenerator() as ShadowGenerator;
+  /** Records the meshes a real (not skipped) draw into `map` drew, until cleared. */
+  const castsInto = (world: PlayWorld, map: ShadowGenerator) => {
+    const cast = new Set<AbstractMesh>();
+    let before = 0;
+    map.onBeforeShadowMapRenderMeshObservable.add(() => { before = world.driver.draws(); });
+    map.onAfterShadowMapRenderMeshObservable.add((mesh) => { if (world.driver.draws() > before) cast.add(mesh); });
+    return cast;
+  };
+  /** Records the meshes the view drew (warm draws only create pipelines), until cleared. */
+  const viewDraws = () => {
+    const drawn = new Set<AbstractMesh>();
+    const render = Mesh.prototype.render;
+    vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
+      if (!this.getScene().getEngine().getCurrentRenderPassName().startsWith("warm ")) drawn.add(this);
+      return render.apply(this, args);
+    });
+    return drawn;
+  };
+
+  const RATES = [["every tick", 1], ["twice a frame", 2]] as const;
+  it.each(RATES.flatMap(([rate, ticksPerFrame]) => (["spot", "sun"] as const).map((kind) => [rate, kind, ticksPerFrame] as const)))(
+    "a Text3D whose text changes %s under a drawn %s map draws every frame and casts into it: webgpu", async (_rate, kind, ticksPerFrame) => {
+    // The script also writes the light every tick, so the shadow controller lists each rebuilt mesh as a caster before
+    // its probe. The mesh takes the place of one that drew and cast (at two ticks a frame, of a rebuild of it that never
+    // drew), so its reveal waits for no map to list it while hidden: the lookup finds its pipelines and it is revealed
+    // in its first frame. Revealed, it is a caster new to the map whose depth pipeline (the previous mesh's) exists, so
+    // that frame's map render draws it.
+    const world = playWorld("webgpu", [shadowing(kind, 1), actor(text3d("Score 0"))]);
+    await settle(world);
+    const map = shadowMapOf(world, kind);
+    const cast = castsInto(world, map);
+    const drawn = viewDraws();
+    world.driver.arm();
+    const visuals = new Set<AbstractMesh>();
+    const rows: { drawn: boolean; hidden: boolean; held: boolean; cast: boolean }[] = [];
+    for (let index = 0; index < 6; index++) {
+      for (let tick = index * ticksPerFrame; tick < (index + 1) * ticksPerFrame; tick++)
+        world.place(actor(text3d(`Score ${tick + 1}`)), shadowing(kind, 1 + (tick + 1) / 10));
+      const visual = world.handle.scene.getMeshByName(`actor-${SLOT}`)!;
+      visuals.add(visual);
+      drawn.clear();
+      cast.clear();
+      const { view } = await world.frame();
+      rows.push({ drawn: drawn.has(visual), hidden: isRevealPending(visual), held: view?.rendered !== true, cast: cast.has(visual) });
+    }
+    const { pipelines, synchronous } = world.driver;
+    expect({ mapDrawn: !awaitsFirstDraw(map), rebuilt: visuals.size, rows, pipelines: pipelines.size, synchronous: synchronous.size })
+      .toEqual({
+        mapDrawn: true, rebuilt: 6, rows: Array.from({ length: 6 }, () => ({ drawn: true, hidden: false, held: false, cast: true })),
+        pipelines: 0, synchronous: 0,
+      });
+  });
+
+  it.each(["spot", "sun"] as const)(
+    "a model visual rebuilt under a drawn %s map draws whole every frame and casts from the frame it takes the slot: webgpu", async (kind) => {
+    // A changed assignment of an actor with a model part stages its new visual until the model has loaded. The visual it
+    // replaces goes only when it takes the slot, and the shadow controller lists it as a caster then. It takes the place
+    // of a visual that drew, so its reveal waits for no map to list it: the lookup finds its pipelines (the same model's
+    // and box's) and it draws, and casts, in the first frame it holds the slot.
+    const model = (orderInLayer: number): Actor => ({
+      slotId: SLOT, guid: "visual", position: [0, 1, -4], assign: { meshAssetGuid: null, meshKind: null, orderInLayer, parts: [
+        part("body", "box", { meshAssetGuid: "model" }), part("base", "box", { position: [0, -0.5, 0], scale: [0.6, 0.1, 0.6] }),
+      ] },
+    });
+    const world = playWorld("webgpu", [shadowing(kind, 1)]);
+    world.handle.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    world.place(model(0));
+    await settle(world);
+    const scene = world.handle.scene;
+    /** The slot's visual a frame shows (a staged replacement stays disabled until it takes the slot), and its surfaces. */
+    const shown = () => scene.meshes.find((mesh) => mesh.name === `actor-${SLOT}` && mesh.isEnabled());
+    const surfaces = (root: AbstractMesh | undefined) => root?.getChildMeshes(false).filter((mesh) => mesh.getTotalVertices() > 0) ?? [];
+    const cast = castsInto(world, shadowMapOf(world, kind));
+    const drawn = viewDraws();
+    const first = shown();
+    drawn.clear();
+    await world.frame();
+    const drewBefore = surfaces(first).length > 0 && surfaces(first).every((mesh) => drawn.has(mesh));
+    world.driver.arm();
+    world.place(model(1), shadowing(kind, 1.1));
+    /** Frames in which some surface of the slot's visual did not draw. */
+    let incomplete = 0;
+    let held = 0;
+    let adoptedAt = -1;
+    let castAt = -1;
+    for (let index = 0; index < 12 && castAt < 0; index++) {
+      const visual = shown();
+      // Before the frame: a replacement taking the slot after it disposes this visual.
+      const parts = surfaces(visual);
+      drawn.clear();
+      cast.clear();
+      if ((await world.frame()).view?.rendered !== true) held++;
+      if (!parts.length || !parts.every((mesh) => drawn.has(mesh))) incomplete++;
+      if (visual === first) continue;
+      if (adoptedAt < 0) adoptedAt = index;
+      if (parts.every((mesh) => cast.has(mesh))) castAt = index;
+    }
+    expect({ drewBefore, adopted: adoptedAt >= 0, incomplete, held, castOnAdoption: castAt >= 0 && castAt === adoptedAt,
+      synchronous: world.driver.synchronous.size }).toEqual({
+      drewBefore: true, adopted: true, incomplete: 0, held: 0, castOnAdoption: true, synchronous: 0,
     });
   });
 

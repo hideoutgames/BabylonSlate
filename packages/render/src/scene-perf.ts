@@ -25,7 +25,9 @@ import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } fr
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import { bindsAsPreviousEffect } from "./fixed-light-binding";
-import { hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe } from "./reveal-pending";
+import {
+  hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe, replacesDrawnVisual,
+} from "./reveal-pending";
 import { casterPipelinesWarm } from "./shadow-caster-warm";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { pipelinesWarm, requestPipelineWarm } from "./variant-pipeline-warmup";
@@ -327,9 +329,11 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`), those of
       // the drawn shadow maps its reveal redraws included (`shadow-caster-warm.ts`), which those maps start creating
       // once its caster depth variants are ready, while its own warm draws create theirs or, in this round, the main
-      // pass's lookup ahead of them finds them (`lookUpPipelines`).
+      // pass's lookup ahead of them finds them (`lookUpPipelines`). A visual rebuilt in place of one that had shown
+      // (`replacesDrawnVisual`) waits for no map: each map's redraw with it, a caster new to the map, leaves out what
+      // misses a pipeline, holding nothing, so the slot never goes blank for a frame while a map lists it.
       requestPipelineWarm(mesh);
-      const castersWarm = meshReady && casterPipelinesWarm(mesh);
+      const castersWarm = meshReady && (replacesDrawnVisual(mesh) || casterPipelinesWarm(mesh));
       noteRevealProbe(mesh, meshReady && castersWarm, pipelinesWarm(mesh));
       const failed = meshReady ? undefined : failedRequest();
       if (failed) {

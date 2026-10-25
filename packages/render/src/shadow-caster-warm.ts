@@ -37,7 +37,10 @@ import {
  * would redraw (the controller's `setShadowCasterReach`) for its depth pipelines (`casterPipelinesWarm`): a map that
  * has not listed it since it was hidden is asked to render again (within the frame's warm budget, in any frame), and
  * that render lists it (`listsHiddenCaster`) inside a warm scope only so its draws start them, every one skipped. The
- * reveal waits until they exist, so the mesh appears with its shadow and the redraw its reveal starts creates none.
+ * reveal waits until they exist, so the mesh appears with its shadow and the redraw its reveal starts creates none. A
+ * Play visual rebuilt in place of one that had shown (`replacesDrawnVisual`, a script's text written every tick) asks
+ * no map: the slot would otherwise go blank while a map lists it. Revealed, it is a caster new to each map: in a
+ * steady frame it casts in that frame's render where its depth pipelines exist and is left out until they do.
  *
  * A caster that has drawn into the map keeps drawing, a later depth variant of its own included (a changed Material
  * whose colour variant is ready, a mesh's first instances), which still creates its pipeline in the draw, since leaving
