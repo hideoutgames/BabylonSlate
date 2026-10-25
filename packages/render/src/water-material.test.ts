@@ -6,7 +6,7 @@ import {
 import {
   RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel,
 } from "@haptic/core";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import {
@@ -515,7 +515,9 @@ describe("Water material binding", () => {
       expect(own.textures.has(WATER_FOAM_SAMPLER)).toBe(true);
       expect(own.vectors.get(WATER_CLOCK_UNIFORM)).toEqual([7.25, 0, 0, 0]);
       expect(own.vectors.get(WATER_EYE_UNIFORM)).toEqual([3, 4, -5, 0]);
-      expect(own.vectors.get(WATER_NODE_FOAM_UNIFORM)).toEqual([plugin.water.crestFoam, plugin.water.foamAmount, waterFoamThresholdOf(plugin.water), 0]);
+      const { fftSize, fftCascades } = sceneWaterQualityDeviceClamp(scene).quality;
+      expect(own.vectors.get(WATER_NODE_FOAM_UNIFORM)).toEqual([plugin.water.crestFoam, plugin.water.foamAmount,
+        waterFoamThresholdOf(plugin.water, plugin.body.waveScale, fftSize, fftCascades), 1 / Math.min(1, plugin.body.waveScale)]);
       expect(own.vectors.get(WATER_NODE_SUN_UNIFORM)![3]).toBe(plugin.water.subsurface);
     } finally { scene.dispose(); engine.dispose(); }
   });

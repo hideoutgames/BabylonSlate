@@ -201,26 +201,71 @@ function buildSpectrum(w: WaterDefinition): WaterSpectrum {
   };
   const slope = waterSpectrumSlope(spectrum);
   spectrum.choppiness = Math.min(WATER_SPECTRUM_CHOP * w.steepness, slope > 0 ? WATER_SPECTRUM_FOLD_LIMIT / slope : Infinity);
-  let weighted = 0;
-  for (let c = 0; c < patchSizes.length; c++) {
-    const low = Math.max(bandEdges[c]!, TAU / patchSizes[c]!), high = Math.min(bandEdges[c + 1]!, Math.PI * 256 / patchSizes[c]!);
-    weighted += (WATER_FOAM_WEIGHTS[c]! * bandSlope(spectrum, low, high)) ** 2;
-  }
-  spectrum.foamSpread = spectrum.choppiness * Math.sqrt(weighted);
+  spectrum.foamSpread = foamSpreadOf(spectrum, WATER_FOAM_REFERENCE_SIZE, WATER_SPECTRUM_CASCADES);
   return spectrum;
 }
 
+/** The simulation size `WaterSpectrum.foamSpread` is taken at. */
+const WATER_FOAM_REFERENCE_SIZE = 256;
+
+/** λ times the weighted RMS slopes of the first `cascades` cascades, each over the band a `size`-texel FFT draws. */
+function foamSpreadOf(spectrum: WaterSpectrum, size: number, cascades: number): number {
+  const { patchSizes, bandEdges } = spectrum;
+  let weighted = 0;
+  for (let c = 0; c < Math.min(cascades, patchSizes.length); c++) {
+    const low = Math.max(bandEdges[c]!, TAU / patchSizes[c]!), high = Math.min(bandEdges[c + 1]!, Math.PI * size / patchSizes[c]!);
+    weighted += (WATER_FOAM_WEIGHTS[c]! * bandSlope(spectrum, low, high)) ** 2;
+  }
+  return spectrum.choppiness * Math.sqrt(weighted);
+}
+
+const foamSpreads = new WeakMap<WaterSpectrum, Map<number, number>>();
 /**
- * The weighted foam sum (`WATER_FOAM_WEIGHTS`, at Wave Scale 1) above which a sea foams: the level only Crest Foam's
- * share of the sea passes (the sum taken as Gaussian, `FOAM_SUM_MEAN` and `FOAM_SUM_DEVIATION` of `foamSpread`), so
- * Crest Foam sets the whitecap cover of any sea, but never below `FOAM_BREAKING`. A lower Wave Scale shrinks the sum
- * against it, so calmer bodies foam less. Crest Foam 0 never foams (Infinity).
+ * `foamSpread` of the turbulence a `size`-texel, `cascades`-cascade simulation draws: smaller or fewer cascades leave out
+ * the shortest waves, whose folds the foam sum would otherwise count.
  */
-export function waterFoamThreshold(spectrum: WaterSpectrum, crestFoam: number): number {
+export function waterFoamSpread(spectrum: WaterSpectrum, size = WATER_FOAM_REFERENCE_SIZE, cascades = WATER_SPECTRUM_CASCADES): number {
+  if (size === WATER_FOAM_REFERENCE_SIZE && cascades >= WATER_SPECTRUM_CASCADES) return spectrum.foamSpread;
+  let cached = foamSpreads.get(spectrum);
+  if (!cached) { cached = new Map(); foamSpreads.set(spectrum, cached); }
+  const key = size * 8 + cascades;
+  let spread = cached.get(key);
+  if (spread === undefined) { spread = foamSpreadOf(spectrum, size, cascades); cached.set(key, spread); }
+  return spread;
+}
+
+/** The body and simulation a foam threshold is for (`waterFoamThreshold`). */
+export interface WaterFoamOptions {
+  /** The body's Wave Scale (default 1). */
+  waveScale?: number;
+  /** Texels per side of the wave simulation (default 256). */
+  fftSize?: number;
+  /** Cascades the simulation draws (default all). */
+  cascades?: number;
+}
+
+/**
+ * The Wave Scale foam is measured at (`waterFoamScale`): a body's turbulence divided by it compares to
+ * `waterFoamThreshold`. Wave Scales above 1 keep their extra turbulence, so taller seas foam more.
+ */
+export function waterFoamScale(waveScale: number): number {
+  return clamp(waveScale, WATER_FOAM_MIN_SCALE, 1);
+}
+const WATER_FOAM_MIN_SCALE = 0.01;
+
+/**
+ * The weighted foam sum (`WATER_FOAM_WEIGHTS`, divided by `waterFoamScale`) above which a sea foams: the level only
+ * Crest Foam's share of the sea passes (the sum taken as Gaussian, `FOAM_SUM_MEAN` and `FOAM_SUM_DEVIATION` of the
+ * simulation's `waterFoamSpread`), so Crest Foam sets the whitecap cover of any sea at any quality, but never below
+ * `FOAM_BREAKING`. A Wave Scale below 1 shrinks that share in proportion, so calmer bodies foam less but still foam.
+ * Crest Foam 0 never foams (Infinity).
+ */
+export function waterFoamThreshold(spectrum: WaterSpectrum, crestFoam: number, options: WaterFoamOptions = {}): number {
   const crest = clamp(crestFoam, 0, 1);
   if (!(crest > 0)) return Infinity;
-  const z = normalQuantileAbove(FOAM_SHARE * crest);
-  return Math.max(FOAM_BREAKING, (FOAM_SUM_MEAN + z * FOAM_SUM_DEVIATION) * spectrum.foamSpread);
+  const z = normalQuantileAbove(FOAM_SHARE * crest * waterFoamScale(options.waveScale ?? 1));
+  const spread = waterFoamSpread(spectrum, options.fftSize, options.cascades);
+  return Math.max(FOAM_BREAKING, (FOAM_SUM_MEAN + z * FOAM_SUM_DEVIATION) * spread);
 }
 
 /** z with P(Z > z) = p for a standard normal Z, 0 < p ≤ 0.5 (Abramowitz and Stegun 26.2.23, error under 5e-4). */

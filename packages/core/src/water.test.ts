@@ -6,7 +6,7 @@ import {
   sampleWaterSurface, sampleWaterWaves, waterBankFadeLength, waterBankGain, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline,
   waterWaveEnvelope,
 } from "./water";
-import { evaluateWaterSpectrum, WATER_SPECTRUM_GRAVITY, waterFoamThreshold, waterSpectrum } from "./water-spectrum";
+import { evaluateWaterSpectrum, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamSpread, waterFoamThreshold, waterSpectrum } from "./water-spectrum";
 
 const realistic = createDefaultWaterDefinition();
 const storm = { ...realistic, waveHeight: 1.2, waveLength: 30, swellHeight: 0.6, swellLength: 90, steepness: 1 };
@@ -300,6 +300,23 @@ describe("Spectrum water", () => {
     // A glassy sea, whose turbulence barely moves, still needs a real fold.
     const glassy = waterSpectrum({ ...base, waveHeight: 0.001, swellHeight: 0 });
     expect(waterFoamThreshold(glassy, 1)).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it("keeps whitecaps on calmer bodies and lower-quality simulations", () => {
+    const sea = waterSpectrum(createDefaultWaterDefinition()), open = waterFoamThreshold(sea, 0.2);
+    // A Lake's sum is taken back to Wave Scale 1 (waterFoamScale), and a smaller share of it foams: a higher bar there,
+    // but far below the Wave Scale 1 threshold over a sum shrunk to 0.35, which no fold reached.
+    const lake = waterFoamThreshold(sea, 0.2, { waveScale: 0.35 });
+    expect(waterFoamScale(0.35)).toBe(0.35);
+    expect(lake).toBeGreaterThan(open);
+    expect(lake).toBeLessThan(open / 0.35 * 0.5);
+    // Taller bodies keep their extra turbulence against the Wave Scale 1 bar.
+    expect(waterFoamScale(2)).toBe(1);
+    expect(waterFoamThreshold(sea, 0.2, { waveScale: 2 })).toBe(open);
+    // A 64-texel, two-cascade simulation draws fewer short waves: the same share foams below a lower bar.
+    expect(waterFoamSpread(sea, 64, 2)).toBeLessThan(sea.foamSpread);
+    expect(waterFoamThreshold(sea, 0.2, { fftSize: 64, cascades: 2 })).toBeLessThan(open);
+    expect(waterFoamSpread(sea, 256, 3)).toBe(sea.foamSpread);
   });
 
   it("lets each cascade's foam recover over about one of its wave periods", () => {

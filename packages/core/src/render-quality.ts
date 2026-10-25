@@ -191,7 +191,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
       refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fftSize: 64, fftCascades: 2,
+      planarScale: 0.5, fftSize: 128, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 0.5, ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
@@ -203,7 +203,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     water: {
       shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fftSize: 128, fftCascades: 3,
+      planarScale: 0.5, fftSize: 256, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 0.75, ambientOcclusion: true, reflections: false, volumetricLighting: false },
   },
