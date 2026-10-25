@@ -1107,19 +1107,24 @@ const EDGE_DIAGNOSTIC_CODES = new Set([
   "type.wildcard_group",
 ]);
 
+function anchorsCompiledNode(
+  d: Diagnostic,
+  compiled: ReadonlySet<string>,
+): boolean {
+  if (!d.nodeId || compiled.has(d.nodeId)) return true;
+  const related = d.relatedNodeId;
+  return (
+    !!related &&
+    compiled.has(related) &&
+    EDGE_DIAGNOSTIC_CODES.has(d.code)
+  );
+}
+
 function keepCompiledNodeDiagnostics(
   diagnostics: readonly Diagnostic[],
   compiled: ReadonlySet<string>,
 ): Diagnostic[] {
-  return diagnostics.filter((d) => {
-    if (!d.nodeId || compiled.has(d.nodeId)) return true;
-    const related = d.relatedNodeId;
-    return (
-      !!related &&
-      compiled.has(related) &&
-      EDGE_DIAGNOSTIC_CODES.has(d.code)
-    );
-  });
+  return diagnostics.filter((d) => anchorsCompiledNode(d, compiled));
 }
 
 function validateFlowSwitchCases(
@@ -1278,8 +1283,10 @@ export function validateGraphs(
   options: ValidateOptions = {},
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  const compiledByGraph = new Map<string, ReadonlySet<string>>();
   for (const graph of graphs) {
     const compiled = compiledNodeIds(graph);
+    compiledByGraph.set(graph.id, compiled);
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
     const incoming = indexIncomingEdges(graph);
@@ -1301,8 +1308,12 @@ export function validateGraphs(
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   diagnostics.push(...validateCustomEventNames(graphs, ctx));
+  // Registered rules see every graph; their node diagnostics follow the same compiled-node filter.
   for (const rule of listValidationRules()) {
-    diagnostics.push(...rule.run(graphs, ctx));
+    for (const d of rule.run(graphs, ctx)) {
+      const compiled = compiledByGraph.get(d.graphId);
+      if (!compiled || anchorsCompiledNode(d, compiled)) diagnostics.push(d);
+    }
   }
   return diagnostics;
 }

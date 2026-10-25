@@ -199,14 +199,42 @@ describe("physics nodes", () => {
     expect(diags.some((d) => d.code === "physics.radius")).toBe(true);
   });
 
+  it("ignores a stored Radius of 0 when the pin is wired or the node never runs", () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
+      id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties,
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("wired", "physics.sphereOverlap", { "default:radius": 0 }),
+        node("abs", "math.abs", { "default:in": 2 }),
+        node("unreached", "physics.sphereOverlap", { "default:radius": 0 }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "wired", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "abs", sourcePinId: "out", targetNodeId: "wired", targetPinId: "radius" },
+      ],
+    };
+    expect(validateGraphs([graph], { assetGuid: "a" }).filter((d) => d.code === "physics.radius")).toEqual([]);
+  });
+
   describe("collision channel literals", () => {
     const registry = createDefaultNodeRegistry();
     const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
       id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties,
     });
-    const channelDiagnostics = (nodes: GraphNode[], edges: LogicGraph["edges"] = []) =>
-      validateGraphs([{ id: "g", kind: "event", nodes, edges }], { assetGuid: "a" })
+    // Begin Play runs every node that has an exec input, in order, so each of them is compiled.
+    const channelDiagnostics = (nodes: GraphNode[], edges: LogicGraph["edges"] = []) => {
+      const chain = [node("begin", "flow.event.beginPlay"), ...nodes.filter((n) => n.pins.some((p) => p.id === "execIn"))];
+      const exec = chain.slice(1).map((next, index) => ({
+        id: `exec-${index}`, sourceNodeId: chain[index]!.id, sourcePinId: "execOut", targetNodeId: next.id, targetPinId: "execIn",
+      }));
+      return validateGraphs([{ id: "g", kind: "event", nodes: [chain[0]!, ...nodes], edges: [...edges, ...exec] }], { assetGuid: "a" })
         .filter((d) => d.code === "physics.channel");
+    };
 
     it.each(["physics.lineTrace", "physics.sphereOverlap", "physics.shapeSweep", "input.projectCursorToScene"])(
       "warns that an unknown %s Channel default would behave as All", (typeId) => {
@@ -232,6 +260,11 @@ describe("physics nodes", () => {
       const found = channelDiagnostics([
         node("stale", "enum.make", { enumGuid: "engine:CollisionChannel", value: "Visibility" }),
         node("other", "enum.make", { enumGuid: "engine:Key", value: "Visibility" }),
+        node("log-stale", "debug.log"),
+        node("log-other", "debug.log"),
+      ], [
+        { id: "read-stale", sourceNodeId: "stale", sourcePinId: "out", targetNodeId: "log-stale", targetPinId: "message" },
+        { id: "read-other", sourceNodeId: "other", sourcePinId: "out", targetNodeId: "log-other", targetPinId: "message" },
       ]);
       expect(found).toEqual([expect.objectContaining({ nodeId: "stale", severity: "warning" })]);
     });

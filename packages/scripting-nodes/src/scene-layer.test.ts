@@ -77,11 +77,14 @@ describe("scene-layer nodes", () => {
       id: "g",
       kind: "event",
       nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "reg", "scene-layer.registerPostProcess", {
           "default:material": "bloom",
         }),
       ],
-      edges: [],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+      ],
     };
     const diagnostics = validateGraphs([graph], {
       assetGuid: "a",
@@ -98,11 +101,14 @@ describe("scene-layer nodes", () => {
       id: "g",
       kind: "event",
       nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "reg", "scene-layer.registerPostProcess", {
           "default:material": "bloom",
         }),
       ],
-      edges: [],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+      ],
     };
     const diagnostics = validateGraphs([graph], {
       assetGuid: "a",
