@@ -328,7 +328,8 @@ export async function loadGameFromFiles(
     for (const [guid, selected] of requestedFonts ?? []) for (const mode of selected) requireFont(guid, mode);
     for (const root of roots) if (entries.get(root)?.type === "Font" && !modes.has(root)) requireFont(root, "bitmap");
     // Font metadata already lives in the catalog. Original font bytes are only
-    // requested for Bitmap text; MSDF and geometry consumers select sidecars.
+    // requested for Bitmap text (including MSDF text without an atlas); MSDF
+    // and geometry consumers select sidecars.
     const acquire = (id: string, metadataOnly = false) => scope.acquire<PreparedAsset>(id, metadataOnly ? {
       key: "export-font-catalog", estimate: { sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0 },
       load: async () => ({ value: { bytes: new Uint8Array(), decodedBytes: 0, publish() {} } }),
@@ -360,12 +361,17 @@ export async function loadGameFromFiles(
     };
     for (const [guid, selected] of modes) inheritModes(guid, selected);
     const variants = new Set<string>();
-    // A Font exports only the representations it has; the renderer falls back without the others.
-    const addSidecar = (id: string) => { if (entries.has(id)) variants.add(id); };
+    // A Font exports only the representations it has. 3D Text without a
+    // facetype draws the bundled face; MSDF text without the full atlas pair
+    // draws Bitmap, which needs the Font's own source to keep its face.
     for (const [guid, selected] of modes) {
       if (selected.has("bitmap")) variants.add(guid);
-      if (selected.has("facetype")) addSidecar(fontFacetypeExportGuid(guid));
-      if (selected.has("msdf")) { addSidecar(fontMsdfExportGuid(guid)); addSidecar(fontMsdfAtlasExportGuid(guid)); }
+      if (selected.has("facetype") && entries.has(fontFacetypeExportGuid(guid))) variants.add(fontFacetypeExportGuid(guid));
+      if (selected.has("msdf")) {
+        const pair = [fontMsdfExportGuid(guid), fontMsdfAtlasExportGuid(guid)];
+        if (pair.every(id => entries.has(id))) for (const id of pair) variants.add(id);
+        else variants.add(guid);
+      }
     }
     const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
     // A Model's collision triangles are a separate cached representation, cooked

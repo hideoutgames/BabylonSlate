@@ -107,6 +107,8 @@ describe("loadGameFromFiles", () => {
     expect(game.scenes.has("scene")).toBe(true);
     expect(game.fontFacetypeBytes.has("font")).toBe(false);
     expect(game.fontMsdfPng.has("font")).toBe(false);
+    // MSDF text without an atlas draws Bitmap in the Font's own face.
+    expect(game.fontBytes.has("font")).toBe(true);
     game.dispose!();
   });
   it("does not read the default Font's facetype for 3D Text without a Font", async () => {
