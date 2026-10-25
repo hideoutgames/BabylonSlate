@@ -131,18 +131,6 @@ export function AnimationPreviewCanvas({
         const restoreObserver = restored?.add(() => presenter?.present({ force: true })) ?? null;
         stopRestoreWatch = () => restored?.remove(restoreObserver);
         presenter.present({ force: true });
-        if (cancelled) {
-          group?.stop();
-          stopRestoreWatch?.();
-          stopRestoreWatch = null;
-          presenter.dispose();
-          gestures.dispose();
-          loaded.dispose();
-          host.dispose();
-          hostRef.current = null;
-          presenterRef.current = null;
-          return;
-        }
         setClip(
           group?.isPlaying
             ? { playing: true, looping: group.loopAnimation }
