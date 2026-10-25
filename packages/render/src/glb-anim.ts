@@ -952,41 +952,48 @@ export function publishModelHierarchyAnimations(
   replayPendingAnimState(binding, slotId);
 }
 
-/** True when name-match retarget keeps at least one channel. */
-export async function animationRetargetHasMatches(
+/** Clip names whose name-match retarget onto the target keeps at least one
+ * channel. Both GLBs load once for the whole batch. */
+export async function animationRetargetMatchingClips(
   engine: AbstractEngine,
   sourceBytes: Uint8Array,
   targetBytes: Uint8Array,
-  clipName: string,
-): Promise<boolean> {
-  const scene = new Scene(engine);
-  try {
-    return await animationRetargetHasMatchesOnScene(
-      scene,
-      sourceBytes,
-      targetBytes,
-      clipName,
-    );
-  } finally {
-    scene.dispose();
-  }
-}
-
-async function animationRetargetHasMatchesOnScene(
-  scene: Scene,
-  sourceBytes: Uint8Array,
-  targetBytes: Uint8Array,
-  clipName: string,
-): Promise<boolean> {
+  clipNames: readonly string[],
+): Promise<Set<string>> {
+  const matching = new Set<string>();
   if (!isGltfModelBytes(sourceBytes) || !isGltfModelBytes(targetBytes)) {
-    return false;
+    return matching;
   }
-  let sourceContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
-  let targetContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
+  const scene = new Scene(engine);
+  let sourceContainer: AssetContainer | undefined;
+  let targetContainer: AssetContainer | undefined;
   try {
     sourceContainer = await loadGlbContainer(scene, sourceBytes, "retarget-src.glb");
     targetContainer = await loadGlbContainer(scene, targetBytes, "retarget-dst.glb");
-    const instance = targetContainer.instantiateModelsToScene(
+    for (const clipName of new Set(clipNames)) {
+      if (retargetKeepsChannels(sourceContainer, targetContainer, clipName)) {
+        matching.add(clipName);
+      }
+    }
+  } catch {
+    // A GLB that fails to load matches no clip.
+  } finally {
+    sourceContainer?.dispose();
+    targetContainer?.dispose();
+    scene.dispose();
+  }
+  return matching;
+}
+
+/** Probes one clip against a fresh target instance, as an isolated retarget would. */
+function retargetKeepsChannels(
+  sourceContainer: AssetContainer,
+  targetContainer: AssetContainer,
+  clipName: string,
+): boolean {
+  let instance: ReturnType<typeof targetContainer.instantiateModelsToScene> | undefined;
+  try {
+    instance = targetContainer.instantiateModelsToScene(
       keepSourceName,
       false,
       { doNotInstantiate: true },
@@ -998,19 +1005,13 @@ async function animationRetargetHasMatchesOnScene(
       (instance.rootNodes[0] as TransformNode | undefined) ??
       targetContainer.transformNodes[0] ??
       targetContainer.meshes[0];
-    if (!sourceGroup || !root) {
-      instance.dispose();
-      return false;
-    }
+    if (!sourceGroup || !root) return false;
     const retargeted = retargetAnimationGroupWithMeshProxy(sourceGroup, root);
-    const matched = retargeted != null;
     retargeted?.dispose();
-    instance.dispose();
-    return matched;
+    return retargeted != null;
   } catch {
     return false;
   } finally {
-    sourceContainer?.dispose();
-    targetContainer?.dispose();
+    instance?.dispose();
   }
 }

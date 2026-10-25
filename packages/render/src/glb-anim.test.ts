@@ -12,7 +12,7 @@ import { createTestEngine } from "./create-null-engine";
 import {
   accountedGeometryBytesForScene,
   adoptLoadedHierarchy,
-  animationRetargetHasMatches,
+  animationRetargetMatchingClips,
   beginSlotModelAnimLoad,
   createModelActorRoot,
   invalidateSlotAnimLoad,
@@ -82,7 +82,7 @@ describe("adoptLoadedHierarchy", () => {
   });
 });
 
-describe("animationRetargetHasMatches", () => {
+describe("animationRetargetMatchingClips", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
     [];
 
@@ -94,35 +94,29 @@ describe("animationRetargetHasMatches", () => {
     }
   });
 
-  it("keeps channels when two hierarchy clips share node names", async () => {
+  it("keeps every hierarchy clip that shares node names and drops missing clip names", async () => {
     const handle = createTestEngine();
     handles.push(handle);
-    const bytes = encodeParentedAnimatedTriangleGlb("Idle");
+    const split = splitGlbJsonBin(encodeParentedAnimatedTriangleGlb("Idle"))!;
+    const animations = split.json.animations as Record<string, unknown>[];
+    animations.push({ ...animations[0], name: "Run" });
+    const bytes = encodeGlbJsonBin(split.json, split.bin);
     expect(
-      await animationRetargetHasMatches(handle.engine, bytes, bytes, "Idle"),
-    ).toBe(true);
+      await animationRetargetMatchingClips(handle.engine, bytes, bytes, ["Idle", "Walk", "Run"]),
+    ).toEqual(new Set(["Idle", "Run"]));
   });
 
-  it("returns false when the clip name is missing", async () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const bytes = encodeParentedAnimatedTriangleGlb("Idle");
-    expect(
-      await animationRetargetHasMatches(handle.engine, bytes, bytes, "Walk"),
-    ).toBe(false);
-  });
-
-  it("returns false when the target GLB has no matching nodes", async () => {
+  it("matches no clip when the target GLB has no matching nodes", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     expect(
-      await animationRetargetHasMatches(
+      await animationRetargetMatchingClips(
         handle.engine,
         encodeParentedAnimatedTriangleGlb("Idle"),
         encodeTriangleGlb(),
-        "Idle",
+        ["Idle"],
       ),
-    ).toBe(false);
+    ).toEqual(new Set());
   });
 });
 

@@ -72,11 +72,12 @@ export async function writeRetargetedAnimations(options: {
   folderRelative: string;
   rootId: string;
   readModelBytes: (modelGuid: string) => Promise<Uint8Array | null>;
+  /** Clip names among `clipNames` that keep at least one channel on the target. */
   probeMatches: (
     sourceBytes: Uint8Array,
     targetBytes: Uint8Array,
-    clipName: string,
-  ) => Promise<boolean>;
+    clipNames: readonly string[],
+  ) => Promise<ReadonlySet<string>>;
   createAsset: (
     rootId: string,
     relativePath: string,
@@ -91,15 +92,29 @@ export async function writeRetargetedAnimations(options: {
   const usedStems = new Set(names.map(fileStem));
   let created = 0;
   const targetBytes = await options.readModelBytes(options.targetModelGuid);
+  // A probe loads both GLBs, so each source Model is read and probed once for
+  // all of its clips.
+  const clipsByModel = new Map<string, Set<string>>();
+  for (const { payload } of options.sources) {
+    if (!payload.clipName) continue;
+    const clips = clipsByModel.get(payload.modelGuid) ?? new Set<string>();
+    clips.add(payload.clipName);
+    clipsByModel.set(payload.modelGuid, clips);
+  }
+  const matchesByModel = new Map<string, ReadonlySet<string>>();
+  if (targetBytes) {
+    for (const [modelGuid, clips] of clipsByModel) {
+      const sourceBytes = await options.readModelBytes(modelGuid);
+      if (!sourceBytes) continue;
+      matchesByModel.set(
+        modelGuid,
+        await options.probeMatches(sourceBytes, targetBytes, [...clips]),
+      );
+    }
+  }
   for (const source of options.sources) {
-    const sourceBytes = await options.readModelBytes(source.payload.modelGuid);
-    const clipName = source.payload.clipName;
-    const matches =
-      targetBytes &&
-      sourceBytes &&
-      clipName &&
-      (await options.probeMatches(sourceBytes, targetBytes, clipName));
-    if (!matches) {
+    const { clipName, modelGuid } = source.payload;
+    if (!clipName || !matchesByModel.get(modelGuid)?.has(clipName)) {
       skipped.push(source.name);
       continue;
     }
