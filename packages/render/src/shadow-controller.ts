@@ -48,6 +48,7 @@ import { trackShadowSlotDefines } from "./shadow-slot-defines";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import {
+  casterNormalBias,
   resolveDirectionalShadowBias,
   type DirectionalShadowBiasInput,
 } from "./shadow-bias";
@@ -1518,6 +1519,7 @@ export class SceneShadowController {
     // bound yet. Never derive from the previous frame in applySettings.
     let preparedBias: EffectiveShadowBias | null = null;
     let clearedForDraw = false;
+    let layerTexelSize = 0;
     // The resolver reads its input synchronously; each map reuses one.
     const biasInput: DirectionalShadowBiasInput = {
       width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
@@ -1561,6 +1563,14 @@ export class SceneShadowController {
       record.worldTexelSize = effective.worldTexelSize;
       record.depthScale = effective.depthScale;
       record.mode = !settings.autoBias ? "manual" : automatic ? "directional-auto" : "local-authored";
+      layerTexelSize = automatic ? effective.worldTexelSize : 0;
+    });
+    // Babylon binds biasAndScaleSM per caster just before these observers run.
+    let caster: AbstractMesh | null = null;
+    generator.onBeforeShadowMapRenderMeshObservable.add((mesh) => { caster = mesh; });
+    generator.onBeforeShadowMapRenderObservable.add((effect) => {
+      const normalBias = caster ? casterNormalBias(caster, generator.normalBias, layerTexelSize) : generator.normalBias;
+      if (normalBias !== generator.normalBias) effect.setFloat3("biasAndScaleSM", generator.bias, normalBias, generator.depthScale);
     });
     // Native readiness probes emit before/after-render without drawing.
     // Only actual RTT passes (including empty maps and snapshot rendering)
