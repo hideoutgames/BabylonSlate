@@ -363,7 +363,8 @@ const waveScratch = createWaterWaveOutput(), gradientScratch = new Float64Array(
 /**
  * Surface waves under world (x, z) in world metres, independent of the volume's transform. The world point is inverted
  * to its rest point first, so height, normal (J⁻ᵀ∇H) and `velocity` (∂η/∂t at this fixed X/Z) describe the rendered
- * surface; `orbital` is the water's horizontal particle velocity.
+ * surface; `orbital` is the water's horizontal particle velocity. Not a runtime path (queries use `sampleWaterSurface`):
+ * it is the transform-free reference surface the core water tests and the render mesh parity tests check against.
  */
 export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, time: number, scale = 1) {
   const spectrum = waterSpectrum(water), o = waveScratch;
