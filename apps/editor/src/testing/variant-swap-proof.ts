@@ -40,7 +40,9 @@ import { isForwardLightExcluded, setAuthoredLightEnabled } from "../../../../pac
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
-import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
+import { AUTHORED_LIGHT_PREFIX, createPlayLight } from "../../../../packages/render/src/scene-illumination";
+import { spawnableLightsOfLoad } from "../../../../packages/render/src/spawnable-lights";
+import { reserveSceneLightInventory } from "../../../../packages/render/src/scene-lighting";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
@@ -441,9 +443,10 @@ async function warmSpawn() {
 }
 
 /**
- * A load rehearses its authored lights' changes (`createLoadRehearsal`): each change is applied, drawn once by a
- * strict frame and reverted. Afterwards a point switching off and a spot starting to cast shadows link no program on the
- * real context, and the view never holds.
+ * A load rehearses its authored lights' changes (`createLoadRehearsal`), and a light of each kind its Classes may
+ * spawn (here a shadowed point, a kind no authored light has): each change is applied, drawn once by a strict frame and
+ * reverted. Afterwards a point switching off, a shadowed point spawning near the camera (built as Play builds a spawned
+ * light part) and a spot starting to cast shadows link no program on the real context, and the view never holds.
  */
 async function rehearsedChanges() {
   const view = await worldView();
@@ -454,10 +457,20 @@ async function rehearsedChanges() {
     authored(point, [0.3, 0.4, 1], 0.9);
     const spot = new SpotLight(`${AUTHORED_LIGHT_PREFIX}spot`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
     authored(spot, [0.9, 0.85, 0.7], 1.4);
+    // As Play's load (`prewarmSceneMaterials`): what the Classes may spawn, and room for one more light from the start.
+    const torch = { lightKind: "point", color: [1, 0.6, 0.3], intensity: 1.2, castShadows: true, range: 9 };
+    const spawnable = spawnableLightsOfLoad({
+      scripts: [{
+        assetGuid: "torch", classId: "Torch", source: "", anchors: [], entryPoints: [],
+        components: [{ id: "light", classId: "LightComponent", properties: torch }],
+      }],
+      assets: [], isClass: () => false,
+    });
+    reserveSceneLightInventory(view.scene, view.scene.lights.length + 1);
     await view.coordinator.prepare();
     await view.settle();
     const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
-    const rehearsal = createLoadRehearsal(view.scene);
+    const rehearsal = createLoadRehearsal(view.scene, undefined, [...spawnable.values()]);
     for (let attempt = 0; attempt < 600 && !rehearsal.done; attempt++) {
       rehearsal.check();
       if (view.coordinator.isReady()) rehearsal.frame(() => view.frame(false));
@@ -490,11 +503,21 @@ async function rehearsedChanges() {
       const pointOff = await change(() => setAuthoredLightEnabled(point, false));
       // One change at a time, as rehearsed: the point back on first (the variants the load drew).
       await change(() => setAuthoredLightEnabled(point, true));
+      // Near the camera, until its map draws (its casters' depth programs in use). Built as a spawned actor's light part
+      // is (`createPlayLight`, then a shadow sync); a whole actor would add its invisible origin and helper meshes, whose
+      // own variants compile at a spawn and would be counted here.
+      let spawnedLight: Light | undefined;
+      const spawned = await change(() => {
+        spawnedLight = createPlayLight(view.scene, `${AUTHORED_LIGHT_PREFIX}torch`, "point", torch);
+        (spawnedLight as PointLight).position.set(0.4, 4.2, -7);
+        findSceneShadowController(view.scene)?.sync();
+      }, () => (spawnedLight?.getShadowGenerator() as ShadowGenerator | null | undefined)?.getDarkness() === 0);
+      await change(() => spawnedLight?.dispose());
       // Until the spot's map draws (its casters' depth programs in use), not only the receivers' swap.
       const spotShadows = await change(() => authored(spot, [0.9, 0.85, 0.7], 1.4, true),
         () => (spot.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() === 0);
       return {
-        report, pointOff, spotShadows,
+        report, pointOff, spawned, spotShadows,
         glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
       };
     } finally {

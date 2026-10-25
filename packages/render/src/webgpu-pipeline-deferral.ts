@@ -366,6 +366,15 @@ export function deferredPipelineCount(engine: AbstractEngine): number {
 }
 
 /**
+ * No deferred pipeline on `engine` started or finished for `PIPELINE_DEFERRAL_STALL_MS`: the stall after which a
+ * deferring view's pending pipelines compile synchronously at their next draw. False while nothing defers.
+ */
+export function deferredPipelinesStalled(engine: AbstractEngine): boolean {
+  const state = states.get(engine);
+  return !!state && performance.now() - state.progressAt >= PIPELINE_DEFERRAL_STALL_MS;
+}
+
+/**
  * Deferred pipeline creations on `engine` that have finished, a monotonic count.
  * Loading waits count each as compile progress (`DriverCompileWatch`): on
  * WebKit, where pipelines build one after another, a held first frame may

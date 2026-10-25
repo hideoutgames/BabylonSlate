@@ -3,9 +3,12 @@ import type { Transform } from "@haptic/core";
 import {
   actorParentGuid,
   composeParentChildTransform,
+  composeParentChildTransformInto,
   copyTransform,
+  copyTransformInto,
 } from "./actor-world-transform";
 import {
+  assertColliderLocalPose,
   colliderLocalPose,
   multiplyQuat,
   rotateQuatVec,
@@ -218,12 +221,15 @@ function physicsTransformResolver(
       const ancestor = resolve(parent);
       // Validate the supported shear-free TRS boundary, but retain the shared
       // authored actor composition used by snapshots and rendering.
-      colliderLocalPose(
+      assertColliderLocalPose(
         kind === "2d" ? "box2d" : "box",
         actor.transform,
         ancestor.scale,
       );
-      transform = composeParentChildTransform(ancestor, actor.transform);
+      // A cycle threw above, so the pose is distinct from the ancestor's.
+      transform = scratch
+        ? composeParentChildTransformInto(ancestor, actor.transform, scratch.pose(actor.guid))
+        : composeParentChildTransform(ancestor, actor.transform);
     } else {
       transform = scratch
         ? copyTransformInto(actor.transform, scratch.pose(actor.guid))
@@ -245,20 +251,6 @@ function physicsTransformResolver(
     return transform;
   };
   return resolve;
-}
-
-function copyTransformInto(source: Transform, out: Transform): Transform {
-  out.position.x = source.position.x;
-  out.position.y = source.position.y;
-  out.position.z = source.position.z;
-  out.rotation.x = source.rotation.x;
-  out.rotation.y = source.rotation.y;
-  out.rotation.z = source.rotation.z;
-  out.rotation.w = source.rotation.w;
-  out.scale.x = source.scale.x;
-  out.scale.y = source.scale.y;
-  out.scale.z = source.scale.z;
-  return out;
 }
 
 /**

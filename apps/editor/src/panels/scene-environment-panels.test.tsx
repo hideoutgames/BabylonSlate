@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { FoliageGroup, SerializedScene } from "@haptic/core";
-import { FoliageGroupsPanel } from "./scene-environment-panels";
+import { FoliageGroupsPanel, LandscapeOutlinerPanel } from "./scene-environment-panels";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {}
@@ -14,6 +14,8 @@ const harness = vi.hoisted(() => ({
   groups: [] as FoliageGroup[],
   tools: {} as Record<string, unknown>,
   applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
+  selectActor: vi.fn(),
+  frameActor: vi.fn(),
 }));
 
 function scene(): SerializedScene {
@@ -26,7 +28,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   applySceneChange: harness.applySceneChange,
   assetRegistry: { list: () => [{ path: "assets/tree.hasset", header: { guid: MODEL, name: "Tree", type: "Model" } }] },
 })));
-vi.mock("../context/scene-editing-context", () => ({ useSceneEditing: () => ({ selectedActorIds: [], selectActor: vi.fn(), frameActor: vi.fn() }) }));
+vi.mock("../context/scene-editing-context", () => ({ useSceneEditing: () => ({ selectedActorIds: [], selectActor: harness.selectActor, frameActor: harness.frameActor }) }));
 vi.mock("../context/scene-tools-context", () => ({ useSceneTools: () => harness.tools }));
 
 const panel = {} as IDockviewPanelProps;
@@ -40,7 +42,20 @@ function setTools(overrides: Record<string, unknown>) {
   };
 }
 
-afterEach(() => { cleanup(); harness.groups = []; harness.applySceneChange.mockClear(); });
+afterEach(() => { cleanup(); harness.groups = []; harness.applySceneChange.mockClear(); harness.selectActor.mockClear(); harness.frameActor.mockClear(); });
+
+describe("Landscape Outliner", () => {
+  it("selects a created landscape without moving the camera", async () => {
+    setTools({});
+    render(<LandscapeOutlinerPanel {...panel} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create Landscape" }));
+    const actor = harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!;
+    expect(actor.components.map((component) => component.classId)).toEqual(["LandscapeComponent"]);
+    await waitFor(() => expect(harness.selectActor).toHaveBeenCalledWith(actor.id));
+    expect(harness.tools.setLandscapeSelection).toHaveBeenCalledWith(`${actor.id}/${actor.components[0]!.id}`);
+    expect(harness.frameActor).not.toHaveBeenCalled();
+  });
+});
 
 describe("Foliage Groups", () => {
   it("keeps a Model's scale range ordered when Min passes Max", () => {

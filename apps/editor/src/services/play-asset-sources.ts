@@ -8,6 +8,7 @@ import {
 } from "@haptic/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
 import type { SceneSourceAssets } from "@haptic/render";
+import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
@@ -555,6 +556,11 @@ async function acquirePlayAssetSourcesAttempt(
       materialDocuments: content.materialDocuments, materialFunctions: content.materialFunctions,
       particleLibrary: content.particleLibrary, audioLibrary: content.audioLibrary,
       fonts,
+      // What its Classes may spawn, and the generic kinds when it may spawn a Class it does not hold (a Load On Demand one).
+      spawnableLights: spawnableLightsOfLoad({
+        scripts: game.scripts, assets: [...required].map((guid) => ({ guid, dependencies: host.registry.dependenciesFor(guid) })),
+        isClass: (guid) => host.registry.getByGuid(guid)?.header.type === "Class",
+      }),
     };
     controls.push(...packedPlayControls(content).filter((control) => control.type !== "loadNavMesh"));
     if (game.scripts.length) controls.unshift({ type: "loadScripts", scripts: game.scripts });

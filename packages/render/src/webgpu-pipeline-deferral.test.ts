@@ -1,59 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Observable } from "@babylonjs/core";
-import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import {
   beginPipelineDeferral,
   deferredPipelineCount,
+  deferredPipelinesStalled,
   drawsInPass,
   PIPELINE_DEFERRAL_STALL_MS,
 } from "./webgpu-pipeline-deferral";
 import { DriverCompileWatch } from "./driver-compile";
-
-type Pipeline = { label: string };
-
-/**
- * Prototype-level WebGPUEngine (its constructor needs a real device) whose
- * pipeline cache is Babylon's own tree, so every lookup, miss and stored
- * pipeline goes through Babylon 9.29's `getRenderPipeline`. The GPU device and
- * the descriptor builder are the seams; `_draw` stands in for Babylon's: it
- * asks the cache for its pipeline, then records the draw.
- */
-function webGpuEngine() {
-  let resolveAsync!: (pipeline: Pipeline) => void;
-  let rejectAsync!: (error: Error) => void;
-  const device = {
-    limits: {},
-    createRenderPipeline: vi.fn(() => ({ label: "sync" })),
-    createRenderPipelineAsync: vi.fn(() => new Promise<Pipeline>((resolve, reject) => {
-      resolveAsync = resolve;
-      rejectAsync = reject;
-    })),
-  };
-  const cache = new WebGPUCacheRenderPipelineTree(device as never, {} as never);
-  (cache as unknown as { _buildRenderPipelineDescriptor: () => object })._buildRenderPipelineDescriptor = () => ({});
-  const drawn: unknown[] = [];
-  const engine = Object.assign(Object.create(WebGPUEngine.prototype), {
-    _isWebGPU: true,
-    _caps: { parallelShaderCompile: false },
-    _compiledEffects: {},
-    _device: device,
-    _cacheRenderPipeline: cache,
-    _snapshotRendering: { play: false, record: false },
-    currentRenderPassId: 0,
-    onDisposeObservable: new Observable(),
-    _draw(this: { _cacheRenderPipeline: WebGPUCacheRenderPipelineTree }, effectId: number) {
-      const effect = { uniqueId: effectId, _pipelineContext: { shaderProcessingContext: { attributeNamesFromEffect: [], attributeLocationsFromEffect: [] } } };
-      drawn.push(this._cacheRenderPipeline.getRenderPipeline(0, effect as never, 1, 0));
-    },
-  }) as WebGPUEngine & { currentRenderPassId: number };
-  const draw = (effectId: number, pass = 1) => {
-    engine.currentRenderPassId = pass;
-    (engine as unknown as { _draw(effectId: number): void })._draw(effectId);
-  };
-  return { engine, device, drawn, draw, resolve: (pipeline: Pipeline) => resolveAsync(pipeline), reject: (error: Error) => rejectAsync(error) };
-}
+import { webGpuEngine } from "./webgpu-test-fixtures";
 
 const objectPass = (pass: number) => pass === 1;
 /** Lets the device's settled promise reach the deferral. */
@@ -315,7 +271,11 @@ describe("beginPipelineDeferral", () => {
     const first = beginPipelineDeferral(engine, warmPass, { warm: true })!;
     draw(3, 9);
     first.close();
-    now += PIPELINE_DEFERRAL_STALL_MS;
+    // The stall its waiters stop at: none while a creation started less than the stall time ago.
+    now += PIPELINE_DEFERRAL_STALL_MS - 1;
+    expect(deferredPipelinesStalled(engine)).toBe(false);
+    now += 1;
+    expect(deferredPipelinesStalled(engine)).toBe(true);
     const later = beginPipelineDeferral(engine, warmPass, { warm: true })!;
     draw(3, 9);
     later.close();
@@ -323,6 +283,11 @@ describe("beginPipelineDeferral", () => {
     expect(later.warmed()).toBe(false);
     expect(device.createRenderPipeline).not.toHaveBeenCalled();
     expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(1);
+    // Another creation starting is progress again.
+    const next = beginPipelineDeferral(engine, warmPass, { warm: true })!;
+    draw(4, 9);
+    next.close();
+    expect(deferredPipelinesStalled(engine)).toBe(false);
   });
 
   it("does nothing on WebGL", () => {

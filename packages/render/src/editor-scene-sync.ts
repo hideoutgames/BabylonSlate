@@ -287,6 +287,83 @@ export class EditorSceneSync {
     }
   }
 
+  /**
+   * Applies a transform-only edit of the last applied Scene (`isTransformOnlySceneEdit`) to the actors whose pose
+   * changed, instead of re-realizing every actor: those take the full per-actor pass of `apply`, the actor roots under
+   * them refreeze their world matrices, and the Scene-wide cable and illumination passes run as in `apply`. Returns
+   * false, changing nothing, when the edit needs `apply`: a realization, visual replacement or model load still in
+   * flight, an overlay layout (which can move other actors), or a moved actor whose visual depends on its pose (a 2D
+   * Panel's scale) or that has no visual yet.
+   */
+  applyPoses(sceneData: SerializedScene): boolean {
+    const previous = this.lastScene;
+    if (!previous || previous.actors.length !== sceneData.actors.length) return false;
+    if (this.applyingScene || this.pendingApply || !this.materialsRefreshable || this.assetsNeedRebuild ||
+      this.pendingVisuals.size > 0 || this.pendingTextureLoads.size > 0 || this.pendingModelLoadCount() > 0) return false;
+    const layoutOptions = { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: (guid: string) => this.assets?.texturePixelSizes?.get(guid) };
+    if (resolveOverlayLayout(sceneData.actors, layoutOptions).actors !== sceneData.actors) return false;
+    const actorIndex = new SceneActorIndex(sceneData.actors);
+    const assets = this.meshAssetsForScene(sceneData);
+    const pose = (actor: SerializedActor) => JSON.stringify([actor.transform, actor.components.map((component) => component.transform)]);
+    const moved: Array<{ actor: SerializedActor; mesh: Mesh }> = [];
+    for (let index = 0; index < sceneData.actors.length; index++) {
+      const actor = sceneData.actors[index]!;
+      const before = previous.actors[index]!;
+      if (actor === before || isSceneLayerAnchorActor(actor) || pose(actor) === pose(before)) continue;
+      const mesh = this.meshes.get(actor.id);
+      if (!mesh || mesh.isDisposed() || actorVisualFingerprint(actor, assets, actorIndex) !== this.meshKinds.get(actor.id)) return false;
+      moved.push({ actor, mesh });
+    }
+    this.applyingScene = sceneData;
+    try {
+      for (const { actor, mesh } of moved) {
+        this.beginEditorModelLoad(actor, mesh);
+        this.trackFoliagePreparation(actor, mesh);
+        this.prepareActorVisual(actor, mesh);
+      }
+      // Actor roots under a moved actor keep frozen world matrices of its old pose.
+      const movedRoots = new Set<Node>(moved.map(({ mesh }) => mesh));
+      const affected: Array<{ mesh: Mesh; depth: number }> = [];
+      for (const mesh of this.meshes.values()) {
+        let depth = 0;
+        let under = false;
+        for (let node: Node | null = mesh; node; node = node.parent) {
+          under ||= movedRoots.has(node);
+          depth++;
+        }
+        if (!under) continue;
+        if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
+        affected.push({ mesh, depth });
+      }
+      syncEditorCablePreviews(this.scene, sceneData.actors, {
+        rootForActor: (actorId) => this.meshes.get(actorId) ?? null,
+        gravity: sceneData.settings.gravity,
+        simulate: true,
+      });
+      for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
+        stealActiveCamera: this.stealActiveCamera,
+        restoreCamera: this.restoreCamera,
+        applyClearColor: sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
+        assets: this.assets,
+      })) void progress;
+      // Parents first, so each root freezes under its parent's new world matrix.
+      affected.sort((a, b) => a.depth - b.depth);
+      for (const { mesh } of affected) freezeStaticActorWorldMatrix(mesh);
+      // A Material published during the pass is owed to this edit, as in `apply`.
+      while (this.materialRefreshGeneration === this.applyGeneration) {
+        this.materialRefreshGeneration = null;
+        for (const _progress of this.materialRefreshSteps(sceneData, this.takeOwedMaterialRefresh())) void _progress;
+      }
+      this.lastScene = sceneData;
+      this.lastSceneActors = null;
+      this.onAfterApply?.();
+      this.scheduler?.invalidate("asset");
+    } finally {
+      this.applyingScene = null;
+    }
+    return true;
+  }
+
   async applyAsync(sceneData: SerializedScene, options: SceneWorkOptions & { assets?: MeshAssetContext }): Promise<void> {
     this.pendingApply?.abort(new Error("Scene realization was superseded."));
     const controller = new AbortController();
@@ -705,12 +782,13 @@ export class EditorSceneSync {
 
   /**
    * `lastScene.actors.find` for an id, through an index built once per applied
-   * Scene so per-actor consumers (deformers, brushes) do not scan every actor.
+   * Scene so per-actor consumers (deformers, brushes, gizmo selection roots) do
+   * not scan every actor.
    * Applying drops the index, so a document edited in place between applies is
    * read again; the actors array identity and length also guard it. The first
    * actor with an id wins, like `find`.
    */
-  private lastSceneActor(actorId: string): SerializedActor | undefined {
+  lastSceneActor(actorId: string): SerializedActor | undefined {
     const actors = this.lastScene?.actors;
     if (!actors) return undefined;
     let index = this.lastSceneActors;

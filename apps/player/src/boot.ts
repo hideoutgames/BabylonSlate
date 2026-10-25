@@ -32,6 +32,7 @@ import {
   type RenderShadingSettings,
   type SceneLoadProgress,
 } from "@haptic/render";
+import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
@@ -202,7 +203,16 @@ function initializePlayer(
   const { canvas, game } = options;
   own(() => game.dispose?.());
   const manifest: GameManifest = game.manifest;
+  const classAssetGuids = new Set(manifest.assets.flatMap((entry) => entry.type === "Class" ? [entry.guid] : []));
+  /**
+   * The light parts a load's Classes may spawn, and the generic kinds when it may spawn a Class it does not hold (a
+   * Load On Demand one), as editor Play prepares them: `assets` are the load's catalog entries.
+   */
+  const spawnableLightsOf = (scripts: GameSourceContent["scripts"], assets: Iterable<{ guid: string; dependencies?: readonly string[] }>) =>
+    spawnableLightsOfLoad({ scripts, assets, isClass: (guid) => classAssetGuids.has(guid) });
   const startup = manifest.startupSceneGuid;
+  // The startup sources: the entry Scene's closure and the startup-required systems, as the artifact loads them.
+  const startupAssets = requiredGameAssets(manifest, [startup, ...manifest.assets.flatMap((entry) => entry.startupRequired ? [entry.guid] : [])]);
   const scene: SerializedScene | undefined = game.scenes.get(startup);
   if (!scene) {
     throw new Error("Set Startup Scene in Project Settings.");
@@ -306,6 +316,8 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
+    // What the startup sources' Classes may spawn: Play's load rehearses a light of each kind.
+    spawnableLights: spawnableLightsOf(game.scripts, manifest.assets.filter((entry) => startupAssets.has(entry.guid))),
     renderTargets: content.renderTargets,
     renderTargetTextures: content.renderTargetTextures,
     postProcessStack: content.postProcessStack,
@@ -806,6 +818,7 @@ function initializePlayer(
       materialDocuments: prepared.materialDocuments, materialFunctions: prepared.materialFunctions,
       audioLibrary: prepared.audioLibrary, particleLibrary: prepared.particleLibrary,
       fonts: [...sources.fontBytes].map(([guid, bytes]) => ({ guid, family: sources.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
+      spawnableLights: spawnableLightsOf(sources.scripts, sources.manifest.assets),
     };
   };
   if (game.acquireAssets) handle.setCommandSourceLoader?.(async (ids, request) => {

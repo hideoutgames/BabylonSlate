@@ -1,8 +1,9 @@
 /**
  * Test-build-only proof, on a real WebGPU device (the software adapter in CI), that a world view keeps drawing while
  * new variants' render pipelines are created: a light switching off draws each Material's previous Effect until its
- * new variant's pipeline exists, a spawn with a variant nothing compiled stays hidden until its pipelines exist, and a
- * spawn whose Material Play's load warmed creates no pipeline at all. It counts the pipelines the device created
+ * new variant's pipeline exists, a new shadow map (a spot's, the sun's first cascaded one) samples neutrally until its
+ * casters' pipelines exist, a spawn with a variant nothing compiled stays hidden until its pipelines exist, and a spawn
+ * whose Material Play's load warmed creates no pipeline at all. It counts the pipelines the device created
  * synchronously (each blocks the renderer while the GPU process compiles it) and asynchronously.
  */
 import {
@@ -210,6 +211,8 @@ type PredictedAdmission = {
   /** Why the frames not drawn after that change were not. */
   heldBecause: string[];
   done: boolean;
+  /** A map the admission started or brought back has drawn (it samples neutrally until then). */
+  mapDrawn: boolean;
 };
 
 /**
@@ -219,7 +222,8 @@ type PredictedAdmission = {
  * spot map), and a shadowed spot whose map waits on standby enters the Forward budget. Approached, the admission's
  * Effects were compiled ahead, and a new or returning map's casters' depth pipelines created by a render of the
  * controller's prediction map; the receivers' pipelines are still created at the admission, while previous variants
- * draw. A prediction left to expire gives its prediction map's pipelines back.
+ * draw. Jumped in, a new or returning map samples neutrally until a warm render of it has created its casters' depth
+ * pipelines. A prediction left to expire gives its prediction map's pipelines back.
  */
 export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
   let variant = 0;
@@ -359,7 +363,7 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         return {
           admitted: admitted(), effectsAhead, effectsAtAdmission: 0, pipelines: { ...counts }, pipelinesAhead,
           pipelinesLeft: webGpuPipelinesOutside(new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).map((effect) => effect.uniqueId))),
-          lateFrames: 0, held: 0, heldBecause: [], done: true,
+          lateFrames: 0, held: 0, heldBecause: [], done: true, mapDrawn: true,
         };
       }
       if (admitted()) throw new Error(`The ${admission} admission came before the change.`);
@@ -379,15 +383,15 @@ export async function proveWebGpuPredictedAdmissions(engine: AbstractEngine) {
         else if (drawn().some((effect, slot) => effect === before[slot])) lateFrames++;
         else done = true;
       }
-      // A map the admission starts asks for its casters' depth variants and pipelines when it first draws, which can
-      // come after the floors' new variants.
+      // A map the admission starts asks for its casters' depth variants when it first draws, and waits for their
+      // pipelines, which can come after the floors' new variants.
       const map = spotShadowed ? findSceneShadowController(scene)?.generator(spot) : null;
-      for (let index = 0; index < 300 && map && awaitsFirstDraw(map); index++) await frame();
+      for (let index = 0; index < 300 && map && awaitsFirstDraw(map); index++) if (!(await frame())) held++;
       for (let index = 0; index < 4; index++) await frame();
       return {
         admitted: admitted(), effectsAhead, effectsAtAdmission: compiledSince(known), pipelines: { ...counts }, pipelinesAhead,
         pipelinesLeft: WebGPUCacheRenderPipelineTree.GetNodeCounts().pipelineCount - cachedPipelines, lateFrames, held,
-        heldBecause: [...reasons], done,
+        heldBecause: [...reasons], done, mapDrawn: !map || !awaitsFirstDraw(map),
       };
     } finally {
       device.createRenderPipeline = createRenderPipeline;
@@ -523,8 +527,8 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
       () => { if (boxes.every((box, index) => drawnEffect(box) === before[index])) previousFrames++; },
     );
 
-    // The spot starts casting shadows, then stops: the floors swap to their shadowed variants and on. The new map's
-    // casters draw in a shadow pass, outside the view's deferral, so their depth pipelines are created synchronously.
+    // The spot starts casting shadows, then stops: the floors swap to their shadowed variants and on. The new map
+    // samples neutrally until a warm render of it has created its casters' depth pipelines, then draws.
     const unshadowed = boxes.map(drawnEffect);
     authored(spot, [0.9, 0.85, 0.7], 1.4, true);
     const shadowGain = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== unshadowed[index]) &&
@@ -566,6 +570,19 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
     warmed.position.set(-1, 0.3, -1.2);
     warmed.material = warmedMaterial;
     const warmSpawn = await step(() => !isRevealPending(warmed) && drawnEffect(warmed) !== null);
+
+    // The sun starts casting shadows into a first, cascaded map (one render pass per cascade): it too waits, neutral,
+    // for its casters' depth pipelines, while the floors draw their previous variants.
+    setSceneRenderSettings(scene, {
+      mode: "pbr",
+      quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } }),
+      shadows: normalizeShadowSettings({ cascades: 2, maxLocalLights: 2 }),
+    });
+    const unshadowedBySun = boxes.map(drawnEffect);
+    authored(sun, [1, 0.95, 0.85], 0.7, true);
+    const sunMap = () => sun.getShadowGenerator() as ShadowGenerator | null;
+    const sunShadows = await step(() => boxes.every((floor, index) => drawnEffect(floor) !== unshadowedBySun[index]) &&
+      sunMap()?.getDarkness() === 0);
     return {
       swap: { ...swap, previousFrames },
       shadowGain,
@@ -573,6 +590,7 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
       spawn: { ...spawn, hiddenFrames },
       staged,
       warmSpawn,
+      sunShadows: { ...sunShadows, cascades: sunMap()?.getShadowMap()?.renderPassIds.length ?? 0 },
     };
   } finally {
     device.createRenderPipeline = createRenderPipeline;

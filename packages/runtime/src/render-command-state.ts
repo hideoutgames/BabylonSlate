@@ -15,6 +15,8 @@ export class RenderCommandState implements RuntimeSubsystem {
   readonly deformerSnapshots = new Map<number, string>();
   /** Actors whose deformers changed mid-tick; flushed after the tick. */
   readonly dirtyDeformerActors = new Set<Actor>();
+  /** Actors whose component transforms changed mid-tick; flushed after the tick. */
+  readonly dirtyComponentTransformActors = new Set<Actor>();
   /** Slots with a configured render target capture. */
   readonly captureSlots = new Set<number>();
   /** Slots whose last `setFogVolumes` sent volumes. */
@@ -26,7 +28,10 @@ export class RenderCommandState implements RuntimeSubsystem {
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
     this.deformerSnapshots.delete(slotId);
-    if (owner) this.dirtyDeformerActors.delete(owner);
+    if (owner) {
+      this.dirtyDeformerActors.delete(owner);
+      this.dirtyComponentTransformActors.delete(owner);
+    }
     this.captureSlots.delete(slotId);
     this.fogVolumeSlots.delete(slotId);
     this.reflectionProbeSlots.delete(slotId);

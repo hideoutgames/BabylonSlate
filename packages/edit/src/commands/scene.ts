@@ -185,18 +185,23 @@ export class SetActorsTransformsCommand implements EditCommand<SerializedScene> 
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    let next = doc;
-    for (const entry of this.entries) {
-      next = replaceActor(next, entry.actorId, (actor) => isSceneLayerAnchorActor(actor) ? actor : ({
+    // One pass over the actors; a later entry for the same actor wins.
+    const targets = new Map(this.entries.map((entry) => [entry.actorId, entry.to]));
+    let changed = false;
+    const actors = doc.actors.map((actor): SerializedActor => {
+      const to = targets.get(actor.id);
+      if (!to || isSceneLayerAnchorActor(actor)) return actor;
+      changed = true;
+      return {
         ...actor,
         transform: {
-          position: [...entry.to.position],
-          rotation: [...entry.to.rotation],
-          scale: [...entry.to.scale],
+          position: [...to.position],
+          rotation: [...to.rotation],
+          scale: [...to.scale],
         },
-      }));
-    }
-    return next;
+      };
+    });
+    return changed ? { ...doc, actors } : doc;
   }
 
   invert(): SetActorsTransformsCommand {

@@ -172,12 +172,15 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // each Material's previous Effect while its pipeline is created asynchronously, as do floors whose spot starts or
   // stops casting shadows (a lost map's sampler takes a placeholder of the declared type, so no GPU validation error),
   // a spawn with a variant nothing compiled stays hidden meanwhile, and a spawn whose Material the load warmed creates
-  // no pipeline at all.
+  // no pipeline at all. A new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth
+  // pipelines exist, creating none synchronously.
   const swap = result.variantSwap!;
   expect({
     swap: { done: swap.swap.done, held: swap.swap.held, previous: swap.swap.previousFrames > 0, ...swap.swap.pipelines,
       asynchronous: swap.swap.pipelines.asynchronous > 0 },
-    shadowGain: { done: swap.shadowGain.done, held: swap.shadowGain.held },
+    shadowGain: { done: swap.shadowGain.done, held: swap.shadowGain.held, synchronous: swap.shadowGain.pipelines.synchronous },
+    sunShadows: { done: swap.sunShadows.done, held: swap.sunShadows.held, synchronous: swap.sunShadows.pipelines.synchronous,
+      cascades: swap.sunShadows.cascades },
     shadowLoss: { done: swap.shadowLoss.done, held: swap.shadowLoss.held, previous: swap.shadowLoss.previousFrames > 0,
       synchronous: swap.shadowLoss.pipelines.synchronous },
     spawn: { done: swap.spawn.done, held: swap.spawn.held, hidden: swap.spawn.hiddenFrames > 0, ...swap.spawn.pipelines,
@@ -187,7 +190,8 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     warmSpawn: { done: swap.warmSpawn.done, held: swap.warmSpawn.held, ...swap.warmSpawn.pipelines },
   }, JSON.stringify(swap)).toEqual({
     swap: { done: true, held: 0, previous: true, synchronous: 0, asynchronous: true },
-    shadowGain: { done: true, held: 0 },
+    shadowGain: { done: true, held: 0, synchronous: 0 },
+    sunShadows: { done: true, held: 0, synchronous: 0, cascades: 2 },
     shadowLoss: { done: true, held: 0, previous: true, synchronous: 0 },
     spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
     staged: { done: true, held: 0, synchronous: 0, asynchronous: true },
@@ -419,12 +423,16 @@ test("WebGPU admissions a waiting light approaches have their variants and caste
   // Their receivers' render pipelines are still created then, asynchronously, previous variants drawing meanwhile. The
   // casters of a returning standby map and of the first spot map create no pipeline synchronously: a render of the
   // controller's prediction map created theirs ahead, while nothing else creates pipelines ahead. Jumping straight in,
-  // the same admissions compile their Effects then, and the first spot map creates a shadow pass pipeline
-  // synchronously. A prediction left to expire leaves no pipeline behind.
+  // the same admissions compile their Effects then, and a new or returning map waits, neutral, for its casters' depth
+  // pipelines, which a warm render of it creates asynchronously. A prediction left to expire leaves no pipeline behind.
   const predicted = result.predictedAdmissions;
   const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
-    admitted: admission.admitted, done: admission.done, effects: admission.effectsAtAdmission, held: admission.held,
-    synchronous: admission.pipelines.synchronous, asynchronous: admission.pipelines.asynchronous > 0,
+    admitted: admission.admitted, done: admission.done, mapDrawn: admission.mapDrawn, effects: admission.effectsAtAdmission,
+    held: admission.held, synchronous: admission.pipelines.synchronous, asynchronous: admission.pipelines.asynchronous > 0,
+  });
+  const jumped = (admission: (typeof predicted)["forward"]["jumped"]) => ({
+    admitted: admission.admitted, done: admission.done, mapDrawn: admission.mapDrawn, compiled: admission.effectsAtAdmission > 0,
+    held: admission.held, synchronous: admission.pipelines.synchronous,
   });
   expect({
     forward: outcome(predicted.forward.approached), standby: outcome(predicted.standby.approached),
@@ -436,20 +444,22 @@ test("WebGPU admissions a waiting light approaches have their variants and caste
       first: predicted.first.approached.effectsAhead > 0 && predicted.first.approached.pipelinesAhead > 0,
     },
     jumped: {
-      forward: predicted.forward.jumped.admitted && predicted.forward.jumped.effectsAtAdmission > 0,
-      standby: predicted.standby.jumped.admitted && predicted.standby.jumped.effectsAtAdmission > 0,
-      shadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.effectsAtAdmission > 0,
-      first: predicted.first.jumped.admitted && predicted.first.jumped.effectsAtAdmission > 0 &&
-        predicted.first.jumped.pipelines.synchronous > 0,
+      forward: jumped(predicted.forward.jumped), standby: jumped(predicted.standby.jumped),
+      shadow: jumped(predicted.shadow.jumped), first: jumped(predicted.first.jumped),
     },
     expired: { standby: predicted.standby.expired.pipelinesLeft, first: predicted.first.expired.pipelinesLeft },
   }, JSON.stringify(predicted)).toEqual({
-    forward: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    standby: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    shadow: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    first: { admitted: true, done: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    forward: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    standby: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    shadow: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
+    first: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
     ahead: { forward: true, standby: true, shadow: true, first: true },
-    jumped: { forward: true, standby: true, shadow: true, first: true },
+    jumped: {
+      forward: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
+      standby: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
+      shadow: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
+      first: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
+    },
     expired: { standby: 0, first: 0 },
   });
 });

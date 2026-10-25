@@ -89,7 +89,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
   const createLandscape = () => {
     if (!scene) return;
     const actor = createActor(crypto.randomUUID(), `Landscape ${entries.length + 1}`, { components: [{ id: crypto.randomUUID(), classId: "LandscapeComponent", transform: identitySerializedTransform(), properties: { ...parseLandscapeProperties({ width: NEW_LANDSCAPE_SIZE, depth: NEW_LANDSCAPE_SIZE, subdivisions: NEW_LANDSCAPE_CELLS }) } }] });
-    void commit({ ...scene, actors: [...scene.actors, actor] }).then((ok) => { if (ok) { selectActor(actor.id); setLandscapeSelection(`${actor.id}/${actor.components[0]!.id}`); frameActor(actor.id); } });
+    void commit({ ...scene, actors: [...scene.actors, actor] }).then((ok) => { if (ok) { selectActor(actor.id); setLandscapeSelection(`${actor.id}/${actor.components[0]!.id}`); } });
   };
   const deleteSelection = () => {
     if (!scene || !selection) return;

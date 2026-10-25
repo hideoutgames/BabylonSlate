@@ -19,8 +19,10 @@ import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRevealPending } from "./reveal-pending";
 import { registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
-import { awaitsFirstDraw } from "./shadow-first-draw";
+import { awaitsFirstDraw, firstDrawsUrgent } from "./shadow-first-draw";
+import { firstDrawPipelinesReady } from "./shadow-map-warm";
 import { configureCutoutSorting } from "./sorting";
+import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
 
 type BorrowedMap = {
@@ -416,6 +418,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
       this.bind();
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
+      const warmsFirstDraws = !this.view && variantSwapsTolerated() && pipelinesDeferred(this.scene.getEngine()) &&
+        !firstDrawsUrgent(this.scene);
       for (const entry of this.borrowed) {
         // A view draws only its own maps; the scene view drew the shared ones.
         if (this.view && entry.generator.camera !== this.view) continue;
@@ -428,12 +432,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
         const { generator, map } = entry;
         const light = generator.getLight();
         if (!light.isEnabled() || !light.shadowEnabled) continue;
-        // A map that has not drawn yet first draws with every caster's depth variant ready, before its refresh is
-        // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
-        if (awaitsFirstDraw(generator) && !withSceneReadinessState(this.scene, () => map.isReadyForRendering()))
-          continue;
-        if (!map._shouldRender()) continue;
-        drawBorrowedTarget(
+        const draw = () => drawBorrowedTarget(
           this.scene,
           map,
           () => {
@@ -452,6 +451,18 @@ export class ManagedShadowsTask extends FrameGraphTask {
           },
           SHADOW_DRAW,
         );
+        if (awaitsFirstDraw(generator)) {
+          // A map that has not drawn yet first draws with every caster's depth variant ready, before its refresh is
+          // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
+          if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
+          // On WebGPU, in a world view's steady frame, it also waits until its casters' depth pipelines exist, which
+          // its draw would otherwise create synchronously (`firstDrawPipelinesReady`). Strict frames (loading), a
+          // capture's own sun maps and a frame that publishes a manual capture (`firstDrawsUrgent`), none of which may
+          // publish a neutral map, still create them in the draw.
+          if (warmsFirstDraws && !firstDrawPipelinesReady(this.scene, generator, draw)) continue;
+        }
+        if (!map._shouldRender()) continue;
+        draw();
       }
       // Do not sample an allocation replaced during another shadow's callback.
       // It has not participated in this pass and needs fresh preparation.

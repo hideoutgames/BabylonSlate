@@ -48,6 +48,7 @@ import { trackShadowSlotDefines } from "./shadow-slot-defines";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import {
+  casterNormalBias,
   resolveDirectionalShadowBias,
   type DirectionalShadowBiasInput,
 } from "./shadow-bias";
@@ -62,7 +63,7 @@ import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
-import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
+import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
@@ -1500,6 +1501,8 @@ export class SceneShadowController {
       indicesBefore = scene.getActiveIndices();
     });
     map?.onAfterUnbindObservable.add(() => {
+      // A warm render draws nothing, but Babylon counts a skipped draw's indices before it reaches the pipeline.
+      if (isWarmShadowRender(generator)) return;
       this.drawCalls += Math.max(
         0,
         readEngineDrawCalls(scene.getEngine()) - drawsBefore,
@@ -1518,6 +1521,7 @@ export class SceneShadowController {
     // bound yet. Never derive from the previous frame in applySettings.
     let preparedBias: EffectiveShadowBias | null = null;
     let clearedForDraw = false;
+    let layerTexelSize = 0;
     // The resolver reads its input synchronously; each map reuses one.
     const biasInput: DirectionalShadowBiasInput = {
       width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
@@ -1561,6 +1565,14 @@ export class SceneShadowController {
       record.worldTexelSize = effective.worldTexelSize;
       record.depthScale = effective.depthScale;
       record.mode = !settings.autoBias ? "manual" : automatic ? "directional-auto" : "local-authored";
+      layerTexelSize = automatic ? effective.worldTexelSize : 0;
+    });
+    // Babylon binds biasAndScaleSM per caster just before these observers run.
+    let caster: AbstractMesh | null = null;
+    generator.onBeforeShadowMapRenderMeshObservable.add((mesh) => { caster = mesh; });
+    generator.onBeforeShadowMapRenderObservable.add((effect) => {
+      const normalBias = caster ? casterNormalBias(caster, generator.normalBias, layerTexelSize) : generator.normalBias;
+      if (normalBias !== generator.normalBias) effect.setFloat3("biasAndScaleSM", generator.bias, normalBias, generator.depthScale);
     });
     // Native readiness probes emit before/after-render without drawing.
     // Only actual RTT passes (including empty maps and snapshot rendering)
@@ -1571,6 +1583,8 @@ export class SceneShadowController {
     map?.onAfterRenderObservable.add((face) => {
       if (!clearedForDraw) return;
       clearedForDraw = false;
+      // A warm render (`shadow-map-warm.ts`) skips its draws: it is no first draw.
+      if (isWarmShadowRender(generator)) return;
       // A new, moved or resumed map samples neutrally until its last face is drawn.
       if (awaitsFirstDraw(generator) && face === (map.isCube ? 5 : 0)) {
         setAwaitingFirstDraw(generator, false);
