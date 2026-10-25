@@ -58,7 +58,7 @@ render: snapshot apply + command handlers on the Play Scene of the shared Engine
 - One Engine per open project; editor viewports, Prefab/Material previews and overlay Play are Scenes or views on it. Preview Build runs `apps/player` in an iframe with its own Engine.
 - The game worker owns simulation: scripts, physics, navigation, Animation Graph and behaviour-tree evaluation. The main thread owns rendering, audio and fonts. Nothing Babylon crosses into the worker except physics on its private NullEngine.
 - Poses travel only through the snapshot buffer; structural changes travel only as ordered commands. Graph execution emits commands and never touches Babylon.
-- Owners: worker hosts in [apps/editor/src/services](../../apps/editor/src/services/) (`game-worker-host.ts`, `play-session.ts`, `input-capture.ts`), worker side [worker-entry.ts](../../packages/runtime/src/worker-entry.ts) and [driver.ts](../../packages/runtime/src/driver.ts), main-thread apply [snapshot-apply.ts](../../packages/render/src/snapshot-apply.ts).
+- Owners: worker hosts in [apps/editor/src/services](../../apps/editor/src/services/) (`game-worker-host.ts`, `play-session.ts` with its `play-session-*.ts` and `play-scene-readiness.ts` modules, `input-capture.ts`), worker side [worker-entry.ts](../../packages/runtime/src/worker-entry.ts) and [driver.ts](../../packages/runtime/src/driver.ts), main-thread apply [snapshot-apply.ts](../../packages/render/src/snapshot-apply.ts).
 
 ### Core routing rules
 
