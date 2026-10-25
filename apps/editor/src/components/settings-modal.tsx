@@ -94,7 +94,7 @@ import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
-import { downloadBlob } from "../lib/download";
+import { downloadZipArchive } from "../lib/download";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
   EngineSettingsForm,
@@ -309,14 +309,6 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   { label: "Projects", ids: ["templates", "plugins", "extensions"] },
 ];
 
-/** Downloads exactly the view's bytes, even when it shares a larger buffer. */
-function downloadZip(bytes: Uint8Array, fileName: string): void {
-  downloadBlob(
-    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }),
-    fileName,
-  );
-}
-
 function matchesSearch(
   label: string,
   keywords: string,
@@ -512,7 +504,7 @@ export function SettingsModal({
     setExportNotice(null);
     try {
       const bytes = await exportProject(projectDocument);
-      downloadZip(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
+      downloadZipArchive(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
       setExportNotice("Project backup prepared. Check your downloads.");
     } catch (error) {
       setExportProjectError(error instanceof Error ? error.message : String(error));
@@ -532,7 +524,7 @@ export function SettingsModal({
         setExportGameError(exportGameFailureMessage(result.error));
         return;
       }
-      downloadZip(
+      downloadZipArchive(
         zipExportedGame(result.value),
         `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`,
       );

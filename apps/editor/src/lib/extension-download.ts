@@ -1,4 +1,4 @@
-import { downloadZipArchive } from "./plugin-download";
+import { downloadZipArchive } from "./download";
 
 /** Same download interaction as Plugins, with a distinct editor package format. */
 export function downloadExtensionArchive(bytes: Uint8Array, name: string): void {
