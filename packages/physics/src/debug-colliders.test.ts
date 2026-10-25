@@ -1,19 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { createSoftwarePhysicsBackend } from "./create-backend";
 import {
-  debugColliderFromDesc,
   listDebugCollidersFromRecords,
 } from "./debug-colliders";
+import type { ColliderDesc, PhysicsTransform } from "./types";
 
 const identity = {
   position: { x: 1, y: 2, z: 3 },
   rotation: { x: 0, y: 0, z: 0, w: 1 },
 };
 
-describe("debugColliderFromDesc", () => {
+const describeOne = (desc: ColliderDesc, transform: PhysicsTransform) =>
+  listDebugCollidersFromRecords([{ desc }], () => transform)[0] ?? null;
+
+describe("debug collider shapes", () => {
   it("maps the simulation shape and closes polygon outlines", () => {
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "box",
           bodyId: "body",
@@ -33,7 +36,7 @@ describe("debugColliderFromDesc", () => {
       halfExtents: { x: 0.5, y: 1, z: 1.5 },
     });
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "circle",
           bodyId: "body",
@@ -48,7 +51,7 @@ describe("debugColliderFromDesc", () => {
       )?.shape,
     ).toBe("circle");
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "poly",
           bodyId: "body",
@@ -75,7 +78,7 @@ describe("debugColliderFromDesc", () => {
       { x: 1, y: 2, z: 3 },
     ]);
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "capsule",
           bodyId: "body",
@@ -96,7 +99,7 @@ describe("debugColliderFromDesc", () => {
       halfHeight: 1,
     });
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "capsule2d",
           bodyId: "body",
@@ -115,7 +118,7 @@ describe("debugColliderFromDesc", () => {
       halfHeight: 0.8,
     });
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "cylinder",
           bodyId: "body",
@@ -134,7 +137,7 @@ describe("debugColliderFromDesc", () => {
       height: 2,
     });
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "mesh",
           bodyId: "body",
@@ -149,7 +152,7 @@ describe("debugColliderFromDesc", () => {
       ),
     ).toBeNull();
     expect(
-      debugColliderFromDesc(
+      describeOne(
         {
           id: "hull",
           bodyId: "body",
@@ -203,7 +206,7 @@ describe("debugColliderFromDesc", () => {
   });
 
   it("retains triangle geometry and pose for mesh collision debugging", () => {
-    const listed = debugColliderFromDesc({
+    const listed = describeOne({
       id: "triangle", bodyId: "body",
       shape: { kind: "mesh", positions: new Float32Array([0, 0, 0, 2, 0, 0, 0, 3, 0]), indices: new Uint16Array([0, 1, 2]) },
       friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 1,
@@ -220,8 +223,8 @@ describe("debugColliderFromDesc", () => {
       shape: { kind: "chain" as const, points: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }] },
       friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 1,
     };
-    expect(debugColliderFromDesc(desc, identity)?.points).toHaveLength(3);
-    expect(debugColliderFromDesc({ ...desc, shape: { ...desc.shape, loop: true } }, identity)?.points).toEqual([
+    expect(describeOne(desc, identity)?.points).toHaveLength(3);
+    expect(describeOne({ ...desc, shape: { ...desc.shape, loop: true } }, identity)?.points).toEqual([
       { x: 1, y: 2, z: 3 }, { x: 3, y: 2, z: 3 }, { x: 3, y: 4, z: 3 }, { x: 1, y: 2, z: 3 },
     ]);
   });
@@ -311,10 +314,10 @@ describe("SoftwarePhysicsBackend.listDebugColliders point shapes", () => {
   });
 });
 
-describe("debugColliderFromDesc world pose", () => {
+describe("debug collider world pose", () => {
   it("rotates the local collider offset by the body quaternion", () => {
     const yaw90 = Math.SQRT1_2;
-    const listed = debugColliderFromDesc(
+    const listed = describeOne(
       {
         id: "offset-box",
         bodyId: "body",
@@ -338,7 +341,7 @@ describe("debugColliderFromDesc world pose", () => {
 
   it("rotates polyline points into world space", () => {
     const yaw90 = Math.SQRT1_2;
-    const listed = debugColliderFromDesc(
+    const listed = describeOne(
       {
         id: "poly",
         bodyId: "body",

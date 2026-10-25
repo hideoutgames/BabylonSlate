@@ -4,7 +4,6 @@ import type { Quat, Transform, Vec3 } from "./math-rng";
 export const ENGINE_TWEEN_SPACE_ENUM_ID = "engine:TweenSpace";
 export const TWEEN_SPACES = ["local", "world"] as const;
 export type TweenTransformSpace = (typeof TWEEN_SPACES)[number];
-export const TWEEN_SPACE_LABELS: Record<TweenTransformSpace, string> = { local: "Local", world: "World" };
 
 export type TweenValueMap = {
   float: number;

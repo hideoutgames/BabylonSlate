@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { pngPixelSize } from "./bytes";
 import {
   applyTexturePixelSizesToSpriteAnimation,
   createDefaultSpriteAnimationPayload,
@@ -193,15 +192,5 @@ describe("SpriteAnimation payload", () => {
       { textureGuid: "hero-tex", width: 200, height: 100 },
       { textureGuid: "gif-tex", width: 48, height: 24 },
     ]);
-  });
-});
-
-describe("pngPixelSize", () => {
-  it("reads width and height from a PNG IHDR chunk", () => {
-    expect(pngPixelSize(pngIhdr(200, 100))).toEqual({ width: 200, height: 100 });
-  });
-
-  it("returns null for non-PNG bytes", () => {
-    expect(pngPixelSize(new Uint8Array([1, 2, 3, 4]))).toBeNull();
   });
 });

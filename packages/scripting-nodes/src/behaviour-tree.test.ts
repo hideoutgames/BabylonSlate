@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyLogicGraph } from "@haptic/scripting";
 import type { CodegenContext } from "@haptic/scripting";
 import { behaviourTreeNodes } from "./behaviour-tree";
 
 function mockCtx(overrides?: Partial<CodegenContext>): CodegenContext {
   const emits: string[] = [];
   return {
-    graph: createEmptyLogicGraph("g"),
+    graph: { id: "g", kind: "event", nodes: [], edges: [] },
     node: {
       id: "n1",
       typeId: "test",

@@ -265,7 +265,7 @@ function generatorPasses(generator: ShadowGenerator): number {
  * second view (a Full Quality capture) would otherwise bind another depth range
  * than the one the map was drawn with. Only the scene view's camera fits.
  */
-export function fitLocalShadowDepth(light: Light, camera: Camera | null): void {
+function fitLocalShadowDepth(light: Light, camera: Camera | null): void {
   if (!(light instanceof PointLight || light instanceof SpotLight)) return;
   const far = camera?.maxZ || 10000;
   const ranged = Number.isFinite(light.range) && light.range > 0 && light.range < far;

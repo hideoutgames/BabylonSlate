@@ -1,7 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  CATALOG_MENU_ROW_HEIGHT,
-  CATALOG_MENU_TOUCH_ROW_HEIGHT,
   CatalogMenu,
   humanizePropertyLabel,
 } from "@haptic/editor-kit";
@@ -13,10 +11,6 @@ import {
   type PinCompatibilityRule,
 } from "./graph-connect";
 import { nodeRoleClass, nodeVisualRole } from "./node-theme";
-
-/** Desktop rows match `--chrome-row`; coarse pointers use `--touch-target`. */
-export const NODE_PALETTE_ROW_HEIGHT = CATALOG_MENU_ROW_HEIGHT;
-export const NODE_PALETTE_TOUCH_ROW_HEIGHT = CATALOG_MENU_TOUCH_ROW_HEIGHT;
 
 export interface NodePaletteProps {
   open: boolean;

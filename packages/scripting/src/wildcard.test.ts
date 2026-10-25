@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  assertEveryConcreteTypeHasConverter,
   createWildcardNodes,
   wildcardConverterNodeId,
 } from "./wildcard";
@@ -10,7 +9,7 @@ describe("wildcard", () => {
   it("generates converters for every concrete target", () => {
     const nodes = createWildcardNodes();
     const ids = new Set(nodes.map((n) => n.id));
-    expect(assertEveryConcreteTypeHasConverter(ids)).toEqual([]);
+    expect(ids.has("wildcard.to_string")).toBe(true);
     for (const t of CONCRETE_WILDCARD_TARGETS) {
       expect(ids.has(wildcardConverterNodeId(t))).toBe(true);
     }

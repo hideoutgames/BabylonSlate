@@ -1,9 +1,6 @@
 import type { QualityOverrides } from "@haptic/core";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "@haptic/vfs";
-import {
-  receiveActiveAppSettingsUpdate,
-  subscribeAppSettings,
-} from "../context/app-settings-context";
+import { subscribeAppSettings } from "../context/app-settings-context";
 import { editorQuiet } from "./editor-quiet";
 
 export { ENGINE_SETTINGS_CHANGED_EVENT };
@@ -26,31 +23,6 @@ export type ViewportRenderTarget = {
   setObstructed: (value: boolean) => void;
   setFrameCap: (fps: number) => void;
 };
-
-export function dispatchEngineSettingsChanged(settings: {
-  viewportFrameCap: number;
-  theme?: "system" | "light" | "dark";
-  graphDefaultZoom?: number;
-  renderingOverridesEnabled?: boolean;
-  hardwareScalingLevel?: number;
-  postProcessingEnabled?: boolean;
-  editorTextureLodEnabled?: boolean;
-  editorTextureLodQuality?: number;
-  textureBudgetEnabled?: boolean;
-  textureByteCeiling?: number;
-  audioBudgetEnabled?: boolean;
-  audioByteCeiling?: number;
-  audioMaxVoices?: number;
-  viewportFlySpeed?: number;
-  viewportDropDistance?: number;
-  viewportGridSize?: number;
-  modelImportDefaultScale?: number;
-}): void {
-  receiveActiveAppSettingsUpdate(settings);
-  window.dispatchEvent(
-    new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, { detail: settings }),
-  );
-}
 
 export type LiveEngineSettingsTarget = {
   scaling?: {
@@ -274,7 +246,6 @@ export function canvasIsEditorVisible(
 export function attachViewportRenderGate(options: {
   canvas: HTMLCanvasElement;
   scheduler: ViewportRenderTarget;
-  loadFrameCap?: () => Promise<number>;
   scaling?: {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
@@ -322,9 +293,7 @@ export function attachViewportRenderGate(options: {
   });
   mutation.observe(document.body, OVERLAY_MUTATION_OPTIONS);
 
-  let settingsVersion = -1;
   const unsubscribeSettings = subscribeAppSettings((snapshot) => {
-    settingsVersion = snapshot.version;
     applyLiveEngineSettings(
       {
         scheduler,
@@ -338,16 +307,6 @@ export function attachViewportRenderGate(options: {
       snapshot.settings,
     );
   });
-
-  void (async () => {
-    if (options.loadFrameCap) {
-      const generation = settingsVersion;
-      const viewportFrameCap = await options.loadFrameCap();
-      if (generation !== settingsVersion) return;
-      applyLiveEngineSettings({ scheduler }, { viewportFrameCap });
-      return;
-    }
-  })();
 
   return () => {
     intersection?.disconnect();

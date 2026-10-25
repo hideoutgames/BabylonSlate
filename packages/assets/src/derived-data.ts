@@ -117,8 +117,8 @@ async function removeJournalFiles(
 
 /**
  * Append `lines` after the tail segment's `text`, rolling at the size bound.
- * A segment is written only once it holds a new line (or as the empty stub),
- * so a full tail is never rewritten unchanged.
+ * A segment is written only once it holds a new line, so a full tail is never
+ * rewritten unchanged.
  */
 async function writeSegments(
   storage: ProjectStorage,
@@ -146,16 +146,6 @@ async function writeSegments(
     changed = true;
   }
   await write(index, text);
-}
-
-/** True when a journal segment exists (an empty stub counts). */
-export async function hasJournal(
-  derivedStorage: ProjectStorage,
-  projectGuid: string,
-): Promise<boolean> {
-  return journalOperation(derivedStorage, projectGuid, async () =>
-    (await segmentIndices(derivedStorage, projectGuid)).length > 0,
-  );
 }
 
 /**
@@ -242,23 +232,6 @@ export async function unsealJournal(
   });
 }
 
-/** Replace the whole journal with `lines` (an empty list leaves an empty journal). */
-export async function writeJournalStub(
-  derivedStorage: ProjectStorage,
-  projectGuid: string,
-  lines: string[] = [],
-): Promise<void> {
-  return journalOperation(derivedStorage, projectGuid, async () => {
-    await removeJournalFiles(
-      derivedStorage,
-      projectGuid,
-      await derivedStorage.exists(journalSegmentsPath(projectGuid)),
-    );
-    await derivedStorage.mkdir(journalSegmentsPath(projectGuid), true);
-    await writeSegments(derivedStorage, projectGuid, 0, "", lines);
-  });
-}
-
 /**
  * Append JSONL lines to the recovery journal in order (creates it if missing).
  * Only the tail segment is read and rewritten, never the whole journal; a tail
@@ -294,15 +267,6 @@ export async function appendJournalLines(
       : "";
     await writeSegments(derivedStorage, projectGuid, index, text, lines);
   });
-}
-
-/** Append one JSONL line to the recovery journal (creates it if missing). */
-export async function appendJournalLine(
-  derivedStorage: ProjectStorage,
-  projectGuid: string,
-  line: string,
-): Promise<void> {
-  return appendJournalLines(derivedStorage, projectGuid, [line]);
 }
 
 async function readSegmentLines(

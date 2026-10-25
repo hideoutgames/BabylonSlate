@@ -413,14 +413,3 @@ export function combineText2DEffects(
   out.rotation = rotation;
   return out;
 }
-
-export function layoutHasLetterEffects(layout: Text2DLayout): boolean {
-  return layout.items.some(
-    (item) =>
-      item.effects.shake !== 0 ||
-      item.effects.waveSpeed !== 0 ||
-      item.effects.waveIntensity !== 0 ||
-      item.effects.hover !== 0 ||
-      item.effects.rotate !== 0,
-  );
-}

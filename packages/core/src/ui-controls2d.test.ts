@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampUIControl2DValue, normalizeUIControl2DText, parseUIControl2DProperties, uiControl2DFraction, uiControl2DValueAt, uiControl2DVisualAsset } from "./ui-controls2d";
+import { clampUIControl2DValue, normalizeUIControl2DText, parseUIControl2DProperties, uiControl2DFraction, uiControl2DValueAt } from "./ui-controls2d";
 
 describe("SceneLayer controls", () => {
   it("snaps to steps relative to the minimum without losing the final partial step", () => {
@@ -43,14 +43,14 @@ describe("SceneLayer controls", () => {
     expect(parseUIControl2DProperties("2DDropdownComponent", { options: [], selectedIndex: 0 }).selectedIndex).toBe(-1);
   });
 
-  it("retains every visual override and prefers a material over a texture", () => {
+  it("retains every visual override", () => {
     const properties = parseUIControl2DProperties("2DSliderComponent", {
       trackMaterialGuid: " track-material ", trackTextureGuid: "track-texture", thumbTextureGuid: "thumb-texture",
       fillMaterialGuid: " ", opacity: 5, tint: [-1, 0.5, 2, 0.5], textColor: "#zzzzzz",
     });
-    expect(uiControl2DVisualAsset(properties, "track")).toEqual({ kind: "material", guid: "track-material" });
-    expect(uiControl2DVisualAsset(properties, "thumb")).toEqual({ kind: "texture", guid: "thumb-texture" });
-    expect(uiControl2DVisualAsset(properties, "fill")).toBeNull();
-    expect(properties).toMatchObject({ opacity: 1, tint: [0, 0.5, 2, 0.5], textColor: "#ffffff" });
+    expect(properties).toMatchObject({
+      trackMaterialGuid: "track-material", trackTextureGuid: "track-texture", thumbTextureGuid: "thumb-texture",
+      fillMaterialGuid: null, fillTextureGuid: null, opacity: 1, tint: [0, 0.5, 2, 0.5], textColor: "#ffffff",
+    });
   });
 });

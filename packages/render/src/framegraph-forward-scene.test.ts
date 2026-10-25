@@ -1,6 +1,7 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
-import { captureRenderFrame } from "./render-frame-report";
+import { beginRenderFrameCapture } from "./render-frame-report";
 import {
+  type AbstractEngine,
   Animation,
   DirectionalLight,
   Effect,
@@ -54,6 +55,15 @@ afterEach(() => {
   vi.restoreAllMocks();
   for (const engine of engines.splice(0)) engine.dispose();
 });
+
+function captureRenderFrame<T>(engine: AbstractEngine, draw: () => T) {
+  const scope = beginRenderFrameCapture(engine);
+  try {
+    return { value: draw(), report: scope.capture.report };
+  } finally {
+    scope.dispose();
+  }
+}
 
 function host(engine = new NullEngine()) {
   if (!engines.includes(engine)) engines.push(engine);

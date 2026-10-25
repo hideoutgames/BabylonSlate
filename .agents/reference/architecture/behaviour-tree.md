@@ -43,7 +43,7 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 - Rotate To Face writes yaw only and teleports the physics body like script transform writes.
 - Play Animation emits `animState` (`stateId: "bt.playAnimation"`) and suppresses the Animation Graph for that slot while owned; abort or slot release ends ownership.
 - Play Sound uses the shared `playSound` path with stable `voiceId` `bt:${actor.guid}:${node.id}` and omits `loop` (the Audio asset decides). The tree owns its voices; abort and actor removal stop them.
-- Trace frames record stack, blackboard, results, node memory, `playAnimationOwned` and `playSoundVoiceIds`; `restoreBtFromTrace` restores evaluation and ownership.
+- Trace frames record stack, blackboard, results, node memory, `playAnimationOwned` and `playSoundVoiceIds`; `restoreFromTrace` restores evaluation and ownership (BT rows right after time dilation; see [debugger.md](debugger.md#trace-recorder)).
 
 ## Live editor state
 

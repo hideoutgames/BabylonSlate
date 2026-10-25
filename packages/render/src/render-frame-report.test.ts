@@ -1,11 +1,20 @@
-import { NullEngine, Scene } from "@babylonjs/core";
+import { NullEngine, Scene, type AbstractEngine } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphExecuteTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/executeTask";
 import { afterEach, expect, it } from "vitest";
-import { activeRenderFrameCapture, captureRenderFrame, RenderFrameReportFeed, type RenderFrameReport } from "./render-frame-report";
+import { activeRenderFrameCapture, beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReport } from "./render-frame-report";
 
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
+
+function captureRenderFrame<T>(engine: AbstractEngine, draw: () => T) {
+  const scope = beginRenderFrameCapture(engine);
+  try {
+    return { value: draw(), report: scope.capture.report };
+  } finally {
+    scope.dispose();
+  }
+}
 
 function fixture() {
   const engine = new NullEngine();

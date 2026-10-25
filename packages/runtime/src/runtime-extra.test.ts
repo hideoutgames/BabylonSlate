@@ -109,7 +109,7 @@ describe("runtime driver extras", () => {
     err.stack = "Error: boom\n    at x (haptic:///fix.js:1:1)";
     const diag = runtime.reportError(err);
     expect(diag?.nodeId).toBe("n");
-    expect(runtime.getLogRing().entries().length).toBeGreaterThan(0);
+    expect(runtime.executeConsoleCommand("dumplog").output).toContain("boom");
     runtime.stop();
   });
 });

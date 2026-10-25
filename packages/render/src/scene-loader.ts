@@ -432,7 +432,7 @@ function parentStreamingComponentOf(
   );
 }
 
-export function isIdentitySerializedTransform(
+function isIdentitySerializedTransform(
   transform: SerializedTransform | undefined,
 ): boolean {
   const value = transform ?? identitySerializedTransform();
@@ -1070,7 +1070,7 @@ function attachMeshCollisionDashes(
   }
 }
 
-export function disposeMeshCollisionDashes(mesh: Mesh): void {
+function disposeMeshCollisionDashes(mesh: Mesh): void {
   for (const child of [...mesh.getChildren()]) {
     if (
       child instanceof Mesh &&

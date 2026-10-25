@@ -6,7 +6,6 @@ import { createDefaultScene, createEmptyProject, normalizeProjectSettings, SCENE
 import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import {
-  createEmptyProjectFiles,
   createProjectFromTemplate,
   decodeProjectZip,
   encodeProjectZip,
@@ -15,12 +14,8 @@ import {
   rewriteProjectIdentity,
   writeProjectTree,
 } from "./hproject";
-import { bytesEqual } from "./bytes";
-import {
-  hasJournal,
-  truncateJournal,
-  writeJournalStub,
-} from "./derived-data";
+import { bytesEqual } from "./test-support/bytes";
+import { createEmptyProjectFiles } from "./test-support/project-files";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
@@ -164,16 +159,5 @@ describe("hproject codec", () => {
         rewritten.find((f) => f.path === "assets/x.txt")!.data,
       ),
     ).toBe("keep");
-  });
-});
-
-describe("derived data", () => {
-  it("stores journals outside the project tree contract", async () => {
-    const derived = new MemoryStorageAdapter();
-    await derived.openDocumentsProject("derived-root");
-    await writeJournalStub(derived, "proj-guid", ["cmd-1"]);
-    expect(await hasJournal(derived, "proj-guid")).toBe(true);
-    await truncateJournal(derived, "proj-guid");
-    expect(await hasJournal(derived, "proj-guid")).toBe(false);
   });
 });

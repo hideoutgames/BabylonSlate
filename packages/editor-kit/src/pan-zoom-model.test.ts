@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centeredView, contentToView, fitScale, pinchView, viewToContent, zoomViewAbout } from "./pan-zoom-model";
+import { centeredView, fitScale, pinchView, viewToContent, zoomViewAbout } from "./pan-zoom-model";
 
 describe("pan-zoom model", () => {
   const surface = { width: 400, height: 300 };
@@ -17,9 +17,9 @@ describe("pan-zoom model", () => {
     const before = viewToContent(view, pivot);
     const zoomed = zoomViewAbout(view, 3, pivot);
     expect(zoomed.scale).toBe(3);
-    const after = contentToView(zoomed, before);
-    expect(after.x).toBeCloseTo(pivot.x);
-    expect(after.y).toBeCloseTo(pivot.y);
+    const after = viewToContent(zoomed, pivot);
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
   });
 
   it("clamps zoom to the limits", () => {
@@ -34,8 +34,9 @@ describe("pan-zoom model", () => {
     expect(once).toEqual(again);
     expect(once.scale).toBe(2);
     // The content under the starting midpoint follows the fingers.
-    const anchored = contentToView(once, viewToContent(origin.view, origin.mid));
-    expect(anchored.x).toBeCloseTo(220);
-    expect(anchored.y).toBeCloseTo(150);
+    const anchored = viewToContent(once, { x: 220, y: 150 });
+    const start = viewToContent(origin.view, origin.mid);
+    expect(anchored.x).toBeCloseTo(start.x);
+    expect(anchored.y).toBeCloseTo(start.y);
   });
 });

@@ -87,7 +87,5 @@ export const FEATURE_TEST_OPTIONAL_SLOTS = {
   colorGradingLut: ["engine-content/feature-test/lut/FT_Grade_lut.png"],
 } as const satisfies Record<string, readonly string[]>;
 
-export type FeatureTestOptionalSlot = keyof typeof FEATURE_TEST_OPTIONAL_SLOTS;
-
 /** Published list of optional files present at build time (written by the copy plugin). */
 export const FEATURE_TEST_SLOTS_MANIFEST = "engine-content/feature-test/slots.json";

@@ -350,7 +350,7 @@ describe("runtime behaviour tree evaluation", () => {
     const replay = createInProcessRuntime(options);
     replay.start();
     replay.realizePlayWorld();
-    replay.restoreBtFromTrace(payload!.frames.at(-1)!.bt!);
+    replay.restoreFromTrace(payload!.frames.at(-1)!);
     replay.executeConsoleCommand("snapshot start");
     replay.tick();
     replay.executeConsoleCommand("snapshot stop");

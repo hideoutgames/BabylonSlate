@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalTerrainMask,
   createTerrainResolver,
-  resolveTerrainTile,
   TERRAIN_ALL,
   TERRAIN_E,
   TERRAIN_N,
@@ -108,15 +107,16 @@ describe("terrain resolution", () => {
 
   it("ignores corners for a 4-side terrain", () => {
     const ledge = terrainSheet("sides", [0, E, E | W, W]);
-    expect(resolveTerrainTile(ledge, "ground", E | W | NE | SE | SW | NW)).toBe(3);
+    const resolve = createTerrainResolver(ledge, "ground")!;
+    expect(resolve(E | W | NE | SE | SW | NW)).toBe(3);
     // Stacked ledges have no vertical variants: the open single piece is closest.
-    expect(resolveTerrainTile(ledge, "ground", N | S)).toBe(1);
+    expect(resolve(N | S)).toBe(1);
   });
 
   it("resolves nothing for a terrain without tiles in range", () => {
     const sheet = terrainSheet("blob", GRASS_MASKS);
-    expect(resolveTerrainTile(sheet, "missing", 0)).toBe(0);
-    expect(resolveTerrainTile(normalizeTilesetPayload({ ...sheet, tiles: [] }), "ground", 0)).toBe(0);
+    expect(createTerrainResolver(sheet, "missing")).toBeNull();
+    expect(createTerrainResolver(normalizeTilesetPayload({ ...sheet, tiles: [] }), "ground")).toBeNull();
     expect(createTerrainResolver(sheet, "ground", GRASS.top)?.(TERRAIN_ALL)).toBe(GRASS.top);
   });
 });

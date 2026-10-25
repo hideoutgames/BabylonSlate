@@ -3,7 +3,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
-import { LATTICE_UNIFORMS, latticeShaderDeclarations, latticeShaderFunctions } from "./lattice-deformer-shader";
+import { LATTICE_SAMPLER, LATTICE_UNIFORMS, latticeShaderDeclarations, latticeShaderFunctions } from "./lattice-deformer-shader";
 
 export class LatticeDeformerBlock extends NodeMaterialBlock {
   private scene?: Scene;
@@ -36,8 +36,8 @@ export class LatticeDeformerBlock extends NodeMaterialBlock {
     const scene = this.scene ?? state.sharedData.nodeMaterial.getScene();
     if (!scene) throw new Error("Lattice block requires its material scene.");
     for (const name of LATTICE_UNIFORMS) if (!state.uniforms.includes(name)) state.uniforms.push(name);
-    if (!state.samplers.includes("latticeData")) {
-      state.samplers.push("latticeData");
+    if (!state.samplers.includes(LATTICE_SAMPLER)) {
+      state.samplers.push(LATTICE_SAMPLER);
       state._samplerDeclaration += latticeShaderDeclarations(state.shaderLanguage);
     }
     state._emitFunction("slateLattice", latticeShaderFunctions(scene, state.shaderLanguage), "");

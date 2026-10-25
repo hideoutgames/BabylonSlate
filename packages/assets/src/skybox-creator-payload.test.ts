@@ -13,7 +13,6 @@ import {
   createSkyboxFaceTextureResult,
   defaultSkyboxCreatorSourcePlacement,
   fitSourceIntoSkyboxNet,
-  letterboxSize,
   normalizeSkyboxCreatorPayload,
   resizeSkyboxCreatorSourcePlacement,
   rotateSkyboxCreatorSourcePlacement,
@@ -287,27 +286,6 @@ describe("SkyboxCreator cubemap net", () => {
     const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
     expect(view.getUint32(16)).toBe(512);
     expect(view.getUint32(20)).toBe(512);
-  });
-
-  it("letterboxes a 4 by 3 net into wide and tall hosts so cells stay square", () => {
-    expect(letterboxSize(800, 300)).toEqual({
-      width: 400,
-      height: 300,
-      x: 200,
-      y: 0,
-    });
-    expect(letterboxSize(400, 600)).toEqual({
-      width: 400,
-      height: 300,
-      x: 0,
-      y: 150,
-    });
-    expect(letterboxSize(400, 300)).toEqual({
-      width: 400,
-      height: 300,
-      x: 0,
-      y: 0,
-    });
   });
 
   it("contain-fits source placement onto the net by default", () => {

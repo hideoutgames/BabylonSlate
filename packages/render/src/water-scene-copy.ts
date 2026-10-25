@@ -28,13 +28,12 @@ import { managedRenderTextureResource, renderTargetAllocationBytes } from "./ren
 import { sceneWaterSamplesSceneCopy, waterMeshSamplesSceneCopy } from "./water-mesh";
 import type { WaterQualityDeviceClamp } from "./water-quality-device";
 
-/** Linear view depth written for sky / far-plane pixels (the sentinel volumetric-shader also uses). */
-export const WATER_SCENE_COPY_SKY_DEPTH = 65000;
 /**
- * RGBA16F stores the sentinel as its nearest half float, 64992: readers treat
- * a copy alpha at or above this as sky. Real depths are clamped to the sentinel.
+ * Linear view depth written for sky / far-plane pixels (the sentinel volumetric-shader also uses).
+ * Real depths are clamped to it. RGBA16F stores it as its nearest half float, 64992; readers treat
+ * a copy alpha at or above 0.9 × this value as sky (water-node-blocks.ts, water-shader-chunks.ts).
  */
-export const WATER_SCENE_COPY_SKY_THRESHOLD = 64000;
+export const WATER_SCENE_COPY_SKY_DEPTH = 65000;
 export const WATER_SCENE_COPY_SHADER = "hapticWaterSceneCopy";
 
 /**

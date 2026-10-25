@@ -83,8 +83,3 @@ export function pinchView(
 export function viewToContent(view: PanZoomView, point: { x: number; y: number }) {
   return { x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale };
 }
-
-/** Content coordinates → surface point. */
-export function contentToView(view: PanZoomView, point: { x: number; y: number }) {
-  return { x: view.x + point.x * view.scale, y: view.y + point.y * view.scale };
-}

@@ -60,8 +60,8 @@ type PointGeometry = { points: Vec3[]; indices?: number[] };
  */
 const pointGeometryByShape = new WeakMap<PointShape, PointGeometry>();
 
-function pointGeometry(shape: PointShape, shared: boolean): PointGeometry {
-  const reusable = shared && Object.isFrozen(shape);
+function pointGeometry(shape: PointShape): PointGeometry {
+  const reusable = Object.isFrozen(shape);
   const cached = reusable ? pointGeometryByShape.get(shape) : undefined;
   if (cached) return cached;
   const geometry: PointGeometry = shape.kind === "convex"
@@ -78,18 +78,9 @@ function pointGeometry(shape: PointShape, shared: boolean): PointGeometry {
   return geometry;
 }
 
-/** Snapshot the simulation geometry with its current body and local collider pose. */
-export function debugColliderFromDesc(
-  desc: ColliderDesc,
-  bodyTransform: PhysicsTransform,
-): DebugColliderPrimitive | null {
-  return describeCollider(desc, bodyTransform, false);
-}
-
 function describeCollider(
   desc: ColliderDesc,
   bodyTransform: PhysicsTransform,
-  shared: boolean,
 ): DebugColliderPrimitive | null {
   const position = colliderWorldPosition(desc, bodyTransform);
   const rotation = multiplyQuat(
@@ -177,11 +168,11 @@ function describeCollider(
         shape: "convex",
         position,
         rotation,
-        points: pointGeometry(shape, shared).points,
+        points: pointGeometry(shape).points,
       };
     case "mesh": {
       if (shape.positions.length < 9 || shape.indices.length < 3) return null;
-      const geometry = pointGeometry(shape, shared);
+      const geometry = pointGeometry(shape);
       return {
         id: desc.id,
         shape: "mesh",
@@ -204,7 +195,7 @@ export function listDebugCollidersFromRecords(
   for (const record of colliders) {
     const body = getBodyTransform(record.desc.bodyId);
     if (!body) continue;
-    const primitive = describeCollider(record.desc, body, true);
+    const primitive = describeCollider(record.desc, body);
     if (primitive) out.push(primitive);
   }
   return out;

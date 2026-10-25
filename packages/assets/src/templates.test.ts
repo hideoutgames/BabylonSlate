@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
-  createEmptyProjectFiles,
   encodeProjectZip,
   writeProjectTree,
 } from "./hproject";
+import { createEmptyProjectFiles } from "./test-support/project-files";
 import { listTemplateCatalog, loadTemplateFiles } from "./templates";
 
 async function templatesFolder() {

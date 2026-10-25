@@ -12,7 +12,7 @@ import type { EffectCompileFailure } from "./effect-compile-failure";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
 import { CelMaterial } from "./cel-material";
 import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
-import { LATTICE_UNIFORMS } from "./lattice-deformer-shader";
+import { LATTICE_SAMPLER, LATTICE_UNIFORMS } from "./lattice-deformer-shader";
 import { gpuWaterWaves, WATER_FFT_SAMPLER, WATER_VERTEX_WAVE_UNIFORMS } from "./water-material";
 
 type MaskProgram = {
@@ -195,7 +195,7 @@ export class SharedOutlineMaskRenderer {
       AddClipPlaneUniforms(uniforms);
       wrapper.setEffect(this.view.scene.getEngine().createEffect(SHARED_OUTLINE_MASK_SHADER, {
         attributes, uniformsNames: uniforms, uniformBuffersNames: [],
-        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", "latticeData", ...(water ? [WATER_FFT_SAMPLER] : [])],
+        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", LATTICE_SAMPLER, ...(water ? [WATER_FFT_SAMPLER] : [])],
         defines: joined, fallbacks, onCompiled: null, onError: this.compileFailure?.for(`Shared Outline ${this.group} Mask`) ?? null,
         indexParameters: { maxSimultaneousMorphTargets: morphs },
         shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,

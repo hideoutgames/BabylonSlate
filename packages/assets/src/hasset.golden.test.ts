@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { encodeHasset, readHassetHeader } from "./hasset";
-import { bytesEqual } from "./bytes";
+import { bytesEqual } from "./test-support/bytes";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";

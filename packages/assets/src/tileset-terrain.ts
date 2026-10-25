@@ -138,11 +138,6 @@ export function createTerrainResolver(
   };
 }
 
-/** One-off resolution; 0 when the terrain has no tiles. */
-export function resolveTerrainTile(tileset: TilesetPayload, terrainId: string, mask: number): number {
-  return createTerrainResolver(tileset, terrainId)?.(mask) ?? 0;
-}
-
 function compareScores(a: readonly number[], b: readonly number[]): number {
   for (let at = 0; at < a.length; at++) {
     const delta = a[at]! - b[at]!;
