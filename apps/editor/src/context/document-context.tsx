@@ -11,6 +11,7 @@ import {
 import { DocumentSubscriptions, sameDocumentRef } from "./document-subscriptions";
 import { flushSync } from "react-dom";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
+import { DocumentOpenErrorDialog } from "../components/document-open-error-dialog";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import type {
   AssetDocumentKind,
@@ -245,6 +246,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const registerBeforeTransition = useCallback<DocumentTransitionGate["register"]>(handler => documentTransitions.register(handler), [documentTransitions]);
   const sceneDocumentLoadRef = useRef<AbortController | null>(null);
   const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean; error?: unknown } | null>(null);
+  /** Why a selected tab's asset could not be read; a Scene's read failure shows in its loading dialog instead. */
+  const [documentOpenError, setDocumentOpenError] = useState<string | null>(null);
   const debugMode = useDebugMode();
   useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
   const cancelSceneDocumentLoad = useCallback(() => {
@@ -1489,6 +1492,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setAnimEditorModes({});
     mtimeSnapshotRef.current = null;
     setExternalChangePrompt(null);
+    setDocumentOpenError(null);
     await refreshProjectList();
     bump();
     return { outcome: "closed" };
@@ -2016,7 +2020,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (id === activeDocumentId) return;
       const target = documentService.getState().openDocuments.get(id);
       if (target?.content === null && target.ref.kind !== "content-browser") {
-        void finishOpenDocument(target.ref);
+        // A restored tab reads its asset when first selected. Callers do not
+        // wait for it, so a failed read is reported here.
+        finishOpenDocument(target.ref).catch((error: unknown) => {
+          // Closing the tab or the project cancels the read.
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          console.error("[editor] failed to open document", error);
+          setDocumentOpenError(error instanceof Error ? error.message : String(error));
+        });
         return;
       }
       if (activeDocumentId) {
@@ -2868,6 +2879,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                               progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
                             }) : undefined}
                           />
+                          <DocumentOpenErrorDialog error={documentOpenError} onClose={() => setDocumentOpenError(null)} />
                         </DocumentContext.Provider>
                       </SourceControlStateContext.Provider>
                     </EditorShellStateContext.Provider>

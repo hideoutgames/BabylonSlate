@@ -774,6 +774,31 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().recoveryAvailable).toBe(false);
   });
 
+  it("reports a restored tab whose asset cannot be read when the tab is selected", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Material", name: "Shiny" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument({ kind: "material", path: asset.path, label: "Shiny Material" }));
+    await act(() => actions.saveAll());
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+    await act(() => actions.openListedProject(listed));
+    const id = documentId({ kind: "material", path: asset.path });
+    expect(documents().openDocuments.find(doc => doc.id === id)?.content).toBeNull();
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path, options) {
+      if (path === asset.path) throw new Error("The Material could not be decoded.");
+      return realLoad.call(this, kind, path, options);
+    });
+    try {
+      act(() => actions.setActiveDocument(id));
+      expect((await screen.findByTestId("document-open-error")).textContent).toContain("The Material could not be decoded.");
+    } finally { read.mockRestore(); }
+    fireEvent.click(screen.getByTestId("document-open-error-dismiss"));
+    await waitFor(() => expect(screen.queryByTestId("document-open-error")).toBeNull());
+  });
+
   /** Reopens "Stable" after a session that never saved `name`, with its edit in the journal. */
   async function reopenAfterUnsavedSession(actions: DocumentActions, name: string) {
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

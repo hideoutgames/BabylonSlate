@@ -10,7 +10,7 @@ The editor shows each open asset as a document tab, and each document arranges i
 - Hold a tab, then drag it sideways to reorder. The **Open Documents** menu at the end of the strip lists every tab and can close one or all of them.
 - <kbd>Alt</kbd>+<kbd>Page Down</kbd> and <kbd>Alt</kbd>+<kbd>Page Up</kbd> move between documents; <kbd>Alt</kbd>+<kbd>W</kbd> closes the active one.
 
-Closing a document with unsaved changes asks whether to save. When you reopen the project, your tabs come back.
+Closing a document with unsaved changes asks whether to save. When you reopen the project, your tabs come back. If a tab's asset can no longer be read, selecting the tab shows **Could Not Open Asset** with the reason, or **Scene Loading Failed** for a scene.
 
 ## Arrange windows
 
