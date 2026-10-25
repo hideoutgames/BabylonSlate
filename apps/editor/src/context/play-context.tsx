@@ -488,8 +488,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
   const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
-  /** Reports a closed Preview's diagnostics once its frame has gone; a newer Preview or unmount cancels it. */
-  const previewCloseTimerRef = useRef<number | null>(null);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
@@ -856,9 +854,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setEditorQuiet(gameCoversEditor);
   }, [gameCoversEditor]);
   useEffect(() => () => setEditorQuiet(false), []);
-  useEffect(() => () => {
-    if (previewCloseTimerRef.current !== null) window.clearTimeout(previewCloseTimerRef.current);
-  }, []);
   // Stopped Play leaves the editor read-only, as a running Simulation does; breakpoints can still change.
   const { lockAuthoring } = documents;
   useEffect(() => (playStopped ? lockAuthoring("Read-only while Play is stopped") : undefined), [lockAuthoring, playStopped]);
@@ -1020,19 +1015,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     [appendLog, ensureEngine, sessionOwner, releasePlaySources],
   );
 
-  const flushClosedPreviewReport = useCallback(() => {
-    if (previewCloseTimerRef.current === null) return;
-    window.clearTimeout(previewCloseTimerRef.current);
-    previewCloseTimerRef.current = null;
-    previewClosingRef.current = false;
-    const diagnostics = previewDiagnosticsRef.current;
-    previewDiagnosticsRef.current = [];
-    if (diagnostics.length > 0) {
-      setDropped(0);
-      setReportEntries(diagnostics);
-      setReportOpen(true);
-    }
-  }, []);
   const finishPreviewPresentation = useCallback(() => {
     previewClosingRef.current = true;
     previewAssetHostRef.current?.dispose();
@@ -1051,9 +1033,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPreviewCanCancel(true);
     setPlayOpen(false);
     setSessionPlayScene(null);
-    if (previewCloseTimerRef.current !== null) window.clearTimeout(previewCloseTimerRef.current);
-    previewCloseTimerRef.current = window.setTimeout(flushClosedPreviewReport, 100);
-  }, [flushClosedPreviewReport]);
+    window.setTimeout(() => {
+      previewClosingRef.current = false;
+      const diagnostics = previewDiagnosticsRef.current;
+      previewDiagnosticsRef.current = [];
+      if (diagnostics.length > 0) {
+        setDropped(0);
+        setReportEntries(diagnostics);
+        setReportOpen(true);
+      }
+    }, 100);
+  }, []);
 
   const closePreview = useCallback(() => {
     if (sessionTicketRef.current?.mode === "preview") void sessionOwner.stop(sessionTicketRef.current);
@@ -1199,8 +1189,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setPreviewPreparationError(reason);
       appendLog(`Preview Build failed: ${reason}`);
     };
-    // A Preview closed moments ago reports its diagnostics now, before this one can produce any.
-    flushClosedPreviewReport();
     previewClosingRef.current = false;
     preparingRef.current = true;
     setPreparing(true);
@@ -1298,7 +1286,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (sessionOwner.getSnapshot().lifecycle === "preparing") void sessionOwner.stop(ticket);
       }
     }
-  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner, finishPreviewPresentation, flushClosedPreviewReport]);
+  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner, finishPreviewPresentation]);
 
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
