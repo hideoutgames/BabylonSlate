@@ -8,7 +8,7 @@ import {
   type ShadowGenerator,
 } from "@babylonjs/core";
 import { isPipelineWarmupMesh, isRevealPending } from "./reveal-pending";
-import { awaitsFirstDraw, isWarmShadowRender } from "./shadow-first-draw";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import { chargeWarmMap, warmMapRoom } from "./shadow-map-warm";
 import {
   beginPipelineDeferral,
@@ -26,53 +26,55 @@ import {
  * the whole map would clear what receivers sample, so the map's own real render handles them instead: each caster's
  * draws sit between Babylon's `onBeforeShadowMapRenderMeshObservable` and `onAfterShadowMapRenderMeshObservable`
  * (which name the level of detail drawn: a caster is its master mesh), and in a world view's steady frame (`active`)
- * the draws of a caster the map has not drawn run inside a warm deferral scope admitting the map's render passes. They
- * are skipped, and a missing pipeline starts creating asynchronously with the map's own target state, while every
- * caster that has drawn into the map draws as before. A render whose skipped casters found every pipeline they need
- * renders the map again at once, drawing them; one still being created leaves its caster out until it exists
- * (`casterRedrawDue`), as a caster still compiling is left out on WebGL2. The map keeps all it held.
+ * the draws of a caster the map has not drawn run inside an isolated deferral scope admitting the map's render
+ * passes. A draw whose pipeline exists draws; one whose pipeline is missing is skipped and starts it asynchronously with
+ * the map's own target state. Every caster that has drawn into the map draws as before, so the map keeps all it held,
+ * and renders once: a new caster whose pipelines exist (a mesh rebuilt every tick, as a script's text is) casts in the
+ * frame it arrives, and one still missing some joins once they exist (`casterRedrawDue`), as a caster still compiling
+ * does on WebGL2 (a caster of several parts may cast in part meanwhile).
  *
  * A mesh hidden for its reveal (`isRevealPending`) casts into no map. Its colour probe asks each drawn map its reveal
  * would redraw (the controller's `setShadowCasterReach`) for its depth pipelines (`casterPipelinesWarm`): a map that
- * has not listed it since it was hidden is asked to render again (within the frame's warm budget), listing it only so
- * its draws start them, all of them skipped, and the reveal waits until they exist, so the mesh appears with its
- * shadow and the redraw its reveal starts creates none.
+ * has not listed it since it was hidden is asked to render again (within the frame's warm budget, in any frame), and
+ * that render lists it (`listsHiddenCaster`) inside a warm scope only so its draws start them, every one skipped. The
+ * reveal waits until they exist, so the mesh appears with its shadow and the redraw its reveal starts creates none.
  *
  * A caster that has drawn into the map keeps drawing, a later depth variant of its own included (a changed Material
  * whose colour variant is ready, a mesh's first instances), which still creates its pipeline in the draw, since leaving
- * it out would drop a shadow the map holds. Waits end at the deferral's stall (`deferredPipelinesStalled`), when the
- * caster draws and creates what is still missing synchronously, and a reveal's wait for a map that never lists the
- * mesh after `PIPELINE_DEFERRAL_STALL_MS`. Pipelines skipped draws start are charged to the Engine frame's warm budget
- * (`WARM_MAP_PIPELINES_PER_FRAME`), which a real render cannot wait for, so the frame's other warm renders wait
- * instead. A frame that is not a steady one (a strict frame, one that publishes a manual capture) draws every caster
- * the map left out (`leavesOutCasters`), creating its pipelines in the draw.
+ * it out would drop a shadow the map holds. Waits end at the deferral's stall: an isolated draw's pipeline compiles
+ * synchronously past the Engine's stall or its own, and a reveal waits no longer than `PIPELINE_DEFERRAL_STALL_MS`
+ * from the first render that listed the mesh, or from its first ask when no render answers. Pipelines these draws
+ * start are charged to the Engine frame's warm budget (`WARM_MAP_PIPELINES_PER_FRAME`), which a real render cannot
+ * wait for, so the frame's other warm renders wait instead. A frame that is not a steady one (a strict frame, one that
+ * publishes a manual capture) draws every caster the map left out (`leavesOutCasters`), creating its pipelines then.
  */
 type Skips = PipelineDeferral[];
+/** How a render draws a caster: as before, as one new to the map (isolated), or only to warm (hidden). */
+type Kind = "drawn" | "new" | "hidden";
 
 type MapCasters = {
   map: RenderTargetTexture;
   engine: AbstractEngine;
-  /** Casters a real draw of the map drew. */
+  /** Casters a real draw of the map drew whole. */
   drawn: WeakSet<AbstractMesh>;
-  /** Casters new to the map that its last render listing them left out: their skipped draws' scopes. */
+  /** Casters new to the map whose last render listing them skipped some draws: the scopes of those draws. */
   leftOut: Map<AbstractMesh, Skips>;
   /**
-   * Hidden meshes a render listed since they were hidden (`listsHiddenCaster`): their skipped draws' scopes, none when
-   * the caster lists left them out, with the Material they had.
+   * Hidden meshes a render listed since they were hidden (`listsHiddenCaster`): their warm draws' scopes, none when
+   * the caster lists left them out, with the Material they had and when the first such render ran.
    */
-  warmed: Map<AbstractMesh, { scopes: Skips; material: Material | null }>;
+  warmed: Map<AbstractMesh, { scopes: Skips; material: Material | null; since: number }>;
   /** Hidden meshes whose reveal waits for the map to list them, since when. */
   requests: Map<AbstractMesh, number>;
-  /** The render in progress is a world view's steady frame's: casters new to the map are skipped. */
+  /** A tracked render is in progress; `active`: a world view's steady frame's, which isolates new casters. */
+  tracking: boolean;
   active: boolean;
-  /** Skipped casters of this frame's earlier render that found every pipeline: they draw in this one. */
-  admitted: Set<AbstractMesh>;
-  /** This render's casters, its decision per caster (a mesh's parts draw alike) and the scopes of those it skipped. */
+  /** This render's casters, how it draws each (a mesh's parts draw alike) and the scopes of draws it skipped. */
   seen: Set<AbstractMesh>;
-  decided: Map<AbstractMesh, boolean>;
+  decided: Map<AbstractMesh, Kind>;
   skipped: Map<AbstractMesh, Skips>;
-  /** The skipped caster draw in progress. */
-  open: { scope: PipelineDeferral; pendingBefore: number } | undefined;
+  /** The caster draw in progress inside a scope. */
+  open: { scope: PipelineDeferral; pendingBefore: number; kind: Kind } | undefined;
 };
 
 /** Each tracked generator's bookkeeping, for its current shadow map. */
@@ -127,13 +129,13 @@ function release(state: MapCasters): void {
   state.requests.clear();
 }
 
-function skips(state: MapCasters, mesh: AbstractMesh): boolean {
-  let skip = state.decided.get(mesh);
-  if (skip === undefined) {
-    skip = isRevealPending(mesh) || (!state.drawn.has(mesh) && !state.admitted.has(mesh));
-    state.decided.set(mesh, skip);
+function kindOf(state: MapCasters, mesh: AbstractMesh): Kind {
+  let kind = state.decided.get(mesh);
+  if (kind === undefined) {
+    kind = isRevealPending(mesh) ? "hidden" : state.active && !state.drawn.has(mesh) ? "new" : "drawn";
+    state.decided.set(mesh, kind);
   }
-  return skip;
+  return kind;
 }
 
 /** The bookkeeping of `generator`'s current map (a new map starts afresh), its draw observers installed on first use. */
@@ -145,87 +147,97 @@ function castersOf(generator: ShadowGenerator): MapCasters | undefined {
   if (current) release(current);
   const state: MapCasters = {
     map, engine: generator.getLight().getScene().getEngine(), drawn: new WeakSet(), leftOut: new Map(), warmed: new Map(),
-    requests: new Map(), active: false, admitted: new Set(), seen: new Set(), decided: new Map(), skipped: new Map(),
+    requests: new Map(), tracking: false, active: false, seen: new Set(), decided: new Map(), skipped: new Map(),
     open: undefined,
   };
   maps.set(generator, state);
   map.onDisposeObservable.addOnce(() => release(state));
   if (observed.has(generator)) return state;
   observed.add(generator);
+  // Only tracked renders count: a first draw's warm render (`shadow-map-warm.ts`) skips every draw itself.
   generator.onBeforeShadowMapRenderMeshObservable.add((rendering) => {
     const own = maps.get(generator);
-    if (!own) return;
+    if (!own?.tracking) return;
     const mesh = casterOf(rendering);
     own.seen.add(mesh);
-    if (!own.active || own.open || !skips(own, mesh)) return;
+    if (own.open) return;
+    const kind = kindOf(own, mesh);
+    if (kind === "drawn") return;
     const passes = own.map.renderPassIds;
     const pendingBefore = deferredPipelineCount(own.engine);
-    const scope = beginPipelineDeferral(own.engine, (pass) => passes.includes(pass), { warm: true });
-    if (scope) own.open = { scope, pendingBefore };
+    const scope = beginPipelineDeferral(own.engine, (pass) => passes.includes(pass), kind === "hidden" ? { warm: true } : { isolated: true });
+    if (scope) own.open = { scope, pendingBefore, kind };
   });
   generator.onAfterShadowMapRenderMeshObservable.add((rendering) => {
     const own = maps.get(generator);
-    if (!own) return;
+    if (!own?.tracking) return;
     const mesh = casterOf(rendering);
     const open = own.open;
-    if (open) {
-      own.open = undefined;
-      open.scope.close();
-      chargeWarmMap(own.engine, open.pendingBefore);
-      let scopes = own.skipped.get(mesh);
-      if (!scopes) own.skipped.set(mesh, (scopes = []));
-      scopes.push(open.scope);
+    if (!open) {
+      if (kindOf(own, mesh) !== "drawn") return;
+      own.drawn.add(mesh);
+      if (own.leftOut.has(mesh) || own.warmed.has(mesh)) drop(own, mesh, { leftOut: true, warmed: true });
       return;
     }
-    // The whole-map warm render of a first draw draws nothing; a hidden mesh is listed only to warm.
-    if (isWarmShadowRender(generator) || isRevealPending(mesh)) return;
-    own.drawn.add(mesh);
-    if (own.leftOut.has(mesh) || own.warmed.has(mesh)) drop(own, mesh, { leftOut: true, warmed: true });
+    own.open = undefined;
+    const skipped = open.scope.close();
+    chargeWarmMap(own.engine, open.pendingBefore);
+    if (open.kind === "new" && !skipped) return;
+    let scopes = own.skipped.get(mesh);
+    if (!scopes) own.skipped.set(mesh, (scopes = []));
+    scopes.push(open.scope);
   });
   return state;
 }
 
-/** Records one render; returns the skipped casters that found every pipeline (or whose wait stalled): they draw now. */
-function settle(state: MapCasters): AbstractMesh[] {
+/** Records one tracked render. */
+function settle(state: MapCasters): void {
   if (state.open) {
     state.open.scope.close();
     chargeWarmMap(state.engine, state.open.pendingBefore);
     state.open = undefined;
   }
-  const stalled = deferredPipelinesStalled(state.engine);
-  const admit: AbstractMesh[] = [];
-  for (const [mesh, scopes] of state.skipped) {
-    record(state, mesh);
-    if (isRevealPending(mesh)) {
-      state.warmed.set(mesh, { scopes, material: mesh.material ?? null });
+  const now = performance.now();
+  for (const [mesh, kind] of state.decided) {
+    if (kind === "drawn") continue;
+    const scopes = state.skipped.get(mesh);
+    if (kind === "hidden") {
+      const material = mesh.material ?? null;
+      const before = state.warmed.get(mesh);
+      record(state, mesh);
+      state.warmed.set(mesh, { scopes: scopes ?? [], material, since: before?.material === material ? before.since : now });
       state.requests.delete(mesh);
-      continue;
-    }
-    state.leftOut.set(mesh, scopes);
-    if (state.active && (stalled || !waits(scopes))) admit.push(mesh);
-  }
-  // A steady frame's render answered every request: a hidden mesh it did not draw has nothing to warm in this map.
-  if (state.active) {
-    for (const [mesh] of state.requests) {
-      if (state.skipped.has(mesh)) continue;
-      state.warmed.set(mesh, { scopes: [], material: mesh.material ?? null });
-      state.requests.delete(mesh);
+    } else if (scopes) {
+      record(state, mesh);
+      state.leftOut.set(mesh, scopes);
+    } else {
+      // A new caster every draw of which found its pipeline has drawn whole.
+      state.drawn.add(mesh);
+      drop(state, mesh, { leftOut: true, warmed: true });
     }
   }
-  // A new caster this render no longer drew or skipped (out of the map's reach) is forgotten: listed again, it is new
-  // again, and the map does not render again for it meanwhile.
+  // Every tracked render answers the requests: a hidden mesh it did not list has nothing to warm in this map, and a
+  // mesh no longer hidden needs nothing.
+  for (const mesh of state.requests.keys()) {
+    if (!isRevealPending(mesh)) drop(state, mesh, { request: true });
+    else if (!state.decided.has(mesh)) {
+      state.warmed.set(mesh, { scopes: [], material: mesh.material ?? null, since: now });
+      drop(state, mesh, { request: true });
+    }
+  }
+  // A new caster this render no longer listed (out of the map's reach) is forgotten: listed again, it is new again,
+  // and the map does not render again for it meanwhile.
   for (const mesh of state.leftOut.keys()) if (!state.seen.has(mesh)) drop(state, mesh, { leftOut: true });
   state.seen.clear();
   state.skipped.clear();
   state.decided.clear();
-  return admit;
 }
 
 /**
  * Draws `generator`'s map with `render`, tracking which casters have drawn into it (WebGPU, a world view's own map).
- * `active` (a world view's steady frame, the map drawn before) skips the draws of casters new to it, and renders the
- * map again at once when those found every pipeline they need; otherwise every caster draws. A caster draw that
- * throws leaves no scope open.
+ * `active` (a world view's steady frame, the map drawn before) isolates the draws of casters new to it; otherwise every
+ * caster draws. Hidden meshes whose reveal asked the map are listed only to warm, whatever `active`. A caster draw
+ * that throws leaves no scope open.
  */
 export function renderTrackingCasters(generator: ShadowGenerator, active: boolean, render: () => void): void {
   const state = castersOf(generator);
@@ -235,31 +247,22 @@ export function renderTrackingCasters(generator: ShadowGenerator, active: boolea
   }
   // A first draw draws every caster it lists, from an empty map.
   if (!active && awaitsFirstDraw(generator)) state.drawn = new WeakSet();
+  state.tracking = true;
   state.active = active;
-  let admit: AbstractMesh[];
   try {
-    try {
-      render();
-    } finally {
-      admit = settle(state);
-    }
-    if (!admit.length) return;
-    for (const mesh of admit) state.admitted.add(mesh);
-    try {
-      render();
-    } finally {
-      settle(state);
-    }
+    render();
   } finally {
+    settle(state);
+    state.tracking = false;
     state.active = false;
-    state.admitted.clear();
   }
 }
 
 /**
- * Whether `generator`'s map should render again now: in a world view's steady frame (`steady`), when a caster it left
- * out has its pipelines (or their wait stalled), or a hidden mesh waits for it to list it and the Engine frame has warm
- * budget left; in any other frame, when it left a caster out at all, which then draws. Forgets disposed casters.
+ * Whether `generator`'s map should render again now: when a hidden mesh waits for it to list it and the Engine frame
+ * has warm budget left; and when it left out a caster, in a world view's steady frame (`steady`) once that caster's
+ * pipelines exist (or their wait stalled), in any other frame at once, drawing it. Forgets disposed casters and
+ * requests no reveal waits on.
  */
 export function casterRedrawDue(generator: ShadowGenerator, steady: boolean): boolean {
   const state = maps.get(generator);
@@ -267,9 +270,10 @@ export function casterRedrawDue(generator: ShadowGenerator, steady: boolean): bo
   let due = false;
   for (const [mesh, scopes] of state.leftOut) {
     if (mesh.isDisposed()) drop(state, mesh, { leftOut: true });
-    else if (!steady || !waits(scopes) || deferredPipelinesStalled(state.engine)) due = true;
+    else if (!steady || !waits(scopes)) due = true;
   }
-  return due || (steady && state.requests.size > 0 && warmMapRoom(state.engine));
+  for (const mesh of state.requests.keys()) if (!isRevealPending(mesh)) drop(state, mesh, { request: true });
+  return due || (state.requests.size > 0 && warmMapRoom(state.engine));
 }
 
 /** Whether `generator`'s map left out a caster new to it whose depth pipelines were still being created. */
@@ -280,13 +284,15 @@ export function leavesOutCasters(generator: ShadowGenerator): boolean {
   return false;
 }
 
-/**
- * Whether the caster lists of `generator`'s map list the hidden `mesh` now: only in a world view's steady frame, and
- * only while its reveal waits for the map to list it.
- */
+/** Whether the caster lists of `generator`'s map list the hidden `mesh` now: in a tracked render its reveal asked for. */
 export function listsHiddenCaster(generator: ShadowGenerator, mesh: AbstractMesh): boolean {
   const state = maps.get(generator);
-  return state?.active === true && state.requests.has(mesh);
+  return state?.tracking === true && state.requests.has(mesh);
+}
+
+/** A revealed mesh's requests are over (its reveal may skip the probe that would answer them). */
+export function forgetCasterRequests(mesh: AbstractMesh): void {
+  for (const state of [...(recordedIn.get(mesh) ?? [])]) if (state.requests.has(mesh)) drop(state, mesh, { request: true });
 }
 
 /** Lets `scene`'s shadow controller name the drawn maps a mesh's reveal redraws; `undefined` removes it. */
@@ -300,7 +306,7 @@ export function setShadowCasterReach(
 
 /**
  * The colour probe of a hidden mesh (WebGPU): whether its depth pipelines exist for every drawn map its reveal would
- * redraw, or their creation stalled. A map that has not listed it since it was hidden (or since its Material changed)
+ * redraw, or creating them stalled. A map that has not listed it since it was hidden (or since its Material changed)
  * is asked to (`casterRedrawDue`), until `PIPELINE_DEFERRAL_STALL_MS` after the first ask. An instance and a mesh with
  * instances (they draw in one batch, which a skip would leave out whole) and a mesh staged for pipeline warm-up are
  * never listed.
@@ -318,7 +324,9 @@ export function casterPipelinesWarm(mesh: AbstractMesh): boolean {
     if (!state) return;
     const warmed = state.warmed.get(mesh);
     if (warmed?.material === material) {
-      if (waits(warmed.scopes) && !deferredPipelinesStalled(state.engine)) warm = false;
+      // A warm draw never compiles synchronously: its wait ends at the Engine's stall or its own.
+      if (waits(warmed.scopes) && !deferredPipelinesStalled(state.engine) && now - warmed.since < PIPELINE_DEFERRAL_STALL_MS)
+        warm = false;
       return;
     }
     const since = state.requests.get(mesh);
@@ -328,9 +336,9 @@ export function casterPipelinesWarm(mesh: AbstractMesh): boolean {
       warm = false;
     } else if (now - since < PIPELINE_DEFERRAL_STALL_MS) warm = false;
     else {
-      // The map never listed it: its reveal waits no longer.
-      state.warmed.set(mesh, { scopes: [], material });
-      state.requests.delete(mesh);
+      // No render listed it: its reveal waits no longer.
+      state.warmed.set(mesh, { scopes: [], material, since: now });
+      drop(state, mesh, { request: true });
     }
   });
   return warm;

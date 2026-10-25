@@ -323,6 +323,59 @@ describe("beginPipelineDeferral", () => {
     expect(deferredPipelinesStalled(engine)).toBe(false);
   });
 
+  const shadowPass = (pass: number) => pass === 9;
+
+  it("draws an isolated scope's hits and skips its misses, starting them asynchronously past the hold cap, uncounted by the view", async () => {
+    const { engine, device, drawn, draw, resolve } = webGpuEngine();
+    // A caster the map drew before: its pipeline exists.
+    draw(5, 9);
+    device.createRenderPipeline.mockClear();
+    drawn.length = 0;
+    // The view's hold cap is over: its own misses would compile synchronously.
+    const view = beginPipelineDeferral(engine, objectPass, { startsDeferrals: false })!;
+    const isolated = beginPipelineDeferral(engine, shadowPass, { isolated: true })!;
+    draw(5, 9);
+    draw(7, 9);
+    expect({ skipped: isolated.close(), waiting: isolated.waiting(), drawn: drawn.length, view: view.close() })
+      .toEqual({ skipped: 1, waiting: true, drawn: 1, view: 0 });
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(1);
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    const pipeline = { label: "async" };
+    resolve(pipeline);
+    await settle();
+    expect(isolated.waiting()).toBe(false);
+    const next = beginPipelineDeferral(engine, shadowPass, { isolated: true })!;
+    draw(7, 9);
+    expect(next.close()).toBe(0);
+    expect(drawn.at(-1)).toBe(pipeline);
+  });
+
+  it("gives up an isolated draw's own creation after the stall time while other creations keep the Engine progressing", () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine, device, draw } = webGpuEngine();
+    const isolatedFrame = () => {
+      const scope = beginPipelineDeferral(engine, shadowPass, { isolated: true })!;
+      draw(4, 9);
+      scope.close();
+      return scope;
+    };
+    const first = isolatedFrame();
+    // Another view's miss starts a creation later, so the Engine-wide stall is not reached when this one's is.
+    now += PIPELINE_DEFERRAL_STALL_MS / 2;
+    const other = beginPipelineDeferral(engine, objectPass)!;
+    draw(9);
+    other.close();
+    now += PIPELINE_DEFERRAL_STALL_MS / 2 - 1;
+    expect(first.waiting()).toBe(true);
+    isolatedFrame();
+    expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    now += 1;
+    expect({ first: first.waiting(), other: other.waiting() }).toEqual({ first: false, other: true });
+    isolatedFrame();
+    expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing on WebGL", () => {
     const engine = { isWebGPU: false } as never;
     expect(beginPipelineDeferral(engine, objectPass)).toBeUndefined();

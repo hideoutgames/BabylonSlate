@@ -530,12 +530,14 @@ export class RenderTargetCaptures {
   }
   /**
    * Whether a steady frame held back part of an admitted shadow map for its casters' pipelines (WebGPU): a first draw
-   * (`isFirstDrawHeld`), or casters new to a drawn map (`leavesOutCasters`).
+   * (`isFirstDrawHeld`), or casters new to a drawn map (`leavesOutCasters`). A light switched off, or casting none,
+   * draws no map in the frame the capture would wait for.
    */
   private shadowsHeldBack(): boolean {
     const controller = findSceneShadowController(this.scene);
     if (!controller) return false;
     for (const light of this.scene.lights) {
+      if (!light.isEnabled() || !light.shadowEnabled) continue;
       const map = controller.generator(light);
       if (map && (isFirstDrawHeld(map) || leavesOutCasters(map))) return true;
     }

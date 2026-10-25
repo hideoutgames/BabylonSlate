@@ -65,7 +65,7 @@ import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
-import { listsHiddenCaster, setShadowCasterReach } from "./shadow-caster-warm";
+import { forgetCasterRequests, listsHiddenCaster, setShadowCasterReach } from "./shadow-caster-warm";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -451,6 +451,7 @@ export class SceneShadowController {
     // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
     // with it: a local light's only when the mesh is within its range, a sun's always.
     const unwatchReveals = onMeshRevealed(scene, (mesh) => {
+      forgetCasterRequests(mesh);
       if (!this.meshes.has(mesh)) return;
       this.forEachGenerator((generator) => {
         if (reaches(generator, mesh)) generator.getShadowMap()?.resetRefreshCounter();

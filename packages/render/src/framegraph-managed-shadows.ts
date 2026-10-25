@@ -469,9 +469,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
           map.resetRefreshCounter();
         }
         if (!map._shouldRender()) continue;
-        // A drawn map in such a frame leaves out the casters new to it until their depth pipelines exist, which their
-        // draws would otherwise create synchronously, and draws again at once those that found them; the same frames
-        // as above draw them at once.
+        // A drawn map in such a frame leaves out the draws of casters new to it whose depth pipelines are missing until
+        // they exist, which those draws would otherwise create synchronously; the same frames as above draw them at once.
         if (tracksCasters) renderTrackingCasters(generator, warmsFirstDraws && !firstDraw, draw);
         else draw();
       }

@@ -85,7 +85,7 @@ import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { findSceneShadowController, PREDICTION_MAP_SIZE } from "./shadow-controller";
-import { awaitsFirstDraw } from "./shadow-first-draw";
+import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
 import { PREDICTIONS_MAX } from "./variant-prediction";
@@ -262,7 +262,8 @@ function driverModel(engine: NullEngine, model: Model) {
   let draws = 0;
   const passDraws = new Map<number, number>();
   type Scope = {
-    allows: (pass: number) => boolean; omits?: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number;
+    allows: (pass: number) => boolean; omits?: (pass: number) => boolean; warm: boolean; isolated: boolean; skipped: number;
+    lookups: number; hits: number;
     effects: Set<Effect>;
     /** Per omitting pass, the Effects whose draws it left out, and the omitting passes in which some draw drew. */
     omittedIn: Map<number, Set<Effect>>; drew: Set<number>;
@@ -276,9 +277,10 @@ function driverModel(engine: NullEngine, model: Model) {
     vi.mocked(beginPipelineDeferral).mockImplementation((_engine, allows, options = {}) => {
       if (options.nested && !scopes.length) return undefined;
       const warm = options.warm === true;
+      const isolated = !warm && options.isolated === true;
       const scope: Scope = {
-        allows, omits: warm ? undefined : options.omits, warm, skipped: 0, lookups: 0, hits: 0, effects: new Set(), omittedIn: new Map(),
-        drew: new Set(),
+        allows, omits: warm || isolated ? undefined : options.omits, warm, isolated, skipped: 0, lookups: 0, hits: 0, effects: new Set(),
+        omittedIn: new Map(), drew: new Set(),
       };
       scopes.push(scope);
       let closed = false;
@@ -299,14 +301,16 @@ function driverModel(engine: NullEngine, model: Model) {
               }
             }
             const parent = scopes[index - 1];
-            if (parent && !warm) {
+            if (parent && !warm && !isolated) {
               parent.skipped += scope.skipped;
               for (const effect of scope.effects) parent.effects.add(effect);
             }
           }
           return scope.skipped;
         },
-        waiting: () => [...scope.effects].some((effect) => pending.has(effect)),
+        // An isolated scope's draws compile at the stall, as the real deferral's do.
+        waiting: () => !(isolated && performance.now() - progressAt >= PIPELINE_DEFERRAL_STALL_MS) &&
+          [...scope.effects].some((effect) => pending.has(effect)),
         warmed: () => scope.lookups > 0 && scope.hits === scope.lookups,
       };
     });
@@ -343,7 +347,14 @@ function driverModel(engine: NullEngine, model: Model) {
           effects.add(effect);
           return;
         }
-        if (scope && missing) {
+        // An isolated scope (a drawn shadow map's new casters) skips a miss, holding nothing, until the stall.
+        if (scope?.isolated && missing) {
+          if (performance.now() - progressAt < PIPELINE_DEFERRAL_STALL_MS) {
+            scope.skipped += 1;
+            scope.effects.add(effect);
+            return;
+          }
+        } else if (scope && missing) {
           pipelines.add(effect);
           scope.skipped += 1;
           scope.effects.add(effect);
@@ -1736,6 +1747,7 @@ describe("compile holds after the first frame", () => {
     /** Meshes a real (not skipped) draw into the spot map drew: each level of detail drawn, and its master. */
     const drew = new WeakSet<AbstractMesh>();
     const watched = new WeakSet<ShadowGenerator>();
+    let renders = 0;
     const watch = () => {
       const generator = map();
       if (!generator || watched.has(generator)) return;
@@ -1747,18 +1759,27 @@ describe("compile holds after the first frame", () => {
         drew.add(mesh);
         if (mesh._masterMesh) drew.add(mesh._masterMesh);
       });
+      // A spot map clears once per render.
+      generator.getShadowMap()?.onClearObservable.add(() => { renders++; });
     };
     watch();
     const frame = async () => {
       watch();
       return world.frame();
     };
+    /** One frame; how many times the spot map rendered in it. */
+    const rendersIn = async () => {
+      watch();
+      renders = 0;
+      await world.frame();
+      return renders;
+    };
     const castInto = (mesh: AbstractMesh) => drew.has(mesh);
     const lagCasters = () => {
       world.driver.arm();
       world.driver.lagOnly((effect) => /#define SM_FLOAT\b/.test(effect.defines));
     };
-    return { world, map, frame, instancedBox, unlitBox, drawsOnce, castInto, lagCasters };
+    return { world, map, frame, rendersIn, instancedBox, unlitBox, drawsOnce, castInto, lagCasters };
   }
 
   it("a hidden spawn whose caster depth variant no caster drew is revealed once that pipeline exists, creating none synchronously", async () => {
@@ -1872,28 +1893,84 @@ describe("compile holds after the first frame", () => {
       .toEqual({ drawnBefore: true, castWhilePending: false, cast: true, synchronous: 0, held: 0 });
   });
 
-  it("a caster new to a drawn map whose depth pipeline exists casts in the frame it arrives, rebuilt every frame too", async () => {
-    // WebGPU: a mesh moved under the spot, and one replaced by a new mesh every frame (as a script's text is), whose
-    // depth pipelines exist: the map's render that skips them finds them, so it draws again at once, with them.
-    const { world, frame, instancedBox, castInto } = await newCasterWorld();
+  it("a caster new to a drawn map whose depth pipeline exists casts in the frame it arrives, the map rendering once", async () => {
+    // WebGPU: a plain spawn (the crate's depth variant), a mesh moved under the spot and one replaced by a new mesh
+    // every frame (as a script's text is), whose depth pipelines exist: each draws in the map's one render of that frame.
+    const { world, frame, rendersIn, instancedBox, castInto } = await newCasterWorld();
+    for (let index = 0; index < 4; index++) await frame();
+    const plain = MeshBuilder.CreateBox("plain caster", { size: 0.5 }, world.handle.scene);
+    plain.position.set(1, 0.25, -1);
+    // Never hidden, as a mesh whose Material keeps the Effect it draws with on itself (a script's text) is not.
+    noteDrawn(plain);
+    const plainRenders: number[] = [];
+    for (let index = 0; index < 3 && !castInto(plain); index++) plainRenders.push(await rendersIn());
     const moved = instancedBox([40, 0.25, 40]);
     for (let index = 0; index < 6; index++) await frame();
     moved.position.set(-1, 0.25, 1);
-    await frame();
+    const movedRenders = await rendersIn();
     const movedCast = castInto(moved);
     let rebuilt = instancedBox([1, 0.25, 1]);
     for (let index = 0; index < 4; index++) await frame();
     const rebuiltCast: boolean[] = [];
+    const rebuiltRenders: number[] = [];
     for (let index = 0; index < 4; index++) {
       rebuilt.dispose();
       rebuilt = instancedBox([1, 0.25, 1]);
-      // Never hidden, as a mesh whose Material keeps the Effect it draws with on itself (a script's text) is not.
       noteDrawn(rebuilt);
-      await frame();
+      rebuiltRenders.push(await rendersIn());
       rebuiltCast.push(castInto(rebuilt) && !isRevealPending(rebuilt));
     }
-    expect({ movedCast, rebuiltCast, synchronous: world.driver.synchronous.size })
-      .toEqual({ movedCast: true, rebuiltCast: [true, true, true, true], synchronous: 0 });
+    expect({ plainCast: castInto(plain), plainRenders: Math.max(...plainRenders), movedCast, movedRenders, rebuiltCast, rebuiltRenders,
+      synchronous: world.driver.synchronous.size }).toEqual({
+      plainCast: true, plainRenders: 1, movedCast: true, movedRenders: 1, rebuiltCast: [true, true, true, true],
+      rebuiltRenders: [1, 1, 1, 1], synchronous: 0,
+    });
+  });
+
+  it("a caster a drawn map left out that moves out of its reach leaves the map drawing once per change", async () => {
+    // WebGPU: the box (unlit: the map draws once per change) is left out while its depth pipeline is created, then
+    // leaves the spot's range before it exists. The map forgets it, so the pipeline's arrival renders nothing.
+    const { world, frame, rendersIn, unlitBox, drawsOnce, castInto, lagCasters } = await newCasterWorld();
+    const box = unlitBox([40, 0.25, 40]);
+    for (let index = 0; index < 6; index++) await frame();
+    lagCasters();
+    box.position.set(1, 0.25, 1);
+    for (let index = 0; index < 3; index++) await frame();
+    const leftOut = !castInto(box);
+    box.position.set(40, 0.25, 40);
+    for (let index = 0; index < 2; index++) await frame();
+    world.driver.release();
+    for (let index = 0; index < 3; index++) await frame();
+    const renders: number[] = [];
+    for (let index = 0; index < 6; index++) renders.push(await rendersIn());
+    expect({ leftOut, drawsOnce: drawsOnce(), renders }).toEqual({ leftOut: true, drawsOnce: true, renders: [0, 0, 0, 0, 0, 0] });
+  });
+
+  it.each(["outside the spot's cone", "while every frame publishes a manual capture"] as const)(
+    "a hidden spawn %s is revealed once its colour pipelines exist", async (arrival) => {
+    // WebGPU: only the box's colour pipelines lag. Its reveal asks the drawn spot map to list it: a render that leaves
+    // it out (it is beyond the cone) answers that it has nothing to warm there, and a frame that may not wait (a manual
+    // Full Quality capture that cannot publish yet marks every frame so) still lists it, so neither waits for long.
+    const { world, frame, unlitBox, castInto } = await newCasterWorld();
+    const scene = world.handle.scene;
+    if (arrival !== "outside the spot's cone") scene.onBeforeRenderObservable.add(() => setFirstDrawsUrgent(scene, true));
+    for (let index = 0; index < 4; index++) await frame();
+    world.driver.arm();
+    world.driver.lagOnly((effect) => !/#define SM_FLOAT\b/.test(effect.defines));
+    const box = unlitBox(arrival === "outside the spot's cone" ? [9, 0.25, 0] : [1, 0.25, 1]);
+    let held = 0;
+    for (let index = 0; index < 3; index++) if ((await frame()).view?.rendered !== true) held++;
+    const hiddenBefore = isRevealPending(box);
+    world.driver.release();
+    let revealedAfter = -1;
+    for (let index = 0; index < 1.3 * PIPELINE_DEFERRAL_STALL_MS / FRAME_MS && revealedAfter < 0; index++) {
+      if ((await frame()).view?.rendered !== true) held++;
+      if (!isRevealPending(box)) revealedAfter = index;
+    }
+    expect({ hiddenBefore, revealedPromptly: revealedAfter >= 0 && revealedAfter <= 2, cast: arrival === "outside the spot's cone" || castInto(box),
+      synchronous: world.driver.synchronous.size, held }, JSON.stringify({ revealedAfter })).toEqual({
+      hiddenBefore: true, revealedPromptly: true, cast: true, synchronous: 0, held: 0,
+    });
   });
 
   it.each(["spawned", "moved"] as const)(
