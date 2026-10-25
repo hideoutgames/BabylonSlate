@@ -1,19 +1,17 @@
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
-import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
-import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
+import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation } from "./engine-gpu-timing";
+import { RuntimeMaterialEditOwner } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
-import { createRuntimeTransformTools, type RuntimeTransformTools, type RuntimeTransformToolsOptions, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
-import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReport, type RenderFrameReportReceipt } from "./render-frame-report";
+import { createRuntimeTransformTools, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
+import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReportReceipt } from "./render-frame-report";
 import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
 import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
-import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
-import type { ParticleLibrary } from "./particle-service";
 import { ParticleService } from "./particle-service";
 import { acquireParticleMaterial } from "./particle-material";
 import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
@@ -31,7 +29,7 @@ import type { Node as BabylonNode } from "@babylonjs/core";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
-import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
+import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
 import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type ReflectionProbeBinding, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
@@ -39,7 +37,7 @@ import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
 import { requestRenderPath, retainPlayRenderPathSession, subscribeRenderPathSession } from "./render-path-session";
-import type { RenderPath, ResolvedRenderingPipeline } from "@haptic/core";
+import type { RenderPath } from "@haptic/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
@@ -48,27 +46,26 @@ import {
   setFixedShapeLightingWorldScene,
 } from "./fixed-light-admission";
 import { fixedShapeLightGuard, setFixedShapeLightGuard, type FixedLightGuard } from "./fixed-light-binding";
-import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
+import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { isLightValueOnlySceneEdit } from "./light-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
-import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
 import { releaseLightPredictions } from "./variant-prediction";
-import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
+import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineView, Material } from "@babylonjs/core";
 import { resolveRenderingQuality, sceneLayerCanvasToLayer } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
-import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
-import { RenderPerformanceFeed, type RenderPerformanceReceipt, type RenderPerformanceSample } from "./render-performance";
+import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
+import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
 import {
   Engine,
   KhronosTextureContainer2,
@@ -79,21 +76,12 @@ import {
   WebGPUCacheRenderPipeline,
 } from "@babylonjs/core";
 import type {
-  AudioProjectSettings,
-  PhysicsWorldKind,
   SerializedScene,
-  ViewportMode,
 } from "@haptic/core";
 import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
-import type {
-  SpriteAnimationPayload,
-  SpritePayload,
-  TilemapPayload,
-  TilesetPayload,
-} from "@haptic/assets";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -105,41 +93,12 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
-import {
-  createEditorCamera,
-  type EditorCameraController,
-} from "./editor-camera";
-import {
-  viewCenterWorldPosition,
-  worldPositionFromCanvas,
-} from "./editor-place";
-import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyCableFrame, stepEditorCables } from "./cable-mesh";
-import { calculateEditorDropTransforms, type EditorDropTransform } from "./editor-drop";
 import { createPreviewLighting } from "./preview-lighting";
 import {
   ViewportShadingOverlay,
-  type ViewportShadingMode,
 } from "./viewport-shading-mode";
-import { isText2DOverlayMesh } from "./overlay-transform-box";
-import { createGizmoHost, type GizmoHost } from "./gizmo-host";
-import { createWaterHandles } from "./water-handles";
-import { createSplineHandles } from "./spline-handles";
-import { createDeformerHandles } from "./deformer-handles";
-import { selectedShapeComponent } from "./shape-edit-target";
-import type { ComponentShapeEdit, ShapeHandlesHost } from "./shape-handles";
-import {
-  applyGizmoMultiSelectDrag,
-  beginGizmoMultiSelectDrag,
-  pickGizmoAttachActorId,
-  readMeshLocalTransform,
-  selectionGizmoRoots,
-  type GizmoMultiSelectDrag,
-} from "./gizmo-multi-select";
-import { attachViewportGestures } from "./viewport-gestures";
-import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
-import { createGameCameraPilot, type GameCameraPilotFraming } from "./game-camera-pilot";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
 import {
@@ -152,40 +111,27 @@ import {
   documentEditorColorScheme,
   editorClearColor,
   sceneClearColor,
-  type EditorColorScheme,
 } from "./editor-clear-color";
 import {
   applySceneToBabylonScene,
-  editorComponentMeshName,
-  unfreezeActorWorldMatrix,
-  freezeStaticActorWorldMatrix,
 } from "./scene-loader";
-import { waterKindForClass, DEFORMER_COMPONENT_CLASS_ID, deformerTargetMesh, parseDeformerProperties } from "@haptic/core";
 import {
   accountedGeometryBytesForScene,
   holdSceneInstanceCompiles,
-  isEditorModelPlaceholder,
 } from "./glb-anim";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
-import { actorFramingRadius, actorFramingTarget } from "./actor-framing";
-import {
-  isSkyboxMesh,
-} from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
-  syncAuthoredCamerasFromMeshes,
-  syncAuthoredAreaLightsFromMeshes,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
-import { CommandSourcePreparation, type CommandSourceLoader } from "./command-source-preparation";
+import { CommandSourcePreparation } from "./command-source-preparation";
 import {
   bindResourceCacheToHandle,
   acquireMaterialTexture,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
-  type TextureResources,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import {
@@ -200,7 +146,6 @@ import {
   createPlayConsoleViz,
   type PlayConsoleVizController,
 } from "./play-console-viz";
-import type { NavDebugBlockerPose } from "./nav-debug-overlay";
 import {
   createPlayDebugDraw,
   type PlayDebugDrawController,
@@ -236,15 +181,15 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
-import { FontRegistry, type FontAssetEntry } from "./font-registry";
+import { FontRegistry } from "./font-registry";
 import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
-import { pickActorMeshName, pickAtCanvas } from "./picking";
+import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Joystick2DInput } from "./joystick2d-input";
 import { refreshUIControl2DMaterials } from "./ui-controls2d-mesh";
-import { UIControls2DInput, type SceneLayerControlEvent } from "./ui-controls2d-input";
+import { UIControls2DInput } from "./ui-controls2d-input";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { attachPlayCursor } from "./play-cursor";
 import {
@@ -256,8 +201,6 @@ import {
   sceneLayerFrustumSize,
   walkOverlayPointerHits,
 } from "@haptic/core";
-import { meshNamesInCanvasRect } from "./two-d";
-import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { updateSceneTilemapAnimations } from "./tilemap-mesh";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
@@ -266,7 +209,6 @@ import { refreshText2DMaterials } from "./text2d-mesh";
 import {
   normalizePostProcessStack,
   type AttachedPostProcessStack,
-  type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
 import {
@@ -280,535 +222,22 @@ import {
 import { firstFrameCompletionMs } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
-export interface EditorSceneLoadOptions {
-  signal: AbortSignal;
-  assets?: MeshAssetContext;
-  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
-  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Project asset guid of the loaded Scene document. */
-  sceneAssetGuid?: string;
-  onProgress?: (progress: number) => void;
-}
+import { createEditorViewportTools } from "./editor-viewport-tools";
+import type {
+  CreateEngineOptions,
+  EditorSceneLoadOptions,
+  EditorTools,
+  EngineHandle,
+  PlayActorPosition,
+} from "./create-engine-types";
 
-export interface EngineHandle {
-  engine: AbstractEngine;
-  scene: Scene;
-  scheduler: RenderScheduler;
-  resourceCache: TextureResources;
-  scaling: HardwareScalingController;
-  dispose: () => void;
-  /**
-   * Confirmed native release of every retired owner (native stack generations,
-   * world renderer, layer compositor). Resolves after `dispose()` once actual
-   * release is confirmed; rejects when release never confirmed and the shared
-   * owners are quarantined.
-   */
-  whenReleased: () => Promise<void>;
-  resize: () => void;
-  setSize: (width: number, height: number) => void;
-  loadScene: (
-    sceneData: SerializedScene,
-    options?: { sceneAssetGuid?: string },
-  ) => void;
-  /** Blocking editor realization; callers keep the view obstructed until readiness. */
-  loadSceneAsync: (sceneData: SerializedScene, options: EditorSceneLoadOptions) => Promise<void>;
-  /** Push a worker snapshot and invalidate the viewport. */
-  pushSnapshot: (buffer: Float32Array) => void;
-  /** Apply a structural command (spawn/assignMesh) from the game worker. */
-  applyCommand: (command: CommandMessage) => void;
-  prepareRuntimeMaterialEdit: (request: RuntimeMaterialPreparationRequest) => Promise<void>;
-  commitRuntimeMaterialEdit: (command: RuntimeMaterialCommitCommand) => { success: boolean; reason?: string };
-  releaseRuntimeMaterialPreparation: (editToken: string) => void;
-  /** Keep-only: drain accepted render owners after the correlated runtime command fence. */
-  quiesceAuthoringRevision: (commandRevision: number, signal: AbortSignal) => Promise<{ commandRevision: number }>;
-  /** Cold authored assignment sources prepare before replacing a live visual. */
-  setCommandSourceLoader?: (loader: CommandSourceLoader | null) => void;
-  setPaused: (paused: boolean) => void;
-  /** Freeze render-owned game time independently of presentation/input pause reasons. */
-  setGameTimePaused: (paused: boolean) => void;
-  /** SceneLayer input gate, independent of Simulation Edit and pause ownership. */
-  setGameInputEnabled: (enabled: boolean) => void;
-  /**
-   * True while a SceneLayer joystick, 2D control or active scroll drag owns
-   * the pointer, so game input capture must not report it. Settled by the
-   * engine's own canvas listeners, which run before a later-attached capture.
-   */
-  ownsGamePointer: (pointerId: number) => boolean;
-  /**
-   * Send the current Scene Layer and canvas size through `onSceneLayerResize`
-   * again. Hosts call it once their runtime exists: the report `createEngine`
-   * makes comes before there is a runtime to receive it.
-   */
-  publishSceneLayerSize: () => void;
-  /** Use the existing debug camera while preserving the possessed game camera/listener. */
-  setSimulationEditMode: (enabled: boolean) => void;
-  /** Request one supported render-only frame; unsupported owners retain the last image. */
-  requestPausedRedraw: () => { accepted: boolean; reason?: string };
-  /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
-  setSceneStreamingPaused: (paused: boolean) => void;
-  /** Enable or disable this canvas's `registerView` client (overlay Play). */
-  setRegisterViewEnabled: (enabled: boolean) => void;
-  /** Live Babylon mesh/texture counts for Play leak assertions. */
-  liveObjectCounts: () => { meshes: number; textures: number };
-  /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
-  drawCalls: () => number;
-  renderDiagnostics: () => RenderDiagnostics;
-  /** Whether `lightsdebug` is on, so hosts read `renderDiagnostics().shadowLights` only while it is. */
-  lightsDebugEnabled: () => boolean;
-  /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
-  observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
-  /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
-  observeGpuTiming: (onSample: (sample: EngineGpuTimingSample) => void, onError?: (error: unknown) => void) => EngineGpuTimingObservation;
-  /** Explicit next coherent game presentation; rejects concurrent profiling. */
-  captureFrame: () => Promise<RenderFrameReport>;
-  cancelFrameCapture: (reason?: string) => void;
-  /** Existing gizmos/selection overlay adapted to exact runtime identities. */
-  attachRuntimeTransformTools: (options: RuntimeTransformToolsOptions) => RuntimeTransformTools;
-  renderPathStatus: () => ResolvedRenderingPipeline;
-  scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
-  /** Non-persistent game-wide session render path request; null resumes the project path. */
-  setRenderPath: (renderPath: RenderPath | null) => void;
-  /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
-  accountedGeometryBytes: () => number;
-  /** Explicit tap pick (hover picking is disabled). */
-  pickAt: (
-    canvasX: number,
-    canvasY: number,
-  ) => { meshName: string; slotId: number | null } | null;
-  /** Editor camera, gizmos, grid, outline and scene sync; null in Play views. */
-  editor: EditorTools | null;
-  /** Latest snapshot actor positions (Play), for e2e collision / motion. */
-  lastActorPositions: () => PlayActorPosition[];
-  /** Snapshot-driven Babylon visuals for Play/Preview parity assertions. */
-  playVisualStates: () => Array<{
-    slotId: number;
-    name: string;
-    visible: boolean;
-    position: [number, number, number];
-    worldMatrixPosition: [number, number, number];
-    materialName: string | null;
-  }>;
-  /** Material names on Play meshes and GLB descendants (Preview e2e). */
-  playMeshMaterialNames: () => string[];
-  /** Laid-out width in pixels and CSS stack of each Play 2D Text mesh (cold-load font e2e). */
-  playText2DLayouts: () => Array<{ slotId: number; name: string; fontStack: string; width: number }>;
-  /** Compiled effect defines per Play mesh (e2e shader-state readout). */
-  playMeshMaterialDefines: () => Array<{
-    mesh: string;
-    material: string | null;
-    defines: string;
-  }>;
-  /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
-  setMeshAssets: (assets: MeshAssetContext) => void;
-  /**
-   * Swap the stored encoding (PNG to KTX2) of Textures already installed with
-   * `setMeshAssets`, when their pixels, sampler and settings are unchanged.
-   * Editor meshes and Materials stay alive; a guid whose installed bytes are
-   * already identical is left as it is, and a guid never installed is ignored.
-   * Returns the guids whose installed bytes match the given bytes afterwards:
-   * the replaced ones and the already-identical ones. A guid that is not
-   * returned still needs `setMeshAssets`, or a retry once it is installed.
-   * Content edits go through `setMeshAssets`.
-   */
-  replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => string[];
-  /** Retain prepared source maps until the consuming runtime instance is retired. */
-  /**
-   * `prepare` loads the sources' textures, Materials and models before resolving; `warm` (a latent spawn's preload:
-   * Spawn Actor, a Class load) then also compiles them against the current lighting (`warmSpawnables`). A scene's
-   * sources leave `warm` off: its load compiles once its lighting is final.
-   */
-  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; warm?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
-  nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
-  /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
-  spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
-  /** Play's last load rehearsal of its light changes (`createLoadRehearsal`), once it has ended. */
-  loadRehearsalStats: () => LoadRehearsalReport | null;
-  /** Release startup source ownership after its actors have retired. */
-  releaseInitialSources: () => void;
-  /** Refresh owned library unions without resetting live mixer session settings. */
-  setSourceLibraries: (libraries: Pick<SceneSourceAssets, "audioLibrary" | "particleLibrary">) => void;
-  /** Project render mode and defaults; scene overrides remain independent. */
-  setRenderSettings: (settings: RenderShadingSettings) => void;
-  /** Register FontFace source bytes before Bitmap 2D Text paints. */
-  registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
-  /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
-  applySceneEnvironment: (sceneData: SerializedScene) => void;
-  /** Overlay Play SceneLayer scenes, back to front. */
-  sceneLayerScenes: () => Array<{
-    layerId: string;
-    scene: Scene;
-    zOrder: number;
-  }>;
-  /**
-   * Every Scene this view owns that is still alive: the world Scene and everything the SceneLayer
-   * compositor built (layer Scenes and their output-blit Scenes, retired generations still releasing).
-   */
-  ownedScenes: () => Scene[];
-  /** Authored camera post-process passes currently attached. */
-  postProcessPassCount: () => number;
-  /** Prepared FrameGraph task names in record order, or [] before preparation. */
-  renderTaskNames: () => string[];
-  /** Unique Material guids currently assigned to Play meshes. */
-  assignedMaterialGuids: () => string[];
-  /** Local Engine Settings gate. Does not mutate the scene document. */
-  setPostProcessingEnabled: (enabled: boolean) => void;
-  /** Explicit local quality preferences; runtime commands take precedence. */
-  setLocalQualityOverrides: (overrides: import("@haptic/core").QualityOverrides) => void;
-  /** Live Engine Settings texture LRU budget. */
-  setTextureBudget: (bytes: number, enabled: boolean) => void;
-  /** Live Engine Settings decoded-PCM LRU (Play only). */
-  setAudioBudget: (bytes: number, enabled: boolean) => void;
-  /** Live Engine Settings max concurrent voices (Play only). */
-  setMaxVoices: (maxVoices: number) => void;
-  setPostProcessStack: (stack: readonly PostProcessStackInput[]) => void;
-  setMaterialDocuments: (
-    documents: ReadonlyMap<string, MaterialDocument>,
-    functions?: ReadonlyMap<string, MaterialFunctionDocument>,
-  ) => void;
-  /** Material asset guids whose editor tab is open — those stay unfrozen. */
-  setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
-  /** Compile shaders before the first editor draw (scene-load warm). */
-  prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity) => Promise<void>;
-  /** Present one loading frame without resuming normal paused/obstructed drawing. */
-  presentFirstFrame: (owner?: SceneLayerLoadIdentity) => Promise<void>;
-  /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
-  unlockAudio: () => Promise<void>;
-  /** Clear session mixer volumes and stop voices (scene change / Play stop). */
-  resetAudioSession: () => void;
-  /** Replace the active scene's baked audio field; null restores dry acoustics. */
-  setAudioReverbField: (bytes: Uint8Array | null) => void;
-  /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
-  resetParticleSession: () => void;
-  /** Debug free camera is the Play active camera. */
-  isFreeCamEnabled: () => boolean;
-  /** Fly the Play free camera; no-op while it is off. */
-  steerPlayFreeCam: (forward: number, right: number) => void;
-  /** Resolves when editor or Play GLB instantiations from the last apply have finished. */
-  whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
-  /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
-  whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
-  /** Additive runtime readiness, restricted to the streamed instance's actor slots. */
-  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void, owner?: SceneStreamIdentity) => Promise<void>;
-  /** Snapshot/editor GLB loads currently tracked (including settled promises). */
-  modelLoadCount: () => number;
-}
-
-export interface CreateEngineOptions {
-  /** Existing app-lifetime engine; when set, this canvas is registerView'd. */
-  sharedEngine?: AbstractEngine;
-  /**
-   * How a `sharedEngine` canvas is presented.
-   * `registerView` (default) is the Play overlay blit of the engine framebuffer.
-   * `rtt` renders this Scene into an RTT and 2D-blits the canvas — Prefab
-   * Preview must use this so it does not steal Scene/Play's default framebuffer.
-   */
-  present?: "registerView" | "rtt";
-  /** When true, use Play scene performance settings. */
-  playMode?: boolean;
-  /**
-   * The world view started (true) or stopped (false) holding its last image
-   * while WebGPU render pipelines, or on any backend effects the driver still
-   * compiles, are needed, for `PIPELINE_HOLD_PAUSE_DELAY_MS`; the release is
-   * immediate. Play hosts pause the game runtime's time for the hold (pause
-   * reason `rendering`, which leaves input alone), as for a blocking load; this
-   * Engine already pauses its own game time, audio and particles. Disposing the
-   * Engine ends a hold.
-   */
-  onPipelineHold?: (held: boolean) => void;
-  maxActors?: number;
-  /** Attach the editor camera, gizmos, grid, selection and scene sync. */
-  editor?: boolean;
-  /** Document viewport identity for scoped editor commands. */
-  editorViewportId?: string;
-  /** Session-only studio lights for isolated editor asset previews. */
-  previewLighting?: boolean;
-  viewportMode?: ViewportMode;
-  /** Navigation debug geometry follows the physics world, independently of the camera view. */
-  physicsWorld?: PhysicsWorldKind;
-  /** Actor id under an explicit tap, or null when the tap missed. */
-  onPickActor?: (
-    actorId: string | null,
-    options?: { additive?: boolean },
-  ) => void;
-  /** Actors inside a one-finger marquee drag (2D hold, or Drag Select). */
-  onMarqueeSelect?: (actorIds: string[]) => void;
-  /** Live marquee overlay rect in CSS canvas pixels; null to hide. */
-  onMarqueeMove?: (
-    rect: { x: number; y: number; width: number; height: number } | null,
-  ) => void;
-  /** True while the viewport Drag Select tool is armed. */
-  dragSelectActive?: () => boolean;
-  /** Fired when an armed drag-select gesture ends so the tool can unpress. */
-  onDragSelectEnd?: () => void;
-  /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
-  onGizmoDragStart?: () => void;
-  onGizmoDragEnd?: () => void;
-  /** A component shape handle was released; merge properties as one undoable change. */
-  onComponentShapeEdit?: (edit: ComponentShapeEdit) => void;
-  /**
-   * SceneLayer / overlay-prefab viewports: 2D transform box instead of
-   * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
-   */
-  overlayTransformBox?: boolean;
-  /** When false, WASD does not fly the editor camera (Play overlay) and Game Camera is not piloted. */
-  editorFlyEnabled?: () => boolean;
-  /**
-   * Game Camera piloting paused: write the Default Camera actor's local
-   * transform to the document as one undoable edit.
-   */
-  onPilotedActorMoveEnd?: (transform: {
-    actorId: string;
-    position: [number, number, number];
-    rotation: [number, number, number, number];
-    scale: [number, number, number];
-  }) => void;
-  /** World units/s for WASD. Read each tick so Engine Settings apply live. */
-  editorFlySpeed?: () => number;
-  /** Viewport clear color scheme; defaults from `html.dark` when present. */
-  colorScheme?: EditorColorScheme;
-  /** Play `clearColor` from scene `settings.environmentColor`. */
-  environmentColor?: readonly [number, number, number];
-  /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
-  frameCap?: number;
-  renderSettings?: Partial<RenderProjectSettings>;
-  onScalabilityApplied?: (acknowledgement: ScalabilityAcknowledgement) => void;
-  onRagdollPoseCaptured?: (result: RagdollCaptureResult) => void;
-  onRuntimeOutputChanged?: (settings: RenderProjectSettings) => void;
-  /** Plain scene-owned requested/effective selection, emitted only when it changes. */
-  onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
-  /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
-  spritePayloads?: ReadonlyMap<string, SpritePayload>;
-  waterPayloads?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;
-  spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
-  /** Tilemap / tileset payloads for Play chunk meshes. */
-  tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
-  tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
-  pixelsPerUnit?: number;
-  sortingLayers?: readonly string[];
-  /** Overlay 2DButton pick floor in CSS pixels (Engine Settings `touchMinTargetPx`). */
-  touchMinTargetPx?: number;
-  /** Project `twoD.pixelPerfect` — snap the Play camera, not the editor camera. */
-  pixelPerfect?: boolean;
-  /** Texture pixels keyed by Texture asset guid. */
-  textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
-  renderTargets?: MeshAssetContext["renderTargets"];
-  renderTargetTextures?: MeshAssetContext["renderTargetTextures"];
-  areaEmissions?: MeshAssetContext["areaEmissions"];
-  /** Authored Texture source pixels for overlay 2DTexture world size. */
-  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
-  /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
-  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
-  /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
-  fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
-  /** MSDF atlas PNG keyed by Font asset guid. */
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
-  /** CSS font stack when no Font is picked. */
-  fontCssStack?: string;
-  /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
-  fontCssStackByGuid?: ReadonlyMap<string, string>;
-  /** FontFace source bytes for Bitmap 2D Text. */
-  fontFaceEntries?: readonly FontAssetEntry[];
-  /** Model source bytes keyed by Model asset guid. */
-  modelBytes?: ReadonlyMap<string, Uint8Array>;
-  /** Model payloads (material slots / clip names) keyed by Model asset guid. */
-  modelPayloads?: ReadonlyMap<
-    string,
-    import("@haptic/assets").ModelPayload
-  >;
-  /** Native clipName → Animation guid, keyed by Model guid. */
-  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
-  /** Retargeted Animation loads keyed by the actor (target) Model guid. */
-  retargetAnimationLoads?: ReadonlyMap<
-    string,
-    readonly import("@haptic/assets").RetargetAnimationLoad[]
-  >;
-  /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
-  ktx2BasePath?: string;
-  /** Self-hosted Draco glTF decoder directory. Editor uses `/draco/`. */
-  dracoBasePath?: string;
-  /** Self-hosted meshopt glTF decoder directory. Editor uses `/meshopt/`. */
-  meshoptBasePath?: string;
-  /** Compiled Material documents keyed by asset guid. */
-  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
-  /** Material Function documents keyed by asset guid. */
-  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Authored scene post-process stack. */
-  postProcessStack?: readonly PostProcessStackInput[];
-  /**
-   * Local Engine Settings gate (default on). Skips attaching the authored
-   * stack without mutating scene documents.
-   */
-  postProcessingEnabled?: boolean;
-  textureByteCeiling?: number;
-  textureBudgetEnabled?: boolean;
-  audioByteCeiling?: number;
-  audioBudgetEnabled?: boolean;
-  audioMaxVoices?: number;
-  /** Shared Engine admission limits, configured when its first handle is created. */
-  nativePreparation?: NativePreparationLimits;
-  /** Engine Settings `hardwareScalingLevel`. 1 is native. */
-  hardwareScalingLevel?: number;
-  /** Stack skip / compile messages (exported player and Play overlay). */
-  onPostProcessDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
-  /** Injected playback backend (tests). Browser Play uses AudioV2. */
-  audioBackend?: AudioPlaybackBackend;
-  /** Packed or collected Audio source bytes keyed by asset guid. */
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
-  /** Load clip bytes on first `playSound` (overlay Play / player lazy path). */
-  loadAudioSourceBytes?: import("./audio-service").AudioSourceBytesLoader;
-  prepareAudioAsset?: import("./audio-service").AudioAssetPreparer;
-  /** Mixer / channel / attenuation / Audio payloads for gain routing. */
-  audioLibrary?: AudioLibrary;
-  /** Particle Emitter / Particle System payloads for Play. */
-  particleLibrary?: ParticleLibrary;
-  /** Scene `audioReverb` chunk; dry when missing. */
-  audioReverbBytes?: Uint8Array | null;
-  /** Project Settings Audio (occlusion master and reverb scales). */
-  audioProjectSettings?: Partial<
-    Pick<
-      AudioProjectSettings,
-      | "occlusionEnabled"
-      | "reverbWetScale"
-      | "reverbDecayScale"
-      | "reverbDampingScale"
-    >
-  >;
-  onAudioDiagnostic?: (diagnostic: {
-    code: string;
-    message: string;
-    assetGuid?: string;
-  }) => void;
-  onAudioAssetReady?: (guid: string) => void;
-  /** Particle Graph problems also name the graph node (and pin) to focus. */
-  onParticleDiagnostic?: (diagnostic: {
-    code: string;
-    message: string;
-    assetGuid?: string;
-    nodeId?: string;
-    pinId?: string;
-  }) => void;
-  onMaterialDiagnostic?: (diagnostic: {
-    code: string;
-    message: string;
-    severity?: string;
-    nodeId?: string;
-  }) => void;
-  /** Baked navmesh bytes for Play `shownav`. */
-  navmeshBytes?: Uint8Array | null;
-  /** NavMesh Blocker volumes drawn with Play `shownav`. */
-  navBlockers?: readonly NavDebugBlockerPose[] | null;
-  /** Authored SceneLayer joystick input for the host input ring. */
-  onTouchAxis?: (controlId: string, value: number) => void;
-  /** The game reads tilt or device motion (`requestDeviceMotion`); the host starts motion input. */
-  onDeviceMotionRequest?: () => void;
-  /** Overlay 2DButton graph events (Play compositor). */
-  onSceneLayerPointer?: (event: {
-    layerId: string;
-    actorGuid: string;
-    event:
-      | "onMouseEnter"
-      | "onMouseLeave"
-      | "onClick"
-      | "onPressStart"
-      | "onPressEnd";
-    componentId?: string;
-  }) => void;
-  onSceneLayerControl?: (event: SceneLayerControlEvent) => void;
-  onSceneLayerFocusNavigate?: (reverse: boolean) => void;
-  onSceneLayerScroll?: (event: { layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }) => void;
-  /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
-  onSceneLayerResize?: (size: {
-    frustumWidth: number;
-    frustumHeight: number;
-    canvasWidth: number;
-    canvasHeight: number;
-    safeAreaInsets?: { left: number; right: number; top: number; bottom: number };
-  }) => void;
-  /** Finished non-looping AudioComponent voice (Play graph On Audio Finished). */
-  onAudioVoiceEnded?: (voiceId: string) => void;
-}
-
-export interface EditorTools {
-  camera: EditorCameraController;
-  /**
-   * The camera controller viewport input should steer: the editor camera, or
-   * the Default Camera actor while Game Camera is on and that actor can move.
-   */
-  navigation: EditorCameraController;
-  gizmos: GizmoHost;
-  grid: EditorGrid;
-  selection: SceneOutlineSelection;
-  sync: EditorSceneSync;
-  setViewportMode: (mode: ViewportMode) => void;
-  /** Session overlay: PBR / Unlit / Wireframe. */
-  setViewportShadingMode: (mode: ViewportShadingMode) => void;
-  /** Session MeshComponent collision dashes (default off). */
-  setDrawMeshCollision: (enabled: boolean) => void;
-  /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
-  setPixelPerfect: (settings: { pixelsPerUnit: number } | null) => void;
-  /** Ordered sorting layers from project settings, back to front. */
-  setSortingLayers: (layers: readonly string[]) => void;
-  /** Tile grid, subdivision and 2D game camera bounds from scene settings. */
-  setGridSettings: (settings: {
-    tileSize: number;
-    tileSubdivisions: number;
-    cameraBounds2D: { width: number; height: number };
-    showGrid?: boolean;
-  }) => void;
-  /** Select actors by id; passing an empty list clears the selection. */
-  setSelectedActors: (actorIds: string[]) => void;
-  /** Pure collision query; the caller commits the resulting authored transforms. */
-  dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
-  /** Frustum / light / audio debug + 1 Hz Camera or Render Target Capture preview for the current selection. */
-  syncSelectionDebug: (options: {
-    sceneData: SerializedScene | null;
-    selectedActorIds: readonly string[];
-    selectedComponentIds?: readonly string[];
-    audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
-  }) => void;
-  setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
-  frameActor: (actorId: string) => void;
-  /** Live local TRS of each selection-root mesh after a gizmo drag. */
-  selectedActorTransforms: () => Array<{
-    actorId: string;
-    position: [number, number, number];
-    rotation: [number, number, number, number];
-    scale: [number, number, number];
-    text2dWrap?: { wrapWidth: number; wrapHeight: number };
-  }>;
-  /** Live transform of the gizmo-attached mesh, for turning a drag into a command. */
-  attachedActorTransform: () => {
-    actorId: string;
-    position: [number, number, number];
-    rotation: [number, number, number, number];
-    scale: [number, number, number];
-    text2dWrap?: { wrapWidth: number; wrapHeight: number };
-  } | null;
-  /** Preview the named Default Camera without replacing the stored orbit pose. */
-  setPreviewGameCamera: (enabled: boolean) => void;
-  /**
-   * World point under a client coordinate on this viewport canvas, or null when
-   * the canvas has no layout size.
-   */
-  worldPositionAtClient: (
-    clientX: number,
-    clientY: number,
-  ) => [number, number, number] | null;
-  /** World point in the middle of this viewport, in front of the editor camera. */
-  worldPositionAtViewCenter: () => [number, number, number];
-}
-
-export type PlayActorPosition = {
-  slotId: number;
-  x: number;
-  y: number;
-  z: number;
-  qx: number;
-  qy: number;
-  qz: number;
-  qw: number;
-};
-
+export type {
+  CreateEngineOptions,
+  EditorSceneLoadOptions,
+  EditorTools,
+  EngineHandle,
+  PlayActorPosition,
+} from "./create-engine-types";
 function positionsFromSample(
   sampled: {
     actorCount: number;
@@ -2052,7 +1481,8 @@ function initializeEngine(
     freezeLibraryMaterials();
     rebuildPostProcessStack();
     lastSceneAssetGuid = load.sceneAssetGuid;
-    if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
+    const reselect = selectedActorIds();
+    if (reselect.length > 0) editor?.setSelectedActors(reselect);
     if (assets) debugOverlay?.refreshRenderTargets();
   };
 
@@ -2143,439 +1573,26 @@ function initializeEngine(
   };
 
   let editor: EditorTools | null = null;
-  let lastSelectedActorIds: string[] = [];
-  let lastSelectedComponentIds: readonly string[] = [];
   let debugOverlay: EditorDebugOverlay | null = null;
   let disposeGestures: (() => void) | null = null;
+  let selectedActorIds: () => string[] = () => [];
   if (options.editor && editorSync) {
-    const mode: ViewportMode = options.viewportMode ?? "3d";
-    // The editor camera replaces the default viewport camera set up above.
-    scene.activeCamera?.dispose();
-    const cameraController = createEditorCamera(scene, { mode, scheduler });
-    onRollback(() => cameraController.dispose());
-    let previewGameCamera = false;
-    const grid = createEditorGrid(scene, {
-      mode,
-      camera: cameraController.camera,
-    });
-    onRollback(() => grid.dispose());
-    const selection = outlineHost.selection;
-    onRollback(() => selection.dispose());
-    let multiSelectDrag: GizmoMultiSelectDrag | null = null;
-    let pointDrag: ShapeHandlesHost<never> | null = null;
-    const parentIdOf = (id: string): string | null =>
-      editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
-        ?.parentId ?? null;
-    const selectedActorTransforms = () => {
-      const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
-      const live: Array<{
-        actorId: string;
-        position: [number, number, number];
-        rotation: [number, number, number, number];
-        scale: [number, number, number];
-        text2dWrap?: { wrapWidth: number; wrapHeight: number };
-      }> = [];
-      for (const actorId of roots) {
-        const mesh = editorSync.meshForActor(actorId);
-        if (!mesh) continue;
-        const liveTransform = readMeshLocalTransform(mesh);
-        const meta = mesh.metadata as {
-          text2dPendingWrap?: { wrapWidth: number; wrapHeight: number };
-          text2dDragStartScale?: [number, number, number];
-        } | null;
-        live.push({
-          actorId,
-          ...liveTransform,
-          ...(meta?.text2dDragStartScale
-            ? { scale: meta.text2dDragStartScale }
-            : {}),
-          ...(meta?.text2dPendingWrap
-            ? { text2dWrap: meta.text2dPendingWrap }
-            : {}),
-        });
-      }
-      return live;
-    };
-    const gizmosRef: { host: GizmoHost | null } = { host: null };
-    const debugOverlayInstance = new EditorDebugOverlay(scene, {
-      renderTargets: () => binding.renderTargets,
-    });
-    onRollback(() => debugOverlayInstance.dispose());
-    debugOverlay = debugOverlayInstance;
-    const gizmos = createGizmoHost(scene, {
-      mode,
-      registerOverlay: (draw) => worldRenderer.attachEditorOverlay(draw),
+    ({ editor, debugOverlay, disposeGestures, selectedActorIds } = createEditorViewportTools({
+      canvas,
+      engine,
+      scene,
+      options,
+      editorSync,
       scheduler,
-      manipulator: options.overlayTransformBox ? "overlay-box" : "trs",
-      canvasCssHeight: () => pointerCanvas().height,
-      onDragStart: () => {
-        const attached = gizmosRef.host?.attachedMesh() ?? null;
-        pointDrag = (attached && pointHandles().find((handles) => attached === handles.selectedNode() && handles.beginSelectionDrag())) || null;
-        if (pointDrag) return;
-        const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
-        const followers = roots
-          .map((id) => editorSync.meshForActor(id))
-          .filter(
-            (mesh): mesh is NonNullable<typeof mesh> =>
-              mesh !== null && mesh !== attached,
-          );
-        for (const root of roots) {
-          const mesh = editorSync.meshForActor(root);
-          if (mesh) unfreezeActorWorldMatrix(mesh);
-        }
-        if (attached instanceof Mesh) unfreezeActorWorldMatrix(attached);
-        multiSelectDrag = beginGizmoMultiSelectDrag(attached, followers);
-        options.onGizmoDragStart?.();
-      },
-      onDrag: () => {
-        if (pointDrag) { pointDrag.dragSelection(); return; }
-        const attached = gizmosRef.host?.attachedMesh() ?? null;
-        if (multiSelectDrag && attached) {
-          applyGizmoMultiSelectDrag(multiSelectDrag, attached);
-        }
-        const sceneData = editorSync.serializedScene();
-        syncAuthoredAreaLightsFromMeshes(scene, (id) => editorSync.meshForActor(id));
-        if (sceneData) {
-          syncAuthoredCamerasFromMeshes(scene, sceneData, (id) =>
-            editorSync.meshForActor(id),
-          );
-        }
-        debugOverlayInstance.followLivePose();
-      },
-      onDragEnd: () => {
-        if (pointDrag) { pointDrag.endSelectionDrag(); pointDrag = null; return; }
-        const attached = gizmosRef.host?.attachedMesh() ?? null;
-        if (multiSelectDrag && attached) {
-          applyGizmoMultiSelectDrag(multiSelectDrag, attached);
-        }
-        multiSelectDrag = null;
-        const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
-        for (const root of roots) {
-          const mesh = editorSync.meshForActor(root);
-          if (mesh) freezeStaticActorWorldMatrix(mesh);
-        }
-        if (attached instanceof Mesh) freezeStaticActorWorldMatrix(attached);
-        options.onGizmoDragEnd?.();
-      },
-    });
-    gizmosRef.host = gizmos;
-    onRollback(() => gizmos.dispose());
-    const waterHandles = createWaterHandles(gizmos.layer, scene, {
-      scheduler,
-      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
-    });
-    onRollback(() => waterHandles.dispose());
-    const splineHandles = createSplineHandles(gizmos.layer, scene, {
-      scheduler,
-      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
-      onSelectionChange: () => attachSelectionGizmo(),
-    });
-    const deformerHandles = createDeformerHandles(gizmos.layer, scene, {
-      scheduler,
-      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
-      onSelectionChange: () => attachSelectionGizmo(),
-    });
-    onRollback(() => deformerHandles.dispose());
-    const pointHandles = (): ShapeHandlesHost<never>[] => [splineHandles, deformerHandles];
-    // A selected spline or deformer point takes the translate gizmo until a viewport
-    // tap outside the handles or a new selection returns it to the actor.
-    // The 2D transform box frames every selected root, not just the one it
-    // attaches to: the others follow its drags through the multi-select delta.
-    const selectionBoxVisuals = (attachId: string) => {
-      if (!options.overlayTransformBox) return editorSync.visualMeshesForActor(attachId);
-      const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
-      if (roots.length < 2) return editorSync.visualMeshesForActor(attachId);
-      return roots.flatMap((id) => {
-        const mesh = editorSync.meshForActor(id);
-        if (!mesh) return [];
-        return isText2DOverlayMesh(mesh) && id !== attachId ? [mesh] : editorSync.visualMeshesForActor(id);
-      });
-    };
-    const attachSelectionGizmo = () => {
-      const point = splineHandles.selectedNode() ?? deformerHandles.selectedNode();
-      if (point) {
-        gizmos.attachTo(point, [], { tool: "translate" });
-        return;
-      }
-      // Locked actors are not pickable; keep the gizmo off them so lock is
-      // more than a pick filter. Attach to the first pickable selection root
-      // so a selected child is not the group handle when its parent is too.
-      const attachId = pickGizmoAttachActorId(lastSelectedActorIds, parentIdOf, (id) => {
-        const mesh = editorSync.meshForActor(id);
-        if (!mesh) return false;
-        const locked = editorSync
-          .serializedScene()
-          ?.actors.find((actor) => actor.id === id)?.locked;
-        if (locked) return false;
-        return mesh.isPickable || isEditorModelPlaceholder(mesh);
-      });
-      gizmos.attachTo(
-        attachId ? editorSync.meshForActor(attachId) : null,
-        attachId ? selectionBoxVisuals(attachId) : [],
-      );
-    };
-    onRollback(() => splineHandles.dispose());
-    const syncShapeHandles = (actorIds: readonly string[]) => {
-      const selected = selectedShapeComponent(editorSync.serializedScene(), actorIds, lastSelectedComponentIds);
-      const { actor, component } = selected ?? {};
-      const kind = component ? waterKindForClass(component.classId) : null;
-      waterHandles.attach(actor && component && kind ? {
-        actorId: actor.id, componentId: component.id, kind,
-        meshName: editorComponentMeshName(actor.id, component.id),
-        properties: component.properties,
-      } : null);
-      splineHandles.attach(actor && component?.classId === "SplineComponent" ? {
-        actorId: actor.id, componentId: component.id,
-        meshName: editorComponentMeshName(actor.id, component.id), properties: component.properties,
-      } : null);
-      const deformerTarget = actor && component?.classId === DEFORMER_COMPONENT_CLASS_ID
-        ? deformerTargetMesh(actor.components, parseDeformerProperties(component.properties).targetMeshComponentId) : undefined;
-      deformerHandles.attach(actor && component && deformerTarget ? {
-        actorId: actor.id, componentId: component.id,
-        meshName: editorComponentMeshName(actor.id, deformerTarget.id), properties: component.properties,
-        resolveMesh: () => editorSync.meshForComponent(actor.id, deformerTarget.id),
-        preview: deformerBindings(actor.id, actor.components).some((binding) => binding.id === component.id),
-      } : null);
-    };
-
-    // Game Camera turns look, fly, pan and zoom onto the Default Camera actor.
-    const pilot = createGameCameraPilot({
-      mode: () => cameraController.mode,
-      target: () => {
-        if (!previewGameCamera || options.editorFlyEnabled?.() === false) return null;
-        const sceneData = editorSync.serializedScene();
-        const actorId = sceneData?.settings.mainCameraActorId;
-        const componentId = sceneData?.settings.mainCameraComponentId;
-        const actor = actorId ? sceneData?.actors.find((entry) => entry.id === actorId) : undefined;
-        if (!actor || actor.locked || !actor.components.some(
-          (component) => component.id === componentId && component.classId === "CameraComponent",
-        )) return null;
-        const mesh = editorSync.meshForActor(actor.id);
-        const camera = scene.activeCamera;
-        if (!mesh || !camera || camera === cameraController.camera) return null;
-        return { actorId: actor.id, mesh, camera };
-      },
-      onBegin: ({ mesh }) => unfreezeActorWorldMatrix(mesh as Mesh),
-      onMove: () => {
-        const sceneData = editorSync.serializedScene();
-        if (sceneData) syncAuthoredCamerasFromMeshes(scene, sceneData, (id) => editorSync.meshForActor(id));
-        scheduler.invalidate("camera");
-      },
-      onCommit: ({ actorId, mesh }) => {
-        freezeStaticActorWorldMatrix(mesh as Mesh);
-        options.onPilotedActorMoveEnd?.({ actorId, ...readMeshLocalTransform(mesh) });
-      },
-    });
-    onRollback(() => pilot.dispose());
-    type NavigationFraming = ReturnType<EditorCameraController["captureFraming"]> & {
-      pilot?: GameCameraPilotFraming | null;
-    };
-    const navigation: EditorCameraController = Object.assign(
-      Object.create(cameraController) as EditorCameraController,
-      {
-        look: (deltaYaw: number, deltaPitch: number) =>
-          pilot.active() ? pilot.look(deltaYaw, deltaPitch) : cameraController.look(deltaYaw, deltaPitch),
-        orbit: (deltaYaw: number, deltaPitch: number) =>
-          pilot.active() ? pilot.look(deltaYaw, deltaPitch) : cameraController.orbit(deltaYaw, deltaPitch),
-        fly: (forward: number, right: number) =>
-          pilot.active() ? pilot.fly(forward, right) : cameraController.fly(forward, right),
-        pan: (deltaX: number, deltaY: number) =>
-          pilot.active() ? pilot.pan(deltaX, deltaY) : cameraController.pan(deltaX, deltaY),
-        zoom: (factor: number, pivot?: Parameters<EditorCameraController["zoom"]>[1]) =>
-          pilot.active() ? pilot.zoom(factor) : cameraController.zoom(factor, pivot),
-        captureFraming: (): NavigationFraming => ({
-          ...cameraController.captureFraming(),
-          pilot: pilot.captureFraming(),
-        }),
-        restoreFraming: (framing: NavigationFraming) => {
-          if (framing.pilot) pilot.restoreFraming(framing.pilot);
-          else cameraController.restoreFraming(framing);
-        },
-      },
-    );
-    // The joystick orbits with Pivot Around Center; a piloted camera flies.
-    Object.defineProperty(navigation, "pivotAroundCenter", {
-      get: () => !pilot.active() && cameraController.pivotAroundCenter,
-    });
-    const navigationActive = () => !previewGameCamera || pilot.active();
-
-    let tapPickSequence = 0;
-    const gestures = attachViewportGestures(canvas, navigation, {
-      scheduler,
-      editorCameraActive: navigationActive,
-      blockLook: (x, y) =>
-        gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || deformerHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
-      dragSelectActive: () => options.dragSelectActive?.() === true,
-      onPointer:
-        options.sharedEngine || presentRtt
-          ? (type, x, y, pointerId) => {
-              gizmos.forwardPointer(type, x, y, {
-                ...pointerCanvas(),
-                pointerId,
-              });
-            }
-          : undefined,
-      onTap: (x, y, tap) => {
-        splineHandles.clearSelection();
-        deformerHandles.clearSelection();
-        const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
-        const sequence = ++tapPickSequence;
-        void pickActorMeshName(scene, mapped.x, mapped.y).then((meshName) => {
-          // A later tap or scene disposal supersedes this asynchronous read-back.
-          if (sequence !== tapPickSequence || scene.isDisposed) return;
-          const actorId = meshName ? editorSync.actorForMesh(meshName) : null;
-          options.onPickActor?.(actorId, { additive: tap?.additive === true });
-        });
-      },
-      onMarqueeMove: options.onMarqueeMove,
-      onDragSelectEnd: options.onDragSelectEnd,
-      onMarquee: (rect) => {
-        if (!options.onMarqueeSelect) return;
-        const css = canvas.getBoundingClientRect();
-        const names = meshNamesInCanvasRect(scene, rect, css.width, css.height);
-        const actorIds = [
-          ...new Set(
-            names
-              .map((name) => editorSync.actorForMesh(name))
-              .filter((id): id is string => id !== null),
-          ),
-        ];
-        options.onMarqueeSelect(actorIds);
-      },
-    });
-    onRollback(() => gestures.dispose());
-    const flyKeys =
-      typeof window === "undefined"
-        ? null
-        : attachViewportFlyKeys(window, navigation, canvas, {
-            scheduler,
-            speed: () => options.editorFlySpeed?.() ?? DEFAULT_FLY_SPEED,
-            isEnabled: () =>
-              navigationActive() && options.editorFlyEnabled?.() !== false,
-          });
-    onRollback(() => flyKeys?.dispose());
-    disposeGestures = () => {
-      gestures.dispose();
-      flyKeys?.dispose();
-    };
-
-    editor = {
-      camera: cameraController,
-      navigation,
-      gizmos,
-      grid,
-      selection,
-      sync: editorSync,
-      setViewportMode: (next: ViewportMode) => {
-        cameraController.setMode(next);
-        gizmos.setMode(next);
-        grid.setMode(next);
-        scheduler.invalidate("camera");
-      },
-      setViewportShadingMode: (next: ViewportShadingMode) => {
-        viewportShading?.setMode(next);
-        syncEditorOutlines();
-        scheduler.invalidate("asset");
-      },
-      setDrawMeshCollision: (enabled: boolean) => {
-        editorSync.setDrawMeshCollision(enabled);
-        scheduler.invalidate("asset");
-      },
-      setPixelPerfect: (settings) => {
-        cameraController.setCanvasHeight(engine.getRenderHeight());
-        cameraController.setPixelPerfect(settings);
-        if (settings) {
-          applyPixelArtSamplingToScene(scene);
-        }
-      },
-      setSortingLayers: (layers) => {
-        editorSync.setSortingLayers(layers);
-        scheduler.invalidate("asset");
-      },
-      setGridSettings: (settings) => {
-        grid.setSpacing(settings.tileSize);
-        grid.setSubdivisions(settings.tileSubdivisions);
-        grid.setCameraBounds(settings.cameraBounds2D);
-        if (typeof settings.showGrid === "boolean") {
-          grid.setVisible(settings.showGrid);
-        }
-        scheduler.invalidate("asset");
-      },
-      setSelectedActors: (actorIds: string[]) => {
-        if (actorIds.length !== lastSelectedActorIds.length || actorIds.some((id, index) => id !== lastSelectedActorIds[index])) lastSelectedComponentIds = [];
-        lastSelectedActorIds = [...actorIds];
-        outlineHost.setSelection(actorIds);
-        syncShapeHandles(actorIds);
-        attachSelectionGizmo();
-        scheduler.invalidate("selection");
-      },
-      syncSelectionDebug: (options) => {
-        debugOverlayInstance.sync(options);
-        editorSync.setCollisionSelection(options);
-        lastSelectedComponentIds = options.selectedComponentIds ?? [];
-        syncShapeHandles(lastSelectedActorIds);
-        scheduler.invalidate("selection");
-      },
-      setPreviewCanvas: (canvas) => {
-        debugOverlayInstance.setPreviewCanvas(canvas);
-      },
-      frameActor: (actorId: string) => {
-        const mesh = editorSync.meshForActor(actorId);
-        if (!mesh || isSkyboxMesh(mesh)) return;
-        const center = actorFramingTarget(mesh);
-        if (cameraController.mode === "3d") {
-          cameraController.frame(
-            center,
-            actorFramingRadius(mesh, { minZ: cameraController.camera.minZ }),
-          );
-        } else {
-          cameraController.frame(center);
-        }
-      },
-      selectedActorTransforms,
-      dropSelectedActors: (selectedActorIds, maxDistance) => {
-        const sceneData = editorSync.serializedScene();
-        return sceneData ? calculateEditorDropTransforms({
-          sceneData, selectedActorIds, maxDistance, meshForActor: (id) => editorSync.meshForActor(id),
-          assets: { modelBytes: binding.modelBytes, modelSources: binding.modelSources, modelPayloads: binding.modelPayloads,
-            spritePayloads: binding.spritePayloads, tilemaps: binding.tilemaps, tilesets: binding.tilesets,
-            pixelsPerUnit: binding.pixelsPerUnit },
-        }) : [];
-      },
-      attachedActorTransform: () => {
-        const mesh = gizmos.attachedMesh();
-        if (!mesh) return selectedActorTransforms()[0] ?? null;
-        const actorId = editorSync.actorForMesh(mesh.name);
-        if (!actorId) return null;
-        return (
-          selectedActorTransforms().find(
-            (entry) => entry.actorId === actorId,
-          ) ?? {
-            actorId,
-            ...readMeshLocalTransform(mesh),
-          }
-        );
-      },
-      setPreviewGameCamera: (enabled: boolean) => {
-        if (!enabled) pilot.flush();
-        previewGameCamera = enabled;
-        editorSync.setGameCameraPreview(enabled, cameraController.camera);
-        scheduler.invalidate("camera");
-      },
-      worldPositionAtClient: (clientX, clientY) => {
-        const rect = canvas.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return null;
-        return worldPositionFromCanvas(
-          cameraController.camera,
-          clientX - rect.left,
-          clientY - rect.top,
-          { width: rect.width, height: rect.height },
-          cameraController.mode,
-        );
-      },
-      worldPositionAtViewCenter: () =>
-        viewCenterWorldPosition(cameraController.camera, cameraController.mode),
-    };
+      outlineHost,
+      worldRenderer,
+      binding,
+      viewportShading,
+      presentRtt,
+      pointerCanvas,
+      syncEditorOutlines,
+      onRollback,
+    }));
   }
 
   // Play renders snapshot proxy meshes only. Seeding the default scene here
@@ -4335,8 +3352,9 @@ function initializeEngine(
       const installed = installMeshAssets(assets);
       const rebuilt =
         editorSync?.setMeshAssets(installed) === true;
-      if (rebuilt && lastSelectedActorIds.length > 0) {
-        editor?.setSelectedActors(lastSelectedActorIds);
+      const reselect = selectedActorIds();
+      if (rebuilt && reselect.length > 0) {
+        editor?.setSelectedActors(reselect);
       }
       // After any mesh rebuild, so a resized target re-parents to live meshes.
       debugOverlay?.refreshRenderTargets();

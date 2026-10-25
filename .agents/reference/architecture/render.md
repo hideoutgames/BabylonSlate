@@ -7,7 +7,7 @@ Contributor reference for Haptic's main-thread Babylon renderer: Engine ownershi
 | Area | Owner |
 | --- | --- |
 | Every Babylon object (Engine, Scenes, materials, textures, FrameGraphs, particles, audio voices) | [`packages/render/src/`](../../../packages/render/src/) (`@haptic/render`) |
-| Engine/session construction | [`create-engine.ts`](../../../packages/render/src/create-engine.ts) (`createEngine`, `createAppEngine`), [`apps/editor/src/lib/project-engine.ts`](../../../apps/editor/src/lib/project-engine.ts) (`createProjectEngineSession`), [`backend-engine-session.ts`](../../../packages/render/src/backend-engine-session.ts), [`webgpu-engine.ts`](../../../packages/render/src/webgpu-engine.ts) |
+| Engine/session construction | [`create-engine.ts`](../../../packages/render/src/create-engine.ts) (`createEngine`, `createAppEngine`; handle and option types in `create-engine-types.ts`, editor viewport camera, gizmos, handles and gestures in `editor-viewport-tools.ts`), [`apps/editor/src/lib/project-engine.ts`](../../../apps/editor/src/lib/project-engine.ts) (`createProjectEngineSession`), [`backend-engine-session.ts`](../../../packages/render/src/backend-engine-session.ts), [`webgpu-engine.ts`](../../../packages/render/src/webgpu-engine.ts) |
 | Render path, color pipeline, scalability, shadow presets (Babylon-free) | [`packages/core/src/`](../../../packages/core/src/) (`render-path.ts`, `render-effects.ts`, `scalability.ts`, `shadows.ts`, `render-setting-ownership.ts`) |
 | Water/cable/wave math shared with the worker | [`packages/core/src/`](../../../packages/core/src/) (`water.ts`, `water-blend.ts`, `cable-simulation.ts`), [`packages/runtime/src/water-world.ts`](../../../packages/runtime/src/water-world.ts) |
 
