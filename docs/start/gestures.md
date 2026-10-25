@@ -35,8 +35,8 @@ Class, Material, Animation Graph, Behaviour Tree and Particle Graph editors shar
 
 | Gesture | Result |
 | --- | --- |
-| One-finger drag on empty space | Pan. |
-| Pinch | Zoom between 10% and 150%. |
+| One-finger drag on empty space or a wire | Pan. |
+| Pinch, including over wires | Zoom between 10% and 150%. |
 | Double-tap empty space | Open **Add Node** at that spot. |
 | Hold empty space, then drag | Draw a selection rectangle. |
 | Tap an output pin, then an input pin | Connect them. |
