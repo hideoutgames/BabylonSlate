@@ -498,25 +498,25 @@ export function MaterialPreviewSurface({
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [meshPickOpen, setMeshPickOpen] = useState(false);
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
 
   useEffect(() => {
     editing.attachPreviewCanvas(canvasRef.current);
     return () => editing.attachPreviewCanvas(null);
   }, [editing.attachPreviewCanvas]);
 
-  const modelAssets = useMemo(
-    () =>
-      (assetRegistry?.list() ?? [])
-        .filter((asset) => asset.header.type === "Model")
-        .map((asset) => ({
-          guid: asset.header.guid,
-          name: asset.header.name,
-          type: asset.header.type,
-          path: asset.path,
-        })),
-    [assetRegistry],
-  );
+  const modelAssets = useMemo(() => {
+    void registryEpoch; // Registry contents mutate without replacing its instance.
+    if (!meshPickOpen) return [];
+    return (assetRegistry?.list() ?? [])
+      .filter((asset) => asset.header.type === "Model")
+      .map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      }));
+  }, [assetRegistry, registryEpoch, meshPickOpen]);
 
   const status = editing.previewState.status;
   // Dismissing the picker keeps the current mesh; only a pick changes it.

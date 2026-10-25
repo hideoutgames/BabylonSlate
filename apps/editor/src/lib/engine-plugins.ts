@@ -1,4 +1,3 @@
-import { discoverEnginePlugins } from "@haptic/assets";
 import {
   MemoryStorageAdapter,
   HttpCatalogStorageAdapter,
@@ -26,11 +25,11 @@ async function emptyEnginePluginStorage(): Promise<ProjectStorage> {
   return createReadOnlyProjectStorage(storage);
 }
 
-/** Mount the bundled plugin catalog; file parts are fetched on demand, never as archives. */
-export async function loadEnginePluginStorage(options: {
+/** The mounted catalog, or null when the index cannot be read. */
+async function loadEnginePluginCatalog(options: {
   fetch: typeof fetch;
   baseUrl?: string;
-}): Promise<ProjectStorage> {
+}): Promise<ProjectStorage | null> {
   lastEnginePluginLoad.entries = 0;
   lastEnginePluginLoad.errors = [];
   const baseUrl = options.baseUrl ?? "/";
@@ -40,7 +39,7 @@ export async function loadEnginePluginStorage(options: {
     const response = await fetchCatalog(enginePluginPublicUrl(baseUrl, ENGINE_PLUGIN_INDEX_FILE));
     if (!response.ok) {
       lastEnginePluginLoad.errors.push(`index ${response.status}`);
-      return emptyEnginePluginStorage();
+      return null;
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
     const catalog = JSON.parse(new TextDecoder().decode(bytes)) as HttpStorageCatalog & { plugins?: Array<{ id: string }> };
@@ -52,25 +51,36 @@ export async function loadEnginePluginStorage(options: {
     return result;
   } catch (error) {
     lastEnginePluginLoad.errors.push(`index ${error instanceof Error ? error.message : String(error)}`);
+    return null;
   }
-  return emptyEnginePluginStorage();
+}
+
+/** Mount the bundled plugin catalog; file parts are fetched on demand, never as archives. */
+export async function loadEnginePluginStorage(options: {
+  fetch: typeof fetch;
+  baseUrl?: string;
+}): Promise<ProjectStorage> {
+  return (await loadEnginePluginCatalog(options)) ?? emptyEnginePluginStorage();
 }
 
 let cachedEnginePluginStorage: ProjectStorage | null = null;
 
-/** Fetch bundled engine plugins once per editor session after a successful load. */
+/** False for the empty fallback (or any load not kept), which a later call retries. */
+export function isCachedEnginePluginStorage(storage: ProjectStorage): boolean {
+  return storage === cachedEnginePluginStorage;
+}
+
+/** Fetch bundled engine plugins once per editor session after a successful index load, even one listing no plugins. */
 export async function ensureEnginePluginStorage(options?: {
   fetch?: typeof fetch;
   baseUrl?: string;
 }): Promise<ProjectStorage> {
   if (cachedEnginePluginStorage) return cachedEnginePluginStorage;
-  const storage = await loadEnginePluginStorage({
+  const storage = await loadEnginePluginCatalog({
     fetch: options?.fetch ?? fetch.bind(globalThis),
     baseUrl: options?.baseUrl ?? import.meta.env.BASE_URL,
   });
-  const discovered = await discoverEnginePlugins(storage);
-  if (discovered.length > 0) {
-    cachedEnginePluginStorage = storage;
-  }
+  if (!storage) return emptyEnginePluginStorage();
+  cachedEnginePluginStorage = storage;
   return storage;
 }

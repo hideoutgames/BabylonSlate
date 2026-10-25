@@ -27,6 +27,7 @@ import {
   type Camera,
   type AbstractMesh,
   type Light,
+  type Observer,
   type Scene,
 } from "@babylonjs/core";
 import { PLAY_FREE_CAM_NAME, type EngineHandle } from "@haptic/render";
@@ -381,367 +382,372 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     }
   };
 
-  // Effects: requests, and new Effects (an engine cache miss starts a compile).
-  const seenEffects = new WeakSet<object>();
-  for (const effect of Object.values((internals._compiledEffects ?? {}) as Record<string, object>)) seenEffects.add(effect);
-  if (wrapMethod(engine, "createEffect", restores, (original) => function (this: unknown, ...args: unknown[]) {
-    const effect = original.apply(this, args);
-    bump("effect.request");
-    if (effect && typeof effect === "object" && !seenEffects.has(effect)) {
-      seenEffects.add(effect);
-      bump("effect.new");
-      const effectOptions = args[1] as Record<string, unknown> | undefined;
-      const defines = (typeof args[4] === "string" ? args[4] : effectOptions?.defines) as string | undefined;
-      const base = effectBaseName(args[0]);
-      // Lit Effects, split by fixed-shape seats versus Babylon's lightSources path.
-      if (defines?.includes("#define LIGHT0\n")) {
-        bump("effect.lit");
-        bump(defines.includes("#define SLATE_FIXED_LIGHTS\n") ? "effect.lit.fixed" : "effect.lit.legacy");
+  // Declared before the try so its finally also undoes a setup that throws part-way.
+  const longTasks: Array<[number, number]> = [];
+  let longTaskObserver: PerformanceObserver | null = null;
+  let beginObserver: Observer<AbstractEngine> | null = null;
+  let endObserver: Observer<AbstractEngine> | null = null;
+  let releaseLease: (() => void) | null = null;
+  try {
+    // Effects: requests, and new Effects (an engine cache miss starts a compile).
+    const seenEffects = new WeakSet<object>();
+    for (const effect of Object.values((internals._compiledEffects ?? {}) as Record<string, object>)) seenEffects.add(effect);
+    if (wrapMethod(engine, "createEffect", restores, (original) => function (this: unknown, ...args: unknown[]) {
+      const effect = original.apply(this, args);
+      bump("effect.request");
+      if (effect && typeof effect === "object" && !seenEffects.has(effect)) {
+        seenEffects.add(effect);
+        bump("effect.new");
+        const effectOptions = args[1] as Record<string, unknown> | undefined;
+        const defines = (typeof args[4] === "string" ? args[4] : effectOptions?.defines) as string | undefined;
+        const base = effectBaseName(args[0]);
+        // Lit Effects, split by fixed-shape seats versus Babylon's lightSources path.
+        if (defines?.includes("#define LIGHT0\n")) {
+          bump("effect.lit");
+          bump(defines.includes("#define SLATE_FIXED_LIGHTS\n") ? "effect.lit.fixed" : "effect.lit.legacy");
+        }
+        // Node materials name effects by build id; stack each shader family once.
+        record("effect", `${base} @ ${(defines ?? "").replace(/\n/g, " ").replace(/#define /g, "").trim().slice(0, 2000)}`, true, base.replace(/\d+/g, "#"));
       }
-      // Node materials name effects by build id; stack each shader family once.
-      record("effect", `${base} @ ${(defines ?? "").replace(/\n/g, " ").replace(/#define /g, "").trim().slice(0, 2000)}`, true, base.replace(/\d+/g, "#"));
-    }
-    return effect;
-  })) instrumented.push("engine.createEffect");
+      return effect;
+    })) instrumented.push("engine.createEffect");
 
-  // Released Effects leave the cache: the next request for the same shader and defines compiles again.
-  if (wrapMethod(engine, "_releaseEffect", restores, (original) => function (this: unknown, ...args: unknown[]) {
-    const effect = args[0] as { name?: unknown; _key?: string } | undefined;
-    if (effect?._key && (internals._compiledEffects as Record<string, unknown> | undefined)?.[effect._key] === effect) {
-      const base = effectBaseName(effect.name);
-      bump("effect.release");
-      record("effect.release", base, true, base.replace(/\d+/g, "#"));
-    }
-    return original.apply(this, args);
-  })) instrumented.push("engine._releaseEffect");
+    // Released Effects leave the cache: the next request for the same shader and defines compiles again.
+    if (wrapMethod(engine, "_releaseEffect", restores, (original) => function (this: unknown, ...args: unknown[]) {
+      const effect = args[0] as { name?: unknown; _key?: string } | undefined;
+      if (effect?._key && (internals._compiledEffects as Record<string, unknown> | undefined)?.[effect._key] === effect) {
+        const base = effectBaseName(effect.name);
+        bump("effect.release");
+        record("effect.release", base, true, base.replace(/\d+/g, "#"));
+      }
+      return original.apply(this, args);
+    })) instrumented.push("engine._releaseEffect");
 
-  // Backend object creation and uploads.
-  const gl = internals._gl as Record<string, unknown> | undefined;
-  if (gl && !engine.isWebGPU) {
-    for (const [method, key] of GL_METHODS)
-      if (wrapMethod(gl, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
-        bump(key);
-        return original.apply(this, args);
-      })) instrumented.push(`gl.${method}`);
-  }
-  const device = internals._device as Record<string, unknown> | undefined;
-  if (device && engine.isWebGPU) {
-    for (const [method, key] of GPU_DEVICE_METHODS)
-      if (wrapMethod(device, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
-        bump(key);
-        return original.apply(this, args);
-      })) instrumented.push(`device.${method}`);
-    const queue = device.queue as Record<string, unknown> | undefined;
-    if (queue)
-      for (const [method, key] of GPU_QUEUE_METHODS)
-        if (wrapMethod(queue, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
+    // Backend object creation and uploads.
+    const gl = internals._gl as Record<string, unknown> | undefined;
+    if (gl && !engine.isWebGPU) {
+      for (const [method, key] of GL_METHODS)
+        if (wrapMethod(gl, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
           bump(key);
           return original.apply(this, args);
-        })) instrumented.push(`queue.${method}`);
-  }
-  const pipelineCache = internals._cacheRenderPipeline as Record<string, unknown> | undefined;
-  const pipelineStats = pipelineCache?.constructor as { NumCacheMiss?: number } | undefined;
-  const bindGroupStats = (internals._cacheBindGroups as Record<string, unknown> | undefined)?.constructor as
-    | { NumBindGroupsCreatedTotal?: number }
-    | undefined;
-  if (pipelineCache && wrapMethod(pipelineCache, "_createRenderPipeline", restores, (original) => function (this: unknown, ...args: unknown[]) {
-    const effect = args[0] as { name?: unknown; uniqueId?: number } | undefined;
-    const base = effectBaseName(effect?.name);
-    record("pipeline", `${base} #${effect?.uniqueId ?? "?"} topology ${String(args[1])} samples ${String(args[2])}`, true, base.replace(/\d+/g, "#"));
-    return original.apply(this, args);
-  })) instrumented.push("cacheRenderPipeline._createRenderPipeline");
-  let lastPipelineMiss = pipelineStats?.NumCacheMiss ?? 0;
-  let lastBindGroups = bindGroupStats?.NumBindGroupsCreatedTotal ?? 0;
+        })) instrumented.push(`gl.${method}`);
+    }
+    const device = internals._device as Record<string, unknown> | undefined;
+    if (device && engine.isWebGPU) {
+      for (const [method, key] of GPU_DEVICE_METHODS)
+        if (wrapMethod(device, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
+          bump(key);
+          return original.apply(this, args);
+        })) instrumented.push(`device.${method}`);
+      const queue = device.queue as Record<string, unknown> | undefined;
+      if (queue)
+        for (const [method, key] of GPU_QUEUE_METHODS)
+          if (wrapMethod(queue, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
+            bump(key);
+            return original.apply(this, args);
+          })) instrumented.push(`queue.${method}`);
+    }
+    const pipelineCache = internals._cacheRenderPipeline as Record<string, unknown> | undefined;
+    const pipelineStats = pipelineCache?.constructor as { NumCacheMiss?: number } | undefined;
+    const bindGroupStats = (internals._cacheBindGroups as Record<string, unknown> | undefined)?.constructor as
+      | { NumBindGroupsCreatedTotal?: number }
+      | undefined;
+    if (pipelineCache && wrapMethod(pipelineCache, "_createRenderPipeline", restores, (original) => function (this: unknown, ...args: unknown[]) {
+      const effect = args[0] as { name?: unknown; uniqueId?: number } | undefined;
+      const base = effectBaseName(effect?.name);
+      record("pipeline", `${base} #${effect?.uniqueId ?? "?"} topology ${String(args[1])} samples ${String(args[2])}`, true, base.replace(/\d+/g, "#"));
+      return original.apply(this, args);
+    })) instrumented.push("cacheRenderPipeline._createRenderPipeline");
+    let lastPipelineMiss = pipelineStats?.NumCacheMiss ?? 0;
+    let lastBindGroups = bindGroupStats?.NumBindGroupsCreatedTotal ?? 0;
 
-  // Materials: material-level invalidations by flag, submesh define marks, readiness.
-  if (wrapMethod(Material.prototype, "markAsDirty", restores, (original) => function (this: Material, ...args: unknown[]) {
-    if (inScene(this)) {
-      const flag = Number(args[0]) || 0;
-      for (const [bit, name] of MATERIAL_FLAGS)
-        if (flag & bit) {
-          bump(`mat.dirty.${name}`);
-          record(`dirty.${name}`, this.name, true);
-        }
-    }
-    return original.apply(this, args);
-  })) instrumented.push("Material.markAsDirty");
-  if (wrapMethod(Material.prototype, "markDirty", restores, (original) => function (this: Material, ...args: unknown[]) {
-    if (inScene(this)) bump("mat.markDirty");
-    return original.apply(this, args);
-  })) instrumented.push("Material.markDirty");
-  // One stack per frame for light-define marks: a mark with `disposed` set is a light leaving mesh.lightSources.
-  let lightMarkFrame = -1;
-  for (const [method, key] of DEFINE_MARKS)
-    if (wrapMethod(MaterialDefines.prototype, method, restores, (original) => function (this: MaterialDefines, ...args: unknown[]) {
-      // Processing a clean define set is a no-op; count only real transitions.
-      if (method !== "markAsProcessed" || this.isDirty) bump(key);
-      if (method === "markAsLightDirty") {
-        if (args[0]) bump("defines.lightDisposed");
-        if (lightMarkFrame !== frameIndex) {
-          lightMarkFrame = frameIndex;
-          record("defines.light", `first mark of frame${args[0] ? " (light removed)" : ""}`, true, `frame ${frameIndex}`);
-        }
+    // Materials: material-level invalidations by flag, submesh define marks, readiness.
+    if (wrapMethod(Material.prototype, "markAsDirty", restores, (original) => function (this: Material, ...args: unknown[]) {
+      if (inScene(this)) {
+        const flag = Number(args[0]) || 0;
+        for (const [bit, name] of MATERIAL_FLAGS)
+          if (flag & bit) {
+            bump(`mat.dirty.${name}`);
+            record(`dirty.${name}`, this.name, true);
+          }
       }
       return original.apply(this, args);
-    })) instrumented.push(`MaterialDefines.${method}`);
-  // The view's forward graph is owned outside the Scene (scene.frameGraph stays unset); find it as it executes.
-  let forwardObjects: ActiveMeshSource | null = null;
-  if (wrapMethod(FrameGraph.prototype, "execute", restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
-    if (this.scene === scene) forwardObjects = (this.getTaskByName("Forward objects") as ActiveMeshSource | undefined) ?? forwardObjects;
-    return original.apply(this, args);
-  })) instrumented.push("FrameGraph.execute");
-  // Frame graph re-plans: who released the prepared graph, and each rebuild.
-  for (const method of ["dispose", "buildAsync"] as const)
-    if (wrapMethod(FrameGraph.prototype, method, restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
-      if (this.scene === scene) {
-        bump(`frameGraph.${method}`);
-        record(`frameGraph.${method}`, `${this.tasks.length} tasks`, true, `frame ${frameIndex}`);
-      }
+    })) instrumented.push("Material.markAsDirty");
+    if (wrapMethod(Material.prototype, "markDirty", restores, (original) => function (this: Material, ...args: unknown[]) {
+      if (inScene(this)) bump("mat.markDirty");
       return original.apply(this, args);
-    })) instrumented.push(`FrameGraph.${method}`);
-  if (wrapMethod(NodeMaterial.prototype, "build", restores, (original) => function (this: NodeMaterial, ...args: unknown[]) {
-    if (inScene(this)) {
-      bump("nodeMaterial.build");
-      record("nodeMaterial.build", this.name, true, this.name.replace(/\d+/g, "#"));
-    }
-    return original.apply(this, args);
-  })) instrumented.push("NodeMaterial.build");
-  let readyDepth = 0;
-  for (const [name, prototype] of [
-    ["PBRBaseMaterial", PBRBaseMaterial.prototype],
-    ["StandardMaterial", StandardMaterial.prototype],
-    ["NodeMaterial", NodeMaterial.prototype],
-    ["ShaderMaterial", ShaderMaterial.prototype],
-  ] as const)
-    if (wrapMethod(prototype, "isReadyForSubMesh", restores, (original) => function (this: Material, ...args: unknown[]) {
-      readyDepth += 1;
-      try {
-        const ready = original.apply(this, args);
-        if (readyDepth === 1 && inScene(this)) {
-          bump("ready.calls");
-          if (!ready) {
-            bump("ready.false");
-            record("notReady", `${this.getClassName()} ${this.name} on ${(args[0] as AbstractMesh | undefined)?.name ?? "?"}`);
+    })) instrumented.push("Material.markDirty");
+    // One stack per frame for light-define marks: a mark with `disposed` set is a light leaving mesh.lightSources.
+    let lightMarkFrame = -1;
+    for (const [method, key] of DEFINE_MARKS)
+      if (wrapMethod(MaterialDefines.prototype, method, restores, (original) => function (this: MaterialDefines, ...args: unknown[]) {
+        // Processing a clean define set is a no-op; count only real transitions.
+        if (method !== "markAsProcessed" || this.isDirty) bump(key);
+        if (method === "markAsLightDirty") {
+          if (args[0]) bump("defines.lightDisposed");
+          if (lightMarkFrame !== frameIndex) {
+            lightMarkFrame = frameIndex;
+            record("defines.light", `first mark of frame${args[0] ? " (light removed)" : ""}`, true, `frame ${frameIndex}`);
           }
         }
-        return ready;
-      } finally {
-        readyDepth -= 1;
-      }
-    })) instrumented.push(`${name}.isReadyForSubMesh`);
-
-  // Shadows: construction/recreation and disposal of maps.
-  let shadowDepth = 0;
-  if (wrapMethod(ShadowGenerator.prototype, "_initializeGenerator", restores, (original) => function (this: ShadowGenerator, ...args: unknown[]) {
-    shadowDepth += 1;
-    try {
-      if (shadowDepth === 1 && this.getLight()?.getScene() === scene) {
-        bump("shadow.init");
-        record("shadow.init", `${this.getClassName()} for ${this.getLight()?.name ?? "?"} size ${this.mapSize}`, true);
-      }
+        return original.apply(this, args);
+      })) instrumented.push(`MaterialDefines.${method}`);
+    // The view's forward graph is owned outside the Scene (scene.frameGraph stays unset); find it as it executes.
+    let forwardObjects: ActiveMeshSource | null = null;
+    if (wrapMethod(FrameGraph.prototype, "execute", restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
+      if (this.scene === scene) forwardObjects = (this.getTaskByName("Forward objects") as ActiveMeshSource | undefined) ?? forwardObjects;
       return original.apply(this, args);
-    } finally {
-      shadowDepth -= 1;
-    }
-  })) instrumented.push("ShadowGenerator._initializeGenerator");
-  if (wrapMethod(ShadowGenerator.prototype, "dispose", restores, (original) => function (this: ShadowGenerator, ...args: unknown[]) {
-    if (shadowDepth === 0 && this.getLight()?.getScene() === scene) {
-      bump("shadow.dispose");
-      record("shadow.dispose", `${this.getClassName()} for ${this.getLight()?.name ?? "?"}`, true);
-    }
-    shadowDepth += 1;
-    try {
-      return original.apply(this, args);
-    } finally {
-      shadowDepth -= 1;
-    }
-  })) instrumented.push("ShadowGenerator.dispose");
-
-  // Long tasks overlapping the run.
-  const longTasks: Array<[number, number]> = [];
-  const longTaskObserver = new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) longTasks.push([round2(entry.startTime), round2(entry.duration)]);
-  });
-  try {
-    longTaskObserver.observe({ type: "longtask" });
-  } catch {
-    // Not supported: long-task attribution stays empty.
-  }
-
-  const diagnostics = () => handle.renderDiagnostics();
-  const initial = diagnostics();
-  const lights = scene.lights.map((light) => ({
-    name: light.name,
-    type: light.getClassName(),
-    enabled: light.isEnabled(),
-    intensity: light.intensity,
-    position: "position" in light ? (light as Light & { position: Vector3 }).position.asArray().map(round2) : null,
-    range: light.range,
-    shadowGenerators: lightGenerators(light).length,
-  }));
-  const caps = handle.engine.getCaps();
-  const capsSummary = {
-    maxUniformBuffersPerShaderStage: caps.maxUniformBuffersPerShaderStage ?? null,
-    maxTexturesImageUnits: caps.maxTexturesImageUnits,
-    maxVertexUniformVectors: caps.maxVertexUniformVectors,
-    parallelShaderCompile: !!caps.parallelShaderCompile,
-  };
-
-  // Per-frame bookkeeping.
-  const frames: FlyFrame[] = [];
-  const phases: FlyThroughResult["phases"] = [];
-  let phase: FlyPhase = "warmup";
-  let phaseStart = performance.now();
-  let phaseFirstFrame = 0;
-  const startPhase = (next: FlyPhase, now: number) => {
-    phases.push({ phase, startMs: round2(phaseStart), endMs: round2(now), firstFrame: phaseFirstFrame, lastFrame: frames.length - 1 });
-    phase = next;
-    phaseStart = now;
-    phaseFirstFrame = frames.length;
-  };
-  let lastWork = initial.rendererWork;
-  let lastPresentation = initial.presentation;
-  let lastRendered = handle.scheduler.stats().renderedFrames;
-  let lastEnd: number | null = null;
-  let skipped = 0;
-  let frameBegin = 0;
-  let previousLights = enabledLightNames(scene).join("|");
-  const generatorLights = new Map<ShadowGenerator, string>();
-  for (const light of scene.lights) for (const generator of lightGenerators(light)) generatorLights.set(generator, light.name);
-  let previousActive = new Set<number>();
-  let currentActive = new Set<number>();
-  activeMeshIds(scene, null, previousActive);
-  const heap = () => {
-    const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
-    return typeof memory?.usedJSHeapSize === "number" ? round2(memory.usedJSHeapSize / 1048576) : null;
-  };
-  const delta = (key: string, next: number | undefined, previous: number | undefined) => {
-    const value = (next ?? 0) - (previous ?? 0);
-    if (value !== 0) bump(key, round2(value));
-  };
-
-  const beginObserver = engine.onBeginFrameObservable.add(() => {
-    frameBegin = performance.now();
-  });
-  const endObserver = engine.onEndFrameObservable.add(() => {
-    const end = performance.now();
-    const rendered = handle.scheduler.stats().renderedFrames;
-    if (rendered === lastRendered) {
-      skipped += 1;
-      return;
-    }
-    lastRendered = rendered;
-    const cpuMs = end - frameBegin;
-    const missNow = pipelineStats?.NumCacheMiss ?? 0;
-    delta("babylon.pipelineMiss", missNow, lastPipelineMiss);
-    lastPipelineMiss = missNow;
-    const groupsNow = bindGroupStats?.NumBindGroupsCreatedTotal ?? 0;
-    delta("babylon.bindGroupsCreated", groupsNow, lastBindGroups);
-    lastBindGroups = groupsNow;
-    const state = diagnostics();
-    const work = state.rendererWork;
-    const presentation = state.presentation;
-    delta("graph.strictChecks", work?.strictReadinessChecks, lastWork?.strictReadinessChecks);
-    delta("graph.outlineChecks", work?.outlineReadinessChecks, lastWork?.outlineReadinessChecks);
-    delta("graph.builds", work?.graphBuilds, lastWork?.graphBuilds);
-    delta("graph.shadowAdmissions", work?.shadowAdmissions, lastWork?.shadowAdmissions);
-    delta("view.held", presentation?.held, lastPresentation?.held);
-    delta("view.drawn", presentation?.drawn, lastPresentation?.drawn);
-    delta("view.copied", presentation?.copied, lastPresentation?.copied);
-    lastWork = work;
-    lastPresentation = presentation;
-    const enabled = enabledLightNames(scene);
-    const signature = enabled.join("|");
-    if (signature !== previousLights) {
-      bump("lights.changed");
-      const before = new Set(previousLights ? previousLights.split("|") : []);
-      const after = new Set(enabled);
-      const added = enabled.filter((name) => !before.has(name));
-      const removed = [...before].filter((name) => !after.has(name));
-      record("lights", `+[${added.join(", ")}] -[${removed.join(", ")}] now ${enabled.length}`);
-      previousLights = signature;
-    }
-    const seenGenerators = new Set<ShadowGenerator>();
-    for (const light of scene.lights)
-      for (const generator of lightGenerators(light)) {
-        seenGenerators.add(generator);
-        const owner = generatorLights.get(generator);
-        if (owner === undefined) {
-          bump("shadow.attached");
-          record("shadow.attached", `${generator.getClassName()} to ${light.name}`);
-        } else if (owner !== light.name) {
-          bump("shadow.moved");
-          record("shadow.moved", `${owner} -> ${light.name}`);
+    })) instrumented.push("FrameGraph.execute");
+    // Frame graph re-plans: who released the prepared graph, and each rebuild.
+    for (const method of ["dispose", "buildAsync"] as const)
+      if (wrapMethod(FrameGraph.prototype, method, restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
+        if (this.scene === scene) {
+          bump(`frameGraph.${method}`);
+          record(`frameGraph.${method}`, `${this.tasks.length} tasks`, true, `frame ${frameIndex}`);
         }
-        generatorLights.set(generator, light.name);
+        return original.apply(this, args);
+      })) instrumented.push(`FrameGraph.${method}`);
+    if (wrapMethod(NodeMaterial.prototype, "build", restores, (original) => function (this: NodeMaterial, ...args: unknown[]) {
+      if (inScene(this)) {
+        bump("nodeMaterial.build");
+        record("nodeMaterial.build", this.name, true, this.name.replace(/\d+/g, "#"));
       }
-    for (const [generator, owner] of generatorLights)
-      if (!seenGenerators.has(generator)) {
-        bump("shadow.detached");
-        record("shadow.detached", owner);
-        generatorLights.delete(generator);
+      return original.apply(this, args);
+    })) instrumented.push("NodeMaterial.build");
+    let readyDepth = 0;
+    for (const [name, prototype] of [
+      ["PBRBaseMaterial", PBRBaseMaterial.prototype],
+      ["StandardMaterial", StandardMaterial.prototype],
+      ["NodeMaterial", NodeMaterial.prototype],
+      ["ShaderMaterial", ShaderMaterial.prototype],
+    ] as const)
+      if (wrapMethod(prototype, "isReadyForSubMesh", restores, (original) => function (this: Material, ...args: unknown[]) {
+        readyDepth += 1;
+        try {
+          const ready = original.apply(this, args);
+          if (readyDepth === 1 && inScene(this)) {
+            bump("ready.calls");
+            if (!ready) {
+              bump("ready.false");
+              record("notReady", `${this.getClassName()} ${this.name} on ${(args[0] as AbstractMesh | undefined)?.name ?? "?"}`);
+            }
+          }
+          return ready;
+        } finally {
+          readyDepth -= 1;
+        }
+      })) instrumented.push(`${name}.isReadyForSubMesh`);
+
+    // Shadows: construction/recreation and disposal of maps.
+    let shadowDepth = 0;
+    if (wrapMethod(ShadowGenerator.prototype, "_initializeGenerator", restores, (original) => function (this: ShadowGenerator, ...args: unknown[]) {
+      shadowDepth += 1;
+      try {
+        if (shadowDepth === 1 && this.getLight()?.getScene() === scene) {
+          bump("shadow.init");
+          record("shadow.init", `${this.getClassName()} for ${this.getLight()?.name ?? "?"} size ${this.mapSize}`, true);
+        }
+        return original.apply(this, args);
+      } finally {
+        shadowDepth -= 1;
       }
-    const activeCount = activeMeshIds(scene, forwardObjects, currentActive);
-    let added = 0;
-    let removed = 0;
-    for (const id of currentActive) if (!previousActive.has(id)) added += 1;
-    for (const id of previousActive) if (!currentActive.has(id)) removed += 1;
-    [previousActive, currentActive] = [currentActive, previousActive];
-    if (state.shadowDrawCalls > 0) bump("shadow.mapFrames");
-    const cameraEye = camera.globalPosition;
-    const counters: Record<string, number> = {};
-    for (const key of Object.keys(pending)) {
-      if (pending[key]) counters[key] = pending[key]!;
-      delete pending[key];
-    }
-    frames.push({
-      i: frameIndex,
-      phase,
-      begin: round2(frameBegin),
-      end: round2(end),
-      cpuMs: round2(cpuMs),
-      intervalMs: lastEnd === null ? null : round2(end - lastEnd),
-      skipped,
-      pos: [round2(cameraEye.x), round2(cameraEye.y), round2(cameraEye.z)],
-      c: counters,
-      copyMs: round2(presentation?.copyMs ?? 0),
-      preparationMs: round2(presentation?.preparationMs ?? 0),
-      size: [state.width, state.height],
-      scaling: state.scalingLevel,
-      activeMeshes: activeCount,
-      activeAdded: added,
-      activeRemoved: removed,
-      drawCalls: state.drawCalls,
-      shadowDrawCalls: state.shadowDrawCalls,
-      enabledLights: enabled.length,
-      lodReduced: state.autoLod.reduced,
-      compiledEffects: Object.keys((internals._compiledEffects ?? {}) as object).length,
-      engineTextures: state.resources.cachedTextures,
-      heapMb: heap(),
+    })) instrumented.push("ShadowGenerator._initializeGenerator");
+    if (wrapMethod(ShadowGenerator.prototype, "dispose", restores, (original) => function (this: ShadowGenerator, ...args: unknown[]) {
+      if (shadowDepth === 0 && this.getLight()?.getScene() === scene) {
+        bump("shadow.dispose");
+        record("shadow.dispose", `${this.getClassName()} for ${this.getLight()?.name ?? "?"}`, true);
+      }
+      shadowDepth += 1;
+      try {
+        return original.apply(this, args);
+      } finally {
+        shadowDepth -= 1;
+      }
+    })) instrumented.push("ShadowGenerator.dispose");
+
+    // Long tasks overlapping the run.
+    longTaskObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) longTasks.push([round2(entry.startTime), round2(entry.duration)]);
     });
-    frameIndex += 1;
-    lastEnd = end;
-    skipped = 0;
-  }, undefined, true);
+    try {
+      longTaskObserver.observe({ type: "longtask" });
+    } catch {
+      // Not supported: long-task attribution stays empty.
+    }
 
-  // Camera driver: one pose per animation frame, as the joystick and WASD do.
-  const releaseLease = handle.scheduler.acquireContinuous("flythrough");
-  const eye = new Vector3();
-  const ahead = new Vector3();
-  const direction = new Vector3();
-  const setPose = (distance: number) => {
-    path.at(distance, eye);
-    if (distance + lookAhead <= path.length) path.at(distance + lookAhead, ahead);
-    else ahead.copyFrom(path.end).addInPlace(path.end.subtract(path.beforeEnd).normalize().scale(distance + lookAhead - path.length));
-    ahead.y -= lookDrop;
-    ahead.subtractToRef(eye, direction);
-    if (direction.lengthSquared() < 1e-6) direction.set(0, 0, 1);
-    direction.normalize();
-    driver.setPose(eye, direction);
-    handle.scheduler.invalidate("camera");
-  };
+    const diagnostics = () => handle.renderDiagnostics();
+    const initial = diagnostics();
+    const lights = scene.lights.map((light) => ({
+      name: light.name,
+      type: light.getClassName(),
+      enabled: light.isEnabled(),
+      intensity: light.intensity,
+      position: "position" in light ? (light as Light & { position: Vector3 }).position.asArray().map(round2) : null,
+      range: light.range,
+      shadowGenerators: lightGenerators(light).length,
+    }));
+    const caps = handle.engine.getCaps();
+    const capsSummary = {
+      maxUniformBuffersPerShaderStage: caps.maxUniformBuffersPerShaderStage ?? null,
+      maxTexturesImageUnits: caps.maxTexturesImageUnits,
+      maxVertexUniformVectors: caps.maxVertexUniformVectors,
+      parallelShaderCompile: !!caps.parallelShaderCompile,
+    };
 
-  try {
+    // Per-frame bookkeeping.
+    const frames: FlyFrame[] = [];
+    const phases: FlyThroughResult["phases"] = [];
+    let phase: FlyPhase = "warmup";
+    let phaseStart = performance.now();
+    let phaseFirstFrame = 0;
+    const startPhase = (next: FlyPhase, now: number) => {
+      phases.push({ phase, startMs: round2(phaseStart), endMs: round2(now), firstFrame: phaseFirstFrame, lastFrame: frames.length - 1 });
+      phase = next;
+      phaseStart = now;
+      phaseFirstFrame = frames.length;
+    };
+    let lastWork = initial.rendererWork;
+    let lastPresentation = initial.presentation;
+    let lastRendered = handle.scheduler.stats().renderedFrames;
+    let lastEnd: number | null = null;
+    let skipped = 0;
+    let frameBegin = 0;
+    let previousLights = enabledLightNames(scene).join("|");
+    const generatorLights = new Map<ShadowGenerator, string>();
+    for (const light of scene.lights) for (const generator of lightGenerators(light)) generatorLights.set(generator, light.name);
+    let previousActive = new Set<number>();
+    let currentActive = new Set<number>();
+    activeMeshIds(scene, null, previousActive);
+    const heap = () => {
+      const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
+      return typeof memory?.usedJSHeapSize === "number" ? round2(memory.usedJSHeapSize / 1048576) : null;
+    };
+    const delta = (key: string, next: number | undefined, previous: number | undefined) => {
+      const value = (next ?? 0) - (previous ?? 0);
+      if (value !== 0) bump(key, round2(value));
+    };
+
+    beginObserver = engine.onBeginFrameObservable.add(() => {
+      frameBegin = performance.now();
+    });
+    endObserver = engine.onEndFrameObservable.add(() => {
+      const end = performance.now();
+      const rendered = handle.scheduler.stats().renderedFrames;
+      if (rendered === lastRendered) {
+        skipped += 1;
+        return;
+      }
+      lastRendered = rendered;
+      const cpuMs = end - frameBegin;
+      const missNow = pipelineStats?.NumCacheMiss ?? 0;
+      delta("babylon.pipelineMiss", missNow, lastPipelineMiss);
+      lastPipelineMiss = missNow;
+      const groupsNow = bindGroupStats?.NumBindGroupsCreatedTotal ?? 0;
+      delta("babylon.bindGroupsCreated", groupsNow, lastBindGroups);
+      lastBindGroups = groupsNow;
+      const state = diagnostics();
+      const work = state.rendererWork;
+      const presentation = state.presentation;
+      delta("graph.strictChecks", work?.strictReadinessChecks, lastWork?.strictReadinessChecks);
+      delta("graph.outlineChecks", work?.outlineReadinessChecks, lastWork?.outlineReadinessChecks);
+      delta("graph.builds", work?.graphBuilds, lastWork?.graphBuilds);
+      delta("graph.shadowAdmissions", work?.shadowAdmissions, lastWork?.shadowAdmissions);
+      delta("view.held", presentation?.held, lastPresentation?.held);
+      delta("view.drawn", presentation?.drawn, lastPresentation?.drawn);
+      delta("view.copied", presentation?.copied, lastPresentation?.copied);
+      lastWork = work;
+      lastPresentation = presentation;
+      const enabled = enabledLightNames(scene);
+      const signature = enabled.join("|");
+      if (signature !== previousLights) {
+        bump("lights.changed");
+        const before = new Set(previousLights ? previousLights.split("|") : []);
+        const after = new Set(enabled);
+        const added = enabled.filter((name) => !before.has(name));
+        const removed = [...before].filter((name) => !after.has(name));
+        record("lights", `+[${added.join(", ")}] -[${removed.join(", ")}] now ${enabled.length}`);
+        previousLights = signature;
+      }
+      const seenGenerators = new Set<ShadowGenerator>();
+      for (const light of scene.lights)
+        for (const generator of lightGenerators(light)) {
+          seenGenerators.add(generator);
+          const owner = generatorLights.get(generator);
+          if (owner === undefined) {
+            bump("shadow.attached");
+            record("shadow.attached", `${generator.getClassName()} to ${light.name}`);
+          } else if (owner !== light.name) {
+            bump("shadow.moved");
+            record("shadow.moved", `${owner} -> ${light.name}`);
+          }
+          generatorLights.set(generator, light.name);
+        }
+      for (const [generator, owner] of generatorLights)
+        if (!seenGenerators.has(generator)) {
+          bump("shadow.detached");
+          record("shadow.detached", owner);
+          generatorLights.delete(generator);
+        }
+      const activeCount = activeMeshIds(scene, forwardObjects, currentActive);
+      let added = 0;
+      let removed = 0;
+      for (const id of currentActive) if (!previousActive.has(id)) added += 1;
+      for (const id of previousActive) if (!currentActive.has(id)) removed += 1;
+      [previousActive, currentActive] = [currentActive, previousActive];
+      if (state.shadowDrawCalls > 0) bump("shadow.mapFrames");
+      const cameraEye = camera.globalPosition;
+      const counters: Record<string, number> = {};
+      for (const key of Object.keys(pending)) {
+        if (pending[key]) counters[key] = pending[key]!;
+        delete pending[key];
+      }
+      frames.push({
+        i: frameIndex,
+        phase,
+        begin: round2(frameBegin),
+        end: round2(end),
+        cpuMs: round2(cpuMs),
+        intervalMs: lastEnd === null ? null : round2(end - lastEnd),
+        skipped,
+        pos: [round2(cameraEye.x), round2(cameraEye.y), round2(cameraEye.z)],
+        c: counters,
+        copyMs: round2(presentation?.copyMs ?? 0),
+        preparationMs: round2(presentation?.preparationMs ?? 0),
+        size: [state.width, state.height],
+        scaling: state.scalingLevel,
+        activeMeshes: activeCount,
+        activeAdded: added,
+        activeRemoved: removed,
+        drawCalls: state.drawCalls,
+        shadowDrawCalls: state.shadowDrawCalls,
+        enabledLights: enabled.length,
+        lodReduced: state.autoLod.reduced,
+        compiledEffects: Object.keys((internals._compiledEffects ?? {}) as object).length,
+        engineTextures: state.resources.cachedTextures,
+        heapMb: heap(),
+      });
+      frameIndex += 1;
+      lastEnd = end;
+      skipped = 0;
+    }, undefined, true);
+
+    // Camera driver: one pose per animation frame, as the joystick and WASD do.
+    releaseLease = handle.scheduler.acquireContinuous("flythrough");
+    const eye = new Vector3();
+    const ahead = new Vector3();
+    const direction = new Vector3();
+    const setPose = (distance: number) => {
+      path.at(distance, eye);
+      if (distance + lookAhead <= path.length) path.at(distance + lookAhead, ahead);
+      else ahead.copyFrom(path.end).addInPlace(path.end.subtract(path.beforeEnd).normalize().scale(distance + lookAhead - path.length));
+      ahead.y -= lookDrop;
+      ahead.subtractToRef(eye, direction);
+      if (direction.lengthSquared() < 1e-6) direction.set(0, 0, 1);
+      direction.normalize();
+      driver.setPose(eye, direction);
+      handle.scheduler.invalidate("camera");
+    };
+
     setPose(0);
     await new Promise<void>((resolve, reject) => {
       let pass = 0;
@@ -784,30 +790,32 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       const wait = () => (handle.scheduler.stats().renderedFrames >= target || scene.isDisposed ? resolve() : requestAnimationFrame(wait));
       requestAnimationFrame(wait);
     });
+    const final = diagnostics();
+    return {
+      backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
+      adapter: final.adapter,
+      caps: capsSummary,
+      pathLength: round2(path.length),
+      speed,
+      phases,
+      frames,
+      log,
+      longTasks,
+      lights,
+      qualityLimitsBefore: initial.qualityLimits,
+      qualityLimitsAfter: final.qualityLimits,
+      pipeline: final.pipeline,
+      totals,
+      instrumented,
+    };
   } finally {
-    releaseLease();
+    releaseLease?.();
     engine.onBeginFrameObservable.remove(beginObserver);
     engine.onEndFrameObservable.remove(endObserver);
     for (const restore of restores.reverse()) restore();
-    for (const entry of longTaskObserver.takeRecords()) longTasks.push([round2(entry.startTime), round2(entry.duration)]);
-    longTaskObserver.disconnect();
+    if (longTaskObserver) {
+      for (const entry of longTaskObserver.takeRecords()) longTasks.push([round2(entry.startTime), round2(entry.duration)]);
+      longTaskObserver.disconnect();
+    }
   }
-  const final = diagnostics();
-  return {
-    backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
-    adapter: final.adapter,
-    caps: capsSummary,
-    pathLength: round2(path.length),
-    speed,
-    phases,
-    frames,
-    log,
-    longTasks,
-    lights,
-    qualityLimitsBefore: initial.qualityLimits,
-    qualityLimitsAfter: final.qualityLimits,
-    pipeline: final.pipeline,
-    totals,
-    instrumented,
-  };
 }

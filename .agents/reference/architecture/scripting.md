@@ -30,6 +30,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 - Tags: project `settings.tags` `{ tags: [{ id, path, parentId }], nextId }`; IDs are stable u32 (0 = None), never reallocated from display order; discarded IDs still advance `nextId`.
 - Asset/Class-typed declarations carry **Loading**: absent = Soft (referenced, never loaded with the owner); `"hard"` joins the owner's required closure (Class header `requiredVariableNames`). Synchronous readers (`input.*`, `data.readEntry`) still require their values. Dependency metadata is stamped on save.
 - Data Definitions (`.datadefinition.hasset`) and Data Trees (`.datatree.hasset`) address entries by exact, case-sensitive name paths; internal IDs are never lookup fallbacks.
+- A Data Tree entry's values are editable (Data Tree editor, `editorData.updateEntry`) only once its Definition's added or renamed fields are applied and no structural conflict remains: `dataEntryNeedsDefinitionApply` and `dataEntryStructuralIssue` on a `reconcileDataEntry` result ([`data-values.ts`](../../../packages/scripting/src/data-values.ts)).
 
 ## Pin types
 

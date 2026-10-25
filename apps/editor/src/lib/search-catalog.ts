@@ -1,43 +1,16 @@
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
-import { ENGINE_BT_BUILTIN_CLASSES } from "@haptic/object-model";
+import {
+  ENGINE_BT_BUILTIN_CLASSES,
+  ENGINE_COMPONENT_CLASS_IDS,
+} from "@haptic/object-model";
 import { ENGINE_BASE_CLASSES } from "./content-browser-helpers";
 
-/** Engine class ids indexed as catalog hits (shipped types only; unbuilt P11 nav stays gated). */
+/** Engine class ids indexed as catalog hits: base classes, built-in BT nodes, SceneLayer and every engine component. */
 export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   ...ENGINE_BASE_CLASSES,
   ...ENGINE_BT_BUILTIN_CLASSES.map((entry) => entry.id),
   "SceneLayer",
-  "MeshComponent",
-  "SpriteComponent",
-  "TilemapComponent",
-  "CameraComponent",
-  "SpringArmComponent",
-  "CableComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "MirrorComponent",
-  "OutlineComponent",
-  "DeformerComponent",
-  "HemisphericFillLightComponent",
-  "SkyboxComponent",
-  "Text3DComponent",
-  "RigidBodyComponent",
-  "MovementComponent",
-  "ColliderComponent",
-  "AnimationGraphComponent",
-  "BehaviourTreeComponent",
-  "NavAgentComponent",
-  "AudioComponent",
-  "ParticleComponent",
-  "2DAnchorComponent",
-  "2DJoystickComponent",
-  "2DPainterComponent",
-  "2DButtonComponent",
-  "2DFocusTargetComponent",
-  "2DMaterialComponent",
-  "2DTextureComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
+  ...ENGINE_COMPONENT_CLASS_IDS,
 ];
 
 const nodeRegistry = createDefaultNodeRegistry();

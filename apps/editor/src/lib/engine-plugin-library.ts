@@ -16,10 +16,14 @@ import {
   ENGINE_PLUGIN_LIBRARY_FOLDER,
   MemoryStorageAdapter,
 } from "@haptic/vfs";
-import { ensureEnginePluginStorage } from "./engine-plugins";
+import {
+  captureLibraryFile, createLibraryQueue, LIBRARY_DEFAULTS_FILE, readLibraryDefaults,
+  resolveLibraryImport, restoreLibraryFiles, sameLibraryIdentity, writeLibraryDefaults,
+  type LibraryQueue,
+} from "./engine-library";
+import { ensureEnginePluginStorage, isCachedEnginePluginStorage } from "./engine-plugins";
 
 export const ENGINE_PLUGIN_LIBRARY_ROOT = ENGINE_PLUGIN_LIBRARY_FOLDER;
-const DEFAULTS_FILE = "defaults.json";
 const CATALOG_FILE = "catalog.json";
 const CATALOG_VERSION = 1;
 
@@ -44,45 +48,23 @@ interface LibraryState {
   defaults: Record<string, boolean>;
 }
 
-function normalizedName(name: string): string {
-  return name.trim().toLowerCase();
-}
+const pluginGuidOf = (entry: EnginePluginEntry) => entry.pluginGuid;
 
 /** App-owned immutable plugin generations and creation defaults, separate from project copies. */
 export class EnginePluginLibrary {
-  private mutation: Promise<unknown> = Promise.resolve();
+  private readonly serialize: LibraryQueue;
   private readonly bundledStorage: ProjectStorage;
   private readonly libraryStorage: ProjectStorage;
 
+  /** Instances over the same library folder must share `serialize`. */
   constructor(
     bundledStorage: ProjectStorage,
     libraryStorage: ProjectStorage,
+    serialize: LibraryQueue = createLibraryQueue(),
   ) {
     this.bundledStorage = bundledStorage;
     this.libraryStorage = libraryStorage;
-  }
-
-  private serialize<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.mutation.then(operation, operation);
-    this.mutation = next.catch(() => undefined);
-    return next;
-  }
-
-  private async readDefaults(): Promise<Record<string, boolean>> {
-    const defaults: Record<string, boolean> = Object.create(null);
-    if (!(await this.libraryStorage.exists(DEFAULTS_FILE))) return defaults;
-    let value: unknown;
-    try {
-      value = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
-    } catch {
-      // Defaults are preferences: unreadable ones fall back to each plugin's own.
-      return defaults;
-    }
-    if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
-    for (const [guid, enabled] of Object.entries(value)) {
-      if (typeof enabled === "boolean") defaults[guid] = enabled;
-    }
-    return defaults;
+    this.serialize = serialize;
   }
 
   private async readRecords(): Promise<StoredPlugin[]> {
@@ -116,7 +98,7 @@ export class EnginePluginLibrary {
   }
 
   private async readState(): Promise<LibraryState> {
-    const defaults = await this.readDefaults();
+    const defaults = await readLibraryDefaults(this.libraryStorage);
     const entries: EnginePluginEntry[] = [];
     const records = await this.readRecords();
     const folderNames: string[] = [];
@@ -139,9 +121,7 @@ export class EnginePluginLibrary {
     for (const incoming of records) {
       // An engine update may introduce a bundled name/GUID already in the library.
       // The bundled original remains authoritative; never let a user archive replace it.
-      if (entries.some((entry) =>
-        entry.pluginGuid === incoming.settings.pluginGuid ||
-        normalizedName(entry.settings.displayName) === normalizedName(incoming.settings.displayName))) {
+      if (sameLibraryIdentity(entries, pluginGuidOf, incoming.settings.pluginGuid, incoming.settings.displayName).length > 0) {
         continue;
       }
       const folderName = uniquePluginFolderName(incoming.settings.displayName, folderNames);
@@ -201,7 +181,7 @@ export class EnginePluginLibrary {
         throw new Error("The Engine Plugin no longer exists.");
       }
       defaults[guid] = enabled;
-      await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+      await writeLibraryDefaults(this.libraryStorage, defaults);
     });
   }
 
@@ -214,7 +194,7 @@ export class EnginePluginLibrary {
       // Existing snapshots retain immutable generations; only catalog ownership changes.
       await this.writeRecords(records.filter((record) => record.settings.pluginGuid !== guid));
       delete defaults[guid];
-      await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+      await writeLibraryDefaults(this.libraryStorage, defaults);
     });
   }
 
@@ -225,36 +205,21 @@ export class EnginePluginLibrary {
     return this.serialize(async () => {
       const incoming = await inspectHplugin(bytes);
       const { entries, records, defaults } = await this.readState();
-      const conflicts = entries.filter((entry) =>
-        entry.pluginGuid === incoming.settings.pluginGuid ||
-        normalizedName(entry.settings.displayName) === normalizedName(incoming.settings.displayName));
-      if (conflicts.some((entry) => entry.bundled)) {
-        throw new Error("A bundled Engine Plugin already uses this name or ID and cannot be replaced.");
-      }
-      if (conflicts.length > 1) {
-        throw new Error("The plugin name and ID match different Engine Plugins. Rename the plugin before exporting.");
-      }
-      const existing = conflicts[0];
-      if (existing && options.replaceGuid !== existing.pluginGuid) {
-        return { status: "conflict", existing };
-      }
-      if (!existing && options.replaceGuid) {
-        throw new Error("The Engine Plugin changed. Export again to confirm the replacement.");
-      }
+      const target = resolveLibraryImport(entries, pluginGuidOf, {
+        guid: incoming.settings.pluginGuid, displayName: incoming.settings.displayName,
+      }, options.replaceGuid, "Plugin");
+      if ("conflict" in target) return { status: "conflict", existing: target.conflict };
+      const { existing } = target;
       if (existing) {
         delete defaults[existing.pluginGuid];
         defaults[incoming.settings.pluginGuid] = existing.enabledByDefault;
       }
       const generation = await this.storeGeneration(incoming);
-      const previousCatalog = await this.libraryStorage.exists(CATALOG_FILE)
-        ? await this.libraryStorage.readBinary(CATALOG_FILE)
-        : null;
-      const previousDefaults = await this.libraryStorage.exists(DEFAULTS_FILE)
-        ? await this.libraryStorage.readBinary(DEFAULTS_FILE)
-        : null;
+      const previousCatalog = await captureLibraryFile(this.libraryStorage, CATALOG_FILE);
+      const previousDefaults = await captureLibraryFile(this.libraryStorage, LIBRARY_DEFAULTS_FILE);
       try {
         await this.writeRecords([...records.filter((record) => record.settings.pluginGuid !== existing?.pluginGuid), generation]);
-        await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+        await writeLibraryDefaults(this.libraryStorage, defaults);
         const entry = (await this.readState()).entries.find(
           (plugin) => plugin.pluginGuid === incoming.settings.pluginGuid,
         );
@@ -263,30 +228,28 @@ export class EnginePluginLibrary {
       } catch (cause) {
         // The new generation folder stays unreferenced; restore the catalog and
         // defaults so the library lists exactly what it did before the import.
-        const restoreErrors: unknown[] = [];
-        for (const [path, previous] of [[CATALOG_FILE, previousCatalog], [DEFAULTS_FILE, previousDefaults]] as const) {
-          try {
-            if (previous) await this.libraryStorage.writeBinary(path, previous);
-            else if (await this.libraryStorage.exists(path)) await this.libraryStorage.remove(path);
-          } catch (restoreError) { restoreErrors.push(restoreError); }
-        }
-        if (restoreErrors.length > 0) {
-          throw new AggregateError([cause, ...restoreErrors], "Plugin import failed and the previous library state could not be fully restored.", { cause });
-        }
-        throw cause;
+        return restoreLibraryFiles(this.libraryStorage,
+          [[CATALOG_FILE, previousCatalog], [LIBRARY_DEFAULTS_FILE, previousDefaults]], cause, "Plugin");
       }
     });
   }
 }
 
 let cachedLibrary: Promise<EnginePluginLibrary> | null = null;
+// One queue for the app-owned folder, so uncached fallback instances stay ordered too.
+const libraryQueue = createLibraryQueue();
 
 export function ensureEnginePluginLibrary(): Promise<EnginePluginLibrary> {
   if (!cachedLibrary) {
     cachedLibrary = Promise.all([
       ensureEnginePluginStorage(),
       createTemplateStorage(ENGINE_PLUGIN_LIBRARY_ROOT),
-    ]).then(([bundled, library]) => new EnginePluginLibrary(bundled, library));
+    ]).then(([bundled, library]) => {
+      // Never pin the session to the empty fallback: New Project would copy no
+      // bundled plugins until reload. The next call retries the bundled index.
+      if (!isCachedEnginePluginStorage(bundled)) cachedLibrary = null;
+      return new EnginePluginLibrary(bundled, library, libraryQueue);
+    });
     void cachedLibrary.catch(() => { cachedLibrary = null; });
   }
   return cachedLibrary;

@@ -1,6 +1,7 @@
 import type { Breakpoint, BreakpointCondition, BreakpointConditionOp, BreakpointLocation } from "@haptic/bridge";
 import type { GraphBreakpoints, GraphBreakpointState } from "@haptic/graph-ui";
 import type { BreakpointSettings } from "../lib/breakpoint-settings";
+import { KeyedListStore } from "./keyed-list-store";
 
 /**
  * Node breakpoints: editor state per project, never stored in an asset, so setting one never makes a
@@ -62,25 +63,10 @@ export function serializeBreakpointFile(entries: readonly BreakpointEntry[]): st
   return `${JSON.stringify(file, null, 2)}\n`;
 }
 
-/** An external store: React reads it with `useSyncExternalStore`, sessions subscribe to its changes. */
-export class BreakpointStore {
-  private entries = new Map<string, BreakpointEntry>();
-  private snapshot: readonly BreakpointEntry[] = [];
-  private readonly listeners = new Set<() => void>();
-  private readonly changeListeners = new Set<(entries: readonly BreakpointEntry[]) => void>();
-
-  /** Every breakpoint, in the order they were set. A new array after each change. */
-  list = (): readonly BreakpointEntry[] => this.snapshot;
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  /** Runs after each change made here, not after `hydrate`: what saving needs. */
-  onChange(listener: (entries: readonly BreakpointEntry[]) => void): () => void {
-    this.changeListeners.add(listener);
-    return () => this.changeListeners.delete(listener);
+/** The project's breakpoints, in the order they were set; sessions subscribe to its changes. */
+export class BreakpointStore extends KeyedListStore<BreakpointEntry> {
+  constructor() {
+    super(keyOf);
   }
 
   get(location: BreakpointLocation): BreakpointEntry | undefined {
@@ -89,17 +75,11 @@ export class BreakpointStore {
 
   /** What a session checks: the enabled breakpoints, with their conditions and hit counts. */
   enabledBreakpoints(): Breakpoint[] {
-    return this.snapshot.filter((entry) => entry.enabled).map(({ condition, hitCount, ...entry }) => ({
+    return this.list().filter((entry) => entry.enabled).map(({ condition, hitCount, ...entry }) => ({
       ...pickLocation(entry),
       ...(condition ? { condition } : {}),
       ...(hitCount !== undefined ? { hitCount } : {}),
     }));
-  }
-
-  /** Replaces every breakpoint with saved ones, without saving them again. */
-  hydrate(entries: readonly BreakpointEntry[]): void {
-    this.entries = new Map(entries.map((entry) => [keyOf(entry), entry]));
-    this.publish(false);
   }
 
   /** Adds an enabled breakpoint, or removes the one at the location. */
@@ -148,17 +128,6 @@ export class BreakpointStore {
     if (changed) this.publish();
   }
 
-  removeAll(): void {
-    if (this.entries.size === 0) return;
-    this.entries.clear();
-    this.publish();
-  }
-
-  /** A Class asset moved or was renamed: its breakpoints follow it. */
-  renameAsset(fromPath: string, toPath: string): void {
-    this.rekey((entry) => entry.assetGuid === fromPath ? { ...entry, assetGuid: toPath } : entry);
-  }
-
   /** A function was renamed, so its graph reports under a new name: its breakpoints follow it. */
   renameGraph(assetGuid: string, fromGraphId: string, toGraphId: string, graphName: string): void {
     this.rekey((entry) => entry.assetGuid === assetGuid && entry.graphId === fromGraphId
@@ -182,25 +151,6 @@ export class BreakpointStore {
       subscribe: this.subscribe,
       toggle: (nodeId) => this.toggle({ assetGuid, graphId, nodeId }, labelFor(nodeId)),
     };
-  }
-
-  private rekey(change: (entry: BreakpointEntry) => BreakpointEntry): void {
-    let changed = false;
-    const next = new Map<string, BreakpointEntry>();
-    for (const entry of this.entries.values()) {
-      const updated = change(entry);
-      if (updated !== entry) changed = true;
-      next.set(keyOf(updated), updated);
-    }
-    if (!changed) return;
-    this.entries = next;
-    this.publish();
-  }
-
-  private publish(save = true): void {
-    this.snapshot = [...this.entries.values()];
-    if (save) for (const listener of this.changeListeners) listener(this.snapshot);
-    for (const listener of this.listeners) listener();
   }
 }
 

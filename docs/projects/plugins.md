@@ -61,7 +61,7 @@ See [Plugin Settings](../assets/plugin-settings.md) for the asset itself.
 
 | Control | Description |
 | --- | --- |
-| Enabled By Default | Whether new projects start with the plugin on. |
+| Enable *Plugin Name* By Default | Whether new projects start with the plugin on. |
 | Export | Save the plugin as a `.hplugin` file. |
 | Delete | Plugins you added only. Bundled plugins cannot be removed. |
 

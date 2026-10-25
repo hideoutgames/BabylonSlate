@@ -16,10 +16,13 @@ import {
   ENGINE_EXTENSION_LIBRARY_FOLDER,
   MemoryStorageAdapter,
 } from "@haptic/vfs";
+import {
+  captureLibraryFile, createLibraryQueue, LIBRARY_DEFAULTS_FILE, readLibraryDefaults,
+  resolveLibraryImport, restoreLibraryFiles, sameLibraryIdentity, writeLibraryDefaults,
+} from "./engine-library";
 import { ensureEngineExtensionStorage } from "./engine-extensions";
 
 export const ENGINE_EXTENSION_LIBRARY_ROOT = ENGINE_EXTENSION_LIBRARY_FOLDER;
-const DEFAULTS_FILE = "defaults.json";
 
 export interface EngineExtensionEntry extends ExtensionDescriptor {
   bundled: boolean;
@@ -36,13 +39,11 @@ interface LibraryState {
   defaults: Record<string, boolean>;
 }
 
-function normalizedName(name: string): string {
-  return name.trim().toLowerCase();
-}
+const extensionGuidOf = (entry: EngineExtensionEntry) => entry.extensionGuid;
 
 /** App-owned extension archives and creation defaults, separate from project copies. */
 export class EngineExtensionLibrary {
-  private mutation: Promise<unknown> = Promise.resolve();
+  private readonly serialize = createLibraryQueue();
   private readonly bundledStorage: ProjectStorage;
   private readonly libraryStorage: ProjectStorage;
 
@@ -54,31 +55,8 @@ export class EngineExtensionLibrary {
     this.libraryStorage = libraryStorage;
   }
 
-  private serialize<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.mutation.then(operation, operation);
-    this.mutation = next.catch(() => undefined);
-    return next;
-  }
-
-  private async readDefaults(): Promise<Record<string, boolean>> {
-    const defaults: Record<string, boolean> = Object.create(null);
-    if (!(await this.libraryStorage.exists(DEFAULTS_FILE))) return defaults;
-    let value: unknown;
-    try {
-      value = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
-    } catch {
-      // Defaults are preferences: unreadable ones fall back to each extension's own.
-      return defaults;
-    }
-    if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
-    for (const [guid, enabled] of Object.entries(value)) {
-      if (typeof enabled === "boolean") defaults[guid] = enabled;
-    }
-    return defaults;
-  }
-
   private async readState(): Promise<LibraryState> {
-    const defaults = await this.readDefaults();
+    const defaults = await readLibraryDefaults(this.libraryStorage);
     const entries: EngineExtensionEntry[] = [];
     const archivePaths = new Map<string, string>();
     const folderNames: string[] = [];
@@ -124,9 +102,7 @@ export class EngineExtensionLibrary {
       }
       // An engine update may introduce a bundled name/GUID already in the library.
       // The bundled original remains authoritative; never let a user archive replace it.
-      if (entries.some((entry) =>
-        entry.extensionGuid === incoming.settings.extensionGuid ||
-        normalizedName(entry.settings.displayName) === normalizedName(incoming.settings.displayName))) {
+      if (sameLibraryIdentity(entries, extensionGuidOf, incoming.settings.extensionGuid, incoming.settings.displayName).length > 0) {
         continue;
       }
       const folderName = uniqueExtensionFolderName(incoming.settings.displayName, folderNames);
@@ -190,7 +166,7 @@ export class EngineExtensionLibrary {
       }
       if (entry.invalid) throw new Error(`The Engine Extension is invalid: ${entry.invalid}`);
       defaults[guid] = enabled;
-      await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+      await writeLibraryDefaults(this.libraryStorage, defaults);
     });
   }
 
@@ -203,7 +179,7 @@ export class EngineExtensionLibrary {
       const archivePath = archivePaths.get(guid)!;
       await this.libraryStorage.remove(archivePath);
       delete defaults[guid];
-      await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+      await writeLibraryDefaults(this.libraryStorage, defaults);
     });
   }
 
@@ -214,55 +190,31 @@ export class EngineExtensionLibrary {
     return this.serialize(async () => {
       const incoming = await inspectHextension(bytes);
       const { entries, archivePaths, defaults } = await this.readState();
-      const conflicts = entries.filter((entry) =>
-        entry.extensionGuid === incoming.settings.extensionGuid ||
-        normalizedName(entry.settings.displayName) === normalizedName(incoming.settings.displayName));
-      if (conflicts.some((entry) => entry.bundled)) {
-        throw new Error("A bundled Engine Extension already uses this name or ID and cannot be replaced.");
-      }
-      if (conflicts.length > 1) {
-        throw new Error("The extension name and ID match different Engine Extensions. Rename the extension before exporting.");
-      }
-      const existing = conflicts[0];
-      if (existing && options.replaceGuid !== existing.extensionGuid) {
-        return { status: "conflict", existing };
-      }
-      if (!existing && options.replaceGuid) {
-        throw new Error("The Engine Extension changed. Export again to confirm the replacement.");
-      }
+      const target = resolveLibraryImport(entries, extensionGuidOf, {
+        guid: incoming.settings.extensionGuid, displayName: incoming.settings.displayName,
+      }, options.replaceGuid, "Extension");
+      if ("conflict" in target) return { status: "conflict", existing: target.conflict };
+      const { existing } = target;
       const archivePath = existing
         ? archivePaths.get(existing.extensionGuid)!
         : `${newGuid()}.hextension`;
       const previousArchive = existing ? await this.libraryStorage.readBinary(archivePath) : null;
-      const previousDefaults = await this.libraryStorage.exists(DEFAULTS_FILE)
-        ? await this.libraryStorage.readBinary(DEFAULTS_FILE)
-        : null;
+      const previousDefaults = await captureLibraryFile(this.libraryStorage, LIBRARY_DEFAULTS_FILE);
       if (existing) {
         delete defaults[existing.extensionGuid];
         defaults[incoming.settings.extensionGuid] = existing.enabledByDefault;
       }
       try {
         await this.libraryStorage.writeBinary(archivePath, bytes);
-        await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+        await writeLibraryDefaults(this.libraryStorage, defaults);
         const entry = (await this.readState()).entries.find(
           (extension) => extension.extensionGuid === incoming.settings.extensionGuid,
         );
         if (!entry) throw new Error("Export did not produce an Engine Extension.");
         return { status: "imported", entry };
       } catch (cause) {
-        const restoreErrors: unknown[] = [];
-        try {
-          if (previousArchive) await this.libraryStorage.writeBinary(archivePath, previousArchive);
-          else if (await this.libraryStorage.exists(archivePath)) await this.libraryStorage.remove(archivePath);
-        } catch (restoreError) { restoreErrors.push(restoreError); }
-        try {
-          if (previousDefaults) await this.libraryStorage.writeBinary(DEFAULTS_FILE, previousDefaults);
-          else if (await this.libraryStorage.exists(DEFAULTS_FILE)) await this.libraryStorage.remove(DEFAULTS_FILE);
-        } catch (restoreError) { restoreErrors.push(restoreError); }
-        if (restoreErrors.length > 0) {
-          throw new AggregateError([cause, ...restoreErrors], "Extension import failed and the previous library state could not be fully restored.", { cause });
-        }
-        throw cause;
+        return restoreLibraryFiles(this.libraryStorage,
+          [[archivePath, previousArchive], [LIBRARY_DEFAULTS_FILE, previousDefaults]], cause, "Extension");
       }
     });
   }

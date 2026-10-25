@@ -42,6 +42,11 @@ function segment(value: string): string {
   return encoded;
 }
 
+/** Throws the `invalid` SaveGameError the service raises for a project, profile or slot ID it cannot store. */
+export function validateSaveGameId(value: string): void {
+  segment(value);
+}
+
 function failure(error: unknown): SaveGameFailure {
   if (error instanceof SaveGameError) return { code: error.code, message: error.message };
   const record = error as { name?: unknown; code?: unknown; message?: unknown } | null;

@@ -149,6 +149,20 @@ describe("Material preview panel", () => {
     expect(screen.queryByTestId("material-preview-custom-mesh")).toBeNull();
   });
 
+  it("refreshes an open custom mesh picker when Models change", async () => {
+    const { rerender } = render(<MaterialPreviewPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    expect(screen.getByTestId("search-item-model-1")).toBeTruthy();
+    await assetRegistry.createAsset("project", "model-2.hasset", {
+      guid: "model-2", name: "Bust", type: "Model", version: 1, dependencies: [], payload: {}, chunks: [],
+    });
+    await assetRegistry.deleteAsset("model-1");
+    harness.registryEpoch += 1;
+    rerender(<MaterialPreviewPanel {...panelProps} />);
+    expect(await screen.findByTestId("search-item-model-2")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-model-1")).toBeNull();
+  });
+
   it("returns to Cube when the custom picker chooses None", () => {
     render(<MaterialPreviewPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));

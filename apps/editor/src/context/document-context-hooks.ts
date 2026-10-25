@@ -111,7 +111,7 @@ export function useSaveState(): SaveState {
   return useSlice(SaveStateContext, "useSaveState");
 }
 
-/** Compile staleness and Play preview bundles; changes on Compile, not per edit. */
+/** Compile staleness: whether open graphs changed since the last Compile, and their signature. */
 export function useCompileState(): CompileState {
   return useSlice(CompileStateContext, "useCompileState");
 }

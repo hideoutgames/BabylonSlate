@@ -246,12 +246,3 @@ export async function importFont(
     },
   ];
 }
-
-export function msdfAtlasPickError(
-  files: ReadonlyArray<{ name: string }>,
-): string | null {
-  const hasJson = files.some((file) => extensionOf(file.name) === "json");
-  const hasPng = files.some((file) => extensionOf(file.name) === "png");
-  if (hasJson && hasPng) return null;
-  return "MSDF needs both JSON and PNG.";
-}

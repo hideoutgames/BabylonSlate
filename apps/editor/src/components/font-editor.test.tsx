@@ -171,7 +171,7 @@ describe("Font editor", () => {
       representations: { source: true },
     }) as unknown as Record<string, unknown>;
     fontHarness.pickImportFiles.mockResolvedValueOnce([
-      { name: "Display.json", bytes: new TextEncoder().encode('{"chars":[],"common":{}}') },
+      { name: "Display.json", bytes: new TextEncoder().encode('{"pages":["Display.png"],"chars":[],"common":{}}') },
       { name: "Display.png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) },
     ]);
     render(<FontInspector path={PATH} payload={payload()} onChange={commit} />);

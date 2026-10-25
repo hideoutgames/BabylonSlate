@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
+import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, validateSaveGameId, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
 import { createSaveGameStorage, pickImportFiles } from "@haptic/vfs";
 import { AssetPicker, AssetPickerControl } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
@@ -8,7 +8,7 @@ import { Switch } from "@haptic/ui/components/switch";
 import { Badge } from "@haptic/ui/components/badge";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import {
   useDocumentActions,
@@ -28,6 +28,19 @@ function displayValue(value: SaveGameValue): string {
   if (Array.isArray(value)) return value.map(displayValue).join(", ") || "Empty Array";
   if (typeof value === "object") return Object.entries(value).map(([key, entry]) => `${key}: ${displayValue(entry)}`).join(" · ");
   return String(value);
+}
+
+/**
+ * Play's service rejects a default it cannot store; the preview service below never receives the defaults.
+ * The core check decides; its message covers every kind of save ID, so name the field instead.
+ */
+function saveIdError(label: string, value: string): string | null {
+  try { validateSaveGameId(value); return null; }
+  catch {
+    if (!value.trim()) return `${label} must not be empty.`;
+    try { encodeURIComponent(value); } catch { return `${label} contains characters a save cannot store.`; }
+    return `${label} is too long to store.`;
+  }
 }
 
 function downloadSave(text: string, slot: string) {
@@ -56,6 +69,8 @@ export function ProjectSaveGamesSettings() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [inspection, setInspection] = useState<{ slot: string; values: Record<string, SaveGameValue> } | null>(null);
+  // Advanced whenever an effect clears the inspection, so an Inspect still loading then cannot bring back a stale save.
+  const inspectionGeneration = useRef(0);
   const [deleteTarget, setDeleteTarget] = useState<SaveGameInfo | "all" | null>(null);
 
   useEffect(() => { setProfile(settings?.defaultProfile ?? "default"); }, [projectGuid, settings?.defaultProfile]);
@@ -65,18 +80,20 @@ export function ProjectSaveGamesSettings() {
     let cancelled = false;
     setService(null);
     setSaves([]);
+    inspectionGeneration.current += 1;
     setInspection(null);
     setError(null);
     if (!projectGuid || !definitionAsset || !settings) return;
     void (async () => {
       try {
         const definition = validateSaveGameDefinition(openDefinition ?? await loadAssetDocument("save-game", definitionAsset.path));
-        const next = new SaveGameService({ projectId: projectGuid, definition, preview: true, storage: createSaveGameStorage(), defaultProfile: settings.defaultProfile, defaultSlot: settings.defaultSlot });
+        // Every call below names its profile and slot, so editing the defaults never rebuilds this service.
+        const next = new SaveGameService({ projectId: projectGuid, definition, preview: true, storage: createSaveGameStorage() });
         if (!cancelled) setService(next);
       } catch (cause) { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); }
     })();
     return () => { cancelled = true; };
-  }, [projectGuid, definitionAsset?.path, settings?.definitionGuid, settings?.defaultProfile, settings?.defaultSlot, registryEpoch, loadAssetDocument, openDefinition]); // eslint-disable-line react-hooks/exhaustive-deps -- depend on stable definition identity and settings values
+  }, [projectGuid, definitionAsset?.path, settings?.definitionGuid, registryEpoch, loadAssetDocument, openDefinition]); // eslint-disable-line react-hooks/exhaustive-deps -- depend on stable definition identity, not the settings object
 
   const refresh = useCallback(async () => {
     if (!service) return;
@@ -85,6 +102,9 @@ export function ProjectSaveGamesSettings() {
 
   useEffect(() => {
     let cancelled = false;
+    // An open inspection belongs to the profile it was loaded from.
+    inspectionGeneration.current += 1;
+    setInspection(null);
     if (service) void service.listSaves({ profile }).then((result) => {
       if (cancelled) return;
       if (result.ok) { setSaves(result.value); setError(null); }
@@ -105,6 +125,8 @@ export function ProjectSaveGamesSettings() {
   };
   if (!settings) return null;
   const disabled = pending || !service;
+  const defaultSlotError = saveIdError("Default Slot", settings.defaultSlot);
+  const defaultProfileError = saveIdError("Default Profile", settings.defaultProfile);
   return <FieldGroup className="min-w-0" data-testid="settings-save-games-panel">
     <FieldSet className="min-w-0">
       <FieldLegend>Save Games</FieldLegend>
@@ -112,8 +134,8 @@ export function ProjectSaveGamesSettings() {
         <AssetPickerControl value={settings.definitionGuid}><Button id="settings-save-definition" variant="outline" className="w-full justify-start pointer-coarse:min-h-11" onClick={() => setPickerOpen(true)}>{definitionAsset?.header.name ?? "Choose Save Game"}</Button></AssetPickerControl>
         <FieldDescription>Create a Save Game asset with typed fields and defaults, then select it here. Save Game and Load Game use the default slot automatically.</FieldDescription>
       </Field>
-      <Field><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><Input id="settings-save-slot" value={settings.defaultSlot} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} /></Field>
-      <Field><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><Input id="settings-save-profile" value={settings.defaultProfile} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} /></Field>
+      <Field data-invalid={defaultSlotError ? true : undefined}><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><Input id="settings-save-slot" value={settings.defaultSlot} aria-invalid={defaultSlotError ? true : undefined} aria-describedby={defaultSlotError ? "settings-save-slot-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} />{defaultSlotError ? <FieldError id="settings-save-slot-error">{defaultSlotError}</FieldError> : null}</Field>
+      <Field data-invalid={defaultProfileError ? true : undefined}><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><Input id="settings-save-profile" value={settings.defaultProfile} aria-invalid={defaultProfileError ? true : undefined} aria-describedby={defaultProfileError ? "settings-save-profile-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} />{defaultProfileError ? <FieldError id="settings-save-profile-error">{defaultProfileError}</FieldError> : null}</Field>
       {/* Reserve the Switch's expanded hit area without clipping it at the panel edge. */}
       <Field orientation="horizontal" className="pr-3"><FieldContent className="min-w-0"><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel><FieldDescription>Clear this project's local preview profiles before each Play session. Exported game saves use a separate namespace.</FieldDescription></FieldContent><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>
     </FieldSet>
@@ -142,7 +164,14 @@ export function ProjectSaveGamesSettings() {
         <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{save.slot}</span><Badge variant="outline">{save.status === "ok" ? save.recovered ? "Recovered" : "Valid" : save.status === "corrupt" ? "Corrupt" : "Incompatible"}</Badge></div>
         <FieldDescription>{save.createdAt ? `${new Date(save.createdAt).toLocaleString()} · Schema ${save.schemaVersion} · Generation ${save.sequence}` : save.error?.message}</FieldDescription>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status !== "ok"} aria-label={`Inspect ${save.slot}`} onClick={() => void run(async () => { if (!service) return; resultValue(await service.loadGame(save)); setInspection({ slot: save.slot, values: structuredClone(service.getSaveData()) }); })}>Inspect</Button>
+          <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status !== "ok"} aria-label={`Inspect ${save.slot}`} onClick={() => void run(async () => {
+            if (!service) return;
+            const generation = inspectionGeneration.current;
+            resultValue(await service.loadGame(save));
+            // A Default Profile edit or a new definition while it loaded already cleared the inspection.
+            if (inspectionGeneration.current !== generation) return;
+            setInspection({ slot: save.slot, values: structuredClone(service.getSaveData()) });
+          })}>Inspect</Button>
           <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status === "corrupt"} aria-label={`Export ${save.slot}`} onClick={() => void run(async () => { if (service) downloadSave(resultValue(await service.exportSave(save)), save.slot); })}>Export Save</Button>
           <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled} aria-label={`Delete ${save.slot}`} onClick={() => setDeleteTarget(save)}>Delete Save</Button>
         </div>

@@ -14,6 +14,8 @@ import { systemPreviewLibrary } from "../lib/play-particles";
 
 const harness = vi.hoisted(() => ({
   createScene: vi.fn(),
+  /** Play's Material library collection for each load. */
+  collectMaterialLibrary: vi.fn(),
   services: [] as Array<{
     setPaused: ReturnType<typeof vi.fn>;
     updateLibrary: ReturnType<typeof vi.fn>;
@@ -118,11 +120,7 @@ vi.mock("../context/play-context", () => {
 vi.mock("../context/document-context", async () => {
   const documents = {
     assetRegistry: { getByGuid: (guid: string) => harness.textures.get(guid) },
-    collectPlayMaterialLibrary: async () => ({
-      documents: new Map(),
-      functions: new Map(),
-      textureGuids: [...harness.textureGuids],
-    }),
+    collectPlayMaterialLibrary: (...args: unknown[]) => harness.collectMaterialLibrary(...args),
     collectPlayTextureBytes: async () => new Map(harness.textureBytes),
   };
   return (await import("../testing/document-context-mock")).documentContextMock(() => ({ ...documents, registryEpoch: harness.registryEpoch }));
@@ -130,11 +128,17 @@ vi.mock("../context/document-context", async () => {
 
 beforeEach(() => {
   harness.createScene.mockImplementation(() => ({ scene: {}, dispose: vi.fn() }));
+  harness.collectMaterialLibrary.mockImplementation(async () => ({
+    documents: new Map(),
+    functions: new Map(),
+    textureGuids: [...harness.textureGuids],
+  }));
 });
 
 afterEach(() => {
   cleanup();
   harness.createScene.mockReset();
+  harness.collectMaterialLibrary.mockReset();
   harness.services.length = 0;
   harness.assignDiagnostics = [];
   harness.tier = "live";
@@ -285,6 +289,25 @@ describe("Particle preview recovery", () => {
     await waitFor(() =>
       expect(screen.getByTestId("particle-preview-count").textContent).toBe("~12 / 256"),
     );
+  });
+
+  it("keeps the running preview when a load it replaced fails afterwards", async () => {
+    let failFirstLoad: (error: Error) => void = () => {};
+    harness.collectMaterialLibrary.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => { failFirstLoad = reject; }),
+    );
+    const view = render(preview());
+    // A Material change starts a new load while the first still collects its Materials.
+    view.rerender(preview({ ...withMaterial, render: { ...withMaterial.render, materialGuid: "mat-2" } }));
+    await screen.findByTestId("particle-preview-restart");
+    const service = harness.services[0]!;
+
+    await act(async () => failFirstLoad(new Error("Material library unavailable")));
+
+    expect(service.dispose).not.toHaveBeenCalled();
+    const assigns = service.handleCommand.mock.calls.length;
+    fireEvent.click(screen.getByTestId("particle-preview-restart"));
+    expect(service.handleCommand).toHaveBeenCalledTimes(assigns + 1);
   });
 
   it("pauses the running preview and restarts it with the same assignment", async () => {

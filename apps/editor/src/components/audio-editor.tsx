@@ -145,6 +145,8 @@ export function AudioPreview({
   const previewSessionRef = useRef<ReturnType<
     typeof createAudioPreviewSession
   > | null>(null);
+  /** The latest waveform decode; an older one that finishes later is dropped. */
+  const waveformRequestRef = useRef(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const clipIds = audio.clips.map((clip) => clip.chunkId).join("|");
   const audioRef = useRef(audio);
@@ -168,13 +170,15 @@ export function AudioPreview({
     }
     previewSessionRef.current = session;
     void (async () => {
+      // Taken before the prefetch, so a Play started meanwhile keeps its clip's waveform.
+      const request = ++waveformRequestRef.current;
       await session.prefetch(audioRef.current);
       if (cancelled) return;
       const clipId = audioRef.current.clips[0]?.chunkId;
       const bytes = clipId ? session.clipBytes(clipId) : undefined;
       if (!bytes) return;
       const waveform = await decodeAudioWaveformPeaks(bytes);
-      if (cancelled) return;
+      if (cancelled || request !== waveformRequestRef.current) return;
       if (waveform) {
         setWaveformPeaks(waveform.peaks);
         setWaveformDuration(waveform.durationSeconds);
@@ -189,8 +193,10 @@ export function AudioPreview({
     });
     return () => {
       cancelled = true;
+      // Disposing stops the voice without reporting its end.
       session.dispose();
       previewSessionRef.current = null;
+      setPlaying(false);
     };
   }, [path, readAssetChunk, clipIds]);
 
@@ -220,8 +226,9 @@ export function AudioPreview({
     if (!clipId) return;
     const bytes = session.clipBytes(clipId);
     if (!bytes) return;
+    const request = ++waveformRequestRef.current;
     void decodeAudioWaveformPeaks(bytes).then((waveform) => {
-      if (!waveform) return;
+      if (!waveform || request !== waveformRequestRef.current || previewSessionRef.current !== session) return;
       setWaveformPeaks(waveform.peaks);
       setWaveformDuration(waveform.durationSeconds);
     });

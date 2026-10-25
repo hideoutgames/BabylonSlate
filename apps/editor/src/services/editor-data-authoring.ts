@@ -11,6 +11,8 @@ import {
 import type { AssetRegistry, IndexedAsset } from "@haptic/assets";
 import {
   createDataEntryForDefinition,
+  dataEntryNeedsDefinitionApply,
+  dataEntryStructuralIssue,
   reconcileDataEntry,
   resolveDataEntryValues,
   serializeDataEntryValues,
@@ -29,7 +31,6 @@ type Host = Pick<ReturnType<typeof useDocuments>,
   "assetRegistry" | "getOpenDocuments" | "loadAssetDocument" |
   "ensureAssetDocument" | "applyAssetDocumentChange" | "noteAssetsCreated"
 >;
-const structuralIssues = new Set(["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"]);
 
 function schemasFor(host: Host): TypeSchemas {
   return typeSchemasFromGraphAssets(collectGraphTypeAssets({
@@ -284,8 +285,7 @@ export function createEditorDataAuthoringApi(
         if (index.effectiveDefinitionById.get(entry.id) !== guid) throw new Error("The entry uses a different Data Definition.");
         const fields = schemas.dataDefinitions![guid]!.fields;
         const migration = reconcileDataEntry(entry, guid, fields, schemas);
-        if (migration.changes.some((change) => change.kind === "added" || change.kind === "renamed") ||
-          migration.issues.some((issue) => issue.severity === "error" && structuralIssues.has(issue.code))) {
+        if (dataEntryNeedsDefinitionApply(migration) || dataEntryStructuralIssue(migration)) {
           throw new Error("Apply Data Definition changes to this entry before updating its values.");
         }
         const supplied = serializeDataEntryValues(args.values, fields, schemas);

@@ -326,13 +326,13 @@ describe("DocumentProvider actions and route", () => {
       ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: 3 },
     ] }));
     await act(() => actions.collectPlayPreviewScripts());
-    expect(documents()).toMatchObject({ graphsNeedCompile: false, scriptsStale: false });
+    expect(documents().graphsNeedCompile).toBe(false);
 
     expect(await act(() => actions.reparentClassDocument(id, "Hero"))).toBeNull();
     expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
     expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([id]);
-    // The new parent reaches Compile and Play's bundles, though the graph is unchanged.
-    expect(documents()).toMatchObject({ graphsNeedCompile: true, scriptsStale: true });
+    // The new parent reaches Compile, though the graph is unchanged.
+    expect(documents().graphsNeedCompile).toBe(true);
 
     // Discard: the unsaved member never reached disk.
     act(() => actions.closeDocument(id));
@@ -463,6 +463,39 @@ describe("DocumentProvider actions and route", () => {
       expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
       expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
     } finally { release(); save.mockRestore(); }
+  });
+
+  it.each([true, false])("keeps a scene edit made while a Class rename writes its files (scene referenced the Class before: %s)", async (referencedBefore) => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const before = referencedBefore ? ["hero"] : [];
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: before.map((id) => createActor(id, "Hero", { classId: "Hero" })),
+    }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const original = ProjectService.prototype.renameAsset;
+    const rename = vi.spyOn(ProjectService.prototype, "renameAsset").mockImplementation(async function(this: ProjectService, ...args) {
+      started = true;
+      await held;
+      return original.apply(this, args);
+    });
+    try {
+      let renaming!: ReturnType<DocumentActions["renameAsset"]>;
+      act(() => { renaming = actions.renameAsset(asset.header.guid, "Champion"); });
+      await waitFor(() => expect(started).toBe(true));
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+        ...openScene(MAIN_SCENE_ID), actors: [...openScene(MAIN_SCENE_ID).actors, createActor("late", "Late Hero", { classId: "Hero" })],
+      }));
+      await act(async () => { release(); await renaming; });
+    } finally { release(); rename.mockRestore(); }
+    expect(openScene(MAIN_SCENE_ID).actors.map(({ id, classId }) => ({ id, classId })))
+      .toEqual([...before, "late"].map((id) => ({ id, classId: "Champion" })));
+    expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
   });
 
   it("does not write back an asset the Content Browser deletes between two Save All writes", async () => {
@@ -738,6 +771,66 @@ describe("DocumentProvider actions and route", () => {
     await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position));
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
     expect(documents().recoveryAvailable).toBe(false);
+  });
+
+  /** Reopens "Stable" with a Material tab restored but not yet read. */
+  async function reopenWithRestoredMaterialTab(actions: DocumentActions) {
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Material", name: "Shiny" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument({ kind: "material", path: asset.path, label: "Shiny Material" }));
+    await act(() => actions.saveAll());
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+    await act(() => actions.openListedProject(listed));
+    const id = documentId({ kind: "material", path: asset.path });
+    expect(documents().openDocuments.find(doc => doc.id === id)?.content).toBeNull();
+    return { asset, id };
+  }
+
+  it("reports a restored tab whose asset cannot be read when the tab is selected", async () => {
+    const actions = await openProject();
+    const { asset, id } = await reopenWithRestoredMaterialTab(actions);
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path, options) {
+      if (path === asset.path) throw new Error("The Material could not be decoded.");
+      return realLoad.call(this, kind, path, options);
+    });
+    try {
+      act(() => actions.setActiveDocument(id));
+      expect((await screen.findByTestId("document-open-error")).textContent).toContain("The Material could not be decoded.");
+    } finally { read.mockRestore(); }
+    fireEvent.click(screen.getByTestId("document-open-error-dismiss"));
+    await waitFor(() => expect(screen.queryByTestId("document-open-error")).toBeNull());
+  });
+
+  it("reports nothing for a restored tab closed while its first read is pending", async () => {
+    const actions = await openProject();
+    const { asset, id } = await reopenWithRestoredMaterialTab(actions);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    let settled = false;
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path, options) {
+      if (path !== asset.path) return realLoad.call(this, kind, path, options);
+      started = true;
+      try {
+        await held;
+        return await realLoad.call(this, kind, path, options);
+      } finally { settled = true; }
+    });
+    try {
+      act(() => actions.setActiveDocument(id));
+      await waitFor(() => expect(started).toBe(true));
+      act(() => actions.closeDocument(id));
+      release();
+      await waitFor(() => expect(settled).toBe(true));
+      // A macrotask: the rejection has reached the provider and any dialog has rendered.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    } finally { release(); read.mockRestore(); }
+    expect(documents().openDocuments.some(doc => doc.id === id)).toBe(false);
+    expect(screen.queryByTestId("document-open-error")).toBeNull();
   });
 
   /** Reopens "Stable" after a session that never saved `name`, with its edit in the journal. */

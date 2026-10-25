@@ -722,3 +722,16 @@ export function reconcileDataEntry(
   }
   return { entry: next, changes, issues: issues.map((entry) => ({ ...entry, entryId: row.id })) };
 }
+
+type DataEntryMigration = ReturnType<typeof reconcileDataEntry>;
+const STRUCTURAL_ISSUE_CODES = new Set(["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"]);
+
+/** The first Definition conflict that blocks applying a migration or editing the entry's values. */
+export function dataEntryStructuralIssue(migration: Pick<DataEntryMigration, "issues">): DataValidationIssue | undefined {
+  return migration.issues.find((entry) => entry.severity === "error" && STRUCTURAL_ISSUE_CODES.has(entry.code));
+}
+
+/** Added or renamed fields must be applied before the entry's values can be edited. */
+export function dataEntryNeedsDefinitionApply(migration: Pick<DataEntryMigration, "changes">): boolean {
+  return migration.changes.some((change) => change.kind === "added" || change.kind === "renamed");
+}

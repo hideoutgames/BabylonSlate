@@ -2385,6 +2385,8 @@ export function applyPrefabPropertyDefaults(
   prefab: SerializedComponent | undefined,
 ): PropertyRow[] {
   if (!prefab) return rows;
+  // Save Game rows end in user variable names, not property keys.
+  if (prefab.classId === "SaveGameComponent") return rows;
   return rows.map((row) => {
     if (prefab.classId === "DeformerComponent" && row.kind === "vector3") {
       const index = /-offset-(\d+)$/.exec(row.id)?.[1];

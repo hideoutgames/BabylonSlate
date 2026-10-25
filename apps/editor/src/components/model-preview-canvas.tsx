@@ -247,18 +247,6 @@ export function ModelPreviewCanvas({
         hostRef.current = host;
         presenterRef.current = presenter;
         presenter.present({ force: true });
-        if (cancelled) {
-          presenter.dispose();
-          gestures.dispose();
-          loaded?.dispose();
-          host.dispose();
-          hostRef.current = null;
-          presenterRef.current = null;
-          shadingRef.current = null;
-          gizmoHostRef.current?.dispose();
-          gizmoHostRef.current = null;
-          return;
-        }
         setPreviewGeneration((value) => value + 1);
         const tick = () => {
           if (cancelled) return;
