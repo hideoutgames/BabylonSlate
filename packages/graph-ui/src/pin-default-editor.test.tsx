@@ -37,6 +37,17 @@ describe("inline default editing sessions", () => {
     expect((screen.getByRole("textbox", { name: "Value" }) as HTMLInputElement).value).toBe(kind === "string" ? "Before" : "2");
   });
 
+  it("stores the last valid number when a typed edit ends on an invalid expression", () => {
+    const initial = request("float", 5);
+    render(<PinDefaultEditor {...initial} />);
+    const input = screen.getByRole("textbox", { name: "Value" });
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.change(input, { target: { value: "12+" } });
+    fireEvent.blur(input);
+    expect(initial.onChange).toHaveBeenCalledExactlyOnceWith(12);
+  });
+
   it("ends a numeric scrub with one bounded commit without changing the graph during the gesture", () => {
     const initial = request("float", 0.5);
     initial.pin.min = 0;
