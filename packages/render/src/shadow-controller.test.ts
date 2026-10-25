@@ -21,7 +21,7 @@ import {
   Vector3,
   type AbstractEngine,
 } from "@babylonjs/core";
-import { sceneShadowController } from "./shadow-controller";
+import { PREDICTION_MAP_SIZE, sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import {
@@ -29,7 +29,7 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
-import { otherShadowReservations } from "./shadow-admission";
+import { otherShadowReservations, shadowBytesPerTexel } from "./shadow-admission";
 import { beginManagedRenderAllocation, limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { retainAreaLightLookup } from "./area-light-resources";
@@ -1390,6 +1390,73 @@ describe("shared shadow lifecycle", () => {
 function cascadeFit(generator: CascadedShadowGenerator): number[][] {
   return Array.from({ length: generator.numCascades }, (_, layer) => [...generator.getCascadeTransformMatrix(layer)!.m]);
 }
+
+describe("prediction maps", () => {
+  /** A scene whose camera sits at the origin, with a spot light a prediction map of its kind is built for. */
+  function predicting() {
+    const { scene, controller } = fixture();
+    scene.activeCamera!.position.set(0, 0, 0);
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    receiver.material = new StandardMaterial("receiver", scene);
+    controller.setParticipation(receiver, { castShadows: true, receiveShadows: true });
+    const spot = new SpotLight("spot", new Vector3(0, 3, 6), Vector3.Down(), Math.PI / 2, 1, scene);
+    // A sync takes the scene's shadow settings, which a prediction map is built with.
+    controller.sync();
+    const engine = scene.getEngine();
+    return { scene, controller, spot, engine, bytes: PREDICTION_MAP_SIZE ** 2 * shadowBytesPerTexel(engine) };
+  }
+
+  /** A shadowed point light near the camera, which takes the scene's one local map once registered. */
+  function nearPoint(scene: Scene) {
+    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
+    point.range = 10;
+    return point;
+  }
+
+  it.each([[-1, false], [0, true]])("is built only into the room the real maps leave (%i bytes to spare)", (spare, built) => {
+    const { scene, controller, spot, engine, bytes } = predicting();
+    controller.register(nearPoint(scene), true);
+    controller.sync();
+    expect(controller.metrics().bytes).toBeGreaterThan(0);
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + bytes + spare);
+    expect({ built: controller.predictionMap(spot) !== null, held: controller.heldPredictionMaps.length })
+      .toEqual({ built, held: built ? 1 : 0 });
+  });
+
+  it("goes when a sync needs its room for a real map", () => {
+    // Calibration: the bytes the point's map takes.
+    const calibration = predicting();
+    calibration.controller.register(nearPoint(calibration.scene), true);
+    calibration.controller.sync();
+    const pointBytes = calibration.controller.metrics().bytes;
+    const { scene, controller, spot, engine, bytes } = predicting();
+    // Room for the point's map, or for the prediction map, not for both.
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + pointBytes + bytes - 1);
+    const map = controller.predictionMap(spot)!;
+    const dispose = vi.spyOn(map, "dispose");
+    const point = nearPoint(scene);
+    controller.register(point, true);
+    controller.sync();
+    expect({ point: controller.generator(point) !== null, held: controller.heldPredictionMaps.length, disposed: dispose.mock.calls.length,
+      withinLimit: managedRenderReservations(engine).reservedBytes <= managedRenderReservations(engine).limit })
+      .toEqual({ point: true, held: 0, disposed: 1, withinLimit: true });
+  });
+
+  it.each([
+    ["new shadow settings", ({ scene, controller }: ReturnType<typeof predicting>) => {
+      updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, filterQuality: "high" }) });
+      controller.sync();
+    }],
+    ["a restored context", ({ engine }: ReturnType<typeof predicting>) => engine.onContextRestoredObservable.notifyObservers(engine)],
+    ["the Scene's disposal", ({ scene }: ReturnType<typeof predicting>) => scene.dispose()],
+  ] as const)("goes with %s", (_name, change) => {
+    const context = predicting();
+    const map = context.controller.predictionMap(context.spot)!;
+    const dispose = vi.spyOn(map, "dispose");
+    change(context);
+    expect({ held: context.controller.heldPredictionMaps.length, disposed: dispose.mock.calls.length }).toEqual({ held: 0, disposed: 1 });
+  });
+});
 
 describe("view sun shadow maps", () => {
   it("binds a single sun map with the box it was drawn with, whichever camera binds it", () => {
