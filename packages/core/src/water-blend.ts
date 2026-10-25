@@ -2,7 +2,7 @@ import type { Transform, Vec3 } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import {
   createWaterWaveOutput, emptyWaterSample, invertWaterWaves, sampleWaterSurface, waterBankDistance, waterBankFadeLength, waterBankGain,
-  waterEulerianGradient, waterHorizontalEnvelope, waterMovesSideways, waterRestBase, waterRiverCentreline,
+  waterEulerianGradient, waterHorizontalEnvelopeOf, waterMovesSideways, waterRestBase, waterRiverCentreline,
   type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterSample, type WaterWaveGain,
 } from "./water";
 import { waterSpectrum } from "./water-spectrum";
@@ -611,16 +611,17 @@ export function sampleWaterBlend(
   const me = index.bodies[self]!;
   const list = index.neighbours(self);
   if (!list.length || !me.ray || !(Number.isFinite(time) && Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)) || !me.body.enabled) {
-    return sampleWaterSurface(me.definition, me.body, position, time, me.transform);
+    return sampleWaterSurface(me.definition, me.body, position, time, me.transform, me);
   }
-  const reach = waterBlendReach(index.distance) + waterHorizontalEnvelope(me.definition, me.referenceScale) + BLEND_DERIVATIVE_STEP;
+  const spectrum = waterSpectrum(me.definition), scale = me.referenceScale;
+  const reach = waterBlendReach(index.distance) + waterHorizontalEnvelopeOf(spectrum, scale) + BLEND_DERIVATIVE_STEP;
   let near = false;
   for (const j of list) {
     const b = index.bodies[j]!.bounds;
     if (position.x >= b[0]! - reach && position.x <= b[1]! + reach && position.z >= b[4]! - reach && position.z <= b[5]! + reach) { near = true; break; }
   }
-  if (!near) return sampleWaterSurface(me.definition, me.body, position, time, me.transform);
-  const spectrum = waterSpectrum(me.definition), scale = me.referenceScale, gerstner = waterMovesSideways(spectrum, scale), wave = waveScratch;
+  if (!near) return sampleWaterSurface(me.definition, me.body, position, time, me.transform, me);
+  const gerstner = waterMovesSideways(spectrum, scale), wave = waveScratch;
   const stencil = blendStencil, s = blendSample, y = position.y;
   let found: boolean;
   if (gerstner) {

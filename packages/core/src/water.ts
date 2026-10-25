@@ -330,14 +330,23 @@ export function evaluateWaterVertex(
   evaluateWaterSpectrum(spectrum, x0, z0, time, out, scale, vertexGain[0]!, vertexGain[1]! * gradX, vertexGain[1]! * gradZ);
 }
 
+function waveEnvelopeOf(spectrum: WaterSpectrum, scale: number): number {
+  return Math.abs(scale) * 4 * spectrum.sigma;
+}
+
 /** Bound on |H| for a body (metres): four standard deviations of the sea's height. */
 export function waterWaveEnvelope(water: WaterDefinition, scale = 1): number {
-  return Math.abs(scale) * 4 * waterSpectrum(water).sigma;
+  return waveEnvelopeOf(waterSpectrum(water), scale);
+}
+
+/** `waterHorizontalEnvelope` of a spectrum the caller already holds, for per-query paths. */
+export function waterHorizontalEnvelopeOf(spectrum: WaterSpectrum, scale: number): number {
+  return spectrum.choppiness * waveEnvelopeOf(spectrum, scale);
 }
 
 /** Bound on the Gerstner horizontal offset |D| for a body (metres): λ times the height envelope. Zero at Steepness 0. */
 export function waterHorizontalEnvelope(water: WaterDefinition, scale = 1): number {
-  return waterSpectrum(water).choppiness * waterWaveEnvelope(water, scale);
+  return waterHorizontalEnvelopeOf(waterSpectrum(water), scale);
 }
 
 /**
@@ -531,11 +540,12 @@ export function sampleWaterSurface(
   let hit = waterRestBase(body, transform, inverse, ray, position.x, position.y, position.z);
   if (!hit?.footprint.inside) return emptyWaterSample();
   if (gerstner) {
-    const fadeLength = body.kind === "global" ? 0 : waterBankFadeLength(water, scale);
+    const horizontal = waterHorizontalEnvelopeOf(spectrum, scale);
+    const fadeLength = body.kind === "global" ? 0 : WATER_BANK_FADE_ENVELOPES * horizontal;
     let gain: WaterWaveGain | undefined;
     // A rest point within the fade band lies at most one horizontal envelope from the query; further inside, the
     // rest point is unfaded and the plain inversion is exact.
-    if (fadeLength > 0 && waterBankDistance(hit.footprint, transform, bankScratch) < fadeLength + waterHorizontalEnvelope(water, scale)) {
+    if (fadeLength > 0 && waterBankDistance(hit.footprint, transform, bankScratch) < fadeLength + horizontal) {
       Object.assign(bankGain, { body, transform, inverse, ray, y: position.y, fadeLength });
       gain = bankGain;
     }
