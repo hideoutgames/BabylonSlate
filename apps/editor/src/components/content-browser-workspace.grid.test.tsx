@@ -903,6 +903,28 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
   });
 
+  it("refuses an MSDF atlas pick without its JSON instead of attaching the PNG to the Font", async () => {
+    const font = texture(0);
+    font.path = "assets/Display.font.hasset";
+    font.header = { ...font.header, type: "Font", name: "Display", guid: "font-1" };
+    installRegistry([font]);
+    const importFile = vi.fn(async () => []);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), importFile };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/Display.font.hasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import MSDF Atlas…" }));
+    const picker = await waitFor(() => {
+      const input = document.querySelector('[data-testid="vfs-import-picker-input"]');
+      expect(input).not.toBeNull();
+      return input!;
+    });
+    const png = new File([new Uint8Array([1])], "atlas.png");
+    Object.defineProperty(png, "arrayBuffer", { value: async () => new Uint8Array([1]).buffer });
+    fireEvent.change(picker, { target: { files: [png] } });
+    expect(await screen.findByText("MSDF needs both JSON and PNG.")).toBeTruthy();
+    expect(importFile).not.toHaveBeenCalled();
+  });
+
   it("opens the connected reference graph focused on the target and navigates to a selected asset", async () => {
     const asset = texture(0);
     const dependency = texture(1);

@@ -15,6 +15,7 @@ import {
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import {
   groupMsdfImportBatch,
+  msdfAtlasPickError,
   newAssetGuid,
   stripAssetFileSuffix,
   type AssetCopyOptions,
@@ -171,6 +172,12 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
               accept: ".json,.png",
             });
             if (!files.length) return;
+            // As the Font editor does: a lone PNG would attach as a Texture chunk.
+            const pickError = msdfAtlasPickError(files);
+            if (pickError) {
+              setImportErrors([pickError]);
+              return;
+            }
             const prepared = groupMsdfImportBatch(files);
             const browse = contentBrowserFolderOps(
               selectedFolderPath,
