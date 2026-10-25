@@ -10,7 +10,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { getBuildLabel } from "../lib/build-identity";
-import { brandWordmarkSrc } from "../lib/branding";
 import { bootIntroStart, useBootIntro } from "./boot-intro";
 import loadingStyles from "./launcher-transition.css?inline";
 
@@ -240,11 +239,15 @@ export function LauncherTransitionProvider({
               aria-label={label}
             >
               <section className="slate-splash">
-                <img
-                  className="slate-splash-wordmark"
-                  src={brandWordmarkSrc()}
-                  alt=""
-                />
+                <span className="slate-splash-wordmark" aria-hidden="true">
+                  <span className="slate-splash-wordmark-ca slate-splash-wordmark-red">
+                    HAPTIC
+                  </span>
+                  <span className="slate-splash-wordmark-ca slate-splash-wordmark-amber">
+                    HAPTIC
+                  </span>
+                  <span className="slate-splash-wordmark-ink">HAPTIC</span>
+                </span>
                 <div className="slate-splash-bottom">
                   <span
                     className="slate-loading-track"
