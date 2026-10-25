@@ -72,6 +72,20 @@ describe("SessionDiagnostics", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("fails a start whose first memory sample is invalid and releases everything it acquired", async () => {
+    vi.useFakeTimers();
+    const releaseFrames = vi.fn();
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
+      observeFrames: () => releaseFrames, captureFrame: async () => "frame", runtimeOperation: async () => ({ success: true }),
+      sampleMemory: () => ({ textureBytes: -1, geometryBytes: 0 }),
+    });
+    expect(await session.startProfile()).toMatchObject({ success: false });
+    expect(session.active).toBeNull();
+    expect(session.lastProfile?.stopReason).toBe("error");
+    expect(releaseFrames).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("records no long tasks where the browser reports none, and says so", async () => {
     const session = new SessionDiagnostics({ mode: "play", identity: () => identity,
       observeFrames: () => () => {}, captureFrame: async () => "frame", runtimeOperation: async () => ({ success: true }),

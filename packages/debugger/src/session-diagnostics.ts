@@ -90,11 +90,9 @@ export class SessionDiagnostics<FrameReport> {
         ...(sampleMemory ? ["memory"] : []), ...(state.releaseLongTasks ? ["long-tasks"] : [])] };
       recorder.start(identity, options);
       state.recorder = recorder;
-      if (sampleMemory) {
-        const sample = () => admit(() => recorder.recordMemory({ sampledAtMs: this.now(), ...sampleMemory() }));
-        sample();
-        state.memoryTimer = setInterval(sample, STATS_COMMAND_INTERVAL_MS);
-      }
+      const sampleMemoryNow = sampleMemory &&
+        (() => admit(() => recorder.recordMemory({ sampledAtMs: this.now(), ...sampleMemory() })));
+      if (sampleMemoryNow) state.memoryTimer = setInterval(sampleMemoryNow, STATS_COMMAND_INTERVAL_MS);
       state.deadline = this.now() + (options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
       state.releaseFrames = this.ports.observeFrames((sample) => {
         if (state.stopping || this.operation !== state) return;
@@ -104,6 +102,12 @@ export class SessionDiagnostics<FrameReport> {
         try { recorder.recordFrame(sample); } catch { void this.finish(state, "error"); }
       });
       state.timer = setTimeout(() => { void this.finish(state, "duration"); }, options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
+      // Sampled once everything is acquired: an invalid first sample ends the recording, and the stop must release it all.
+      sampleMemoryNow?.();
+      if (state.stopping) {
+        await state.stopping;
+        return { success: false, reason: "Performance recording stopped while starting." };
+      }
       this.retained = null;
       return { success: true };
     } catch (error) {
