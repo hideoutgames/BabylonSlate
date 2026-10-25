@@ -14,7 +14,7 @@ import {
   Skeleton,
   StandardMaterial,
   TransformNode,
-  type SubMesh,
+  SubMesh,
   UniversalCamera,
   Vector3,
   VertexBuffer,
@@ -366,6 +366,47 @@ describe("local shadow refresh", () => {
     instance.dispose();
     expect(render()).toBe(6);
     expect(render()).toBe(0);
+  });
+
+  it("refreshes an instance for its source's geometry and depth state when the source itself casts nothing", async () => {
+    // Only the instance's own record can report these: its source has none.
+    const { mesh, material, controller, render } = await fixture();
+    mesh.createInstance("instance").position.set(1.5, 0, 0);
+    controller.setParticipation(mesh, { castShadows: false });
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    const positions = [...mesh.getVerticesData(VertexBuffer.PositionKind)!];
+    positions[0] = positions[0]! + 1;
+    mesh.setVerticesData(VertexBuffer.PositionKind, positions, false);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    material.backFaceCulling = false;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
+
+  it("draws an instance of a source with several parts where the instance is, not where its source is", async () => {
+    // Babylon draws an instance in its source's part batches, which the map culls part by part; the source's parts lie
+    // beyond the light's range, the instance within it.
+    const { scene, mesh, light, controller, map, render } = await fixture();
+    light.range = 6;
+    mesh.unfreezeWorldMatrix();
+    mesh.position.set(50, 0, 0);
+    const vertices = mesh.getTotalVertices();
+    mesh.subMeshes = [];
+    new SubMesh(0, 0, vertices, 0, 18, mesh);
+    new SubMesh(0, 0, vertices, 18, 18, mesh);
+    controller.setParticipation(mesh, { castShadows: false });
+    mesh.createInstance("instance").position.set(1.5, 0, 0);
+    const engine = scene.getEngine();
+    const draw = engine.drawElementsType.bind(engine);
+    let drawn = 0;
+    vi.spyOn(engine, "drawElementsType").mockImplementation((...args) => {
+      if (engine._currentRenderTarget === map.renderTarget) drawn++;
+      draw(...args);
+    });
+    expect(render()).toBe(6);
+    expect(drawn).toBeGreaterThan(0);
   });
 
   it.each(["skeleton", "morph", "updatable", "levels of detail"] as const)(

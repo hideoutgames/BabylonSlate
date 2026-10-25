@@ -167,11 +167,13 @@ export class ShadowMapRefresh {
       state.value(source instanceof Mesh ? source.sideOrientation : undefined);
       state.value(source.skeleton);
       state.value(source.morphTargetManager);
-      state.value(mesh.subMeshes);
+      // An instance draws its source's parts, not its own copies of them.
+      const parts = source.subMeshes;
+      state.value(parts);
       // Babylon leaves this unset on empty model/tilemap roots until geometry
       // creates their first SubMesh. Keep tracking the later populated list.
-      if (mesh.subMeshes)
-        for (const part of mesh.subMeshes) {
+      if (parts)
+        for (const part of parts) {
           state.value(part);
           state.value(part.indexStart);
           state.value(part.indexCount);
