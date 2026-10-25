@@ -54,6 +54,8 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
+import type { SpawnableLight } from "./spawnable-lights";
+import { reserveSceneLightInventory } from "./scene-lighting";
 import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
 import { releaseLightPredictions } from "./variant-prediction";
 import { nativePreparationForEngine } from "./native-preparation";
@@ -1345,14 +1347,17 @@ function initializeEngine(
   const sourceOwners = new Map<number, SceneSourceAssets>([[0, mergeSceneSourceAssets([{
     assets: captureMeshSourceAssets(binding), materialDocuments: new Map(materialDocuments),
     materialFunctions: new Map(materialFunctions), audioLibrary: options.audioLibrary,
-    particleLibrary: options.particleLibrary, fonts: options.fontFaceEntries,
+    particleLibrary: options.particleLibrary, fonts: options.fontFaceEntries, spawnableLights: options.spawnableLights,
   }])]]);
+  /** The light parts the owned sources' Classes may spawn, which Play's load rehearses. */
+  let spawnableLights: ReadonlyMap<string, SpawnableLight> = new Map(options.spawnableLights ?? []);
   let nextSourceOwner = 0;
   let sourceFontGuids = new Set(options.fontFaceEntries?.map((font) => font.guid));
   const installOwnedSources = () => {
     const union = mergeSceneSourceAssets(sourceOwners.values());
     installMeshAssets(union.assets!);
     installMaterialDocuments(union.materialDocuments!, union.materialFunctions);
+    spawnableLights = union.spawnableLights ?? new Map();
     for (const guid of compiledMaterialGuids) if (!union.materialDocuments?.has(guid)) compiledMaterialGuids.delete(guid);
     const models = new Set(binding.modelSources?.keys());
     releaseUnownedGlbSources(scene, models);
@@ -1376,7 +1381,7 @@ function initializeEngine(
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
       "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
       "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
-      "retargetAnimationLoads", "navmeshBytes", "audioReverbBytes", "audioBytes"] as const) delete options[key];
+      "retargetAnimationLoads", "navmeshBytes", "audioReverbBytes", "audioBytes", "spawnableLights"] as const) delete options[key];
   };
 
   /** A scene document's cel shading and shadow overrides, without project settings. */
@@ -3182,6 +3187,14 @@ function initializeEngine(
       const scope = loadingScope(owner);
       // Every instance the load published is in the Scene now; later ones compile as they publish.
       if (!owner) instanceCompileHold = null;
+      // A previous load's rehearsal stops first (its Effects go after the warm-ups below, which may share them): an
+      // applied step's stand-in light would count in the Scene's lights.
+      if (!owner && options.playMode) loadRehearsal?.cancel();
+      // The light parts Play may spawn, which its load rehearses. Its lit Materials compile for one more light than the
+      // Scene holds from the start, the spawned light's: a spawn of one light then changes no Material's light capacity,
+      // and the warm-ups and the rehearsal's other changes compile at the capacity the game draws with.
+      const spawnable = !owner && options.playMode ? [...spawnableLights.values()] : [];
+      if (spawnable.length) reserveSceneLightInventory(scope.target, scope.target.lights.length + 1);
       applyRenderingQuality();
       // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
       // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
@@ -3202,7 +3215,7 @@ function initializeEngine(
         endLoadRehearsal();
         loadRehearsalReport = null;
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
-        loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing());
+        loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing(), spawnable);
       }
     },
     whenMaterialTexturesReady: async (owner) => {

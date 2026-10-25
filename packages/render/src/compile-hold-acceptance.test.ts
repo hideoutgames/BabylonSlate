@@ -56,6 +56,7 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
+  type ScriptBundleEntry,
 } from "@haptic/bridge";
 import { areaRectLightBindings, createDefaultScene, normalizeRenderingQuality } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
@@ -82,6 +83,7 @@ import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
+import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
 import { beginPipelineDeferral, effectDrawn, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 
 // NullEngine is not WebGPU, so the real deferral never engages; the `webgpu` model replaces it.
@@ -340,11 +342,22 @@ const light = (kind: "point" | "spot" | "directional" | "hemispheric", propertie
 /** Rotates +Z (a light's forward) to straight down. */
 const DOWN: Quat = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];
 
+/** A Class whose prefab template holds a Light component with `properties` (its Light Kind among them). */
+const lightClass = (classId: string, properties: Record<string, unknown>): ScriptBundleEntry => ({
+  assetGuid: classId, classId, source: "", anchors: [], entryPoints: [],
+  components: [{ id: "light", classId: "LightComponent", properties }],
+});
+
+/** A load's compiled Classes, each a Class asset of its own, and its assets' dependencies (every one a Class asset). */
+const classesLoad = (scripts: ScriptBundleEntry[], assets: SpawnableLightLoad["assets"] = []): SpawnableLightLoad =>
+  ({ scripts, assets, isClass: () => true });
+
 /**
  * A Play world: a crate on a floor, a sun, a camera, plus the scenario's own actors. Every actor is posed through
- * the snapshot, as the game worker poses them.
+ * the snapshot, as the game worker poses them. `load` is the startup sources' compiled Classes and dependencies, whose
+ * lights it may spawn.
  */
-function playWorld(model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2") {
+function playWorld(model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([])) {
   // Preparation polls every 16 ms and the Play pause waits 250 ms: both run on this clock.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
   cleanups.push(() => vi.useRealTimers());
@@ -356,6 +369,8 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     playMode: true,
     onPipelineHold: (held) => holds.push(held),
     materialDocuments: new Map(materials.map((guid) => [guid, createDefaultMaterialDocument(guid)])),
+    // As editor Play passes its startup sources'.
+    spawnableLights: spawnableLightsOfLoad(load),
   });
   cleanups.push(() => handle.dispose());
   handle.loadScene(createDefaultScene(), { sceneAssetGuid: "scene" });
@@ -591,6 +606,24 @@ function realCompiles(world: PlayWorld): Effect[] {
         if (wrapper?.effect && !names[pass]?.startsWith("prediction")) held.add(wrapper.effect);
       });
   return world.driver.created.filter((effect) => held.has(effect));
+}
+
+/**
+ * From now on, which mesh's readiness (`Mesh.isReady`, its caster checks included) requested each Effect the driver
+ * creates. An Effect no mesh's readiness requested (a draw's, a shadow map's) has none.
+ */
+function effectRequesters(world: PlayWorld): Map<Effect, string> {
+  const requesters = new Map<Effect, string>();
+  const isReady = Mesh.prototype.isReady;
+  vi.spyOn(Mesh.prototype, "isReady").mockImplementation(function (this: Mesh, ...args) {
+    const before = world.driver.created.length;
+    try {
+      return isReady.apply(this, args);
+    } finally {
+      for (const effect of world.driver.created.slice(before)) if (!requesters.has(effect)) requesters.set(effect, this.name);
+    }
+  });
+  return requesters;
 }
 
 /** The view keeps drawing, raises no hold and pauses nothing; the subject drew its previous Effect while the new one compiled. */
@@ -1288,18 +1321,107 @@ describe("compile holds after the first frame", () => {
     });
   });
 
+  /** A torch: a shadowed spot. */
+  const TORCH = { castShadows: true, range: 12, outerAngle: 70, innerAngle: 40 };
+  /** A Class whose prefab holds the torch. */
+  const TORCH_CLASS = () => classesLoad([lightClass("Torch", { lightKind: "spot", ...TORCH })]);
+  /** A Spawn Actor names Pickup, a Class the load does not hold: Load On Demand, it arrives with its spawn. */
+  const ON_DEMAND = () => classesLoad([{ assetGuid: "spawner", classId: "Spawner", source: "", anchors: [], entryPoints: [] }],
+    [{ guid: "spawner", dependencies: ["pickup"] }]);
+  /** Play's camera high above the floor, looking down at the crate. */
+  const HIGH_CAMERA = new Vector3(0, 25, -10);
+  const SPAWN_CASES: ReadonlyArray<readonly [string, {
+    /** The startup sources' Classes and dependencies. */
+    load: () => SpawnableLightLoad;
+    /** The light spawned in slot 40 (facing the way a torch the player carries does, or down), or an authored change. */
+    spawn?: { position: Vec3; rotation?: Quat; assign: Actor["assign"]; shadows: boolean };
+    /** Two local lights in the Forward budget: the points, nearer the camera than the spot. */
+    full?: boolean;
+    camera?: Vector3;
+    /** The authored lights, when not two points and a spot. */
+    lights?: () => Actor[];
+  }]> = [
+    ["a torch spawns near the camera", { load: TORCH_CLASS, spawn: { position: [0.5, 2.5, -9], assign: light("spot", TORCH), shadows: true } }],
+    ["a torch spawns near the camera into a full Forward budget",
+      { load: TORCH_CLASS, full: true, spawn: { position: [0.5, 2.5, -9], assign: light("spot", TORCH), shadows: true } }],
+    // The stand-in at the camera reaches the casters only by reaching as far as the shadow distance; no authored point
+    // starting to cast draws a point map's caster depth variants (a cube of distances) instead.
+    ["a lantern spawns near the casters below a high camera", {
+      load: () => classesLoad([lightClass("Lantern", { lightKind: "point", castShadows: true, range: 12 })]),
+      camera: HIGH_CAMERA, lights: () => [spot(12, [0, 5, 0])],
+      spawn: { position: [0, 3, -2], assign: light("point", { castShadows: true }), shadows: true },
+    }],
+    ["an on-demand Class's point spawns near the camera",
+      { load: ON_DEMAND, spawn: { position: [0.5, 2.5, -9], assign: light("point"), shadows: false } }],
+    ["an on-demand Class's shadowed spot spawns near the camera",
+      { load: ON_DEMAND, spawn: { position: [0.5, 2.5, -9], assign: light("spot", { castShadows: true }), shadows: true } }],
+    ["the spot starts casting shadows", { load: TORCH_CLASS }],
+  ];
+
+  it.each((["sync", "webgpu"] as const).flatMap((model) => SPAWN_CASES.map(([cause, spec]) => [model, cause, spec] as const)))(
+    "a light Play may spawn compiles nothing at its admission, nor does a rehearsed change: %s, %s", async (model, _, spec) => {
+    // A Class's prefab holds a shadowed spot, or a Spawn Actor names a Class the load cannot see, in whose place it
+    // rehearses a point and a spot, each with and without shadows. The load rehearses one such light spawning, at the
+    // camera and reaching as far as the shadow distance, so a light spawned mid-game near the camera or near the casters
+    // finds its receivers' variants and its casters' depth variants compiled and drawn (their WebGPU pipelines created),
+    // also where it takes the place of a point the Forward budget then leaves out. The scene holds four lights: the
+    // spawned fifth would raise every lit Material's light capacity, so the load compiles for five from the start, and
+    // the authored changes it rehearses compile nothing either.
+    rehearseLoad = true;
+    const lights = spec.lights?.() ?? [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])];
+    const world = playWorld(model, lights, [], "actor-2", spec.load());
+    if (spec.full) updateSceneRenderingSettings(world.handle.scene,
+      { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) });
+    if (spec.camera) {
+      const camera = world.handle.scene.activeCamera as ArcRotateCamera;
+      camera.setTarget(Vector3.Zero());
+      camera.setPosition(spec.camera);
+    }
+    const lightOf = (slotId: number) => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${slotId}`);
+    let before: Effect | null = null;
+    let requesters = new Map<Effect, string>();
+    const spawn = spec.spawn;
+    const record = await measure(world, () => spawn
+      ? world.place({ slotId: 40, guid: "spawned", position: spawn.position, rotation: spawn.rotation, assign: spawn.assign })
+      : world.place(spot(12, [0, 5, 0], { castShadows: true })), () => {
+      before = world.subjectEffect();
+      requesters = effectRequesters(world);
+      if (spec.full) expect([10, 11, 12].map((slotId) => isForwardLightExcluded(lightOf(slotId)!))).toEqual([false, false, true]);
+    });
+    const rehearsal = world.handle.loadRehearsalStats();
+    const map = lightOf(40) ? findSceneShadowController(world.handle.scene)!.generator(lightOf(40)!) : null;
+    // The spawned actor's own meshes (its invisible origin and light helper, which the camera pass's scene probe prepares
+    // with fresh defines) are a spawn of their own: what the load warmed did not have its light.
+    const own = (name: string | undefined) => name === "actor-40" || !!name?.startsWith("actor-40|");
+    expect({
+      rehearsed: rehearsal?.timedOut.length === 0 && rehearsal.omitted.length === 0 && rehearsal.unrestored.length === 0,
+      // The change took effect: the subject draws another variant, and a spawned light is lit (in place of a point when
+      // the budget is full) and a shadowed one's map has drawn.
+      changed: world.subjectEffect() !== before,
+      spawned: !spawn || (!isForwardLightExcluded(lightOf(40)!) && (!spawn.shadows || (!!map && !awaitsFirstDraw(map))) &&
+        (!spec.full || [10, 11].some((slotId) => isForwardLightExcluded(lightOf(slotId)!)))),
+      effects: world.driver.created.filter((effect) => !own(requesters.get(effect))).length,
+      pipelines: record.pipelines + record.warmPipelines,
+      synchronous: world.driver.synchronous.size,
+      heldFrames: record.heldFrames, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
+    }, JSON.stringify({ record, rehearsal })).toEqual({
+      rehearsed: true, changed: true, spawned: true, effects: 0, pipelines: 0, synchronous: 0, heldFrames: 0, holdRaised: false,
+      paused: false, recovered: true,
+    });
+  });
+
   /**
    * Each authored light (lit, and whether its shadow map is admitted, with its darkness) and the subject's defines at
    * the first presented frame and 17 frames later, for a load with or without its rehearsal. The frames run on a 16 ms
    * clock once loading has drawn six frames, and in both runs afterwards: a residency the load's own admissions began
    * has not run out by the first presentation, and runs out (250 ms) within the later frames.
    */
-  async function presentedAdmission(rehearse: boolean, actors: Actor[], configure?: (world: PlayWorld) => void) {
+  async function presentedAdmission(rehearse: boolean, actors: Actor[], configure?: (world: PlayWorld) => void, load = classesLoad([])) {
     // A fresh world per run: the previous one's Engine, clock and render spy go first.
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
     if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
     rehearseLoad = rehearse;
-    const world = playWorld("sync", actors);
+    const world = playWorld("sync", actors, [], "actor-2", load);
     configure?.(world);
     const controller = () => findSceneShadowController(world.handle.scene)!;
     const state = () => ({
@@ -1325,20 +1447,56 @@ describe("compile holds after the first frame", () => {
     return { first, later: state(), rehearsal: world.handle.loadRehearsalStats() };
   }
 
-  it.each([
+  const ADMISSION_SCENARIOS = [
     ["shadow maps", [
       spot(12, [-1, 4, 3], { castShadows: true }), spot(10, [0, 4, 0], { castShadows: true }), spot(11, [1, 4, 0.2], { castShadows: true }),
     ], undefined],
     ["the Forward light budget", [point(10, [0, 4, 0]), point(11, [1, 4, 0.2]), spot(12, [-1, 4, 0.6])], (world: PlayWorld) =>
       updateSceneRenderingSettings(world.handle.scene,
         { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) })],
-  ] as const)("a load rehearsal leaves %s as a load without it does", async (_, actors, configure) => {
+  ] as const;
+
+  it.each(ADMISSION_SCENARIOS)("a load rehearsal leaves %s as a load without it does", async (_, actors, configure) => {
     // Admission ranks by history: an admitted light keeps its place against a slightly nearer one. Switching a light
     // off lets a waiting one take its map or slot; reverting that change must not leave the waiting light admitted.
     const baseline = await presentedAdmission(false, [...actors], configure);
     const rehearsed = await presentedAdmission(true, [...actors], configure);
     expect((rehearsed.rehearsal?.steps ?? 0) > 0, JSON.stringify(rehearsed.rehearsal)).toBe(true);
     expect({ first: rehearsed.first, later: rehearsed.later }).toEqual({ first: baseline.first, later: baseline.later });
+  });
+
+  it.each(ADMISSION_SCENARIOS)("a load rehearsal's spawned light leaves %s as a load that may spawn none does", async (_, actors, configure) => {
+    // The spawned spot takes the nearest place in the Forward budget and a shadow map, and goes again: removing it must
+    // give back every light's slot and map as it found them. Only the light capacity differs, by the one light the
+    // load reserves for a spawn (four lights here, so five).
+    const capacity = (defines: string | null) => /#define MAXLIGHTCOUNT (\d+)/.exec(defines ?? "")?.[1];
+    const admission = (state: { lights: string[]; defines: string | null }) =>
+      ({ ...state, defines: state.defines?.replace(/#define MAXLIGHTCOUNT \d+/, "") ?? null });
+    const baseline = await presentedAdmission(true, [...actors], configure);
+    const spawning = await presentedAdmission(true, [...actors], configure,
+      classesLoad([lightClass("Torch", { lightKind: "spot", castShadows: true, range: 12 })]));
+    expect({
+      steps: spawning.rehearsal!.steps - baseline.rehearsal!.steps, drawn: spawning.rehearsal!.drawn - baseline.rehearsal!.drawn,
+      unrestored: spawning.rehearsal!.unrestored,
+    }, JSON.stringify(spawning.rehearsal)).toEqual({ steps: 1, drawn: 1, unrestored: [] });
+    expect({ first: admission(spawning.first), later: admission(spawning.later) })
+      .toEqual({ first: admission(baseline.first), later: admission(baseline.later) });
+    expect([capacity(baseline.first.defines), capacity(spawning.first.defines), capacity(spawning.later.defines)]).toEqual(["4", "5", "5"]);
+  });
+
+  it("a load rehearses generic spawned lights only when its scripts may spawn a Class it does not hold", async () => {
+    // Spawner's Spawn Actor names Pickup. Held, Pickup's own lights are known (it has none); not held, Pickup loads on
+    // demand with its spawn, and the load rehearses a point and a spot, each with and without shadows, in its place.
+    const spawner: ScriptBundleEntry = {
+      assetGuid: "spawner", classId: "Spawner", source: 'out = await ctx.spawnActorAsync("Pickup", transform);', anchors: [], entryPoints: [],
+    };
+    const pickup: ScriptBundleEntry = { assetGuid: "pickup", classId: "Pickup", source: "", anchors: [], entryPoints: [] };
+    const steps = async (load: SpawnableLightLoad) =>
+      (await presentedAdmission(true, [point(10, [-1.5, 2.5, -1])], undefined, load)).rehearsal!.steps;
+    const none = await steps(classesLoad([]));
+    const held = await steps(classesLoad([spawner, pickup], [{ guid: "spawner", dependencies: ["pickup"] }]));
+    const unheld = await steps(classesLoad([spawner], [{ guid: "spawner", dependencies: ["pickup"] }]));
+    expect([held - none, unheld - none]).toEqual([0, 4]);
   });
 
   it("a load rehearsal reports a change whose revert could not give back a standby shadow map", async () => {

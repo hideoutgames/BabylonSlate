@@ -62,17 +62,19 @@ test("a world view draws each Material's previous Effect with the changed lights
   const warm = result.warmSpawn;
   expect({ staged: warm.staged, links: warm.links, drawn: warm.drawn, appeared: warm.appeared > 20, glErrors: warm.glErrors },
     JSON.stringify(warm)).toEqual({ staged: 0, links: 0, drawn: true, appeared: true, glErrors: [] });
-  // A load that rehearsed its lights' changes (each drawn once behind the loading screen) links no program when a point
-  // switches off or a spot starts casting shadows, and never holds.
+  // A load that rehearsed its lights' changes and the light its Classes may spawn (each drawn once behind the loading
+  // screen) links no program when a point switches off, a shadowed point spawns near the camera (until its map has
+  // drawn) or a spot starts casting shadows, and never holds.
   const rehearsed = result.rehearsed;
+  const change = (step: { links: number; held: number; changed: boolean }) => ({ links: step.links, held: step.held, changed: step.changed });
   expect({
     rehearsed: rehearsed.report.steps > 0 && rehearsed.report.timedOut.length === 0, compiled: rehearsed.report.variants > 0,
-    pointOff: { links: rehearsed.pointOff.links, held: rehearsed.pointOff.held, changed: rehearsed.pointOff.changed },
-    spotShadows: { links: rehearsed.spotShadows.links, held: rehearsed.spotShadows.held, changed: rehearsed.spotShadows.changed },
+    pointOff: change(rehearsed.pointOff), spawned: change(rehearsed.spawned), spotShadows: change(rehearsed.spotShadows),
     glErrors: rehearsed.glErrors,
   }, JSON.stringify(rehearsed)).toEqual({
     rehearsed: true, compiled: true,
-    pointOff: { links: 0, held: 0, changed: true }, spotShadows: { links: 0, held: 0, changed: true }, glErrors: [],
+    pointOff: { links: 0, held: 0, changed: true }, spawned: { links: 0, held: 0, changed: true },
+    spotShadows: { links: 0, held: 0, changed: true }, glErrors: [],
   });
   // A light that waits within reach of an admission has the variants it asks for compiled ahead: a spot entering the
   // Forward budget, one taking a point's shadow map and one taking the first spot map (its variants from a prediction

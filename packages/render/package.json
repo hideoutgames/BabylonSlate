@@ -24,6 +24,7 @@
     "./default-typeface": "./src/default-typeface.ts",
     "./png-encode": "./src/png-encode.ts",
     "./scene-load-readiness": "./src/scene-load-readiness.ts",
+    "./spawnable-lights": "./src/spawnable-lights.ts",
     "./lifecycle-pause": "./src/lifecycle-pause.ts",
     "./gl-error-trace": "./src/gl-error-trace.ts",
     "./ktx2-transcoder": "./src/ktx2-transcoder.ts"

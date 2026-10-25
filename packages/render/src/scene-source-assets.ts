@@ -3,6 +3,7 @@ import type { AudioLibrary } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import type { FontAssetEntry } from "./font-registry";
 import type { MeshAssetContext } from "./mesh-assets";
+import type { SpawnableLight } from "./spawnable-lights";
 
 /** One consumer's prepared source data. Babylon resources stay in the existing caches. */
 export interface SceneSourceAssets {
@@ -12,6 +13,8 @@ export interface SceneSourceAssets {
   audioLibrary?: AudioLibrary;
   particleLibrary?: ParticleLibrary;
   fonts?: readonly FontAssetEntry[];
+  /** The light parts its Classes may spawn, generic kinds included (`spawnableLightsOfLoad`), which Play's load rehearses. */
+  spawnableLights?: ReadonlyMap<string, SpawnableLight>;
 }
 
 const assetMaps = ["renderTargets", "renderTargetTextures", "waters", "textureBytes", "areaEmissions",
@@ -63,5 +66,6 @@ export function mergeSceneSourceAssets(sources: Iterable<SceneSourceAssets>): Sc
       emitters: mergeMaps(particles.map((entry) => entry.emitters)),
     },
     fonts: [...new Map(rows.flatMap((row) => (row.fonts ?? []).map((font) => [font.guid, font] as const))).values()],
+    spawnableLights: mergeMaps(rows.map((row) => row.spawnableLights)),
   };
 }
