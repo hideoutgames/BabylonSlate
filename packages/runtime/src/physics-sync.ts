@@ -1302,8 +1302,11 @@ export class PhysicsWorldSync {
 
   addImpulse(actorId: string, impulse: Vec3, strength?: number): void {
     const bodyId = this.bodyByActor.get(actorId);
-    if (!bodyId) return;
-    this.backend.addImpulse(bodyId, impulse, strength);
+    // Dropped like an impulse at a point, so a non-finite input cannot corrupt the body's velocity and pose.
+    // A 2D impulse may omit z.
+    const vector = { x: impulse?.x, y: impulse?.y, z: impulse?.z ?? 0 };
+    if (!bodyId || ![vector.x, vector.y, vector.z, strength ?? 1].every(Number.isFinite)) return;
+    this.backend.addImpulse(bodyId, vector as Vec3, strength);
   }
 
   /** Steering updates velocity through physics without replacing its pose. */
