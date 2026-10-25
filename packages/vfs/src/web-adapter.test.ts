@@ -506,6 +506,26 @@ describe("OPFS / web storage adapter", () => {
     await expect(storage.readBinaryRange("asset.hasset", 0, 2, during.revision)).rejects.toBeInstanceOf(SourceRevisionChangedError);
   });
 
+  it("never gives a file written again after removal a revision read before the removal", async () => {
+    const storage = await openedAdapter();
+    // Write counters outlive a test, so use a path no other test writes.
+    const path = "rewritten.hasset";
+    const folder = await opfsProjectFolder(await navigator.storage.getDirectory(), storage.getCurrentFolder()!.id);
+    // Writes within one millisecond keep lastModified, so only the write counter tells them apart.
+    const sameMillisecond = async () => {
+      const file = await folder.getFileHandle(path);
+      const getFile = file.getFile.bind(file);
+      vi.spyOn(file, "getFile").mockImplementation(async () => Object.assign(await getFile(), { lastModified: 0 }));
+    };
+    await storage.writeBinary(path, new Uint8Array([1, 2, 3, 4]));
+    await sameMillisecond();
+    const before = await storage.readBinaryRange(path, 0, 2);
+    await storage.remove(path);
+    await storage.writeBinary(path, new Uint8Array([9, 9, 9, 9]));
+    await sameMillisecond();
+    await expect(storage.readBinaryRange(path, 0, 2, before.revision)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+  });
+
   it("rejects parent segments and directories it cannot list", async () => {
     const storage = await openedAdapter();
     await storage.writeText("scenes/main.scene.json", "{}");
@@ -546,13 +566,19 @@ describe("OPFS / web storage adapter", () => {
   it("keeps saved data and project metadata available when writes or deletion are denied", async () => {
     const storage = await openedAdapter();
     await storage.writeText("project.json", "original");
+    const committed = await storage.readBinaryRange("project.json", 0, 8);
     const root = await navigator.storage.getDirectory();
     const directory = await opfsProjectFolder(root, storage.getCurrentFolder()!.id);
     const file = await directory.getFileHandle("project.json");
     vi.spyOn(file, "createWritable").mockRejectedValueOnce(new DOMException("Storage is full", "QuotaExceededError"));
     await expect(storage.writeText("project.json", "changed")).rejects.toThrow("Storage is full");
+    vi.spyOn(directory, "removeEntry").mockRejectedValueOnce(new DOMException("Removal denied", "NoModificationAllowedError"));
+    await expect(storage.remove("project.json")).rejects.toThrow("Removal denied");
     vi.spyOn(root, "removeEntry").mockRejectedValueOnce(new DOMException("Deletion denied", "NotAllowedError"));
     await expect(storage.deleteProject(storage.getCurrentFolder()!)).rejects.toThrow("Deletion denied");
+    // Unchanged bytes keep their revision.
+    const { bytes } = await storage.readBinaryRange("project.json", 0, 8, committed.revision);
+    expect(new TextDecoder().decode(bytes)).toBe("original");
     const reopened = new OpfsStorageAdapter();
     expect(await reopened.listProjects()).toHaveLength(1);
     expect(await reopened.readText("project.json")).toBe("original");

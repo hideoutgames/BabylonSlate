@@ -15,10 +15,27 @@ const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
 /**
  * Write counters per `${projectId}/${path}`. Values come from one sequence and
  * are never reused, so a removed path's entry can be dropped: a rewrite cannot
- * reproduce a revision string a reader still holds.
+ * reproduce a revision string a reader still holds. Entries are dropped only
+ * once the removal succeeds, so a file that stays keeps its revision.
  */
 const writeRevisions = new Map<string, number>();
 let writeSequence = 0;
+
+/** Write counters of `key` and every path below it, taken before a removal. */
+function writeRevisionsUnder(key: string): Map<string, number> {
+  return new Map([...writeRevisions].filter(([cached]) => cached === key || cached.startsWith(`${key}/`)));
+}
+
+/**
+ * Drop the counters of removed files. A counter that a write changed during
+ * the removal stays, because that write may have created the file again.
+ */
+function forgetRemovedRevisions(removed: Map<string, number>): void {
+  for (const [key, value] of removed) {
+    if (writeRevisions.get(key) === value) writeRevisions.delete(key);
+  }
+}
+
 const lifecycleQueues = new Map<string, Promise<void>>();
 const directoryNames = new Map<string, Promise<string>>();
 
@@ -261,16 +278,16 @@ export class OpfsStorageAdapter implements ProjectStorage {
     if (!session) throw new ProjectOpenElsewhereError();
     let spent = !owned;
     try {
-      for (const cache of [this.rangeHandles, writeRevisions]) {
-        for (const cached of [...cache.keys()]) {
-          if (cached.startsWith(`${handle.id}/`)) cache.delete(cached);
-        }
+      for (const cached of [...this.rangeHandles.keys()]) {
+        if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
       }
+      const revisions = writeRevisionsUnder(handle.id);
       const opfs = await this.getOpfsRoot();
       try { await opfs.removeEntry(await directoryName(handle.id), { recursive: true }); }
       catch (error) {
         if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
       }
+      forgetRemovedRevisions(revisions);
       // Another adapter may have registered or selected a project during disk I/O.
       await updateMeta((latest) => {
         latest.projects = latest.projects.filter((project) => project.id !== handle.id);
@@ -532,17 +549,17 @@ export class OpfsStorageAdapter implements ProjectStorage {
 
   async remove(path: string): Promise<void> {
     const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
-    for (const cache of [this.rangeHandles, writeRevisions]) {
-      for (const cached of [...cache.keys()]) {
-        if (cached === key || cached.startsWith(`${key}/`)) cache.delete(cached);
-      }
+    for (const cached of [...this.rangeHandles.keys()]) {
+      if (cached === key || cached.startsWith(`${key}/`)) this.rangeHandles.delete(cached);
     }
+    const revisions = writeRevisionsUnder(key);
     const { parent, name } = await this.resolveHandle(path, false, "remove");
     try {
       await parent.removeEntry(name, { recursive: true });
     } catch (error) {
       throw lookupError(error, path, "remove", false);
     }
+    forgetRemovedRevisions(revisions);
   }
 
   async stat(path: string): Promise<FileStat> {
