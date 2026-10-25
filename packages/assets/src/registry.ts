@@ -484,7 +484,8 @@ export class AssetRegistry {
         await storage.withReadScope((reader) => this.walk(root, root.pathPrefix, reader));
       } else await this.walk(root, root.pathPrefix, storage);
     } catch (error) {
-      this.unmountRoot(root.id);
+      // A remount of this id meanwhile owns the root now.
+      if (this.roots.get(root.id) === root) this.unmountRoot(root.id);
       throw error;
     }
   }
@@ -2347,6 +2348,8 @@ export class AssetRegistry {
     let nextSlot = 0;
     try {
       for (const entry of entries) {
+        // A remount of this id replaced the root: its own scan indexes the folder.
+        if (this.roots.get(root.id) !== root) break;
         const path = `${dir}/${entry.name}`;
         if (entry.isDir) {
           if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
@@ -2361,6 +2364,7 @@ export class AssetRegistry {
         if (!path.endsWith(".hasset")) continue;
         const slot = slots[nextSlot++]!;
         const { header, locator } = await readCatalog(slot.run, slot.index);
+        if (this.roots.get(root.id) !== root) break;
         const indexed = this.byGuid.get(header.guid);
         if (indexed && !indexed.placeholder && indexed.path !== path) {
           // A second file with an indexed guid (a copy made outside the editor)
@@ -2371,10 +2375,9 @@ export class AssetRegistry {
         }
         this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
       }
-    } catch (error) {
+    } finally {
       // Reads left running must not outlive the scan: the read scope ends when it returns.
       await readCatalog.settle();
-      throw error;
     }
   }
 
