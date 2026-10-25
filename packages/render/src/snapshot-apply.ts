@@ -157,6 +157,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   outlines: Map<number, { actorId: string; bindings: import("@haptic/core").OutlineBinding[] }>;
   deformers: Map<number, { actorId: string; revision: number; bindings: import("@haptic/core").DeformerBinding[] }>;
   fogVolumes: Map<number, { actorId: string; bindings: import("@haptic/core").FogVolumeBinding[] }>;
+  reflectionProbes: Map<number, { actorId: string; bindings: import("@haptic/core").ReflectionProbeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
   meshes: Map<number, Mesh>;
@@ -306,6 +307,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     outlines: new Map(),
     deformers: new Map(),
     fogVolumes: new Map(),
+    reflectionProbes: new Map(),
     meshes: new Map(),
     boneAttachments: new Map(),
     lights: new Map(),
@@ -1555,6 +1557,7 @@ export function retirePlaySlot(
   binding.outlines.delete(slotId);
   binding.deformers.delete(slotId);
   binding.fogVolumes.delete(slotId);
+  binding.reflectionProbes.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
   rejectedTextAssignments.get(binding)?.delete(slotId);
@@ -1610,6 +1613,7 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
     ...binding.outlines.keys(),
     ...binding.deformers.keys(),
     ...binding.fogVolumes.keys(),
+    ...binding.reflectionProbes.keys(),
     ...binding.areaLights.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
@@ -2401,6 +2405,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.outlines.clear();
   binding.deformers.clear();
   binding.fogVolumes.clear();
+  binding.reflectionProbes.clear();
   binding.onVisualChanged = undefined;
   const pending = pendingVisualReplacements.get(binding);
   for (const candidate of pending?.values() ?? []) candidate.dispose();
