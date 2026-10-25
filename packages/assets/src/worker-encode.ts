@@ -108,7 +108,8 @@ export function createWorkerEncodeFn(
       const onMessage = (event: MessageEvent) => {
         const msg = event.data as EncodeWorkerReply;
         if (msg.type === "loaded") {
-          rejectReady = null;
+          // Clear the slot only while it still belongs to this init.
+          if (rejectReady === reject) rejectReady = null;
           resolve();
           return;
         }
