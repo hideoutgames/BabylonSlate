@@ -773,8 +773,8 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().recoveryAvailable).toBe(false);
   });
 
-  it("reports a restored tab whose asset cannot be read when the tab is selected", async () => {
-    const actions = await openProject();
+  /** Reopens "Stable" with a Material tab restored but not yet read. */
+  async function reopenWithRestoredMaterialTab(actions: DocumentActions) {
     const registry = documents().assetRegistry!;
     const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Material", name: "Shiny" }));
     act(() => actions.noteAssetsCreated());
@@ -785,6 +785,12 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.openListedProject(listed));
     const id = documentId({ kind: "material", path: asset.path });
     expect(documents().openDocuments.find(doc => doc.id === id)?.content).toBeNull();
+    return { asset, id };
+  }
+
+  it("reports a restored tab whose asset cannot be read when the tab is selected", async () => {
+    const actions = await openProject();
+    const { asset, id } = await reopenWithRestoredMaterialTab(actions);
     const realLoad = ProjectService.prototype.loadDocument;
     const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path, options) {
       if (path === asset.path) throw new Error("The Material could not be decoded.");
@@ -796,6 +802,35 @@ describe("DocumentProvider actions and route", () => {
     } finally { read.mockRestore(); }
     fireEvent.click(screen.getByTestId("document-open-error-dismiss"));
     await waitFor(() => expect(screen.queryByTestId("document-open-error")).toBeNull());
+  });
+
+  it("reports nothing for a restored tab closed while its first read is pending", async () => {
+    const actions = await openProject();
+    const { asset, id } = await reopenWithRestoredMaterialTab(actions);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    let settled = false;
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path, options) {
+      if (path !== asset.path) return realLoad.call(this, kind, path, options);
+      started = true;
+      try {
+        await held;
+        return await realLoad.call(this, kind, path, options);
+      } finally { settled = true; }
+    });
+    try {
+      act(() => actions.setActiveDocument(id));
+      await waitFor(() => expect(started).toBe(true));
+      act(() => actions.closeDocument(id));
+      release();
+      await waitFor(() => expect(settled).toBe(true));
+      // A macrotask: the rejection has reached the provider and any dialog has rendered.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    } finally { release(); read.mockRestore(); }
+    expect(documents().openDocuments.some(doc => doc.id === id)).toBe(false);
+    expect(screen.queryByTestId("document-open-error")).toBeNull();
   });
 
   /** Reopens "Stable" after a session that never saved `name`, with its edit in the journal. */

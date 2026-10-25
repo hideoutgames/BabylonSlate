@@ -2028,8 +2028,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         // A restored tab reads its asset when first selected. Callers do not
         // wait for it, so a failed read is reported here.
         finishOpenDocument(target.ref).catch((error: unknown) => {
-          // Closing the tab or the project cancels the read.
-          if (error instanceof DOMException && error.name === "AbortError") return;
+          // Cancelled, not failed: closing the tab aborts its read, and closing
+          // the project ends ProjectService's read session first, so a read
+          // still running then rejects as aborted too. Matched by name: some
+          // readers cancel with an Error named AbortError, and an abort
+          // reason need not be this window's DOMException.
+          if ((error as { name?: unknown } | null)?.name === "AbortError") return;
           console.error("[editor] failed to open document", error);
           setDocumentOpenError(error instanceof Error ? error.message : String(error));
         });
