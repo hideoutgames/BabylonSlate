@@ -52,6 +52,7 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 ## Reverb bake
 
 - Like nav bake: main-thread collect of static `MeshComponent` triangles (8 actors per yield), worker occupancy + flood fill + probes, 1,500 ms debounce, 8,000 ms timeout, geometry-hash cache.
+- Each bake runs in its own worker, terminated when it settles or times out, and a flush bakes its Scenes one at a time, so a timeout covers only that Scene's bake and never turns the Scenes after it into dry fallbacks.
 - Background bakes never save authored edits; results for unsaved geometry stay staged in `ProjectService` until Save writes geometry and chunk together. A flush (Save, export) is never superseded.
 - Save removes a stale reverb chunk when geometry changed without a matching result. Export packs only saved results; a reached Scene whose result could not be saved fails export.
 - Do not `disconnect()` AudioV2 private `_outNode` / `_inNode` ports (it hung Play Stop); remove only the reverb graph's own edges.

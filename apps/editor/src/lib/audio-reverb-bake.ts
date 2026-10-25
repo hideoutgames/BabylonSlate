@@ -272,10 +272,16 @@ export function createAudioReverbBakeController(options: {
     }
   }
 
+  const cancelScheduled = (path: string) => {
+    const existing = pending.get(path);
+    if (existing === undefined) return;
+    clearTimeout(existing);
+    pending.delete(path);
+  };
+
   return {
     schedule(path, scene) {
-      const existing = pending.get(path);
-      if (existing !== undefined) clearTimeout(existing);
+      cancelScheduled(path);
       pending.set(
         path,
         setTimeout(() => {
@@ -286,25 +292,24 @@ export function createAudioReverbBakeController(options: {
       );
     },
     async flush(path, scene, write) {
-      const existing = pending.get(path);
-      if (existing !== undefined) {
-        clearTimeout(existing);
-        pending.delete(path);
-      }
+      cancelScheduled(path);
       await run(path, scene, write, true);
     },
     async flushAll(scenes, write) {
-      const settled = await Promise.allSettled(
-        scenes.map((entry) => this.flush(entry.path, entry.scene, write)),
-      );
+      for (const entry of scenes) cancelScheduled(entry.path);
       const unsaved = new Map<string, AudioReverbBakeUnsavedError>();
-      settled.forEach((result, index) => {
-        if (result.status === "fulfilled") return;
-        const { reason } = result;
-        unsaved.set(scenes[index]!.path, reason instanceof AudioReverbBakeUnsavedError
-          ? reason
-          : new AudioReverbBakeUnsavedError(null, reason));
-      });
+      // One Scene at a time: each bake's timeout then covers its own work, not
+      // time queued behind other Scenes' bakes.
+      for (const { path, scene } of scenes) {
+        if (disposed) break;
+        try {
+          await run(path, scene, write, true);
+        } catch (reason) {
+          unsaved.set(path, reason instanceof AudioReverbBakeUnsavedError
+            ? reason
+            : new AudioReverbBakeUnsavedError(null, reason));
+        }
+      }
       return unsaved;
     },
     drain() {

@@ -248,6 +248,42 @@ describe("audio reverb bake controller", () => {
     release();
   });
 
+  it("gives each Scene in a flush its own bake timeout", async () => {
+    vi.useFakeTimers();
+    const timeoutMs = 1_000;
+    const writes: AudioReverbBakeWrite[] = [];
+    const diagnostics: Array<{ code: string }> = [];
+    // One bake thread: each job starts when the one before it finishes.
+    let thread = Promise.resolve();
+    const controller = createAudioReverbBakeController({
+      timeoutMs,
+      bake: () => {
+        const job = thread.then(() => new Promise<Uint8Array>((resolve) => {
+          setTimeout(() => resolve(new Uint8Array([7])), timeoutMs * 0.6);
+        }));
+        thread = job.then(() => undefined);
+        return job;
+      },
+      write: async (entry) => {
+        writes.push(entry);
+      },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    const flushed = controller.flushAll([
+      { path: "assets/A.scene.hasset", scene: sceneWith([boxActor("a", [0, 0, 0])]) },
+      { path: "assets/B.scene.hasset", scene: sceneWith([boxActor("b", [8, 0, 0])]) },
+    ]);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(timeoutMs * 2);
+    expect((await flushed).size).toBe(0);
+    expect(diagnostics).toEqual([]);
+    expect(writes.map((entry) => [entry.path, [...entry.bytes]])).toEqual([
+      ["assets/A.scene.hasset", [7]],
+      ["assets/B.scene.hasset", [7]],
+    ]);
+    controller.dispose();
+  });
+
   it("flush of empty static geometry writes dry fallback without hanging", async () => {
     const writes: AudioReverbBakeWrite[] = [];
     const controller = createAudioReverbBakeController({

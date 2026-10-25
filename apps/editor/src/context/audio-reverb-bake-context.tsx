@@ -17,27 +17,40 @@ import {
   staticAudioGeometryFingerprint,
   type AudioReverbBakeController,
 } from "../lib/audio-reverb-bake";
-import { createAudioReverbWorker } from "../services/audio-reverb-worker-host";
+import {
+  createAudioReverbWorker,
+  type AudioReverbWorkerHost,
+} from "../services/audio-reverb-worker-host";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 
 const SCENE_KINDS = ["scene"] as const;
 
-function createBakeFn(workerRef: {
-  current: ReturnType<typeof createAudioReverbWorker> | null;
-}): (
+/**
+ * Each bake gets its own worker, stopped when the bake settles: a timed-out
+ * bake then stops computing instead of delaying the bakes after it.
+ */
+function createBakeFn(live: Set<AudioReverbWorkerHost>): (
   geometry: AudioReverbGeometry,
   signal: AbortSignal,
 ) => Promise<Uint8Array> {
-  try {
-    if (typeof Worker === "undefined") {
-      return async (geometry) => bakeAudioReverb(geometry);
-    }
-    const worker = createAudioReverbWorker();
-    workerRef.current = worker;
-    return (geometry, signal) => worker.bake(geometry, signal);
-  } catch {
+  if (typeof Worker === "undefined") {
     return async (geometry) => bakeAudioReverb(geometry);
   }
+  return async (geometry, signal) => {
+    let host: AudioReverbWorkerHost;
+    try {
+      host = createAudioReverbWorker();
+    } catch {
+      return bakeAudioReverb(geometry);
+    }
+    live.add(host);
+    try {
+      return await host.bake(geometry, signal);
+    } finally {
+      live.delete(host);
+      host.terminate();
+    }
+  };
 }
 
 export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
@@ -47,9 +60,6 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   // Only Scene edits can change static audio geometry.
   const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
   const controllerRef = useRef<AudioReverbBakeController | null>(null);
-  const workerRef = useRef<ReturnType<typeof createAudioReverbWorker> | null>(
-    null,
-  );
   // The bake controller and Save flush outlive renders and read these when
   // they run. Updated after commit, never during render.
   const latest = {
@@ -70,8 +80,9 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   const fingerprintByContent = useRef(new WeakMap<object, string>());
 
   useEffect(() => {
+    const workers = new Set<AudioReverbWorkerHost>();
     const controller = createAudioReverbBakeController({
-      bake: createBakeFn(workerRef),
+      bake: createBakeFn(workers),
       withWrite: work => latestRef.current.withSceneWrite(writer => work(entry =>
         writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload))),
       write: async (entry) => {
@@ -97,8 +108,8 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
     return () => {
       registerAudioReverbSaveFlush(null);
       controller.dispose();
-      workerRef.current?.terminate();
-      workerRef.current = null;
+      for (const worker of [...workers]) worker.terminate();
+      workers.clear();
       controllerRef.current = null;
     };
   }, []);
