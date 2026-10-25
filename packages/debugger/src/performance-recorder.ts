@@ -1,3 +1,7 @@
+import type { PerformanceScriptEntry } from "@haptic/bridge";
+
+export type { PerformanceScriptEntry };
+
 /** Explicit timing captures, independent of Stats and full-world traces. */
 export const PERFORMANCE_FRAME_COLUMNS = [
   "frameId", "tickId", "sceneGeneration", "completedAtMs", "intervalMs",
@@ -86,15 +90,6 @@ export type PerformanceTickSample = {
 export type PerformanceMemorySample = { sampledAtMs: number; textureBytes: number; geometryBytes: number };
 /** Host performance.now() start, converted to a recording-relative origin on admission. */
 export type PerformanceLongTaskSample = { startedAtMs: number; durationMs: number };
-/** A script entry point a profile timed: the Class, the event or function, and where its entry node is. */
-export type PerformanceScriptEntry = {
-  assetGuid: string; classId: string; className?: string;
-  /** The compiled export the runtime called. */
-  exportName: string; event?: string;
-  /** The entry node's canvas title (`Event Tick`), or the function's name. */
-  title?: string;
-  graphId?: string; nodeId?: string;
-};
 export type PerformanceStopReason = "requested" | "duration" | "budget" | "session-ended" | "error";
 export type PerformanceStream = {
   columns: readonly string[];

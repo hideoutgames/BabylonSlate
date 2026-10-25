@@ -499,6 +499,9 @@ importers:
 
   packages/debugger:
     dependencies:
+      '@haptic/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@haptic/core':
         specifier: workspace:*
         version: link:../core

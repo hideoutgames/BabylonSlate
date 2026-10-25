@@ -1,5 +1,6 @@
+import type { DiagnosticOperation } from "@haptic/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SessionDiagnostics, type DiagnosticOperationRequest } from "./session-diagnostics";
+import { SessionDiagnostics } from "./session-diagnostics";
 import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 import { PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample,
   type PerformanceIdentity, type PerformanceTickSample } from "./performance-recorder";
@@ -20,7 +21,7 @@ describe("SessionDiagnostics", () => {
     vi.useFakeTimers();
     let now = 0;
     let frames: ((sample: PerformanceFrameSample) => void) | undefined;
-    const requests: DiagnosticOperationRequest[] = [];
+    const requests: DiagnosticOperation[] = [];
     const session = new SessionDiagnostics({ mode: "preview", identity: () => identity, now: () => now,
       observeFrames: (listener) => { frames = listener; return () => { frames = undefined; }; },
       captureFrame: async () => "frame",
@@ -99,7 +100,7 @@ describe("SessionDiagnostics", () => {
   });
 
   it("releases a denied acquisition and marks chunk sequence loss as an error", async () => {
-    const requests: DiagnosticOperationRequest[] = [];
+    const requests: DiagnosticOperation[] = [];
     let deny = true;
     const session = new SessionDiagnostics({ mode: "play", identity: () => identity,
       observeFrames: () => () => {}, captureFrame: async () => "frame",
@@ -116,7 +117,7 @@ describe("SessionDiagnostics", () => {
   });
 
   it("counts every tick of a chunk that a budget stop leaves unrecorded", async () => {
-    const requests: DiagnosticOperationRequest[] = [];
+    const requests: DiagnosticOperation[] = [];
     const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
       observeFrames: () => () => {}, captureFrame: async () => "frame",
       runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
@@ -132,7 +133,7 @@ describe("SessionDiagnostics", () => {
   });
 
   it("keeps a chunk's script rows with the ticks it keeps", async () => {
-    const requests: DiagnosticOperationRequest[] = [];
+    const requests: DiagnosticOperation[] = [];
     const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
       observeFrames: () => () => {}, captureFrame: async () => "frame",
       runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
@@ -151,7 +152,7 @@ describe("SessionDiagnostics", () => {
   });
 
   it("adds only the runtime's own count when the runtime stops on its budget", async () => {
-    const requests: DiagnosticOperationRequest[] = [];
+    const requests: DiagnosticOperation[] = [];
     const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
       observeFrames: () => () => {}, captureFrame: async () => "frame",
       runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
