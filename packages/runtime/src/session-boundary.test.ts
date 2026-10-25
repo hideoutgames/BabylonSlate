@@ -262,6 +262,26 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
+  it("ends a cold spawn whose owner was destroyed while its class loaded without a diagnostic", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = makeRuntime({ classAssetGuids: { Loading: "loading-class", Cold: "cold-class" },
+      playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loading" })] },
+      onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ classId: "Loading", parentClassId: "Actor", assetGuid: "loading-class", anchors: [],
+        source: 'export async function begin(ctx) { await ctx.spawnActorAsync("Cold"); ctx.setVariable("continued", true); }',
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+      runtime.realizePlayWorld(); runtime.start();
+      const request = commands.find(command => command.type === "assetPreload");
+      if (request?.type !== "assetPreload") throw new Error("missing class preload");
+      expect(runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
+      await flush();
+      expect(runtime.getWorld().getActors()).toEqual([]);
+      expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
+    } finally { runtime.stop(); }
+  });
+
   it("queues ready-scene Begin Play and audio callbacks until the user hold clears", async () => {
     const runtime = makeRuntime({ deferSceneModelsReady: true,
       playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Listener", components: [

@@ -787,6 +787,76 @@ describe("AssetRegistry", () => {
     expect(await storage.exists("assets/fx/spark.hasset")).toBe(true);
   });
 
+  it("keeps a remount when the scan it replaced fails", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/top.hasset", { guid: "top", type: "Material", name: "Top" });
+    await writeAsset(storage, "assets/fx/spark.hasset", { guid: "spark-1", type: "Texture", name: "Spark" });
+    const readdir = storage.readdir.bind(storage);
+    let failFirst!: (error: Error) => void;
+    let blocked = true;
+    vi.spyOn(storage, "readdir").mockImplementation(async (path) => {
+      if (path === "assets" && blocked) {
+        blocked = false;
+        return new Promise((_, reject) => { failFirst = reject; });
+      }
+      return readdir(path);
+    });
+    const registry = new AssetRegistry(storage);
+    const first = registry.mountRoot(projectContentRoot());
+    await registry.mountRoot(projectContentRoot());
+    failFirst(new Error("Permission denied"));
+
+    await expect(first).rejects.toThrow("Permission denied");
+    expect(registry.listRoots().map((root) => root.id)).toEqual(["project"]);
+    expect(registry.getByGuid("top")).toBeDefined();
+    expect(registry.getByGuid("spark-1")).toBeDefined();
+  });
+
+  it("does not index a scan superseded by a remount", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "old/assets/a.hasset", { guid: "old-a", type: "Material", name: "Old" });
+    await writeAsset(storage, "new/assets/b.hasset", { guid: "new-b", type: "Material", name: "New" });
+    const readdir = storage.readdir.bind(storage);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(storage, "readdir").mockImplementation(async (path) => {
+      if (path === "old/assets") await gate;
+      return readdir(path);
+    });
+    const registry = new AssetRegistry(storage);
+    const first = registry.mountRoot({ id: "plugin:p", kind: "plugin", pathPrefix: "old/assets" });
+    await registry.mountRoot({ id: "plugin:p", kind: "plugin", pathPrefix: "new/assets" });
+    release();
+    await first;
+
+    expect(registry.getByGuid("old-a")).toBeUndefined();
+    expect(registry.getByGuid("new-b")?.rootId).toBe("plugin:p");
+  });
+
+  it("does not index a header a superseded scan finishes reading after the remount", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "old/assets/a.hasset", { guid: "old-a", type: "Material", name: "Old" });
+    await writeAsset(storage, "new/assets/b.hasset", { guid: "new-b", type: "Material", name: "New" });
+    const readBinaryRange = storage.readBinaryRange.bind(storage);
+    let release!: () => void;
+    let reading!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { reading = resolve; });
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args: Parameters<typeof storage.readBinaryRange>) => {
+      if (args[0] === "old/assets/a.hasset") { reading(); await gate; }
+      return readBinaryRange(...args);
+    });
+    const registry = new AssetRegistry(storage);
+    const first = registry.mountRoot({ id: "plugin:p", kind: "plugin", pathPrefix: "old/assets" });
+    await started;
+    await registry.mountRoot({ id: "plugin:p", kind: "plugin", pathPrefix: "new/assets" });
+    release();
+    await first;
+
+    expect(registry.getByGuid("old-a")).toBeUndefined();
+    expect(registry.getByGuid("new-b")?.rootId).toBe("plugin:p");
+  });
+
   it("keeps the first file indexed when a copy made outside the editor has its guid, and will not delete the copy unseen", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/a/hero.hasset", { guid: "hero", type: "Material", name: "Hero" });

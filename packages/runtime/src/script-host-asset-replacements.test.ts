@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Actor, ActorComponent, MaterialObject } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
+import type { MaterialParameterValue } from "@haptic/bridge";
 
 function services(extra: Partial<ScriptHostServices>): ScriptHostServices {
   return { log() {}, print() {}, destroyActor() {}, executeConsoleCommand: () => ({ success: true, output: "" }),
@@ -76,8 +77,71 @@ it("hands material ownership to the replacement and releases superseded source p
   })).createContext(actor, 0, 0);
   await ctx.setMeshMaterialAsync(mesh, "first");
   expect(released).toEqual([]);
+  // Setting the material it already shows keeps the preload that holds it.
+  ctx.setMeshMaterial(mesh, "first");
+  expect(released).toEqual([]);
   await ctx.setMeshMaterialAsync(mesh, "second");
   expect(released).toEqual(["preload:first"]);
   ctx.setMeshMaterial(mesh, null);
   expect(released).toEqual(["preload:first", "preload:second"]);
+});
+
+it("keeps a texture's preload when the same texture is bound again", async () => {
+  const actor = new Actor({ classId: "Hero", guid: "hero" });
+  const mesh = new ActorComponent({ classId: "MeshComponent", guid: "mesh" });
+  actor.attachComponent(mesh);
+  mesh.setVariable("materialGuid", "material");
+  const material = mesh.getVariable("materialObject") as MaterialObject;
+  const released: string[] = [];
+  const bound = new Map<string, MaterialParameterValue>();
+  const ctx = new ScriptHost(services({
+    prepareAssets: async () => {},
+    acquireAssets: async (guids) => ({ success: true, progress: 1, preloadId: `preload:${guids[0]}`, errorMessage: "" }),
+    releaseAcquiredAssets: id => { released.push(id); },
+    getAssetLoadState: () => "ready",
+    setMaterialParameter: (_material, name, value) => { bound.set(name, value); },
+    getMaterialParameter: (_material, name) => bound.get(name) ?? null,
+  })).createContext(actor, 0, 0);
+  await ctx.setMaterialTextureParameterAsync(material, "Diffuse", "texture");
+  ctx.setMaterialTextureParameter(material, "Diffuse", "texture");
+  expect(released).toEqual([]);
+});
+
+it("releases a material preload once the mesh shows another asset, even one bound without it", async () => {
+  const actor = new Actor({ classId: "Hero", guid: "hero" });
+  const mesh = new ActorComponent({ classId: "MeshComponent", guid: "mesh" });
+  actor.attachComponent(mesh);
+  const released: string[] = [];
+  const ctx = new ScriptHost(services({
+    prepareAssets: async () => {},
+    acquireAssets: async (guids) => ({ success: true, progress: 1, preloadId: `preload:${guids[0]}`, errorMessage: "" }),
+    releaseAcquiredAssets: id => { released.push(id); },
+    getAssetLoadState: () => "ready",
+  })).createContext(actor, 0, 0);
+  await ctx.setMeshMaterialAsync(mesh, "first");
+  ctx.setVariableOn(mesh, "materialGuid", "second");
+  ctx.setMeshMaterial(mesh, "second");
+  expect(released).toEqual(["preload:first"]);
+});
+
+it("releases a texture's preload when the parameter resets to its default", async () => {
+  const actor = new Actor({ classId: "Hero", guid: "hero" });
+  const mesh = new ActorComponent({ classId: "MeshComponent", guid: "mesh" });
+  actor.attachComponent(mesh);
+  mesh.setVariable("materialGuid", "material");
+  const material = mesh.getVariable("materialObject") as MaterialObject;
+  const released: string[] = [];
+  const bound = new Map<string, MaterialParameterValue>();
+  const ctx = new ScriptHost(services({
+    prepareAssets: async () => {},
+    acquireAssets: async (guids) => ({ success: true, progress: 1, preloadId: `preload:${guids[0]}`, errorMessage: "" }),
+    releaseAcquiredAssets: id => { released.push(id); },
+    getAssetLoadState: () => "ready",
+    setMaterialParameter: (_material, name, value) => { bound.set(name, value); },
+    getMaterialParameter: (_material, name) => bound.get(name) ?? null,
+    resetMaterialParameter: (_material, name) => bound.delete(name),
+  })).createContext(actor, 0, 0);
+  await ctx.setMaterialTextureParameterAsync(material, "Diffuse", "texture");
+  expect(ctx.resetMaterialTextureParameter(material, "Diffuse")).toBe(true);
+  expect(released).toEqual(["preload:texture"]);
 });

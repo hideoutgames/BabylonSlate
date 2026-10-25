@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 import { createPhysicsBackend } from "./create-backend";
+import { HavokPhysicsBackend } from "./havok-backend";
 import type { ColliderDesc, LineTraceOptions } from "./types";
 
 describe("Line Trace actor exclusions", () => {
@@ -57,6 +59,53 @@ describe("Line Trace actor exclusions", () => {
         ignoreActorIds: ["actor-0", "actor-1", "actor-2"],
       }).hit).toBe(false);
       expect(backend.lineTrace(start, end).actorId).toBe("actor-0");
+    } finally {
+      backend.dispose();
+    }
+  });
+
+  it("leaves the Havok shapes of ignored actors the trace never reaches untouched", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    try {
+      const staticBox = (id: string, x: number, y: number) => {
+        backend.createBody({ id, actorId: id, motionType: "static", mass: 0, linearDamping: 0, angularDamping: 0,
+          gravityScale: 0, transform: { position: { x, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+        backend.createCollider({ id: `${id}-box`, bodyId: id, shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+          friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      };
+      const ignored = Array.from({ length: 50 }, (_, index) => `aside-${index}`);
+      ignored.forEach((id, index) => staticBox(id, 10 + index * 2, 4));
+      staticBox("target", 0, 4);
+      backend.step(1 / 60);
+      const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
+      const setFilterInfo = vi.spyOn(havok, "HP_Shape_SetFilterInfo");
+      expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { ignoreActorIds: ignored }).actorId)
+        .toBe("target");
+      expect(setFilterInfo).not.toHaveBeenCalled();
+      setFilterInfo.mockRestore();
+    } finally {
+      backend.dispose();
+    }
+  });
+});
+
+describe("Havok ignored-actor query cost", () => {
+  it("sweeps out of its own actor with one penetration probe and one cast", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    try {
+      for (const [id, y] of [["self", 0], ["floor", -3]] as const) {
+        backend.createBody({ id, actorId: id, motionType: "static", mass: 0, linearDamping: 0, angularDamping: 0,
+          gravityScale: 0, transform: { position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+        backend.createCollider({ id: `${id}-box`, bodyId: id, shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+          friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      }
+      backend.step(1 / 60);
+      const proximity = vi.spyOn(backend.plugin, "shapeProximity");
+      const cast = vi.spyOn(backend.plugin, "shapeCast");
+      const pose = (y: number) => ({ position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
+      const hit = backend.shapeSweep({ kind: "box", halfExtents: { x: 0.25, y: 0.25, z: 0.25 } }, pose(0), pose(-5), { ignoreActorIds: ["self"] });
+      expect(hit.actorId).toBe("floor");
+      expect([proximity.mock.calls.length, cast.mock.calls.length]).toEqual([1, 1]);
     } finally {
       backend.dispose();
     }

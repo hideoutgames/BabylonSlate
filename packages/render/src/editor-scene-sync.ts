@@ -34,6 +34,7 @@ import {
   editorComponentMeshName,
   editorActorParentId,
   editorModelLoadTarget,
+  modelMeshComponentsOf,
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
   SceneActorIndex,
@@ -90,6 +91,8 @@ export class EditorSceneSync {
   private readonly rejectedVisuals = new Map<string, string>();
   private readonly pendingVisuals = new Map<string, Mesh>();
   private readonly pendingTextureLoads = new Set<Promise<void>>();
+  /** Model loads not yet settled; finished and failed ones stay in `slotAnimLoads` for readiness. */
+  private readonly modelLoadsInFlight = new Set<Promise<void>>();
   private applyGeneration = 0;
   private pendingApply: AbortController | null = null;
   private realization: Promise<void> | null = null;
@@ -299,7 +302,7 @@ export class EditorSceneSync {
     const previous = this.lastScene;
     if (!previous || previous.actors.length !== sceneData.actors.length) return false;
     if (this.applyingScene || this.pendingApply || !this.materialsRefreshable || this.assetsNeedRebuild ||
-      this.pendingVisuals.size > 0 || this.pendingTextureLoads.size > 0 || this.pendingModelLoadCount() > 0) return false;
+      this.pendingVisuals.size > 0 || this.pendingTextureLoads.size > 0 || this.modelLoadsInFlight.size > 0) return false;
     const layoutOptions = { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: (guid: string) => this.assets?.texturePixelSizes?.get(guid) };
     if (resolveOverlayLayout(sceneData.actors, layoutOptions).actors !== sceneData.actors) return false;
     const actorIndex = new SceneActorIndex(sceneData.actors);
@@ -454,16 +457,17 @@ export class EditorSceneSync {
           }, actorIndex);
           const previous = mesh;
           this.prepareActorVisual(actor, replacement);
-          const modelGuid = this.meshComponentAssetGuid(actor);
+          const modelGuids = modelMeshComponentsOf(actor).map((model) => model.guid);
           const textureReady = ownedVisualTexturePreparation(replacement);
-          if (previous && !previous.isDisposed() && (modelGuid || textureReady)) {
+          if (previous && !previous.isDisposed() && (modelGuids.length > 0 || textureReady)) {
             // Exact texture preparation includes upload and budget admission.
             // Models keep their existing material/animation transaction too.
             replacement.setEnabled(false);
             const candidate = replacement;
             const generation = this.applyGeneration;
             const signal = this.pendingApply?.signal;
-            if (modelGuid && !this.assets?.modelSources?.has(modelGuid)) {
+            // With no model source to load, the staged replacement could never adopt; keep the previous visual.
+            if (modelGuids.length > 0 && modelGuids.every((guid) => !this.assets?.modelSources?.has(guid))) {
               candidate.dispose();
               void textureReady?.catch(() => {});
             } else {
@@ -495,7 +499,7 @@ export class EditorSceneSync {
               let failedFoliage = false;
               const load = (textureReady ?? Promise.resolve()).then(async () => {
                 if (!ownsLoad()) return;
-                if (modelGuid) await this.beginEditorModelLoad(actor, candidate, { ownsLoad, onAdopted });
+                if (modelGuids.length > 0) await this.beginEditorModelLoad(actor, candidate, { ownsLoad, onAdopted });
                 else onAdopted();
               }, (error: unknown) => {
                 if (ownsLoad()) this.rejectedVisuals.set(actor.id, descriptor);
@@ -911,6 +915,7 @@ export class EditorSceneSync {
     for (const candidate of this.pendingVisuals.values()) candidate.dispose();
     this.pendingVisuals.clear();
     this.pendingTextureLoads.clear();
+    this.modelLoadsInFlight.clear();
   }
 
   private trackFoliagePreparation(actor: SerializedActor, root: Mesh): void {
@@ -930,8 +935,10 @@ export class EditorSceneSync {
         this.onAfterApply?.();
       }
     });
-    // Retain failures in the generation's readiness set for the loading dialog.
+    // Retain failures in the generation's readiness set for the loading dialog;
+    // a finished preparation leaves it, so it no longer holds the pose fast path off.
     this.pendingTextureLoads.add(load);
+    void load.then(() => { this.pendingTextureLoads.delete(load); }, () => {});
     void load.catch((error: unknown) => console.warn(`[render] Foliage preparation failed: ${String(error)}`));
   }
 
@@ -984,9 +991,10 @@ export class EditorSceneSync {
       const guid = authoredMaterialGuid(component.properties.materialGuid);
       if (guid) this.noteMaterialUse(actor.id, guid);
     }
-    const model = this.meshComponentAssetGuid(actor);
-    for (const slot of (model ? this.assets?.modelPayloads?.get(model)?.materialSlots : undefined) ?? []) {
-      if (slot.materialGuid) this.noteMaterialUse(actor.id, slot.materialGuid);
+    for (const { guid } of modelMeshComponentsOf(actor)) {
+      for (const slot of this.assets?.modelPayloads?.get(guid)?.materialSlots ?? []) {
+        if (slot.materialGuid) this.noteMaterialUse(actor.id, slot.materialGuid);
+      }
     }
   }
 
@@ -1088,34 +1096,32 @@ export class EditorSceneSync {
     }
   }
 
-  private meshComponentAssetGuid(actor: SerializedActor): string | null {
-    const component = actor.components.find(
-      (entry) => entry.classId === "MeshComponent",
-    );
-    const guid = component?.properties.assetGuid;
-    return typeof guid === "string" && guid.length > 0 ? guid : null;
-  }
-
   private applyModelSlots(actor: SerializedActor, root: Mesh): void {
-    const guid = this.meshComponentAssetGuid(actor);
-    const payload = guid ? this.assets?.modelPayloads?.get(guid) : undefined;
-    if (!payload) return;
     const resolve = this.notingUses(actor.id, this.resolveMaterial);
-    applyModelMaterialSlots(
-      editorModelLoadTarget(root, actor),
-      payload.materialSlots,
-      (materialGuid) => resolve?.(materialGuid) ?? null,
-    );
+    for (const { component, guid } of modelMeshComponentsOf(actor)) {
+      const payload = this.assets?.modelPayloads?.get(guid);
+      if (!payload) continue;
+      applyModelMaterialSlots(
+        editorModelLoadTarget(root, actor, component),
+        payload.materialSlots,
+        (materialGuid) => resolve?.(materialGuid) ?? null,
+      );
+    }
   }
 
+  /**
+   * Loads every Model MeshComponent of the actor into its own placeholder. A
+   * staged replacement (`publication`) adopts once, after its last model publishes.
+   */
   private beginEditorModelLoad(actor: SerializedActor, root: Mesh, publication?: {
     ownsLoad: () => boolean;
     onAdopted: () => void;
   }): Promise<void> | undefined {
-    const guid = this.meshComponentAssetGuid(actor);
-    const bytes = guid ? this.assets?.modelSources?.get(guid) : undefined;
-    if (!guid || !bytes) return;
-    const slotId = ++this.modelLoadSlot;
+    const models = modelMeshComponentsOf(actor).flatMap(({ component, guid }) => {
+      const bytes = this.assets?.modelSources?.get(guid);
+      return bytes ? [{ component, guid, bytes }] : [];
+    });
+    if (models.length === 0) return;
     this.modelLoadBinding.modelBytes = this.assets?.modelBytes;
     this.modelLoadBinding.modelSources = this.assets?.modelSources;
     this.modelLoadBinding.modelPayloads = this.assets?.modelPayloads;
@@ -1128,38 +1134,51 @@ export class EditorSceneSync {
       this.assets?.materialTextureGuids;
     this.modelLoadBinding.compiledMaterialGuids =
       this.assets?.compiledMaterialGuids;
-    const placeholder = editorModelLoadTarget(root, actor);
     const generation = this.applyGeneration;
     const signal = this.pendingApply?.signal;
-    const ownsLoad = () => generation === this.applyGeneration && !signal?.aborted &&
-      !root.isDisposed() && !placeholder.isDisposed() && (publication ? publication.ownsLoad() : this.meshes.get(actor.id) === root);
-    return beginSlotModelAnimLoad(
-      this.scene,
-      this.modelLoadBinding,
-      slotId,
-      guid,
-      bytes,
-      placeholder,
-      () => {
-        if (!ownsLoad()) return;
-        publication?.onAdopted();
-        const wasFrozen = root.isWorldMatrixFrozen;
-        applyActorTransform(root, actor);
-        // Adoption may land at a yield after this actor's final freeze step.
-        // Restore that matrix without announcing a partially realized scene.
-        if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
-        if (!this.applyingScene) {
-          this.scheduler?.invalidate("asset");
-          this.onAfterApply?.();
-        }
-      },
-      ownsLoad,
-      (prepared) => {
-        if (!ownsLoad()) return;
-        this.bindActorMaterials(actor, prepared);
-      },
-      this.preparationPriority,
-    );
+    let unpublished = models.length;
+    const loads = models.map(({ component, guid, bytes }) => {
+      const placeholder = editorModelLoadTarget(root, actor, component);
+      const ownsLoad = () => generation === this.applyGeneration && !signal?.aborted &&
+        !root.isDisposed() && !placeholder.isDisposed() && (publication ? publication.ownsLoad() : this.meshes.get(actor.id) === root);
+      const load = beginSlotModelAnimLoad(
+        this.scene,
+        this.modelLoadBinding,
+        ++this.modelLoadSlot,
+        guid,
+        bytes,
+        placeholder,
+        () => {
+          if (!ownsLoad()) return;
+          if (publication && --unpublished > 0) return;
+          publication?.onAdopted();
+          const wasFrozen = root.isWorldMatrixFrozen;
+          applyActorTransform(root, actor);
+          // Adoption may land at a yield after this actor's final freeze step.
+          // Restore that matrix without announcing a partially realized scene.
+          if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
+          if (!this.applyingScene) {
+            this.scheduler?.invalidate("asset");
+            this.onAfterApply?.();
+          }
+        },
+        ownsLoad,
+        (prepared) => {
+          if (!ownsLoad()) return;
+          // The prepared instance is this component's model alone, so only its own slots, override and instance apply.
+          this.bindActorMaterials({ ...actor, components: [component] }, prepared);
+        },
+        this.preparationPriority,
+      );
+      this.modelLoadsInFlight.add(load);
+      void load.finally(() => this.modelLoadsInFlight.delete(load)).catch(() => {});
+      return load;
+    });
+    if (loads.length === 1) return loads[0];
+    // Discarding callers rely on readiness to report a failure, as beginSlotModelAnimLoad's own promise does.
+    const all = Promise.all(loads).then(() => undefined);
+    void all.catch(() => {});
+    return all;
   }
 
   private restoreMeshComponentConstruction(

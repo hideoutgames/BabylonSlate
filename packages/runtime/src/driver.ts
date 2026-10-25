@@ -1462,7 +1462,7 @@ class InProcessRuntime implements RuntimeDriver {
         (entry) =>
           !entry.destroyed &&
           entry.classId === "AudioComponent" &&
-          (entry.guid === voiceId || entry.sourceId === voiceId),
+          entry.guid === voiceId,
       );
       if (!component) continue;
       this.admission.run(component, () => this.scriptHost.invokeEvent(

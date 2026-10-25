@@ -227,4 +227,44 @@ describe("Play multipart model publication", () => {
       expect(f.scene.meshes).toHaveLength(0);
     } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
   });
+
+  it("applies same-tick material commands after re-sending an installed model", async () => {
+    const f = fixture();
+    const materials = new Map(["m1", "m2"].map((guid) => [guid, new StandardMaterial(guid, f.scene)]));
+    f.binding.resolveMaterial = (guid) => materials.get(guid) ?? null;
+    try {
+      const root = await initialModel(f);
+      // A script property write re-sends the unchanged assignment in the same batch as the material change.
+      applyAssignMesh(f.scene, f.binding, { type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: "old", primaryComponentId: "removed" });
+      applyAssignMaterial(f.scene, f.binding, { type: "assignMaterial", slotId: 1, componentId: "removed", materialAssetGuid: "m2" });
+      const triangles = root.getChildMeshes().filter((mesh) => mesh.getTotalVertices() === 3);
+      expect(triangles.length).toBeGreaterThan(0);
+      for (const mesh of triangles) expect(mesh.material).toBe(materials.get("m2"));
+    } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
+  });
+
+  it("applies material commands deferred by an abandoned replacement when the installed model is re-sent", async () => {
+    const f = fixture();
+    const materials = new Map(["m2"].map((guid) => [guid, new StandardMaterial(guid, f.scene)]));
+    f.binding.resolveMaterial = (guid) => materials.get(guid) ?? null;
+    const blocked = deferred<void>();
+    const nativeLoad = modelContainer.loadModelContainer;
+    try {
+      const root = await initialModel(f);
+      vi.spyOn(modelContainer, "loadModelContainer").mockImplementation(async (...args) => {
+        if (args[2] === "first.glb") await blocked.promise;
+        return nativeLoad(...args);
+      });
+      applyAssignMesh(f.scene, f.binding, { type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: "first", primaryComponentId: "removed" });
+      applyAssignMaterial(f.scene, f.binding, { type: "assignMaterial", slotId: 1, componentId: "removed", materialAssetGuid: "m2" });
+      applyAssignMesh(f.scene, f.binding, { type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: "old", primaryComponentId: "removed" });
+      blocked.resolve();
+      await Promise.allSettled([...(f.binding.slotAnimLoads?.values() ?? [])]);
+      expect(f.binding.meshes.get(1)).toBe(root);
+      expect(f.binding.slotAnimationGroups!.get(1)!.map((group) => group.name)).toEqual(["old"]);
+      const triangles = root.getChildMeshes().filter((mesh) => mesh.getTotalVertices() === 3);
+      expect(triangles.length).toBeGreaterThan(0);
+      for (const mesh of triangles) expect(mesh.material).toBe(materials.get("m2"));
+    } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
+  });
 });

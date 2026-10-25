@@ -160,9 +160,9 @@ export class SceneLayers implements RuntimeSubsystem {
       ? await preloads.acquire([assetGuid], owner?.guid ?? this.host.world().currentScene?.guid ?? "session") : null;
     let layer: SceneLayer | null = null;
     try {
-      { const pending = this.host.continueSimulation(owner); if (pending) await pending; }
+      // Rechecked after each wait: another continuation resumed in the same flush may have destroyed the owner.
+      for (let pending = this.host.continueSimulation(owner); pending; pending = this.host.continueSimulation(owner)) await pending;
       if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
-      if (this.host.stopped() || owner?.destroyed) throw sceneRealizationCancelled();
       layer = this.create(assetGuid, zOrder);
       if (!layer || layer.destroyed) throw new Error(`SceneLayer ${assetGuid} could not be prepared`);
       if (preload) preloads.transferOwner(preload.preloadId, layer.guid);

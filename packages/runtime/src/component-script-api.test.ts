@@ -383,6 +383,42 @@ describe("component script API", () => {
     runtime.stop();
   });
 
+  it("drops a non-finite impulse instead of driving the body to an infinite position", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      dt: 1 / 60,
+      playScene: sceneOf([
+        createActor("hero", "Hero", {
+          classId: "Hero",
+          components: [
+            { id: "rb", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0, linearDamping: 0 } },
+            { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
+          ],
+        }),
+      ]),
+    });
+    await runtime.loadScripts([
+      script(
+        [
+          "export function onTick(ctx) {",
+          "  if (ctx.tickIndex !== 1) return;",
+          "  ctx.addImpulse(ctx.self, { x: 1 / 0, y: 0, z: 0 }, 1);",
+          "}",
+        ].join("\n"),
+        { entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }] },
+      ),
+    ]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+    runtime.tick();
+    expect(runtime.getWorld().findActor("hero")?.transform.position.x).toBe(0);
+    runtime.stop();
+  });
+
   it("Set Collider isTrigger updates the live backend", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -735,6 +771,18 @@ describe("component script API", () => {
       seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
+        // A streamed copy of a duplicated scene keeps the original component id as its source.
+        createActor("decoy", "Decoy", {
+          classId: "Hero",
+          components: [
+            {
+              id: "decoy-audio",
+              sourceId: "audio-1",
+              classId: "AudioComponent",
+              properties: { audioAssetGuid: "jump", playOnStart: false },
+            },
+          ],
+        }),
         createActor("speaker", "Speaker", {
           classId: "Hero",
           components: [
@@ -780,6 +828,7 @@ describe("component script API", () => {
           command.message === "speaker",
       ),
     ).toBe(true);
+    expect(commands.some((command) => command.type === "log" && command.category === "Finished" && command.message === "decoy")).toBe(false);
     runtime.stop();
   });
 });

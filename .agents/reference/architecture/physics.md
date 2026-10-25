@@ -86,7 +86,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 ## Script queries
 
 - Queries run against the calling script's world (main, its SceneLayer's, or a miss for a layer without physics). Misses return false, zero vectors, null Actor and zero distance.
-- `shapeSweep` is linear on every backend (start rotation kept; initial overlap hits at distance 0). `sphereOverlap` lists each body and shape owner once. `ignoreActorIds` skips only the named actors' own shapes.
+- `shapeSweep` is linear on every backend (start rotation kept; initial overlap hits at distance 0). `sphereOverlap` lists each body and shape owner once. `ignoreActorIds` skips only the named actors' own shapes. Havok has no free membership bit to tag them: it masks a few ignored shapes (a sweep ignoring its own actor) up front, and for a long list (a channel's ignore list) masks an ignored actor's shapes only when the query reaches them and repeats (as trigger-only queries peel solid shapes), so that cost follows the rejected shapes on the query's path, not the length of the list.
 - Collision Channel: All (includes triggers), Static, Dynamic (includes ragdoll bones), Character (Movement owners), Solid, Triggers. Unknown names answer as All with a `physics.channel` warning. Line Trace Draw Debug never draws in release exports.
 - `moveCharacter` lazily creates a controller on the actor's body (no dedicated component) and applies the result immediately. Havok and Rapier enforce slope limits natively; software cannot.
 
