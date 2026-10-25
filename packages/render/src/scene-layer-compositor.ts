@@ -327,14 +327,29 @@ export class SceneLayerCompositor {
     return () => { for (const release of releases) release(); };
   }
 
+  /**
+   * Prepares the layer's current renderer. A post-process rebuild, resize or
+   * re-create during the wait replaces it, and preparation follows the
+   * replacement; a removed layer has nothing left to prepare. Only the caller's
+   * `assertCurrent` (a load's own currency) cancels.
+   */
   async prepare(layerId: string, assertCurrent: () => void): Promise<void> {
     this.resize();
-    const layer = this.byId.get(layerId);
-    if (!layer) throw new Error("SceneLayer was removed before rendering preparation.");
-    this.bindHudCamera(layer, true);
-    await layer.renderer.prepare(assertCurrent);
-    assertCurrent();
-    if (this.byId.get(layerId) !== layer) throw new Error("SceneLayer rendering preparation was superseded.");
+    for (;;) {
+      const layer = this.byId.get(layerId);
+      if (!layer) { assertCurrent(); return; }
+      this.bindHudCamera(layer, true);
+      const renderer = layer.renderer;
+      try {
+        await renderer.prepare(assertCurrent);
+      } catch (error) {
+        assertCurrent();
+        if (this.byId.get(layerId) !== layer || layer.renderer !== renderer) continue;
+        throw error;
+      }
+      assertCurrent();
+      if (this.byId.get(layerId) === layer && layer.renderer === renderer) return;
+    }
   }
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {

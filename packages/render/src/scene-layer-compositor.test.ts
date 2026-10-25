@@ -521,6 +521,22 @@ describe("SceneLayerCompositor", () => {
     expect(compositor.ownedScenes()).toEqual([]);
   });
 
+  it("follows a post-process rebuild during preparation and resolves for a layer removed while it prepares", async () => {
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
+    engines.push(engine);
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: () => ({ dispose() {} }) });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    // A script's sceneLayerPostProcess (or a resize) replaces the renderer the pending preparation awaits.
+    const rebuilt = compositor.prepare("overlay", () => {});
+    compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
+    await expect(rebuilt).resolves.toBeUndefined();
+    await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
+    const removed = compositor.prepare("overlay", () => {});
+    compositor.remove("overlay");
+    await expect(removed).resolves.toBeUndefined();
+    await compositor.dispose();
+  });
+
   it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {
     const { engine, compositor } = world();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
