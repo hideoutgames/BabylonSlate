@@ -9,7 +9,6 @@ import {
 } from "@haptic/object-model";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
-import { sceneRealizationCancelled } from "./scene-realization-work";
 import type { ScriptHost, ScriptHostServices } from "./script-host";
 import type { TweenRuntime } from "./tween-runtime";
 
@@ -79,12 +78,10 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       if (deps.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
       const preload = deps.demandAssetCatalog && guid
         ? await deps.assetPreloads.acquire([guid], owner?.guid ?? deps.world().currentScene?.guid ?? "session") : null;
-      if (deps.stopped() || owner?.destroyed) {
-        if (preload) deps.assetPreloads.release(preload.preloadId);
-        throw sceneRealizationCancelled();
-      }
       try {
-        { const pending = deps.continueSimulation(owner ?? null); if (pending) await pending; }
+        // Ends quietly, like any continuation, when the session stopped or the owner was destroyed meanwhile,
+        // including by another continuation that resumed in the same flush.
+        for (let pending = deps.continueSimulation(owner ?? null); pending; pending = deps.continueSimulation(owner ?? null)) await pending;
         if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
         const actor = deps.spawn({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
         if (preload) {
