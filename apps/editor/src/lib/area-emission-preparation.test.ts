@@ -1,6 +1,6 @@
 import { areaEmissionChunkId, AREA_EMISSION_CHUNK_KIND, type IndexedAsset } from "@haptic/assets";
 import { describe, expect, it, vi } from "vitest";
-import { areaEmissionStatusDescription, prepareReferencedAreaEmissions } from "./area-emission-preparation";
+import { areaEmissionStatusDescription, prepareReferencedAreaEmissions, resetAreaEmissionPreparations } from "./area-emission-preparation";
 
 const sha = (fill: string) => fill.repeat(64);
 function texture(guid: string, source: string, prepared = false): IndexedAsset {
@@ -34,5 +34,18 @@ describe("automatic area emission preparation", () => {
     await vi.waitFor(() => expect(areaEmissionStatusDescription(asset)).toContain("could not be prepared: Project is read-only."));
     prepareReferencedAreaEmissions(["readonly"], () => asset, prepare);
     expect(prepare).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed source after the project closes, and ignores jobs the closed project started", async () => {
+    let fail!: (error: Error) => void;
+    const prepare = vi.fn(() => new Promise<void>((_, reject) => { fail = reject; }));
+    const asset = texture("reopened", "e");
+    prepareReferencedAreaEmissions(["reopened"], () => asset, prepare);
+    resetAreaEmissionPreparations();
+    fail(new Error("Project closed."));
+    await Promise.resolve();
+    expect(areaEmissionStatusDescription(asset)).toMatch(/Prepare Emission/);
+    prepareReferencedAreaEmissions(["reopened"], () => asset, prepare);
+    expect(prepare).toHaveBeenCalledTimes(2);
   });
 });

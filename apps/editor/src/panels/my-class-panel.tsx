@@ -113,7 +113,6 @@ export type MyClassMember = {
   functionId?: string;
   assetGuid?: string;
   pins?: import("@haptic/core").GraphClassMemberPin[];
-  hasError?: boolean;
   componentId?: string;
   /** Class tree folder path; `|` separates subcategories. */
   category?: string;
@@ -410,7 +409,6 @@ function memberTreeNode(
     depth,
     hasChildren: false,
     expanded: false,
-    muted: member.hasError,
     icon: memberIcon(member),
     draggable: canDropClassMember(member),
     trailing: member.inherited ? (
@@ -547,7 +545,12 @@ export function ClassMembersView({
     () => new Map(members.map((member) => [rowIdOf(member), member])),
     [members],
   );
-  const treeSections = sectionsForTree(activeFunctionId, membersOptions);
+  // Sections are a fresh array; recomputing them per render would rebuild every tree row.
+  const treeSections = useMemo(
+    () => sectionsForTree(activeFunctionId, membersOptions),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sections read only these option fields
+    [activeFunctionId, membersOptions?.parentClass, membersOptions?.parentOf, membersOptions?.assetType],
+  );
   const renamableIds = useMemo(() => {
     const ids = new Set<string>();
     for (const member of graph?.members ?? []) {

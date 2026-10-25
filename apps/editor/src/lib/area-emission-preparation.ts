@@ -7,6 +7,8 @@ type Prepare = (guid: string) => Promise<void>;
 const preparations = new Map<string, AreaEmissionPreparation>();
 const listeners = new Set<() => void>();
 let revision = 0;
+/** Advanced when a project closes, so jobs it started cannot record into the next project. */
+let generation = 0;
 
 function sourceKey(asset: IndexedAsset): string | undefined {
   if (asset.header.type !== "Texture") return undefined;
@@ -47,11 +49,28 @@ export function prepareReferencedAreaEmissions(guids: readonly string[], lookup:
     if (!key || currentAreaEmissionChunk(asset.header) || preparations.has(key)) continue;
     preparations.set(key, { state: "preparing" });
     publish();
+    const started = generation;
     void prepare(guid).then(
-      () => { preparations.delete(key); publish(); },
-      (error: unknown) => { preparations.set(key, { state: "failed", message: error instanceof Error ? error.message : String(error) }); publish(); },
+      () => {
+        if (started !== generation) return;
+        preparations.delete(key);
+        publish();
+      },
+      (error: unknown) => {
+        if (started !== generation) return;
+        preparations.set(key, { state: "failed", message: error instanceof Error ? error.message : String(error) });
+        publish();
+      },
     );
   }
+}
+
+/** Forget every job when the project closes: a reopened project retries failed sources. */
+export function resetAreaEmissionPreparations(): void {
+  generation++;
+  if (preparations.size === 0) return;
+  preparations.clear();
+  publish();
 }
 
 /** Inspector note for an assigned emission Texture without prepared data. */
