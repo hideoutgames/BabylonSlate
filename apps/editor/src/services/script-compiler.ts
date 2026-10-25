@@ -1,4 +1,4 @@
-import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@haptic/core";
+import { classIdForAssetPath, consoleCommandMetadataFromGraph, fnv1a } from "@haptic/core";
 import { stripAssetFileSuffix } from "@haptic/assets";
 import {
   displayNodeTitle,
@@ -494,22 +494,13 @@ export type GraphCompileCacheOptions = {
   tagRegistry?: TagRegistry;
 };
 
-function fnv1aHex(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 function typeSchemasFingerprint(
   enums: GraphCompileCacheOptions["enums"],
   structs: GraphCompileCacheOptions["structs"],
   dataDefinitions: GraphCompileCacheOptions["dataDefinitions"],
 ): string {
   if (!enums && !structs && !dataDefinitions) return "0";
-  return fnv1aHex(
+  return fnv1a(
     JSON.stringify({ enums: enums ?? null, structs: structs ?? null, dataDefinitions: dataDefinitions ?? null }),
   );
 }
@@ -559,7 +550,7 @@ function graphDocumentCompileCacheKey(
       typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
     latent: options.latentFingerprint ?? "",
     inputAssets: options.inputAssets ?? [],
-    dataAssets: options.dataFingerprint ?? fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
+    dataAssets: options.dataFingerprint ?? fnv1a(JSON.stringify(options.dataAssets ?? [])),
     tags: tagRegistryCompileFingerprint(options.tagRegistry),
   });
 }
@@ -777,7 +768,7 @@ export function compileGraphDocuments(
     options.structs,
     options.dataDefinitions,
   );
-  const dataFingerprint = fnv1aHex(JSON.stringify(options.dataAssets ?? []));
+  const dataFingerprint = fnv1a(JSON.stringify(options.dataAssets ?? []));
   const project = projectLatentFunctions(documents);
   const otherClassGraphs = serializedGraphsByClassId(documents);
   const scripts: ScriptBundleEntry[] = [];
@@ -929,7 +920,7 @@ export function compileAnimGraphScripts(
   const cacheOptions = {
     ...options,
     typesFingerprint: typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
-    dataFingerprint: fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
+    dataFingerprint: fnv1a(JSON.stringify(options.dataAssets ?? [])),
   };
   for (const entry of documents) {
     const cache = options.cache;
