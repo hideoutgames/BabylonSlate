@@ -325,9 +325,11 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     if (hideable) {
       hideUntilReady(mesh);
       // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`), those of
-      // the drawn shadow maps that listed it included (`shadow-caster-warm.ts`).
+      // the drawn shadow maps its reveal redraws included (`shadow-caster-warm.ts`), which those maps start creating
+      // once its caster depth variants are ready, while its own warm draws create theirs.
       requestPipelineWarm(mesh);
-      noteRevealProbe(mesh, meshReady && pipelinesWarm(mesh) && casterPipelinesWarm(mesh));
+      const castersWarm = meshReady && casterPipelinesWarm(mesh);
+      noteRevealProbe(mesh, meshReady && pipelinesWarm(mesh) && castersWarm);
       const failed = meshReady ? undefined : failedRequest();
       if (failed) {
         reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);

@@ -463,13 +463,15 @@ export class ManagedShadowsTask extends FrameGraphTask {
           // capture's own sun maps and a frame that publishes a manual capture (`firstDrawsUrgent`), none of which may
           // publish a neutral map, still create them in the draw.
           if (warmsFirstDraws && !firstDrawPipelinesReady(this.scene, generator, draw)) continue;
-        } else if (tracksCasters && casterRedrawDue(generator)) {
-          // A new caster this map left out has its depth pipelines now: the map draws again, with it.
+        } else if (tracksCasters && casterRedrawDue(generator, warmsFirstDraws)) {
+          // A new caster this map left out has its depth pipelines now, or a hidden mesh's reveal waits for the map
+          // to list it: the map draws again. A frame that may not wait (above) draws every caster it left out.
           map.resetRefreshCounter();
         }
         if (!map._shouldRender()) continue;
         // A drawn map in such a frame leaves out the casters new to it until their depth pipelines exist, which their
-        // draws would otherwise create synchronously; the same frames as above draw them at once.
+        // draws would otherwise create synchronously, and draws again at once those that found them; the same frames
+        // as above draw them at once.
         if (tracksCasters) renderTrackingCasters(generator, warmsFirstDraws && !firstDraw, draw);
         else draw();
       }

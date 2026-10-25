@@ -51,7 +51,9 @@ import {
   SubMesh,
   UniversalCamera,
   Vector3,
+  VertexBuffer,
   type AbstractEngine,
+  type AbstractMesh,
   type Effect,
 } from "@babylonjs/core";
 import {
@@ -79,7 +81,7 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { findSceneShadowController, PREDICTION_MAP_SIZE } from "./shadow-controller";
 import { awaitsFirstDraw } from "./shadow-first-draw";
-import { isRevealPending, onMeshRevealed } from "./reveal-pending";
+import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
 import { PREDICTIONS_MAX } from "./variant-prediction";
 import { managedRenderReservations } from "./managed-render-resources";
@@ -246,6 +248,8 @@ function driverModel(engine: NullEngine, model: Model) {
   const drawnEffects = new WeakSet<Effect>();
   /** WebGPU model: Effects whose pipeline a draw outside any deferring scope (a shadow map's) created synchronously. */
   const synchronous = new Set<Effect>();
+  /** WebGPU model: draws that were not skipped. */
+  let drawCount = 0;
   type Scope = { allows: (pass: number) => boolean; warm: boolean; skipped: number; lookups: number; hits: number; effects: Set<Effect> };
   const scopes: Scope[] = [];
   if (model === "webgpu") {
@@ -313,6 +317,7 @@ function driverModel(engine: NullEngine, model: Model) {
           pipelineReady.add(effect);
         }
         if (effect) drawnEffects.add(effect);
+        drawCount += 1;
         draw(...args);
       }) as never);
     }
@@ -354,6 +359,8 @@ function driverModel(engine: NullEngine, model: Model) {
     warming: () => scopes.some((scope) => scope.warm),
     /** WebGPU model: a draw that was not skipped has drawn with `effect`. */
     drewWith: (effect: Effect) => drawnEffects.has(effect),
+    /** WebGPU model: how many draws were not skipped so far. */
+    draws: () => drawCount,
   };
 }
 
@@ -1650,15 +1657,16 @@ describe("compile holds after the first frame", () => {
   });
 
   /**
-   * A drawn spot map over the crate, and a thin-instanced box: a caster whose depth variant (an instanced one) no caster
-   * of the map drew. Only the casters' depth pipelines lag; every other pipeline is created at once.
+   * A spot map over the crate (drawn unless `castShadows` is false), and thin-instanced boxes: casters whose depth
+   * variant (an instanced one) no caster of the map drew. `lagCasters` lags only the casters' depth pipelines; every
+   * other pipeline is created at once.
    */
-  async function newCasterWorld() {
-    const world = playWorld("webgpu", [spot(10, [0, 5, 0], { castShadows: true })], [], "actor-1");
+  async function newCasterWorld(options: { castShadows?: boolean } = {}) {
+    const world = playWorld("webgpu", [spot(10, [0, 5, 0], { castShadows: options.castShadows ?? true })], [], "actor-1");
     await settle(world);
     const scene = world.handle.scene;
-    const map = scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!.getShadowGenerator() as ShadowGenerator;
-    // Instanced drawing, which the headless engine does not report: the box's variants are then instanced ones.
+    const map = () => scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!.getShadowGenerator() as ShadowGenerator | null;
+    // Instanced drawing, which the headless engine does not report: the boxes' variants are then instanced ones.
     world.engine.getCaps().instancedArrays = true;
     const instancedBox = (position: Vec3) => {
       const box = MeshBuilder.CreateBox("instanced caster", { size: 0.5 }, scene);
@@ -1666,62 +1674,180 @@ describe("compile holds after the first frame", () => {
       box.thinInstanceAdd(Matrix.Identity());
       return box;
     };
-    /** Whether a real (not skipped) draw into the spot map has drawn `mesh`. */
-    const castInto = (mesh: Mesh) => {
-      const effect = mesh.subMeshes[0]?._getDrawWrapper(map.getShadowMap()!.renderPassIds[0]!)?.effect;
-      return !!effect && world.driver.drewWith(effect);
+    // Thin instances keep a map drawing every frame; an unlit box without normals is another depth variant (no
+    // normal bias attribute) that leaves it drawing once per change.
+    const unlit = new StandardMaterial("unlit caster", scene);
+    unlit.disableLighting = true;
+    const unlitBox = (position: Vec3) => {
+      const box = MeshBuilder.CreateBox("unlit caster", { size: 0.5 }, scene);
+      box.removeVerticesData(VertexBuffer.NormalKind);
+      box.material = unlit;
+      box.position.set(...position);
+      return box;
     };
+    /** The spot map draws once per change. */
+    const drawsOnce = () => map()?.getShadowMap()?.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    /** Meshes a real (not skipped) draw into the spot map drew: each level of detail drawn, and its master. */
+    const drew = new WeakSet<AbstractMesh>();
+    const watched = new WeakSet<ShadowGenerator>();
+    const watch = () => {
+      const generator = map();
+      if (!generator || watched.has(generator)) return;
+      watched.add(generator);
+      let before = 0;
+      generator.onBeforeShadowMapRenderMeshObservable.add(() => { before = world.driver.draws(); });
+      generator.onAfterShadowMapRenderMeshObservable.add((mesh) => {
+        if (world.driver.draws() === before) return;
+        drew.add(mesh);
+        if (mesh._masterMesh) drew.add(mesh._masterMesh);
+      });
+    };
+    watch();
+    const frame = async () => {
+      watch();
+      return world.frame();
+    };
+    const castInto = (mesh: AbstractMesh) => drew.has(mesh);
     const lagCasters = () => {
       world.driver.arm();
       world.driver.lagOnly((effect) => /#define SM_FLOAT\b/.test(effect.defines));
     };
-    return { world, map, instancedBox, castInto, lagCasters };
+    return { world, map, frame, instancedBox, unlitBox, drawsOnce, castInto, lagCasters };
   }
 
   it("a hidden spawn whose caster depth variant no caster drew is revealed once that pipeline exists, creating none synchronously", async () => {
     // WebGPU: the spawn is hidden until its variants are ready. Its caster depth pipeline for the spot map, which the map
     // would create synchronously when it redraws with the revealed mesh, is created ahead while it stays hidden: the
     // map's own render lists it in a warm scope, every other caster drawing as before.
-    const { world, map, instancedBox, castInto, lagCasters } = await newCasterWorld();
+    const { world, map, frame, instancedBox, castInto, lagCasters } = await newCasterWorld();
     lagCasters();
     const box = instancedBox([1, 0.25, 1]);
     const hidden: boolean[] = [];
     let held = 0;
     for (let index = 0; index < 6; index++) {
-      if ((await world.frame()).view?.rendered !== true) held++;
+      if ((await frame()).view?.rendered !== true) held++;
       hidden.push(isRevealPending(box));
     }
     world.driver.release();
-    let revealedAfter = -1;
-    for (let index = 0; index < 8 && !(revealedAfter >= 0 && castInto(box)); index++) {
-      if ((await world.frame()).view?.rendered !== true) held++;
-      if (revealedAfter < 0 && !isRevealPending(box)) revealedAfter = index;
+    let castAtReveal: boolean | null = null;
+    for (let index = 0; index < 8 && castAtReveal === null; index++) {
+      if ((await frame()).view?.rendered !== true) held++;
+      if (!isRevealPending(box)) castAtReveal = castInto(box);
     }
-    expect({ hidden, revealed: revealedAfter >= 0, cast: castInto(box), mapDrawn: !awaitsFirstDraw(map),
-      synchronous: world.driver.synchronous.size, held }).toEqual({
-      hidden: [true, true, true, true, true, true], revealed: true, cast: true, mapDrawn: true, synchronous: 0, held: 0,
+    expect({ hidden, castAtReveal, mapDrawn: !awaitsFirstDraw(map()!), synchronous: world.driver.synchronous.size, held })
+      .toEqual({ hidden: [true, true, true, true, true, true], castAtReveal: true, mapDrawn: true, synchronous: 0, held: 0 });
+  });
+
+  it("a hidden spawn a drawn map does not redraw for meanwhile is revealed with its shadow, creating no pipeline synchronously", async () => {
+    // WebGPU: the spawn (an unlit box: the map draws once per change) is hidden while its colour pipelines lag;
+    // meanwhile the spot starts casting, and its new map draws without it (a first draw lists no hidden mesh) and
+    // would not draw again while it stays hidden. Its reveal asks the map to list it, so its depth pipeline is created
+    // ahead, and it appears on the frame its shadow does.
+    const { world, map, frame, unlitBox, drawsOnce, castInto } = await newCasterWorld({ castShadows: false });
+    world.driver.arm();
+    /** The box's caster depth variant: the only one without the normal bias attribute. */
+    const boxDepth = (effect: Effect) => /#define SM_FLOAT\b/.test(effect.defines) && !/#define NORMAL\b/.test(effect.defines);
+    // Every new pipeline lags but the other casters' depth pipelines, so the new map draws at once.
+    world.driver.lagOnly((effect) => !/#define SM_FLOAT\b/.test(effect.defines) || boxDepth(effect));
+    const box = unlitBox([1, 0.25, 1]);
+    let held = 0;
+    for (let index = 0; index < 3; index++) if ((await frame()).view?.rendered !== true) held++;
+    world.place(spot(10, [0, 5, 0], { castShadows: true }));
+    for (let index = 0; index < 10 && !(map() && !awaitsFirstDraw(map()!)); index++)
+      if ((await frame()).view?.rendered !== true) held++;
+    const drawnWhileHidden = !!map() && !awaitsFirstDraw(map()!) && drawsOnce() && isRevealPending(box);
+    // Its colour pipelines arrive; its depth pipeline for the spot map still lags.
+    world.driver.lagOnly(boxDepth);
+    const hidden: boolean[] = [];
+    for (let index = 0; index < 6; index++) {
+      if ((await frame()).view?.rendered !== true) held++;
+      hidden.push(isRevealPending(box));
+    }
+    world.driver.release();
+    let castAtReveal: boolean | null = null;
+    for (let index = 0; index < 8 && castAtReveal === null; index++) {
+      if ((await frame()).view?.rendered !== true) held++;
+      if (!isRevealPending(box)) castAtReveal = castInto(box);
+    }
+    expect({ drawnWhileHidden, hidden, castAtReveal, synchronous: world.driver.synchronous.size, held }).toEqual({
+      drawnWhileHidden: true, hidden: [true, true, true, true, true, true], castAtReveal: true, synchronous: 0, held: 0,
     });
+  });
+
+  it.each(["colour", "depth"] as const)(
+    "a hidden spawn drawn as a level of detail casts nothing into a drawn map until it is revealed with its shadow (%s pipelines lag)", async (lagging) => {
+    // WebGPU: Babylon's shadow pass names the level it draws for a mesh, which counts as the mesh: while the mesh is
+    // hidden (its colour pipelines lagging) the level's draws are skipped, even once its depth pipeline exists, and the
+    // reveal waits for that pipeline (its depth pipeline lagging).
+    const { world, frame, instancedBox, castInto } = await newCasterWorld();
+    world.driver.arm();
+    const depth = (effect: Effect) => /#define SM_FLOAT\b/.test(effect.defines);
+    world.driver.lagOnly(lagging === "depth" ? depth : (effect) => /#define INSTANCES\b/.test(effect.defines) && !depth(effect));
+    const box = instancedBox([1, 0.25, 1]);
+    // The camera, ten units away, draws the level.
+    const level = instancedBox([1, 0.25, 1]);
+    box.addLODLevel(5, level);
+    const hidden: boolean[] = [];
+    const levelCast: boolean[] = [];
+    let held = 0;
+    for (let index = 0; index < 6; index++) {
+      if ((await frame()).view?.rendered !== true) held++;
+      hidden.push(isRevealPending(box));
+      levelCast.push(castInto(level));
+    }
+    world.driver.release();
+    let castAtReveal: boolean | null = null;
+    for (let index = 0; index < 8 && castAtReveal === null; index++) {
+      if ((await frame()).view?.rendered !== true) held++;
+      if (!isRevealPending(box)) castAtReveal = castInto(level);
+    }
+    expect({ hidden, levelCastWhileHidden: levelCast.some(Boolean), castAtReveal, synchronous: world.driver.synchronous.size, held })
+      .toEqual({ hidden: [true, true, true, true, true, true], levelCastWhileHidden: false, castAtReveal: true, synchronous: 0, held: 0 });
   });
 
   it("a drawn mesh that becomes a caster of a drawn map with a depth variant no caster drew creates no pipeline synchronously", async () => {
     // WebGPU: the box draws far from the spot's range, then moves under it. The map draws on with its other casters
     // while the box's depth pipeline is created, and draws the box once it exists.
-    const { world, instancedBox, castInto, lagCasters } = await newCasterWorld();
+    const { world, frame, instancedBox, castInto, lagCasters } = await newCasterWorld();
     const box = instancedBox([40, 0.25, 40]);
-    for (let index = 0; index < 6; index++) await world.frame();
+    for (let index = 0; index < 6; index++) await frame();
     const drawnBefore = !isRevealPending(box);
     lagCasters();
     box.position.set(1, 0.25, 1);
     const cast: boolean[] = [];
     let held = 0;
     for (let index = 0; index < 6; index++) {
-      if ((await world.frame()).view?.rendered !== true) held++;
+      if ((await frame()).view?.rendered !== true) held++;
       cast.push(castInto(box));
     }
     world.driver.release();
-    for (let index = 0; index < 4 && !castInto(box); index++) if ((await world.frame()).view?.rendered !== true) held++;
+    for (let index = 0; index < 4 && !castInto(box); index++) if ((await frame()).view?.rendered !== true) held++;
     expect({ drawnBefore, castWhilePending: cast.some(Boolean), cast: castInto(box), synchronous: world.driver.synchronous.size, held })
       .toEqual({ drawnBefore: true, castWhilePending: false, cast: true, synchronous: 0, held: 0 });
+  });
+
+  it("a caster new to a drawn map whose depth pipeline exists casts in the frame it arrives, rebuilt every frame too", async () => {
+    // WebGPU: a mesh moved under the spot, and one replaced by a new mesh every frame (as a script's text is), whose
+    // depth pipelines exist: the map's render that skips them finds them, so it draws again at once, with them.
+    const { world, frame, instancedBox, castInto } = await newCasterWorld();
+    const moved = instancedBox([40, 0.25, 40]);
+    for (let index = 0; index < 6; index++) await frame();
+    moved.position.set(-1, 0.25, 1);
+    await frame();
+    const movedCast = castInto(moved);
+    let rebuilt = instancedBox([1, 0.25, 1]);
+    for (let index = 0; index < 4; index++) await frame();
+    const rebuiltCast: boolean[] = [];
+    for (let index = 0; index < 4; index++) {
+      rebuilt.dispose();
+      rebuilt = instancedBox([1, 0.25, 1]);
+      // Never hidden, as a mesh whose Material keeps the Effect it draws with on itself (a script's text) is not.
+      noteDrawn(rebuilt);
+      await frame();
+      rebuiltCast.push(castInto(rebuilt) && !isRevealPending(rebuilt));
+    }
+    expect({ movedCast, rebuiltCast, synchronous: world.driver.synchronous.size })
+      .toEqual({ movedCast: true, rebuiltCast: [true, true, true, true], synchronous: 0 });
   });
 
   it.each(["spawned", "moved"] as const)(
@@ -1729,21 +1855,68 @@ describe("compile holds after the first frame", () => {
     // WebGPU: the caster waits (a spawn hidden, a drawn mesh left out of the map) for the pipeline the map's redraw
     // started, which never arrives. Once no pipeline has started or finished for the stall time, the map draws it,
     // creating it synchronously.
-    const { world, instancedBox, castInto, lagCasters } = await newCasterWorld();
+    const { world, frame, instancedBox, castInto, lagCasters } = await newCasterWorld();
     const box = instancedBox(arrival === "spawned" ? [1, 0.25, 1] : [40, 0.25, 40]);
-    if (arrival === "moved") for (let index = 0; index < 6; index++) await world.frame();
+    if (arrival === "moved") for (let index = 0; index < 6; index++) await frame();
     lagCasters();
     if (arrival === "moved") box.position.set(1, 0.25, 1);
     let held = 0;
     let waitedFrames = 0;
     for (let index = 0; index < 1.5 * PIPELINE_DEFERRAL_STALL_MS / FRAME_MS && !castInto(box); index++) {
-      if ((await world.frame()).view?.rendered !== true) held++;
+      if ((await frame()).view?.rendered !== true) held++;
       waitedFrames++;
     }
     expect({ held, waitedPastStall: waitedFrames >= PIPELINE_DEFERRAL_STALL_MS / FRAME_MS, revealed: !isRevealPending(box),
       cast: castInto(box), synchronous: world.driver.synchronous.size > 0 }, JSON.stringify({ waitedFrames })).toEqual({
       held: 0, waitedPastStall: true, revealed: true, cast: true, synchronous: true,
     });
+  });
+
+  it.each(["fast", "fullQuality"] as const)(
+    "a manual %s capture requested while a drawn map leaves out a new caster publishes the map with it", async (quality) => {
+    // WebGPU: the box (unlit: the map draws once per change) moves under the spot, whose map leaves it out while its
+    // depth pipeline is created. A manual capture keeps the image it publishes, so the map draws with it for the
+    // capture, creating that pipeline then: a Full Quality capture draws after the frame's maps, a Fast one before
+    // them, so it waits one frame for them.
+    const { world, frame, unlitBox, drawsOnce, castInto, lagCasters } = await newCasterWorld();
+    const allocate = world.engine.createRenderTargetTexture.bind(world.engine);
+    vi.spyOn(world.engine, "createRenderTargetTexture").mockImplementation((size, creation) => {
+      const target = allocate(size, creation);
+      target.texture!.format = typeof creation === "object" && creation.format !== undefined ? creation.format : Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    world.handle.setMeshAssets({
+      renderTargets: new Map([["target", { mode: "SceneColor", width: 32, height: 16 }]]),
+      renderTargetTextures: new Map([["texture", { renderTargetGuid: "target" }]]),
+    });
+    world.handle.applyCommand({ type: "configureRenderTargetCapture", actorGuid: "camera", slotId: 4, settings: {
+      ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target", captureEveryFrame: false, quality } });
+    const scene = world.handle.scene;
+    const box = unlitBox([40, 0.25, 40]);
+    /** Per capture draw of the floor: whether the spot's map held the box (after it: a render hook would redraw it). */
+    const captured: boolean[] = [];
+    (scene.getMeshByName("actor-1") as Mesh).onAfterRenderObservable.add(() => {
+      if (scene.activeCamera?.name === "renderTargetCapture:camera") captured.push(castInto(box));
+    });
+    for (let index = 0; index < 6; index++) await frame();
+    let held = 0;
+    const capture = async () => {
+      captured.length = 0;
+      world.handle.applyCommand({ type: "captureRenderTarget", actorGuid: "camera" });
+      for (let index = 0; index < 8; index++) if ((await frame()).view?.rendered !== true) held++;
+      const drawn = captured.length;
+      for (let index = 0; index < 2; index++) if ((await frame()).view?.rendered !== true) held++;
+      return { drew: drawn > 0, published: captured.length === drawn, last: captured.at(-1) ?? null };
+    };
+    // A first capture prepares the capture's view.
+    await capture();
+    held = 0;
+    lagCasters();
+    box.position.set(1, 0.25, 1);
+    for (let index = 0; index < 3; index++) if ((await frame()).view?.rendered !== true) held++;
+    const leftOut = drawsOnce() && !castInto(box);
+    const during = await capture();
+    expect({ leftOut, during, held }).toEqual({ leftOut: true, during: { drew: true, published: true, last: true }, held: 0 });
   });
 
   it.each(["fast", "fullQuality"] as const)(

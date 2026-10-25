@@ -16,14 +16,16 @@ it("charges the pipelines a drawn map's new caster starts to the frame's warm bu
   const after = new Observable<AbstractMesh>();
   // The members a tracked render reads of a map drawing into render pass 9, whose casters Babylon's shadow pass
   // announces around each caster's draws.
+  const shadowMap = { renderPassIds: [9], onDisposeObservable: new Observable() };
   const drawnMap = {
     getLight: () => ({ getScene: () => scene }),
-    getShadowMap: () => ({ renderPassIds: [9] }),
+    getShadowMap: () => shadowMap,
     onBeforeShadowMapRenderMeshObservable: before,
     onAfterShadowMapRenderMeshObservable: after,
   } as unknown as ShadowGenerator;
-  const established = {} as AbstractMesh;
-  const spawned = {} as AbstractMesh;
+  const mesh = () => ({ onDisposeObservable: new Observable(), isDisposed: () => false }) as unknown as AbstractMesh;
+  const established = mesh();
+  const spawned = mesh();
   const caster = (mesh: AbstractMesh, effects: number[]) => {
     before.notifyObservers(mesh);
     for (const effect of effects) draw(effect, 9);

@@ -59,8 +59,9 @@ export function setFirstDrawHeld(generator: ShadowGenerator, value: boolean): vo
 
 /**
  * Whether `scene`'s current frame publishes a manual Render Target capture, set by the captures before its graph
- * runs: a map awaiting its first draw then draws once its casters are ready, creating any missing pipeline
- * synchronously, since a capture published while it samples neutrally would keep that image.
+ * runs: a map awaiting its first draw then draws once its casters are ready, and a drawn map that left out casters new
+ * to it draws again with them (`shadow-caster-warm.ts`), creating any missing pipeline synchronously, since a capture
+ * published while a map samples neutrally or lacks a caster would keep that image.
  */
 export function firstDrawsUrgent(scene: Scene): boolean {
   return urgent.has(scene);
