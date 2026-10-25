@@ -12,7 +12,13 @@ const META_KEY = "haptic:opfs-meta";
 /** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
 const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
+/**
+ * Write counters per `${projectId}/${path}`. Values come from one sequence and
+ * are never reused, so a removed path's entry can be dropped: a rewrite cannot
+ * reproduce a revision string a reader still holds.
+ */
 const writeRevisions = new Map<string, number>();
+let writeSequence = 0;
 const lifecycleQueues = new Map<string, Promise<void>>();
 const directoryNames = new Map<string, Promise<string>>();
 
@@ -255,8 +261,10 @@ export class OpfsStorageAdapter implements ProjectStorage {
     if (!session) throw new ProjectOpenElsewhereError();
     let spent = !owned;
     try {
-      for (const cached of [...this.rangeHandles.keys()]) {
-        if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
+      for (const cache of [this.rangeHandles, writeRevisions]) {
+        for (const cached of [...cache.keys()]) {
+          if (cached.startsWith(`${handle.id}/`)) cache.delete(cached);
+        }
       }
       const opfs = await this.getOpfsRoot();
       try { await opfs.removeEntry(await directoryName(handle.id), { recursive: true }); }
@@ -438,8 +446,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
       await parent.getFileHandle(name, { create: true })
     ).createWritable();
     // Ranges read while the write is staged see a changed revision.
-    const before = writeRevisions.get(key) ?? 0;
-    writeRevisions.set(key, before + 1);
+    const before = writeRevisions.get(key);
+    const staged = ++writeSequence;
+    writeRevisions.set(key, staged);
     try {
       // Storage bytes are never SharedArrayBuffer-backed; DOM BufferSource
       // requires an ArrayBuffer-backed view.
@@ -448,10 +457,13 @@ export class OpfsStorageAdapter implements ProjectStorage {
     } catch (error) {
       await writable.abort().catch(() => {});
       // The committed bytes are unchanged, so readers holding their revision stay valid.
-      if (writeRevisions.get(key) === before + 1) writeRevisions.set(key, before);
+      if (writeRevisions.get(key) === staged) {
+        if (before === undefined) writeRevisions.delete(key);
+        else writeRevisions.set(key, before);
+      }
       throw error;
     }
-    writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
+    writeRevisions.set(key, ++writeSequence);
   }
 
   async readText(path: string): Promise<string> {
@@ -520,8 +532,10 @@ export class OpfsStorageAdapter implements ProjectStorage {
 
   async remove(path: string): Promise<void> {
     const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
-    for (const cached of [...this.rangeHandles.keys()]) {
-      if (cached === key || cached.startsWith(`${key}/`)) this.rangeHandles.delete(cached);
+    for (const cache of [this.rangeHandles, writeRevisions]) {
+      for (const cached of [...cache.keys()]) {
+        if (cached === key || cached.startsWith(`${key}/`)) cache.delete(cached);
+      }
     }
     const { parent, name } = await this.resolveHandle(path, false, "remove");
     try {
