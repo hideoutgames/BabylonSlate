@@ -25,9 +25,16 @@ import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 
 const SCENE_KINDS = ["scene"] as const;
 
+/** Concurrent bake workers, leaving a core for the editor's main thread. */
+function audioReverbBakeSlots(): number {
+  if (typeof Worker === "undefined") return 1;
+  const cores = typeof navigator === "undefined" ? 0 : navigator.hardwareConcurrency || 0;
+  return Math.max(1, cores - 1);
+}
+
 /**
- * Each bake gets its own worker, stopped when the bake settles: a timed-out
- * bake then stops computing instead of delaying the bakes after it.
+ * Each bake gets its own worker, stopped when the bake settles or is aborted
+ * (timed out or superseded), so a stopped bake stops computing.
  */
 function createBakeFn(live: Set<AudioReverbWorkerHost>): (
   geometry: AudioReverbGeometry,
@@ -83,6 +90,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
     const workers = new Set<AudioReverbWorkerHost>();
     const controller = createAudioReverbBakeController({
       bake: createBakeFn(workers),
+      bakeSlots: audioReverbBakeSlots(),
       withWrite: work => latestRef.current.withSceneWrite(writer => work(entry =>
         writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload))),
       write: async (entry) => {

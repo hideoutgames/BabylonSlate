@@ -142,6 +142,8 @@ export function createAudioReverbBakeController(options: {
   collect?: (scene: AudioReverbBakeScene) => Promise<AudioReverbGeometry>;
   debounceMs?: number;
   timeoutMs?: number;
+  /** How many bakes, background and flush alike, run at once. Default 1. */
+  bakeSlots?: number;
   onDiagnostic?: (diagnostic: AudioReverbBakeDiagnostic) => void;
 }): AudioReverbBakeController {
   const debounceMs = options.debounceMs ?? AUDIO_BAKE_DEBOUNCE_MS;
@@ -161,9 +163,44 @@ export function createAudioReverbBakeController(options: {
   const inflight = new Map<string, { fingerprint: string; flushing: boolean; work: Promise<void> }>();
   const completed = new Map<string, { hash: string; fingerprint: string; bytes: Uint8Array }>();
   const generation = new Map<string, number>();
+  // The bake of each path's current generation, stopped when it is superseded.
+  const bakeAborts = new Map<string, AbortController>();
   let disposed = false;
 
+  // Bakes take turns for these slots, so their workers cannot outnumber the
+  // cores, and a bake's timeout starts only once it holds one.
+  let freeSlots = Math.max(1, Math.floor(options.bakeSlots ?? 1) || 1);
+  const slotWaiters: Array<(release: () => void) => void> = [];
+  const releaseSlot = () => {
+    const next = slotWaiters.shift();
+    if (next) next(releaseSlot);
+    else freeSlots += 1;
+  };
+  /** The slot's release, or null when `signal` aborts first. */
+  const bakeSlot = (signal: AbortSignal): Promise<(() => void) | null> => {
+    if (signal.aborted) return Promise.resolve(null);
+    if (freeSlots > 0) {
+      freeSlots -= 1;
+      return Promise.resolve(releaseSlot);
+    }
+    return new Promise((resolve) => {
+      const grant = (release: () => void) => {
+        signal.removeEventListener("abort", leave);
+        resolve(release);
+      };
+      const leave = () => {
+        const index = slotWaiters.indexOf(grant);
+        if (index >= 0) slotWaiters.splice(index, 1);
+        resolve(null);
+      };
+      slotWaiters.push(grant);
+      signal.addEventListener("abort", leave, { once: true });
+    });
+  };
+
   const bump = (path: string) => {
+    bakeAborts.get(path)?.abort();
+    bakeAborts.delete(path);
     const next = (generation.get(path) ?? 0) + 1;
     generation.set(path, next);
     return next;
@@ -235,8 +272,12 @@ export function createAudioReverbBakeController(options: {
     gen: number,
     fingerprint: string,
   ): Promise<{ hash: string; bytes: Uint8Array } | null> {
+    // An admitted write can start this a turn after a newer edit superseded it.
+    if (generation.get(path) !== gen) return null;
     const abort = new AbortController();
+    bakeAborts.set(path, abort);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let release: (() => void) | null = null;
     let hash = completed.get(path)?.hash ?? "0";
     try {
       const geometry = await collect(scene);
@@ -249,14 +290,17 @@ export function createAudioReverbBakeController(options: {
         // it with this snapshot so its later Save can persist the matching chunk.
         return cached.fingerprint === fingerprint ? null : { hash, bytes: cached.bytes };
       }
-      const timeout = new Promise<Uint8Array>((_, reject) => {
-        timer = setTimeout(() => {
-          abort.abort();
-          reject(new Error("audio reverb bake timed out"));
-        }, timeoutMs);
+      release = await bakeSlot(abort.signal);
+      if (!release || generation.get(path) !== gen) return null;
+      // Timing out or being superseded stops the bake and frees its slot at once.
+      const stopped = new Promise<never>((_, reject) => {
+        abort.signal.addEventListener("abort", () => {
+          reject(new Error("audio reverb bake stopped"));
+        }, { once: true });
       });
-      void timeout.catch(() => undefined);
-      const bytes = await Promise.race([bake(geometry, abort.signal), timeout]);
+      void stopped.catch(() => undefined);
+      timer = setTimeout(() => abort.abort(), timeoutMs);
+      const bytes = await Promise.race([bake(geometry, abort.signal), stopped]);
       if (generation.get(path) !== gen) return null;
       return { hash, bytes };
     } catch {
@@ -269,19 +313,15 @@ export function createAudioReverbBakeController(options: {
       return { hash, bytes: dryAudioReverbFallbackBytes(hash) };
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      release?.();
+      if (bakeAborts.get(path) === abort) bakeAborts.delete(path);
     }
   }
 
-  const cancelScheduled = (path: string) => {
-    const existing = pending.get(path);
-    if (existing === undefined) return;
-    clearTimeout(existing);
-    pending.delete(path);
-  };
-
   return {
     schedule(path, scene) {
-      cancelScheduled(path);
+      const existing = pending.get(path);
+      if (existing !== undefined) clearTimeout(existing);
       pending.set(
         path,
         setTimeout(() => {
@@ -292,24 +332,27 @@ export function createAudioReverbBakeController(options: {
       );
     },
     async flush(path, scene, write) {
-      cancelScheduled(path);
+      const existing = pending.get(path);
+      if (existing !== undefined) {
+        clearTimeout(existing);
+        pending.delete(path);
+      }
       await run(path, scene, write, true);
     },
     async flushAll(scenes, write) {
-      for (const entry of scenes) cancelScheduled(entry.path);
+      // Every Scene's flush starts now, so an edit made while it runs waits
+      // for it and bakes after; the bake slots decide which bakes run first.
+      const settled = await Promise.allSettled(
+        scenes.map((entry) => this.flush(entry.path, entry.scene, write)),
+      );
       const unsaved = new Map<string, AudioReverbBakeUnsavedError>();
-      // One Scene at a time: each bake's timeout then covers its own work, not
-      // time queued behind other Scenes' bakes.
-      for (const { path, scene } of scenes) {
-        if (disposed) break;
-        try {
-          await run(path, scene, write, true);
-        } catch (reason) {
-          unsaved.set(path, reason instanceof AudioReverbBakeUnsavedError
-            ? reason
-            : new AudioReverbBakeUnsavedError(null, reason));
-        }
-      }
+      settled.forEach((result, index) => {
+        if (result.status === "fulfilled") return;
+        const { reason } = result;
+        unsaved.set(scenes[index]!.path, reason instanceof AudioReverbBakeUnsavedError
+          ? reason
+          : new AudioReverbBakeUnsavedError(null, reason));
+      });
       return unsaved;
     },
     drain() {
