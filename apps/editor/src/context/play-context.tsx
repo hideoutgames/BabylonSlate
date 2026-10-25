@@ -987,7 +987,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       releasePlaySources();
       // A Play Blocked prompt belongs to the preparation that just ended.
       setPlayBlockedOpen(false);
-      setBlockedDiagnostics([]);
       setEncodeQueuePauseReason("play", false);
       if (sessionState.mode === null) {
         setPlayOpen(false);
