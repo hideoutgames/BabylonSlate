@@ -17,6 +17,8 @@ The command system is always present; only the debugger UI and debug-tier comman
 | GL error trace (`installGlErrorTrace`) | [`packages/render/src/gl-error-trace.ts`](../../../packages/render/src/gl-error-trace.ts) |
 | Host memory (`getHostMemoryStats`) | [`packages/vfs/src/device-memory.ts`](../../../packages/vfs/src/device-memory.ts) |
 | Play overlay, console, Inspector, Stats HUD, probes, load reports | [`apps/editor/src/components/`](../../../apps/editor/src/components/), [`services/runtime-probes.ts`](../../../apps/editor/src/services/runtime-probes.ts), [`lib/scene-load-report.ts`](../../../apps/editor/src/lib/scene-load-report.ts) |
+| Editor Play, Simulation and Preview Build requests, session report, Play dialogs | `PlayProvider` ([`apps/editor/src/context/play-context.tsx`](../../../apps/editor/src/context/play-context.tsx)); context types and consumer hooks live in `play-context-hooks.ts`, re-exported by `play-context.tsx` |
+| Debug menu defaults, Play content, Play asset sources | `usePlayDebuggerDefaults`, `usePlayContent` (one reducer for the startup sources' content) and `usePlayAssetSources` (source sets and their lifetime) in [`apps/editor/src/context/`](../../../apps/editor/src/context/) `use-play-*.ts`, called by `PlayProvider` |
 
 ## Package boundary
 

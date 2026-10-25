@@ -596,7 +596,7 @@ function releasePackedContent(content: PackedGameContent): void {
   content.audioReverbBytes = null;
 }
 
-type PreparedPlaySources = Awaited<ReturnType<typeof acquirePlayAssetSources>>;
+export type PreparedPlaySources = Awaited<ReturnType<typeof acquirePlayAssetSources>>;
 
 /** Rebuild only container unions; retained collision/animation results are reused. */
 export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>) {
