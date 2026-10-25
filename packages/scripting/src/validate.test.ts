@@ -908,6 +908,23 @@ describe("validateGraphs", () => {
     ).toHaveLength(2);
   });
 
+  it("errors when two locals of one function compile to the same identifier", () => {
+    const local = (id: string, name: string, functionId: string) =>
+      ({ id, name, kind: "variable" as const, classId: "Hero", functionId });
+    const diags = validateGraphs([{ id: "Jump", kind: "function", nodes: [], edges: [] }], {
+      assetGuid: "a",
+      classId: "Hero",
+      members: [
+        local("loc-1", "Move Speed", "fn-1"),
+        local("loc-2", "Move_Speed", "fn-1"),
+        local("loc-3", "Move-Speed", "fn-2"),
+      ],
+    });
+    expect(diags.filter((d) => d.code === "member.local_name_conflict")).toEqual([
+      expect.objectContaining({ message: 'Local variable "Move_Speed" collides with local variable "Move Speed"' }),
+    ]);
+  });
+
   it("errors unknown class constraints when a known-class table is provided", () => {
     const graph: LogicGraph = {
       id: "g",

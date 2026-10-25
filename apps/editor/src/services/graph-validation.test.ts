@@ -3277,6 +3277,13 @@ describe("validateSerializedGraph material domains", () => {
         kind: "event",
         nodes: [
           {
+            id: "begin",
+            typeId: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            pins: registry.get("flow.event.beginPlay")!.pins({}),
+            properties: {},
+          },
+          {
             id: "reg",
             typeId: "scene-layer.registerPostProcess",
             position: { x: 0, y: 0 },
@@ -3284,7 +3291,9 @@ describe("validateSerializedGraph material domains", () => {
             properties: { "default:material": "bloom" },
           },
         ],
-        edges: [],
+        edges: [
+          { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+        ],
       },
       {
         assetGuid: "g1",
@@ -3305,6 +3314,13 @@ describe("validateSerializedGraph material domains", () => {
         kind: "event",
         nodes: [
           {
+            id: "begin",
+            typeId: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            pins: registry.get("flow.event.beginPlay")!.pins({}),
+            properties: {},
+          },
+          {
             id: "reg",
             typeId: "scene-layer.registerPostProcess",
             position: { x: 0, y: 0 },
@@ -3312,7 +3328,9 @@ describe("validateSerializedGraph material domains", () => {
             properties: { "default:material": "bloom" },
           },
         ],
-        edges: [],
+        edges: [
+          { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+        ],
       },
       {
         assetGuid: "g1",

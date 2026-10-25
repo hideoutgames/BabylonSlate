@@ -5,6 +5,7 @@ import {
   type BackendEngineSession,
 } from "@haptic/render";
 import { startPlayer, type PlayerBootHandle, type PlayerBootOptions } from "./boot";
+import { playerDecoderPaths } from "./decoder-paths";
 import { packedContentFromGame } from "./hydrate";
 
 export type PlayerBackendHandle = PlayerBootHandle & {
@@ -38,11 +39,7 @@ export async function startPlayerWithBackend(
       return canvas;
     },
     releaseCanvas: (canvas) => { canvas.remove(); },
-    decoders: {
-      ktx2BasePath: new URL("./ktx2/", document.baseURI).href,
-      dracoBasePath: new URL("./draco/", document.baseURI).href,
-      meshoptBasePath: new URL("./meshopt/", document.baseURI).href,
-    },
+    decoders: playerDecoderPaths(),
   });
   let released = false;
   let releaseFailure: unknown;

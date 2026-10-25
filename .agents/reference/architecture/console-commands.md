@@ -59,7 +59,7 @@ The visualization commands stay off the Debug menu; the console arms them.
 ## Autocomplete
 
 - Ranks command names exact → prefix → interior → subsequence, then enum values, `on` / `off`, `param=`, defaults, and context lists from `CommandParameter.complete` (`scenes`, `actors`, `commands`).
-- Completion replaces the current token and preserves quoting. The debugger stays headless; Play supplies scene keys and live actor names.
+- Completion replaces the current token and preserves quoting. The debugger stays headless; Play supplies scene keys and live actor names. Preview Build builds its command list and Scene keys from the game manifest ([`console-catalog.ts`](../../../apps/player/src/console-catalog.ts)), so Classes and Scenes that startup did not load still appear.
 
 ## Not engine commands
 

@@ -41,8 +41,9 @@ function validatePostProcessDomain(
   if (!domains) return [];
   const out = [];
   for (const graph of graphs) {
+    const wired = new Set(graph.edges.map((edge) => `${edge.targetNodeId}\t${edge.targetPinId}`));
     for (const node of graph.nodes) {
-      if (!POST_PROCESS_NODE_IDS.has(node.typeId)) continue;
+      if (!POST_PROCESS_NODE_IDS.has(node.typeId) || wired.has(`${node.id}\tmaterial`)) continue;
       const guid = materialGuidFromNode(node);
       if (!guid) continue;
       const domain = domains[guid];

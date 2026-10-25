@@ -195,7 +195,10 @@ export class AssetLoadingService {
   private readonly entriesByAsset = new Map<string, Set<CacheEntry>>();
   private readonly scopes = new Set<AssetLoadScope>();
   private readonly rootRequests = new Map<Acquisition, RootRequestState>();
-  private readonly rootFailures = new Map<string, RootRequestState>();
+  /** `rootRequests` grouped by asset id, so a load-state read scans only that asset's live requests. */
+  private readonly rootRequestsByAsset = new Map<string, Set<RootRequestState>>();
+  /** Latest failed root request per asset id and representation key; an asset leaves when its last failure does. */
+  private readonly rootFailures = new Map<string, Map<string | undefined, RootRequestState>>();
   private readonly queue: CacheEntry[] = [];
   private readonly budgets: AssetLoadingBudgets;
   private readonly now: () => number;
@@ -229,14 +232,14 @@ export class AssetLoadingService {
   getLoadState(assetId: string, representation?: string): AssetLoadState {
     const matches = (request: RootRequestState) => request.assetId === assetId
       && (!representation || request.representation === representation);
-    const requests = [...this.rootRequests.values()].filter(matches);
+    const requests = [...this.rootRequestsByAsset.get(assetId) ?? []].filter(matches);
     if (requests.some(request => request.state === "loading")) return "loading";
     let latest: CacheEntry | undefined;
     for (const entry of this.entriesByAsset.get(assetId) ?? []) {
       if ((!representation || entry.representation.key === representation)
         && (!latest || entry.order > latest.order)) latest = entry;
     }
-    const failure = [...this.rootFailures.values()].filter(matches).sort((a, b) => b.order - a.order)[0];
+    const failure = [...this.rootFailures.get(assetId)?.values() ?? []].filter(matches).sort((a, b) => b.order - a.order)[0];
     const newestReady = Math.max(latest?.order ?? -1, ...requests.map(request => request.order));
     if (failure && failure.order > newestReady) return "failed";
     if (latest?.state === "ready") {
@@ -247,6 +250,20 @@ export class AssetLoadingService {
       }
     }
     return latest?.state ?? "unloaded";
+  }
+
+  private forgetRootRequest(ticket: Acquisition): void {
+    const request = this.rootRequests.get(ticket);
+    if (!request) return;
+    this.rootRequests.delete(ticket);
+    const assetRequests = this.rootRequestsByAsset.get(request.assetId);
+    assetRequests?.delete(request);
+    if (!assetRequests?.size) this.rootRequestsByAsset.delete(request.assetId);
+  }
+
+  private deleteRootFailure(assetId: string, representation: string | undefined): void {
+    const failures = this.rootFailures.get(assetId);
+    if (failures?.delete(representation) && !failures.size) this.rootFailures.delete(assetId);
   }
 
   snapshot(): AssetLoadingSnapshot {
@@ -272,8 +289,10 @@ export class AssetLoadingService {
         this.evict(entry);
       }
     }
-    for (const [key, failure] of this.rootFailures) {
-      if (options.force || failure.lastUsed <= before) this.rootFailures.delete(key);
+    for (const failures of [...this.rootFailures.values()]) {
+      for (const failure of [...failures.values()]) {
+        if (options.force || failure.lastUsed <= before) this.deleteRootFailure(failure.assetId, failure.representation);
+      }
     }
   }
 
@@ -302,6 +321,9 @@ export class AssetLoadingService {
       assetId, representation: representation?.key, order: this.order++, state: "loading", lastUsed: this.now(),
     };
     this.rootRequests.set(ticket, request);
+    let assetRequests = this.rootRequestsByAsset.get(assetId);
+    if (!assetRequests) this.rootRequestsByAsset.set(assetId, assetRequests = new Set());
+    assetRequests.add(request);
     try {
       const records = new Map<string, AssetCatalogRecord>();
       const visited = new Set<string>();
@@ -340,13 +362,13 @@ export class AssetLoadingService {
       check();
       request.state = "ready";
       root!.preparedDependencies = [...ticket.entries].filter(entry => entry !== root).map(entry => entry.key);
-      this.rootFailures.delete(JSON.stringify([assetId, request.representation]));
+      this.deleteRootFailure(assetId, request.representation);
       return root!.result!.value as T;
     } catch (error) {
       if (!signal.aborted && !this.disposed) {
-        this.rootFailures.set(JSON.stringify([assetId, request.representation]), {
-          ...request, state: "failed", order: this.order++, lastUsed: this.now(),
-        });
+        let failures = this.rootFailures.get(assetId);
+        if (!failures) this.rootFailures.set(assetId, failures = new Map());
+        failures.set(request.representation, { ...request, state: "failed", order: this.order++, lastUsed: this.now() });
       }
       throw error;
     }
@@ -354,7 +376,7 @@ export class AssetLoadingService {
 
   /** @internal */
   release(ticket: Acquisition): void {
-    this.rootRequests.delete(ticket);
+    this.forgetRootRequest(ticket);
     ticket.controller.abort();
     for (const entry of ticket.entries) {
       entry.owners.delete(ticket);

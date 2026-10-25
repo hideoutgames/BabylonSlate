@@ -32,7 +32,7 @@ export interface TypeResolver {
 }
 
 /** Call node pins mirror the callee's declared interface. */
-function callDefinition(
+export function callDefinition(
   base: MaterialNodeDefinition,
   fn: MaterialFunctionDocument,
 ): MaterialNodeDefinition {
@@ -53,7 +53,8 @@ function callDefinition(
   };
 }
 
-function plumbingDefinition(
+/** Function Input / Output pins mirror the function's declared interface. */
+export function plumbingDefinition(
   base: MaterialNodeDefinition,
   type: "function.input" | "function.output",
   fn: MaterialFunctionDocument,

@@ -410,6 +410,7 @@ describe("string.replace", () => {
   it.each([
     ["l", "L", "heLLo"],
     ["", "-", "hello"],
+    ["l", "$$", "he$$$$o"],
   ])("Replace %j with %j in hello is %j", (search, replacement, expected) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

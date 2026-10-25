@@ -164,6 +164,46 @@ describe("struct nodes", () => {
     expect(Object.getOwnPropertyDescriptor(made, "__proto__")?.value).toBe(5);
   });
 
+  it("keeps fields named Out and In apart from the Make and Break structure pins", () => {
+    const registry = createDefaultNodeRegistry();
+    const properties = {
+      structGuid: "struct-ports",
+      fields: [
+        { name: "out", typeId: "int", defaultValue: 7 },
+        { name: "in", typeId: "string", defaultValue: "x" },
+      ],
+    };
+    const brk = node(registry, "break", "struct.break", properties);
+    const fieldPin = (name: string) => brk.pins.find((pin) => pin.direction === "out" && pin.name === name)!.id;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "make", "struct.make", properties),
+        brk,
+        node(registry, "logOut", "debug.log"),
+        node(registry, "logIn", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "logOut", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "logOut", sourcePinId: "execOut", targetNodeId: "logIn", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "make", sourcePinId: "out", targetNodeId: "break", targetPinId: "in" },
+        { id: "e4", sourceNodeId: "break", sourcePinId: fieldPin("Out"), targetNodeId: "logOut", targetPinId: "message" },
+        { id: "e5", sourceNodeId: "break", sourcePinId: fieldPin("In"), targetNodeId: "logIn", targetPinId: "message" },
+      ],
+    };
+    expect(validateGraphs([graph], { assetGuid: "a" }, { registry }).filter((d) => d.code === "pin.direction")).toEqual([]);
+    const body = compileGraph(graph, { assetGuid: "a", registry }).source
+      .replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const logs: unknown[] = [];
+    (new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+    });
+    expect(logs).toEqual([7, "x"]);
+  });
+
   it("keeps field pins by name when the snapshot is rewritten", () => {
     const def = createDefaultNodeRegistry().get("struct.make")!;
     const first = def.pins({
