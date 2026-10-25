@@ -19,7 +19,7 @@ Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with a
 | `.hextension` inspect / import / export and limits | [`extension-package.ts`](../../../packages/assets/src/extension-package.ts) |
 | Activation, transpile, command registry, API lifetime | [`apps/editor/src/lib/editor-extension-host.ts`](../../../apps/editor/src/lib/editor-extension-host.ts) |
 | Project lifetime, refresh, diagnostics | [`apps/editor/src/services/editor-extension-service.ts`](../../../apps/editor/src/services/editor-extension-service.ts) |
-| Engine library and bundled catalog | [`engine-extension-library.ts`](../../../apps/editor/src/lib/engine-extension-library.ts), [`engine-extensions.ts`](../../../apps/editor/src/lib/engine-extensions.ts), [`engine-extensions/`](../../../engine-extensions/) |
+| Engine library and bundled catalog | [`engine-extension-library.ts`](../../../apps/editor/src/lib/engine-extension-library.ts), [`engine-library.ts`](../../../apps/editor/src/lib/engine-library.ts) (defaults file, name and guid conflicts, operation queue and import rollback, shared with Engine Plugins), [`engine-extensions.ts`](../../../apps/editor/src/lib/engine-extensions.ts), [`engine-extensions/`](../../../engine-extensions/) |
 | Editor-only predicates | [`packages/core/src/editor-only.ts`](../../../packages/core/src/editor-only.ts) |
 | Editor ScriptHost for utility graphs | [`editor-utility-scripts.ts`](../../../apps/editor/src/lib/editor-utility-scripts.ts), [`editor-utility-runtime.tsx`](../../../apps/editor/src/components/editor-utility-runtime.tsx) |
 
