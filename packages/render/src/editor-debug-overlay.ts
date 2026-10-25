@@ -481,11 +481,15 @@ export class EditorDebugOverlay {
   /**
    * After asset installation, re-lens a selected capture's frustum and preview
    * when its Render Target's aspect changed. Otherwise keep the RTT and only
-   * re-filter its meshes, since installs can rebuild captured geometry.
+   * re-filter the lens' meshes, since installs can rebuild previewed geometry.
    */
   refreshRenderTargets(): void {
     const capture = this.previewCapture;
-    if (this.stopped || !this.lastSync || !capture) return;
+    if (this.stopped || !this.lastSync || !this.lensActive) return;
+    if (!capture) {
+      if (this.preview) this.preview.rtt.renderList = this.cameraRenderList();
+      return;
+    }
     if (this.captureAspect(capture.renderTargetGuid) !== this.previewAspect) {
       this.sync(this.lastSync);
       return;
@@ -611,7 +615,7 @@ export class EditorDebugOverlay {
     this.areaNative = null;
   }
 
-  /** Camera lenses keep the fixed 16:9 PIP aspect and their existing mesh list. */
+  /** Camera lenses keep the fixed 16:9 PIP aspect and preview every scene mesh but debug guides and camera models. */
   private cameraLens(component: SerializedComponent): LensDebug {
     const nearClip = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
     return {
@@ -629,10 +633,14 @@ export class EditorDebugOverlay {
         farClip: Math.max(nearClip + 0.01, asNumber(component.properties.farClip, 1000)),
       },
       aspect: CAMERA_PREVIEW_ASPECT,
-      renderList: this.scene.meshes.filter(
-        (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
-      ),
+      renderList: this.cameraRenderList(),
     };
+  }
+
+  private cameraRenderList(): AbstractMesh[] {
+    return this.scene.meshes.filter(
+      (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
+    );
   }
 
   /**
@@ -933,12 +941,13 @@ export class EditorDebugOverlay {
     if (!canvas || !texture || this.previewBlitInFlight) return;
     this.previewBlitInFlight = true;
     try {
+      // The size the readback is taken at: a lens switch can resize the RTT before it resolves.
+      const { width, height } = texture.getSize();
       const buffer = await this.previewBlitter.read(texture);
       // A stopped overlay or replaced canvas must not receive a late readback.
       if (!buffer || !canvas.getContext || this.previewCanvas !== canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const { width, height } = texture.getSize();
       canvas.width = width;
       canvas.height = height;
       this.previewBlitter.put(ctx, buffer, width, height);

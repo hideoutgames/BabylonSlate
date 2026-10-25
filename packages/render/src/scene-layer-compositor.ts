@@ -34,7 +34,8 @@ import {
 } from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
-import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
+import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import {
@@ -327,14 +328,35 @@ export class SceneLayerCompositor {
     return () => { for (const release of releases) release(); };
   }
 
+  /**
+   * Prepares the layer's current renderer. A post-process rebuild, resize or
+   * re-create during the wait replaces it, and preparation follows the
+   * replacement; a removed layer has nothing left to prepare. The caller's
+   * `assertCurrent` cancels, and an error of a renderer that is still current
+   * (a timeout, a missing camera) rejects. Each replacement brings fresh
+   * bounds, so following one more starts no later than
+   * `SCENE_PREPARATION_CEILING_MS` after the first pass began.
+   */
   async prepare(layerId: string, assertCurrent: () => void): Promise<void> {
     this.resize();
-    const layer = this.byId.get(layerId);
-    if (!layer) throw new Error("SceneLayer was removed before rendering preparation.");
-    this.bindHudCamera(layer, true);
-    await layer.renderer.prepare(assertCurrent);
-    assertCurrent();
-    if (this.byId.get(layerId) !== layer) throw new Error("SceneLayer rendering preparation was superseded.");
+    const ceiling = performance.now() + SCENE_PREPARATION_CEILING_MS;
+    for (let following = false; ; following = true) {
+      const layer = this.byId.get(layerId);
+      if (!layer) { assertCurrent(); return; }
+      if (following && performance.now() >= ceiling)
+        throw new PreparationTimedOut(`SceneLayer rendering preparation timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit: its renderer kept being replaced.`);
+      this.bindHudCamera(layer, true);
+      const renderer = layer.renderer;
+      try {
+        await renderer.prepare(assertCurrent);
+      } catch (error) {
+        assertCurrent();
+        if (this.byId.get(layerId) !== layer || layer.renderer !== renderer) continue;
+        throw error;
+      }
+      assertCurrent();
+      if (this.byId.get(layerId) === layer && layer.renderer === renderer) return;
+    }
   }
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {

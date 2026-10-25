@@ -3,6 +3,7 @@ import {
   BaseTexture,
   CubeTexture,
   NullEngine,
+  NullEngineOptions,
   Scene,
   SphericalPolynomial,
   Vector3,
@@ -10,6 +11,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   Quaternion,
+  RawTexture,
   Texture,
 } from "@babylonjs/core";
 import { normalizeEnvironmentLightingSettings } from "@haptic/core";
@@ -21,7 +23,7 @@ import { applySceneEnvironment } from "./scene-illumination";
 import { createSkyboxMesh } from "./skybox";
 import type { ResourceLease } from "./resource-cache";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { isSceneFrameReady } from "./scene-perf";
+import { isSceneFrameReady, onSceneReadinessDirty } from "./scene-perf";
 import { compileMaterialPlan } from "./material-compiler";
 import {
   createDefaultMaterialDocument,
@@ -40,8 +42,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fixture(suppliedIrradiance = true) {
-  const engine = new NullEngine();
+function fixture(suppliedIrradiance = true, engineOptions?: NullEngineOptions) {
+  const engine = new NullEngine(engineOptions);
   const cache = new ResourceCache();
   // NullEngine has no cube upload IO. Keep actual InternalTexture cache,
   // CubeTexture clone/serialization, Scene and ResourceCache ownership.
@@ -349,6 +351,51 @@ it("lights a Skybox-sourced scene from the visible sky's own cube where the sky 
   cache.flushUnreferenced();
   expect(skyCube.getInternalTexture()).toBeNull();
   expect(cache.resourceStats()).toMatchObject({ leases: 0 });
+});
+
+it("turns a Skybox's lighting each frame without invalidating materials or readiness, and frozen materials still rebind it", async () => {
+  // Multiview makes NullEngine report uniform buffers, which a frozen material skips rebinding.
+  const engineOptions = new NullEngineOptions();
+  engineOptions.enableMultiview = true;
+  const { engine, cache, a, bytes, assets } = fixture(true, engineOptions);
+  a.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+  // NullEngine cannot upload the BRDF lookup.
+  a.environmentBRDFTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, a);
+  vi.spyOn(a.environmentBRDFTexture, "isReady").mockReturnValue(true);
+  const sky = createSkyboxMesh(a, "Sky", cache.acquireTexture("sky", engine, bytes, { isCube: true }) as ResourceLease<CubeTexture>);
+  applySceneEnvironment(a, createDefaultScene(), { assets });
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  const surfaces = await Promise.all(["live", "frozen"].map(async (name) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, a);
+    const material = new PBRMaterial(name, a);
+    mesh.material = material;
+    const subMesh = mesh.subMeshes[0]!;
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+    material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    return { mesh, material, subMesh };
+  }));
+  surfaces[1]!.material.freeze();
+  const readinessDirty = vi.fn();
+  disposers.push(onSceneReadinessDirty(a, readinessDirty));
+  const invalidated = surfaces.map(({ material }) => vi.spyOn(material, "markAsDirty"));
+
+  // A script turning the sky: two frames, each with a new rotation.
+  for (const angle of [0.1, 0.2]) {
+    sky.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), angle);
+    sky.computeWorldMatrix(true);
+    a.onBeforeRenderObservable.notifyObservers(a);
+  }
+  expect(readinessDirty).not.toHaveBeenCalled();
+  for (const spy of invalidated) expect(spy).not.toHaveBeenCalled();
+
+  // The next frame binds the turned matrix, including into the frozen material's uniform buffer.
+  const matrix = a.environmentTexture!.getReflectionTextureMatrix();
+  for (const { mesh, material, subMesh } of surfaces) {
+    a.resetCachedMaterial();
+    const updated = vi.spyOn(material._uniformBuffer, "updateMatrix");
+    material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    expect(updated).toHaveBeenCalledWith("reflectionMatrix", matrix);
+  }
 });
 
 it("binds, removes and swaps a late Scene environment on a frozen PBR graph without rebuilding or allocating placeholder cubes", async () => {

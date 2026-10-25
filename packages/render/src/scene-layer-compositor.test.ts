@@ -2,7 +2,8 @@ import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder,
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneLayerCanvasToLayer } from "@haptic/core";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
-import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
+import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import * as scenePerf from "./scene-perf";
 
@@ -519,6 +520,53 @@ describe("SceneLayerCompositor", () => {
     expect(compositor.ownedScenes()).not.toContain(oldBlit);
     await compositor.dispose();
     expect(compositor.ownedScenes()).toEqual([]);
+  });
+
+  it("follows a post-process rebuild during preparation and resolves for a layer removed while it prepares", async () => {
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
+    engines.push(engine);
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
+      renderers.push(renderer); return { dispose() {} };
+    } });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    // A script's sceneLayerPostProcess (or a resize) replaces the renderer the pending preparation awaits.
+    const assertCurrent = () => {};
+    const rebuilt = compositor.prepare("overlay", assertCurrent);
+    compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
+    const followed = vi.spyOn(renderers[1]!, "prepare");
+    await expect(rebuilt).resolves.toBeUndefined();
+    // The caller's own preparation reached the replacement: the readiness probe's background preparation passes no `assertCurrent`.
+    expect(followed).toHaveBeenCalledWith(assertCurrent);
+    await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
+    const removed = compositor.prepare("overlay", () => {});
+    compositor.remove("overlay");
+    await expect(removed).resolves.toBeUndefined();
+    await compositor.dispose();
+  });
+
+  it("stops following renderer replacements once the preparation ceiling has passed", async () => {
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
+    engines.push(engine);
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
+      renderers.push(renderer); return { dispose() {} };
+    } });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    const preparing = compositor.prepare("overlay", () => {});
+    compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
+    // Each replacement's coordinator starts fresh bounds. A script keeps replacing the graph faster than it prepares:
+    // once preparation follows the first replacement, the ceiling passes and the graph is replaced again.
+    const follow = renderers[1]!.prepare.bind(renderers[1]);
+    const now = performance.now.bind(performance);
+    vi.spyOn(renderers[1]!, "prepare").mockImplementation((...args) => {
+      const followed = follow(...args);
+      vi.spyOn(performance, "now").mockImplementation(() => now() + SCENE_PREPARATION_CEILING_MS);
+      compositor.setPostProcess("overlay", [{ materialGuid: "third", enabled: true }]);
+      return followed;
+    });
+    await expect(preparing).rejects.toBeInstanceOf(PreparationTimedOut);
+    await compositor.dispose();
   });
 
   it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {

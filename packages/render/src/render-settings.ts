@@ -26,6 +26,7 @@ import {
   normalizeWaterBlendDistance,
   type PostProcessingEffectField,
   type PostProcessingQuality,
+  type EffectiveRenderingQuality,
 } from "@haptic/core";
 import { ColorGradingSource } from "./color-grading";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -57,6 +58,14 @@ type SceneRendering = {
   waterRevision: number;
   /** Device clamp of one revision and colour pipeline (Scene Linear changes which reflections a device can draw). */
   waterDevice: { revision: number; sceneLinear: boolean; clamp: WaterQualityDeviceClamp } | null;
+  /** `resolveSceneRenderingQuality` for the quality inputs it was resolved from, which writers replace, never mutate. */
+  resolvedQuality: {
+    project: RenderShadingSettings;
+    shadowOverrides: ShadowOverrides;
+    local: QualityOverrides;
+    session: QualityOverrides;
+    quality: EffectiveRenderingQuality;
+  } | null;
   /** Scenes (such as SceneLayers) resolving their quality through this Scene. */
   followers: Set<Scene>;
   localLightBudget: number;
@@ -132,6 +141,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       water: waterQualityValues(quality.water),
       waterRevision: ++waterRevisions,
       waterDevice: null,
+      resolvedQuality: null,
       followers: new Set(),
       localLightBudget: resolveLocalLightBudget(quality.lighting),
       cel: normalizeCelShadingSettings(undefined),
@@ -380,10 +390,17 @@ export function sceneWaterQualityDeviceClamp(scene: Scene): WaterQualityDeviceCl
   return clamp;
 }
 
-/** Explicit editor preferences precede session commands and never change authored settings. */
-export function resolveSceneRenderingQuality(scene: Scene) {
+/**
+ * Explicit editor preferences precede session commands and never change authored settings. Cached until a quality
+ * input is replaced (several readers ask every frame): the result is shared, so callers never mutate it.
+ */
+export function resolveSceneRenderingQuality(scene: Scene): EffectiveRenderingQuality {
   const state = sceneRenderingSettings(scene);
-  const local = state.localQualityOverrides;
-  const session = state.qualityOverrides;
-  return resolveRenderingQuality(state.project, state.shadowOverrides, mergeRenderingQualityOverrides(local, session));
+  const { project, shadowOverrides, localQualityOverrides: local, qualityOverrides: session } = state;
+  const cached = state.resolvedQuality;
+  if (cached && cached.project === project && cached.shadowOverrides === shadowOverrides && cached.local === local &&
+    cached.session === session) return cached.quality;
+  const quality = resolveRenderingQuality(project, shadowOverrides, mergeRenderingQualityOverrides(local, session));
+  state.resolvedQuality = { project, shadowOverrides, local, session, quality };
+  return quality;
 }

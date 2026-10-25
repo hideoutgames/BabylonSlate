@@ -24,7 +24,7 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment, type FilteredEnvironmentTarget } from "./environment-prefilter";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
-import { setMeshEnvironmentResolver } from "./mesh-environment";
+import { markMeshEnvironmentChanged, setMeshEnvironmentResolver } from "./mesh-environment";
 import { drawOutsideSceneView } from "./render-target-capture";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
@@ -90,6 +90,8 @@ export class ReflectionProbes {
   private readonly assignments = new WeakMap<AbstractMesh, Assignment>();
   /** Bumped whenever the published set changes, invalidating every assignment. */
   private generation = 0;
+  /** Whether materials route through `resolve`: only while a probe is published. */
+  private resolving = false;
   private capturing = false;
   private dirtyAt = -1;
   private disposed = false;
@@ -97,6 +99,7 @@ export class ReflectionProbes {
   private readonly world = Matrix.Identity();
   private readonly part = Matrix.Identity();
   private readonly corner = new Vector3();
+  private readonly extent = new Vector3();
   private readonly position = new Vector3();
   private readonly lookAt = new Vector3();
   private readonly viewMatrix = Matrix.Identity();
@@ -156,10 +159,6 @@ export class ReflectionProbes {
     this.probes.delete(actorId);
     for (const probe of probes) this.retire(probe);
     this.republish();
-  }
-
-  clear(): void {
-    for (const actorId of [...this.probes.keys()]) this.remove(actorId);
   }
 
   /**
@@ -237,10 +236,32 @@ export class ReflectionProbes {
     markSceneReadinessDirty(this.scene);
   }
 
+  /**
+   * The resolver came or went, so materials compiled without it (or with it)
+   * may need other defines; `resolve` only dirties meshes it assigned before.
+   */
+  private invalidateMaterials(): void {
+    const blocked = this.scene.blockMaterialDirtyMechanism;
+    this.scene.blockMaterialDirtyMechanism = false;
+    try {
+      for (const material of this.scene.materials) {
+        material.markAsDirty(Material.TextureDirtyFlag);
+        material.markDirty(true);
+      }
+      this.scene.resetCachedMaterial();
+    } finally {
+      this.scene.blockMaterialDirtyMechanism = blocked;
+    }
+  }
+
   private republish(): void {
     this.generation++;
     const any = [...this.probes.values()].some((probes) => probes.some((probe) => probe.published));
     setMeshEnvironmentResolver(this.scene, any ? (mesh) => this.resolve(mesh) : null);
+    if (any !== this.resolving) {
+      this.resolving = any;
+      this.invalidateMaterials();
+    }
     markSceneReadinessDirty(this.scene);
   }
 
@@ -270,15 +291,18 @@ export class ReflectionProbes {
       probe.min.minimizeInPlace(this.corner);
       probe.max.maximizeInPlace(this.corner);
     }
-    const size = probe.max.subtract(probe.min);
-    const volume = size.x * size.y * size.z;
-    const target = probe.target;
-    if (target && (probe.volume !== volume || !target.view.boundingBoxPosition.equalsWithEpsilon(this.corner.copyFrom(probe.min).addInPlace(probe.max).scaleInPlace(0.5), 0))) {
-      target.view.boundingBoxPosition = this.corner.clone();
-      target.view.boundingBoxSize = size;
-      if (probe.published) this.generation++;
-    }
-    probe.volume = volume;
+    const size = probe.max.subtractToRef(probe.min, this.extent);
+    probe.volume = size.x * size.y * size.z;
+    const view = probe.target?.view;
+    if (!view) return;
+    const center = this.corner.copyFrom(probe.min).addInPlace(probe.max).scaleInPlace(0.5);
+    // Compare the box itself: turning or reshaping it can keep its volume and centre.
+    if (view.boundingBoxSize.equals(size) && view.boundingBoxPosition.equals(center)) return;
+    view.boundingBoxPosition = center.clone();
+    view.boundingBoxSize = size.clone();
+    // Frozen materials keep the old box in their uniform buffers until forced to rebind.
+    markMeshEnvironmentChanged(view);
+    if (probe.published) this.generation++;
   }
 
   private staticSignature(): string {

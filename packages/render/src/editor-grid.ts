@@ -2,6 +2,7 @@ import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderLanguage, ShaderMaterial, ShaderStore, Vector2, Vector4, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@haptic/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
+import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME, markEditorHelperMesh } from "./helper-mesh";
 
 export { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME };
@@ -18,9 +19,6 @@ const GRID_PLANE_OFFSET = 0.002;
 /** Line colours are display-space; the world axes use the transform gizmo's axis colours. */
 const GRID_MINOR_COLOR = new Color3(0.52, 0.53, 0.56);
 const GRID_MAJOR_COLOR = new Color3(0.6, 0.61, 0.64);
-const GRID_AXIS_X_COLOR = new Color3(0.86, 0.24, 0.22);
-const GRID_AXIS_Y_COLOR = new Color3(0.22, 0.68, 0.38);
-const GRID_AXIS_Z_COLOR = new Color3(0.28, 0.48, 0.86);
 
 /**
  * Each grid level (minor, major, then ×10 steps of the major spacing) fades in
@@ -487,8 +485,8 @@ export function createEditorGrid(
     material.setColor3("majorColor", sceneColor(color));
     material.setColor3("minorColor", sceneColor(minorColor));
     // The plane's u axis is world X; v is world Z in 3D and world Y in 2D.
-    material.setColor3("axisColorU", sceneColor(GRID_AXIS_X_COLOR));
-    material.setColor3("axisColorV", sceneColor(mode === "3d" ? GRID_AXIS_Z_COLOR : GRID_AXIS_Y_COLOR));
+    material.setColor3("axisColorU", sceneColor(GIZMO_AXIS_COLORS.x));
+    material.setColor3("axisColorV", sceneColor(mode === "3d" ? GIZMO_AXIS_COLORS.z : GIZMO_AXIS_COLORS.y));
     material.setFloat("gridVisible", visible ? 1 : 0);
     // 2D fades at the frame edge, not with depth, so its lines keep their width.
     material.setFloat("distanceThinning", mode === "3d" ? 1 : 0);

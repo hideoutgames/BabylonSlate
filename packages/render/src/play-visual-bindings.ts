@@ -1,4 +1,4 @@
-import type { Node as BabylonNode, Mesh, Scene } from "@babylonjs/core";
+import type { AbstractMesh, Node as BabylonNode, Mesh, Scene } from "@babylonjs/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { AreaRectLightGroup } from "./area-rect-light";
 import type { CreateEngineOptions } from "./create-engine-types";
@@ -128,7 +128,10 @@ export function createPlayVisualBindings({
     if (!actorId || !root) return;
     // Runtime transforms are normally world-space. If a caller attaches actor
     // roots, descendants still belong to their own actor's outline identity.
-    const otherRoots = new Set([...binding.meshes.values()].filter((mesh) => mesh !== root));
+    // The slot roots are gathered only when a part is checked, so a root without
+    // child meshes never walks every slot.
+    let roots: ReadonlySet<AbstractMesh> | undefined;
+    const otherRoots = { has: (mesh: AbstractMesh) => mesh !== root && (roots ??= new Set<AbstractMesh>(binding.meshes.values())).has(mesh) };
     const meshes = visualMeshes(root, otherRoots);
     outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
     outlineActorBySlot.set(slotId, actorId);

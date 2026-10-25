@@ -10,11 +10,11 @@ import { encodeTriangleGlb } from "./glb-test-fixtures";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });
-function setup() {
+function setup(invalidate = () => {}) {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   const renderer = new SceneRenderCoordinator(scene);
-  const host = new SceneOutlineHost(scene, renderer, () => {});
+  const host = new SceneOutlineHost(scene, renderer, invalidate);
   cleanups.push(() => { host.dispose(); renderer.dispose(); engine.dispose(); });
   return { scene, host };
 }
@@ -218,6 +218,26 @@ describe("authored scene outline host", () => {
     host.setSelection([]); host.setSelection(["a"]);
     expect(host.selection.selected()).toEqual([a]);
     expect(host.view.contributions.has("component:b:ink")).toBe(false);
+  });
+
+  it("records spawns without republishing while nothing is outlined, then outlines every recorded actor", () => {
+    let invalidations = 0;
+    const { scene, host } = setup(() => invalidations++);
+    const [a, b, c, d] = ["a", "b", "c", "d"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    host.setActor("a", [a!], []);
+    const before = invalidations;
+    host.setActor("b", [b!], []);
+    host.setActor("c", [c!], []);
+    host.removeActor("b");
+    host.setActor("renamed", [c!], [], "c");
+    expect(invalidations).toBe(before);
+    expect(host.view.active).toBe(false);
+    host.setActor("d", [d!], authored("d"));
+    expect(invalidations).toBeGreaterThan(before);
+    expect(host.view.meshesForGroup("strict")).toEqual([a, c, d]);
+    setSceneRenderSettings(scene, { mode: "cel" });
+    host.refreshSettings();
+    expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a", "d", "renamed"]);
   });
 
   it("keeps editor guides out of gameplay masks and removes only global CEL on a mode change", () => {

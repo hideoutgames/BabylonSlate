@@ -35,8 +35,10 @@ interface AuthoredPostProcessOptions {
 let nextInstance = 0;
 
 /**
- * Opt-in adapter proof. It does not attach a camera pass or select a renderer.
- * The task owns its material instance; the graph owns all output textures.
+ * One authored post-process stack entry as a frame graph task; the scene
+ * post-process graph chains one per enabled entry, in stack order. It does not
+ * attach a camera pass or select a renderer. The task owns its material
+ * instance; the graph owns all output textures.
  */
 export class AuthoredPostProcessTask extends FrameGraphTask {
   readonly outputTexture: FrameGraphTextureHandle;
