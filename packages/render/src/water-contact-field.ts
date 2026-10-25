@@ -95,7 +95,9 @@ export function isWaterContactMesh(mesh: AbstractMesh): boolean {
   if (isEditorHelperMesh(mesh) || mesh.infiniteDistance) return false;
   const meta = mesh.metadata as Record<string, unknown> | null;
   if (meta && (meta.slateWater || meta.slateWaterRemoval || meta.landscapeRoot || meta.slateLandscape || meta.skybox)) return false;
-  return mesh.getTotalIndices() > 0;
+  // Unindexed geometry (e.g. flat-shaded glTF primitives) draws its vertices as consecutive triangles.
+  const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  return mesh.getTotalIndices() > 0 || (source.isUnIndexed && mesh.getTotalVertices() >= 3);
 }
 
 type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };
@@ -615,7 +617,8 @@ export class WaterContactField {
     const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh;
     this.geometryChanged(piece);
     piece.revision = positionRevision(piece.geometry);
-    const positions = source.getVerticesData(VertexBuffer.PositionKind), indices = source.getIndices();
+    const positions = source.getVerticesData(VertexBuffer.PositionKind);
+    const indices = positions && source.isUnIndexed ? sequentialIndices(positions.length / 3) : source.getIndices();
     if (!positions || !indices) return;
     // A mesh that kept moving while its rebuild was throttled is sliced where it is now.
     if (piece.instance < 0) piece.matrix.set(mesh.computeWorldMatrix().m);
@@ -992,6 +995,13 @@ function boxPass(values: Float32Array, count: number, lines: number, stride: num
       sum += line[add > last ? last : add]! - line[drop < 0 ? 0 : drop]!;
     }
   }
+}
+
+/** Indices of unindexed geometry, whose vertices are consecutive triangles. */
+function sequentialIndices(count: number): Uint32Array {
+  const indices = new Uint32Array(count);
+  for (let i = 0; i < count; i++) indices[i] = i;
+  return indices;
 }
 
 /** The same thin-instance matrix values, in the same order. */
