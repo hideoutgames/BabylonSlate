@@ -3,6 +3,7 @@ import { identityTransform } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import { sampleSplinePath, SPLINE_SUBDIVISIONS } from "./spline-component";
 import { evaluateWaterSpectrum, waterSpectrum, type WaterSpectrum } from "./water-spectrum";
+import { waterHorizontalEnvelopeOf, waterWaveEnvelopeOf } from "./water-envelope";
 
 export type WaterKind = "global" | "ocean" | "lake" | "river" | "puddle";
 export type WaterColor = [number, number, number];
@@ -299,7 +300,12 @@ export function invertWaterWaves(
  * envelopes, so the offset stays well inside every bank. Zero without sideways motion.
  */
 export function waterBankFadeLength(water: WaterDefinition, scale = 1): number {
-  return WATER_BANK_FADE_ENVELOPES * waterHorizontalEnvelope(water, scale);
+  return waterBankFadeLengthOf(waterSpectrum(water), scale);
+}
+
+/** `waterBankFadeLength` of a spectrum the caller already holds, for per-query paths. */
+function waterBankFadeLengthOf(spectrum: WaterSpectrum, scale: number): number {
+  return WATER_BANK_FADE_ENVELOPES * waterHorizontalEnvelopeOf(spectrum, scale);
 }
 
 /**
@@ -330,18 +336,9 @@ export function evaluateWaterVertex(
   evaluateWaterSpectrum(spectrum, x0, z0, time, out, scale, vertexGain[0]!, vertexGain[1]! * gradX, vertexGain[1]! * gradZ);
 }
 
-function waveEnvelopeOf(spectrum: WaterSpectrum, scale: number): number {
-  return Math.abs(scale) * 4 * spectrum.sigma;
-}
-
 /** Bound on |H| for a body (metres): four standard deviations of the sea's height. */
 export function waterWaveEnvelope(water: WaterDefinition, scale = 1): number {
-  return waveEnvelopeOf(waterSpectrum(water), scale);
-}
-
-/** `waterHorizontalEnvelope` of a spectrum the caller already holds, for per-query paths. */
-export function waterHorizontalEnvelopeOf(spectrum: WaterSpectrum, scale: number): number {
-  return spectrum.choppiness * waveEnvelopeOf(spectrum, scale);
+  return waterWaveEnvelopeOf(waterSpectrum(water), scale);
 }
 
 /** Bound on the Gerstner horizontal offset |D| for a body (metres): λ times the height envelope. Zero at Steepness 0. */
@@ -542,7 +539,7 @@ export function sampleWaterSurface(
   if (!hit?.footprint.inside) return emptyWaterSample();
   if (gerstner) {
     const horizontal = waterHorizontalEnvelopeOf(spectrum, scale);
-    const fadeLength = body.kind === "global" ? 0 : WATER_BANK_FADE_ENVELOPES * horizontal;
+    const fadeLength = body.kind === "global" ? 0 : waterBankFadeLengthOf(spectrum, scale);
     let gain: WaterWaveGain | undefined;
     // A rest point within the fade band lies at most one horizontal envelope from the query; further inside, the
     // rest point is unfaded and the plain inversion is exact.
