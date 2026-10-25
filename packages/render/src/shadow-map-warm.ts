@@ -1,5 +1,5 @@
 import type { AbstractEngine, Scene, ShadowGenerator } from "@babylonjs/core";
-import { withWarmShadowRender } from "./shadow-first-draw";
+import { isFirstDrawHeld, setFirstDrawHeld, withWarmShadowRender } from "./shadow-first-draw";
 import {
   beginPipelineDeferral,
   deferredPipelineCount,
@@ -64,17 +64,22 @@ const reported = new WeakSet<Scene>();
  * can change meanwhile). The wait ends at the deferral's stall (`deferredPipelinesStalled`: no deferred pipeline started
  * or finished for `PIPELINE_DEFERRAL_STALL_MS`), when the map draws and creates what is still missing synchronously, as
  * a stalled deferral's draws do. A warm render that throws is reported once per scene and is not run again for that
- * map, which draws at once, as without one.
+ * map, which draws at once, as without one. A map this holds back is marked (`setFirstDrawHeld`), so a manual Render
+ * Target capture can wait a frame for it (`render-target-capture.ts`).
  */
 export function firstDrawPipelinesReady(scene: Scene, generator: ShadowGenerator, render: () => void): boolean {
+  const ready = warmFirstDraw(scene, generator, render);
+  setFirstDrawHeld(generator, !ready);
+  if (ready) waiting.delete(generator);
+  return ready;
+}
+
+function warmFirstDraw(scene: Scene, generator: ShadowGenerator, render: () => void): boolean {
   const engine = scene.getEngine();
   const map = generator.getShadowMap();
   if (!map || failed.has(generator)) return true;
-  if (waiting.get(generator)?.waiting()) {
-    if (!deferredPipelinesStalled(engine)) return false;
-    waiting.delete(generator);
-    return true;
-  }
+  // A previous wait counts only while it still holds this first draw: a moved or resumed map starts afresh.
+  if (isFirstDrawHeld(generator) && waiting.get(generator)?.waiting()) return deferredPipelinesStalled(engine);
   if (!warmMapRoom(engine)) return false;
   const passes = new Set(map.renderPassIds);
   const scope = beginPipelineDeferral(engine, (pass) => passes.has(pass), { warm: true });
@@ -84,7 +89,6 @@ export function firstDrawPipelinesReady(scene: Scene, generator: ShadowGenerator
     withWarmShadowRender(generator, render);
   } catch (error) {
     failed.add(generator);
-    waiting.delete(generator);
     if (!reported.has(scene)) {
       reported.add(scene);
       console.warn(`[render] Shadow map warm render failed: ${String(error)}`);
@@ -94,10 +98,7 @@ export function firstDrawPipelinesReady(scene: Scene, generator: ShadowGenerator
     scope.close();
     chargeWarmMap(engine, pendingBefore);
   }
-  if (!scope.waiting()) {
-    waiting.delete(generator);
-    return true;
-  }
+  if (!scope.waiting()) return true;
   waiting.set(generator, scope);
   return false;
 }

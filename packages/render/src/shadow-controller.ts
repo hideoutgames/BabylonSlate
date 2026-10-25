@@ -1500,6 +1500,8 @@ export class SceneShadowController {
       indicesBefore = scene.getActiveIndices();
     });
     map?.onAfterUnbindObservable.add(() => {
+      // A warm render draws nothing, but Babylon counts a skipped draw's indices before it reaches the pipeline.
+      if (isWarmShadowRender(generator)) return;
       this.drawCalls += Math.max(
         0,
         readEngineDrawCalls(scene.getEngine()) - drawsBefore,

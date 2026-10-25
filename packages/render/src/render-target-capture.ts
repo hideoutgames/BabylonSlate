@@ -29,6 +29,7 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { registerSceneAuxiliaryViews } from "./scene-auxiliary-views";
 import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
 import { findSceneShadowController, type ViewShadows } from "./shadow-controller";
+import { isFirstDrawHeld, setFirstDrawsUrgent } from "./shadow-first-draw";
 
 export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 
@@ -122,6 +123,8 @@ type Capture = {
   local: Matrix;
   fallback?: Matrix;
   requested: boolean;
+  /** Its manual Fast request waited a frame for a shared shadow map's held first draw; it waits no more. */
+  waitedForShadows: boolean;
 };
 type CaptureBuffer = { texture: CaptureRenderTarget; lease: ManagedRenderLease };
 /**
@@ -264,7 +267,7 @@ export class RenderTargetCaptures {
     const local = transform ? authoredTransformMatrix(transform) : Matrix.Identity();
     this.captures.set(actorId, {
       camera, settings, includeIds: new Set(settings.actorIds), root, local, fallback,
-      requested: previous?.requested ?? false,
+      requested: previous?.requested ?? false, waitedForShadows: previous?.waitedForShadows ?? false,
     });
     camera.fov = settings.fieldOfView * Math.PI / 180;
     camera.minZ = settings.nearClip;
@@ -319,6 +322,8 @@ export class RenderTargetCaptures {
    */
   render(): void {
     this.pendingFullQuality.length = 0;
+    // A nested call (inside a capture's own draw) keeps its frame's state.
+    if (!drawing.has(this.scene)) setFirstDrawsUrgent(this.scene, false);
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
     for (const [actorId, capture] of this.captures) {
@@ -349,6 +354,17 @@ export class RenderTargetCaptures {
         // A capture of chosen actors outlines only them; actor roots can change with any mesh.
         if (settings.captureOnlyActors && this.refreshRoots()) this.refreshOutlineFilters();
         this.pendingFullQuality.push({ actorId, guid, capture, target });
+        // It draws after the frame's shadow maps and publishes what they show: a new map draws for it now, rather
+        // than wait, neutral, for its casters' pipelines (`firstDrawsUrgent`).
+        if (!settings.captureEveryFrame) setFirstDrawsUrgent(this.scene, true);
+        continue;
+      }
+      // A manual Fast colour capture draws here, before the frame's shadow maps: one that would publish a new map
+      // whose first draw a steady frame held back for its casters' pipelines waits one frame, in which that map draws.
+      if (!settings.captureEveryFrame && !target.depth && !target.normals && !capture.waitedForShadows &&
+        this.shadowFirstDrawHeld()) {
+        capture.waitedForShadows = true;
+        setFirstDrawsUrgent(this.scene, true);
         continue;
       }
       const meshes = this.collectCandidates(capture, target);
@@ -509,9 +525,20 @@ export class RenderTargetCaptures {
     const owner = this.ownerOf(mesh);
     return owner !== undefined && capture.includeIds.has(owner);
   }
+  /** Whether an admitted shadow map awaits a first draw a steady frame held back for its casters' pipelines (WebGPU). */
+  private shadowFirstDrawHeld(): boolean {
+    const controller = findSceneShadowController(this.scene);
+    if (!controller) return false;
+    for (const light of this.scene.lights) {
+      const map = controller.generator(light);
+      if (map && isFirstDrawHeld(map)) return true;
+    }
+    return false;
+  }
   /** A drawn frame consumes the manual request and publishes the front buffer. */
   private published(capture: Capture, target: Target): void {
     capture.requested = false;
+    capture.waitedForShadows = false;
     const wasPublished = target.published;
     target.published = true;
     if (!wasPublished || target.spare) this.publishTextures(wasPublished);
@@ -923,6 +950,7 @@ export class RenderTargetCaptures {
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.releaseAuxiliaryViews();
     this.pendingFullQuality.length = 0;
+    setFirstDrawsUrgent(this.scene, false);
     this.scene.onNewMeshAddedObservable.remove(this.addedMesh);
     this.scene.onMeshRemovedObservable.remove(this.removedMesh);
     this.clear();

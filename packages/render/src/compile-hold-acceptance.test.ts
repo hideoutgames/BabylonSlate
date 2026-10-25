@@ -32,6 +32,7 @@
  */
 import {
   ArcRotateCamera,
+  Constants,
   DirectionalLight,
   Mesh,
   MeshBuilder,
@@ -58,7 +59,9 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
 } from "@haptic/bridge";
-import { areaRectLightBindings, createDefaultScene, normalizeRenderingQuality } from "@haptic/core";
+import {
+  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, normalizeRenderingQuality,
+} from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -281,7 +284,7 @@ function driverModel(engine: NullEngine, model: Model) {
         // An Effect's first draw needs its pipeline: at once before arming or after release, pending in between (an
         // Effect the load compiled without drawing it, such as a spawnable's, has none yet).
         if (effect && !pipelineReady.has(effect) && !pending.has(effect)) {
-          if (armed && holding) start(effect);
+          if (armed && holding && (!lags || lags(effect))) start(effect);
           else pipelineReady.add(effect);
         }
         const missing = !!effect && pending.has(effect);
@@ -323,7 +326,10 @@ function driverModel(engine: NullEngine, model: Model) {
       holding = false;
       lags = undefined;
     },
-    /** From now on the driver finishes every link but those `lagging` picks, which stay pending until `release`. */
+    /**
+     * From now on the driver finishes every link (WebGPU model: every pipeline) but those `lagging` picks, which stay
+     * pending until `release`.
+     */
     lagOnly: (lagging: (effect: Effect) => boolean) => {
       lags = lagging;
       for (const effect of [...pending]) if (!lagging(effect)) pending.delete(effect);
@@ -1479,6 +1485,63 @@ describe("compile holds after the first frame", () => {
     expect({ held, waitedPastStall: waitedFrames >= PIPELINE_DEFERRAL_STALL_MS / FRAME_MS, drawn: !!generator && !awaitsFirstDraw(generator),
       synchronous: world.driver.synchronous.size > 0 }, JSON.stringify({ waitedFrames })).toEqual({
       held: 0, waitedPastStall: true, drawn: true, synchronous: true,
+    });
+  });
+
+  it.each(["fast", "fullQuality"] as const)(
+    "a manual %s capture requested while a new map waits for its casters' pipelines publishes the map drawn", async (quality) => {
+    // WebGPU: the spot's new map samples neutrally while its casters' depth pipelines are created (the receivers' come at
+    // once here). A manual capture keeps the image it publishes, so one requested meanwhile publishes the map drawn: a
+    // Full Quality capture draws after the frame's maps, which then draw for it at once; a Fast one draws before them,
+    // so it waits one frame for them. The capture looks from the camera actor's root at the floor under the crate.
+    const world = playWorld("webgpu", [spot(10, [0, 5, 0])], [], "actor-1");
+    // NullEngine does not record the requested format, which a capture's target is charged by.
+    const allocate = world.engine.createRenderTargetTexture.bind(world.engine);
+    vi.spyOn(world.engine, "createRenderTargetTexture").mockImplementation((size, creation) => {
+      const target = allocate(size, creation);
+      target.texture!.format = typeof creation === "object" && creation.format !== undefined ? creation.format : Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    world.handle.setMeshAssets({
+      renderTargets: new Map([["target", { mode: "SceneColor", width: 32, height: 16 }]]),
+      renderTargetTextures: new Map([["texture", { renderTargetGuid: "target" }]]),
+    });
+    world.handle.applyCommand({ type: "configureRenderTargetCapture", actorGuid: "camera", slotId: 4, settings: {
+      ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target", captureEveryFrame: false, quality } });
+    const scene = world.handle.scene;
+    const map = () => scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!.getShadowGenerator() as ShadowGenerator | null;
+    /** Per capture draw of the floor: whether the spot's map had drawn (none while it casts no shadows). */
+    const captured: boolean[] = [];
+    (scene.getMeshByName("actor-1") as Mesh).onBeforeRenderObservable.add(() => {
+      if (scene.activeCamera?.name !== "renderTargetCapture:camera") return;
+      const generator = map();
+      captured.push(!!generator && !awaitsFirstDraw(generator) && generator.getDarkness() === 0);
+    });
+    await settle(world);
+    let held = 0;
+    const frame = async () => {
+      if ((await world.frame()).view?.rendered !== true) held++;
+    };
+    // A first capture prepares the capture's view; a manual capture stops drawing once it has published.
+    const capture = async () => {
+      captured.length = 0;
+      world.handle.applyCommand({ type: "captureRenderTarget", actorGuid: "camera" });
+      for (let index = 0; index < 8; index++) await frame();
+      const drawn = captured.length;
+      for (let index = 0; index < 2; index++) await frame();
+      return { drew: drawn > 0, published: captured.length === drawn, last: captured.at(-1) ?? null };
+    };
+    const before = await capture();
+    world.driver.arm();
+    world.driver.lagOnly((effect) => /#define SM_FLOAT\b/.test(effect.defines));
+    world.place(spot(10, [0, 5, 0], { castShadows: true }));
+    held = 0;
+    for (let index = 0; index < 3; index++) await frame();
+    const waiting = !!map() && awaitsFirstDraw(map()!);
+    const during = await capture();
+    expect({ before, waiting, during, held }).toEqual({
+      before: { drew: true, published: true, last: false }, waiting: true,
+      during: { drew: true, published: true, last: true }, held: 0,
     });
   });
 
