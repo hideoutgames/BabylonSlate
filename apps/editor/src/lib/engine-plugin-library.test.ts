@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultPluginSettings,
   discoverEnginePlugins,
@@ -219,6 +219,12 @@ describe("EnginePluginLibrary", () => {
 });
 
 describe("ensureEnginePluginLibrary", () => {
+  beforeEach(() => templateFolders.clear());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("retries the bundled catalog after a failed index load instead of keeping the empty fallback", async () => {
     const directory = mkdtempSync(join(tmpdir(), "engine-plugin-library-"));
     try {
@@ -243,44 +249,38 @@ describe("ensureEnginePluginLibrary", () => {
       expect((await recovered.list()).map((entry) => entry.pluginGuid)).toEqual(["bundled-guid"]);
       expect(await ensureEnginePluginLibrary()).toBe(recovered);
     } finally {
-      vi.unstubAllGlobals();
       rmSync(directory, { recursive: true, force: true });
     }
   });
 
   it("orders operations from separate calls while the bundled catalog stays unavailable", async () => {
     vi.stubGlobal("fetch", async () => new Response("unavailable", { status: 503 }));
-    try {
-      templateFolders.clear();
-      vi.resetModules();
-      const { ensureEnginePluginLibrary, ENGINE_PLUGIN_LIBRARY_ROOT } = await import("./engine-plugin-library");
-      const incoming = await archive("user-guid", "User Pack");
-      const exportDialog = await ensureEnginePluginLibrary();
-      const settingsPage = await ensureEnginePluginLibrary();
-      const saved = templateFolders.get(ENGINE_PLUGIN_LIBRARY_ROOT)!;
-      const writeText = saved.writeText.bind(saved);
-      let reachCatalogWrite!: () => void;
-      const catalogWriteReached = new Promise<void>((resolve) => { reachCatalogWrite = resolve; });
-      let release!: () => void;
-      const held = new Promise<void>((resolve) => { release = resolve; });
-      vi.spyOn(saved, "writeText").mockImplementation(async (path, value) => {
-        if (path === "catalog.json") {
-          reachCatalogWrite();
-          await held;
-        }
-        return writeText(path, value);
-      });
+    vi.resetModules();
+    const { ensureEnginePluginLibrary, ENGINE_PLUGIN_LIBRARY_ROOT } = await import("./engine-plugin-library");
+    const incoming = await archive("user-guid", "User Pack");
+    const exportDialog = await ensureEnginePluginLibrary();
+    const settingsPage = await ensureEnginePluginLibrary();
+    const saved = templateFolders.get(ENGINE_PLUGIN_LIBRARY_ROOT)!;
+    const writeText = saved.writeText.bind(saved);
+    let reachCatalogWrite!: () => void;
+    const catalogWriteReached = new Promise<void>((resolve) => { reachCatalogWrite = resolve; });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(saved, "writeText").mockImplementation(async (path, value) => {
+      if (path === "catalog.json") {
+        reachCatalogWrite();
+        await held;
+      }
+      return writeText(path, value);
+    });
 
-      const importing = exportDialog.import(incoming);
-      await catalogWriteReached;
-      const listing = settingsPage.list();
-      await Promise.race([listing, new Promise((resolve) => setTimeout(resolve, 0))]);
-      release();
+    const importing = exportDialog.import(incoming);
+    await catalogWriteReached;
+    const listing = settingsPage.list();
+    await Promise.race([listing, new Promise((resolve) => setTimeout(resolve, 0))]);
+    release();
 
-      expect((await listing).map((entry) => entry.pluginGuid)).toEqual(["user-guid"]);
-      expect(await importing).toMatchObject({ status: "imported" });
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    expect((await listing).map((entry) => entry.pluginGuid)).toEqual(["user-guid"]);
+    expect(await importing).toMatchObject({ status: "imported" });
   });
 });
