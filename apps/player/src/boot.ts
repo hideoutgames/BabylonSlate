@@ -36,6 +36,7 @@ import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
+import { playerDecoderPaths } from "./decoder-paths";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
   applyPlayerActiveScene,
@@ -67,18 +68,6 @@ import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
-}
-
-function ktx2BasePath(): string {
-  return new URL("./ktx2/", document.baseURI).href;
-}
-
-function dracoBasePath(): string {
-  return new URL("./draco/", document.baseURI).href;
-}
-
-function meshoptBasePath(): string {
-  return new URL("./meshopt/", document.baseURI).href;
 }
 
 export type PlayerDiagnostic = {
@@ -327,9 +316,7 @@ function initializePlayer(
     physicsWorld: manifest.physicsWorld,
     navmeshBytes: content.navmeshBytes,
     navBlockers: navDebugBlockersFromActors(scene.actors),
-    ktx2BasePath: ktx2BasePath(),
-    dracoBasePath: dracoBasePath(),
-    meshoptBasePath: meshoptBasePath(),
+    ...playerDecoderPaths(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onConsoleEvent?.({
         type: "log",
