@@ -30,17 +30,32 @@ export function ActorDefaultsGrid({
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const assets = useMemo(() => { void registryEpoch; return assetRegistry?.list() ?? []; }, [assetRegistry, registryEpoch]);
   const ancestors = useMemo(() => walkAncestry(parentClass, classParentLookup(assets)), [assets, parentClass]);
-  const [ancestorDefaults, setAncestorDefaults] = useState<Record<string, ActorDefaults | undefined>>({});
+  const ancestorAssets = useMemo(() => {
+    const ids = new Set(ancestors);
+    return assets.filter(asset => asset.header.type === "Class" && ids.has(classIdFromClassAsset(asset)));
+  }, [ancestors, assets]);
+  // Closed ancestors are read from disk only when that set changes, not on every edit to an open Class.
+  const closedAncestorPaths = ancestorAssets
+    .filter(asset => !classDocuments.some(doc => doc.ref.path === asset.path))
+    .map(asset => asset.path)
+    .join("\n");
+  const [savedDefaults, setSavedDefaults] = useState<Record<string, ActorDefaults | undefined>>({});
   useEffect(() => {
     let active = true;
-    const ids = new Set(ancestors);
-    void Promise.all(assets.filter(asset => asset.header.type === "Class" && ids.has(classIdFromClassAsset(asset))).map(async asset => {
-      const open = classDocuments.find(doc => doc.ref.path === asset.path);
-      const graph = open ? open.content as SerializedGraph | null : await loadGraphDocument(asset.path).catch(() => null);
+    const closed = new Set(closedAncestorPaths.split("\n"));
+    void Promise.all(ancestorAssets.filter(asset => closed.has(asset.path)).map(async asset => {
+      const graph = await loadGraphDocument(asset.path).catch(() => null);
       return [classIdFromClassAsset(asset), graph?.actorDefaults] as const;
-    })).then(entries => { if (active) setAncestorDefaults(Object.fromEntries(entries)); });
+    })).then(entries => { if (active) setSavedDefaults(Object.fromEntries(entries)); });
     return () => { active = false; };
-  }, [ancestors, assets, classDocuments, loadGraphDocument]);
+  }, [ancestorAssets, closedAncestorPaths, loadGraphDocument]);
+  const ancestorDefaults = useMemo(() => {
+    const open = ancestorAssets.flatMap(asset => {
+      const doc = classDocuments.find(entry => entry.ref.path === asset.path);
+      return doc ? [[classIdFromClassAsset(asset), (doc.content as SerializedGraph | null)?.actorDefaults] as const] : [];
+    });
+    return { ...savedDefaults, ...Object.fromEntries(open) };
+  }, [ancestorAssets, classDocuments, savedDefaults]);
   const inherited = resolveActorDefaults(ancestors.map(id => ancestorDefaults[id]));
 
   const writeFlag = (key: ActorDefaultFlag, value: boolean) => {

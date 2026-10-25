@@ -19,6 +19,7 @@ import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 import { IconActionButton } from "../components/icon-action-button";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
+import { useRetainedValue } from "../lib/use-retained-value";
 
 const TOUCH_ACTION = "pointer-coarse:min-h-11";
 const TOUCH_ICON_ACTION = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
@@ -197,6 +198,20 @@ function useTreeActions(state: TreeState) {
   return { error, busy, run, menuItems, dialogs, renamingId, setRenamingId, addAndRename, finishRename };
 }
 
+const NO_ROW_MENU_ITEMS: NestedMenuItem[] = [];
+
+/** An entry's menu; its items are built when it opens and kept while it closes. */
+function DataTreeRowMenu({ entryId, name, actionSize, menuItems }: {
+  entryId: string;
+  name: string;
+  actionSize: "touch-icon" | "icon-sm";
+  menuItems: { readonly current: (id: string) => NestedMenuItem[] };
+}) {
+  const [open, setOpen] = useState(false);
+  const items = useRetainedValue(open ? menuItems.current(entryId) : null, NO_ROW_MENU_ITEMS);
+  return <NestedMenu size="chrome" open={open} onOpenChange={setOpen} items={items} trigger={<Button variant="ghost" size={actionSize} className={QUIET_ROW_ACTION} aria-label={`Entry Menu For ${name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />;
+}
+
 export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
   void _props;
   const state = useDataAssetEditing();
@@ -227,15 +242,18 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
       return true;
     });
   }, [index, query, collapsedIds]);
-  const { menuItems } = actions;
+  // Row menus build their items when opened, from the latest actions, so a selection or
+  // toggle does not build a menu for every visible entry.
+  const menuItemsRef = useRef(actions.menuItems);
+  useLayoutEffect(() => { menuItemsRef.current = actions.menuItems; });
   const nodes = useMemo<TreeViewNode[]>(() => visible.map((entry) => {
     const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
     return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
       icon: <BetweenHorizontalStartIcon className="size-3.5" />, renamable: !readOnly,
       preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
-      trailing: <NestedMenu size="chrome" items={menuItems(entry.id)} trigger={<Button variant="ghost" size={actionSize} className={QUIET_ROW_ACTION} aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
+      trailing: <DataTreeRowMenu entryId={entry.id} name={entry.name} actionSize={actionSize} menuItems={menuItemsRef} />,
     };
-  }), [visible, index, collapsedIds, query, readOnly, menuItems, actionSize]);
+  }), [visible, index, collapsedIds, query, readOnly, actionSize]);
   if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
   const definition = tree.defaultDefinitionGuid ? state.definitions.get(tree.defaultDefinitionGuid) : null;
   // The header and Tree Root stay put; only the tree scrolls, inside the panel.
