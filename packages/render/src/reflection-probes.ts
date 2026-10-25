@@ -161,10 +161,6 @@ export class ReflectionProbes {
     this.republish();
   }
 
-  clear(): void {
-    for (const actorId of [...this.probes.keys()]) this.remove(actorId);
-  }
-
   /**
    * Editor scenes: probes and static actors from the authored document. Any
    * document change recaptures once the editing settles.
