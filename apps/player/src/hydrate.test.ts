@@ -25,7 +25,7 @@ import {
   createDefaultSpriteAnimationPayload,
   normalizeAudioPayload,
 } from "@haptic/assets";
-import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@haptic/exporter";
+import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid, packedPlayControls } from "@haptic/exporter";
 import { resolveAudioPlayback } from "@haptic/assets";
 import { RuntimeDataCatalog } from "@haptic/runtime";
 import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
@@ -33,7 +33,6 @@ import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
 import {
   packedBootControls,
   packedContentFromGame,
-  packedPlayControls,
 } from "./hydrate";
 
 // Hydration fixtures explicitly prepare their offered content. Required-edge
