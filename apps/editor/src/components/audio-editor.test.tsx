@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AudioClips, AudioDetails } from "./audio-editor";
+import { AudioClips, AudioDetails, AudioPreview } from "./audio-editor";
 
 const audioIO = vi.hoisted(() => ({
   pick: vi.fn(async () => [{ name: "new.wav", bytes: new Uint8Array([1, 2, 3]) }]),
+  read: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
   write: vi.fn(async () => {}),
   remove: vi.fn(async () => {}),
 }));
@@ -11,6 +12,11 @@ vi.mock("@haptic/vfs", async (original) => ({
   ...await original<typeof import("@haptic/vfs")>(),
   pickImportFiles: audioIO.pick,
 }));
+// Web Audio is the boundary: previews play through the in-memory backend.
+vi.mock("@haptic/render", async (original) => {
+  const render = await original<typeof import("@haptic/render")>();
+  return { ...render, BabylonAudioPlaybackBackend: render.FakeAudioPlaybackBackend };
+});
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -34,7 +40,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       },
     ],
   },
-  readAssetChunk: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
+  readAssetChunk: audioIO.read,
   writeAudioClipChunk: audioIO.write,
   removeAudioClipChunk: audioIO.remove,
 })));
@@ -42,6 +48,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("Audio editor docks", () => {
@@ -118,5 +125,29 @@ describe("Audio editor docks", () => {
         }),
       );
     });
+  });
+
+  it("shows Play again when a clip change replaces the playing preview", async () => {
+    const decodeAudioData = vi.fn(async () => {
+      throw new Error("No audio decoder in tests");
+    });
+    vi.stubGlobal("AudioContext", class {
+      decodeAudioData = decodeAudioData;
+      close = async () => {};
+    });
+    const clips = [{ chunkId: "source", name: "Jump", weight: 1 }];
+    const view = render(<AudioPreview path="assets/Jump.hasset" payload={{ clips }} />);
+    // The first clip's waveform decodes once its bytes are cached.
+    await waitFor(() => expect(decodeAudioData).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId("audio-preview-play"));
+    expect(screen.getByTestId("audio-preview-stop")).toBeTruthy();
+    // A clip added in the Clips dock replaces the preview session, which stops the voice.
+    view.rerender(
+      <AudioPreview
+        path="assets/Jump.hasset"
+        payload={{ clips: [...clips, { chunkId: "clip-1", name: "Second", weight: 1 }] }}
+      />,
+    );
+    expect(await screen.findByTestId("audio-preview-play")).toBeTruthy();
   });
 });
