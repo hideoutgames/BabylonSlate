@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PropertyGrid, walkAncestry, type PropertyRow } from "@haptic/editor-kit";
 import {
   resolveActorDefaults,
@@ -49,13 +49,17 @@ export function ActorDefaultsGrid({
     })).then(entries => { if (active) setSavedDefaults(Object.fromEntries(entries)); });
     return () => { active = false; };
   }, [ancestorAssets, closedAncestorPaths, loadGraphDocument]);
-  const ancestorDefaults = useMemo(() => {
-    const open = ancestorAssets.flatMap(asset => {
-      const doc = classDocuments.find(entry => entry.ref.path === asset.path);
-      return doc ? [[classIdFromClassAsset(asset), (doc.content as SerializedGraph | null)?.actorDefaults] as const] : [];
-    });
-    return { ...savedDefaults, ...Object.fromEntries(open) };
-  }, [ancestorAssets, classDocuments, savedDefaults]);
+  const openDefaults = useMemo(() => Object.fromEntries(ancestorAssets.flatMap(asset => {
+    const doc = classDocuments.find(entry => entry.ref.path === asset.path);
+    return doc ? [[classIdFromClassAsset(asset), (doc.content as SerializedGraph | null)?.actorDefaults] as const] : [];
+  })), [ancestorAssets, classDocuments]);
+  // A Class whose tab closes keeps its last open values until the disk read of it lands.
+  const lastOpenDefaults = useRef<Record<string, ActorDefaults | undefined>>({});
+  useEffect(() => { Object.assign(lastOpenDefaults.current, openDefaults); }, [openDefaults]);
+  const ancestorDefaults = useMemo(
+    () => ({ ...lastOpenDefaults.current, ...savedDefaults, ...openDefaults }),
+    [openDefaults, savedDefaults],
+  );
   const inherited = resolveActorDefaults(ancestors.map(id => ancestorDefaults[id]));
 
   const writeFlag = (key: ActorDefaultFlag, value: boolean) => {

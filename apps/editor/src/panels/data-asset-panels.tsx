@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@haptic/core";
 import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@haptic/scripting";
@@ -199,16 +199,18 @@ function useTreeActions(state: TreeState) {
 }
 
 const NO_ROW_MENU_ITEMS: NestedMenuItem[] = [];
+/** The current row menu builder; context reaches an open menu through the memoized rows. */
+const DataTreeRowMenuItemsContext = createContext<(id: string) => NestedMenuItem[]>(() => NO_ROW_MENU_ITEMS);
 
 /** An entry's menu; its items are built when it opens and kept while it closes. */
-function DataTreeRowMenu({ entryId, name, actionSize, menuItems }: {
+function DataTreeRowMenu({ entryId, name, actionSize }: {
   entryId: string;
   name: string;
   actionSize: "touch-icon" | "icon-sm";
-  menuItems: { readonly current: (id: string) => NestedMenuItem[] };
 }) {
+  const menuItems = useContext(DataTreeRowMenuItemsContext);
   const [open, setOpen] = useState(false);
-  const items = useRetainedValue(open ? menuItems.current(entryId) : null, NO_ROW_MENU_ITEMS);
+  const items = useRetainedValue(open ? menuItems(entryId) : null, NO_ROW_MENU_ITEMS);
   return <NestedMenu size="chrome" open={open} onOpenChange={setOpen} items={items} trigger={<Button variant="ghost" size={actionSize} className={QUIET_ROW_ACTION} aria-label={`Entry Menu For ${name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />;
 }
 
@@ -242,16 +244,14 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
       return true;
     });
   }, [index, query, collapsedIds]);
-  // Row menus build their items when opened, from the latest actions, so a selection or
+  // Row menus build their items only while open, from the actions in context, so a selection or
   // toggle does not build a menu for every visible entry.
-  const menuItemsRef = useRef(actions.menuItems);
-  useLayoutEffect(() => { menuItemsRef.current = actions.menuItems; });
   const nodes = useMemo<TreeViewNode[]>(() => visible.map((entry) => {
     const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
     return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
       icon: <BetweenHorizontalStartIcon className="size-3.5" />, renamable: !readOnly,
       preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
-      trailing: <DataTreeRowMenu entryId={entry.id} name={entry.name} actionSize={actionSize} menuItems={menuItemsRef} />,
+      trailing: <DataTreeRowMenu entryId={entry.id} name={entry.name} actionSize={actionSize} />,
     };
   }), [visible, index, collapsedIds, query, readOnly, actionSize]);
   if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
@@ -270,7 +270,7 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
       {actions.error ? <div className="shrink-0 p-1"><OperationError message={actions.error} /></div> : null}
       <div className="shrink-0 px-1 pt-1"><Button variant="ghost" size="sm" className={cn("w-full justify-start gap-1 rounded-sm px-1 text-[13px] font-normal", touchSizing ? "h-11" : "h-7", !state.browseBranchId && !selectedEntryId ? "bg-accent font-medium" : "hover:bg-accent/50")} onClick={() => state.browse(null)}><span className="flex size-5 items-center justify-center text-muted-foreground"><DatabaseIcon className="size-3.5" /></span>Tree Root<span className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">{tree.entries.length}</span></Button></div>
       <div className="min-h-0 flex-1">
-        {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={touchSizing ? TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} renamingId={actions.renamingId} onRenameRequest={readOnly ? undefined : actions.setRenamingId} onRenameDone={actions.finishRename} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
+        {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <DataTreeRowMenuItemsContext.Provider value={actions.menuItems}><TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={touchSizing ? TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} renamingId={actions.renamingId} onRenameRequest={readOnly ? undefined : actions.setRenamingId} onRenameDone={actions.finishRename} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} /></DataTreeRowMenuItemsContext.Provider>}
       </div>
     </div>
     <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />

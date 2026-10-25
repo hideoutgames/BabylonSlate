@@ -729,7 +729,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   });
 
   // Saved Debug menu defaults apply field by field: a settings write re-applies only the fields it
-  // changed, so it never undoes a toggle whose own write is still queued behind it.
+  // changed, so it no longer reverts another field whose own write is still queued behind it.
   const savedDefaults = appSettings.debuggerDefaults;
   const savedPreviewBuild = savedDefaults.previewBuild === true;
   const savedPlayFromScene = savedDefaults.playFromScene !== false;
