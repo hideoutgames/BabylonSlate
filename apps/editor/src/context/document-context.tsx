@@ -1643,6 +1643,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     closeDocumentsForPathsRef.current = closeDocumentsForPaths;
   }, [closeDocumentsForPaths]);
 
+  /**
+   * Writes `project.json` now, in the project write queue: a Save All already
+   * running finishes first instead of overwriting it with its older document.
+   */
+  const saveProjectNow = useCallback((next: ProjectDocument) => enqueueProjectWrite(async () => {
+    const projectSave = projectSaveState.current.capture(next);
+    await projectService.saveProject(next, documentService.buildLayouts());
+    await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+    projectSaveState.current.complete(projectSave);
+  }), [captureMtimeSnapshot, documentService, enqueueProjectWrite, projectService]);
+
   const replaceClassReferencesBeforeDelete = useCallback(async (
     replacements: readonly ClassAssetReplacement[],
     deletingGuids: ReadonlySet<string>,
@@ -1680,14 +1691,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (settings.changed) {
         await onProgress?.("Project Settings");
         const next = { ...current, settings: settings.value };
-        const projectSave = projectSaveState.current.capture(next);
-        await projectService.saveProject(next, documentService.buildLayouts());
-        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-        projectSaveState.current.complete(projectSave);
+        await saveProjectNow(next);
         setProjectDocument(next);
       }
     }
-  }, [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
+  }, [bump, collectGraphTypeSchemas, documentService, projectService, saveProjectNow, setProjectDocument]);
 
   const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
     cancelDebouncedSave();
@@ -1803,10 +1811,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
         setProjectDocument(next);
         captureAllLayouts();
-        const projectSave = projectSaveState.current.capture(next);
-        await projectService.saveProject(next, documentService.buildLayouts());
-        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-        projectSaveState.current.complete(projectSave);
+        await saveProjectNow(next);
       }
       bump();
       // Everything else is repaired first; the delete then reports what was not.
@@ -1821,10 +1826,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [
       bump,
       captureAllLayouts,
-      captureMtimeSnapshot,
       collectGraphTypeSchemas,
       documentService,
       projectService,
+      saveProjectNow,
       setProjectDocument,
     ],
   );
