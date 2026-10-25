@@ -473,7 +473,7 @@ export const flowNodes: NodeDefinition[] = [
       return [
         pin("execOut", "then", "out", EXEC),
         ...params.map((param) =>
-          pin(param.name, param.name, "out", pinTypeForCommandParam(param.type)),
+          pin(memberArgPinId(param.name, EXEC_PIN_IDS), param.name, "out", pinTypeForCommandParam(param.type)),
         ),
       ];
     },
@@ -483,7 +483,7 @@ export const flowNodes: NodeDefinition[] = [
         : [];
       const out: Record<string, string> = {};
       for (const param of params) {
-        out[param.name] = `(ctx.commandArgs[${JSON.stringify(param.name)}])`;
+        out[memberArgPinId(param.name, EXEC_PIN_IDS)] = `(ctx.commandArgs[${JSON.stringify(param.name)}])`;
       }
       if (Object.keys(out).length === 0) return;
       return out;

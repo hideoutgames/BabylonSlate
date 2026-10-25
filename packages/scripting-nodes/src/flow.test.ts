@@ -46,6 +46,28 @@ describe("flow nodes", () => {
     );
   });
 
+  it("reads an On Command Run parameter named like the then pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const run = node(registry, "run", "flow.event.commandRun", { parameters: [{ name: "execOut", type: "string" }] });
+    const param = run.pins.find((pin) => pin.kind === "data" && pin.name === "execOut")!;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [run, node(registry, "log", "debug.log")],
+      edges: [
+        { id: "e1", sourceNodeId: "run", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "run", sourcePinId: param.id, targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const logs: unknown[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source, "onCommandRun").onCommandRun as (ctx: unknown) => void)({
+      commandArgs: { execOut: "go" },
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+    });
+    expect(logs).toEqual(["go"]);
+  });
+
   it("registers editor utility lifecycle events", () => {
     const ids = flowNodes.map((node) => node.id);
     expect(ids).toEqual(

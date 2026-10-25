@@ -10,7 +10,7 @@ import {
   TRANSFORM,
   VEC3,
 } from "@haptic/scripting";
-import { objectLiteralKey } from "./member-pins";
+import { memberArgPinId, objectLiteralKey } from "./member-pins";
 import { titleCaseEnumMember } from "./enum";
 
 export function structGuidOf(properties: Record<string, unknown>): string {
@@ -46,10 +46,15 @@ export function structFieldsOf(
   });
 }
 
+/** A field named like the node's own struct pin gets a suffixed pin id (`memberArgPinId`). */
+const MAKE_PIN_IDS: ReadonlySet<string> = new Set(["out"]);
+const BREAK_PIN_IDS: ReadonlySet<string> = new Set(["in"]);
+
 function fieldPins(fields: readonly StructField[], direction: "in" | "out") {
+  const fixedIds = direction === "in" ? MAKE_PIN_IDS : BREAK_PIN_IDS;
   return fields.map((field) =>
     pin(
-      field.name,
+      memberArgPinId(field.name, fixedIds),
       titleCaseEnumMember(field.name),
       direction,
       pinTypeForVariable(field),
@@ -83,7 +88,7 @@ export const structNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => ({
       out: makeStructLiteral(structFieldsOf(ctx.node.properties), (name) =>
-        ctx.input(name),
+        ctx.input(memberArgPinId(name, MAKE_PIN_IDS)),
       ),
     }),
   },
@@ -100,7 +105,7 @@ export const structNodes: NodeDefinition[] = [
       const value = ctx.input("in");
       const out: Record<string, string> = {};
       for (const field of structFieldsOf(ctx.node.properties)) {
-        out[field.name] =
+        out[memberArgPinId(field.name, BREAK_PIN_IDS)] =
           structGuidOf(ctx.node.properties) === "engine:InputType" &&
           field.name === "Name"
             ? `((v) => ctx.getInputState?.(v)?.input.Name ?? v?.Name ?? "")(${value})`
