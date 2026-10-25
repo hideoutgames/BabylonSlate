@@ -8,7 +8,8 @@ import {
   readHassetHeader,
   type HassetHeader,
 } from "./hasset";
-import { bytesEqual, concatBytes, sha256Hex, writeU32LE } from "./bytes";
+import { concatBytes, sha256Hex, writeU32LE } from "./bytes";
+import { bytesEqual } from "./test-support/bytes";
 import { AssetFormatVersionError, createDefaultMigrationRegistry } from "./migration";
 
 /** A file with an arbitrary header, as another writer could have stored it. */

@@ -2,11 +2,11 @@ import { expect, it } from "vitest";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { importHasset } from "./importers/hasset";
 import { remapImportResultGuids } from "./importers/guid-remap";
-import { renderTargetAssetDependencies } from "./render-target-payload";
+import { collectAssetDependencyMetadata } from "./asset-dependencies";
 
 it("preserves the live sampler's target through save, load, and colliding cross-project import", async () => {
   const payload = { renderTargetGuid: "target-guid" };
-  const dependencies = renderTargetAssetDependencies("RenderTargetTexture", payload);
+  const { dependencies } = collectAssetDependencyMetadata("RenderTargetTexture", payload);
   const textureBytes = await encodeAssetDocument({
     type: "RenderTargetTexture", name: "Depth Texture", guid: "texture-guid", version: 1, payload,
   }, { dependencies });
