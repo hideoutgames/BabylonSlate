@@ -14,6 +14,7 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { createText3DMesh } from "./text3d-mesh";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
+import { createEditorBillboard } from "./editor-billboard";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -241,6 +242,15 @@ describe("visual generation ownership", () => {
     cycle();
     const warmed = { materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length };
     for (let index = 0; index < 200; index += 1) cycle();
+    expect({ materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length }).toEqual(warmed);
+  });
+
+  it("retires editor billboard materials in a persistent scene", () => {
+    const { scene } = host();
+    const cycle = () => createEditorBillboard(scene, "editorActor:lamp", "point_light").dispose();
+    cycle();
+    const warmed = { materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length };
+    for (let index = 0; index < 100; index += 1) cycle();
     expect({ materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length }).toEqual(warmed);
   });
 

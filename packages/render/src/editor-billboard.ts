@@ -17,6 +17,7 @@ import { engineBillboardUrl } from "./default-billboard/urls";
 import { shareHelperProgram } from "./helper-program";
 import { createEngineTextureFromUrl } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
+import { VisualBundle } from "./visual-bundle";
 
 export const EDITOR_BILLBOARD_ICONS = [
   "default",
@@ -131,7 +132,10 @@ export function createEditorBillboard(
     syncEditorBillboardParentScale(mesh);
   });
 
-  const material = shareHelperProgram(new StandardMaterial(`${name}-billboard`, scene));
+  // The mesh owns its material; the per-Engine icon texture outlives it.
+  const bundle = new VisualBundle();
+  mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+  const material = bundle.ownMaterial(shareHelperProgram(new StandardMaterial(`${name}-billboard`, scene)));
   material.disableLighting = true;
   material.backFaceCulling = false;
   material.emissiveColor = DEFAULT_FILL.clone();
