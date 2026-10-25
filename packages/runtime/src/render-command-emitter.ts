@@ -507,7 +507,10 @@ export function liveOverlayButtons(actor: Actor): ActorComponent[] {
   );
 }
 
-/** The actor's children that have a Button component, in world order, without scanning the whole World. */
+/**
+ * The actor's children that own (or owned) a Button component, in world order, without scanning the whole World;
+ * callers keep the live buttons with `liveOverlayButtons`.
+ */
 export function overlayButtonChildren(world: World, actor: Actor): Actor[] {
   return componentOwners(world, "2DButtonComponent").filter((child) => actorParentGuid(child) === actor.guid);
 }
