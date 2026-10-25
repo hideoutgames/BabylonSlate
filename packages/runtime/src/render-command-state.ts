@@ -23,6 +23,8 @@ export class RenderCommandState implements RuntimeSubsystem {
   readonly fogVolumeSlots = new Set<number>();
   /** Slots whose last `setReflectionProbes` sent probes. */
   readonly reflectionProbeSlots = new Set<number>();
+  /** Slots whose last `assignMesh` sent a visual, so losing it sends the empty one. */
+  readonly meshSlots = new Set<number>();
 
   releaseSlot(slotId: number, owner: Actor | undefined): void {
     this.areaLightSlots.delete(slotId);
@@ -35,5 +37,6 @@ export class RenderCommandState implements RuntimeSubsystem {
     this.captureSlots.delete(slotId);
     this.fogVolumeSlots.delete(slotId);
     this.reflectionProbeSlots.delete(slotId);
+    this.meshSlots.delete(slotId);
   }
 }
