@@ -83,7 +83,6 @@ import {
   type EngineSettings,
 } from "@haptic/vfs";
 import { isSourceControlHost } from "@haptic/source-control";
-import { LogOutIcon } from "lucide-react";
 import {
   useDocumentActions,
   useProjectState,
@@ -116,7 +115,6 @@ interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: SettingsScope;
-  onCloseProject?: () => void;
   onEngineSaved?: () => void | Promise<void>;
   "data-testid"?: string;
 }
@@ -329,7 +327,6 @@ export function SettingsModal({
   open,
   onOpenChange,
   scope,
-  onCloseProject,
   onEngineSaved,
   "data-testid": testId,
 }: SettingsModalProps) {
@@ -610,21 +607,6 @@ export function SettingsModal({
       data-testid={resolvedTestId}
       footer={
         <div className="flex items-center justify-end gap-2">
-          {scope === "project" && projectDocument && onCloseProject ? (
-            <Button
-              variant="outline"
-              data-testid="close-project"
-              id="close-project"
-              className="mr-auto min-h-[var(--chrome-row,28px)] w-fit"
-              onClick={() => {
-                changeOpen(false);
-                onCloseProject();
-              }}
-            >
-              <LogOutIcon data-icon="inline-start" />
-              Close Project
-            </Button>
-          ) : null}
           <Button
             variant="outline"
             onClick={() => changeOpen(false)}

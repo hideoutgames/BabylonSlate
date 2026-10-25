@@ -238,6 +238,60 @@ describe("KeybindProvider", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  describe("multi-step shortcuts", () => {
+    const altShift = (key: string) => ({ key, code: `Key${key}`, altKey: true, shiftKey: true });
+    afterEach(() => vi.useRealTimers());
+
+    it("runs Project Browser only once both steps are pressed in time", () => {
+      vi.useFakeTimers();
+      const browse = vi.fn();
+      render(
+        <KeybindProvider>
+          <Command id="editor.projectBrowser" run={browse} />
+        </KeybindProvider>,
+      );
+      expect(fireEvent.keyDown(document.body, altShift("P"))).toBe(false);
+      // Holding the first step and releasing modifiers keep it waiting.
+      fireEvent.keyDown(document.body, { ...altShift("P"), repeat: true });
+      fireEvent.keyDown(document.body, { key: "Shift", code: "ShiftLeft", altKey: true, shiftKey: true });
+      expect(browse).not.toHaveBeenCalled();
+      fireEvent.keyDown(document.body, altShift("B"));
+      expect(browse).toHaveBeenCalledTimes(1);
+
+      fireEvent.keyDown(document.body, altShift("B"));
+      fireEvent.keyDown(document.body, altShift("P"));
+      vi.advanceTimersByTime(1500);
+      fireEvent.keyDown(document.body, altShift("B"));
+      expect(browse).toHaveBeenCalledTimes(1);
+    });
+
+    it("handles a step that continues no shortcut as a fresh press", () => {
+      const browse = vi.fn();
+      const undo = vi.fn();
+      render(
+        <KeybindProvider>
+          <Command id="editor.projectBrowser" run={browse} />
+          <Command id="editor.undo" run={undo} />
+        </KeybindProvider>,
+      );
+      fireEvent.keyDown(document.body, altShift("P"));
+      fireEvent.keyDown(document.body, ctrl("Z"));
+      fireEvent.keyDown(document.body, altShift("B"));
+      expect(undo).toHaveBeenCalledTimes(1);
+      expect(browse).not.toHaveBeenCalled();
+    });
+
+    it("lets the first step through when the command cannot run", () => {
+      const browse = vi.fn();
+      render(
+        <KeybindProvider>
+          <Command id="editor.projectBrowser" run={browse} enabled={false} />
+        </KeybindProvider>,
+      );
+      expect(fireEvent.keyDown(document.body, altShift("P"))).toBe(true);
+    });
+  });
+
   it("falls back to an older registration when the newest is disabled", () => {
     const older = vi.fn();
     const newer = vi.fn();

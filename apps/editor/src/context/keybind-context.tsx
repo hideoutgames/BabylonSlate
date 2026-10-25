@@ -11,6 +11,7 @@ import {
 import {
   chordFromEvent,
   chordHasCommandModifier,
+  chordStartsWith,
   isApplePlatform,
   keepsNativeEditing,
   type KeyChord,
@@ -18,7 +19,9 @@ import {
 import { GraphKeybindsContext, type GraphKeybinds } from "@haptic/graph-ui";
 import {
   editorCommand,
+  KEY_SEQUENCE_TIMEOUT_MS,
   resolveKeybinds,
+  type EditorCommandDefinition,
   type EditorCommandId,
   type ResolvedKeybinds,
 } from "../lib/editor-keybinds";
@@ -80,36 +83,69 @@ export function KeybindProvider({
   useEffect(() => {
     const apple = isApplePlatform();
     const pointers = new Set<number>();
+    // Earlier steps of a multi-step shortcut waiting for the next one.
+    let pending: KeyChord | null = null;
+    let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearPending = () => {
+      pending = null;
+      clearTimeout(pendingTimer);
+    };
     const onPointerDown = (event: PointerEvent) => pointers.add(event.pointerId);
     const onPointerUp = (event: PointerEvent) => pointers.delete(event.pointerId);
+    /** The newest registration that may run now, if any. */
+    const runnable = (commandId: EditorCommandId) => {
+      const modal = modalOpen();
+      const handlers = registry.current.get(commandId) ?? [];
+      for (let index = handlers.length - 1; index >= 0; index -= 1) {
+        const registration = handlers[index]!.current;
+        if (modal && !registration.allowInModal) continue;
+        if (registration.enabled && !registration.enabled()) continue;
+        return registration;
+      }
+      return undefined;
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
-      const chord = chordFromEvent(event, apple);
-      if (!chord) return;
+      const pressed = chordFromEvent(event, apple);
+      if (!pressed) return;
+      // A held step neither advances nor abandons its shortcut.
+      if (pending && event.repeat) {
+        event.preventDefault();
+        return;
+      }
+      const prefix = pending;
+      clearPending();
+      // A step that continues no shortcut is handled as a fresh press.
+      const candidates = prefix ? [`${prefix} ${pressed}`, pressed] : [pressed];
       // Nothing to save, a modal, or Play must not fall through to the browser.
       for (const [commandId, chords] of state.current.bindings) {
-        if (chords.includes(chord) && editorCommand(commandId)?.blocksBrowserDefault) event.preventDefault();
+        if (candidates.some((chord) => chords.includes(chord)) && editorCommand(commandId)?.blocksBrowserDefault) event.preventDefault();
       }
       if (state.current.suspended) return;
       // A three-finger viewport pan must not fire keyboard history.
       if (pointers.size >= 3) return;
       const typing = keepsNativeEditing(event.target);
-      for (const [commandId, chords] of state.current.bindings) {
-        if (!chords.includes(chord)) continue;
-        const command = editorCommand(commandId);
-        if (!command) continue;
-        if (event.repeat && !command.repeat) continue;
-        if (typing) {
-          if (!command.allowInTextInput || !chordHasCommandModifier(chord)) continue;
-        } else if (blockedTarget(event.target)) {
-          continue;
+      const allowed = (command: EditorCommandDefinition, chord: KeyChord) => {
+        if (event.repeat && !command.repeat) return false;
+        if (typing) return Boolean(command.allowInTextInput) && chordHasCommandModifier(chord);
+        return !blockedTarget(event.target);
+      };
+      for (const chord of candidates) {
+        for (const [commandId, chords] of state.current.bindings) {
+          const command = editorCommand(commandId);
+          if (!command || !chords.some((bound) => chordStartsWith(bound, chord) && allowed(command, bound))) continue;
+          if (!runnable(commandId)) continue;
+          event.preventDefault();
+          pending = chord;
+          pendingTimer = setTimeout(clearPending, KEY_SEQUENCE_TIMEOUT_MS);
+          return;
         }
-        const modal = modalOpen();
-        const handlers = registry.current.get(commandId) ?? [];
-        for (let index = handlers.length - 1; index >= 0; index -= 1) {
-          const registration = handlers[index]!.current;
-          if (modal && !registration.allowInModal) continue;
-          if (registration.enabled && !registration.enabled()) continue;
+        for (const [commandId, chords] of state.current.bindings) {
+          if (!chords.includes(chord)) continue;
+          const command = editorCommand(commandId);
+          if (!command || !allowed(command, chord)) continue;
+          const registration = runnable(commandId);
+          if (!registration) continue;
           event.preventDefault();
           registration.run();
           return;
@@ -120,11 +156,14 @@ export function KeybindProvider({
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", clearPending);
     return () => {
+      clearPending();
       window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", clearPending);
     };
   }, []);
 

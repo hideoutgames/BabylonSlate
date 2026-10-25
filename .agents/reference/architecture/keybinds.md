@@ -24,6 +24,7 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 - Canonical strings such as `Mod+Shift+Z`, `Alt+P`, `F2`, `Delete`. Modifier order: `Mod`, `Ctrl`, `Alt`, `Shift`.
 - `Mod` is Command on Apple platforms and Control elsewhere; `Ctrl` is distinct only on Apple.
 - Letters, digits and punctuation match the physical key (`event.code`), so Option/Shift do not change the bound key.
+- A multi-step shortcut separates steps with one space (`Alt+Shift+P Alt+Shift+B`); `chordSteps` splits, `chordStartsWith` tests a prefix. Use one for commands that must not run from a single stray chord (Project Browser closes the project). `aria-keyshortcuts` cannot express a sequence, so `ariaKeyShortcuts` returns `undefined` for one; `chordHasCommandModifier` requires every step to have one.
 
 ## Adding a command
 
@@ -35,6 +36,7 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 ## Dispatch rules
 
 - One window `keydown` listener; the newest enabled registration for the matched command runs and the event is `preventDefault`ed.
+- A press that begins a runnable command's multi-step shortcut is swallowed and waits `KEY_SEQUENCE_TIMEOUT_MS` (1.5 s) for the next step; lone modifiers and key repeats keep it waiting, window blur drops it. A next step that continues nothing is dispatched as a fresh press. A command that cannot run (disabled, behind a modal) does not capture its first step.
 - Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal popup is open: `DialogContent` and modal `SheetContent` set `aria-modal` (Base UI does not), alert dialogs carry `role="alertdialog"`, and a popup in its exit animation (`data-closed`) no longer counts. A registration with `allowInModal` still runs (Search Project closes its own dialog); nonmodal popups (the Play console) never block. Save All's chord still suppresses the browser Save Page.
 - Text fields and `SelectableText` keep native editing. Menus, listboxes, comboboxes and selects keep their own key navigation.
 - `scopeRef` limits a handler to a visible surface (the active viewport). `focusWithinRef` also requires focus inside it; Outliner and Content Browser use it so Delete, Duplicate and Rename act on the focused panel.
@@ -49,5 +51,5 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 
 ## Settings and storage
 
-- Engine Settings → Editor → **Keybinds** lists commands by category; recording ignores lone modifiers, Escape cancels, Tab leaves. Rows can be unassigned or reset; **Reset All** clears every override. Shared chords show a warning.
+- Engine Settings → Editor → **Keybinds** lists commands by category; recording ignores lone modifiers and key repeats, Escape cancels, Tab leaves. The first chord is saved at once; another chord within `KEY_SEQUENCE_TIMEOUT_MS` replaces it with a two-step shortcut. Rows can be unassigned or reset; **Reset All** clears every override. Shared chords, and a chord that begins another command's multi-step shortcut, show a warning.
 - Engine Settings `keybinds` is `Record<commandId, chord[]>` holding only commands that differ from defaults, so later default changes still reach users who never customized them. An empty list unassigns. Unparseable chords are ignored; a malformed map falls back to `{}` without dropping other settings.

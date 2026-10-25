@@ -1,8 +1,7 @@
 import type { Page } from "@playwright/test";
 
-/** Open Project Settings from the chrome dropdown and close the project. */
+/** Close the project with Project Browser in the chrome Settings dropdown. */
 export async function closeProjectViaSettings(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  await page.getByTestId("close-project").click();
+  await page.getByTestId("project-browser").click();
 }

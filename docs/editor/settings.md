@@ -86,4 +86,4 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 
 Each topic's guide covers its settings: for example [Graphics](../graphics/index.md), [Collision](../physics/collision.md), [Save Games](../scripting/save-games.md), [Publishing](../publishing/index.md) and [Source Control](../projects/source-control.md).
 
-**Close Project** is at the bottom of the Project Settings window.
+To close the project and return to the Homepage, choose **Settings > Project Browser** in the toolbar.

@@ -56,6 +56,8 @@ export {
   ariaKeyShortcuts,
   chordFromEvent,
   chordHasCommandModifier,
+  chordStartsWith,
+  chordSteps,
   describeChord,
   formatChord,
   isApplePlatform,
