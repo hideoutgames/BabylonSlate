@@ -773,6 +773,7 @@ export class ResourceCache {
     }
   }
 
+  /** Drop one reference on `key`; tests use it to release the reference an accounting-only `account()` entry holds. */
   releaseAccounting(key: string): void { this.release(key); }
 
   accountedBytes(): number {

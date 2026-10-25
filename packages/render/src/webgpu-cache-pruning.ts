@@ -76,7 +76,10 @@ function countPipelines(node: PipelineNode): number {
   return count;
 }
 
-/** Cached bind groups and render pipelines across every WebGPU Engine in this page. */
+/**
+ * Cached bind groups and render pipelines across every WebGPU Engine in this page.
+ * A diagnostics accessor that tests read; production code does not call it.
+ */
 export function webGpuCacheCounts(): WebGpuCacheCounts {
   return { bindGroups: countBindGroups(bindGroupRoot()), pipelines: countPipelines(pipelineRoot()) };
 }
