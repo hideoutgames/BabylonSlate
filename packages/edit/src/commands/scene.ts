@@ -20,10 +20,7 @@ import type {
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
 } from "./scene-fields";
-
-function byteSizeOf(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
-}
+import { snapshotBytes } from "../snapshot-bytes";
 
 /** `undefined` clears the key, as saving to JSON would. */
 function withProperty(
@@ -59,7 +56,7 @@ export class AddActorCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.actor));
+    return (this.#byteSize ??= snapshotBytes(this.actor));
   }
 
   constructor(actor: SerializedActor, index = -1) {
@@ -100,7 +97,7 @@ export class RemoveActorCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.actor));
+    return (this.#byteSize ??= snapshotBytes(this.actor));
   }
 
   constructor(actor: SerializedActor, index = -1) {
@@ -333,7 +330,7 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.component));
+    return (this.#byteSize ??= snapshotBytes(this.component));
   }
 
   constructor(
@@ -378,7 +375,7 @@ export class RemoveComponentCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.component));
+    return (this.#byteSize ??= snapshotBytes(this.component));
   }
 
   constructor(actorId: string, component: SerializedComponent, index = -1) {
@@ -549,7 +546,7 @@ export class SetComponentPropertyCommand
    * spline points); measured on first read and memoised.
    */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
   }
 
   constructor(
@@ -666,7 +663,7 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
    * post-process stack); measured on first read and memoised.
    */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
   }
 
   constructor(
@@ -723,7 +720,7 @@ export class AddFolderCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.folder));
+    return (this.#byteSize ??= snapshotBytes(this.folder));
   }
 
   constructor(folder: SerializedOutlinerFolder, index = -1) {
@@ -760,7 +757,7 @@ export class RemoveFolderCommand implements EditCommand<SerializedScene> {
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
-    return (this.#byteSize ??= byteSizeOf(this.folder));
+    return (this.#byteSize ??= snapshotBytes(this.folder));
   }
 
   constructor(folder: SerializedOutlinerFolder, index = -1) {
