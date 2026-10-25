@@ -615,7 +615,7 @@ describe("SceneLayer runtime compositor", () => {
     runtime.stop();
   });
 
-  it("sends no layer teardown after Stop cancels a latent create still waiting for readiness", async () => {
+  it("sends no commands after Stop cancels a latent create still waiting for readiness", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -643,7 +643,7 @@ describe("SceneLayer runtime compositor", () => {
     commands.length = 0;
     runtime.stop();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(commands.filter((command) => command.type === "despawn" || command.type === "sceneLayerRemove")).toEqual([]);
+    expect(commands).toEqual([]);
   });
 
   it("never shares a guid between a global layer's actor and a later Scene actor with the same authored id", () => {

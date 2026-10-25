@@ -8,6 +8,7 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { ScriptHostServices } from "./script-host";
+import { RuntimeContinuationCancelled } from "./simulation-waits";
 
 interface SceneLayerLoad {
   readonly layer: SceneLayer;
@@ -112,9 +113,9 @@ export class SceneLayers implements RuntimeSubsystem {
     this.independentWork.clear();
   }
 
-  /** Stop begins: latent creates waiting for readiness are cancelled. */
+  /** Stop begins: latent creates waiting for readiness end quietly, like any continuation Stop cancels. */
   rejectWaiters(): void {
-    for (const waiter of this.readinessWaiters.values()) waiter.reject(sceneRealizationCancelled());
+    for (const waiter of this.readinessWaiters.values()) waiter.reject(new RuntimeContinuationCancelled("sessionStopped"));
     this.readinessWaiters.clear();
   }
 
@@ -182,7 +183,7 @@ export class SceneLayers implements RuntimeSubsystem {
       { const pending = this.host.continueSimulation(owner); if (pending) await pending; }
       return layer;
     } catch (error) {
-      // Stop cancelled the wait; its teardown already ran, so a removal now would send commands after Stop.
+      // After Stop the session has ended: leave the layer to the ended World instead of removing it, which would send commands after Stop.
       if (layer && !this.host.stopped()) this.remove(layer.guid);
       if (preload) preloads.release(preload.preloadId);
       throw error;
