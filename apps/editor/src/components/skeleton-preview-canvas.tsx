@@ -76,25 +76,7 @@ export function SkeletonPreviewCanvas({
         });
         hostRef.current = host;
         presenterRef.current = presenter;
-        bonesRef.current?.dispose();
-        bonesRef.current = attachSkeletonPreview(
-          previewRigRoot(host),
-          host.scene,
-          kind,
-        );
-        setBonesAttached(true);
-        presenter.present({ force: true });
-        if (cancelled) {
-          bonesRef.current?.dispose();
-          bonesRef.current = null;
-          presenter.dispose();
-          gestures.dispose();
-          loaded.dispose();
-          host.dispose();
-          hostRef.current = null;
-          presenterRef.current = null;
-          return;
-        }
+        // The generation effects attach the bones and apply the render settings, then redraw.
         setPreviewGeneration((value) => value + 1);
         const tick = () => {
           if (cancelled) return;
@@ -124,7 +106,7 @@ export function SkeletonPreviewCanvas({
       hostRef.current = null;
       presenterRef.current = null;
     };
-  }, [engine, kind, sourceBytes]);
+  }, [engine, sourceBytes]);
 
   useEffect(() => {
     const host = hostRef.current;
