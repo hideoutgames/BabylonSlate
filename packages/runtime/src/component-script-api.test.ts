@@ -735,6 +735,18 @@ describe("component script API", () => {
       seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
+        // A streamed copy of a duplicated scene keeps the original component id as its source.
+        createActor("decoy", "Decoy", {
+          classId: "Hero",
+          components: [
+            {
+              id: "decoy-audio",
+              sourceId: "audio-1",
+              classId: "AudioComponent",
+              properties: { audioAssetGuid: "jump", playOnStart: false },
+            },
+          ],
+        }),
         createActor("speaker", "Speaker", {
           classId: "Hero",
           components: [
@@ -780,6 +792,7 @@ describe("component script API", () => {
           command.message === "speaker",
       ),
     ).toBe(true);
+    expect(commands.some((command) => command.type === "log" && command.category === "Finished" && command.message === "decoy")).toBe(false);
     runtime.stop();
   });
 });
