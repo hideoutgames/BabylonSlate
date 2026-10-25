@@ -321,15 +321,21 @@ const FRAME_PHASE_LEASE_FRAMES = 600;
  * brief wait costs no stop; the release is immediate.
  */
 export const PIPELINE_HOLD_PAUSE_DELAY_MS = 250;
-/** The project Engine's construction options, for editor views and the app Engine alike. */
-const PROJECT_ENGINE_OPTIONS = {
-  preserveDrawingBuffer: true,
-  stencil: true,
-  adaptToDeviceRatio: false,
-  antialias: false,
-  useLargeWorldRendering: true,
-  useExactSrgbConversions: true,
-} as const satisfies EngineOptions;
+/**
+ * The project Engine's construction options, for editor views and the app
+ * Engine alike. A new object each time: Babylon writes resolved values back
+ * into the options it is given, which must not reach the next Engine.
+ */
+function projectEngineOptions(): EngineOptions {
+  return {
+    preserveDrawingBuffer: true,
+    stencil: true,
+    adaptToDeviceRatio: false,
+    antialias: false,
+    useLargeWorldRendering: true,
+    useExactSrgbConversions: true,
+  };
+}
 
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
@@ -378,7 +384,7 @@ function initializeEngine(
     ? document.createElement("canvas") : canvas;
   const engine =
     options.sharedEngine ??
-    new Engine(constructorCanvas, false, PROJECT_ENGINE_OPTIONS);
+    new Engine(constructorCanvas, false, projectEngineOptions());
   if (ownsEngine) {
     engine.inputElement = canvas;
     onRollback(() => engine.dispose());
@@ -3851,7 +3857,7 @@ export function createAppEngine(
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
   });
-  const engine = new Engine(canvas, false, PROJECT_ENGINE_OPTIONS);
+  const engine = new Engine(canvas, false, projectEngineOptions());
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),
     renderer: (
