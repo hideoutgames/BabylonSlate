@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { NavMeshQuery, Raw, TileCache } from "@recast-navigation/core";
+import { Crowd, NavMeshQuery, Raw, TileCache } from "@recast-navigation/core";
 import {
   createNavigationBackend,
   generateNavMesh,
@@ -175,6 +175,7 @@ describe("tile-cache obstacles and static carve", () => {
     nav.importNavMesh(bytes);
     const update = vi.spyOn(TileCache.prototype, "update");
     const destroyQuery = vi.spyOn(NavMeshQuery.prototype, "destroy");
+    const destroyCrowd = vi.spyOn(Crowd.prototype, "destroy");
     const destroyNative = vi.spyOn(Raw, "destroy");
     try {
       for (let tick = 0; tick < 8; tick++) nav.stepCrowd(1 / 60);
@@ -195,12 +196,17 @@ describe("tile-cache obstacles and static carve", () => {
       expect(destroyQuery).toHaveBeenCalledTimes(1);
       const filter = (destroyQuery.mock.contexts[0] as NavMeshQuery | undefined)?.defaultFilter.raw;
       expect(destroyNative.mock.calls.filter(([resource]) => resource === filter)).toHaveLength(1);
+      // The crowd's own query wrapper allocates a filter that freeing the crowd leaves behind.
+      expect(destroyCrowd).toHaveBeenCalledTimes(1);
+      const crowdFilter = (destroyCrowd.mock.contexts[0] as Crowd | undefined)?.navMeshQuery.defaultFilter.raw;
+      expect(destroyNative.mock.calls.filter(([resource]) => resource === crowdFilter)).toHaveLength(1);
       nav.importNavMesh(bytes);
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
     } finally {
       nav.dispose();
       update.mockRestore();
       destroyQuery.mockRestore();
+      destroyCrowd.mockRestore();
       destroyNative.mockRestore();
     }
   });
