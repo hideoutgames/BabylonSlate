@@ -284,7 +284,23 @@ class EnvironmentLighting {
     if (!settings.enabled && !this.samples.size) return;
     const sky = this.skyCube();
     if (sky !== this.skySource) this.sync();
-    else if (this.view && this.applySkyRotation(settings.rotationYDegrees)) this.invalidateMaterials();
+    else if (this.view && this.applySkyRotation(settings.rotationYDegrees)) this.rebindFrozenMaterials();
+  }
+
+  /**
+   * A turned sky changes only the shared matrix, which no define reads and other materials rebind every frame:
+   * a frozen material skips its uniform buffer unless forced, so only its own draw wrappers rebind.
+   */
+  private rebindFrozenMaterials(): void {
+    for (const mesh of this.scene.meshes) {
+      for (const subMesh of mesh.subMeshes ?? []) {
+        const material = subMesh.getMaterial(false);
+        if (!material?.isFrozen) continue;
+        for (const wrapper of subMesh._drawWrappers) {
+          if (wrapper && wrapper.materialContext === material._materialContext) wrapper._forceRebindOnNextCall = true;
+        }
+      }
+    }
   }
 
   /** Start, or return, the GGX filtering of `sky`; a device or budget that cannot filter reads as failed. */
