@@ -892,9 +892,8 @@ function retainWorkingMaterialOwners(binding: SnapshotSceneBinding, slotId: numb
   const slots = retainedMaterialOwners.get(binding) ?? new Map<number, Map<string, string>>();
   retainedMaterialOwners.set(binding, slots);
   if (slots.has(slotId)) return;
-  const prefix = `${slotId}|`;
-  slots.set(slotId, new Map(hasPredecessor ? [...binding.materialParameters]
-    .filter(([key]) => key.startsWith(prefix)).map(([key, state]) => [key, state.materialAssetGuid]) : []));
+  slots.set(slotId, new Map(hasPredecessor ? [...slotKeysOf(binding.materialParameters, slotId)]
+    .map((key) => [key, binding.materialParameters.get(key)!.materialAssetGuid]) : []));
 }
 
 function releaseRetainedMaterialOwners(binding: SnapshotSceneBinding, slotId: number, retiringSlot = false): void {
@@ -949,12 +948,12 @@ export function applyAssignMesh(
   const retireRemovedMaterials = () => {
     if (!componentIds) return;
     const prefix = `${command.slotId}|`;
+    // Only this slot's keys; the copy keeps iteration stable while the loop deletes.
     const keys = new Set([
-      ...binding.componentMaterialGuids.keys(),
-      ...binding.materialParameters.keys(),
+      ...slotKeysOf(binding.componentMaterialGuids, command.slotId),
+      ...slotKeysOf(binding.materialParameters, command.slotId),
     ]);
     for (const key of keys) {
-      if (!key.startsWith(prefix)) continue;
       const id = key.slice(prefix.length);
       if (!id || componentIds.has(id)) continue;
       binding.componentMaterialGuids.delete(key);
