@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginSaveAllProgress,
   clearDocumentDirtyTrace,
@@ -59,5 +59,34 @@ describe("documentDirtyTrace", () => {
     current.finish();
     expect(saveAllProgress()).toMatchObject({ phase: "documents", pending: false });
     expect(saveAllProgress()!.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("names how long each phase of a save took, the current one included, until it finishes", () => {
+    const now = vi.spyOn(performance, "now");
+    try {
+      now.mockReturnValue(1_000);
+      const save = beginSaveAllProgress();
+      now.mockReturnValue(1_010);
+      save.phase("documents");
+      now.mockReturnValue(3_510);
+      save.phase("journal");
+      now.mockReturnValue(4_210);
+      expect(saveAllProgress()).toMatchObject({
+        phase: "journal",
+        pending: true,
+        elapsedMs: 3_210,
+        phases: [
+          { phase: "started", ms: 10 },
+          { phase: "documents", ms: 2_500 },
+          { phase: "journal", ms: 700 },
+        ],
+      });
+      now.mockReturnValue(4_310);
+      save.finish();
+      now.mockReturnValue(9_000);
+      expect(saveAllProgress()!.phases.at(-1)).toEqual({ phase: "journal", ms: 800 });
+    } finally {
+      now.mockRestore();
+    }
   });
 });
