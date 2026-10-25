@@ -410,8 +410,9 @@ export interface CreateEngineOptions {
   /** Material Function documents keyed by asset guid. */
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   /**
-   * The light parts the startup sources' Classes may spawn (`spawnableLightsFromScripts`). Play's load rehearses one
-   * of each kind (`createLoadRehearsal`); later sources add theirs through `acquireSceneSources`.
+   * The light parts the startup sources' Classes may spawn, with the generic kinds when they may spawn a Class they do
+   * not hold (`spawnableLightsOfLoad`). Play's load rehearses one of each kind (`createLoadRehearsal`); later sources
+   * add theirs through `acquireSceneSources`.
    */
   spawnableLights?: SceneSourceAssets["spawnableLights"];
   /** Authored scene post-process stack. */

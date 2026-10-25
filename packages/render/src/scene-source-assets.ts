@@ -13,7 +13,7 @@ export interface SceneSourceAssets {
   audioLibrary?: AudioLibrary;
   particleLibrary?: ParticleLibrary;
   fonts?: readonly FontAssetEntry[];
-  /** The light parts its Classes may spawn (`spawnableLightsFromScripts`), which Play's load rehearses. */
+  /** The light parts its Classes may spawn, generic kinds included (`spawnableLightsOfLoad`), which Play's load rehearses. */
   spawnableLights?: ReadonlyMap<string, SpawnableLight>;
 }
 

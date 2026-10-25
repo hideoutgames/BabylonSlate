@@ -3187,9 +3187,12 @@ function initializeEngine(
       const scope = loadingScope(owner);
       // Every instance the load published is in the Scene now; later ones compile as they publish.
       if (!owner) instanceCompileHold = null;
+      // A previous load's rehearsal stops first (its Effects go after the warm-ups below, which may share them): an
+      // applied step's stand-in light would count in the Scene's lights.
+      if (!owner && options.playMode) loadRehearsal?.cancel();
       // The light parts Play may spawn, which its load rehearses. Its lit Materials compile for one more light than the
-      // Scene holds from the start, the spawned light's: a spawn then changes no Material's light capacity, and the
-      // warm-ups and the rehearsal's other changes compile at the capacity the game draws with.
+      // Scene holds from the start, the spawned light's: a spawn of one light then changes no Material's light capacity,
+      // and the warm-ups and the rehearsal's other changes compile at the capacity the game draws with.
       const spawnable = !owner && options.playMode ? [...spawnableLights.values()] : [];
       if (spawnable.length) reserveSceneLightInventory(scope.target, scope.target.lights.length + 1);
       applyRenderingQuality();

@@ -41,7 +41,8 @@ import { compileMaterialPlan } from "../../../../packages/render/src/material-co
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX, createPlayLight } from "../../../../packages/render/src/scene-illumination";
-import { spawnableLightsFromScripts } from "../../../../packages/render/src/spawnable-lights";
+import { spawnableLightsOfLoad } from "../../../../packages/render/src/spawnable-lights";
+import { reserveSceneLightInventory } from "../../../../packages/render/src/scene-lighting";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
@@ -456,14 +457,19 @@ async function rehearsedChanges() {
     authored(point, [0.3, 0.4, 1], 0.9);
     const spot = new SpotLight(`${AUTHORED_LIGHT_PREFIX}spot`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene);
     authored(spot, [0.9, 0.85, 0.7], 1.4);
+    // As Play's load (`prewarmSceneMaterials`): what the Classes may spawn, and room for one more light from the start.
+    const torch = { lightKind: "point", color: [1, 0.6, 0.3], intensity: 1.2, castShadows: true, range: 9 };
+    const spawnable = spawnableLightsOfLoad({
+      scripts: [{
+        assetGuid: "torch", classId: "Torch", source: "", anchors: [], entryPoints: [],
+        components: [{ id: "light", classId: "LightComponent", properties: torch }],
+      }],
+      assets: [], isClass: () => false,
+    });
+    reserveSceneLightInventory(view.scene, view.scene.lights.length + 1);
     await view.coordinator.prepare();
     await view.settle();
     const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
-    const torch = { lightKind: "point", color: [1, 0.6, 0.3], intensity: 1.2, castShadows: true, range: 9 };
-    const spawnable = spawnableLightsFromScripts([{
-      assetGuid: "torch", classId: "Torch", source: "", anchors: [], entryPoints: [],
-      components: [{ id: "light", classId: "LightComponent", properties: torch }],
-    }]);
     const rehearsal = createLoadRehearsal(view.scene, undefined, [...spawnable.values()]);
     for (let attempt = 0; attempt < 600 && !rehearsal.done; attempt++) {
       rehearsal.check();
@@ -497,7 +503,9 @@ async function rehearsedChanges() {
       const pointOff = await change(() => setAuthoredLightEnabled(point, false));
       // One change at a time, as rehearsed: the point back on first (the variants the load drew).
       await change(() => setAuthoredLightEnabled(point, true));
-      // Near the camera, where the rehearsal staged it, until its map draws (its casters' depth programs in use).
+      // Near the camera, until its map draws (its casters' depth programs in use). Built as a spawned actor's light part
+      // is (`createPlayLight`, then a shadow sync); a whole actor would add its invisible origin and helper meshes, whose
+      // own variants compile at a spawn and would be counted here.
       let spawnedLight: Light | undefined;
       const spawned = await change(() => {
         spawnedLight = createPlayLight(view.scene, `${AUTHORED_LIGHT_PREFIX}torch`, "point", torch);

@@ -8,6 +8,7 @@ import {
   restoreForwardLightSelection,
   setAuthoredLightEnabled,
 } from "./light-policy";
+import { sceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX, createPlayLight } from "./scene-illumination";
 import { syncSceneLighting } from "./scene-lighting";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
@@ -129,6 +130,14 @@ function castsShadows(light: Light): boolean {
  * settings), of the template with the highest shadow priority. Each adds that light as Play builds a spawned light part
  * (`createPlayLight`), lit, at the active camera and facing its way, where the Forward budget ranks it nearest and a
  * shadow map ranks it at its own priority, as for a spawn at the player; reverting it disposes the light.
+ *
+ * The stand-in reaches as far as the shadow distance, however short its template's range: a local map draws only the
+ * casters within its light's range, and the camera can be far from them (high above, or behind a third-person pawn),
+ * while a real spawn near the player draws the casters around it. A caster the stand-in's map never draws would have
+ * its depth variant compiled (every caster's, by the readiness probe) but never drawn, so a real spawn's map would
+ * create its WebGPU pipeline synchronously in the shadow pass, and iPad WebKit would pay its first draw then. Range
+ * changes no define, and at the camera the stand-in is inside the shadows' relevant area whatever its range. Posing it
+ * at the player's pawn instead would need the game's possession, which the render side does not know.
  */
 function spawnedLightSteps(scene: Scene, spawnable: readonly SpawnableLight[]): RehearsalStep[] {
   const kinds = new Map<string, SpawnableLight>();
@@ -144,10 +153,12 @@ function spawnedLightSteps(scene: Scene, spawnable: readonly SpawnableLight[]): 
       label: `spawned ${key} light`,
       kind: `spawned ${key} light`,
       apply: () => {
-        const { intensity } = template.properties;
+        const { intensity, range } = template.properties;
+        const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
         // Lit, also when the light starts switched off or dark: it compiles what switching it on asks for.
         staged = createPlayLight(scene, `${AUTHORED_LIGHT_PREFIX}spawned ${key}`, template.kind, {
-          ...template.properties, enabled: true, intensity: typeof intensity === "number" && intensity > 0 ? intensity : undefined,
+          ...template.properties, enabled: true, intensity: (finite(intensity) ?? 0) > 0 ? intensity : undefined,
+          range: Math.max(finite(range) ?? 0, sceneRenderingSettings(scene).shadows.distance),
         });
         const camera = scene.activeCamera;
         if (camera && (staged instanceof PointLight || staged instanceof SpotLight)) staged.position.copyFrom(camera.globalPosition);
@@ -378,9 +389,10 @@ export function createLoadRehearsal(
       }
       if (!applied) {
         admission = snapshotAdmission(scene);
+        // Before `apply`, so a step that throws midway (its stand-in added, a shadow sync failing) is still reverted.
+        applied = true;
         steps[index]!.apply();
         markSceneReadinessDirty(scene);
-        applied = true;
         phaseSince = performance.now();
         watch!.restart();
         return;

@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
-import type { SceneSourceAssets } from "@haptic/render";
+import type { SceneSourceAssets, SpawnableLight } from "@haptic/render";
 import { shouldPackKtx2ForPreviewBuild, webGpuMaterialCompatibilityReason } from "@haptic/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
@@ -454,6 +454,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayFontCssStackByGuid(new Map());
     setPlayMaterialDocuments(new Map());
     setPlayMaterialFunctions(new Map());
+    setPlaySpawnableLights(new Map());
     setPlayRenderTargets({ renderTargets: new Map(), renderTargetTextures: new Map() });
     setPlayWaters(new Map());
     setPlayAudioLibrary(emptyPlayAudioLibrary());
@@ -565,6 +566,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playMaterialFunctions, setPlayMaterialFunctions] = useState<
     Map<string, MaterialFunctionDocument>
   >(() => new Map());
+  /** The light parts the startup sources may spawn, which Play's load rehearses. */
+  const [playSpawnableLights, setPlaySpawnableLights] = useState<ReadonlyMap<string, SpawnableLight>>(() => new Map());
   const [postProcessingEnabled, setPostProcessingEnabled] = useState(true);
   const [hardwareScalingLevel, setHardwareScalingLevel] = useState(1);
   const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
@@ -1485,6 +1488,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPlayParticleLibrary(content.particleLibrary);
         setPlayMaterialDocuments(content.materialDocuments);
         setPlayMaterialFunctions(content.materialFunctions);
+        setPlaySpawnableLights(sources.spawnableLights ?? new Map());
         setPlayTextureBytes(game.textureBytes);
         setPlayTexturePixelSizes(content.texturePixelSizes);
         setPlayAreaEmissions(game.areaEmissions);
@@ -1822,6 +1826,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
+            spawnableLights={playSpawnableLights}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

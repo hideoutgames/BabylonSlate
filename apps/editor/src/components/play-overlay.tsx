@@ -18,7 +18,7 @@ import { clipText } from "../lib/diagnostic-info";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@haptic/debugger";
-import type { SceneLoadProgress } from "@haptic/render";
+import type { SceneLoadProgress, SpawnableLight } from "@haptic/render";
 import type { RenderDiagnostics } from "@haptic/render";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -186,6 +186,8 @@ export interface PlayOverlayProps {
   particleLibrary?: ParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /** The light parts the startup sources may spawn, which Play's load rehearses. */
+  spawnableLights?: ReadonlyMap<string, SpawnableLight>;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -321,6 +323,7 @@ function PlayOverlayView({
   particleLibrary,
   materialDocuments,
   materialFunctions,
+  spawnableLights,
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
@@ -668,6 +671,8 @@ function PlayOverlayView({
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
+  const spawnableLightsRef = useRef(spawnableLights);
+  spawnableLightsRef.current = spawnableLights;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
   const sceneNavmeshBytesRef = useRef(sceneNavmeshBytes);
@@ -892,6 +897,7 @@ function PlayOverlayView({
           particleLibrary: particleLibraryRef.current,
           materialDocuments: materialDocumentsRef.current,
           materialFunctions: materialFunctionsRef.current,
+          spawnableLights: spawnableLightsRef.current,
           postProcessingEnabled,
           renderSettings: initialRenderRef.current,
           consoleRenderSettings: initialConsoleRenderRef.current,
