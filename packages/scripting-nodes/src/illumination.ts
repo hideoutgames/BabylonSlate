@@ -5,14 +5,13 @@ import {
   FLOAT,
   BOOL,
   COLOR,
-  actorRef,
   objectRef,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
 const CAMERA = objectRef("CameraComponent");
 const LIGHT = objectRef("LightComponent");
-const ACTOR = actorRef("Actor");
+const ACTOR = objectRef("Actor");
 
 export const illuminationNodes: NodeDefinition[] = [
   {

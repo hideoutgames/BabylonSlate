@@ -54,7 +54,7 @@
           "kind": "data",
           "direction": "in",
           "type": {
-            "kind": "actorRef",
+            "kind": "objectRef",
             "classId": "Actor"
           }
         }

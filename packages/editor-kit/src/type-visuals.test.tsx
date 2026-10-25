@@ -27,41 +27,41 @@ import {
 
 describe("resolveTypeVisual", () => {
   it("recognizes Material Object references as objects with the material glyph", () => {
-    expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "BObject"]);
+    expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "Object"]);
     const visual = resolveTypeVisual({ classId: "MaterialObject" });
     expect(visual.family).toBe("class");
     expect(visual.icon).toBe(resolveTypeVisual({ assetType: "Material" }).icon);
   });
 
-  it("walks subsystem bases through the hidden Subsystem base to BObject", () => {
+  it("walks subsystem bases through the hidden Subsystem base to Object", () => {
     expect(walkAncestry("GameSubsystem", engineParentOf)).toEqual([
       "GameSubsystem",
       "Subsystem",
-      "BObject",
+      "Object",
     ]);
     expect(walkAncestry("SceneSubsystem", engineParentOf)).toEqual([
       "SceneSubsystem",
       "Subsystem",
-      "BObject",
+      "Object",
     ]);
   });
 
   it.each([
-    ["BObject", FileIcon],
+    ["Object", FileIcon],
     ["Actor", FileBoxIcon],
     ["GameInstance", FileSlidersIcon],
     ["GameSubsystem", FileStackIcon],
     ["SceneSubsystem", FileAxis3dIcon],
     ["FunctionLibrary", FileSpreadsheetIcon],
     ["ActorComponent", FileCogIcon],
-    ["BDebugCommand", FileTerminalIcon],
+    ["DebugCommand", FileTerminalIcon],
     ["EditorUtilityObject", FileBracesCornerIcon],
     ["EditorFunctionLibrary", FileSpreadsheetIcon],
   ] as const)("uses the %s class glyph for its user-authored subclasses", (parentClass, icon) => {
     const visual = resolveTypeVisual({
       assetType: "Class",
       classId: "CustomClass",
-      ancestry: ["CustomClass", parentClass, "BObject"],
+      ancestry: ["CustomClass", parentClass, "Object"],
     });
     expect(visual.icon).toBe(icon);
     expect(visual.colorVar).toBe("var(--asset-animation)");
@@ -149,14 +149,14 @@ describe("walkAncestry", () => {
     const parents = new Map<string, string | null>([
       ["MyHero", "HeroBase"],
       ["HeroBase", "Actor"],
-      ["Actor", "BObject"],
-      ["BObject", null],
+      ["Actor", "Object"],
+      ["Object", null],
     ]);
     expect(walkAncestry("MyHero", (id) => parents.get(id))).toEqual([
       "MyHero",
       "HeroBase",
       "Actor",
-      "BObject",
+      "Object",
     ]);
   });
 });
@@ -165,7 +165,7 @@ describe("resolveActorTypeVisual", () => {
   it("uses the Actor parent icon for user actor classes even when they have a mesh", () => {
     const visual = resolveActorTypeVisual({
       classId: "MyHero",
-      ancestry: ["MyHero", "Actor", "BObject"],
+      ancestry: ["MyHero", "Actor", "Object"],
       components: [{ classId: "MeshComponent" }],
     });
     expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);

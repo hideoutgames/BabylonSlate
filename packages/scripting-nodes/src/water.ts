@@ -1,4 +1,4 @@
-import { pin, type NodeDefinition, EXEC, VEC3, BOOL, FLOAT, actorRef } from "@haptic/scripting";
+import { pin, type NodeDefinition, EXEC, VEC3, BOOL, FLOAT, objectRef } from "@haptic/scripting";
 
 /** One coherent sample, shared with the native buoyancy simulation. */
 export const waterNodes: NodeDefinition[] = [{
@@ -11,14 +11,14 @@ export const waterNodes: NodeDefinition[] = [{
     pin("execIn", "Exec", "in", EXEC),
     pin("execOut", "Then", "out", EXEC),
     pin("position", "World Position", "in", VEC3),
-    pin("waterActor", "Water Actor", "in", actorRef("Actor"), "data", true, null),
+    pin("waterActor", "Water Actor", "in", objectRef("Actor"), "data", true, null),
     pin("found", "Found", "out", BOOL),
     pin("height", "Surface Height", "out", FLOAT),
     pin("depth", "Immersion Depth", "out", FLOAT),
     pin("normal", "Surface Normal", "out", VEC3),
     pin("velocity", "Water Velocity", "out", VEC3),
     pin("edgeDistance", "Bank Distance", "out", FLOAT),
-    pin("actor", "Water Actor", "out", actorRef("Actor")),
+    pin("actor", "Water Actor", "out", objectRef("Actor")),
   ],
   codegen: (ctx) => {
     const assignments = ["found", "height", "depth", "normal", "velocity", "edgeDistance", "actor"]

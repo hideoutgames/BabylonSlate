@@ -146,7 +146,7 @@ describe("Move To Blackboard Key", () => {
     const target = runtime.getWorld().findActor("target")!;
     const point = target.components.find((component) => component.sourceId === "point" || component.guid === "point")!;
     runtime.registerBlackboard("board", {
-      name: "Targets", keys: [{ name: "target", type: { kind: "objectRef", classId: "BObject" }, defaultValue: point }],
+      name: "Targets", keys: [{ name: "target", type: { kind: "objectRef", classId: "Object" }, defaultValue: point }],
     });
     runtime.executeConsoleCommand("snapshot start");
     for (let i = 0; i < 20; i += 1) runtime.tick();
@@ -169,7 +169,7 @@ describe("Move To Blackboard Key", () => {
     const { runtime, commands } = await setup(null);
     const target = runtime.getWorld().findActor("target")!;
     runtime.registerBlackboard("board", {
-      name: "Targets", keys: [{ name: "target", type: { kind: "actorRef", classId: "Actor" }, defaultValue: target }],
+      name: "Targets", keys: [{ name: "target", type: { kind: "objectRef", classId: "Actor" }, defaultValue: target }],
     });
     for (let i = 0; i < 20; i += 1) runtime.tick();
     const stoppedAt = runtime.getWorld().findActor("guard")!.transform.position.x;

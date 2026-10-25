@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import {
-  actorRef, arrayOf, assetRef, compileGraph, enumRef, isAssignable,
+  objectRef, arrayOf, assetRef, compileGraph, enumRef, isAssignable,
   ENGINE_RENDER_TARGET_MODE_ENUM_ID,
   type GraphNode, type LogicGraph, type NodeRegistry,
 } from "@haptic/scripting";
@@ -23,14 +23,14 @@ it("compiles actor filtering with live actor arrays and captures after updating 
   const graph: LogicGraph = { id: "capture", kind: "event", nodes: [
     node(registry, "entry", "flow.entry"),
     node(registry, "source", "debug.executeJavaScript", {
-      outputs: [{ name: "capture", type: actorRef("RenderTargetCapture") }, { name: "actors", type: arrayOf(actorRef("Actor")) }],
+      outputs: [{ name: "capture", type: objectRef("RenderTargetCapture") }, { name: "actors", type: arrayOf(objectRef("Actor")) }],
       body: "capture = ctx.capture; actors = ctx.actors;",
     }),
     node(registry, "set", "render-target.setActors"),
     node(registry, "filter", "render-target.setOnlyActors", { "default:value": true }),
     node(registry, "get", "render-target.getActors"),
     node(registry, "sink", "debug.executeJavaScript", {
-      inputs: [{ name: "actors", type: arrayOf(actorRef("Actor")) }], body: "ctx.received = actors;",
+      inputs: [{ name: "actors", type: arrayOf(objectRef("Actor")) }], body: "ctx.received = actors;",
     }),
     node(registry, "capture", "render-target.capture"),
   ], edges: [

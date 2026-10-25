@@ -46,7 +46,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
       nodes: graph.nodes.map((node) => ({ id: node.id, type: node.typeId, data: node.properties, position: node.position })),
       edges: graph.edges.map((edge) => ({ id: edge.id, source: edge.sourceNodeId, sourceHandle: edge.sourcePinId, target: edge.targetNodeId, targetHandle: edge.targetPinId })),
     };
-    files.set(`assets/${name}.class.hasset`, await encodeAssetDocument({ guid: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, type: "Class", name, version, payload: document as unknown as Record<string, unknown> }, { parentClass: "BDebugCommand" }));
+    files.set(`assets/${name}.class.hasset`, await encodeAssetDocument({ guid: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, type: "Class", name, version, payload: document as unknown as Record<string, unknown> }, { parentClass: "DebugCommand" }));
   }
   // A real actor receives asynchronous renderer acknowledgements. Both the
   // event payload and Get Effective Scalability execute in the authored graph.

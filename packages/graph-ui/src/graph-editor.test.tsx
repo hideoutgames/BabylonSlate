@@ -2603,7 +2603,7 @@ describe("GraphEditor", () => {
   });
 
   describe("pins that read Self while unwired", () => {
-    const actor = { kind: "actorRef", classId: "Actor" };
+    const actor = { kind: "objectRef", classId: "Actor" };
     const destroy = {
       id: "destroy",
       type: "actor.destroy",

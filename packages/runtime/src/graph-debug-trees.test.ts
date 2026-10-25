@@ -184,7 +184,7 @@ describe("Animation Graph debugging", () => {
   };
   /** A transition rule that opens when the component's `go` variable is true, and only then enters Run. */
   const rule = (transitionId: string, open: string): CompiledScript => ({
-    assetGuid: `loco/${transitionId}`, classId: `AnimRule:loco:${transitionId}`, parentClassId: "BObject",
+    assetGuid: `loco/${transitionId}`, classId: `AnimRule:loco:${transitionId}`, parentClassId: "Object",
     source: `export function evaluate(ctx) { return { enter: ${open}, exit: true }; }`,
     anchors: [], entryPoints: [{ name: "evaluate", event: "onAnimRule", isAsync: false }],
   });
@@ -252,7 +252,7 @@ describe("Animation Graph debugging", () => {
 
   it("hands the Animation Object graph's scripts the followed component's recorder, and no other component", async () => {
     const object: CompiledScript = {
-      assetGuid: "Content/Loco.animgraph", classId: "AnimGraph:loco", parentClassId: "BObject",
+      assetGuid: "Content/Loco.animgraph", classId: "AnimGraph:loco", parentClassId: "Object",
       source: [
         "export function onUpdateAnimation(ctx) {",
         '  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph("Content/Loco.animgraph", "animation-object");',

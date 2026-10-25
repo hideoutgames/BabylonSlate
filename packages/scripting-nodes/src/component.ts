@@ -2,7 +2,6 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  actorRef,
   arrayOf,
   classRef,
   objectRef,
@@ -65,8 +64,8 @@ export const componentNodes: NodeDefinition[] = [
           : "ActorComponent";
       return [
         properties.implicitSelf === true
-          ? selfPin("actor", "Target", actorRef("Actor"))
-          : subject(pin("actor", "Target", "in", actorRef("Actor"))),
+          ? selfPin("actor", "Target", objectRef("Actor"))
+          : subject(pin("actor", "Target", "in", objectRef("Actor"))),
         pin("out", "out", "out", objectRef(classId)),
       ];
     },

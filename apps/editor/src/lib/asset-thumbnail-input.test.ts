@@ -195,7 +195,7 @@ describe("prepareAssetThumbnailInput", () => {
   });
 
   it("does not read non-Actor classes or cyclic inheritance", async () => {
-    const ordinary = asset("ordinary", "Class", {}, "BObject");
+    const ordinary = asset("ordinary", "Class", {}, "Object");
     const cycleA = asset("cycleA", "Class", {}, "cycleB");
     const cycleB = asset("cycleB", "Class", {}, "cycleA");
     const inputs = fixture([ordinary, cycleA, cycleB]);

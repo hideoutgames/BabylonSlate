@@ -92,7 +92,7 @@ describe("hydrateSerializedGraphForEditor", () => {
       nodes: [
         { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
         { id: "destroy", type: "actor.destroy", position: { x: 0, y: 0 }, data: { __pins: [
-          ...stale("actor.destroy"), { id: "target", name: "target", kind: "data", direction: "in", type: { kind: "actorRef", classId: "Actor" } },
+          ...stale("actor.destroy"), { id: "target", name: "target", kind: "data", direction: "in", type: { kind: "objectRef", classId: "Actor" } },
         ] } },
         { id: "call", type: "functions.call", position: { x: 0, y: 0 }, data: {
           functionName: "Jump", classId: "Hero", implicitSelf: true, pins: [],
@@ -337,14 +337,14 @@ describe("hydrateSerializedGraphForEditor", () => {
           position: { x: 0, y: 0 },
           data: {
             "default:class": "Hero",
-            title: "Cast to BObject",
+            title: "Cast to Object",
             __pins: [
               {
                 id: "result",
                 name: "result",
                 kind: "data",
                 direction: "out",
-                type: { kind: "objectRef", classId: "BObject" },
+                type: { kind: "objectRef", classId: "Object" },
               },
             ],
           },
@@ -361,7 +361,7 @@ describe("hydrateSerializedGraphForEditor", () => {
       type: { kind: string; classId?: string };
     }>;
     expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
-      kind: "actorRef",
+      kind: "objectRef",
       classId: "Hero",
     });
   });
@@ -408,7 +408,7 @@ describe("hydrateSerializedGraphForEditor", () => {
       type: { kind: string; classId?: string };
     }>;
     expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
-      kind: "actorRef",
+      kind: "objectRef",
       classId: "Actor",
     });
     // Validation and compile type the Result the same way.
@@ -416,7 +416,7 @@ describe("hydrateSerializedGraphForEditor", () => {
       parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
     });
     expect(logic.nodes.find((node) => node.id === "cast-1")?.pins.find((pin) => pin.id === "result")?.type).toEqual({
-      kind: "actorRef",
+      kind: "objectRef",
       classId: "Actor",
     });
   });
@@ -433,7 +433,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
 
     it("retypes Classes when the picked Class changes, even from stale saved pins", () => {
-      const stale = [{ id: "classes", name: "Classes", kind: "data", direction: "out", type: { kind: "array", element: { kind: "classRef", classId: "BObject" } } }];
+      const stale = [{ id: "classes", name: "Classes", kind: "data", direction: "out", type: { kind: "array", element: { kind: "classRef", classId: "Object" } } }];
       const graph: SerializedGraph = { nodes: [byClass({ "default:class": "Weapon", __pins: stale })], edges: [] };
       expect(classes(hydrateSerializedGraphForEditor(graph, registry), "assets")).toEqual({
         kind: "array",
@@ -833,9 +833,9 @@ describe("createDefaultLogicGraphSerialized", () => {
     expect(graph.nodes).toEqual([]);
   });
 
-  it("seeds no event nodes for a BObject class", () => {
+  it("seeds no event nodes for an Object class", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
-      parentClass: "BObject",
+      parentClass: "Object",
     });
     expect(graph.nodes).toEqual([]);
   });
@@ -859,7 +859,7 @@ describe("createDefaultLogicGraphSerialized", () => {
 
   it("does not seed leftover EditorUtilityInterface as a logic host", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
-      parentClass: "BObject",
+      parentClass: "Object",
       assetType: "EditorUtilityInterface",
     });
     expect(graph.nodes).toEqual([]);
@@ -1012,12 +1012,12 @@ describe("validateSerializedGraph", () => {
 });
 
 describe("classHierarchyFromParentOf", () => {
-  it("treats Hero as a subclass of Actor and BObject", () => {
+  it("treats Hero as a subclass of Actor and Object", () => {
     const hierarchy = classHierarchyFromParentOf((id) =>
-      id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
+      id === "Hero" ? "Actor" : id === "Actor" ? "Object" : null,
     );
-    expect(hierarchy.isSubclassOf("Hero", "BObject")).toBe(true);
-    expect(hierarchy.isSubclassOf("BObject", "Hero")).toBe(false);
+    expect(hierarchy.isSubclassOf("Hero", "Object")).toBe(true);
+    expect(hierarchy.isSubclassOf("Object", "Hero")).toBe(false);
   });
 });
 
@@ -1081,10 +1081,10 @@ describe("scriptPinCompatibility", () => {
       name: "Object",
       kind: "data" as const,
       direction: "in" as const,
-      type: objectRef("BObject"),
+      type: objectRef("Object"),
     };
     const pin = (
-      kind: "objectRef" | "actorRef",
+      kind: "objectRef",
       classId: string,
     ): {
       id: string;
@@ -1099,14 +1099,14 @@ describe("scriptPinCompatibility", () => {
       direction: "out",
       type: { kind, classId },
     });
-    expect(rule(pin("actorRef", "Actor"), isValidTarget)).toBe(true);
+    expect(rule(pin("objectRef", "Actor"), isValidTarget)).toBe(true);
     expect(rule(pin("objectRef", "MeshComponent"), isValidTarget)).toBe(true);
   });
 
-  it("allows an actor reference into a live object pin of a superclass", () => {
+  it("follows the class hierarchy between object references", () => {
     const rule = scriptPinCompatibility(
       classHierarchyFromParentOf((id) =>
-        id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
+        id === "Hero" ? "Actor" : id === "Actor" ? "Object" : null,
       ),
     );
     const pin = (
@@ -1119,8 +1119,9 @@ describe("scriptPinCompatibility", () => {
       direction: "out",
       type: { kind, classId },
     });
-    expect(rule(pin("actorRef", "Hero"), pin("objectRef", "BObject"))).toBe(true);
-    expect(rule(pin("objectRef", "Hero"), pin("actorRef", "Actor"))).toBe(false);
+    expect(rule(pin("objectRef", "Hero"), pin("objectRef", "Object"))).toBe(true);
+    expect(rule(pin("objectRef", "Hero"), pin("objectRef", "Actor"))).toBe(true);
+    expect(rule(pin("objectRef", "Object"), pin("objectRef", "Actor"))).toBe(false);
   });
 });
 
@@ -1167,8 +1168,8 @@ describe("scriptPaletteNodes", () => {
     expect(drawLine?.defaultData).toMatchObject({ developmentOnly: true });
   });
 
-  it("keeps Is Valid on BObject and Actor palettes", () => {
-    for (const parentClass of ["BObject", "Actor"] as const) {
+  it("keeps Is Valid on Object and Actor palettes", () => {
+    for (const parentClass of ["Object", "Actor"] as const) {
       expect(
         scriptPaletteNodes(registry, { parentClass }).some(
           (node) => node.id === "actor.isValid",
@@ -1179,7 +1180,7 @@ describe("scriptPaletteNodes", () => {
 
   it("lists Play Sound and mixer volume nodes on Actor and Class with volume 1", () => {
     const actor = scriptPaletteNodes(registry, { parentClass: "Actor" });
-    const klass = scriptPaletteNodes(registry, { parentClass: "BObject" });
+    const klass = scriptPaletteNodes(registry, { parentClass: "Object" });
     for (const nodes of [actor, klass]) {
       expect(nodes.some((node) => node.id === "audio.play")).toBe(true);
       expect(nodes.some((node) => node.id === "audio.setChannelVolume")).toBe(
@@ -1252,7 +1253,7 @@ describe("scriptPaletteNodes", () => {
 
   it("shows Animation Object events and hides rule queries", () => {
     const nodes = scriptPaletteNodes(registry, {
-      parentClass: "BObject",
+      parentClass: "Object",
       animationGraphHost: "object",
     });
     expect(nodes.some((node) => node.id === "anim.event.initialize")).toBe(true);
@@ -1269,7 +1270,7 @@ describe("scriptPaletteNodes", () => {
 
   it("shows transition-rule state queries and hides lifecycle events", () => {
     const nodes = scriptPaletteNodes(registry, {
-      parentClass: "BObject",
+      parentClass: "Object",
       animationGraphHost: "rule",
       graph: {
         nodes: [],
@@ -1290,8 +1291,8 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.title === "Set moving")).toBe(false);
   });
 
-  it("hides Begin Play and Tick on BObject class graphs", () => {
-    const nodes = scriptPaletteNodes(registry, { parentClass: "BObject" });
+  it("hides Begin Play and Tick on Object class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Object" });
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(false);
@@ -1343,10 +1344,7 @@ describe("scriptPaletteNodes", () => {
       (node) => node.id === "casting.cast:Scene:scene-1",
     );
     expect(sceneCast?.title).toBe("Cast to Main Hall");
-    expect(sceneCast?.defaultData).toMatchObject({
-      "default:class": "Scene:scene-1",
-      resultKind: "objectRef",
-    });
+    expect(sceneCast?.defaultData).toEqual({ "default:class": "Scene:scene-1" });
     expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
     expect(nodes.some((node) => node.title === "Set Scene Name")).toBe(false);
     expect(
@@ -1459,8 +1457,8 @@ describe("scriptPaletteNodes", () => {
   it("does not inject editor-only class functions into a runtime Actor palette", () => {
     const parentOf = (id: string) => {
       if (id === "LevelTools") return "EditorUtilityObject";
-      if (id === "EditorUtilityObject") return "BObject";
-      if (id === "Actor") return "BObject";
+      if (id === "EditorUtilityObject") return "Object";
+      if (id === "Actor") return "Object";
       return null;
     };
     const nodes = scriptPaletteNodes(registry, {
@@ -1482,7 +1480,7 @@ describe("scriptPaletteNodes", () => {
   it("injects editor-only class functions into an EditorUtilityObject palette", () => {
     const parentOf = (id: string) => {
       if (id === "LevelTools") return "EditorUtilityObject";
-      if (id === "EditorUtilityObject") return "BObject";
+      if (id === "EditorUtilityObject") return "Object";
       return null;
     };
     const nodes = scriptPaletteNodes(registry, {
@@ -1890,7 +1888,7 @@ describe("scriptPaletteNodes", () => {
       classId: "Hero",
     });
     const captureActors = nodes.find((node) => node.id === "variables.get:RenderTargetCaptureComponent:Capture Actors");
-    expect(captureActors?.defaultData).toMatchObject({ propertyKey: "actorIds", container: "array", typeId: "actor" });
+    expect(captureActors?.defaultData).toMatchObject({ propertyKey: "actorIds", container: "array", typeId: "object" });
     expect(captureActors?.pins?.some((pin) => pin.direction === "out" && pin.type.kind === "array")).toBe(true);
     const getText = nodes.find(
       (node) => node.id === "variables.get:Text3DComponent:Text",
@@ -2410,11 +2408,11 @@ describe("scriptPaletteNodes", () => {
 
   const libraryParentOf = (id: string) => {
     if (id === "MathLib") return "FunctionLibrary";
-    if (id === "FunctionLibrary") return "BObject";
+    if (id === "FunctionLibrary") return "Object";
     if (id === "EditorMath") return "EditorFunctionLibrary";
     if (id === "EditorFunctionLibrary") return "FunctionLibrary";
-    if (id === "EditorUtilityObject") return "BObject";
-    if (id === "Actor") return "BObject";
+    if (id === "EditorUtilityObject") return "Object";
+    if (id === "Actor") return "Object";
     return null;
   };
 
@@ -2579,29 +2577,20 @@ describe("scriptPaletteNodes", () => {
     expect(actorCast?.pure).not.toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execIn")).toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
-    expect(actorCast?.defaultData).toMatchObject({
-      "default:class": "Actor",
-      resultKind: "actorRef",
-    });
+    expect(actorCast?.defaultData).toEqual({ "default:class": "Actor" });
     expect(
       actorCast?.pins?.some(
         (pin) =>
           pin.id === "result" &&
-          (pin.type as { kind?: string; classId?: string }).kind === "actorRef" &&
+          (pin.type as { kind?: string; classId?: string }).kind === "objectRef" &&
           (pin.type as { classId?: string }).classId === "Actor",
       ),
     ).toBe(true);
     const heroCast = nodes.find((node) => node.id === "casting.cast:Hero");
     expect(heroCast?.title).toBe("Cast to Hero");
-    expect(heroCast?.defaultData).toMatchObject({
-      "default:class": "Hero",
-      resultKind: "actorRef",
-    });
+    expect(heroCast?.defaultData).toEqual({ "default:class": "Hero" });
     const giCast = nodes.find((node) => node.id === "casting.cast:GameInstance");
     expect(giCast?.title).toBe("Cast to GameInstance");
-    expect(giCast?.defaultData).toMatchObject({
-      resultKind: "objectRef",
-    });
   });
 
   it("does not include removed UserInterface engine classes in the known-class set", () => {
@@ -2773,9 +2762,9 @@ describe("ScriptPaletteCache", () => {
   const libraryParentOf = (id: string) => {
     if (id.startsWith("Class")) return "Actor";
     if (id === "MathLib") return "FunctionLibrary";
-    if (id === "FunctionLibrary") return "BObject";
+    if (id === "FunctionLibrary") return "Object";
     if (id === "Hero") return "Actor";
-    if (id === "Actor") return "BObject";
+    if (id === "Actor") return "Object";
     return null;
   };
 

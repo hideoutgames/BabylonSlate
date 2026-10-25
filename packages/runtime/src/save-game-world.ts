@@ -1,5 +1,5 @@
 import { SaveGameError, newGuid, type SaveGameDefinition, type SaveGameValue, type Transform } from "@haptic/core";
-import { Actor, ActorComponent, BObject, type World } from "@haptic/object-model";
+import { Actor, ActorComponent, EngineObject, type World } from "@haptic/object-model";
 
 interface SavedActor {
   id: string;
@@ -190,7 +190,7 @@ export class SaveGameWorld {
       if (!this.identity.has(value) && this.host.isSpawned(value)) throw new SaveGameError("incompatible", "Register spawned reference targets before saving.");
       return { $saveReference: "actor", actor: this.identity.get(value) ?? value.guid };
     }
-    if (value instanceof BObject) throw new SaveGameError("incompatible", "Only actor and actor-component object references can be saved.");
+    if (value instanceof EngineObject) throw new SaveGameError("incompatible", "Only actor and actor-component object references can be saved.");
     if (value === undefined || value === null) return null;
     if (typeof value === "string" || typeof value === "boolean") return value;
     if (typeof value === "number" && Number.isFinite(value)) return value;

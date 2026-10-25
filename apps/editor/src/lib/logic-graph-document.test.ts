@@ -89,7 +89,7 @@ describe("collectSubsystemClassesForPalette", () => {
 describe("collectFunctionLibrariesForPalette", () => {
   const parentOf = (id: string) => {
     if (id === "MathLib") return "FunctionLibrary";
-    if (id === "FunctionLibrary") return "BObject";
+    if (id === "FunctionLibrary") return "Object";
     if (id === "EditorMath") return "EditorFunctionLibrary";
     if (id === "EditorFunctionLibrary") return "FunctionLibrary";
     if (id === "Hero") return "Actor";
@@ -614,7 +614,7 @@ describe("collectGraphTypeAssets", () => {
           { name: "Hit", typeId: "bool" },
           { name: "Location", typeId: "vec3" },
           { name: "Normal", typeId: "vec3" },
-          { name: "Actor", typeId: "actor" },
+          { name: "Actor", typeId: "object", typeClassId: "Actor" },
           { name: "Distance", typeId: "float" },
         ],
       },

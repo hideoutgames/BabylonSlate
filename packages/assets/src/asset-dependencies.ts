@@ -192,7 +192,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     // The declaring slot may require its own reference on top of what the consumer inherits.
     if (spec.kind === "assetRef") add(value, needed || isHardLoading(spec));
     else if (spec.kind === "classRef") { addClass(spec.classId, false); addClass(value, needed || isHardLoading(spec)); }
-    else if (spec.kind === "actorRef" || spec.kind === "objectRef") addClass(spec.classId, false);
+    else if (spec.kind === "objectRef") addClass(spec.classId, false);
     else if (spec.kind === "enumRef" || spec.kind === "structRef") {
       add(spec.guid, schemaNeeded);
       if (spec.kind === "structRef" && spec.guid === "engine:InputType") add(row(value).Asset, needed);

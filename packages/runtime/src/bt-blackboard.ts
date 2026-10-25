@@ -3,7 +3,7 @@ import type { Transform } from "@haptic/core";
 import {
   Actor,
   ActorComponent,
-  BObject,
+  EngineObject,
   sanitizeInspectValue,
   type World,
 } from "@haptic/object-model";
@@ -40,7 +40,7 @@ function copyValue(value: unknown, depth: number, state: CopyState): unknown {
   if (typeof value === "function") return UNCOMPARABLE;
   if (value === null || typeof value !== "object") return value;
   // A live object is compared by identity: its guid and class never change.
-  if (value instanceof BObject) return value;
+  if (value instanceof EngineObject) return value;
   // A container met again on its own path is a cycle; copying it again would not end.
   if (depth >= MAX_COPY_DEPTH || state.ancestors.has(value)) return UNCOMPARABLE;
   const array = Array.isArray(value);
@@ -71,7 +71,7 @@ function sameValue(baseline: unknown, live: unknown, depth: number): boolean {
   if (typeof baseline === "number" && typeof live === "number") return baseline !== baseline && live !== live;
   if (baseline === null || live === null || typeof baseline !== "object" || typeof live !== "object") return false;
   // Equal live objects were identical above, so a different one has changed.
-  if (baseline instanceof BObject || depth >= MAX_COPY_DEPTH) return false;
+  if (baseline instanceof EngineObject || depth >= MAX_COPY_DEPTH) return false;
   if (Array.isArray(baseline)) {
     if (!Array.isArray(live) || live.length !== baseline.length) return false;
     for (let index = 0; index < baseline.length; index++) if (!sameValue(baseline[index], live[index], depth + 1)) return false;
@@ -135,7 +135,6 @@ function inspectType(type: BlackboardDocument["keys"][number]["type"]): string {
     case "structRef":
       return `struct:${type.guid}`;
     case "objectRef":
-    case "actorRef":
       return "object";
     case "classRef":
       return "class";
@@ -160,11 +159,11 @@ export function blackboardTargetPosition(
   actorsByGuid: ReadonlyMap<string, Actor> = actorGuidIndex(world.getActors()),
 ): NavPoint | null {
   if (!value || typeof value !== "object") return null;
-  if (value instanceof BObject && value.destroyed) return null;
+  if (value instanceof EngineObject && value.destroyed) return null;
   const row = value as { guid?: unknown };
   if (typeof row.guid !== "string") return finitePosition(value);
 
-  let target = value instanceof BObject
+  let target = value instanceof EngineObject
     ? value
     : actorsByGuid.get(row.guid);
   if (!target) {

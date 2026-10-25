@@ -7,7 +7,6 @@ import {
   STRING,
   VEC3,
   BOXED_WILDCARD,
-  actorRef,
   assetRef,
   classRef,
   objectRef,
@@ -44,45 +43,45 @@ describe("pin assignability", () => {
       },
     };
     expect(
-      isAssignable(actorRef("Player"), actorRef("Actor"), { hierarchy }),
+      isAssignable(objectRef("Player"), objectRef("Actor"), { hierarchy }),
     ).toBe(true);
     expect(
-      isAssignable(actorRef("Actor"), actorRef("Player"), { hierarchy }),
+      isAssignable(objectRef("Actor"), objectRef("Player"), { hierarchy }),
     ).toBe(false);
   });
 
-  it("treats objectRef BObject (or empty classId) as the instance root without a hierarchy", () => {
-    expect(isAssignable(actorRef("Actor"), objectRef("BObject"))).toBe(true);
-    expect(isAssignable(objectRef("Hero"), objectRef("BObject"))).toBe(true);
-    expect(isAssignable(objectRef("MeshComponent"), objectRef("BObject"))).toBe(
+  it("treats objectRef Object (or empty classId) as the instance root without a hierarchy", () => {
+    expect(isAssignable(objectRef("Actor"), objectRef("Object"))).toBe(true);
+    expect(isAssignable(objectRef("Hero"), objectRef("Object"))).toBe(true);
+    expect(isAssignable(objectRef("MeshComponent"), objectRef("Object"))).toBe(
       true,
     );
-    expect(isAssignable(actorRef("Actor"), objectRef(""))).toBe(true);
-    expect(isAssignable(objectRef("Hero"), actorRef("Actor"))).toBe(false);
+    expect(isAssignable(objectRef("Actor"), objectRef(""))).toBe(true);
+    expect(isAssignable(objectRef("Hero"), objectRef("Actor"))).toBe(false);
   });
 
-  it("allows actorRef into objectRef when hierarchy says the actor is a subclass", () => {
+  it("follows the hierarchy from an actor subclass to Actor and Object", () => {
     const hierarchy = {
       isSubclassOf(child: string, parent: string) {
         return (
           child === parent ||
           (child === "Player" &&
-            (parent === "Actor" || parent === "BObject")) ||
-          (child === "Actor" && parent === "BObject")
+            (parent === "Actor" || parent === "Object")) ||
+          (child === "Actor" && parent === "Object")
         );
       },
     };
     expect(
-      isAssignable(actorRef("Player"), objectRef("BObject"), { hierarchy }),
+      isAssignable(objectRef("Player"), objectRef("Object"), { hierarchy }),
     ).toBe(true);
     expect(
-      isAssignable(actorRef("Player"), objectRef("Actor"), { hierarchy }),
+      isAssignable(objectRef("Player"), objectRef("Actor"), { hierarchy }),
     ).toBe(true);
     expect(
-      isAssignable(objectRef("Player"), actorRef("Actor"), { hierarchy }),
+      isAssignable(objectRef("Object"), objectRef("Actor"), { hierarchy }),
     ).toBe(false);
     expect(
-      isAssignable(actorRef("Player"), objectRef("Pawn"), { hierarchy }),
+      isAssignable(objectRef("Player"), objectRef("Pawn"), { hierarchy }),
     ).toBe(false);
   });
 
@@ -126,7 +125,7 @@ describe("pin assignability", () => {
     expect(pinTypeTag(assetRef("Audio"))).toBe("assetRef:Audio");
   });
 
-  it.each([BOOL, INT, FLOAT, STRING, VEC3, objectRef("BObject")])(
+  it.each([BOOL, INT, FLOAT, STRING, VEC3, objectRef("Object")])(
     "equal $kind types are assignable",
     (type) => {
       expect(isAssignable(type, type)).toBe(true);

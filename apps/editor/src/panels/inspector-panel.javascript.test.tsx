@@ -35,10 +35,10 @@ describe("Execute JavaScript Inspector", () => {
     view.rerender(host());
     fireEvent.click(screen.getByTestId(`js-input-row-${id}`));
     fireEvent.click(screen.getByRole("button", { name: "Array" }));
-    expect(inputs()[0]).toMatchObject({ name: "items", type: { kind: "array", element: { kind: "objectRef", classId: "BObject" } } });
+    expect(inputs()[0]).toMatchObject({ name: "items", type: { kind: "array", element: { kind: "objectRef", classId: "Object" } } });
     view.rerender(host());
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    expect(inputs()[0]).toMatchObject({ name: "items", type: { kind: "map", key: { kind: "string" }, value: { kind: "objectRef", classId: "BObject" } } });
+    expect(inputs()[0]).toMatchObject({ name: "items", type: { kind: "map", key: { kind: "string" }, value: { kind: "objectRef", classId: "Object" } } });
     view.rerender(host());
     fireEvent.click(screen.getByTestId("js-output-add"));
     fireEvent.click(await screen.findByTestId("search-item-float"));

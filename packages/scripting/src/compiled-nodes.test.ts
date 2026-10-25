@@ -152,10 +152,10 @@ describe("compiledNodeIds", () => {
     const castPins = [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("object", "object", "in", objectRef("BObject")),
-      pin("class", "class", "in", classRef("BObject")),
+      pin("object", "object", "in", objectRef("Object")),
+      pin("class", "class", "in", classRef("Object")),
       pin("success", "success", "out", BOOL),
-      pin("result", "result", "out", objectRef("BObject")),
+      pin("result", "result", "out", objectRef("Object")),
     ];
     const ids = compiledNodeIds(
       graph(

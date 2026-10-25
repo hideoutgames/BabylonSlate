@@ -130,7 +130,7 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 
 /** Engine base classes available when authoring a new Class asset. */
 export const ENGINE_BASE_CLASSES = [
-  "BObject",
+  "Object",
   "Actor",
   "RenderTargetCapture",
   "SceneLayerActor",
@@ -141,7 +141,7 @@ export const ENGINE_BASE_CLASSES = [
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   "FunctionLibrary",
-  "BDebugCommand",
+  "DebugCommand",
   "EditorUtilityObject",
   "EditorFunctionLibrary",
   "BTTask",
@@ -191,7 +191,7 @@ export function buildParentClassTreeRows(
   };
   for (const id of ENGINE_BASE_CLASSES) {
     // Nest engine bases under the nearest engine base the picker lists, so
-    // the subsystem bases sit under BObject past the hidden Subsystem base.
+    // the subsystem bases sit under Object past the hidden Subsystem base.
     const parent =
       walkAncestry(engineParentOf(id), (ancestor) => engineParentOf(ancestor))
         .find((ancestor) =>
@@ -1562,7 +1562,7 @@ export function visualForIndexedAsset(
   parentOf: (id: string) => string | null,
 ): TypeVisual {
   if (asset.header.type === "Class") {
-    const start = asset.header.parentClass ?? "BObject";
+    const start = asset.header.parentClass ?? "Object";
     return resolveTypeVisual({
       assetType: "Class",
       parentClass: asset.header.parentClass,
@@ -1588,7 +1588,7 @@ export function openSceneViewportMode(
 export function defaultParentClassForType(
   type: CreatableAssetType,
 ): string | null {
-  return type === "Class" ? "BObject" : null;
+  return type === "Class" ? "Object" : null;
 }
 
 export function buildNewAssetResult(options: {
@@ -1680,7 +1680,7 @@ export function buildNewAssetResult(options: {
     if (isLockedEngineClassId(classId)) {
       throw new Error(`"${classId}" is an engine class name. Choose another Class name.`);
     }
-    if (walkAncestry(parentClass ?? "BObject", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
+    if (walkAncestry(parentClass ?? "Object", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
       throw new Error("SceneLayer classes must be created as Scene Layer assets.");
     }
     const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {

@@ -116,7 +116,7 @@ export const materialNodes: NodeDefinition[] = [
     category: "material",
     pure: true,
     pins: () => [
-      subject(pin("owner", "Owner", "in", objectRef("BObject"))),
+      subject(pin("owner", "Owner", "in", objectRef("Object"))),
       { ...pin("entryId", "Entry ID", "in", STRING), defaultValue: "" },
       pin("material", "Material", "out", objectRef("MaterialObject")),
     ],

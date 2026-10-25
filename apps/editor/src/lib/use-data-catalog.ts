@@ -20,6 +20,6 @@ export function useDataCatalog() {
   const enumMembers = useMemo(() => Object.fromEntries(types.enums.map((entry) => [entry.guid, entry.members.map((member) => member.name)])), [types]);
   const pickerAssets = useMemo(() => assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })), [assets]);
   const propertyAssets = useMemo(() => pickerAssets.map((entry) => ({ id: entry.guid, name: entry.name, type: entry.type })), [pickerAssets]);
-  const classEntries = useMemo(() => subclassClassEntries("BObject", assets), [assets]);
+  const classEntries = useMemo(() => subclassClassEntries("Object", assets), [assets]);
   return useMemo(() => ({ assets, byGuid, types, schemas, enumMembers, pickerAssets, propertyAssets, classEntries }), [assets, byGuid, types, schemas, enumMembers, pickerAssets, propertyAssets, classEntries]);
 }

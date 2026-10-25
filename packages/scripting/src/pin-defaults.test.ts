@@ -16,7 +16,6 @@ import {
   VEC4,
   arrayOf,
   mapOf,
-  actorRef,
   assetRef,
   classRef,
   objectRef,
@@ -65,7 +64,7 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(arrayOf(FLOAT))).toBe(false);
     expect(pinAcceptsLiteralDefault(mapOf(STRING, FLOAT))).toBe(false);
     expect(pinAcceptsLiteralDefault(objectRef("Actor"))).toBe(false);
-    expect(pinAcceptsLiteralDefault(actorRef("Actor"))).toBe(false);
+    expect(pinAcceptsLiteralDefault(objectRef("Actor"))).toBe(false);
     expect(pinAcceptsLiteralDefault(BOXED_WILDCARD)).toBe(false);
   });
 });
@@ -73,7 +72,7 @@ describe("pinAcceptsLiteralDefault", () => {
 describe("pinRejectsStoredDefault", () => {
   it("rejects only live object and actor instance pins", () => {
     expect(pinRejectsStoredDefault(objectRef("Actor"))).toBe(true);
-    expect(pinRejectsStoredDefault(actorRef("Actor"))).toBe(true);
+    expect(pinRejectsStoredDefault(objectRef("Actor"))).toBe(true);
     expect(pinRejectsStoredDefault(classRef("Actor"))).toBe(false);
     expect(pinRejectsStoredDefault(assetRef("Audio"))).toBe(false);
     expect(pinRejectsStoredDefault(BOXED_WILDCARD)).toBe(false);

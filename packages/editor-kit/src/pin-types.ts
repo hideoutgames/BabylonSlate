@@ -16,7 +16,6 @@ export const PIN_PICKER_TYPES = [
   "color",
   "transform",
   "object",
-  "actor",
   "class",
   "asset",
   "struct",
@@ -46,7 +45,6 @@ export const PIN_PICKER_LABEL: Record<string, string> = {
   transform: "Transform",
   texture: "Texture",
   object: "Object",
-  actor: "Actor",
   class: "Class",
   asset: "Asset",
   struct: "Struct",
@@ -69,7 +67,6 @@ const PIN_PICKER_KIND: Record<PinPickerType, string> = {
   color: "color",
   transform: "transform",
   object: "objectRef",
-  actor: "actorRef",
   class: "classRef",
   asset: "assetRef",
   struct: "structRef",
@@ -95,7 +92,6 @@ export function pinPickerLabel(type: string): string {
 function typeClassIdKind(type: string): string | undefined {
   switch (type) {
     case "object":
-    case "actor":
     case "class":
       return "class";
     case "asset":
@@ -110,7 +106,7 @@ function typeClassIdKind(type: string): string | undefined {
 /**
  * Object/class constraints, asset types and Structure/Enum guids share
  * `typeClassId`. A type change keeps it only when both types read it the same
- * way (Object to Actor keeps a class); Object to Enum must not keep a class id.
+ * way (Object to Class keeps a class); Object to Enum must not keep a class id.
  */
 export function pinPickerKeepsTypeClassId(from: string, to: string): boolean {
   const kind = typeClassIdKind(to);

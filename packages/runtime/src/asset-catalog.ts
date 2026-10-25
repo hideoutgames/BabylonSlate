@@ -240,7 +240,7 @@ export class RuntimeAssetCatalog implements ScriptAssetRegistry {
       seen.add(current);
       chain.push(current);
       if (this.parentByClass.has(current)) {
-        current = this.parentByClass.get(current) ?? "BObject";
+        current = this.parentByClass.get(current) ?? "Object";
         continue;
       }
       engineClasses ??= new ClassRegistry();

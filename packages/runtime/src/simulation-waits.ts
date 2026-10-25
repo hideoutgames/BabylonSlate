@@ -1,4 +1,4 @@
-import type { BObject } from "@haptic/object-model";
+import type { EngineObject } from "@haptic/object-model";
 import type { SceneStreams } from "./scene-streams";
 import type { SessionBoundaries } from "./session-boundaries";
 import type { SimulationBlocks } from "./simulation-blocks";
@@ -52,25 +52,25 @@ export class SimulationWaits {
 
   constructor(host: SimulationWaitsHost) { this.host = host; }
 
-  private blocked(owner: BObject | null): boolean {
+  private blocked(owner: EngineObject | null): boolean {
     return (this.host.blocks().active || this.host.paused() || this.host.boundaries().pausePending ||
       this.host.pauseChangePending()) && !this.host.stopped() && !owner?.destroyed;
   }
 
-  private async wait(owner: BObject | null): Promise<void> {
+  private async wait(owner: EngineObject | null): Promise<void> {
     while (this.blocked(owner))
       await new Promise<void>((resolve) => this.waiters.add(resolve));
     this.assertContinuable(owner);
   }
 
   /** Like waiting, but an unblocked continuation resumes without extra microtask hops. */
-  continueSimulation(owner: BObject | null): Promise<void> | undefined {
+  continueSimulation(owner: EngineObject | null): Promise<void> | undefined {
     if (this.blocked(owner)) return this.wait(owner);
     this.assertContinuable(owner);
     return undefined;
   }
 
-  private assertContinuable(owner: BObject | null): void {
+  private assertContinuable(owner: EngineObject | null): void {
     if (this.host.stopped()) throw new RuntimeContinuationCancelled("sessionStopped");
     if (owner?.destroyed) throw new RuntimeContinuationCancelled("ownerDestroyed");
     if (!this.host.streams().ownerReady(owner)) throw new RuntimeContinuationCancelled("streamNotLoaded");

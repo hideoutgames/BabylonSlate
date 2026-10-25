@@ -35,7 +35,7 @@ describe("Class reference replacement", () => {
       actors: [{ id: "actor", classId: "Actor", components: [
         { id: "component", classId: "ActorComponent", properties: { amount: 1 } },
       ] }],
-      parentClass: "BObject", gameInstanceClass: null, editorUtilityObjects: ["Keep"],
+      parentClass: "Object", gameInstanceClass: null, editorUtilityObjects: ["Keep"],
       nodes: [{ data: { classId: null, class: null, guid: null } }],
       dependencies: ["keep"],
     });
@@ -56,7 +56,7 @@ describe("Class reference replacement", () => {
     expect(result.nodes[0]!.properties).toEqual({ "default:classId": "NPC", "default:text": "Hero" });
     expect(result.variables.map((entry) => entry.defaultValue)).toEqual(["NPC", "Hero"]);
     const cleared = replaceClassAssetReferences(graph, [{ ...hero, replacement: null }]).value;
-    expect(cleared.nodes[0]!.pins[0]!.type.classId).toBe("BObject");
+    expect(cleared.nodes[0]!.pins[0]!.type.classId).toBe("Object");
     expect(cleared.nodes[0]!.properties["default:classId"]).toBeNull();
   });
 

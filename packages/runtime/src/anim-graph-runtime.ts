@@ -1,6 +1,6 @@
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/bridge";
 import type { TraceAnimGraphState } from "@haptic/debugger";
-import { Actor, ActorComponent, type BObject, type World } from "@haptic/object-model";
+import { Actor, ActorComponent, type EngineObject, type World } from "@haptic/object-model";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -51,7 +51,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   /** The graph guid a component's evaluation and queued jump belong to. */
   private readonly graphByComponent = new Map<string, string>();
   /** The AnimationGraphComponent the editor's graph debugger follows, and where its State Machine reports. */
-  private debugComponent: BObject | null = null;
+  private debugComponent: EngineObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
   private readonly host: AnimGraphRuntimeHost;
 
@@ -66,7 +66,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
    * nothing here). Only that component reports the states it samples and the transitions it takes.
    * Its Animation Object graph reports through `ctx.debugTrace`, which `ScriptHost` routes.
    */
-  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
+  setDebugTrace(object: EngineObject | null, sink: ScriptDebugTrace | null): void {
     const followed = sink && object?.classId === "AnimationGraphComponent";
     this.debugComponent = followed ? object : null;
     this.debugSink = followed ? sink : null;

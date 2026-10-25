@@ -348,7 +348,7 @@ describe("projectAddComponentItems", () => {
         guid: "stats",
         name: "Stats",
         type: "Class",
-        parentClass: "BObject",
+        parentClass: "Object",
         path: "assets/Stats.class.hasset",
       }),
     ]);

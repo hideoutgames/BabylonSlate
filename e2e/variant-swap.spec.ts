@@ -75,7 +75,8 @@ test("a world view draws each Material's previous Effect with the changed lights
     pointOff: { links: 0, held: 0, changed: true }, spotShadows: { links: 0, held: 0, changed: true }, glErrors: [],
   });
   // A light that waits within reach of an admission has the variants it asks for compiled ahead: a spot entering the
-  // Forward budget and one taking a point's shadow map link no program when admitted. The four Materials' first draws
+  // Forward budget, one taking a point's shadow map and one taking the first spot map (its variants from a prediction
+  // map) link no program when admitted. The four Materials' first draws
   // still spread two per frame (FIRST_DRAWS_PER_FRAME), as when the same admissions jump straight in, which link their
   // programs then.
   const predicted = result.predicted;
@@ -86,12 +87,16 @@ test("a world view draws each Material's previous Effect with the changed lights
   const late = { forward: predicted.forward.jumped.lateFrames, shadow: predicted.shadow.jumped.lateFrames };
   expect({
     forward: outcome(predicted.forward.approached), shadow: outcome(predicted.shadow.approached),
+    first: outcome(predicted.first.approached),
     aheadForward: predicted.forward.approached.linksAhead > 0, aheadShadow: predicted.shadow.approached.linksAhead > 0,
     jumpedForward: predicted.forward.jumped.admitted && predicted.forward.jumped.linksAtAdmission > 0 && late.forward === 1,
     jumpedShadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.linksAtAdmission > 0 && late.shadow === 1,
+    aheadFirst: predicted.first.approached.linksAhead > 0,
+    jumpedFirst: predicted.first.jumped.admitted && predicted.first.jumped.linksAtAdmission > 0,
   }, JSON.stringify(predicted)).toEqual({
     forward: { admitted: true, links: 0, late: 1, held: 0, glErrors: [] },
     shadow: { admitted: true, links: 0, late: 1, held: 0, glErrors: [] },
-    aheadForward: true, aheadShadow: true, jumpedForward: true, jumpedShadow: true,
+    first: { admitted: true, links: 0, late: 1, held: 0, glErrors: [] },
+    aheadForward: true, aheadShadow: true, jumpedForward: true, jumpedShadow: true, aheadFirst: true, jumpedFirst: true,
   });
 });

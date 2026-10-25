@@ -17,18 +17,18 @@ Variables store values on each object of a class, such as health, a score or a t
 | Type | The kind of value. See [Pin Types](pin-types.md). |
 | Container | **Single** (one value), **Array** (an ordered list) or **Map** (values looked up by key). |
 | Key Type | Maps only: the type of the keys. |
-| Class Type | Object, Actor and Class variables: the class they accept. Subclasses are accepted too. |
+| Class Type | Object and Class variables: the class they accept. Subclasses are accepted too. Choose **Actor** to hold any actor. |
 | Asset Type | Asset variables: the kind of asset, such as Audio or Material. |
 | Enum Type, Record Type | Enum and structure variables: the [Enum, Structure](structures-and-enums.md) or [Data Definition](data.md) to use. |
 | Unit | Integer, Float and Vector variables: shows a unit after the value in number fields, such as 90° for **Degrees** or 16 px for **Pixels**. The value itself is unchanged. The default value, array and map items, and the value input of Set nodes show it. |
 | Loading | Asset and Class variables: **Soft (Load On Demand)** loads on first use or through the load nodes; **Hard (Load With Owner)** loads with the object. |
-| Default | The starting value. Arrays use **Add Item** and maps use **Add Entry**. Object and Actor variables start empty. |
+| Default | The starting value. Arrays use **Add Item** and maps use **Add Entry**. Object variables start empty. |
 
 Changing the type or container resets the default.
 
 ## Get and set values
 
-- Drag a variable from the **Class** window onto the graph, then choose **Get** or **Set**. Single Object and Actor variables also offer **Validated Get**. To drop several at once, select them first: your choice applies to each one that can take it ([Select, copy and paste members](classes.md#select-copy-and-paste-members)).
+- Drag a variable from the **Class** window onto the graph, then choose **Get** or **Set**. Single Object variables also offer **Validated Get**. To drop several at once, select them first: your choice applies to each one that can take it ([Select, copy and paste members](classes.md#select-copy-and-paste-members)).
 - Or open the variable's context menu and choose **Get** or **Set**.
 - **Add Node** lists a Get and Set entry for each variable of this class and its parents.
 

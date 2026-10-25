@@ -1146,7 +1146,7 @@ describe("subclassClassEntries", () => {
   });
 
   it("hides editor graph classes from a runtime class picker", () => {
-    const entries = subclassClassEntries("BObject", [
+    const entries = subclassClassEntries("Object", [
       { header: { type: "Class", name: "Hero", parentClass: "Actor" } },
       { header: { type: "Class", name: "LevelTools", parentClass: "EditorUtilityObject" } },
       {
@@ -1170,7 +1170,7 @@ describe("subclassClassEntries", () => {
 
   it("includes editor graph classes when the host is an editor graph", () => {
     const entries = subclassClassEntries(
-      "BObject",
+      "Object",
       [
         {
           header: {
@@ -1203,7 +1203,7 @@ describe("subclassClassEntries", () => {
         header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" },
       },
     ];
-    const ids = subclassClassEntries("BObject", assets).map((entry) => entry.id);
+    const ids = subclassClassEntries("Object", assets).map((entry) => entry.id);
     expect(ids).toEqual(expect.arrayContaining(["GameSubsystem", "SceneSubsystem", "Inventory"]));
     expect(ids).not.toContain("Subsystem");
     // The fallback pin type of an unset Get Subsystem node constrains to Subsystem.
@@ -1213,8 +1213,8 @@ describe("subclassClassEntries", () => {
       "Inventory",
     ]);
     expect(
-      subclassClassEntries("BObject", assets).find((entry) => entry.id === "Inventory")?.ancestry,
-    ).toEqual(["Inventory", "GameSubsystem", "Subsystem", "BObject"]);
+      subclassClassEntries("Object", assets).find((entry) => entry.id === "Inventory")?.ancestry,
+    ).toEqual(["Inventory", "GameSubsystem", "Subsystem", "Object"]);
     expect(gameInstanceClassEntries(assets).map((entry) => entry.id)).toEqual(["GameInstance"]);
   });
 
@@ -1225,7 +1225,7 @@ describe("subclassClassEntries", () => {
         header: { type: "Class", name: "main.class", parentClass: "Actor" },
       },
     ];
-    const entries = subclassClassEntries("BObject", assets);
+    const entries = subclassClassEntries("Object", assets);
     const main = entries.find((entry) => entry.id === "main");
     expect(main).toMatchObject({ id: "main", name: "main", group: "Project" });
     expect(entries.map((entry) => entry.id)).not.toContain("main.class");

@@ -187,7 +187,7 @@ describe("interface nodes", () => {
     expect(target).toMatchObject({
       name: "Target",
       direction: "in",
-      type: { kind: "objectRef", classId: "BObject" },
+      type: { kind: "objectRef", classId: "Object" },
     });
     expect(call.pins.some((pin) => pin.id === "amount")).toBe(true);
     expect(call.pins.some((pin) => pin.id === "remaining")).toBe(true);

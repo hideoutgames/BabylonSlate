@@ -2,7 +2,7 @@ import {
   isOverlayLayoutClass, parseOverlayLayoutProperties, supportsOverlayVisualStyle,
   type TweenValueType,
 } from "@haptic/core";
-import { Actor, ActorComponent, BObject, SceneLayer, engineScriptApiFor } from "@haptic/object-model";
+import { Actor, ActorComponent, EngineObject, SceneLayer, engineScriptApiFor } from "@haptic/object-model";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenReference } from "./tween-runtime";
 import { applyTweenTransform, tweenWorldTransformDepth, type TweenTransformChannel } from "./tween-transforms";
@@ -20,7 +20,7 @@ const sceneLayerCameraTypes: Record<string, TweenValueType> = {
 };
 
 /** Preserve native array storage while user variables retain their authored value shape. */
-export function tweenStorageValue(target: BObject, key: string, value: unknown): unknown {
+export function tweenStorageValue(target: EngineObject, key: string, value: unknown): unknown {
   if (key === "opacity" && supportsOverlayVisualStyle(target.classId) && typeof value === "number") {
     return Math.min(1, Math.max(0, value));
   }
@@ -38,7 +38,7 @@ export function tweenStorageValue(target: BObject, key: string, value: unknown):
   return value;
 }
 
-export function isReadOnlyTweenProperty(target: BObject, key: string): boolean {
+export function isReadOnlyTweenProperty(target: EngineObject, key: string): boolean {
   return engineScriptApiFor(target.classId)?.variables?.some((entry) => entry.propertyKey === key && entry.getOnly) === true;
 }
 

@@ -67,7 +67,7 @@ export class ClassRegistry {
 
   private registerEngineDefaults(): void {
     this.register({
-      id: "BObject",
+      id: "Object",
       parentClassId: null,
       kind: "object",
       variables: [],
@@ -75,14 +75,14 @@ export class ClassRegistry {
     });
     this.register({
       id: "Actor",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "actor",
       variables: [],
       implementedInterfaces: [],
     });
     this.register({
       id: "MaterialObject",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "object",
       variables: [],
       implementedInterfaces: [],
@@ -96,14 +96,14 @@ export class ClassRegistry {
     });
     this.register({
       id: "Scene",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "object",
       variables: [],
       implementedInterfaces: [],
     });
     this.register({
       id: "SceneLayer",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "object",
       variables: [],
       implementedInterfaces: [],
@@ -127,7 +127,7 @@ export class ClassRegistry {
     });
     this.register({
       id: "ActorComponent",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "component",
       variables: [],
       implementedInterfaces: [],
@@ -141,14 +141,14 @@ export class ClassRegistry {
     });
     this.register({
       id: "GameInstance",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "gameInstance",
       variables: [],
       implementedInterfaces: [],
     });
     // Subsystems stay kind "object" (never spawnable); lineage is gated by isA.
     for (const [id, parentClassId] of [
-      [SUBSYSTEM_CLASS_ID, "BObject"],
+      [SUBSYSTEM_CLASS_ID, "Object"],
       [GAME_SUBSYSTEM_CLASS_ID, SUBSYSTEM_CLASS_ID],
       [SCENE_SUBSYSTEM_CLASS_ID, SUBSYSTEM_CLASS_ID],
     ] as const) {
@@ -162,21 +162,21 @@ export class ClassRegistry {
     }
     this.register({
       id: "FunctionLibrary",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "other",
       variables: [],
       implementedInterfaces: [],
     });
     this.register({
-      id: "BDebugCommand",
-      parentClassId: "BObject",
+      id: "DebugCommand",
+      parentClassId: "Object",
       kind: "other",
       variables: [],
       implementedInterfaces: [],
     });
     this.register({
       id: "EditorUtilityObject",
-      parentClassId: "BObject",
+      parentClassId: "Object",
       kind: "other",
       variables: [],
       implementedInterfaces: [],
@@ -191,7 +191,7 @@ export class ClassRegistry {
     for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite"] as const) {
       this.register({
         id,
-        parentClassId: "BObject",
+        parentClassId: "Object",
         kind: "other",
         variables: [],
         implementedInterfaces: [],

@@ -17,8 +17,7 @@ Every data pin and variable has a type. A wire connects two pins only when their
 | Quaternion | A rotation as a quaternion. |
 | Color | A red, green, blue and alpha colour. |
 | Transform | A location, rotation and scale. |
-| Object | A live object of a chosen class, or nothing. |
-| Actor | A live actor of a chosen class, or nothing. |
+| Object | A live object of a chosen class, or nothing. Choose **Actor** or one of its subclasses as the class to hold an actor. Pins show the class name, such as **Actor** or **Door**. |
 | Class | A class itself rather than an object, such as the class to pass to [Spawn Actor](class/spawn-actor.md). |
 | Asset | An asset of one type, such as an Audio or Material asset. |
 | Structure / Data Definition | A record of named fields. See [Structures and Enums](structures-and-enums.md) and [Data](data.md). |
@@ -29,7 +28,7 @@ A variable can also hold an **Array** or a **Map** of a type, and many nodes hav
 ## Conversions
 
 - An Int connects to a Float pin directly. Going the other way needs [Float To Int](class/float-to-int.md).
-- An object or actor connects to a pin for its own class or any parent class. To go the other way, use [Cast To](class/cast-to.md).
+- An object connects to a pin for its own class or any parent class, so every actor fits an **Actor** pin and every object fits an **Object** pin. To go the other way, use [Cast To](class/cast-to.md).
 - Class pins accept a class or any of its subclasses, but not an object.
 - Asset pins need the same asset type. A Material Instance also fits a Material pin, and a Render Target Texture fits a Texture pin.
 - Structure and Enum pins need exactly the same Structure or Enum.
@@ -56,7 +55,7 @@ An unconnected input can hold a value, edited on the node or under **Defaults** 
 
 - Bool, Int, Float, String, vectors, Rotator, Quaternion, Color, Tag, TagContainer, Enum, Class and Asset inputs have inline editors. Color opens a colour picker; confirm it with **Done**.
 - An input with an inline editor always has a value: the one you set, else the pin's own default, else zero, false or empty. **Compiler Results** never reports it as not connected. The exceptions are Class and Asset inputs, which warn while nothing is selected, and the outputs of an [Interface Implementation](interfaces.md), which need a wire or a value.
-- Object and Actor inputs must be wired; **Compiler Results** reports them as errors until they are. The exception is a pin whose label ends in **(Self)**, such as **Target (Self)** on [Destroy Actor](class/destroy-actor.md) or **Actor (Self)** on [Get Component](class/get-component.md). While nothing is connected it uses the object running the graph; once you connect a reference the label drops **(Self)**. Calls to a function, custom event or interface function of this graph's own class have such a **Target (Self)** pin, so you can wire in another object of the class instead.
+- Object inputs must be wired; **Compiler Results** reports them as errors until they are. The exception is a pin whose label ends in **(Self)**, such as **Target (Self)** on [Destroy Actor](class/destroy-actor.md) or **Actor (Self)** on [Get Component](class/get-component.md). While nothing is connected it uses the object running the graph; once you connect a reference the label drops **(Self)**. Calls to a function, custom event or interface function of this graph's own class have such a **Target (Self)** pin, so you can wire in another object of the class instead.
 - Build arrays with [Make Array](class/make-array.md), maps with [Make Map](class/make-map.md), structures with [Make Structure](class/make-structure.md) and transforms with [Make Transform](class/make-transform.md).
 
 Text values are saved when you press <kbd>Enter</kbd> or leave the field; <kbd>Esc</kbd> cancels. To stop accidental edits on touch screens, turn on **Engine Settings > Graph > Read-Only Pin Defaults**. The **Inspector** stays editable.

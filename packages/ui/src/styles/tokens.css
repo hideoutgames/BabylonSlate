@@ -178,7 +178,6 @@
     --pin-transform: oklch(0.65 0.18 50);
     --pin-color: oklch(0.72 0.10 20);
     --pin-object: oklch(0.52 0.18 250);
-    --pin-actor: oklch(0.50 0.16 235);
     --pin-class: oklch(0.54 0.16 275);
     --pin-struct: oklch(0.54 0.16 275);
     --pin-enum: oklch(0.54 0.16 170);
@@ -299,7 +298,6 @@
     --pin-transform: oklch(0.75 0.16 50);
     --pin-color: oklch(0.80 0.10 20);
     --pin-object: oklch(0.68 0.16 250);
-    --pin-actor: oklch(0.66 0.14 235);
     --pin-class: oklch(0.68 0.16 275);
     --pin-struct: oklch(0.68 0.16 275);
     --pin-enum: oklch(0.68 0.16 170);

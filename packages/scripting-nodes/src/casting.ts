@@ -6,14 +6,13 @@ import {
   INT,
   BOOL,
   objectRef,
-  actorRef,
   classRef,
   type PinType,
   createWildcardNodes,
 } from "@haptic/scripting";
 
 /**
- * The Class pin's literal default (`default:class`), or BObject. Editor
+ * The Class pin's literal default (`default:class`), or Object. Editor
  * hydrate passes a wired Class pin's constraint through the same key when it
  * builds pins, so Result typing and the default class never disagree.
  */
@@ -21,24 +20,21 @@ export function castDefaultClassId(
   properties: Record<string, unknown>,
 ): string {
   const keyed = properties["default:class"];
-  return typeof keyed === "string" && keyed.trim() ? keyed.trim() : "BObject";
+  return typeof keyed === "string" && keyed.trim() ? keyed.trim() : "Object";
 }
 
 export function castResultPinType(
   properties: Record<string, unknown>,
 ): PinType {
-  const classId = castDefaultClassId(properties);
-  if (properties.resultKind === "actorRef") return actorRef(classId);
-  if (properties.resultKind === "objectRef") return objectRef(classId);
-  return classId === "Actor" ? actorRef(classId) : objectRef(classId);
+  return objectRef(castDefaultClassId(properties));
 }
 
 function castPins(properties: Record<string, unknown>) {
   return [
     pin("execIn", "exec", "in", EXEC),
     pin("execOut", "then", "out", EXEC),
-    pin("object", "object", "in", objectRef("BObject")),
-    pin("class", "class", "in", classRef("BObject")),
+    pin("object", "object", "in", objectRef("Object")),
+    pin("class", "class", "in", classRef("Object")),
     pin("success", "success", "out", BOOL),
     pin("result", "result", "out", castResultPinType(properties)),
   ];
@@ -83,7 +79,7 @@ export const castingNodes: NodeDefinition[] = [
   },
   {
     id: "casting.cast",
-    title: "Cast to BObject",
+    title: "Cast to Object",
     category: "casting",
     pins: castPins,
     codegen: castCodegen,

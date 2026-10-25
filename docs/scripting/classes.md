@@ -15,7 +15,7 @@ The **Parent Class** list shows engine classes by their class names.
 
 | Parent Class | Use it for |
 | --- | --- |
-| **BObject** | The root of every class. A class parented directly to it has no transform and is not placed in scenes. |
+| **Object** | The root of every class. A class parented directly to it has no transform and is not placed in scenes. |
 | **Actor** | Objects you place in a scene or create with [Spawn Actor](class/spawn-actor.md). Actors have a transform and components. |
 | **RenderTargetCapture** | An actor that starts with a capture component. See [Render targets](../graphics/render-targets.md). |
 | **SceneLayerActor** | Actors that live in a [Scene Layer](../scenes/scene-layers.md). |
@@ -25,7 +25,7 @@ The **Parent Class** list shows engine classes by their class names.
 | **GameInstance** | The one object that lasts for the whole play session. See [Game Instance and Subsystems](game-instance.md). |
 | **GameSubsystem**, **SceneSubsystem** | Objects the engine creates once per session or once per scene. See [Game Instance and Subsystems](game-instance.md). |
 | **FunctionLibrary** | Functions that any graph can call. See [Functions](functions.md#function-libraries). |
-| **BDebugCommand** | A console command. See [Console commands](#console-commands). |
+| **DebugCommand** | A console command. See [Console commands](#console-commands). |
 | **EditorUtilityObject**, **EditorFunctionLibrary** | Tools that run only in the editor. See [Editor Scripting](editor-scripting.md). |
 | **BTTask**, **BTDecorator**, **BTService**, **BTComposite** | Behaviour Tree nodes you script yourself. See [Behaviour Trees](../ai/behaviour-trees.md). |
 
@@ -87,9 +87,9 @@ Use [Cast To](class/cast-to.md) to treat an object as one of its subclasses.
 
 ## Console commands
 
-A **BDebugCommand** class adds a command to the Play console.
+A **DebugCommand** class adds a command to the Play console.
 
-1. Create a Class with **BDebugCommand** as its parent. Its graph starts with [Event On Command Run](class/event-on-command-run.md).
+1. Create a Class with **DebugCommand** as its parent. Its graph starts with [Event On Command Run](class/event-on-command-run.md).
 2. Select that event and set **Command Name**, **Description**, **Category** and **Parameters** in the **Inspector**. Each parameter becomes an output pin.
 3. Finish the logic with [Report Command](class/report-command.md) to send a success flag and a message back to the console.
 

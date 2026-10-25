@@ -92,7 +92,7 @@ describe("collectOverridableEventRows", () => {
   it("does not list leftover EditorUtilityInterface editor events as overridable", () => {
     const rows = collectOverridableEventRows({
       assetType: "EditorUtilityInterface",
-      parentClass: "BObject",
+      parentClass: "Object",
       graph: { nodes: [], edges: [] },
     });
     expect(rows.some((row) => row.eventType === "flow.event.editorBeginPlay")).toBe(

@@ -466,8 +466,8 @@ describe("BehaviourTreeEditor", () => {
         ...defaultBlackboard.keys,
         { name: "position", type: { kind: "vec3" } },
         { name: "position2d", type: { kind: "vec2" } },
-        { name: "target", type: { kind: "objectRef", classId: "BObject" } },
-        { name: "actor", type: { kind: "actorRef", classId: "Actor" } },
+        { name: "target", type: { kind: "objectRef", classId: "Object" } },
+        { name: "actor", type: { kind: "objectRef", classId: "Actor" } },
       ],
     }));
     fireEvent.click(screen.getByTestId("graph-add-node"));

@@ -26,7 +26,7 @@ export const functionCallNodes: NodeDefinition[] = [
       const classId =
         typeof properties.classId === "string" && properties.classId.trim()
           ? properties.classId.trim()
-          : "BObject";
+          : "Object";
       // A Function Library call names its class, so it has no Target.
       const targetPin =
         properties.static === true
@@ -77,7 +77,7 @@ export const functionCallNodes: NodeDefinition[] = [
         typeof ctx.node.properties.classId === "string" &&
         ctx.node.properties.classId.trim()
           ? ctx.node.properties.classId.trim()
-          : "BObject";
+          : "Object";
       const targetExpr =
         ctx.node.properties.static === true
           ? JSON.stringify(classId)

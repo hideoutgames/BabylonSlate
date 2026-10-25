@@ -547,7 +547,6 @@ async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: stri
       gNode("self", "actor.getSelf", 240, 180),
       gNode("as-capture", "casting.cast", 480, 0, {
         "default:class": "RenderTargetCapture",
-        resultKind: "actorRef",
       }),
       gNode("capture", "render-target.capture", 760, 0),
     ],
@@ -588,7 +587,7 @@ async function saveScalabilityCommands(ctx: FeatureTestContext): Promise<void> {
       ],
       edges: gChain("run", "apply", "report"),
     });
-    await ctx.saveClass({ folder: RENDER_FOLDER, name: entry.name, parentClass: "BDebugCommand", graph });
+    await ctx.saveClass({ folder: RENDER_FOLDER, name: entry.name, parentClass: "DebugCommand", graph });
   }
 }
 

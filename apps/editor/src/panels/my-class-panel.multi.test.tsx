@@ -95,7 +95,7 @@ function heroGraph(): SerializedGraph {
   };
   graph = addClassMember(graph, "variable", "Mana", () => "var-mana", { typeId: "int", defaultValue: 5 });
   graph = addClassMember(graph, "variable", "Pawn", () => "var-pawn", {
-    typeId: "actor",
+    typeId: "object",
     typeClassId: "Actor",
   });
   graph = ensureEventNodeOnGraph(graph, "flow.event.beginPlay", { idFactory: () => "evt-begin" });

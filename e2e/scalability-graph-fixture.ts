@@ -54,7 +54,7 @@ export function scalabilityGraphScripts(): ScriptBundleEntry[] {
   const registry = createDefaultNodeRegistry();
   return scalabilityGraphDefinitions().map(({ name, graph }) => {
     const compiled = compileGraph(graph, { registry, assetGuid: name });
-    return { assetGuid: name, classId: name, parentClassId: "BDebugCommand", source: compiled.source, anchors: compiled.anchors,
+    return { assetGuid: name, classId: name, parentClassId: "DebugCommand", source: compiled.source, anchors: compiled.anchors,
       entryPoints: compiled.entryPoints, command: { name, category: "Qualification", description: "Exercise a compiled scalability graph", parameters: [] } };
   });
 }

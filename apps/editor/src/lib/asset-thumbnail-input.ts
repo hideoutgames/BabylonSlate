@@ -49,7 +49,7 @@ function classAsset(asset: IndexedAsset): boolean {
 }
 
 function parentClass(asset: IndexedAsset): string {
-  return asset.header.parentClass ?? "BObject";
+  return asset.header.parentClass ?? "Object";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

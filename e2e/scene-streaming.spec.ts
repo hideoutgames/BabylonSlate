@@ -26,7 +26,7 @@ function commandGraph(commandName: string, actorClass: string, method: string): 
     nodes: [
       { id: "run", type: "flow.event.commandRun", data: { commandName }, position: { x: 0, y: 0 } },
       { id: "target", type: "actor.getOfClass", data: { "default:classId": actorClass }, position: { x: 0, y: 200 } },
-      { id: "cast", type: "casting.cast", data: { "default:class": "SceneStreamingActor", resultKind: "actorRef" }, position: { x: 250, y: 0 } },
+      { id: "cast", type: "casting.cast", data: { "default:class": "SceneStreamingActor" }, position: { x: 250, y: 0 } },
       { id: "stream", type: `sceneStreaming.${method}`, data: {}, position: { x: 500, y: 0 } },
     ],
     edges: [
@@ -49,16 +49,16 @@ async function streamingProject() {
     // Authored references keep the test controls reachable when Preview saves the Scene.
     members: commands.map((command) => ({
       id: command, kind: "variable", name: command,
-      typeId: "class", typeClassId: "BDebugCommand", defaultValue: command,
+      typeId: "class", typeClassId: "DebugCommand", defaultValue: command,
     })),
   });
   const classes: Array<[string, string, SerializedGraph]> = [
     ["LeftStreaming", "SceneStreamingActor", streamingActorGraph(["LoadLeft", "UnloadLeft"])],
     ["RightStreaming", "SceneStreamingActor", streamingActorGraph(["LoadRight", "UnloadRight"])],
-    ["LoadLeft", "BDebugCommand", commandGraph("stream_left_load", "LeftStreaming", "loadSceneBlocking")],
-    ["LoadRight", "BDebugCommand", commandGraph("stream_right_load", "RightStreaming", "loadSceneAsync")],
-    ["UnloadLeft", "BDebugCommand", commandGraph("stream_left_unload", "LeftStreaming", "unloadSceneAsync")],
-    ["UnloadRight", "BDebugCommand", commandGraph("stream_right_unload", "RightStreaming", "unloadSceneBlocking")],
+    ["LoadLeft", "DebugCommand", commandGraph("stream_left_load", "LeftStreaming", "loadSceneBlocking")],
+    ["LoadRight", "DebugCommand", commandGraph("stream_right_load", "RightStreaming", "loadSceneAsync")],
+    ["UnloadLeft", "DebugCommand", commandGraph("stream_left_unload", "LeftStreaming", "unloadSceneAsync")],
+    ["UnloadRight", "DebugCommand", commandGraph("stream_right_unload", "RightStreaming", "unloadSceneBlocking")],
   ];
   for (const [index, [name, parentClass, graph]] of classes.entries()) {
     const guid = `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;

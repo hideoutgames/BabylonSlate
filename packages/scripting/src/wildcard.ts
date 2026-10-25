@@ -37,21 +37,17 @@ function boxedTest(value: string): string {
  * Converters therefore accept an unboxed `vec4` shape as Quat or Color too.
  */
 function runtimeTagExpr(value: string): string {
-  return `((v) => { if (v === null || v === undefined) return "null"; if (typeof v === "boolean") return "bool"; if (typeof v === "number") return Number.isInteger(v) ? "int" : "float"; if (typeof v === "string") return "string"; if (typeof v !== "object") return "unknown"; if (${boxedTest("v")}) return v.tag; if (typeof v.classId === "string" && v.classId) return (ctx.isA(v, "Actor") ? "actorRef:" : "objectRef:") + v.classId; const n = (k) => typeof v[k] === "number"; if (n("pitch") && n("yaw") && n("roll")) return "rotator"; if (v.position && v.rotation && v.scale) return "transform"; if (n("x") && n("y")) return n("z") ? (n("w") ? "vec4" : "vec3") : "vec2"; return "unknown"; })(${value})`;
+  return `((v) => { if (v === null || v === undefined) return "null"; if (typeof v === "boolean") return "bool"; if (typeof v === "number") return Number.isInteger(v) ? "int" : "float"; if (typeof v === "string") return "string"; if (typeof v !== "object") return "unknown"; if (${boxedTest("v")}) return v.tag; if (typeof v.classId === "string" && v.classId) return "objectRef:" + v.classId; const n = (k) => typeof v[k] === "number"; if (n("pitch") && n("yaw") && n("roll")) return "rotator"; if (v.position && v.rotation && v.scale) return "transform"; if (n("x") && n("y")) return n("z") ? (n("w") ? "vec4" : "vec3") : "vec2"; return "unknown"; })(${value})`;
 }
 
 /**
  * JS test for whether tag `tag` converts to `target`: the same tag, Int into
- * Float (the type system's widening), or any class into the Object / Actor
- * roots.
+ * Float (the type system's widening), or any class into the Object root.
  */
 function tagConvertsExpr(target: PinType, tag: string): string {
   if (target.kind === "float") return `(${tag} === "float" || ${tag} === "int")`;
-  if (target.kind === "objectRef" && target.classId === "BObject") {
-    return `(${tag}.startsWith("objectRef:") || ${tag}.startsWith("actorRef:"))`;
-  }
-  if (target.kind === "actorRef" && target.classId === "Actor") {
-    return `${tag}.startsWith("actorRef:")`;
+  if (target.kind === "objectRef" && target.classId === "Object") {
+    return `${tag}.startsWith("objectRef:")`;
   }
   return `(${tag} === ${JSON.stringify(pinTypeTag(target))})`;
 }

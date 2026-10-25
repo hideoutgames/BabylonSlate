@@ -9,25 +9,25 @@ import {
 describe("ClassRegistry", () => {
   it("registers engine bases and components by default", () => {
     const registry = new ClassRegistry();
-    expect(registry.has("BObject")).toBe(true);
+    expect(registry.has("Object")).toBe(true);
     expect(registry.has("Actor")).toBe(true);
-    expect(registry.has("BDebugCommand")).toBe(true);
-    expect(registry.isA("BDebugCommand", "BObject")).toBe(true);
+    expect(registry.has("DebugCommand")).toBe(true);
+    expect(registry.isA("DebugCommand", "Object")).toBe(true);
     expect(registry.has("EditorUtilityObject")).toBe(true);
-    expect(registry.isA("EditorUtilityObject", "BObject")).toBe(true);
+    expect(registry.isA("EditorUtilityObject", "Object")).toBe(true);
     expect(registry.has("EditorFunctionLibrary")).toBe(true);
     expect(registry.isA("EditorFunctionLibrary", "FunctionLibrary")).toBe(true);
-    expect(registry.isA("EditorFunctionLibrary", "BObject")).toBe(true);
-    expect(registry.isA("Actor", "BObject")).toBe(true);
+    expect(registry.isA("EditorFunctionLibrary", "Object")).toBe(true);
+    expect(registry.isA("Actor", "Object")).toBe(true);
     expect(registry.isA("RenderTargetCapture", "Actor")).toBe(true);
     expect(registry.isA("MeshComponent", "ActorComponent")).toBe(true);
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
       expect(registry.has(id)).toBe(true);
     }
-    expect(registry.isA("BTTask", "BObject")).toBe(true);
-    expect(registry.isA("BTDecorator", "BObject")).toBe(true);
-    expect(registry.isA("BTService", "BObject")).toBe(true);
-    expect(registry.isA("BTComposite", "BObject")).toBe(true);
+    expect(registry.isA("BTTask", "Object")).toBe(true);
+    expect(registry.isA("BTDecorator", "Object")).toBe(true);
+    expect(registry.isA("BTService", "Object")).toBe(true);
+    expect(registry.isA("BTComposite", "Object")).toBe(true);
     expect(registry.isA("BTTask_Wait", "BTTask")).toBe(true);
     expect(registry.isA("BTTask_MoveTo", "BTTask")).toBe(true);
     expect(registry.isA("BTDecorator_BlackboardIsSet", "BTDecorator")).toBe(true);
@@ -35,9 +35,9 @@ describe("ClassRegistry", () => {
     expect(isLockedEngineClassId("BTTask_Wait")).toBe(true);
     expect(registry.has("SceneLayer")).toBe(true);
     expect(registry.has("Scene")).toBe(true);
-    expect(registry.isA("Scene", "BObject")).toBe(true);
+    expect(registry.isA("Scene", "Object")).toBe(true);
     expect(registry.has("SceneLayerActor")).toBe(true);
-    expect(registry.isA("SceneLayer", "BObject")).toBe(true);
+    expect(registry.isA("SceneLayer", "Object")).toBe(true);
     expect(registry.isA("SceneLayerActor", "Actor")).toBe(true);
     expect(registry.isA("2DAnchorComponent", "ActorComponent")).toBe(true);
     expect(registry.isA("2DButtonComponent", "ActorComponent")).toBe(true);
@@ -65,12 +65,12 @@ describe("ClassRegistry", () => {
       "Inventory",
       "GameSubsystem",
       "Subsystem",
-      "BObject",
+      "Object",
     ]);
     expect(registry.ancestry("SceneSubsystem")).toEqual([
       "SceneSubsystem",
       "Subsystem",
-      "BObject",
+      "Object",
     ]);
     expect(registry.isA("GameSubsystem", "GameInstance")).toBe(false);
     for (const id of ["Subsystem", "GameSubsystem", "SceneSubsystem"]) {
@@ -94,24 +94,24 @@ describe("ClassRegistry", () => {
       }).ok,
     ).toBe(true);
     expect(registry.isA("Enemy", "Actor")).toBe(true);
-    expect(registry.ancestry("Enemy")).toEqual(["Enemy", "Actor", "BObject"]);
+    expect(registry.ancestry("Enemy")).toEqual(["Enemy", "Actor", "Object"]);
     expect(registry.inheritedVariables("Enemy").map((v) => v.name)).toContain(
       "health",
     );
   });
 
-  it("discovers user commands through the BDebugCommand parent chain", () => {
+  it("discovers user commands through the DebugCommand parent chain", () => {
     const registry = new ClassRegistry();
     expect(
       registry.register({
         id: "HealCommand",
-        parentClassId: "BDebugCommand",
+        parentClassId: "DebugCommand",
         kind: "other",
         variables: [],
         implementedInterfaces: [],
       }).ok,
     ).toBe(true);
-    expect(registry.isA("HealCommand", "BDebugCommand")).toBe(true);
+    expect(registry.isA("HealCommand", "DebugCommand")).toBe(true);
     expect(registry.isA("HealCommand", "Actor")).toBe(false);
   });
 
@@ -154,7 +154,7 @@ describe("ClassRegistry", () => {
 
   it("rejects reparenting engine bases", () => {
     const registry = new ClassRegistry();
-    expect(registry.reparent("Actor", "BObject").ok).toBe(false);
+    expect(registry.reparent("Actor", "Object").ok).toBe(false);
   });
 
   it("rejects reparenting engine components and BT builtins", () => {

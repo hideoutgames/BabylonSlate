@@ -23,7 +23,7 @@ function renderDialog(
       type={"Scene" as CreatableAssetType}
       name=""
       onNameChange={onNameChange}
-      parentClass="BObject"
+      parentClass="Object"
       onParentClassChange={onParentClassChange}
       onCreate={onCreate}
       {...overrides}
@@ -132,7 +132,7 @@ describe("ContentBrowserNewAssetDialog", () => {
         type="Class"
         name=""
         onNameChange={onNameChange}
-        parentClass="BObject"
+        parentClass="Object"
         onParentClassChange={onParentClassChange}
         onCreate={onCreate}
       />,
@@ -141,7 +141,7 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(screen.getByTestId("new-asset-parent-search")).toBeTruthy();
     expect(
       screen
-        .getByTestId("tree-row-BObject")
+        .getByTestId("tree-row-Object")
         .getAttribute("aria-selected"),
     ).toBe("true");
     fireEvent.keyDown(screen.getByRole("tree", { name: "Parent Class" }), { key: "ArrowDown" });
@@ -216,7 +216,7 @@ describe("ContentBrowserNewAssetDialog", () => {
         type="Scene"
         name="main"
         onNameChange={onNameChange}
-        parentClass="BObject"
+        parentClass="Object"
         onParentClassChange={onParentClassChange}
         takenNameError="An asset with this name already exists in the folder."
         onCreate={onCreate}

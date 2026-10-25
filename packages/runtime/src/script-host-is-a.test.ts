@@ -87,7 +87,6 @@ describe("ScriptContext.isA", () => {
         node(nodeRegistry, "self", "actor.getSelf"),
         node(nodeRegistry, "cast", "casting.cast", {
           "default:class": "Actor",
-          resultKind: "actorRef",
         }),
         node(nodeRegistry, "log", "debug.log"),
       ],

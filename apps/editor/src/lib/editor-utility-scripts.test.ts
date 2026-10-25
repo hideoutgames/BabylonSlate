@@ -15,7 +15,7 @@ const emptyGraph = { nodes: [], edges: [] };
 describe("selectEditorUtilityGraphs", () => {
   const parentOf = (id: string) =>
     id === "LevelTools" || id === "EditorUtilityObject" || id === "Actor"
-      ? "BObject"
+      ? "Object"
       : id === "Tools"
         ? "EditorUtilityObject"
         : null;

@@ -42,7 +42,7 @@ import type {
 import type { RegisteredCommand, TraceBtState, TraceFrame, TracePayload, UserCommandDef } from "@haptic/debugger";
 import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@haptic/input";
 import type { NavObstacleKind, NavPoint } from "@haptic/navigation";
-import type { Actor, BObject, DebugInspectSnapshot, SceneLayer, World } from "@haptic/object-model";
+import type { Actor, EngineObject, DebugInspectSnapshot, SceneLayer, World } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
 import type { RuntimeDiagnostic, SessionDiagnosticAggregator } from "./diagnostics";
 import type { LogRingBuffer, LogSeverity } from "./log-ring";
@@ -176,7 +176,7 @@ export interface RuntimeDriver {
   setAssetLoadStates(states: readonly { guid: string; state: RuntimeAssetLoadState }[]): void;
   configureSaveGame(options: RuntimeSaveGameOptions): SaveGameService;
   getSaveGameService(): SaveGameService | undefined;
-  registerSaveActor(actor: BObject, persistentId?: string): void;
+  registerSaveActor(actor: EngineObject, persistentId?: string): void;
   readonly inputBindings: InputBindingControls;
   start(): void;
   stop(): void;
@@ -298,7 +298,7 @@ export interface RuntimeDriver {
   invokeScriptEvent(
     classId: string,
     event: string,
-    self?: BObject | null,
+    self?: EngineObject | null,
     args?: Record<string, unknown>,
   ): void;
   registerUserCommand(def: UserCommandDef): void;

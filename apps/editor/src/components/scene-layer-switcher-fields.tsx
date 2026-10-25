@@ -55,7 +55,7 @@ export function SceneLayerSwitcherFields({ properties: authoredProperties, class
       renderItem={({ item, index, onChange: update }) => {
         const variables = new Map<string, GraphClassMember>();
         for (const id of walkAncestry(item.classId, parentOf).reverse()) for (const member of graphs[id]?.members ?? []) if (member.kind === "variable" && !member.functionId) variables.set(member.propertyKey ?? member.name, member);
-        return <SwitcherDefaults index={index} defaults={item.defaults} members={[...variables.values()]} schemas={schemas} enumMembers={enumMembers} classes={subclassClassEntries("BObject", assets)} assets={assets.map(asset => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }))} onChange={defaults => update({ ...item, defaults })} />;
+        return <SwitcherDefaults index={index} defaults={item.defaults} members={[...variables.values()]} schemas={schemas} enumMembers={enumMembers} classes={subclassClassEntries("Object", assets)} assets={assets.map(asset => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }))} onChange={defaults => update({ ...item, defaults })} />;
       }} />
     {error ? <FieldError>{error}</FieldError> : null}
     {entries.length === 0 ? <FieldDescription>Add the Scene Layer Actor classes available to this switcher.</FieldDescription> : null}

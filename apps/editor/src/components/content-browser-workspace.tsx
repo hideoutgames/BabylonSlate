@@ -416,7 +416,7 @@ function ContentBrowserWorkspaceBody({
   const [newAssetName, setNewAssetName] = useState("");
   // Starts as the open folder; the dialog's Location can move it elsewhere.
   const [newAssetFolder, setNewAssetFolder] = useState(ASSETS_ROOT);
-  const [newAssetParent, setNewAssetParent] = useState("BObject");
+  const [newAssetParent, setNewAssetParent] = useState("Object");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   const [newWaterStarter, setNewWaterStarter] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -3436,7 +3436,7 @@ function ContentBrowserWorkspaceBody({
             <AlertDialogTitle>Delete Referenced Assets?</AlertDialogTitle>
             <AlertDialogDescription>
               Updates references in {deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`}. This cannot be undone.
-              With None, placed actors keep their data on a base Class and child Classes fall back to BObject.
+              With None, placed actors keep their data on a base Class and child Classes fall back to Object.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="max-h-60 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm">

@@ -66,7 +66,7 @@ describe("collectPlayScriptDocuments", () => {
         },
       },
       (id) =>
-        id === "EditorUtilityObject" ? "BObject" : id === "Actor" ? "BObject" : null,
+        id === "EditorUtilityObject" ? "Object" : id === "Actor" ? "Object" : null,
     );
     expect(documents.map((entry) => entry.path)).toEqual([
       "assets/Hero.class.hasset",

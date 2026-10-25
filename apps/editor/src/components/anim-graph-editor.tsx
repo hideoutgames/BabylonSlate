@@ -627,7 +627,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     );
   }, [doc.transitions, openTransition, ruleMembers, typeCatalog.schemas, dataAssets]);
   const rulePaletteInput = {
-    parentClass: "BObject",
+    parentClass: "Object",
     animationGraphHost: "rule" as const,
     graph: { nodes: [], edges: [], members: ruleMembers },
     structures: typeCatalog.types.structures,

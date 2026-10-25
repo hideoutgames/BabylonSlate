@@ -36,7 +36,7 @@ import type { MaterialParameterValue, ScriptBundleEntry } from "@haptic/bridge";
 import {
   Actor,
   ActorComponent,
-  BObject,
+  EngineObject,
   MaterialObject,
   PostProcessMaterialObject,
   type MaterialInstanceObject,
@@ -109,7 +109,7 @@ const ASSET_LOADING_UNAVAILABLE = "Asset loading is unavailable in this host";
  */
 export interface ScriptHostServices {
   saveGame?: SaveGameService;
-  registerSaveActor?(actor: BObject, persistentId?: string): void;
+  registerSaveActor?(actor: EngineObject, persistentId?: string): void;
   getSaveActorId?(actor: Actor): string;
   resolveSaveActor?(id: string): Actor | undefined;
   /** Read-only session data, shared by runtime and editor utility graphs. */
@@ -119,7 +119,7 @@ export interface ScriptHostServices {
   /** Session seed shared with the world and trace metadata. */
   seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
-  canRunOwner?(owner: BObject): boolean;
+  canRunOwner?(owner: EngineObject): boolean;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
@@ -133,16 +133,16 @@ export interface ScriptHostServices {
   /** World actors in deterministic spawn order for class queries. */
   getActors?(): readonly Actor[];
   /** Live Scene instance for the active Play scene, if any. */
-  getSceneReference?(owner?: BObject | null): Scene | null;
+  getSceneReference?(owner?: EngineObject | null): Scene | null;
   /**
    * `Get <Subsystem>`: the live (never ended) GameSubsystem, or the current
    * main Scene's SceneSubsystem, whose class isA `classId`. Compiled graphs
    * call it at every use, so it must be cheap and side-effect free. Hosts
    * without subsystems (Editor Utility) omit it and the node reads null.
    */
-  getSubsystem?(classId: string): BObject | null;
+  getSubsystem?(classId: string): EngineObject | null;
   /** `Get Game Instance`: the session Game Instance, if the host has one. */
-  getGameInstance?(): BObject | null;
+  getGameInstance?(): EngineObject | null;
   /**
    * The packaged asset list the Asset Registry nodes query. Read each time a
    * graph touches `ctx.assetRegistry`, so a host may rebuild it when its
@@ -153,28 +153,28 @@ export interface ScriptHostServices {
   loadScene?(target: unknown, blocking: boolean): Promise<void>;
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
   /** A consumer's on-demand load of cold assets; `releaseAcquiredAssets` ends its ownership. */
-  acquireAssets?(assets: readonly string[], owner: BObject | null): Promise<RuntimeAssetPreloadResult>;
+  acquireAssets?(assets: readonly string[], owner: EngineObject | null): Promise<RuntimeAssetPreloadResult>;
   releaseAcquiredAssets?(preloadId: string): void;
-  prepareAssets?(assets: readonly string[], owner: BObject | null): Promise<void>;
+  prepareAssets?(assets: readonly string[], owner: EngineObject | null): Promise<void>;
   /** The host-published state of one asset. */
   getAssetLoadState?(assetGuid: string): RuntimeAssetLoadState;
   /**
    * Load handles scripts request, wait on, query and release. A host that
    * omits them fails every load with an "unavailable in this host" error.
    */
-  requestAssetLoad?(assets: readonly string[], owner: BObject | null, options?: RuntimeAssetPreloadOptions): string;
-  requestClassLoad?(classId: string, owner: BObject | null, options?: RuntimeAssetPreloadOptions): string;
+  requestAssetLoad?(assets: readonly string[], owner: EngineObject | null, options?: RuntimeAssetPreloadOptions): string;
+  requestClassLoad?(classId: string, owner: EngineObject | null, options?: RuntimeAssetPreloadOptions): string;
   /** A blocking wait holds the simulation (like Load Scene Blocking) until the handle settles. */
-  waitForAssetLoad?(handle: string, owner: BObject | null, blocking: boolean): Promise<ScriptAssetLoadResult>;
+  waitForAssetLoad?(handle: string, owner: EngineObject | null, blocking: boolean): Promise<ScriptAssetLoadResult>;
   releaseAssetLoad?(handle: string): void;
-  unloadAsset?(assetGuid: string, owner: BObject | null, options?: Pick<RuntimeAssetPreloadOptions, "sessionWide">): void;
+  unloadAsset?(assetGuid: string, owner: EngineObject | null, options?: Pick<RuntimeAssetPreloadOptions, "sessionWide">): void;
   getAssetLoadHandleState?(handle: string): AssetLoadHandleState;
   getAssetLoadHandleProgress?(handle: string): number;
   isSceneLoaded?(target: unknown): boolean;
   getSceneLoadProgress?(target: unknown): number;
   getSceneState?(target: unknown): SceneStreamingState;
-  resolveInstanceId?(owner: BObject | null, id: string): string;
-  waitForSimulation?(owner: BObject | null): Promise<void>;
+  resolveInstanceId?(owner: EngineObject | null, id: string): string;
+  waitForSimulation?(owner: EngineObject | null): Promise<void>;
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
@@ -186,8 +186,8 @@ export interface ScriptHostServices {
     transform?: unknown,
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
-  spawnActor?(classId: string, transform?: unknown, owner?: BObject | null): Actor | null;
-  spawnActorAsync?(classId: string, transform?: unknown, owner?: BObject | null): Promise<Actor | null>;
+  spawnActor?(classId: string, transform?: unknown, owner?: EngineObject | null): Actor | null;
+  spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
   /** Emit a bone attachment (or detach with a null target); false when the renderer cannot address either actor. */
   attachToBone?(actor: Actor, target: Actor | null, boneName: string): boolean;
   print(
@@ -203,7 +203,7 @@ export interface ScriptHostServices {
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync?(command: string): Promise<{ success: boolean; output: string }>;
-  delay(seconds: number, owner?: BObject | null): Promise<void>;
+  delay(seconds: number, owner?: EngineObject | null): Promise<void>;
   tween?(request: TweenRequest): Promise<boolean>;
   isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;
@@ -219,12 +219,12 @@ export interface ScriptHostServices {
    * actor, component or Scene Layer running the script, null outside one) so
    * the host can answer from that object's physics world.
    */
-  sampleWater?(position: Vec3, actorId: string | null, caller?: BObject | null): WaterSample & { actorId: string | null };
-  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }, caller?: BObject | null): HitResult;
+  sampleWater?(position: Vec3, actorId: string | null, caller?: EngineObject | null): WaterSample & { actorId: string | null };
+  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }, caller?: EngineObject | null): HitResult;
   projectCursorToScene?(
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
-    caller?: BObject | null,
+    caller?: EngineObject | null,
   ): HitResult & {
     worldOrigin: Vec3;
     worldDirection: Vec3;
@@ -233,18 +233,18 @@ export interface ScriptHostServices {
     finger: number,
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
-    caller?: BObject | null,
+    caller?: EngineObject | null,
   ): HitResult & {
     worldOrigin: Vec3;
     worldDirection: Vec3;
   };
-  sphereOverlap?(center: Vec3, radius: number, channel?: string, caller?: BObject | null): OverlapResult;
+  sphereOverlap?(center: Vec3, radius: number, channel?: string, caller?: EngineObject | null): OverlapResult;
   shapeSweep?(
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
     channel?: string,
-    caller?: BObject | null,
+    caller?: EngineObject | null,
   ): HitResult;
   addImpulse?(
     actor: Actor | null | undefined,
@@ -264,7 +264,7 @@ export interface ScriptHostServices {
     assetGuid: string,
     zOrder?: number,
   ): SceneLayer | null;
-  createSceneLayerAsync?(assetGuid: string, zOrder: number, owner: BObject | null): Promise<SceneLayer | null>;
+  createSceneLayerAsync?(assetGuid: string, zOrder: number, owner: EngineObject | null): Promise<SceneLayer | null>;
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
   switchSceneLayerActor?(target: unknown, index: unknown): Actor | null;
@@ -284,7 +284,7 @@ export interface ScriptHostServices {
   /** Change any of a layer camera's centre, roll and zoom; values that are not finite numbers keep the current ones. */
   setSceneLayerCamera?(layerGuid: string, changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown }): void;
   /** The live Scene Layer an actor (or a component's actor) belongs to; null for world actors. */
-  getOwningSceneLayer?(target: BObject | null): SceneLayer | null;
+  getOwningSceneLayer?(target: EngineObject | null): SceneLayer | null;
   playSound?(
     asset: string,
     volume?: number,
@@ -360,7 +360,7 @@ export interface ScriptContext {
   loadGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
   listSaves(options?: { profile?: string }): Promise<SaveGameResult<SaveGameInfo[]>>;
   deleteSave(options?: SaveGameOptions): Promise<SaveGameResult<void>>;
-  registerSaveActor(actor: BObject | null, persistentId?: string): void;
+  registerSaveActor(actor: EngineObject | null, persistentId?: string): void;
   registerSaveMigration(fromVersion: number, migrate: SaveGameMigration | string): void;
   getSaveMigrationField(fieldId: string, type?: string, array?: boolean): unknown;
   setSaveMigrationField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
@@ -372,7 +372,7 @@ export interface ScriptContext {
   assetRegistry: ScriptAssetRegistry;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
-  self: BObject | null;
+  self: EngineObject | null;
   deltaSeconds: number;
   tickIndex: number;
   /**
@@ -406,34 +406,34 @@ export interface ScriptContext {
   drawDebug(payload: Record<string, unknown>): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
-  variableReference(target: BObject | null | undefined, name: string, implicitSelf?: boolean): TweenReference | null;
+  variableReference(target: EngineObject | null | undefined, name: string, implicitSelf?: boolean): TweenReference | null;
   tweenValue(reference: TweenReference | null, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown): Promise<boolean>;
   tweenProperty(target: unknown, property: string, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown, space?: unknown): Promise<boolean>;
-  getVariableFrom(target: BObject | null | undefined, name: string): unknown;
+  getVariableFrom(target: EngineObject | null | undefined, name: string): unknown;
   setVariableOn(
-    target: BObject | null | undefined,
+    target: EngineObject | null | undefined,
     name: string,
     value: unknown,
   ): void;
-  destroyActor(actor: BObject | null | undefined): void;
+  destroyActor(actor: EngineObject | null | undefined): void;
   setActorLocation(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     location: { x: number; y: number; z: number },
   ): void;
   addActorWorldOffset(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     offset: { x: number; y: number; z: number },
   ): void;
   setActorRotation(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     rotation: { pitch: number; yaw: number; roll: number },
   ): void;
   setActorScale(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     scale: { x: number; y: number; z: number },
   ): void;
   setActorTransform(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     transform: {
       position?: { x: number; y: number; z: number };
       rotation?: { x: number; y: number; z: number; w: number };
@@ -509,23 +509,23 @@ export interface ScriptContext {
   getFirstComponentOfType(classId: string): ActorComponent | null;
   getAllComponentsOfType(classId: string): ActorComponent[];
   attachActor(
-    child: BObject | null | undefined,
-    parent: BObject | null | undefined,
+    child: EngineObject | null | undefined,
+    parent: EngineObject | null | undefined,
   ): void;
-  detachActor(child: BObject | null | undefined): void;
+  detachActor(child: EngineObject | null | undefined): void;
   attachToBone(
-    actor: BObject | null | undefined,
-    target: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
+    target: EngineObject | null | undefined,
     boneName: string,
   ): void;
-  getParent(actor: BObject | null | undefined): Actor | null;
+  getParent(actor: EngineObject | null | undefined): Actor | null;
   /** The actor's `name` variable (an Actor has no `name` property); "" for a missing or non-actor target. */
-  getActorName(actor: BObject | null | undefined): string;
+  getActorName(actor: EngineObject | null | undefined): string;
   setOwner(
-    actor: BObject | null | undefined,
-    owner: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
+    owner: EngineObject | null | undefined,
   ): void;
-  getOwner(actor: BObject | null | undefined): Actor | null;
+  getOwner(actor: EngineObject | null | undefined): Actor | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number): Promise<void>;
@@ -534,23 +534,23 @@ export interface ScriptContext {
   args: Record<string, unknown>;
   reportCommand(success: boolean, output: string): void;
   callInterface(
-    target: BObject | null | undefined,
+    target: EngineObject | null | undefined,
     interfaceGuid: string,
     method: string,
     args?: Record<string, unknown>,
   ): unknown;
-  getComponent(actor: BObject | null | undefined, classId: string): unknown;
+  getComponent(actor: EngineObject | null | undefined, classId: string): unknown;
   getComponentById(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     componentId: string,
   ): unknown;
   callComponentFunction(
-    target: BObject | null | undefined,
+    target: EngineObject | null | undefined,
     name: string,
     args?: Record<string, unknown>,
   ): Record<string, unknown>;
   addComponent(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     classId: string,
     transform?: unknown,
   ): unknown;
@@ -592,15 +592,15 @@ export interface ScriptContext {
   getThirdPartyNotices(): Promise<{ success: boolean; text: string; errorMessage: string }>;
   getSceneReference(): Scene | null;
   /** Live subsystem whose class isA `classId`, or null (`Get <Subsystem>`). */
-  getSubsystem(classId: string): BObject | null;
+  getSubsystem(classId: string): EngineObject | null;
   /** The session Game Instance, or null in hosts without one. */
-  getGameInstance(): BObject | null;
+  getGameInstance(): EngineObject | null;
   getAnimGraphVariable(target: unknown, name: string): unknown;
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(target: unknown): { id: string; name: string } | null;
   jumpAnimGraphState(target: unknown, state: string): void;
   invokeCustomEvent(
-    target: BObject | null | undefined,
+    target: EngineObject | null | undefined,
     eventName: string,
     args?: Record<string, unknown>,
   ): void;
@@ -614,7 +614,7 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): void;
   invokeFunction(
-    target: BObject | string | null | undefined,
+    target: EngineObject | string | null | undefined,
     functionName: string,
     args?: Record<string, unknown>,
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -683,42 +683,42 @@ export interface ScriptContext {
     actor: Actor | null;
   };
   addImpulse(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     impulse: Vec3,
     strength?: number,
   ): void;
   moveCharacter(
-    actor: BObject | null | undefined,
+    actor: EngineObject | null | undefined,
     translation: Vec3,
     offset?: number,
   ): void;
   playSound(asset: string, volume?: number): void;
-  playParticles(actor?: BObject | null): void;
-  stopParticles(actor?: BObject | null): void;
+  playParticles(actor?: EngineObject | null): void;
+  stopParticles(actor?: EngineObject | null): void;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;
   createSceneLayer(assetGuid: string, zOrder?: number): SceneLayer | null;
   createSceneLayerAsync(assetGuid: string, zOrder?: number): Promise<SceneLayer | null>;
-  removeSceneLayer(layer: BObject | string | null | undefined): void;
+  removeSceneLayer(layer: EngineObject | string | null | undefined): void;
   clearSceneLayers(): void;
   setFocusTarget(target: unknown): boolean;
   clearFocusTarget(target: unknown): void;
   registerSceneLayerPostProcess(
-    layer: BObject | string | null | undefined,
+    layer: EngineObject | string | null | undefined,
     materialGuid: string,
   ): void;
   unregisterSceneLayerPostProcess(
-    layer: BObject | string | null | undefined,
+    layer: EngineObject | string | null | undefined,
     materialGuid: string,
   ): void;
-  setSceneLayerCameraLocation(layer: BObject | string | null | undefined, location: unknown): void;
-  addSceneLayerCameraOffset(layer: BObject | string | null | undefined, delta: unknown): void;
-  getSceneLayerCameraLocation(layer: BObject | string | null | undefined): { x: number; y: number };
-  setSceneLayerCameraRotation(layer: BObject | string | null | undefined, degrees: unknown): void;
-  getSceneLayerCameraRotation(layer: BObject | string | null | undefined): number;
-  setSceneLayerCameraZoom(layer: BObject | string | null | undefined, zoom: unknown): void;
-  getSceneLayerCameraZoom(layer: BObject | string | null | undefined): number;
+  setSceneLayerCameraLocation(layer: EngineObject | string | null | undefined, location: unknown): void;
+  addSceneLayerCameraOffset(layer: EngineObject | string | null | undefined, delta: unknown): void;
+  getSceneLayerCameraLocation(layer: EngineObject | string | null | undefined): { x: number; y: number };
+  setSceneLayerCameraRotation(layer: EngineObject | string | null | undefined, degrees: unknown): void;
+  getSceneLayerCameraRotation(layer: EngineObject | string | null | undefined): number;
+  setSceneLayerCameraZoom(layer: EngineObject | string | null | undefined, zoom: unknown): void;
+  getSceneLayerCameraZoom(layer: EngineObject | string | null | undefined): number;
   getOwningSceneLayer(target: unknown): SceneLayer | null;
   getScalability(): ScalabilitySnapshot | null;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
@@ -771,8 +771,8 @@ export interface ScriptContext {
   getBlackboard(key: string): unknown;
   setBlackboard(key: string, value: unknown): void;
   findPathTo(from: Vec3, to: Vec3): Vec3[];
-  moveTo(actor: BObject | null | undefined, destination: Vec3): void;
-  stopMovement(actor: BObject | null | undefined): void;
+  moveTo(actor: EngineObject | null | undefined, destination: Vec3): void;
+  stopMovement(actor: EngineObject | null | undefined): void;
   isPathValid(from: Vec3, to: Vec3): boolean;
   getClosestNavigablePoint(point: Vec3): Vec3 | null;
   getRandomPointInRadius(center: Vec3, radius: number): Vec3 | null;
@@ -783,7 +783,7 @@ export interface ScriptContext {
   animExitTimeReached(exitTime: number): boolean;
   /**
    * Per-script-instance / per-node mutable state for Do Once, Do N, Flip Flop,
-   * Gate. Never module-global — keyed by the receiving BObject, or by the
+   * Gate. Never module-global — keyed by the receiving Object, or by the
    * calling object for a static Function Library call.
    */
   flowState(nodeId: string): Record<string, unknown>;
@@ -809,7 +809,7 @@ export type ScriptExtras = Partial<BtScriptExtras> & {
    * Static library contexts have no Self; their tweens and stateful flow nodes
    * (Do Once, Do N, Flip Flop, Gate) belong to the calling owner.
    */
-  callerOwner?: BObject | null;
+  callerOwner?: EngineObject | null;
 };
 
 /** The calling frame a nested dispatch inherits: delta, tick index and input. */
@@ -869,9 +869,9 @@ type HostContextMembers = Pick<ScriptContext, HostContextKey>;
  * lifecycle hooks. One host per runtime session.
  */
 export class ScriptHost {
-  private readonly materialReplacements = new WeakMap<BObject, Map<string, number>>();
-  private readonly materialPreloads = new WeakMap<BObject, Map<string, string>>();
-  private readonly boundInterfaceKeys = new WeakMap<BObject, Set<string>>();
+  private readonly materialReplacements = new WeakMap<EngineObject, Map<string, number>>();
+  private readonly materialPreloads = new WeakMap<EngineObject, Map<string, string>>();
+  private readonly boundInterfaceKeys = new WeakMap<EngineObject, Set<string>>();
   /** Text components whose On Text Changed handlers are running now. */
   private readonly textChangeDispatches = new Set<ActorComponent>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
@@ -883,7 +883,7 @@ export class ScriptHost {
    */
   private readonly lineageByClassId = new Map<string, readonly LoadedScript[][]>();
   /** `hooksFor` results per class id; cleared with the lineage they derive from. */
-  private readonly hooksByClassId = new Map<string, LifecycleHooks<BObject>>();
+  private readonly hooksByClassId = new Map<string, LifecycleHooks<EngineObject>>();
   /**
    * `eventScriptsFor` results of the lifecycle events a hook dispatches each
    * tick, per class id and event. They depend only on the lineage, so they are
@@ -891,9 +891,9 @@ export class ScriptHost {
    * a reload reaches actors that captured their hooks at creation.
    */
   private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
-  private readonly pending = new WeakMap<BObject, Set<string>>();
+  private readonly pending = new WeakMap<EngineObject, Set<string>>();
   private readonly flowStates = new WeakMap<
-    BObject,
+    EngineObject,
     Map<string, Record<string, unknown>>
   >();
   private readonly orphanFlowStates = new Map<
@@ -902,12 +902,12 @@ export class ScriptHost {
   >();
   private readonly services: ScriptHostServices;
   /** The instance the editor's graph debugger follows, and where its scripts report. */
-  private debugObject: BObject | null = null;
+  private debugObject: EngineObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
   private breakpoints: ScriptBreakpoints | null = null;
   private costMeter: ScriptCostMeter | null = null;
-  private invokingOwner: BObject | null = null;
-  private finalizingOwner: BObject | null = null;
+  private invokingOwner: EngineObject | null = null;
+  private finalizingOwner: EngineObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
   private interfaceCaller: CallerFrame | null = null;
   private readonly rng: Rng;
@@ -921,7 +921,7 @@ export class ScriptHost {
   }
 
   /** Routes `ctx.debugTrace` to `sink` for scripts that run on `object` (both null stops). */
-  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
+  setDebugTrace(object: EngineObject | null, sink: ScriptDebugTrace | null): void {
     this.debugObject = object;
     this.debugSink = sink;
   }
@@ -947,7 +947,7 @@ export class ScriptHost {
   }
 
   /** Migration exceptions must propagate to the transaction, unlike ordinary events. */
-  private async invokeSaveMigration(self: BObject, event: string, snapshot: SaveGameMigrationData): Promise<void> {
+  private async invokeSaveMigration(self: EngineObject, event: string, snapshot: SaveGameMigrationData): Promise<void> {
     if (self.destroyed) throw new SaveGameError("incompatible", "The registered save migration owner no longer exists.");
     const loaded = this.eventScriptsFor(self.classId, event, self);
     if (!loaded) throw new SaveGameError("incompatible", `Save migration event “${event}” is missing.`);
@@ -1041,7 +1041,7 @@ export class ScriptHost {
   private eventScriptsFor(
     classId: string,
     event: string,
-    self: BObject | null,
+    self: EngineObject | null,
     componentId?: string,
   ): LoadedScript[] | undefined {
     return this.scriptLineage(classId).find((loaded) =>
@@ -1086,7 +1086,7 @@ export class ScriptHost {
    * On Init for the Game Instance and subsystems, Begin Play for the rest.
    * The hooks carry no per-object state, so one object serves every instance.
    */
-  hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
+  hooksFor(classId: string): LifecycleHooks<EngineObject> | undefined {
     const cached = this.hooksByClassId.get(classId);
     if (cached) return cached;
     if (this.scriptLineage(classId).length === 0) return undefined;
@@ -1095,7 +1095,7 @@ export class ScriptHost {
       ancestry.includes("GameInstance") || ancestry.includes(SUBSYSTEM_CLASS_ID)
         ? "onInit"
         : "onBeginPlay";
-    const hooks: LifecycleHooks<BObject> = {
+    const hooks: LifecycleHooks<EngineObject> = {
       onCreation: (self) => {
         const loaded = this.lifecycleScriptsFor(classId, creationEvent);
         if (loaded) this.dispatchEvent(loaded, creationEvent, self, 0, 0);
@@ -1165,12 +1165,12 @@ export class ScriptHost {
    * Instance's shutdown events and a subsystem's On End. Only the dying
    * object's synchronous calls into itself bypass owner admission.
    */
-  invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
+  invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: EngineObject, args: Record<string, unknown> = {}): void {
     const loaded = this.eventScriptsFor(classId, event, self);
     if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
   }
 
-  private dispatchFinalEvent(loaded: readonly LoadedScript[], event: string, self: BObject, args: Record<string, unknown> = {}): void {
+  private dispatchFinalEvent(loaded: readonly LoadedScript[], event: string, self: EngineObject, args: Record<string, unknown> = {}): void {
     const previous = this.finalizingOwner;
     this.finalizingOwner = self;
     try {
@@ -1180,7 +1180,7 @@ export class ScriptHost {
     }
   }
 
-  private canInvokeOwner(owner: BObject): boolean {
+  private canInvokeOwner(owner: EngineObject): boolean {
     // Only synchronous calls from the finalizing object itself inherit its final
     // lifecycle. Calling through another object must reapply normal admission.
     if (owner === this.finalizingOwner && owner === this.invokingOwner) return true;
@@ -1192,12 +1192,12 @@ export class ScriptHost {
    * was destroyed (a counting Delay, or one Pause or a blocking load held)
    * ends that owner's graph quietly, like a cancelled tween.
    */
-  private reportLatentError(error: unknown, owner: BObject | null): void {
+  private reportLatentError(error: unknown, owner: EngineObject | null): void {
     if (owner?.destroyed && error instanceof RuntimeContinuationCancelled && error.reason === "ownerDestroyed") return;
     this.services.reportError(error);
   }
 
-  private invokeOwned<T>(owner: BObject | null, invoke: () => T): T {
+  private invokeOwned<T>(owner: EngineObject | null, invoke: () => T): T {
     const previous = this.invokingOwner;
     this.invokingOwner = owner;
     try {
@@ -1208,7 +1208,7 @@ export class ScriptHost {
   }
 
   /** `invokeOwned` for a compiled entry point, which the cost meter times while a profile records. */
-  private invokeEntry<T>(owner: BObject | null, script: CompiledScript, exportName: string, invoke: () => T): T {
+  private invokeEntry<T>(owner: EngineObject | null, script: CompiledScript, exportName: string, invoke: () => T): T {
     const meter = this.costMeter;
     if (meter === null) return this.invokeOwned(owner, invoke);
     meter.enter(script, exportName);
@@ -1223,7 +1223,7 @@ export class ScriptHost {
   invokeEvent(
     classId: string,
     event: string,
-    self: BObject | null = null,
+    self: EngineObject | null = null,
     args: Record<string, unknown> = {},
     componentId?: string,
   ): void {
@@ -1307,7 +1307,7 @@ export class ScriptHost {
    * Keys match `interfaceHandlerKey` (`guid:method`). Implementations declared by
    * user ancestors are inherited; the nearest declaring class wins.
    */
-  bindInterfaceHandlers(object: BObject): void {
+  bindInterfaceHandlers(object: EngineObject): void {
     for (const key of this.boundInterfaceKeys.get(object) ?? []) object.interfaceHandlers.delete(key);
     const owned = new Set<string>();
     this.boundInterfaceKeys.set(object, owned);
@@ -1329,7 +1329,7 @@ export class ScriptHost {
     }
   }
 
-  private boundInterfaceHandler(object: BObject, assetGuid: string, classId: string, exportName: string): (args: Record<string, unknown>) => Record<string, unknown> {
+  private boundInterfaceHandler(object: EngineObject, assetGuid: string, classId: string, exportName: string): (args: Record<string, unknown>) => Record<string, unknown> {
     // Keep only identities in the live object's callback; a revised module
     // must not stay rooted through an older interface binding.
     return (args) => {
@@ -1346,7 +1346,7 @@ export class ScriptHost {
    * the declaring class that overrides the implementing function runs instead.
    */
   private invokeInterfaceHandler(
-    object: BObject,
+    object: EngineObject,
     declaringScripts: readonly LoadedScript[],
     declaringEntry: LoadedScript,
     exportName: string,
@@ -1405,7 +1405,7 @@ export class ScriptHost {
   private dispatchEvent(
     loaded: readonly LoadedScript[],
     event: string,
-    self: BObject | null,
+    self: EngineObject | null,
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
@@ -1455,26 +1455,26 @@ export class ScriptHost {
     return failure;
   }
 
-  private isPending(self: BObject, key: string): boolean {
+  private isPending(self: EngineObject, key: string): boolean {
     return this.pending.get(self)?.has(key) ?? false;
   }
 
-  private markPending(self: BObject, key: string): void {
+  private markPending(self: EngineObject, key: string): void {
     const set = this.pending.get(self) ?? new Set<string>();
     set.add(key);
     this.pending.set(self, set);
   }
 
-  private clearPending(self: BObject, key: string): void {
+  private clearPending(self: EngineObject, key: string): void {
     this.pending.get(self)?.delete(key);
   }
 
-  clearFlowState(self: BObject | null | undefined): void {
+  clearFlowState(self: EngineObject | null | undefined): void {
     if (self) this.flowStates.delete(self);
   }
 
   private flowStateFor(
-    self: BObject | null,
+    self: EngineObject | null,
     nodeId: string,
     namespace = "",
   ): Record<string, unknown> {
@@ -1518,11 +1518,11 @@ export class ScriptHost {
       if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
       return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
     };
-    const layerCamera = (layer: BObject | string | null | undefined): SceneLayerCamera => {
+    const layerCamera = (layer: EngineObject | string | null | undefined): SceneLayerCamera => {
       const guid = sceneLayerGuidOf(layer);
       return (guid ? services.getSceneLayerCamera?.(guid) : null) ?? SCENE_LAYER_DEFAULT_CAMERA;
     };
-    const setLayerCamera = (layer: BObject | string | null | undefined, changes: Parameters<NonNullable<ScriptHostServices["setSceneLayerCamera"]>>[1]) => {
+    const setLayerCamera = (layer: EngineObject | string | null | undefined, changes: Parameters<NonNullable<ScriptHostServices["setSceneLayerCamera"]>>[1]) => {
       const guid = sceneLayerGuidOf(layer);
       if (guid) services.setSceneLayerCamera?.(guid, changes);
     };
@@ -1832,7 +1832,7 @@ export class ScriptHost {
       getSceneLayerCameraRotation: (layer) => layerCamera(layer).rotation,
       setSceneLayerCameraZoom: (layer, zoom) => { setLayerCamera(layer, { zoom }); },
       getSceneLayerCameraZoom: (layer) => layerCamera(layer).zoom,
-      getOwningSceneLayer: (target) => services.getOwningSceneLayer?.(target instanceof BObject ? target : null) ?? null,
+      getOwningSceneLayer: (target) => services.getOwningSceneLayer?.(target instanceof EngineObject ? target : null) ?? null,
       getScalability: () => services.getScalability?.() ?? null,
       requestScalability: (request) => services.requestScalability?.(request) ?? {
         revision: 0, status: "unsupported", message: "Scalability requires an active Play or player session.",
@@ -1912,7 +1912,7 @@ export class ScriptHost {
    * `script-host-context.test.ts`, whose type check fails until you do.
    */
   createContext(
-    self: BObject | null,
+    self: EngineObject | null,
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
@@ -1991,12 +1991,12 @@ export class ScriptHost {
       context.variableReference = (target, name, implicitSelf = false) => {
         const object = implicitSelf ? store : target;
         if (!object || typeof name !== "string" || !name ||
-          (object instanceof BObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
+          (object instanceof EngineObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
         return {
           identity: object, property: `variable:${name}`,
-          owner: object instanceof BObject ? object : contextOwner ?? undefined,
+          owner: object instanceof EngineObject ? object : contextOwner ?? undefined,
           set: (value) => {
-            if (object instanceof BObject) context.setVariableOn(object, name, tweenStorageValue(object, name, value));
+            if (object instanceof EngineObject) context.setVariableOn(object, name, tweenStorageValue(object, name, value));
             else object.setVariable(name, value);
           },
         };
@@ -2174,7 +2174,7 @@ export class ScriptHost {
         const receiver = target as InterfaceDispatchTarget | null | undefined;
         // A missing or unadmitted receiver runs no handler and reads the pin defaults.
         const dispatchTarget: InterfaceDispatchTarget = !receiver ? NO_INTERFACE_RECEIVER
-          : !(receiver instanceof BObject) || this.canInvokeOwner(receiver) ? receiver
+          : !(receiver instanceof EngineObject) || this.canInvokeOwner(receiver) ? receiver
             : { guid: receiver.guid, classId: receiver.classId, implementedInterfaces: receiver.implementedInterfaces };
         const previous = this.interfaceCaller;
         this.interfaceCaller = { deltaSeconds, tickIndex, tick };
@@ -2248,12 +2248,12 @@ export class ScriptHost {
         return scene && !scene.destroyed ? scene : null;
       };
       context.invokeCustomEvent = (target, eventName, eventArgs) => {
-        const receiver = target as BObject | null | undefined;
+        const receiver = target as EngineObject | null | undefined;
         if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
         // The event runs inside the caller's frame: delta, tick index and input
         // follow it. Caller extras (Behaviour Tree, Animation Graph) belong to
         // the calling script and stay behind.
-        const dispatch = (object: BObject, componentId?: string) => {
+        const dispatch = (object: EngineObject, componentId?: string) => {
           const loaded = this.eventScriptsFor(object.classId, eventName, object, componentId);
           if (!loaded || !this.canInvokeOwner(object)) return;
           this.dispatchEvent(loaded, eventName, object, deltaSeconds, tickIndex, eventArgs ?? {}, tick, undefined, componentId);
@@ -2285,11 +2285,11 @@ export class ScriptHost {
           return {};
         }
         let loaded: LoadedScript[] | undefined;
-        let receiver: BObject | null = null;
+        let receiver: EngineObject | null = null;
         if (typeof target === "string") {
           loaded = this.functionScriptsFor(target, functionName);
         } else {
-          const object = target as BObject | null | undefined;
+          const object = target as EngineObject | null | undefined;
           if (!object || !this.canInvokeOwner(object)) {
             if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration function's owner is unavailable.");
             return {};
@@ -2522,7 +2522,7 @@ export class ScriptHost {
     return context;
   }
 
-  private beginMaterialReplacement(owner: BObject, key: string): number {
+  private beginMaterialReplacement(owner: EngineObject, key: string): number {
     let versions = this.materialReplacements.get(owner);
     if (!versions) { versions = new Map(); this.materialReplacements.set(owner, versions); }
     const version = (versions.get(key) ?? 0) + 1;
@@ -2530,14 +2530,14 @@ export class ScriptHost {
     return version;
   }
 
-  private async prepareMaterialAsset(guid: string, owner: BObject | null): Promise<string> {
+  private async prepareMaterialAsset(guid: string, owner: EngineObject | null): Promise<string> {
     if (!this.services.acquireAssets) { await this.services.prepareAssets?.([guid], owner); return ""; }
     const result = await this.services.acquireAssets([guid], owner);
     if (!result.success) throw new Error(`Asset ${guid}, requested by ${owner?.guid ?? "scene"}: ${result.errorMessage}`);
     return result.preloadId;
   }
 
-  private retainMaterialPreload(owner: BObject, key: string, preloadId: string): void {
+  private retainMaterialPreload(owner: EngineObject, key: string, preloadId: string): void {
     let scopes = this.materialPreloads.get(owner);
     const previous = scopes?.get(key);
     if (preloadId) {
@@ -2547,13 +2547,13 @@ export class ScriptHost {
     if (previous && previous !== preloadId) this.services.releaseAcquiredAssets?.(previous);
   }
 
-  private releaseMaterialPreloads(owner: BObject): void {
+  private releaseMaterialPreloads(owner: EngineObject): void {
     const scopes = this.materialPreloads.get(owner);
     this.materialPreloads.delete(owner);
     for (const id of scopes?.values() ?? []) this.services.releaseAcquiredAssets?.(id);
   }
 
-  private isMaterialReplacementCurrent(owner: BObject, key: string, version: number): boolean {
+  private isMaterialReplacementCurrent(owner: EngineObject, key: string, version: number): boolean {
     return this.materialReplacements.get(owner)?.get(key) === version;
   }
 
@@ -2605,7 +2605,7 @@ export class ScriptHost {
   }
 
   private callNativeComponentFunction(
-    target: BObject | null | undefined,
+    target: EngineObject | null | undefined,
     name: string,
     args: Record<string, unknown>,
   ): Record<string, unknown> {
@@ -2879,7 +2879,7 @@ function componentMatchesId(
 function entryMatchesComponentInvoke(
   entryComponentId: string | undefined,
   invokeComponentId: string | undefined,
-  self: BObject | null,
+  self: EngineObject | null,
 ): boolean {
   const bound =
     typeof entryComponentId === "string" ? entryComponentId.trim() : "";

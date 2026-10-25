@@ -44,7 +44,7 @@ describe("tryReparentUserClass", () => {
   it("rejects leaving Actor ancestry", () => {
     const result = tryReparentUserClass({
       classId: "Hero",
-      newParentId: "BObject",
+      newParentId: "Object",
       assets: [hero],
     });
     expect(result.ok).toBe(false);

@@ -82,7 +82,7 @@ export type PinListEditorProps = {
 };
 
 function isReferencePinType(type: string): boolean {
-  return type === "object" || type === "actor" || type === "class";
+  return type === "object" || type === "class";
 }
 
 function isAssetPinType(type: string): boolean {
@@ -234,7 +234,7 @@ export function PinListEditor({
       {addPosition === "top" ? addField : null}
       {rows.map((row, index) => {
         const selected = effectiveSelectedId === row.id;
-        const classId = row.typeClassId?.trim() || "BObject";
+        const classId = row.typeClassId?.trim() || "Object";
         const classIdentity = classRowIdentity(
           classEntries.find((entry) => entry.id === classId),
           classId,

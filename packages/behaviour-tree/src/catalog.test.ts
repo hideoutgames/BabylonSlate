@@ -68,7 +68,7 @@ describe("kindForCatalogClassId", () => {
     if (id === "BTComposite_Selector" || id === "BTComposite_Sequence" || id === "BTComposite_Parallel") {
       return "BTComposite";
     }
-    if (id === "BTComposite") return "BObject";
+    if (id === "BTComposite") return "Object";
     return null;
   };
 

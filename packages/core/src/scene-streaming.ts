@@ -52,14 +52,14 @@ export function remapSceneStreamingReferences(
   if (!value || typeof value !== "object") return value;
   const source = value as Record<string, unknown>;
   const typedReference = typeof source.classId === "string"
-    || source.kind === "actorRef" || source.kind === "objectRef";
+    || source.kind === "objectRef";
   const referenceId = (id: string, component: boolean): string | null => {
     const mapped = component ? componentIds?.get(id) : undefined;
     if (mapped !== undefined) return mapped;
     const actor = idMap.get(id);
     return actor === undefined ? id : actor;
   };
-  const typedComponent = source.kind !== "actorRef" && typeof source.classId === "string" && source.classId.endsWith("Component");
+  const typedComponent = typeof source.classId === "string" && source.classId.endsWith("Component");
   // An explicit null mapping clears a live reference as a whole. Unmapped
   // identities remain unchanged, including project assets and external refs
   // that scene streaming intentionally retains.
@@ -77,7 +77,7 @@ export function remapSceneStreamingReferences(
     const typedIdentity = typedReference && (key === "guid" || key === "id");
     const componentIdentity = /Component(?:Id|Guid)$/.test(key)
       || key === "componentId" || key === "componentGuid"
-      || (typedIdentity && source.kind !== "actorRef" && typeof source.classId === "string" && source.classId.endsWith("Component"));
+      || (typedIdentity && typeof source.classId === "string" && source.classId.endsWith("Component"));
     const liveIdentity = componentIdentity || /Actor(?:Id|Guid)$/.test(key)
       || key === "actorId" || key === "actorGuid" || typedIdentity;
     return [key, liveIdentity && typeof entry === "string"

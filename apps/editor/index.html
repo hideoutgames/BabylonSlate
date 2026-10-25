@@ -17,6 +17,10 @@
     <script>
       // Haptic is dark only.
       document.documentElement.classList.add("dark");
+      // Set before the intro is parsed, so an automated browser never paints
+      // its layers (see .haptic-intro below).
+      if (navigator.webdriver)
+        document.documentElement.setAttribute("data-automation", "");
     </script>
     <style>
       /* The boot intro. This page paints it outside #root before any bundle
@@ -64,6 +68,14 @@
       .haptic-intro[data-leaving="true"] {
         opacity: 0;
         pointer-events: none;
+      }
+      /* Automated browsers (navigator.webdriver) keep the cover, its timing
+       * and its status but paint none of its layers. Headless software
+       * rendering queues the blended, masked and filtered frames faster than
+       * it can draw them, and works through that backlog long after the intro
+       * has gone, delaying every scene load and screenshot that follows. */
+      html[data-automation] .haptic-intro > :not(.haptic-intro-status) {
+        display: none;
       }
       .haptic-intro-edge {
         position: absolute;

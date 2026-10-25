@@ -114,7 +114,7 @@ export async function selectContentBrowserAssetsFolder(
 
 /**
  * Create an authored asset from the Content Browser New Asset dialog.
- * `parentClass` picks the Class parent (default BObject).
+ * `parentClass` picks the Class parent (default Object).
  */
 export async function createContentBrowserAsset(
   page: Page,

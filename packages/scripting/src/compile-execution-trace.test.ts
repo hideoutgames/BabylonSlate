@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileGraph, type CompileOptions } from "./compile";
 import type { GraphEdge, GraphNode, LogicGraph } from "./ir";
 import { NodeRegistry, pin } from "./node-registry";
-import { BOOL, EXEC, INT, STRING, actorRef } from "./types";
+import { BOOL, EXEC, INT, STRING, objectRef } from "./types";
 
 function registry(): NodeRegistry {
   const nodes = new NodeRegistry();
@@ -97,7 +97,7 @@ function registry(): NodeRegistry {
     title: "Who",
     category: "test",
     pure: true,
-    pins: () => [pin("actor", "actor", "out", actorRef("Actor"))],
+    pins: () => [pin("actor", "actor", "out", objectRef("Actor"))],
     codegen: () => ({ actor: "ctx.who()" }),
   });
   // Acts on its Target, a subject input the compiler reads once into a slot before the node runs.
@@ -108,7 +108,7 @@ function registry(): NodeRegistry {
     pins: () => [
       pin("exec", "exec", "in", EXEC),
       pin("then", "then", "out", EXEC),
-      { ...pin("target", "Target", "in", actorRef("Actor")), subject: true },
+      { ...pin("target", "Target", "in", objectRef("Actor")), subject: true },
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.act(${ctx.input("target")});`);

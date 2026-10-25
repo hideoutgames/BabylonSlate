@@ -29,14 +29,14 @@ describe("nativeEventStubs", () => {
   });
 
   it("exposes lifecycle events on ActorComponent descendants without Actor collision events", () => {
-    const options = { parentClass: "Counter", parentOf: (id: string) => id === "Counter" ? "ActorComponent" : id === "ActorComponent" ? "BObject" : null };
+    const options = { parentClass: "Counter", parentOf: (id: string) => id === "Counter" ? "ActorComponent" : id === "ActorComponent" ? "Object" : null };
     expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.gameLoaded", "flow.event.scalabilityChanged", "flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
     for (const event of nativeEventStubs(options)) expect(isScriptCatalogNodeAllowed(event.eventType, options)).toBe(true);
     expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
   });
 
-  it("lists no Begin Play or Tick on BObject", () => {
-    expect(nativeEventStubs({ parentClass: "BObject" })).toEqual([]);
+  it("lists no Begin Play or Tick on Object", () => {
+    expect(nativeEventStubs({ parentClass: "Object" })).toEqual([]);
   });
 
   it("lists Game Instance lifecycle and scene events, not Actor Begin Play or Destroyed", () => {
@@ -97,7 +97,7 @@ describe("nativeEventStubs", () => {
       RainWeather: "Weather",
       GameSubsystem: "Subsystem",
       SceneSubsystem: "Subsystem",
-      Subsystem: "BObject",
+      Subsystem: "Object",
     };
     const parentOf = (id: string) => parents[id] ?? null;
     const game = { parentClass: "Save", parentOf };
@@ -173,11 +173,11 @@ describe("nativeEventStubs", () => {
   });
 
   it("offers Get Game Instance in runtime hosts only and never the generic Get Subsystem", () => {
-    for (const parentClass of ["Actor", "GameInstance", "FunctionLibrary", "BTTask", "BObject"]) {
+    for (const parentClass of ["Actor", "GameInstance", "FunctionLibrary", "BTTask", "Object"]) {
       expect(isScriptCatalogNodeAllowed("gameInstance.get", { parentClass })).toBe(true);
     }
     const editorParentOf = (id: string) =>
-      id === "EditorFunctionLibrary" ? "FunctionLibrary" : id === "BObject" ? null : "BObject";
+      id === "EditorFunctionLibrary" ? "FunctionLibrary" : id === "Object" ? null : "Object";
     for (const parentClass of ["EditorUtilityObject", "EditorFunctionLibrary"]) {
       expect(
         isScriptCatalogNodeAllowed("gameInstance.get", { parentClass, parentOf: editorParentOf }),
@@ -190,7 +190,7 @@ describe("nativeEventStubs", () => {
     expect(
       nativeEventStubs({
         assetType: "EditorUtilityInterface",
-        parentClass: "BObject",
+        parentClass: "Object",
       }),
     ).toEqual([]);
   });
@@ -198,7 +198,7 @@ describe("nativeEventStubs", () => {
   it("lists editor lifecycle events when ancestry includes EditorUtilityObject", () => {
     const stubs = nativeEventStubs({
       parentClass: "EditorUtilityObject",
-      parentOf: (id) => (id === "EditorUtilityObject" ? "BObject" : null),
+      parentOf: (id) => (id === "EditorUtilityObject" ? "Object" : null),
     });
     expect(stubs.map((stub) => stub.eventType)).toEqual([
       "flow.event.editorBeginPlay",
@@ -209,10 +209,10 @@ describe("nativeEventStubs", () => {
     ]);
   });
 
-  it("adds On Command Run when ancestry includes BDebugCommand", () => {
+  it("adds On Command Run when ancestry includes DebugCommand", () => {
     const stubs = nativeEventStubs({
-      parentClass: "BDebugCommand",
-      parentOf: (id) => (id === "BDebugCommand" ? "BObject" : null),
+      parentClass: "DebugCommand",
+      parentOf: (id) => (id === "DebugCommand" ? "Object" : null),
     });
     expect(stubs.some((stub) => stub.eventType === "flow.event.commandRun")).toBe(
       true,
@@ -255,7 +255,7 @@ describe("nativeEventStubs", () => {
     ).toBe(true);
     expect(
       isScriptCatalogNodeAllowed("flow.event.hit", {
-        parentClass: "BObject",
+        parentClass: "Object",
       }),
     ).toBe(false);
     expect(
@@ -290,7 +290,7 @@ describe("nativeEventStubs", () => {
   });
 
   it("offers switcher events only on the switcher lineage with readable titles", () => {
-    const parents: Record<string, string> = { CustomMenu: "SceneLayerActorSwitcher", SceneLayerActorSwitcher: "SceneLayerActor", SceneLayerActor: "Actor", Actor: "BObject" };
+    const parents: Record<string, string> = { CustomMenu: "SceneLayerActorSwitcher", SceneLayerActorSwitcher: "SceneLayerActor", SceneLayerActor: "Actor", Actor: "Object" };
     const options = { parentClass: "CustomMenu", parentOf: (id: string) => parents[id] };
     const events = nativeEventStubs(options);
     expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitching", name: "Event On Scene Layer Actor Switching" });
@@ -307,7 +307,7 @@ describe("nativeEventStubs", () => {
       nativeEventStubs({
         parentClass: "EditorFunctionLibrary",
         parentOf: (id) =>
-          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "Object",
       }),
     ).toEqual([]);
   });
@@ -315,7 +315,7 @@ describe("nativeEventStubs", () => {
   it("uses BT ancestry for a project subclass of BTTask", () => {
     const stubs = nativeEventStubs({
       parentClass: "BTTask_Patrol",
-      parentOf: (id) => (id === "BTTask_Patrol" ? "BTTask" : id === "BTTask" ? "BObject" : null),
+      parentOf: (id) => (id === "BTTask_Patrol" ? "BTTask" : id === "BTTask" ? "Object" : null),
     });
     expect(stubs.map((stub) => stub.eventType)).toEqual([
       "bt.event.activate",

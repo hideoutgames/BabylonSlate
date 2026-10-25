@@ -115,12 +115,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Float To Int](float-to-int.md) | Converts a Float to an Integer by dropping the fractional part. |
 | [Int To Float](int-to-float.md) | Converts an Integer to a Float with the same value. |
 | [Wildcard Is](wildcard-is.md) | Returns true when a value's type name matches the given tag. |
-| [Wildcard To actorRef:Actor](wildcard-to-actorref-actor.md) | Converts an Any value to an Actor Reference and reports whether it worked. |
 | [Wildcard To bool](wildcard-to-bool.md) | Converts an Any value to a Boolean and reports whether it worked. |
 | [Wildcard To color](wildcard-to-color.md) | Converts an Any value to a Color and reports whether it worked. |
 | [Wildcard To float](wildcard-to-float.md) | Converts an Any value to a Float and reports whether it worked. |
 | [Wildcard To int](wildcard-to-int.md) | Converts an Any value to an Integer and reports whether it worked. |
-| [Wildcard To objectRef:BObject](wildcard-to-objectref-bobject.md) | Converts an Any value to an Object Reference and reports whether it worked. |
+| [Wildcard To objectRef:Object](wildcard-to-objectref-object.md) | Converts an Any value to an Object Reference and reports whether it worked. |
 | [Wildcard To quat](wildcard-to-quat.md) | Converts an Any value to a Quaternion and reports whether it worked. |
 | [Wildcard To rotator](wildcard-to-rotator.md) | Converts an Any value to a Rotator and reports whether it worked. |
 | [Wildcard To String](wildcard-to-string.md) | Converts any value to text and never fails. |

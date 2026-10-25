@@ -6,7 +6,7 @@ import {
   BOOL,
   FLOAT,
   INT,
-  actorRef,
+  objectRef,
   arrayOf,
   enumRef,
   structRef,
@@ -26,7 +26,7 @@ import { enumGuidOf, enumValueOf } from "./enum";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
 const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
-const ACTOR_ARRAY = arrayOf(actorRef("Actor"));
+const ACTOR_ARRAY = arrayOf(objectRef("Actor"));
 
 /** A miss reports zero Location and Normal on the struct and on the exploded pins alike. */
 function emitMappedHit(
@@ -166,7 +166,7 @@ export const physicsNodes: NodeDefinition[] = [
       pin("location", "Location", "out", VEC3),
       pin("normal", "Normal", "out", VEC3),
       pin("distance", "Distance", "out", FLOAT),
-      pin("actor", "Actor", "out", actorRef("Actor")),
+      pin("actor", "Actor", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => {
       emitMappedHit(
@@ -212,7 +212,7 @@ export const physicsNodes: NodeDefinition[] = [
       pin("location", "Location", "out", VEC3),
       pin("normal", "Normal", "out", VEC3),
       pin("distance", "Distance", "out", FLOAT),
-      pin("actor", "Actor", "out", actorRef("Actor")),
+      pin("actor", "Actor", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => {
       emitMappedHit(
@@ -228,7 +228,7 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "target", "in", actorRef("Actor"))),
+      subject(pin("target", "target", "in", objectRef("Actor"))),
       pin("impulse", "impulse", "in", VEC3),
       pin("strength", "strength", "in", FLOAT, "data", true, 1),
     ],
@@ -245,7 +245,7 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "target", "in", actorRef("Actor"))),
+      subject(pin("target", "target", "in", objectRef("Actor"))),
       pin("translation", "translation", "in", VEC3),
       pin("offset", "offset", "in", FLOAT, "data", true),
     ],
