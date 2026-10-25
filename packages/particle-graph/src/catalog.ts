@@ -751,10 +751,6 @@ export const PARTICLE_CATALOG: readonly ParticleNodeDefinition[] = [
 
 const BY_TYPE = new Map(PARTICLE_CATALOG.map((definition) => [definition.type, definition]));
 
-export function particleNodeDefinition(type: string): ParticleNodeDefinition | undefined {
-  return BY_TYPE.get(type);
-}
-
 /** Node types whose pins follow `properties.valueType`, with their default type. */
 const VALUE_TYPE_DEFAULTS: Readonly<Record<string, ParticleNumericType>> = {
   "random.range": "float",

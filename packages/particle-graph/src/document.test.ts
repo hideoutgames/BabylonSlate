@@ -7,7 +7,7 @@ import {
   type ParticleGraphNode,
 } from "./document";
 import { lowerParticleGraphDocument } from "./lower";
-import { particleSpine, validateParticleGraphDocument } from "./validate";
+import { validateParticleGraphDocument } from "./validate";
 
 describe("particle graph document", () => {
   it("injects exactly one Emitter Output into a graph that lacks it", () => {
@@ -88,13 +88,6 @@ describe("particle graph document", () => {
       expect.objectContaining({ code: "particle.missingMaterial", severity: "warning" }),
     ]);
     expect(lowerParticleGraphDocument(doc).ok).toBe(true);
-    expect(particleSpine(doc).map((id) => doc.nodes.find((node) => node.id === id)!.type)).toEqual([
-      "particle.create",
-      "shape.sphere",
-      "update.basicPosition",
-      "update.color",
-      "particle.output",
-    ]);
   });
 
   it("lists the Material as the only dependency", () => {

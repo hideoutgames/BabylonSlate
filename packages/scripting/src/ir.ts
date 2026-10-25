@@ -54,13 +54,6 @@ export type LogicGraph = {
   edges: GraphEdge[];
 };
 
-export function createEmptyLogicGraph(
-  id: string,
-  kind: LogicGraphKind = "event",
-): LogicGraph {
-  return { id, kind, nodes: [], edges: [] };
-}
-
 export function findPin(node: GraphNode, pinId: string): GraphPin | undefined {
   return node.pins.find((p) => p.id === pinId);
 }

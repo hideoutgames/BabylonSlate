@@ -63,12 +63,6 @@ export function timelineBucket(time: number, domain: TimelineDomain, buckets: nu
   return Math.min(buckets - 1, Math.floor((time - start) / span * buckets));
 }
 
-/** The time at the centre of a bucket. */
-export function timelineBucketTime(bucket: number, domain: TimelineDomain, buckets: number): number {
-  const [start, end] = domain;
-  return start + (bucket + 0.5) / Math.max(1, buckets) * (end - start);
-}
-
 /** Per bucket, the sample with the largest total (-1 for an empty bucket): each bar shows its slowest sample. */
 export function timelinePeaks(times: ArrayLike<number>, totals: Float64Array, domain: TimelineDomain, buckets: number): Int32Array {
   const peaks = new Int32Array(Math.max(0, buckets)).fill(-1);

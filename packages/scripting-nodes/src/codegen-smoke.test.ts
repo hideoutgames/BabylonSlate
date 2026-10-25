@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyLogicGraph } from "@haptic/scripting";
 import type { CodegenContext } from "@haptic/scripting";
 import { allNodeDefinitions } from "./index";
 
@@ -31,7 +30,7 @@ function mockCtx(
     inputs,
     outputs,
     ctx: {
-    graph: createEmptyLogicGraph("g"),
+    graph: { id: "g", kind: "event", nodes: [], edges: [] },
     node: {
       id: "n1",
       typeId,

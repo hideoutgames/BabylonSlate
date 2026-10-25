@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
-  createEmptyLogicGraph,
   type CodegenContext,
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
@@ -12,7 +11,7 @@ function emitCtx(typeId: string): { ctx: CodegenContext; emits: string[] } {
   return {
     emits,
     ctx: {
-      graph: createEmptyLogicGraph("g"),
+      graph: { id: "g", kind: "event", nodes: [], edges: [] },
       node: {
         id: "n1",
         typeId,

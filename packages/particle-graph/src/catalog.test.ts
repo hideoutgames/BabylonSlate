@@ -5,7 +5,6 @@ import {
   PARTICLE_RANDOM_LOCKS,
   PARTICLE_VALUE_TYPE_OPTIONS,
   isParticleSpineRole,
-  particleNodeDefinition,
 } from "./catalog";
 import { newParticleNodeProperties } from "./document";
 
@@ -93,13 +92,13 @@ describe("particle node catalog", () => {
 
   it("keeps unwired Reciprocal and Logarithm finite", () => {
     for (const type of ["math.reciprocal", "math.log"]) {
-      expect(particleNodeDefinition(type)!.inputs[0]!.defaultValue![0], type).toBeGreaterThan(0);
+      expect(PARTICLE_CATALOG.find((definition) => definition.type === type)!.inputs[0]!.defaultValue![0], type).toBeGreaterThan(0);
     }
   });
 
   it("keeps Color out of the math nodes Babylon breaks on Color4", () => {
     for (const type of ["math.divide", "math.max", "math.clamp", "math.step", "math.smoothstep"]) {
-      const pin = particleNodeDefinition(type)!.inputs[0]!;
+      const pin = PARTICLE_CATALOG.find((definition) => definition.type === type)!.inputs[0]!;
       expect(pin.type.kind === "generic" && pin.type.accepts, type).toEqual(["float", "vec2", "vec3"]);
     }
   });

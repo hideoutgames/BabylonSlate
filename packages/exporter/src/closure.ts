@@ -154,7 +154,7 @@ function indexAssets(assets: readonly ExportIndexedAsset[]): ClosureIndex {
 }
 
 /** What a game ships without any Scene referencing it. */
-export type ExportRoots = {
+type ExportRoots = {
   /** Guids or class ids that ship with the startup Scene. */
   startupRefs: string[];
   /** Assets under an Always Package Folder, each shipping on its own. */
@@ -167,10 +167,6 @@ export type ExportRoots = {
  * everything in an Always Package Folder. The traversal still drops
  * editor-only assets and disabled plugin content.
  */
-export function selectExportRoots(input: ExportRootInput): ExportRoots {
-  return rootsFromIndex(input, indexAssets(input.assets));
-}
-
 function rootsFromIndex(input: ExportRootInput, { sortedAssets }: ClosureIndex): ExportRoots {
   const hierarchy = classHierarchy(input.parentOf);
   const startupRefs: string[] = [];

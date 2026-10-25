@@ -6,7 +6,6 @@ import {
 } from "./type-context";
 import { validateGraphs } from "./validate";
 import {
-  createEmptyLogicGraph,
   type GraphEdge,
   type GraphNode,
   type LogicGraph,
@@ -136,7 +135,7 @@ describe("validateGraphs", () => {
       },
     });
     expect(listValidationRules()).toHaveLength(1);
-    const diags = validateGraphs([createEmptyLogicGraph("empty")], {
+    const diags = validateGraphs([{ id: "empty", kind: "event", nodes: [], edges: [] }], {
       assetGuid: "a",
     });
     expect(diags.some((d) => d.code === "test.rule")).toBe(true);
@@ -1086,7 +1085,7 @@ describe("validateGraphs", () => {
   });
 
   it("errors when a declared ScriptInterface method is not implemented", () => {
-    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+    const diags = validateGraphs([{ id: "g", kind: "event", nodes: [], edges: [] }], {
       assetGuid: "a",
       implementedInterfaces: [
         {
@@ -1101,7 +1100,7 @@ describe("validateGraphs", () => {
   });
 
   it("errors when an interface implementation signature differs", () => {
-    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+    const diags = validateGraphs([{ id: "g", kind: "event", nodes: [], edges: [] }], {
       assetGuid: "a",
       implementedInterfaces: [
         {
@@ -1143,8 +1142,10 @@ describe("validateGraphs", () => {
       properties: { name },
     });
     const graph: LogicGraph = {
-      ...createEmptyLogicGraph("g"),
+      id: "g",
+      kind: "event",
       nodes: [customEvent("a", "Open/Close"), customEvent("b", "Open Close"), customEvent("c", "Reset")],
+      edges: [],
     };
     const collisions = validateGraphs([graph], { assetGuid: "a" }).filter(
       (d) => d.code === "event.name_collision",
@@ -1175,7 +1176,7 @@ describe("validateGraphs", () => {
       properties: asset ? { "default:binding": { Input: { Name: asset, Asset: asset } } } : {},
     });
     const duplicates = (nodes: GraphNode[], edges: GraphEdge[] = []) =>
-      validateGraphs([{ ...createEmptyLogicGraph("g"), nodes, edges }], { assetGuid: "a" }).filter(
+      validateGraphs([{ id: "g", kind: "event", nodes, edges }], { assetGuid: "a" }).filter(
         (d) => d.code === "event.duplicate",
       );
 
@@ -1238,7 +1239,12 @@ describe("validateGraphs", () => {
 
     it("reports two custom events with the same name, and leaves differently spelled ones to event.name_collision", () => {
       const custom = (id: string, name: string) => entryEvent(id, "flow.event.custom", { name });
-      const graph = { ...createEmptyLogicGraph("g"), nodes: [custom("a", "Open Door"), custom("b", "Open Door"), custom("c", "Open/Door")] };
+      const graph: LogicGraph = {
+        id: "g",
+        kind: "event",
+        nodes: [custom("a", "Open Door"), custom("b", "Open Door"), custom("c", "Open/Door")],
+        edges: [],
+      };
       const diags = validateGraphs([graph], { assetGuid: "a" });
       expect(diags.filter((d) => d.code === "event.duplicate")).toEqual([
         expect.objectContaining({ nodeId: "b", relatedNodeId: "a", message: expect.stringMatching(/^Event Open Door appears/) }),
@@ -1262,7 +1268,7 @@ describe("validateGraphs", () => {
     const signature = (container: "array" | "map") => [
       { name: "targets", typeId: "object", typeClassId: "Actor", direction: "in" as const, container },
     ];
-    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+    const diags = validateGraphs([{ id: "g", kind: "event", nodes: [], edges: [] }], {
       assetGuid: "a",
       implementedInterfaces: [
         { guid: "iface-1", name: "Damageable", methods: [{ name: "Apply Damage", pins: signature("array") }] },

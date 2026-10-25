@@ -14,9 +14,7 @@ export { recastToWorld, worldToRecast } from "./remap";
 export { facingYawFromVelocity } from "./facing";
 export {
   NAVMESH_CHUNK_ID,
-  extraChunksWithNavmesh,
   navmeshChunk,
-  type ExtraChunkLike,
   type NavmeshChunk,
 } from "./chunk";
 export {

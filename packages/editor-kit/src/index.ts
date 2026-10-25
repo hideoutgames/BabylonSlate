@@ -294,7 +294,6 @@ export {
 } from "./atlas-tile-grid";
 export {
   centeredView,
-  contentToView,
   fitScale,
   panView,
   pinchView,

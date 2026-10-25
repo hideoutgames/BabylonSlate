@@ -3,7 +3,6 @@ import {
   COLLISION_CHANNEL_MEMBERS,
   clearValidationRules,
   compileGraph,
-  createEmptyLogicGraph,
   validateGraphs,
   type CodegenContext,
   type GraphNode,
@@ -20,7 +19,7 @@ function emitCtx(
   return {
     emits,
     ctx: {
-      graph: createEmptyLogicGraph("g"),
+      graph: { id: "g", kind: "event", nodes: [], edges: [] },
       node: {
         id: "n1",
         typeId: "physics.moveCharacter",

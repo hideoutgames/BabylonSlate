@@ -157,17 +157,3 @@ export function createWildcardNodes(): NodeDefinition[] {
 
   return nodes;
 }
-
-export function assertEveryConcreteTypeHasConverter(
-  registeredIds: ReadonlySet<string>,
-): string[] {
-  const missing: string[] = [];
-  for (const target of CONCRETE_WILDCARD_TARGETS) {
-    const id = wildcardConverterNodeId(target);
-    if (!registeredIds.has(id)) missing.push(id);
-  }
-  if (!registeredIds.has("wildcard.to_string")) {
-    missing.push("wildcard.to_string");
-  }
-  return missing;
-}
