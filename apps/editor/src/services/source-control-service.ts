@@ -17,6 +17,9 @@ import type { SecretStore } from "@haptic/vfs";
 
 export type DocumentLockEditMode = "editable" | "readonly" | "edit-anyway";
 
+/** Verify requests one refresh sends while local lock changes keep overtaking the reply. */
+const MAX_OVERTAKEN_VERIFY_ATTEMPTS = 3;
+
 function credentialOrigin(repositoryUrl: string): string | null {
   const endpoint = lfsEndpointFromRepoUrl(repositoryUrl);
   try { return endpoint ? new URL(endpoint).origin : null; }
@@ -334,18 +337,32 @@ export class SourceControlService {
     const provider = this.provider;
     if (!provider || !this.settings.enabled) return;
     const revision = ++this.refreshRevision;
+    const before = this.lockRefreshState;
     this.lockRefreshState = { ...this.lockRefreshState, status: "refreshing", error: null };
     this.emit();
     try {
       let result;
       let mutations;
+      let attempts = 0;
       // The server may have answered before a lock this editor created or
       // released meanwhile; that list would revive or drop it, so ask again.
       do {
         mutations = this.lockMutations;
         result = await provider.verify();
         if (revision !== this.refreshRevision) return;
-      } while (isOk(result) && mutations !== this.lockMutations);
+        attempts += 1;
+      } while (isOk(result) && mutations !== this.lockMutations && attempts < MAX_OVERTAKEN_VERIFY_ATTEMPTS);
+      if (isOk(result) && mutations !== this.lockMutations) {
+        // A burst of local lock changes keeps overtaking the list: keep the
+        // cached locks and leave the next check to the scheduler, which runs
+        // it after this tick (or on resume) without holding up its ticks.
+        this.lockRefreshState = before.status === "refreshing"
+          ? { ...before, status: before.lastSuccessAt === null ? "idle" : "ready" }
+          : before;
+        this.emit();
+        this.scheduler?.requestImmediate();
+        return;
+      }
       if (!isOk(result)) {
         this.lockRefreshState = {
           ...this.lockRefreshState,
