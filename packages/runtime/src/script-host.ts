@@ -870,7 +870,7 @@ type HostContextMembers = Pick<ScriptContext, HostContextKey>;
  */
 export class ScriptHost {
   private readonly materialReplacements = new WeakMap<EngineObject, Map<string, number>>();
-  private readonly materialPreloads = new WeakMap<EngineObject, Map<string, string>>();
+  private readonly materialPreloads = new WeakMap<EngineObject, Map<string, { id: string; guid: string }>>();
   private readonly boundInterfaceKeys = new WeakMap<EngineObject, Set<string>>();
   /** Text components whose On Text Changed handlers are running now. */
   private readonly textChangeDispatches = new Set<ActorComponent>();
@@ -1593,7 +1593,14 @@ export class ScriptHost {
       },
       resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
       resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
-      resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
+      resetMaterialTextureParameter: (material, name) => {
+        const reset = this.resetMaterialParameter(material, name, "texture");
+        // The default texture needs no preload; one an earlier set acquired is released.
+        if (reset && (material instanceof MaterialObject || material instanceof PostProcessMaterialObject)) {
+          this.retainMaterialPreload(material, `texture:${name.trim()}`, null);
+        }
+        return reset;
+      },
       setMeshMaterial: (component, materialGuid) => {
         const target = asActorComponent(component);
         if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") ||
@@ -1603,8 +1610,8 @@ export class ScriptHost {
           throw new Error(`Material ${guid} is not prepared; use Set Material Instance (ctx.setMeshMaterialAsync), or load the Material first with Async Load Asset`);
         }
         this.beginMaterialReplacement(target, "material");
-        this.retainMaterialPreload(target, "material", "");
-        // Re-applying the current asset keeps the runtime parameter values.
+        // Re-applying the asset a preload holds keeps that preload; re-applying the current asset keeps its runtime parameter values.
+        this.releaseMaterialPreloadUnlessHolding(target, "material", guid);
         if (target.getVariable("materialGuid") !== guid) {
           const previous = target.getVariable("materialObject");
           if (previous instanceof MaterialObject) this.releaseMaterialPreloads(previous);
@@ -1646,14 +1653,14 @@ export class ScriptHost {
         if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
           throw new Error(`Texture ${value} is not prepared; use Set Material Texture Parameter (ctx.setMaterialTextureParameterAsync), or load the Texture first with Async Load Asset`);
         }
+        const textureAssetGuid = value?.trim() || null;
         if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) {
-          this.beginMaterialReplacement(material, `texture:${name.trim()}`);
-          this.retainMaterialPreload(material, `texture:${name.trim()}`, "");
+          const key = `texture:${name.trim()}`;
+          this.beginMaterialReplacement(material, key);
+          // Binding the texture a preload holds keeps that preload.
+          this.releaseMaterialPreloadUnlessHolding(material, key, textureAssetGuid ?? "");
         }
-        this.setMaterialParameter(material, name, {
-          kind: "texture",
-          textureAssetGuid: value?.trim() || null,
-        });
+        this.setMaterialParameter(material, name, { kind: "texture", textureAssetGuid });
       },
       rotatorToQuat,
       quatToRotator,
@@ -2073,7 +2080,7 @@ export class ScriptHost {
             throw Object.assign(new Error("The material replacement was cancelled or superseded"), { name: "AbortError" });
           }
           const material = context.setMeshMaterial(target, guid);
-          this.retainMaterialPreload(target, "material", preload);
+          this.retainMaterialPreload(target, "material", { id: preload, guid });
           preload = "";
           return material;
         } finally {
@@ -2092,7 +2099,7 @@ export class ScriptHost {
             throw Object.assign(new Error("The texture replacement was cancelled or superseded"), { name: "AbortError" });
           }
           context.setMaterialTextureParameter(material, name, guid || null);
-          this.retainMaterialPreload(material, key, preload);
+          this.retainMaterialPreload(material, key, { id: preload, guid });
           preload = "";
         } finally {
           if (preload) services.releaseAcquiredAssets?.(preload);
@@ -2537,20 +2544,27 @@ export class ScriptHost {
     return result.preloadId;
   }
 
-  private retainMaterialPreload(owner: EngineObject, key: string, preloadId: string): void {
+  /** Holds `preload` (the asset it keeps loaded) for the owner's scope, releasing the one it replaces. */
+  private retainMaterialPreload(owner: EngineObject, key: string, preload: { id: string; guid: string } | null): void {
     let scopes = this.materialPreloads.get(owner);
     const previous = scopes?.get(key);
-    if (preloadId) {
+    if (preload?.id) {
       if (!scopes) { scopes = new Map(); this.materialPreloads.set(owner, scopes); }
-      scopes.set(key, preloadId);
+      scopes.set(key, preload);
     } else scopes?.delete(key);
-    if (previous && previous !== preloadId) this.services.releaseAcquiredAssets?.(previous);
+    if (previous && previous.id !== preload?.id) this.services.releaseAcquiredAssets?.(previous.id);
+  }
+
+  /** A synchronous set keeps the scope's preload only while it holds the asset being set. */
+  private releaseMaterialPreloadUnlessHolding(owner: EngineObject, key: string, guid: string): void {
+    const held = this.materialPreloads.get(owner)?.get(key);
+    if (held && held.guid !== guid) this.retainMaterialPreload(owner, key, null);
   }
 
   private releaseMaterialPreloads(owner: EngineObject): void {
     const scopes = this.materialPreloads.get(owner);
     this.materialPreloads.delete(owner);
-    for (const id of scopes?.values() ?? []) this.services.releaseAcquiredAssets?.(id);
+    for (const { id } of scopes?.values() ?? []) this.services.releaseAcquiredAssets?.(id);
   }
 
   private isMaterialReplacementCurrent(owner: EngineObject, key: string, version: number): boolean {
