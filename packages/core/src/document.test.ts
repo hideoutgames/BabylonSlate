@@ -75,10 +75,13 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/PlayerProgress.savegame.hasset")).toBe("PlayerProgress");
     expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
     expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
-    expect(labelFromPath("assets/enemy.bt.hasset")).toBe("Enemy");
-    expect(labelFromPath("assets/enemy.blackboard.hasset")).toBe("Enemy");
     expect(isAssetDocumentKind("font")).toBe(true);
     expect(isAssetDocumentKind("content-browser")).toBe(false);
+  });
+
+  it("strips Behaviour Tree and Blackboard file suffixes from tab labels", () => {
+    expect(labelFromPath("assets/enemy.bt.hasset")).toBe("Enemy");
+    expect(labelFromPath("assets/enemy.blackboard.hasset")).toBe("Enemy");
   });
 
   it("opens Tileset and Tilemap as their own document kinds", () => {
