@@ -84,7 +84,20 @@ describe("captureConsoleLogs", () => {
     circular.self = circular;
     target.log(circular, 5n, undefined);
     expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("[Circular]");
     expect(messages[0]).toContain("5");
     stop?.();
+  });
+
+  it("writes a value shared by two properties in full", () => {
+    const target: Pick<Console, "log" | "info" | "debug" | "warn" | "error"> = {
+      log: () => {}, info: () => {}, debug: () => {}, warn: () => {}, error: () => {},
+    };
+    const messages: string[] = [];
+    const stop = runtime.captureConsoleLogs(target, (message) => messages.push(message));
+    const point = { x: 1 };
+    target.log({ start: point, end: point, path: [point, point] });
+    expect(messages).toEqual(['{"start":{"x":1},"end":{"x":1},"path":[{"x":1},{"x":1}]}']);
+    stop();
   });
 });

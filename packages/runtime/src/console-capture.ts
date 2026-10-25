@@ -6,12 +6,14 @@ function formatConsoleValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
   try {
-    const seen = new WeakSet<object>();
-    return JSON.stringify(value, (_key, item: unknown) => {
+    // The objects that contain the one being written; a value shared by two properties is no cycle.
+    const ancestors: object[] = [];
+    return JSON.stringify(value, function (this: unknown, _key, item: unknown) {
       if (typeof item === "bigint") return String(item);
       if (item && typeof item === "object") {
-        if (seen.has(item)) return "[Circular]";
-        seen.add(item);
+        while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) ancestors.pop();
+        if (ancestors.includes(item)) return "[Circular]";
+        ancestors.push(item);
       }
       return item;
     }) ?? String(value);
