@@ -84,6 +84,25 @@ describe("desktop account credentials", () => {
     ).toBeNull();
   });
 
+  it.each(["read", "write"] as const)(
+    "signs out of memory fallback when the %s of an older encrypted token fails",
+    async (failure) => {
+      const h = harness();
+      await new DesktopAccountSecretStore(h.files, h.safeStorage).set(
+        "clerk",
+        "old-token",
+      );
+      h.safeStorage.isEncryptionAvailable.mockReturnValue(false);
+      const memory = new DesktopAccountSecretStore(h.files, h.safeStorage);
+      await memory.set("clerk", "new-token");
+      h.files[failure].mockRejectedValueOnce(
+        Object.assign(new Error("permission denied"), { code: "EACCES" }),
+      );
+      await expect(memory.delete("clerk")).resolves.toBeUndefined();
+      expect(await memory.get("clerk")).toBeNull();
+    },
+  );
+
   it("recovers an interrupted account cache by requiring a fresh sign-in", async () => {
     const h = harness();
     await h.files.write('{"version":1,"secrets":{"clerk":');

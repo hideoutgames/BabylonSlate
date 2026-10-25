@@ -111,15 +111,24 @@ export class DesktopAccountSecretStore {
   }
 
   async delete(key: string): Promise<void> {
+    if (this.persistent) return this.queued(() => this.deleteStored(key));
+    this.memory.delete(key);
     return this.queued(async () => {
-      const values = await this.read();
-      // Remove an older encrypted token even when this run used memory fallback.
-      // Deleting ciphertext does not need access to the OS encryption key.
-      if (Object.hasOwn(values, key)) {
-        delete values[key];
-        await this.files.write(JSON.stringify({ version: 1, secrets: values }));
+      // Also remove an older encrypted token, which needs no OS encryption key.
+      // Best effort: if the file cannot be updated, only ciphertext from an
+      // earlier run remains, and this run's token is already gone.
+      try {
+        await this.deleteStored(key);
+      } catch {
+        // Sign-out must still succeed.
       }
-      this.memory.delete(key);
     });
+  }
+
+  private async deleteStored(key: string): Promise<void> {
+    const values = await this.read();
+    if (!Object.hasOwn(values, key)) return;
+    delete values[key];
+    await this.files.write(JSON.stringify({ version: 1, secrets: values }));
   }
 }
