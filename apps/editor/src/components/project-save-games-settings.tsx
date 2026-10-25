@@ -71,12 +71,13 @@ export function ProjectSaveGamesSettings() {
     void (async () => {
       try {
         const definition = validateSaveGameDefinition(openDefinition ?? await loadAssetDocument("save-game", definitionAsset.path));
-        const next = new SaveGameService({ projectId: projectGuid, definition, preview: true, storage: createSaveGameStorage(), defaultProfile: settings.defaultProfile, defaultSlot: settings.defaultSlot });
+        // Every call below names its profile and slot, so editing the defaults never rebuilds this service.
+        const next = new SaveGameService({ projectId: projectGuid, definition, preview: true, storage: createSaveGameStorage() });
         if (!cancelled) setService(next);
       } catch (cause) { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); }
     })();
     return () => { cancelled = true; };
-  }, [projectGuid, definitionAsset?.path, settings?.definitionGuid, settings?.defaultProfile, settings?.defaultSlot, registryEpoch, loadAssetDocument, openDefinition]); // eslint-disable-line react-hooks/exhaustive-deps -- depend on stable definition identity and settings values
+  }, [projectGuid, definitionAsset?.path, settings?.definitionGuid, registryEpoch, loadAssetDocument, openDefinition]); // eslint-disable-line react-hooks/exhaustive-deps -- depend on stable definition identity, not the settings object
 
   const refresh = useCallback(async () => {
     if (!service) return;

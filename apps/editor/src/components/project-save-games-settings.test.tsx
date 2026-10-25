@@ -11,13 +11,14 @@ if (typeof window.PointerEvent === "undefined") {
 const harness = vi.hoisted(() => ({
   storage: null as SaveGameStorage | null,
   definitionGuid: "progress" as string | null,
+  defaultSlot: "default",
   settings: vi.fn(),
   definition: { id: "progress", schemaVersion: 1, fields: [{ id: "score", name: "Score", type: "int" as const, defaultValue: 0 }] },
 }));
 vi.mock("@haptic/vfs", async (importOriginal) => ({ ...await importOriginal<typeof import("@haptic/vfs")>(), createSaveGameStorage: () => harness.storage }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   projectGuid: "project",
-  projectDocument: { settings: { saveGame: { definitionGuid: harness.definitionGuid, defaultProfile: "default", defaultSlot: "default", wipeOnPlay: false } } },
+  projectDocument: { settings: { saveGame: { definitionGuid: harness.definitionGuid, defaultProfile: "default", defaultSlot: harness.defaultSlot, wipeOnPlay: false } } },
   assetRegistry: { getByGuid: () => ({ path: "Progress.savegame.hasset", header: { guid: "progress", name: "Progress", type: "SaveGame" } }), list: () => [] },
   openDocuments: [{ id: "save-game:Progress.savegame.hasset", ref: { kind: "save-game", path: "Progress.savegame.hasset" }, content: harness.definition }],
   updateProjectSettings: harness.settings,
@@ -38,6 +39,7 @@ beforeEach(async () => {
   };
   harness.settings.mockClear();
   harness.definitionGuid = "progress";
+  harness.defaultSlot = "default";
   preview = new SaveGameService({ projectId: "project", definition: harness.definition, storage: harness.storage, preview: true });
   exported = new SaveGameService({ projectId: "project", definition: harness.definition, storage: harness.storage });
   preview.getSaveData().Score = 42;
@@ -55,6 +57,16 @@ describe("Preview Saves manager", () => {
     fireEvent.change(screen.getByLabelText("Profile", { exact: true }), { target: { value: "guest" } });
     await screen.findByRole("button", { name: "Inspect checkpoint" });
     expect(screen.queryByRole("button", { name: "Inspect default" })).toBeNull();
+  });
+
+  it("keeps the open inspection while the default slot is edited", async () => {
+    const { rerender } = render(<ProjectSaveGamesSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect default" }));
+    await screen.findByText("42");
+    harness.defaultSlot = "other";
+    rerender(<ProjectSaveGamesSettings />);
+    expect(screen.getByText("42")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Inspect default" })).toBeTruthy();
   });
 
   it("confirms destructive reset, removes all preview profiles, and retains exported-game data", async () => {
