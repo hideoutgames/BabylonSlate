@@ -368,15 +368,7 @@ export class AssetLoadingService {
       }
     }
     ticket.entries.clear();
-    if (!this.disposed && this.trimTimer === undefined) {
-      this.trimTimer = setTimeout(() => {
-        this.trimTimer = undefined;
-        this.trim();
-        if (this.rootFailures.size || [...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
-      }, this.budgets.retentionMs);
-      // A cache grace period should not keep command-line consumers alive.
-      (this.trimTimer as unknown as { unref?: () => void }).unref?.();
-    }
+    this.scheduleTrim();
     this.pump();
   }
 
@@ -390,6 +382,7 @@ export class AssetLoadingService {
       this.trim();
       if (this.rootFailures.size || [...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
     }, Math.max(1, this.budgets.retentionMs));
+    // A cache grace period should not keep command-line consumers alive.
     (this.trimTimer as unknown as { unref?: () => void }).unref?.();
   }
 
