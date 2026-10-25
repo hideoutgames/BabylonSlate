@@ -1266,6 +1266,37 @@ describe("shared shadow lifecycle", () => {
       restoreObservers - 1,
     );
   });
+  it("lifts a failed allocation's reduced size when the map size setting changes", () => {
+    const { scene, controller } = fixture();
+    const light = new PointLight("point", Vector3.Zero(), scene);
+    controller.register(light, true);
+    const allocation = vi
+      .spyOn(scene.getEngine(), "createRenderTargetCubeTexture")
+      .mockImplementationOnce(() => {
+        throw new Error("driver allocation failed");
+      });
+    controller.sync();
+    expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
+    expect(controller.diagnostics([light])[0]).toMatchObject({
+      status: "active",
+      reason: "shadow map reduced after allocation failure",
+      allocationError: "driver allocation failed",
+      mapSize: 512,
+    });
+    // The failure was keyed to the 1024 request; a 2048 request is new and
+    // no longer limited by it. Memory admission alone halves a 2048 cube.
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, localMapSize: 2048 }),
+    });
+    controller.sync();
+    expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512, 1024]);
+    expect(controller.diagnostics([light])[0]).toMatchObject({
+      status: "active",
+      reason: "shadow map reduced by memory or texture capability",
+      allocationError: null,
+      mapSize: 1024,
+    });
+  });
   it("releases a non-throwing WebGL allocation failure and retains the validated smaller cube", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
