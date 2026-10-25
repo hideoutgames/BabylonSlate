@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./component-props": "./src/component-props.ts",
     "./havok-backend": "./src/havok-backend.ts",
-    "./rapier-backend": "./src/rapier-backend.ts"
+    "./rapier-backend": "./src/rapier-backend.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
