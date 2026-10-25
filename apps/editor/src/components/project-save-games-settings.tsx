@@ -62,6 +62,8 @@ export function ProjectSaveGamesSettings() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [inspection, setInspection] = useState<{ slot: string; values: Record<string, SaveGameValue> } | null>(null);
+  // Advanced whenever an effect clears the inspection, so an Inspect still loading then cannot bring back a stale save.
+  const inspectionGeneration = useRef(0);
   const [deleteTarget, setDeleteTarget] = useState<SaveGameInfo | "all" | null>(null);
 
   useEffect(() => { setProfile(settings?.defaultProfile ?? "default"); }, [projectGuid, settings?.defaultProfile]);
@@ -71,6 +73,7 @@ export function ProjectSaveGamesSettings() {
     let cancelled = false;
     setService(null);
     setSaves([]);
+    inspectionGeneration.current += 1;
     setInspection(null);
     setError(null);
     if (!projectGuid || !definitionAsset || !settings) return;
@@ -93,6 +96,7 @@ export function ProjectSaveGamesSettings() {
   useEffect(() => {
     let cancelled = false;
     // An open inspection belongs to the profile it was loaded from.
+    inspectionGeneration.current += 1;
     setInspection(null);
     if (service) void service.listSaves({ profile }).then((result) => {
       if (cancelled) return;
@@ -152,7 +156,14 @@ export function ProjectSaveGamesSettings() {
         <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{save.slot}</span><Badge variant="outline">{save.status === "ok" ? save.recovered ? "Recovered" : "Valid" : save.status === "corrupt" ? "Corrupt" : "Incompatible"}</Badge></div>
         <FieldDescription>{save.createdAt ? `${new Date(save.createdAt).toLocaleString()} · Schema ${save.schemaVersion} · Generation ${save.sequence}` : save.error?.message}</FieldDescription>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status !== "ok"} aria-label={`Inspect ${save.slot}`} onClick={() => void run(async () => { if (!service) return; resultValue(await service.loadGame(save)); setInspection({ slot: save.slot, values: structuredClone(service.getSaveData()) }); })}>Inspect</Button>
+          <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status !== "ok"} aria-label={`Inspect ${save.slot}`} onClick={() => void run(async () => {
+            if (!service) return;
+            const generation = inspectionGeneration.current;
+            resultValue(await service.loadGame(save));
+            // A Default Profile edit or a new definition while it loaded already cleared the inspection.
+            if (inspectionGeneration.current !== generation) return;
+            setInspection({ slot: save.slot, values: structuredClone(service.getSaveData()) });
+          })}>Inspect</Button>
           <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status === "corrupt"} aria-label={`Export ${save.slot}`} onClick={() => void run(async () => { if (service) downloadSave(resultValue(await service.exportSave(save)), save.slot); })}>Export Save</Button>
           <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled} aria-label={`Delete ${save.slot}`} onClick={() => setDeleteTarget(save)}>Delete Save</Button>
         </div>
