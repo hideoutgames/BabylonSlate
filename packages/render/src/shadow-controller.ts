@@ -65,6 +65,7 @@ import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
+import { listsHiddenCaster } from "./shadow-caster-warm";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -1618,13 +1619,16 @@ export class SceneShadowController {
         this.spatial.queryPlanes(activePlanes, casters);
         // The index never plane-culls deforming casters. A local map ends
         // at its light's range, so anything that cannot reach it draws nothing.
-        // A mesh a world view does not draw yet casts nothing either.
+        // A mesh a world view does not draw yet casts nothing either; on WebGPU
+        // a steady frame lists it only to create its depth pipelines, every
+        // draw of it skipped (`shadow-caster-warm.ts`).
         const light = generator.getLight();
         const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
         const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
         let kept = 0;
         for (const mesh of casters)
-          if (!isRevealPending(mesh) && (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
+          if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
+            (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
         casters.length = kept;
         return casters;
       };
