@@ -1,11 +1,11 @@
 import type { ProjectStorage } from "@haptic/core";
 import { PROJECT_FILE } from "@haptic/core";
 
+/** The project.json mtime, or null when it is missing or cannot be read. */
 export async function readProjectJsonMtime(
   storage: ProjectStorage,
 ): Promise<number | null> {
   try {
-    if (!(await storage.exists(PROJECT_FILE))) return null;
     return (await storage.stat(PROJECT_FILE)).mtime;
   } catch {
     return null;

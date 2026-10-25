@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@haptic/core";
+import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
 
 const journalOperations = new WeakMap<
   ProjectStorage,
@@ -77,16 +77,44 @@ function sealMarkerPath(projectGuid: string): string {
   return `${journalSegmentsPath(projectGuid)}/sealed.json`;
 }
 
-/** Highest segment index sealed for recovery, or null when none is. */
+/**
+ * Highest segment index sealed for recovery, or null when none is: no marker
+ * (or no journal folder), or one that does not parse. A marker that exists but
+ * cannot be read rejects, so a writer never mistakes it for "nothing sealed":
+ * truncation would remove the sealed segments, and an append could write into
+ * the last one.
+ */
 async function sealedThrough(
   storage: ProjectStorage,
   projectGuid: string,
 ): Promise<number | null> {
-  const path = sealMarkerPath(projectGuid);
-  if (!(await storage.exists(path))) return null;
+  let text: string;
   try {
-    const { through } = JSON.parse(await storage.readText(path)) as { through?: unknown };
+    text = await storage.readText(sealMarkerPath(projectGuid));
+  } catch (error) {
+    if (isStorageNotFound(error)) return null;
+    throw error;
+  }
+  try {
+    const { through } = JSON.parse(text) as { through?: unknown };
     return typeof through === "number" && Number.isInteger(through) ? through : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `sealedThrough` for the recovery offer and for Discard: a marker that cannot
+ * be read offers nothing and discards nothing, as a missing one does, so
+ * opening the project (which reads the offer, then discards an empty one)
+ * never fails on it.
+ */
+async function sealedThroughForRecovery(
+  storage: ProjectStorage,
+  projectGuid: string,
+): Promise<number | null> {
+  try {
+    return await sealedThrough(storage, projectGuid);
   } catch {
     return null;
   }
@@ -106,13 +134,17 @@ async function segmentIndices(
   return indices.sort((a, b) => a - b);
 }
 
+/** Remove the journal folder; one that is already gone counts as removed. */
 async function removeJournalFiles(
   storage: ProjectStorage,
   projectGuid: string,
-  exists: boolean,
 ): Promise<void> {
   tailsFor(storage).delete(projectGuid);
-  if (exists) await storage.remove(journalSegmentsPath(projectGuid));
+  try {
+    await storage.remove(journalSegmentsPath(projectGuid));
+  } catch (error) {
+    if (!isStorageNotFound(error)) throw error;
+  }
 }
 
 /**
@@ -151,7 +183,8 @@ async function writeSegments(
 /**
  * Remove the live journal when `canClear()` still holds once every append
  * queued before this call has landed. Resolves false when it did not. Segments
- * sealed for recovery stay.
+ * sealed for recovery stay; a seal marker that exists but cannot be read
+ * rejects with its read error and removes nothing.
  */
 export async function truncateJournal(
   derivedStorage: ProjectStorage,
@@ -159,15 +192,15 @@ export async function truncateJournal(
   canClear: () => boolean = () => true,
 ): Promise<boolean> {
   return journalOperation(derivedStorage, projectGuid, async () => {
-    const exists = await derivedStorage.exists(journalSegmentsPath(projectGuid));
-    const through = exists ? await sealedThrough(derivedStorage, projectGuid) : null;
+    // A missing journal folder reads as unsealed, and its removal is a no-op.
+    const through = await sealedThrough(derivedStorage, projectGuid);
     const live =
       through === null
         ? []
         : (await segmentIndices(derivedStorage, projectGuid)).filter((index) => index > through);
     if (!canClear()) return false;
     if (through === null) {
-      await removeJournalFiles(derivedStorage, projectGuid, exists);
+      await removeJournalFiles(derivedStorage, projectGuid);
     } else {
       tailsFor(derivedStorage).delete(projectGuid);
       for (const index of live) await derivedStorage.remove(segmentPath(projectGuid, index));
@@ -201,13 +234,16 @@ export async function sealJournalForRecovery(
   });
 }
 
-/** Remove the sealed segments (Discard). Records written after the seal stay. */
+/**
+ * Remove the sealed segments (Discard). Records written after the seal stay,
+ * and a seal marker that cannot be read leaves everything in place.
+ */
 export async function discardSealedJournal(
   derivedStorage: ProjectStorage,
   projectGuid: string,
 ): Promise<void> {
   return journalOperation(derivedStorage, projectGuid, async () => {
-    const through = await sealedThrough(derivedStorage, projectGuid);
+    const through = await sealedThroughForRecovery(derivedStorage, projectGuid);
     if (through === null) return;
     for (const index of await segmentIndices(derivedStorage, projectGuid)) {
       if (index <= through) await derivedStorage.remove(segmentPath(projectGuid, index));
@@ -236,6 +272,9 @@ export async function unsealJournal(
  * Append JSONL lines to the recovery journal in order (creates it if missing).
  * Only the tail segment is read and rewritten, never the whole journal; a tail
  * already known to be too full for the first line is neither read nor rewritten.
+ * The first append of a session rejects while the seal marker exists but cannot
+ * be read, since the tail may be sealed; `JournalBuffer` keeps the lines for
+ * its next flush.
  */
 export async function appendJournalLines(
   derivedStorage: ProjectStorage,
@@ -300,13 +339,16 @@ export async function readJournalLines(
   );
 }
 
-/** Read non-empty lines of the segments sealed for recovery, in order. */
+/**
+ * Read non-empty lines of the segments sealed for recovery, in order. None
+ * while the seal marker cannot be read.
+ */
 export async function readSealedJournalLines(
   derivedStorage: ProjectStorage,
   projectGuid: string,
 ): Promise<string[]> {
   return journalOperation(derivedStorage, projectGuid, async () => {
-    const through = await sealedThrough(derivedStorage, projectGuid);
+    const through = await sealedThroughForRecovery(derivedStorage, projectGuid);
     if (through === null) return [];
     const sealed = (await segmentIndices(derivedStorage, projectGuid)).filter(
       (index) => index <= through,

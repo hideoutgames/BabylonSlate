@@ -51,7 +51,8 @@ describe("derived-data journal", () => {
 
     const written = writes.mock.calls.reduce((sum, [, text]) => sum + text.length, 0);
     expect(written).toBe(expected.reduce((sum, line) => sum + line.length + 1, 0));
-    expect(reads).not.toHaveBeenCalled();
+    // Only the absent seal marker is looked up.
+    expect(reads.mock.calls.filter(([path]) => path.endsWith(".jsonl"))).toEqual([]);
     expect(await readJournalLines(storage, "proj-1")).toEqual(expected);
   });
 
@@ -65,6 +66,8 @@ describe("derived-data journal", () => {
     );
     await truncateJournal(storage, "proj-1");
     expect(await storage.exists(journalSegmentsPath("proj-1"))).toBe(false);
+    // A save with no journal left to clear still succeeds.
+    expect(await truncateJournal(storage, "proj-1")).toBe(true);
     await appendJournalLines(storage, "proj-1", ["next"]);
     expect(await readJournalLines(storage, "proj-1")).toEqual(["next"]);
   });
@@ -170,6 +173,26 @@ describe("derived-data journal", () => {
       expect(await readJournalLines(storage, "proj-1")).toEqual([...earlier, "after reopen"]);
       await truncateJournal(storage, "proj-1");
       expect(await readJournalLines(storage, "proj-1")).toEqual([]);
+    });
+
+    it("survive a truncation that cannot read their marker, which fails instead", async () => {
+      const { storage, earlier } = await sealedSession();
+      await appendJournalLines(storage, "proj-1", ["after reopen"]);
+      const marker = `${journalSegmentsPath("proj-1")}/sealed.json`;
+      const failure = new Error("Storage is unavailable");
+      const fail = (path: string) => { if (path === marker) throw failure; };
+      const exists = storage.exists.bind(storage);
+      const stat = storage.stat.bind(storage);
+      const readText = storage.readText.bind(storage);
+      const spies = [
+        vi.spyOn(storage, "exists").mockImplementation(async (path) => { fail(path); return exists(path); }),
+        vi.spyOn(storage, "stat").mockImplementation(async (path) => { fail(path); return stat(path); }),
+        vi.spyOn(storage, "readText").mockImplementation(async (path) => { fail(path); return readText(path); }),
+      ];
+      await expect(truncateJournal(storage, "proj-1")).rejects.toBe(failure);
+      for (const spy of spies) spy.mockRestore();
+      expect(await readJournalLines(storage, "proj-1")).toEqual([...earlier, "after reopen"]);
+      expect(await readSealedJournalLines(storage, "proj-1")).toEqual(earlier);
     });
 
     it("include edits from an earlier session when sealed again", async () => {
