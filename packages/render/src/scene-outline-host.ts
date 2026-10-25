@@ -10,10 +10,14 @@ import type { SceneRenderCoordinator } from "./scene-render-coordinator";
 
 type ActorOutline = { meshes: AbstractMesh[]; bindings: readonly OutlineBinding[] };
 
+/** Whether an enabled Outline component outlines the actor's meshes. */
+function outlinesActor(actor: ActorOutline): boolean {
+  return actor.meshes.length > 0 && actor.bindings.some((binding) => binding.enabled);
+}
+
 /** Whether an enabled Outline component outlines some actor's meshes. */
 function hasOutlineBinding(actors: ReadonlyMap<string, ActorOutline>): boolean {
-  for (const actor of actors.values())
-    if (actor.meshes.length && actor.bindings.some((binding) => binding.enabled)) return true;
+  for (const actor of actors.values()) if (outlinesActor(actor)) return true;
   return false;
 }
 
@@ -92,11 +96,11 @@ export class SceneOutlineHost {
 
   setActor(actorId: string, meshes: readonly AbstractMesh[], bindings: readonly OutlineBinding[], previousActorId?: string): void {
     if (this.disposed) return;
-    const eligible = meshes.filter((mesh) => this.eligible(mesh));
-    const actors = new Map(this.actors);
+    const actor = { meshes: meshes.filter((mesh) => this.eligible(mesh)), bindings };
+    const actors = this.staysIdle(actor) ? this.actors : new Map(this.actors);
     if (previousActorId && previousActorId !== actorId) actors.delete(previousActorId);
-    actors.set(actorId, { meshes: eligible, bindings });
-    this.sync(actors);
+    actors.set(actorId, actor);
+    if (actors !== this.actors) this.sync(actors);
   }
 
   replaceActors(actors: readonly { id: string; meshes: readonly AbstractMesh[]; bindings: readonly OutlineBinding[] }[]): void {
@@ -106,6 +110,7 @@ export class SceneOutlineHost {
 
   removeActor(actorId: string): void {
     if (this.disposed || !this.actors.has(actorId)) return;
+    if (this.staysIdle()) { this.actors.delete(actorId); return; }
     const actors = new Map(this.actors); actors.delete(actorId);
     this.sync(actors);
   }
@@ -136,6 +141,16 @@ export class SceneOutlineHost {
     if (!isViewportShadingTarget(source)) return false;
     const fill = (mesh.material ?? this.scene.defaultMaterial).fillMode;
     return fill === Material.TriangleFillMode || fill === Material.TriangleStripDrawMode || fill === Material.TriangleFanDrawMode;
+  }
+
+  /**
+   * Whether the host is idle and stays idle with `actor` added: nothing is outlined before or after (CEL read live,
+   * as `sync` does), so membership changes in place with no snapshot to validate first. Leaving idle always syncs.
+   */
+  private staysIdle(actor?: ActorOutline): boolean {
+    if (!this.idle || this.selectedActors.length || (actor && outlinesActor(actor))) return false;
+    const { mode, cel } = sceneRenderingSettings(this.scene);
+    return !(mode === "cel" && cel.outlinesEnabled);
   }
 
   private sync(actors = this.actors, selectedActors = this.selectedActors): void {
