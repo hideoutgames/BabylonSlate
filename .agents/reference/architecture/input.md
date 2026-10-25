@@ -15,7 +15,7 @@ Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver
 | `MotionInput`, motion codes, tilt and shake constants | [`packages/input/src/motion.ts`](../../../packages/input/src/motion.ts) |
 | `InputRingBuffer`, wire encoding | [`packages/input/src/ring-buffer.ts`](../../../packages/input/src/ring-buffer.ts) |
 | DOM capture (Play and player) | [`packages/input/src/dom-input-capture.ts`](../../../packages/input/src/dom-input-capture.ts) (`@haptic/input/dom`) |
-| Tick wiring | [`packages/runtime/src/driver.ts`](../../../packages/runtime/src/driver.ts) |
+| Tick wiring | [`packages/runtime/src/runtime-tick-phases.ts`](../../../packages/runtime/src/runtime-tick-phases.ts) (input phase, `requestDeviceMotion`), [`runtime-composition-systems.ts`](../../../packages/runtime/src/runtime-composition-systems.ts) (World input provider), [`driver.ts`](../../../packages/runtime/src/driver.ts) (input queue and reset) |
 | `TickContext` input API | [`packages/object-model/src/objects.ts`](../../../packages/object-model/src/objects.ts) |
 | `TouchInput` (`engine:Touch`), `TOUCH_PHASES`, `TOUCH_TYPES` | [`packages/core/src/touch-input.ts`](../../../packages/core/src/touch-input.ts) |
 | Graph nodes | [`packages/scripting-nodes/src/input.ts`](../../../packages/scripting-nodes/src/input.ts), [`input-bindings.ts`](../../../packages/scripting-nodes/src/input-bindings.ts); event gating in [`packages/scripting/src/compile.ts`](../../../packages/scripting/src/compile.ts) |

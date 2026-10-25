@@ -16,7 +16,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [scripting](../../packages/scripting/src/) | Graph IR, pin types and assignability, pure validator, JS code generator with anchor tables |
 | [scripting-nodes](../../packages/scripting-nodes/src/) | Data-driven node catalog (definition + codegen per node) |
 | [input](../../packages/input/src/) | Raw input ring, action/axis mapping model, `InputResolver` |
-| [runtime](../../packages/runtime/src/) | Game worker entry and in-process driver, ScriptHost, snapshot publisher, runtime subsystems |
+| [runtime](../../packages/runtime/src/) | Game worker entry and in-process driver (`driver.ts`; its subsystem wiring in `runtime-composition*.ts`, tick phases in `runtime-tick-phases.ts`, error and breakpoint reporting in `runtime-error-reporting.ts`), ScriptHost, snapshot publisher, runtime subsystems |
 | [physics](../../packages/physics/src/) | Body/shape protocol; Havok 3D (Physics V2 on a worker-local NullEngine), Rapier 2D, software test backend |
 | [bridge](../../packages/bridge/src/) | SAB seq-lock and transferable transports, snapshot layout, typed channel messages |
 | [render](../../packages/render/src/) | Babylon view: Engine/Scene lifecycle, snapshot apply, ResourceCache, render scheduler, editor tools and gizmos, material/particle lowering, audio and particle services, KTX2 transcode, font registry |
@@ -77,7 +77,7 @@ render: snapshot apply + command handlers on the Play Scene of the shared Engine
 - Workers build as ES modules: construct every Vite-bundled worker with `{ type: "module" }`. Heavy optional runtimes (Rapier, Recast) stay separate chunks loaded by `import()` on first use. Classic workers (`public/basis/encode-worker.js`) load by URL and are not bundled.
 - New asset editors are DockView documents wired through `window-catalog.ts`, `panel-registry.tsx`, `document-workspace.tsx` and `documentKindForAssetType` ([dockview-editor-tabs.md](../rules/dockview-editor-tabs.md)).
 - Editor state subscriptions: read the narrowest hook (`useOpenDocument`, `useOpenDocumentsOfKinds`, state slices); `useDocumentActions()` is identity-stable; `useDocuments()` is deprecated. A component that calls an action during render must also subscribe to the state its result depends on. Registry-derived views key on `[assetRegistry, registryEpoch]`.
-- Runtime driver subsystems register once in `RuntimeSubsystems`; constructors build only their own state, call no host callback and emit nothing; every command goes through the driver's `emit()`; Stop and Scene replacement iterate the registry instead of hand-written call lists.
+- Runtime driver subsystems register once in `RuntimeSubsystems`; constructors build only their own state, call no host callback and emit nothing; every command goes through the driver's `emit()`; Stop and Scene replacement iterate the registry instead of hand-written call lists. The `runtime-composition*.ts` factories take the driver as a `RuntimeComposition` and read its members inside host callbacks, never destructured or cached, because later subsystems do not exist yet when they run.
 
 ## Coding standards
 
