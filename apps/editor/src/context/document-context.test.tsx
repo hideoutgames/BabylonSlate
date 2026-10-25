@@ -465,14 +465,15 @@ describe("DocumentProvider actions and route", () => {
     } finally { release(); save.mockRestore(); }
   });
 
-  it("keeps a scene edit made while a Class rename writes its files", async () => {
+  it.each([true, false])("keeps a scene edit made while a Class rename writes its files (scene referenced the Class before: %s)", async (referencedBefore) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;
     const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
     act(() => actions.noteAssetsCreated());
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const before = referencedBefore ? ["hero"] : [];
     await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
-      ...openScene(MAIN_SCENE_ID), actors: [createActor("hero", "Hero", { classId: "Hero" })],
+      ...openScene(MAIN_SCENE_ID), actors: before.map((id) => createActor(id, "Hero", { classId: "Hero" })),
     }));
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
@@ -492,10 +493,8 @@ describe("DocumentProvider actions and route", () => {
       }));
       await act(async () => { release(); await renaming; });
     } finally { release(); rename.mockRestore(); }
-    expect(openScene(MAIN_SCENE_ID).actors.map(({ id, classId }) => ({ id, classId }))).toEqual([
-      { id: "hero", classId: "Champion" },
-      { id: "late", classId: "Champion" },
-    ]);
+    expect(openScene(MAIN_SCENE_ID).actors.map(({ id, classId }) => ({ id, classId })))
+      .toEqual([...before, "late"].map((id) => ({ id, classId: "Champion" })));
     expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
   });
 

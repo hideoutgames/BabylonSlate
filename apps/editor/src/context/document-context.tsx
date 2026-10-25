@@ -1729,15 +1729,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       // The rename moved files and may have rewritten project.json: neither is external.
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-      for (const { doc } of openChanges) {
-        // From the tab's current content: it can change while the rename writes.
-        const open = documentService.getDocument(doc.id);
-        const walked = open?.content ? replaceClassAssetReferences(open.content, replacements, definitionFields) : null;
-        if (walked?.changed) documentService.applyFileRewrite(doc.id, walked.value);
-        // Content Browser file operations are not undoable. Old edit commands
-        // must not reintroduce the Class id that no longer exists.
-        editSessionRef.current.dropDocument(doc.id);
+      // Every open tab, from its current content: an edit or a first read
+      // while the rename wrote can add a reference the walk above missed.
+      const rewritten = new Set(openChanges.map(({ doc }) => doc.id));
+      for (const open of documentService.getOpenDocumentsOrdered()) {
+        if (!open.content || open.ref.kind === "content-browser" || open.ref.kind === "trace") continue;
+        const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
+        if (!walked.changed) continue;
+        documentService.applyFileRewrite(open.id, walked.value);
+        rewritten.add(open.id);
       }
+      // Content Browser file operations are not undoable. Old edit commands,
+      // also those of a tab closed meanwhile, must not reintroduce the Class
+      // id that no longer exists.
+      for (const id of rewritten) editSessionRef.current.dropDocument(id);
       // The registry stamped the file's payload name; an open tab follows it.
       for (const doc of documentService.getOpenDocumentsOrdered()) {
         if (doc.ref.path === before.path) documentService.applyAssetRename(doc.id, renamed.header.name);
