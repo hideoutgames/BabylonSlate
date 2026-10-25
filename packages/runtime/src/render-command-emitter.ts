@@ -42,6 +42,7 @@ import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
+import { componentOwners } from "./world-component-index";
 
 interface RenderCommandEmitterHost {
   world(): World;
@@ -506,6 +507,11 @@ export function liveOverlayButtons(actor: Actor): ActorComponent[] {
   );
 }
 
+/** The actor's children that have a Button component, in world order, without scanning the whole World. */
+export function overlayButtonChildren(world: World, actor: Actor): Actor[] {
+  return componentOwners(world, "2DButtonComponent").filter((child) => actorParentGuid(child) === actor.guid);
+}
+
 function overlayMeshInteraction(
   actor: Actor,
   world: World,
@@ -517,11 +523,7 @@ function overlayMeshInteraction(
   const buttons = liveOverlayButtons(actor);
   // Own buttons take precedence. Share one child scan across all metadata.
   if (buttons.length === 0) {
-    for (const child of world.getActors()) {
-      if (actorParentGuid(child) === actor.guid) {
-        buttons.push(...liveOverlayButtons(child));
-      }
-    }
+    for (const child of overlayButtonChildren(world, actor)) buttons.push(...liveOverlayButtons(child));
   }
   return {
     hitTest: overlayHitTestOf(actor, buttons[0]),

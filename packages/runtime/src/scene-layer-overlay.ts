@@ -24,11 +24,10 @@ import {
   type SceneLayer,
   type World,
 } from "@haptic/object-model";
-import { actorParentGuid } from "./actor-world-transform";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import type { OwnerAdmission } from "./owner-admission";
-import { liveOverlayButtons, type RenderCommandEmitter } from "./render-command-emitter";
+import { liveOverlayButtons, overlayButtonChildren, type RenderCommandEmitter } from "./render-command-emitter";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
@@ -542,9 +541,7 @@ function resolveOverlayPointerButton(
     if (requested && !button) return null;
     return { owner: actor, button };
   }
-  const children = world
-    .getActors()
-    .filter((child) => actorParentGuid(child) === actor.guid);
+  const children = overlayButtonChildren(world, actor);
   if (requested) {
     for (const child of children) {
       const button = findOverlayButton(liveOverlayButtons(child), requested);
