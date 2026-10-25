@@ -153,7 +153,7 @@ function modelSourceKey(guid: string, source: Blob, payload?: unknown, packed?: 
 }
 
 /** Child of the actor placeholder so scene TRS and import scale stay independent. */
-export function applyModelImportScale(
+function applyModelImportScale(
   placeholder: AbstractMesh,
   scale: number,
 ): TransformNode {
@@ -210,7 +210,7 @@ function bumpSlotAnimEpoch(
   return next;
 }
 
-export function disposeSlotAnimationGroups(
+function disposeSlotAnimationGroups(
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
