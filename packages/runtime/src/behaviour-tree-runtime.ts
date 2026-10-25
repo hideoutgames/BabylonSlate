@@ -599,19 +599,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const slotId = this.host.slot(actor);
     if (slotId === undefined) return;
     const component = evaluatedBehaviourTreeComponent(actor);
-    if (!component) {
-      // A removed BehaviourTreeComponent takes its tree's running work with it.
+    const guid = component ? behaviourTreeGuidOf(component) : null;
+    const document = guid ? this.documents.get(guid) : undefined;
+    if (!component || !guid || !document) {
+      // A removed BehaviourTreeComponent, or one switched to no tree or to one that is not
+      // loaded, takes its old tree's running work with it.
       if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
-      return;
-    }
-    const guid = behaviourTreeGuidOf(component);
-    if (!guid) {
-      this.emitMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
-      return;
-    }
-    const document = this.documents.get(guid);
-    if (!document) {
-      this.emitMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
+      if (component) this.emitMissing(actor.guid, guid ? `Behaviour tree not loaded: ${guid}` : "BehaviourTreeComponent has no treeGuid");
       return;
     }
     const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
@@ -739,9 +733,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   }
 
   /**
-   * The slot's BehaviourTreeComponent, tree or Blackboard changed: abort the
-   * old tree's running tasks and drop its evaluation, so the new source starts
-   * at its root with fresh Blackboard defaults.
+   * The slot's BehaviourTreeComponent, tree or Blackboard changed, or it has
+   * no loaded tree any more: abort the old tree's running tasks and drop its
+   * evaluation and Play Animation ownership, so a new source starts at its
+   * root with fresh Blackboard defaults. A tree the source catalog already
+   * dropped has no nodes left to abort; its slot state still clears.
    */
   private resetEvaluation(actor: Actor, slotId: number, dtSeconds: number): void {
     const previous = this.evalBySlot.get(slotId);

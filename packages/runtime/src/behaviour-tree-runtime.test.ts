@@ -99,6 +99,14 @@ describe("BehaviourTreeRuntime", () => {
       tree.setVariable("treeGuid", "tree-1");
       runtime.tick();
       expect(btStates(commands).at(-1)).toMatchObject({ btNodeId: "wait", blackboard: { items: ["pushed"] } });
+
+      // Pointing the component at a tree that is not loaded aborts the running tree too.
+      commands.length = 0;
+      tree.setVariable("treeGuid", "missing");
+      runtime.tick();
+      expect(commands.filter((command) => command.type === "stopSound")).toEqual([
+        { type: "stopSound", voiceId: "bt:guard:sound" },
+      ]);
     } finally { runtime.stop(); }
   });
 

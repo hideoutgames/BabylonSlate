@@ -38,7 +38,7 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 
 ## Runtime hosts
 
-- `BehaviourTreeComponent` (`treeGuid`, `blackboardGuid` override). `BehaviourTreeRuntime.tick` visits only owners from the shared component owner index ([object-model.md](object-model.md)). Changing tree or blackboard aborts running tasks and restarts with fresh defaults; each evaluation copies array/object defaults. Missing tree → `bt.missing_tree`.
+- `BehaviourTreeComponent` (`treeGuid`, `blackboardGuid` override). `BehaviourTreeRuntime.tick` visits only owners from the shared component owner index ([object-model.md](object-model.md)). Changing tree or blackboard aborts running tasks and restarts with fresh defaults; each evaluation copies array/object defaults. Missing tree → `bt.missing_tree`; a running tree switched to no tree or an unloaded one aborts its tasks the same way.
 - Move To / Move To Blackboard Key drive the navigation crowd; abort calls `stopNavAgent`.
 - Rotate To Face writes yaw only and teleports the physics body like script transform writes.
 - Play Animation emits `animState` (`stateId: "bt.playAnimation"`) and suppresses the Animation Graph for that slot while owned; abort or slot release ends ownership.
