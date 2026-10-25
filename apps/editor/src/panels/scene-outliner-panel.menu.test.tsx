@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@haptic/core";
 import { createActor, createDefaultScene } from "@haptic/core";
@@ -34,6 +34,7 @@ const harness = vi.hoisted(() => ({
   assetListReads: 0,
   keybindReads: 0,
   registryEpoch: 0,
+  loadGraphDocument: (_path: string): Promise<unknown> => Promise.resolve(null),
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
@@ -105,7 +106,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   applySceneChange,
   assetRegistry,
   registryEpoch: harness.registryEpoch,
-  loadGraphDocument: vi.fn(),
+  loadGraphDocument: (path: string) => harness.loadGraphDocument(path),
   openDocument,
 })));
 
@@ -120,6 +121,7 @@ afterEach(() => {
   harness.assetListReads = 0;
   harness.keybindReads = 0;
   harness.registryEpoch = 0;
+  harness.loadGraphDocument = () => Promise.resolve(null);
 });
 
 describe("SceneOutlinerPanel menus", () => {
@@ -220,6 +222,36 @@ describe("SceneOutlinerPanel menus", () => {
     const written = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
     expect(written.name).toBe("Edited While Open");
     expect(written.actors.map((actor) => actor.name)).toEqual(actorNames);
+  });
+  it("places a Class into the Scene as it is when the Class finishes loading", async () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("actor-1", "Cube")];
+    harness.scene = scene;
+    harness.assets = [
+      { path: "assets/Hero.class.hasset", header: { type: "Class", name: "Hero", guid: "hero-class" } },
+    ];
+    let finishLoad!: (graph: unknown) => void;
+    const loading = new Promise<unknown>((resolve) => { finishLoad = resolve; });
+    harness.loadGraphDocument = () => loading;
+    const panel = () => (
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>
+    );
+    const view = render(panel());
+    fireEvent.click(screen.getByTestId("outliner-add-actor"));
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    fireEvent.click(screen.getByTestId("place-actors-item-asset-hero-class"));
+
+    // An edit made elsewhere lands while the Class graph loads.
+    harness.scene = { ...scene, name: "Edited While Loading" };
+    view.rerender(panel());
+    await act(async () => { finishLoad(null); await loading; });
+
+    await waitFor(() => expect(applySceneChange).toHaveBeenCalled());
+    const written = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
+    expect(written.name).toBe("Edited While Loading");
+    expect(written.actors).toHaveLength(2);
   });
   it("lists assets added to the registry while Place Actors was closed when it reopens", async () => {
     const scene = createDefaultScene();
