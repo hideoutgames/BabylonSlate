@@ -35,9 +35,9 @@ export const ENGINE_NAV_OBSTACLE_KIND_ENUM_ID = "engine:NavObstacleKind";
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
 
 /**
- * Query categories, stored by member name in graphs. `PhysicsWorldSync.queryOptions` is the only place that gives
- * them meaning: Static and Dynamic follow a body's motion, Character an actor with a Movement component, Solid
- * everything but trigger shapes, and Triggers only trigger shapes.
+ * Query categories, stored by member name in graphs. `PhysicsQueryChannels.options` in the runtime is the only
+ * place that gives them meaning: Static and Dynamic follow a body's motion, Character an actor with a Movement
+ * component, Solid everything but trigger shapes, and Triggers only trigger shapes.
  */
 export const COLLISION_CHANNEL_MEMBERS = [
   "All",

@@ -23,7 +23,7 @@ Tileset and Tilemap assets, chunked geometry, merged chain collision, animated t
 | Terrain masks, `canonicalTerrainMask`, `terrainMatchScore`, `createTerrainResolver` | [`packages/assets/src/tileset-terrain.ts`](../../../packages/assets/src/tileset-terrain.ts) |
 | Terrain painting `paintTilemapTerrain`, `tilemapTerrainKeyOf` | [`packages/assets/src/tilemap-terrain.ts`](../../../packages/assets/src/tilemap-terrain.ts) |
 | Meshes, atlas binding, parallax | [`packages/render/src/tilemap-mesh.ts`](../../../packages/render/src/tilemap-mesh.ts) |
-| Physics chains (`PhysicsWorldSync`) | [`packages/runtime/src/physics-sync.ts`](../../../packages/runtime/src/physics-sync.ts) |
+| Physics chains (`SpriteTileColliders`) | [`packages/runtime/src/physics-sprite-tile-colliders.ts`](../../../packages/runtime/src/physics-sprite-tile-colliders.ts) |
 | Animation clock (`tilemapAnimationTime`) | [`packages/runtime/src/driver.ts`](../../../packages/runtime/src/driver.ts) |
 | Editor providers | [`apps/editor/src/context/tilemap-editing-context.tsx`](../../../apps/editor/src/context/tilemap-editing-context.tsx), [`tileset-editing-context.tsx`](../../../apps/editor/src/context/tileset-editing-context.tsx), [`tilemap-tileset-payloads.ts`](../../../apps/editor/src/context/tilemap-tileset-payloads.ts) |
 
