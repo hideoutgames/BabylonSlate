@@ -59,7 +59,10 @@ export function indexParticleIncomingEdges(graph: GraphLike): ParticleIncomingEd
   return (nodeId, pinId) => byNode.get(nodeId)?.get(pinId);
 }
 
-export const findParticleGraphCycle = findGraphCycle;
+/** Depth-first cycle search over all edges; returns the node ids on the first loop found. */
+export function findParticleGraphCycle(graph: GraphLike): string[] | null {
+  return findGraphCycle(graph);
+}
 
 /**
  * Node ids on the Particle spine, Create → … → Emitter Output (the update
@@ -280,7 +283,7 @@ function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
     seenTargets.add(key);
   }
 
-  const cycle = findParticleGraphCycle(graph);
+  const cycle = findGraphCycle(graph);
   let resolver: ParticleTypeResolver | null = null;
   if (cycle) {
     diagnostics.push({
