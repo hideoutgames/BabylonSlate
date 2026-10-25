@@ -3,6 +3,7 @@ import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/we
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import {
   beginPipelineDeferral,
+  capturePipelineTarget,
   deferredPipelineCount,
   deferredPipelinesStalled,
   drawsInPass,
@@ -321,6 +322,47 @@ describe("beginPipelineDeferral", () => {
     draw(4, 9);
     next.close();
     expect(deferredPipelinesStalled(engine)).toBe(false);
+  });
+
+  it("looks pipelines up in a captured pass's state, creating none and starting no pass, and puts the current state back", async () => {
+    const { engine, cache, device, draw, startedPasses, reject } = webGpuEngine();
+    const warmPass = (pass: number) => pass === 9;
+    // The pass: a half-float target with the depth test on, where effect 7 drew (its pipeline exists) and effect 3's
+    // creation failed (its next draw would compile it synchronously).
+    cache.setColorFormat("rgba16float");
+    engine.depthCullingState.depthTest = true;
+    draw(7);
+    const failed = beginPipelineDeferral(engine, objectPass)!;
+    draw(3);
+    failed.close();
+    reject(new Error("invalid pipeline"));
+    await settle();
+    const pass = capturePipelineTarget(engine)!;
+    // Ahead of the pass, as a readiness probe finds the Engine: another target format and depth state.
+    cache.setColorFormat("bgra8unorm");
+    engine.depthCullingState.depthTest = false;
+    const probeState = capturePipelineTarget(engine)!;
+    device.createRenderPipeline.mockClear();
+    device.createRenderPipelineAsync.mockClear();
+    startedPasses.mockClear();
+    const found = (effect: number, target = pass) => {
+      const scope = beginPipelineDeferral(engine, warmPass, { lookup: target })!;
+      draw(effect, 9);
+      scope.close();
+      return scope.warmed();
+    };
+    expect({
+      drawn: found(7), neverDrawn: found(8), failed: found(3), otherState: found(7, probeState),
+      synchronous: device.createRenderPipeline.mock.calls.length, asynchronous: device.createRenderPipelineAsync.mock.calls.length,
+      passesStarted: startedPasses.mock.calls.length,
+      restored: [(cache as unknown as { _webgpuColorFormat: string[] })._webgpuColorFormat[0], engine.depthCullingState.depthTest],
+    }).toEqual({
+      drawn: true, neverDrawn: false, failed: false, otherState: false, synchronous: 0, asynchronous: 0, passesStarted: 0,
+      restored: ["bgra8unorm", false],
+    });
+    // Outside a lookup a draw asks for its pass as before.
+    draw(7);
+    expect(startedPasses).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing on WebGL", () => {

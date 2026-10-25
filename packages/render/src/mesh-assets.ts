@@ -211,6 +211,24 @@ export function meshAssetFingerprintWithoutModels(
  * Pass the caller's `meshAssetFingerprintWithoutModels` result to avoid
  * serializing the tilemap, tileset and water payloads a second time.
  */
+/**
+ * The installed assets `meshAssetFingerprint` hashes, as `assets` holds them now: an install replaces these maps and
+ * values rather than editing them, so two equal lists (`sameInstalledMeshAssets`) mean nothing was installed between,
+ * without hashing any bytes.
+ */
+export function installedMeshAssets(assets: MeshAssetContext): readonly unknown[] {
+  return [
+    assets.pixelsPerUnit, assets.spritePayloads, assets.spriteAnimations, assets.tilemaps, assets.waters, assets.tilesets,
+    assets.payloadRevisions, assets.textureBytes, assets.texturePixelSizes, assets.fontFacetypeBytes, assets.fontMsdfJson,
+    assets.fontMsdfPng, assets.fontCssStack, assets.fontCssStackByGuid, assets.areaEmissions, assets.modelSources ?? assets.modelBytes,
+  ];
+}
+
+export function sameInstalledMeshAssets(installed: readonly unknown[], assets: MeshAssetContext): boolean {
+  const now = installedMeshAssets(assets);
+  return now.length === installed.length && now.every((value, index) => value === installed[index]);
+}
+
 export function meshAssetFingerprint(
   assets: MeshAssetContext | undefined,
   withoutModels = meshAssetFingerprintWithoutModels(assets),

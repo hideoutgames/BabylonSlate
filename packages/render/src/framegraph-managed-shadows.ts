@@ -16,8 +16,8 @@ import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
-import { isRevealPending } from "./reveal-pending";
-import { registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
+import { isRevealPending, noteRevealPipelines } from "./reveal-pending";
+import { lookUpPipelines, registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { awaitsFirstDraw, firstDrawsUrgent } from "./shadow-first-draw";
 import { firstDrawPipelinesReady } from "./shadow-map-warm";
@@ -149,6 +149,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   override isReady(): boolean {
     const previous = this._renderer.customIsReadyFunction;
     const engine = this._frameGraph.engine;
+    const scene = this._frameGraph.scene;
     const depthReady = (mesh: AbstractMesh) => this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh);
     // Every variant this pass draws `mesh` with, the depth pre-pass even while the colour variant is unready.
     const probeAhead = (mesh: AbstractMesh, rate: number, preWarm?: boolean) => {
@@ -168,6 +169,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
         // for the reveal.
         if (colour && isRevealPending(mesh)) {
           depthReady(mesh);
+          // WebGPU: with both variants prepared for this pass's draws, a lookup ahead of them can find their pipelines
+          // (a visual rebuilt with what it drew before), so the round reveals it and this frame draws it.
+          if (this.warmsPipelines) warmSafely(scene, () => {
+            if (lookUpPipelines(mesh, engine.currentRenderPassId, this.depthPrePass.renderPassId)) noteRevealPipelines(mesh);
+          });
           return true;
         }
         if (colour && depthReady(mesh)) return true;

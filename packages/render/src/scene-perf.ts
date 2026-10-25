@@ -323,9 +323,10 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     const meshReady = collectEffectRequests(scene.getEngine(), meshRequests, probeMesh);
     if (hideable) {
       hideUntilReady(mesh);
-      // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`).
+      // Where pipelines are deferred, its first draws must find theirs too (`variant-pipeline-warmup.ts`): its warm
+      // draws or, in this round, the main pass's lookup ahead of them (`lookUpPipelines`).
       requestPipelineWarm(mesh);
-      noteRevealProbe(mesh, meshReady && pipelinesWarm(mesh));
+      noteRevealProbe(mesh, meshReady, pipelinesWarm(mesh));
       const failed = meshReady ? undefined : failedRequest();
       if (failed) {
         reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);

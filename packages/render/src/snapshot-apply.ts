@@ -49,7 +49,9 @@ import {
   restoreAlbedoMaterial,
   ownedVisualTexturePreparation,
   applyTilemapAlbedoTextures,
+  installedMeshAssets,
   meshAssetFingerprint,
+  sameInstalledMeshAssets,
   type MeshAssetContext,
 } from "./mesh-assets";
 import {
@@ -691,6 +693,12 @@ function rejectionKey(command: AssignMeshCommand, assets: MeshAssetContext, suff
 }
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
 const visualAssignments = new WeakMap<SnapshotSceneBinding, Map<number, AssignMeshCommand>>();
+/**
+ * What each assignment built: the installed assets it read (`installedMeshAssets`), the visual it built or is
+ * preparing, and whether that visual's model load failed.
+ */
+type BuiltVisual = { assets: readonly unknown[]; visual: Mesh | undefined; failed: boolean };
+const builtVisuals = new WeakMap<AssignMeshCommand, BuiltVisual>();
 type ComponentTransformCommand = Extract<CommandMessage, { type: "setComponentTransforms" }>;
 type ComponentPose = ComponentTransformCommand["parts"][number];
 // Pose samples must not change the assignment's topology: an optimized singleton
@@ -917,8 +925,51 @@ function cancelPendingVisualReplacement(binding: SnapshotSceneBinding, slotId: n
   pendingMaterialPreparations.get(binding)?.delete(slotId);
 }
 
-/** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
+/**
+ * Remember (and rebuild) the Play mesh for a slot from an assignMesh command. The runtime re-sends an actor's visual
+ * with every component property write, unchanged when the value was (a script writing a Text3D's text every tick), so
+ * a command asking for the visual the slot already shows, or is preparing, in `scene` keeps it (`showsAssignment`): a
+ * rebuild would replace a drawn mesh with one that has not drawn, which a world view hides until its variants, and on
+ * WebGPU its pipelines, are known ready, and would restart a staged visual's preparation before it ever adopts.
+ */
 export function applyAssignMesh(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  command: AssignMeshCommand,
+): void {
+  if (showsAssignment(scene, binding, command)) return;
+  assignVisual(scene, binding, command);
+}
+
+/**
+ * Whether `command` is the assignment the slot's visual in `scene` was built for, and that visual is still the one the
+ * slot shows or is preparing: equal, as later commands left that assignment (style, control state, painter and text
+ * reveal commands update it and the visual in place), built with the installed assets the binding holds now, and its
+ * model load not failed. Anything else rebuilds: a retired slot, a visual moved to another host Scene or rebuilt from
+ * the slot's state, a preparation or model load that failed (the same assignment tries again).
+ */
+function showsAssignment(scene: Scene, binding: SnapshotSceneBinding, command: AssignMeshCommand): boolean {
+  const current = visualAssignments.get(binding)?.get(command.slotId);
+  const built = current && builtVisuals.get(current);
+  if (!current || !built?.visual || built.failed || !sameInstalledMeshAssets(built.assets, binding)) return false;
+  const shown = pendingVisualReplacements.get(binding)?.get(command.slotId) ?? binding.meshes.get(command.slotId);
+  if (shown !== built.visual || shown.isDisposed() || shown.getScene() !== scene) return false;
+  return current === command || JSON.stringify(current) === JSON.stringify(command);
+}
+
+/** Builds the slot's visual for `command`, then records what it built (`builtVisuals`). */
+function assignVisual(scene: Scene, binding: SnapshotSceneBinding, command: AssignMeshCommand): void {
+  assignMeshVisual(scene, binding, command);
+  const built: BuiltVisual = {
+    assets: installedMeshAssets(binding), failed: false,
+    visual: pendingVisualReplacements.get(binding)?.get(command.slotId) ?? binding.meshes.get(command.slotId),
+  };
+  builtVisuals.set(command, built);
+  // Observed without turning the slot's load into a success: a readiness wait on it must still reject.
+  void binding.slotAnimLoads?.get(command.slotId)?.catch(() => { built.failed = true; });
+}
+
+function assignMeshVisual(
   scene: Scene,
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
@@ -1066,7 +1117,8 @@ export function applyAssignMesh(
     const guid = command.meshAssetGuid;
     const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
     pendingMaterialPreparations.set(binding, refreshes);
-    const restart = () => applyAssignMesh(scene, binding, command);
+    // A material command restarts the preparation for the same assignment: it rebuilds, whatever the slot shows.
+    const restart = () => assignVisual(scene, binding, command);
     retainWorkingMaterialOwners(binding, command.slotId, Boolean(existing));
     refreshes.set(command.slotId, restart);
     const load = beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, existing,
@@ -1131,7 +1183,7 @@ export function applyAssignMesh(
     pending.set(command.slotId, staged);
     const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
     pendingMaterialPreparations.set(binding, refreshes);
-    const restart = () => applyAssignMesh(scene, binding, command);
+    const restart = () => assignVisual(scene, binding, command);
     retainWorkingMaterialOwners(binding, command.slotId, Boolean(existing));
     refreshes.set(command.slotId, restart);
     const ownsLoad = () => pending.get(command.slotId) === staged &&

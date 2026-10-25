@@ -172,8 +172,10 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // each Material's previous Effect while its pipeline is created asynchronously, as do floors whose spot starts or
   // stops casting shadows (a lost map's sampler takes a placeholder of the declared type, so no GPU validation error),
   // a spawn with a variant nothing compiled stays hidden meanwhile, and a spawn whose Material the load warmed creates
-  // no pipeline at all. A new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth
-  // pipelines exist, creating none synchronously.
+  // no pipeline at all. The first spawn built again (a visual a script's write rebuilds) is revealed in its first frame
+  // and creates none; the same Effect with another vertex layout waits hidden for its own pipeline, holding nothing. A
+  // new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth pipelines exist,
+  // creating none synchronously.
   const swap = result.variantSwap!;
   expect({
     swap: { done: swap.swap.done, held: swap.swap.held, previous: swap.swap.previousFrames > 0, ...swap.swap.pipelines,
@@ -185,6 +187,10 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       synchronous: swap.shadowLoss.pipelines.synchronous },
     spawn: { done: swap.spawn.done, held: swap.spawn.held, hidden: swap.spawn.hiddenFrames > 0, ...swap.spawn.pipelines,
       asynchronous: swap.spawn.pipelines.asynchronous > 0 },
+    respawn: { done: swap.respawn.done, frames: swap.respawn.frames, held: swap.respawn.held, hidden: swap.respawn.hiddenFrames,
+      ...swap.respawn.pipelines },
+    layout: { done: swap.layout.done, held: swap.layout.held, hidden: swap.layout.hiddenFrames > 0, sameEffect: swap.layout.sameEffect,
+      synchronous: swap.layout.pipelines.synchronous, asynchronous: swap.layout.pipelines.asynchronous > 0 },
     staged: { done: swap.staged.done, held: swap.staged.held, ...swap.staged.pipelines,
       asynchronous: swap.staged.pipelines.asynchronous > 0 },
     warmSpawn: { done: swap.warmSpawn.done, held: swap.warmSpawn.held, ...swap.warmSpawn.pipelines },
@@ -194,6 +200,8 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     sunShadows: { done: true, held: 0, synchronous: 0, cascades: 2 },
     shadowLoss: { done: true, held: 0, previous: true, synchronous: 0 },
     spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
+    respawn: { done: true, frames: 1, held: 0, hidden: 0, synchronous: 0, asynchronous: 0 },
+    layout: { done: true, held: 0, hidden: true, sameEffect: true, synchronous: 0, asynchronous: true },
     staged: { done: true, held: 0, synchronous: 0, asynchronous: true },
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
   });

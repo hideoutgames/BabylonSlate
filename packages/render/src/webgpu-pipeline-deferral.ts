@@ -1,4 +1,4 @@
-import { Observable, type AbstractEngine } from "@babylonjs/core";
+import { Observable, type AbstractEngine, type Nullable, type RenderTargetWrapper } from "@babylonjs/core";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 
 /**
@@ -24,6 +24,12 @@ type PipelineCache = {
   getRenderPipeline(fillMode: number, effect: unknown, sampleCount: number, textureState?: number): GPURenderPipeline;
   _createRenderPipeline(effect: unknown, topology: GPUPrimitiveTopology, sampleCount: number): GPURenderPipeline;
   _buildRenderPipelineDescriptor(effect: unknown, topology: GPUPrimitiveTopology, sampleCount: number): GPURenderPipelineDescriptor;
+  /** The bound target's formats (Babylon 9.29 `WebGPUCacheRenderPipeline`), which key every pipeline looked up. */
+  _webgpuColorFormat?: (GPUTextureFormat | null)[];
+  _webgpuDepthStencilFormat?: GPUTextureFormat;
+  mrtTextureCount?: number;
+  setColorFormat?(format: GPUTextureFormat | null): void;
+  setDepthStencilFormat?(format: GPUTextureFormat | undefined): void;
 };
 
 type DrawEngine = {
@@ -33,6 +39,23 @@ type DrawEngine = {
   _device: GPUDevice;
   _snapshotRendering: { record: boolean };
   currentRenderPassId: number;
+  _currentRenderPass?: object | null;
+  /** Starts the bound target's render pass when none is open (Babylon 9.29 `WebGPUEngine`). */
+  _getCurrentRenderPass?(): object | null;
+};
+
+/**
+ * What a draw's pipeline lookup reads from its pass besides the draw's own state (Babylon 9.29): the bound target (its
+ * formats, sample count and Y flip) and the depth state the pass leaves to its draws (`capturePipelineTarget`).
+ */
+export type PipelineTarget = {
+  /** The bound render target (null: the main pass), which sets a draw's sample count and front face. */
+  readonly renderTarget: Nullable<RenderTargetWrapper>;
+  readonly colorFormat: GPUTextureFormat | null;
+  readonly depthStencilFormat: GPUTextureFormat | undefined;
+  readonly depthTest: boolean;
+  readonly depthWrite: boolean;
+  readonly depthFunction: number | null;
 };
 
 type Scope = {
@@ -46,6 +69,8 @@ type Scope = {
   startsDeferrals: boolean;
   /** A warm scope (`warm`): skips every draw, starts any missing pipeline asynchronously, never synchronously. */
   warm: boolean;
+  /** A lookup scope (`lookup`, a warm scope): starts no pipeline either, and its draws start no GPU pass. */
+  lookup: boolean;
   skipped: number;
   /** Draws that looked their pipeline up (warm scopes), and those that found it. */
   lookups: number;
@@ -75,6 +100,8 @@ type DeferralState = {
   startedAt: WeakMap<CacheNode, number>;
   /** Open scopes with `omits`. */
   omitting: number;
+  /** Open lookup scopes: a draw starts no render pass meanwhile. */
+  lookingUp: number;
 };
 
 /** Babylon 9.29 pipeline-cache statistics a synchronous creation updates. */
@@ -95,7 +122,7 @@ function install(engine: AbstractEngine): DeferralState {
     throw new Error("Unsupported Babylon WebGPU pipeline cache layout: _draw, getRenderPipeline, _createRenderPipeline or _buildRenderPipelineDescriptor is missing.");
   const state: DeferralState = {
     scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0, settled: 0, drawn: new WeakSet(), passDraws: new Map(),
-    startedAt: new WeakMap(), omitting: 0,
+    startedAt: new WeakMap(), omitting: 0, lookingUp: 0,
   };
   /** The innermost open scope that admits the current render pass. */
   const scopeOfPass = (): Scope | undefined => {
@@ -135,6 +162,9 @@ function install(engine: AbstractEngine): DeferralState {
     const node = this._parameter.token;
     const scopes = state.scopes;
     const scope = scopes.length ? scopeOfPass() : undefined;
+    // A lookup only asks whether the pipeline exists: a miss starts nothing, and a node that would compile at its draw
+    // (a cache that keeps none, a failed creation) is a miss too.
+    if (scope?.lookup) throw DEFERRED;
     if (scope?.warm) {
       // A warm draw never creates a pipeline synchronously: it starts the missing one (whatever the hold cap or a
       // stall) or waits for it. A cache that cannot keep it, or a creation that failed, has nothing to warm.
@@ -214,16 +244,81 @@ function install(engine: AbstractEngine): DeferralState {
       if (error !== DEFERRED) throw error;
     }
   };
+  // Babylon 9.29 `_draw` asks for the current render pass first, which starts the bound target's (or the canvas's) pass
+  // when none is open, and uses it only after the pipeline lookup: a lookup's draw, made outside its pass, starts none.
+  const currentPass = target._getCurrentRenderPass;
+  if (typeof currentPass === "function") {
+    target._getCurrentRenderPass = function (this: DrawEngine) {
+      return state.lookingUp > 0 ? this._currentRenderPass ?? null : currentPass.call(this);
+    };
+  }
   // Babylon creates the observable on first use, as its own observers do.
   const released = (engine._onReleaseRenderPassObservable ??= new Observable()).add((id) => state.passDraws.delete(id));
   engine.onDisposeObservable.addOnce(() => {
     cache._createRenderPipeline = create;
     cache.getRenderPipeline = lookup;
     target._draw = draw;
+    if (typeof currentPass === "function") target._getCurrentRenderPass = currentPass;
     engine._onReleaseRenderPassObservable?.remove(released);
     states.delete(engine);
   });
   return state;
+}
+
+/** The pipeline cache of `engine` when a lookup can replay a target through it (Babylon 9.29's layout). */
+function lookupCache(engine: AbstractEngine): Required<Pick<PipelineCache, "setColorFormat" | "setDepthStencilFormat" | "_webgpuColorFormat">> &
+  PipelineCache | undefined {
+  const target = engine as unknown as DrawEngine;
+  const cache = target._cacheRenderPipeline;
+  if (!engine.isWebGPU || typeof target._getCurrentRenderPass !== "function" || typeof cache?.setColorFormat !== "function" ||
+    typeof cache.setDepthStencilFormat !== "function" || !Array.isArray(cache._webgpuColorFormat))
+    return undefined;
+  return cache as ReturnType<typeof lookupCache>;
+}
+
+/** `engine`'s current target and depth state, as a lookup reads them; undefined where one cannot replay them. */
+function currentTarget(engine: AbstractEngine): PipelineTarget | undefined {
+  const cache = lookupCache(engine);
+  // A multiple render target pass (more formats) and the stencil test (more state) are not replayed.
+  if (!cache || (cache.mrtTextureCount ?? 0) > 0) return undefined;
+  const depth = engine.depthCullingState;
+  return {
+    renderTarget: engine._currentRenderTarget, colorFormat: cache._webgpuColorFormat[0] ?? null,
+    depthStencilFormat: cache._webgpuDepthStencilFormat, depthTest: depth.depthTest, depthWrite: depth.depthMask,
+    depthFunction: depth.depthFunc,
+  };
+}
+
+/**
+ * The pipeline state the current pass gives its draws on `engine` (WebGPU), for a lookup outside that pass (`lookup` in
+ * `beginPipelineDeferral`): its target and the depth state its draws inherit. None for a pass with multiple render
+ * targets or the stencil test on, or where Babylon's layout differs: a lookup does not replay them.
+ */
+export function capturePipelineTarget(engine: AbstractEngine): PipelineTarget | undefined {
+  return engine.isWebGPU && !engine.stencilState.stencilTest ? currentTarget(engine) : undefined;
+}
+
+/** Puts `pipelines` in place on `engine` for a lookup's draws, the stencil test off; returns the restore. */
+function replayTarget(engine: AbstractEngine, pipelines: PipelineTarget): (() => void) | undefined {
+  const cache = lookupCache(engine);
+  const previous = currentTarget(engine);
+  if (!cache || !previous) return undefined;
+  const stencil = engine.stencilState.stencilTest;
+  const depth = engine.depthCullingState;
+  const apply = (state: PipelineTarget) => {
+    engine._currentRenderTarget = state.renderTarget;
+    cache.setColorFormat(state.colorFormat);
+    cache.setDepthStencilFormat(state.depthStencilFormat);
+    depth.depthTest = state.depthTest;
+    depth.depthMask = state.depthWrite;
+    depth.depthFunc = state.depthFunction;
+  };
+  apply(pipelines);
+  engine.stencilState.stencilTest = false;
+  return () => {
+    apply(previous);
+    engine.stencilState.stencilTest = stencil;
+  };
 }
 
 export type PipelineDeferral = {
@@ -265,6 +360,16 @@ export type PipelineDeferral = {
  * never compiles synchronously), and `warmed()` reports whether every draw
  * found its pipeline. Its skips never count in an enclosing scope.
  *
+ * `lookup` opens a lookup scope, a warm scope that creates nothing: for draws
+ * made outside their pass, before it, only to learn whether their pipelines
+ * exist (a hidden mesh about to be revealed). It replays the target the pass
+ * was found drawing to (`capturePipelineTarget`: formats, sample count and Y
+ * flip) and the depth state it left its draws, with the stencil test off, and
+ * restores them on `close()`; meanwhile a draw starts no GPU pass, and a miss
+ * starts no creation, synchronous or not. A node whose creation failed, or a
+ * cache that keeps nothing, is a miss: its draw would create a pipeline
+ * synchronously. None opens (undefined) where Babylon's layout differs.
+ *
  * `omits` names admitted passes whose output may miss a draw for a few frames
  * (a world view's geometry passes in its steady frames): a draw there whose
  * pipeline is missing is left out without counting (`close()` and `waiting()`
@@ -285,21 +390,27 @@ export type PipelineDeferral = {
 export function beginPipelineDeferral(
   engine: AbstractEngine,
   allows: (renderPassId: number) => boolean,
-  options: { startsDeferrals?: boolean; nested?: boolean; warm?: boolean; omits?: (renderPassId: number) => boolean } = {},
+  options: {
+    startsDeferrals?: boolean; nested?: boolean; warm?: boolean; lookup?: PipelineTarget; omits?: (renderPassId: number) => boolean;
+  } = {},
 ): PipelineDeferral | undefined {
   if (!engine.isWebGPU) return undefined;
   if (options.nested && !states.get(engine)?.scopes.length) return undefined;
   const state = states.get(engine) ?? install(engine);
   states.set(engine, state);
   const scopes = state.scopes;
-  const warm = options.warm === true;
+  const lookup = options.lookup !== undefined;
+  const warm = options.warm === true || lookup;
   const omits = warm ? undefined : options.omits;
+  const restoreTarget = options.lookup && replayTarget(engine, options.lookup);
+  if (lookup && !restoreTarget) return undefined;
   const scope: Scope = {
-    allows, omits, omitted: new Map(), drew: new Set(), startsDeferrals: options.startsDeferrals ?? true, warm, skipped: 0,
+    allows, omits, omitted: new Map(), drew: new Set(), startsDeferrals: options.startsDeferrals ?? true, warm, lookup, skipped: 0,
     lookups: 0, hits: 0, nodes: new Set(), leftOut: new Set(), tokens: new Map(),
   };
   scopes.push(scope);
   if (omits) state.omitting += 1;
+  if (lookup) state.lookingUp += 1;
   let closed = false;
   return {
     close: () => {
@@ -308,6 +419,10 @@ export function beginPipelineDeferral(
       const index = scopes.lastIndexOf(scope);
       if (index >= 0) scopes.splice(index, 1);
       if (omits) state.omitting -= 1;
+      if (restoreTarget) {
+        state.lookingUp -= 1;
+        restoreTarget();
+      }
       // A pass that drew nothing but left-out draws would present empty: it holds for them as an unadmitted pass does.
       for (const [pass, { draws, nodes }] of scope.omitted) {
         if (scope.drew.has(pass)) continue;

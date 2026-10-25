@@ -2,9 +2,10 @@
  * Test-build-only proof, on a real WebGPU device (the software adapter in CI), that a world view keeps drawing while
  * new variants' render pipelines are created: a light switching off draws each Material's previous Effect until its
  * new variant's pipeline exists, a new shadow map (a spot's, the sun's first cascaded one) samples neutrally until its
- * casters' pipelines exist, a spawn with a variant nothing compiled stays hidden until its pipelines exist, and a spawn
- * whose Material Play's load warmed creates no pipeline at all. It counts the pipelines the device created
- * synchronously (each blocks the renderer while the GPU process compiles it) and asynchronously.
+ * casters' pipelines exist, a spawn with a variant nothing compiled stays hidden until its pipelines exist, the same
+ * spawn built again is revealed in its first frame while one with another vertex layout waits hidden for its own
+ * pipeline, and a spawn whose Material Play's load warmed creates no pipeline at all. It counts the pipelines the device
+ * created synchronously (each blocks the renderer while the GPU process compiles it) and asynchronously.
  */
 import {
   Color3,
@@ -18,6 +19,7 @@ import {
   SpotLight,
   StandardMaterial,
   Vector3,
+  VertexBuffer,
   type AbstractEngine,
   type Effect,
   type Light,
@@ -559,6 +561,29 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
     const spawn = await step(() => !isRevealPending(missed) && drawnEffect(missed) !== null,
       () => { if (isRevealPending(missed)) hiddenFrames++; });
 
+    // The same spawn built again, as a script's write rebuilds a visual: its Effect and pipelines (its vertex layout and
+    // state) exist, so a lookup ahead of its draws finds them and it is revealed in its first frame, creating none.
+    missed.dispose();
+    const rebuilt = MeshBuilder.CreateBox("rebuilt", { size: 0.6 }, scene);
+    rebuilt.position.set(1, 0.3, -1.2);
+    rebuilt.material = missedMaterial;
+    let rebuiltHidden = 0;
+    const respawn = await step(() => !isRevealPending(rebuilt) && drawnEffect(rebuilt) !== null,
+      () => { if (isRevealPending(rebuilt)) rebuiltHidden++; });
+    // The same Material on a box whose positions are laid out another way (padded): the Effect has drawn, but not with
+    // this vertex layout, so the lookup misses and the box waits hidden while its pipeline is created asynchronously.
+    const padded = MeshBuilder.CreateBox("padded", { size: 0.6 }, scene);
+    const positions = padded.getVerticesData(VertexBuffer.PositionKind)!;
+    const paddedPositions = new Float32Array((positions.length / 3) * 4);
+    for (let index = 0; index < positions.length / 3; index++)
+      paddedPositions.set(positions.slice(index * 3, index * 3 + 3), index * 4);
+    padded.setVerticesBuffer(new VertexBuffer(engine, paddedPositions, VertexBuffer.PositionKind, false, false, 4, false, 0, 3));
+    padded.position.set(0, 0.3, -1.8);
+    padded.material = missedMaterial;
+    let paddedHidden = 0;
+    const layout = await step(() => !isRevealPending(padded) && drawnEffect(padded) !== null,
+      () => { if (isRevealPending(padded)) paddedHidden++; });
+
     // A spawn whose Material Play's load warmed: its staged box was warm-drawn, so the spawn creates no pipeline.
     const warmedMaterial = new StandardMaterial("warmed", scene);
     // Emissive as illumination: another variant no other mesh draws with.
@@ -589,6 +614,8 @@ async function webGpuWorld(engine: AbstractEngine, rehearse: boolean) {
       shadowGain,
       shadowLoss: { ...shadowLoss, previousFrames: shadowedFrames },
       spawn: { ...spawn, hiddenFrames },
+      respawn: { ...respawn, hiddenFrames: rebuiltHidden },
+      layout: { ...layout, hiddenFrames: paddedHidden, sameEffect: drawnEffect(padded) === drawnEffect(rebuilt) },
       staged,
       warmSpawn,
       sunShadows: { ...sunShadows, cascades: sunMap()?.getShadowMap()?.renderPassIds.length ?? 0 },

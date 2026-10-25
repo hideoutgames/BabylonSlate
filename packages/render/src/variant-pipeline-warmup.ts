@@ -1,6 +1,7 @@
 import {
   Constants,
   MaterialDefines,
+  Mesh,
   Observable,
   type AbstractEngine,
   type AbstractMesh,
@@ -9,7 +10,9 @@ import {
   type Scene,
   type SubMesh,
 } from "@babylonjs/core";
-import { beginPipelineDeferral, effectDrawn, pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import {
+  beginPipelineDeferral, capturePipelineTarget, effectDrawn, pipelinesDeferred, type PipelineTarget,
+} from "./webgpu-pipeline-deferral";
 import { variantSwapsTolerated } from "./variant-swaps";
 
 /**
@@ -33,7 +36,10 @@ import { variantSwapsTolerated } from "./variant-swaps";
  * keeps its previous Effect) inside a warm deferral scope, with the real pass's target and the group's render state.
  * Those draws are always skipped; a missing pipeline starts creating asynchronously. An Effect warms once every warm
  * draw that used it in a frame found its pipeline. A mesh's own warm draws all finding theirs (`pipelinesWarm`) is part
- * of its reveal.
+ * of its reveal. A hidden mesh can also find them before it first draws (`lookUpPipelines`): the main pass's probe makes
+ * the same skipped draws outside the pass, in the target and depth state its last warm draws had, creating nothing, so a
+ * mesh whose pipelines exist for its own vertex layout and state (a visual rebuilt with what it drew before) is
+ * revealed in the frame it appears, as on WebGL2.
  *
  * A cold Effect that no warm draw used for `UNUSED_WARM_MS` (one only the camera's probe pass compiles, a shadow
  * caster's depth variant, a geometry pass's variant, or one whose view stopped warming) becomes admissible as it is,
@@ -74,10 +80,14 @@ type WarmupState = {
   predicting: boolean;
   /** Meshes the current round's probes asked to warm. */
   requests: Set<AbstractMesh>;
-  /** Whether a mesh's last warm draws all found their pipelines. */
+  /** Whether a mesh's last warm draws (or a lookup of them) all found their pipelines. */
   meshWarm: WeakMap<AbstractMesh, boolean>;
   /** Each real render pass id's warm pass id. */
   warmPasses: Map<number, number>;
+  /** Per main object pass, the target and depth state its last warm draws had, and the Engine frame they drew in. */
+  targets: Map<number, { target: PipelineTarget; frame: number }>;
+  /** The Engine frame each mesh's pipelines were last looked up in (`lookUpPipelines`, at most once a frame). */
+  lookedUp: WeakMap<AbstractMesh, number>;
 };
 
 type EffectEngine = { createEffect(...args: unknown[]): Effect };
@@ -115,7 +125,7 @@ function install(engine: AbstractEngine): WarmupState {
   const compiled = (engine as unknown as { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
   const state: WarmupState = {
     cold: new Map(), known: new WeakSet(Object.values(compiled)), budget: 0, budgetFrame: -1, settled: new WeakSet(), marking: 0, warming: false, strict: 0,
-    requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(), predicting: false,
+    requests: new Set(), meshWarm: new WeakMap(), warmPasses: new Map(), predicting: false, targets: new Map(), lookedUp: new WeakMap(),
   };
   const own = Object.prototype.hasOwnProperty.call(engine, "createEffect");
   if (!warmedPasses.has(engine)) warmedPasses.set(engine, new Map());
@@ -141,6 +151,7 @@ function install(engine: AbstractEngine): WarmupState {
   };
   // Babylon creates the observable on first use, as its own observers do.
   const released = (engine._onReleaseRenderPassObservable ??= new Observable()).add((id) => {
+    state.targets.delete(id);
     const warm = state.warmPasses.get(id);
     if (warm === undefined) return;
     state.warmPasses.delete(id);
@@ -278,8 +289,16 @@ function warmPassId(engine: AbstractEngine, state: WarmupState, renderPassId: nu
  */
 export function warmRequestedPipelines(scene: Scene, renderPassId: number, depthPrePassId?: number): void {
   const engine = scene.getEngine();
-  const state = states.get(engine);
-  if (!state?.requests.size) return;
+  const deferred = pipelinesDeferred(engine);
+  let state = states.get(engine);
+  // A still view runs no readiness round, so a spawn's round may be the first: the target must be known by then.
+  if (!state && deferred) states.set(engine, (state = install(engine)));
+  if (!state) return;
+  // Every frame, warm draws or not: what the next frame's lookups ahead of this pass replay (`lookUpPipelines`).
+  const target = deferred ? capturePipelineTarget(engine) : undefined;
+  if (target) state.targets.set(renderPassId, { target, frame: engine.frameId });
+  else state.targets.delete(renderPassId);
+  if (!state.requests.size) return;
   const effects = new Map<Effect, boolean>();
   const pass = engine.currentRenderPassId;
   const alpha = Math.max(0, engine.getAlphaMode());
@@ -313,21 +332,96 @@ export function warmRequestedPipelines(scene: Scene, renderPassId: number, depth
 }
 
 /**
+ * Whether the pipelines a hidden `mesh`'s first draws in the world view's main object pass (`renderPassId`, with its
+ * blended depth pre-pass `depthPrePassId`) need all exist, looked up ahead of that pass: from the pass's own readiness
+ * probe, where its render pass id, shadow flags and freshly prepared defines are those its draws use, the same skipped
+ * draws its warm draws make (`warmRequestedPipelines`), in the target and depth state they had in the pass's last
+ * frame. A lookup creates nothing, synchronously or not, and starts no GPU pass. When every draw found its pipeline the
+ * mesh counts as warm (`pipelinesWarm`): the readiness round may reveal it before the frame draws, and the real draws
+ * find their pipelines; otherwise its warm draws after the real ones create what is missing, as before.
+ *
+ * Only inside a tolerant round where pipelines are deferred, at most once per mesh per Engine frame, and only for an
+ * enabled, visible mesh without instances (an instanced batch is known only once the frame's cull has run) whose
+ * submeshes all hold a ready, processed variant of their own in each pass they draw in: a variant still compiling, cold
+ * (`FIRST_DRAWS_PER_FRAME`) or about to change waits as before.
+ */
+export function lookUpPipelines(mesh: AbstractMesh, renderPassId: number, depthPrePassId?: number): boolean {
+  const scene = mesh.getScene();
+  const engine = scene.getEngine();
+  const state = warmupActive(engine);
+  if (!state) return false;
+  if (state.meshWarm.get(mesh) === true) return true;
+  const captured = state.targets.get(renderPassId);
+  // Drawn in the last frame: a target the pass has not drawn to since (a new graph, a held frame) is not replayed.
+  if (!captured || captured.frame < engine.frameId - 1) return false;
+  if (!mesh.isEnabled() || !mesh.isVisible || !mesh.subMeshes?.length || mesh.hasThinInstances ||
+    mesh.getClassName() === "InstancedMesh" || (mesh instanceof Mesh && mesh.hasInstances)) return false;
+  for (const subMesh of mesh.subMeshes) {
+    const material = subMesh.getMaterial();
+    if (!material) continue;
+    if (!material._storeEffectOnSubMeshes || !preparedVariant(subMesh, renderPassId)) return false;
+    if (material.needAlphaBlendingForMesh(mesh) && material.needDepthPrePass && depthPrePassId !== undefined &&
+      !preparedVariant(subMesh, depthPrePassId)) return false;
+  }
+  // The draws at most once per mesh and Engine frame: nothing a lookup finds missing appears before the next one.
+  if (state.lookedUp.get(mesh) === engine.frameId) return false;
+  state.lookedUp.set(mesh, engine.frameId);
+  const pass = engine.currentRenderPassId;
+  const alpha = Math.max(0, engine.getAlphaMode());
+  const colour = engine.getColorWrite();
+  let found = true;
+  try {
+    for (const subMesh of mesh.subMeshes) {
+      const material = subMesh.getMaterial();
+      if (!material) continue;
+      const blended = material.needAlphaBlendingForMesh(mesh);
+      found = warmDraw(engine, state, renderPassId, subMesh, true, blended, undefined, captured.target);
+      if (found && blended && material.needDepthPrePass && depthPrePassId !== undefined)
+        found = warmDraw(engine, state, depthPrePassId, subMesh, false, false, undefined, captured.target);
+      if (!found) break;
+    }
+  } finally {
+    engine.currentRenderPassId = pass;
+    engine.setAlphaMode(alpha);
+    engine.setColorWrite(colour);
+    scene.resetCachedMaterial();
+  }
+  if (!found) return false;
+  state.meshWarm.set(mesh, true);
+  // Its warm draws after the pass would only find the same pipelines.
+  state.requests.delete(mesh);
+  return true;
+}
+
+/** Whether `subMesh` holds a ready variant for `renderPassId`, prepared from defines nothing changed since. */
+function preparedVariant(subMesh: SubMesh, renderPassId: number): boolean {
+  const wrapper = subMesh._getDrawWrapper(renderPassId);
+  // A cold Effect (`FIRST_DRAWS_PER_FRAME`) reports not ready in the main pass, whose id the probe has current.
+  return wrapper?.defines instanceof MaterialDefines && !wrapper.defines.isDirty && wrapper.effect?.isReady() === true;
+}
+
+/**
  * One skipped draw of `subMesh` under the warm pass of `realPass`; whether it found its pipeline. A draw that never
  * reached its pipeline (its Material not ready for another reason) warms nothing and leaves its Effect's warmth to
- * other draws.
+ * other draws. With `lookup` it is a lookup in that target (`lookUpPipelines`): it creates nothing, and finds nothing
+ * where pipelines are not deferred.
  */
 function warmDraw(
   engine: AbstractEngine, state: WarmupState, realPass: number, subMesh: SubMesh, colour: boolean, blended: boolean,
-  effects: Map<Effect, boolean>,
+  effects?: Map<Effect, boolean>, lookup?: PipelineTarget,
 ): boolean {
   const warmPass = warmPassId(engine, state, realPass);
-  const scope = beginPipelineDeferral(engine, (pass) => pass === warmPass, { warm: true });
-  if (!scope) return true;
+  const scope = beginPipelineDeferral(engine, (pass) => pass === warmPass, lookup ? { warm: true, lookup } : { warm: true });
+  if (!scope) return !lookup;
   // The defines text keys the Effect cache in the order the defines object gained its keys, so a fresh object can
-  // name the same variant differently: the warm draw prepares a copy of the real pass's defines.
-  const defines = subMesh._getDrawWrapper(realPass)?.defines;
-  if (defines instanceof MaterialDefines) subMesh._getDrawWrapper(warmPass, true)!.defines = copyDefines(defines);
+  // name the same variant differently: the warm draw prepares a copy of the real pass's defines. A lookup keeps a warm
+  // wrapper that holds the real draw's Effect already: a fresh copy would ask the cache for it again, one more
+  // reference that the wrapper's one release never gives back.
+  const real = subMesh._getDrawWrapper(realPass);
+  if (real?.defines instanceof MaterialDefines) {
+    const warm = subMesh._getDrawWrapper(warmPass, true)!;
+    if (!(lookup && warm.effect && warm.effect === real.effect)) warm.defines = copyDefines(real.defines);
+  }
   engine.currentRenderPassId = warmPass;
   engine.setColorWrite(colour);
   engine.setAlphaMode(Constants.ALPHA_DISABLE);
@@ -341,7 +435,7 @@ function warmDraw(
   }
   const warmed = scope.warmed();
   const effect = subMesh._getDrawWrapper(warmPass)?.effect;
-  if (effect && drawn > 0) effects.set(effect, (effects.get(effect) ?? true) && warmed);
+  if (effects && effect && drawn > 0) effects.set(effect, (effects.get(effect) ?? true) && warmed);
   return warmed;
 }
 
