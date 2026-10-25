@@ -48,7 +48,6 @@ export function SkyboxCreatorPreviewCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !engine) return;
-    let cancelled = false;
     let host: ReturnType<typeof createMaterialPreviewScene> | null = null;
     let presenter: ReturnType<typeof createMaterialPreviewPresenter> | null =
       null;
@@ -57,11 +56,6 @@ export function SkyboxCreatorPreviewCanvas({
     const overlay = watchBlockingEditorOverlay();
     try {
       host = createMaterialPreviewScene(engine);
-      if (!host || cancelled) {
-        overlay.dispose();
-        host?.dispose();
-        return;
-      }
       hideDefaultPreviewMesh(host);
       const cache = resourceCacheForEngine(engine);
       // A skybox frame changes only when the faces or the look direction do.
@@ -106,7 +100,6 @@ export function SkyboxCreatorPreviewCanvas({
     };
     frame = window.requestAnimationFrame(tick);
     return () => {
-      cancelled = true;
       window.cancelAnimationFrame(frame);
       gestures?.dispose();
       overlay.dispose();
