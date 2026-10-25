@@ -31,6 +31,7 @@ describe("P9 document kinds", () => {
   it("strips material file suffixes from tab labels", () => {
     expect(labelFromPath("assets/Rock.material.hasset")).toBe("Rock");
     expect(labelFromPath("assets/Tint.matfunc.hasset")).toBe("Tint");
+    expect(labelFromPath("assets/rock_wall.matinst.hasset")).toBe("Rock Wall");
     expect(labelFromPath("assets/Depth.rendertarget.hasset")).toBe("Depth");
     expect(labelFromPath("assets/Depth Image.rendertargettexture.hasset")).toBe("Depth Image");
   });
@@ -74,6 +75,8 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/PlayerProgress.savegame.hasset")).toBe("PlayerProgress");
     expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
     expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
+    expect(labelFromPath("assets/enemy.bt.hasset")).toBe("Enemy");
+    expect(labelFromPath("assets/enemy.blackboard.hasset")).toBe("Enemy");
     expect(isAssetDocumentKind("font")).toBe(true);
     expect(isAssetDocumentKind("content-browser")).toBe(false);
   });
@@ -269,6 +272,10 @@ describe("Class and settings documents", () => {
         name: "Day",
       }).label,
     ).toBe("Day Skybox Creator");
+  });
+
+  it("labels a Water document, which carries no name, from its file stem", () => {
+    expect(createDocumentRef("water", "assets/ocean.water.hasset", {}).label).toBe("Ocean Water");
   });
 
   it("opens Trace as a derived-data document kind", () => {
