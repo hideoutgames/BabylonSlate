@@ -32,6 +32,7 @@ import {
   type RenderShadingSettings,
   type SceneLoadProgress,
 } from "@haptic/render";
+import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
@@ -306,6 +307,8 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
+    // What the game's Classes may spawn: Play's load rehearses a light of each kind.
+    spawnableLights: spawnableLightsFromScripts(game.scripts),
     renderTargets: content.renderTargets,
     renderTargetTextures: content.renderTargetTextures,
     postProcessStack: content.postProcessStack,
@@ -806,6 +809,7 @@ function initializePlayer(
       materialDocuments: prepared.materialDocuments, materialFunctions: prepared.materialFunctions,
       audioLibrary: prepared.audioLibrary, particleLibrary: prepared.particleLibrary,
       fonts: [...sources.fontBytes].map(([guid, bytes]) => ({ guid, family: sources.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
+      spawnableLights: spawnableLightsFromScripts(sources.scripts),
     };
   };
   if (game.acquireAssets) handle.setCommandSourceLoader?.(async (ids, request) => {

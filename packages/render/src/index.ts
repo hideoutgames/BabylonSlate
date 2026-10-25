@@ -115,6 +115,7 @@ export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiag
 export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLayerLoadIdentity, type SceneLoadPhase, type SceneLoadProgress } from "./scene-load-readiness";
 export { createSceneStreamingReadiness, type SceneStreamIdentity } from "./scene-streaming-readiness";
 export type { SceneSourceAssets } from "./scene-source-assets";
+export { spawnableLightsFromScripts, type SpawnableLight } from "./spawnable-lights";
 export { NativePreparationScheduler, nativePreparationForEngine } from "./native-preparation";
 export type { NativePreparationLimits, NativePreparationPriority, NativePreparationRequest } from "./native-preparation";
 export { createAppWebGpuEngine, type WebGpuDeviceLoss } from "./webgpu-engine";

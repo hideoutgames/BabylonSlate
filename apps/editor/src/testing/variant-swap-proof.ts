@@ -40,7 +40,8 @@ import { isForwardLightExcluded, setAuthoredLightEnabled } from "../../../../pac
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
-import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
+import { AUTHORED_LIGHT_PREFIX, createPlayLight } from "../../../../packages/render/src/scene-illumination";
+import { spawnableLightsFromScripts } from "../../../../packages/render/src/spawnable-lights";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
@@ -441,9 +442,10 @@ async function warmSpawn() {
 }
 
 /**
- * A load rehearses its authored lights' changes (`createLoadRehearsal`): each change is applied, drawn once by a
- * strict frame and reverted. Afterwards a point switching off and a spot starting to cast shadows link no program on the
- * real context, and the view never holds.
+ * A load rehearses its authored lights' changes (`createLoadRehearsal`), and a light of each kind its Classes may
+ * spawn (here a shadowed point, a kind no authored light has): each change is applied, drawn once by a strict frame and
+ * reverted. Afterwards a point switching off, a shadowed point spawning near the camera (built as Play builds a spawned
+ * light part) and a spot starting to cast shadows link no program on the real context, and the view never holds.
  */
 async function rehearsedChanges() {
   const view = await worldView();
@@ -457,7 +459,12 @@ async function rehearsedChanges() {
     await view.coordinator.prepare();
     await view.settle();
     const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
-    const rehearsal = createLoadRehearsal(view.scene);
+    const torch = { lightKind: "point", color: [1, 0.6, 0.3], intensity: 1.2, castShadows: true, range: 9 };
+    const spawnable = spawnableLightsFromScripts([{
+      assetGuid: "torch", classId: "Torch", source: "", anchors: [], entryPoints: [],
+      components: [{ id: "light", classId: "LightComponent", properties: torch }],
+    }]);
+    const rehearsal = createLoadRehearsal(view.scene, undefined, [...spawnable.values()]);
     for (let attempt = 0; attempt < 600 && !rehearsal.done; attempt++) {
       rehearsal.check();
       if (view.coordinator.isReady()) rehearsal.frame(() => view.frame(false));
@@ -490,11 +497,19 @@ async function rehearsedChanges() {
       const pointOff = await change(() => setAuthoredLightEnabled(point, false));
       // One change at a time, as rehearsed: the point back on first (the variants the load drew).
       await change(() => setAuthoredLightEnabled(point, true));
+      // Near the camera, where the rehearsal staged it, until its map draws (its casters' depth programs in use).
+      let spawnedLight: Light | undefined;
+      const spawned = await change(() => {
+        spawnedLight = createPlayLight(view.scene, `${AUTHORED_LIGHT_PREFIX}torch`, "point", torch);
+        (spawnedLight as PointLight).position.set(0.4, 4.2, -7);
+        findSceneShadowController(view.scene)?.sync();
+      }, () => (spawnedLight?.getShadowGenerator() as ShadowGenerator | null | undefined)?.getDarkness() === 0);
+      await change(() => spawnedLight?.dispose());
       // Until the spot's map draws (its casters' depth programs in use), not only the receivers' swap.
       const spotShadows = await change(() => authored(spot, [0.9, 0.85, 0.7], 1.4, true),
         () => (spot.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() === 0);
       return {
-        report, pointOff, spotShadows,
+        report, pointOff, spawned, spotShadows,
         glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
       };
     } finally {

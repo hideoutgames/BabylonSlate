@@ -8,6 +8,7 @@ import {
 } from "@haptic/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
 import type { SceneSourceAssets } from "@haptic/render";
+import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
@@ -554,7 +555,7 @@ async function acquirePlayAssetSourcesAttempt(
       },
       materialDocuments: content.materialDocuments, materialFunctions: content.materialFunctions,
       particleLibrary: content.particleLibrary, audioLibrary: content.audioLibrary,
-      fonts,
+      fonts, spawnableLights: spawnableLightsFromScripts(game.scripts),
     };
     controls.push(...packedPlayControls(content).filter((control) => control.type !== "loadNavMesh"));
     if (game.scripts.length) controls.unshift({ type: "loadScripts", scripts: game.scripts });
