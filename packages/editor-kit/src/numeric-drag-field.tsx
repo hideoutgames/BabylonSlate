@@ -27,7 +27,11 @@ export interface NumericDragFieldProps {
   validate?: (value: number) => string | undefined;
   disabled?: boolean;
   onChange: (value: number) => void;
-  /** Fired once when a scrub ends, so callers can commit one undo entry. */
+  /**
+   * Fired once per scrub and once per submitted typed edit, so callers can
+   * commit one undo entry. A draft that ends invalid ends on the last value it
+   * sent through `onChange`; Escape never fires it.
+   */
   onDragEnd?: (value: number) => void;
   /** Axis color token: X red, Y green, Z blue. */
   accent?: "x" | "y" | "z";
