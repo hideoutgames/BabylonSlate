@@ -44,9 +44,10 @@ interface AnimGraphRuntimeHost {
 export class AnimGraphRuntime implements RuntimeSubsystem {
   private readonly documents = new Map<string, AnimGraphDocument>();
   private readonly evalByComponent = new Map<string, AnimEvalState>();
-  private readonly initializedBySlot = new Set<string>();
-  private readonly liveInitKeys = new Set<string>();
-  private readonly liveEvalKeys = new Set<string>();
+  /** The graph guid each component last ran `onInitializeAnimation` for. */
+  private readonly initializedGraphByComponent = new Map<string, string>();
+  /** The graph guid of each component the current tick visited. */
+  private readonly liveGraphByComponent = new Map<string, string>();
   private readonly pendingJumpByComponent = new Map<string, string>();
   /** The graph guid a component's evaluation and queued jump belong to. */
   private readonly graphByComponent = new Map<string, string>();
@@ -83,9 +84,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       this.evalByComponent.delete(component.guid);
       this.pendingJumpByComponent.delete(component.guid);
       this.graphByComponent.delete(component.guid);
-      for (const key of this.initializedBySlot) {
-        if (key.startsWith(`${component.guid}:`)) this.initializedBySlot.delete(key);
-      }
+      this.initializedGraphByComponent.delete(component.guid);
     }
   }
 
@@ -93,12 +92,11 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   traceStates(): TraceAnimGraphState[] {
     const rows = new Map<string, TraceAnimGraphState>();
     for (const [componentGuid, state] of this.evalByComponent) {
-      const prefix = `${componentGuid}:`;
-      const initKey = [...this.initializedBySlot].find((key) => key.startsWith(prefix));
-      if (initKey === undefined) continue;
+      const graphGuid = this.initializedGraphByComponent.get(componentGuid);
+      if (graphGuid === undefined) continue;
       rows.set(componentGuid, {
         componentGuid,
-        graphGuid: initKey.slice(prefix.length),
+        graphGuid,
         state: structuredClone(state) as unknown as Record<string, unknown>,
       });
     }
@@ -116,13 +114,13 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
    */
   restoreFromTrace(rows: readonly TraceAnimGraphState[]): void {
     this.evalByComponent.clear();
-    this.initializedBySlot.clear();
+    this.initializedGraphByComponent.clear();
     this.pendingJumpByComponent.clear();
     this.graphByComponent.clear();
     for (const row of rows) {
       if (row.graphGuid !== undefined && row.state) {
         this.evalByComponent.set(row.componentGuid, structuredClone(row.state) as unknown as AnimEvalState);
-        this.initializedBySlot.add(`${row.componentGuid}:${row.graphGuid}`);
+        this.initializedGraphByComponent.set(row.componentGuid, row.graphGuid);
         this.graphByComponent.set(row.componentGuid, row.graphGuid);
       }
       if (row.pendingJumpStateId) this.pendingJumpByComponent.set(row.componentGuid, row.pendingJumpStateId);
@@ -204,25 +202,23 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   /** One tick; `dtSeconds` is the tick's captured step, fixed for the whole tick. */
   tick(dtSeconds: number): void {
     if (this.documents.size === 0) return;
-    const liveKeys = this.liveInitKeys;
-    const liveEvalKeys = this.liveEvalKeys;
-    liveKeys.clear();
-    liveEvalKeys.clear();
+    const live = this.liveGraphByComponent;
+    live.clear();
     // Only an actor that owns an AnimationGraphComponent has a graph to run.
     const completed = walkComponentOwners(this.host.world(), "AnimationGraphComponent", () => this.host.stopped(),
       (actor) => this.tickActor(actor, dtSeconds));
     if (!completed) return;
-    // Deleting the visited entry keeps Set/Map iteration valid, so prune in place.
-    for (const key of this.initializedBySlot) {
-      if (!liveKeys.has(key)) this.initializedBySlot.delete(key);
+    // Deleting the visited entry keeps Map iteration valid, so prune in place.
+    // A component the walk missed, or reached with another graph, initializes again when it next runs.
+    for (const [evalKey, graphGuid] of this.initializedGraphByComponent) {
+      if (live.get(evalKey) !== graphGuid) this.initializedGraphByComponent.delete(evalKey);
     }
     for (const byComponent of [this.graphByComponent, this.evalByComponent, this.pendingJumpByComponent]) {
       for (const evalKey of byComponent.keys()) {
-        if (!liveEvalKeys.has(evalKey)) byComponent.delete(evalKey);
+        if (!live.has(evalKey)) byComponent.delete(evalKey);
       }
     }
-    liveKeys.clear();
-    liveEvalKeys.clear();
+    live.clear();
   }
 
   /**
@@ -285,9 +281,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       const document = this.documents.get(guid);
       if (!document) continue;
       const evalKey = component.guid;
-      const initKey = `${evalKey}:${guid}`;
-      this.liveInitKeys.add(initKey);
-      this.liveEvalKeys.add(evalKey);
+      this.liveGraphByComponent.set(evalKey, guid);
       this.bindGraph(evalKey, guid);
       if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
       this.seedVariables(component, document);
@@ -330,7 +324,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         animFacts: this.evalByComponent.get(evalKey)?.facts,
       };
       const objectClassId = animGraphScriptClassId(guid);
-      if (!this.initializedBySlot.has(initKey)) {
+      if (this.initializedGraphByComponent.get(evalKey) !== guid) {
         this.host.scripts().invokeAnimEvent(
           objectClassId,
           "onInitializeAnimation",
@@ -338,7 +332,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
           0,
           extras,
         );
-        this.initializedBySlot.add(initKey);
+        this.initializedGraphByComponent.set(evalKey, guid);
       }
       this.host.scripts().invokeAnimEvent(
         objectClassId,
