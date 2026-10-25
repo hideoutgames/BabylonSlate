@@ -1107,6 +1107,21 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
+  it("previews a selected camera's rebuilt meshes after an asset install", () => {
+    const { scene } = createHandle();
+    const retired = MeshBuilder.CreateBox(editorMeshName("subject"), {}, scene);
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    overlay.sync({ sceneData: sceneWith([cameraActor()]), selectedActorIds: ["cam"] });
+    expect(overlay.previewTexture!.renderList).toContain(retired);
+
+    retired.dispose();
+    const rebuilt = MeshBuilder.CreateBox(editorMeshName("subject"), {}, scene);
+    overlay.refreshRenderTargets();
+    expect(overlay.previewTexture!.renderList).toContain(rebuilt);
+    expect(overlay.previewTexture!.renderList).not.toContain(retired);
+    overlay.dispose();
+  });
+
   it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
     const ImageDataStub = class {
       data: Uint8ClampedArray;
