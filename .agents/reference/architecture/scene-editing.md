@@ -12,6 +12,7 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 | PropertyGrid, TreeView, pickers, PanelFrame | [`packages/editor-kit/src/`](../../../packages/editor-kit/src/) |
 | Selection provider, session view state | [`apps/editor/src/context/`](../../../apps/editor/src/context/) (`scene-editing-context.tsx`, `editor-session-state-context.tsx`) |
 | Panels, Place Actors, Outliner drops, typed Inspector rows | [`apps/editor/src/panels/`](../../../apps/editor/src/panels/), [`apps/editor/src/lib/`](../../../apps/editor/src/lib/) (`place-actors.ts`, `outliner-drop.ts`, `component-property-rows.ts`) |
+| Scene viewport: Engine view, scene loading, editor sync, navmesh overlay, test host | [`apps/editor/src/panels/viewport-panel.tsx`](../../../apps/editor/src/panels/viewport-panel.tsx) composes `use-viewport-engine.ts` (Engine view creation and release), `use-viewport-scene-load.ts` (blocking and incremental loads, Texture-encoding swaps), `use-viewport-editor-sync.ts` (editor state pushed into the Engine) and `use-viewport-navmesh.ts` (Show Navmesh, Nav Bake collector). Each hook is called where its effects belong in the panel's effect order, which React follows. `__hapticViewportTest` and the `?renderDiagnostics=1` publisher live in `viewport-test-host.ts` |
 | Simulation capture | [`packages/runtime/src/simulation-scene-capture.ts`](../../../packages/runtime/src/simulation-scene-capture.ts), [`component-authoring.ts`](../../../packages/runtime/src/component-authoring.ts) |
 
 ## Document invariants
