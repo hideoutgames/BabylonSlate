@@ -1,3 +1,4 @@
+import { fnv1a } from "@haptic/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   isParticleSpineRole,
@@ -13,7 +14,7 @@ import {
   canonicalParticleGradientStops,
   particleGradientStops,
 } from "./gradient";
-import { fnv1a, hashParticlePlan, particleSettingsFingerprint } from "./hash";
+import { hashParticlePlan, particleSettingsFingerprint } from "./hash";
 import { clampParticlePinValue, resolveParticlePinDefault } from "./pin-defaults";
 import {
   particleConversionFor,

@@ -1,3 +1,4 @@
+import { fnv1a } from "@haptic/core";
 import {
   materialNodeDefinition,
   terminalNodeTypeFor,
@@ -202,15 +203,6 @@ function describeOperand(operand: MaterialOperand | null | undefined): string {
   return `o:${operand.operationId}:${operand.pinId}${
     operand.conversions?.map(({ from, to }) => `:${from}>${to}`).join("") ?? ""
   }`;
-}
-
-function fnv1a(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index++) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
 }
 
 function compileFingerprint(document: MaterialDocument): string {
