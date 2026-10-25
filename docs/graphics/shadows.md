@@ -34,7 +34,7 @@ Open **Project Settings > Rendering > Shadows**. The values below are the Medium
 | **Shadow Filter Quality** | Medium | Low, Medium or High. Higher uses more texture samples. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
 | **Shadow Depth Bias** | 0.0001 | Depth offset. High values detach shadows from surfaces. |
-| **Automatic Shadow Bias** | On | Scales directional bias per cascade, with Depth Bias as the minimum. |
+| **Automatic Shadow Bias** | On | Scales directional bias per cascade, with Depth Bias as the minimum. Landscapes also get a normal offset scaled to the shadow resolution, so sculpted terrain does not shadow itself along its edges. |
 | **Shadow Normal Bias** | 0.005 | Normal offset, in world units. |
 | **Local Shadow Budget Mode** | Auto | **Auto** follows the quality level. **Manual** sets an upper limit. |
 | **Local Shadow Light Budget** | 2 | Manual only. Point and spot lights that can cast shadows at once. |

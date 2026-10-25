@@ -24,6 +24,29 @@ export type DirectionalShadowBias = {
   depthScale: number;
 };
 
+/**
+ * World texels of normal inset for smooth-normal casters in automatic
+ * directional mode. The receiver-plane correction extrapolates each triangle's
+ * own plane across the PCF footprint, so at a sculpted heightfield's concave
+ * edges the neighbouring triangle rises above it and self-shadows as dark lines
+ * along the geometry. Insetting the caster by more than that footprint removes
+ * them; continuous normals mean the inset cannot open split-normal edges.
+ */
+export const SMOOTH_CASTER_NORMAL_BIAS_TEXELS = 3;
+const smoothNormalCasters = new WeakSet<object>();
+
+/** Marks a caster whose vertex normals are continuous everywhere, such as a landscape chunk. */
+export function markSmoothNormalShadowCaster(mesh: object): void {
+  smoothNormalCasters.add(mesh);
+}
+
+/** The normal bias to draw `caster` with: the effective bias, raised for smooth-normal casters when `worldTexelSize` is known. */
+export function casterNormalBias(caster: object, normalBias: number, worldTexelSize: number): number {
+  return smoothNormalCasters.has(caster) && worldTexelSize > 0
+    ? Math.max(normalBias, SMOOTH_CASTER_NORMAL_BIAS_TEXELS * worldTexelSize)
+    : normalBias;
+}
+
 function nonNegativeFinite(value: number): number {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 }
@@ -36,7 +59,8 @@ function positiveFinite(value: number): boolean {
  * Automatic bias for orthographic directional maps only. Authored depth bias
  * is a native-unit floor; authored normal bias is the world-space floor AND
  * bound. Automatically insetting split-normal vertices can open hard contacts,
- * so adaptation adds no normal displacement.
+ * so adaptation adds no normal displacement, except for smooth-normal casters
+ * (`casterNormalBias`).
  *
  * Babylon 9.29's GLSL and WGSL shadowMapVertexMetric apply half of native bias
  * to normalized hardware depth, including reverse depth. CSM depth clamping

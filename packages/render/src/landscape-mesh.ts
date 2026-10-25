@@ -6,6 +6,7 @@ import { parseLandscapeProperties, type LandscapeProperties } from "@haptic/core
 import type { MeshAssetContext } from "./mesh-assets";
 import { RENDERING_GROUP } from "./sorting";
 import { applyMaterialBounds } from "./material-bounds";
+import { markSmoothNormalShadowCaster } from "./shadow-bias";
 
 const CHUNK_CELLS = 32;
 type Chunk = { mesh: Mesh; x: number; z: number; width: number; depth: number };
@@ -81,6 +82,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
     mesh.renderingGroupId = RENDERING_GROUP.world;
     mesh.hasVertexAlpha = false;
     mesh.metadata = { landscapeRoot: root };
+    markSmoothNormalShadowCaster(mesh);
     chunks.push(chunk);
   }
   landscapes.set(root, { data, chunks });

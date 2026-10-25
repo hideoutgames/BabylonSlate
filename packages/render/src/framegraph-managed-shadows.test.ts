@@ -20,6 +20,7 @@ import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createColliderVisualMesh } from "./collider-visual";
+import { markSmoothNormalShadowCaster, SMOOTH_CASTER_NORMAL_BIAS_TEXELS } from "./shadow-bias";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -248,6 +249,37 @@ it("binds current directional projection bias before the managed caster draw wit
   expect(generator.getShadowMap()).toBe(map);
   expect(map.getInternalTexture()).toBe(texture);
   expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
+  graph.dispose();
+});
+
+it("insets smooth-normal casters by world texels while other casters keep the authored normal bias", async () => {
+  const { engine, scene, camera, mesh, light, controller, generator, graph, render } = await fixture("sun");
+  const sun = light as DirectionalLight;
+  sun.customProjectionMatrixBuilder = (_view, _casters, result) => {
+    Matrix.OrthoOffCenterLHToRef(-8, 8, -8, 8, 0, 80, result, engine.isNDCHalfZRange);
+  };
+  sun.forceProjectionMatrixCompute();
+  const terrain = MeshBuilder.CreateGround("terrain", { width: 4, height: 4, subdivisions: 4 }, scene);
+  terrain.material = mesh.material;
+  markSmoothNormalShadowCaster(terrain);
+  controller.sync();
+  await generator.forceCompilationAsync();
+  let normalBias = Number.NaN;
+  let caster: unknown = null;
+  const drawn = new Map<unknown, number>();
+  const setFloat3 = Effect.prototype.setFloat3;
+  vi.spyOn(Effect.prototype, "setFloat3").mockImplementation(function (this: Effect, name, x, y, z) {
+    if (name === "biasAndScaleSM") normalBias = y;
+    return setFloat3.call(this, name, x, y, z);
+  });
+  generator.onBeforeShadowMapRenderMeshObservable.add((rendered) => { caster = rendered; });
+  generator.onAfterShadowMapRenderObservable.add(() => { drawn.set(caster, normalBias); });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  // 16 world units over 256 texels.
+  expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.0625, 8);
+  expect(drawn.get(terrain)).toBeCloseTo(SMOOTH_CASTER_NORMAL_BIAS_TEXELS * 0.0625, 8);
+  expect(drawn.get(mesh)).toBe(0.005);
   graph.dispose();
 });
 

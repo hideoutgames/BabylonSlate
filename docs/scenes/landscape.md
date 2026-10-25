@@ -10,7 +10,7 @@ To brush, drag with one finger, the mouse or a pen. A ring on the surface shows 
 
 ## Sculpt a landscape
 
-1. Switch to **Landscape**. In **Landscape Outliner**, tap **Create Landscape**. A flat landscape 64 × 64 units across, with 64 cells per side, appears at the origin.
+1. Switch to **Landscape**. In **Landscape Outliner**, tap **Create Landscape**. A flat landscape 64 × 64 units across, with 64 cells per side, appears at the origin. The camera stays where it is; choose **Frame** to bring the landscape into view.
 2. Pick a tool in the viewport toolbar and drag over the terrain.
 
 | Tool | Effect |
