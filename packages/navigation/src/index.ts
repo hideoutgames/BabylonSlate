@@ -44,7 +44,6 @@ export {
   type XyBounds,
   type XyChain,
 } from "./blockers";
-export { runNavBakeJob } from "./bake-job";
 export { navMeshDebugPrimitives } from "./debug-primitives";
 export {
   createNavigationBackend,
