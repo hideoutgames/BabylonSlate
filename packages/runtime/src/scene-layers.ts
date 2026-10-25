@@ -182,7 +182,8 @@ export class SceneLayers implements RuntimeSubsystem {
       { const pending = this.host.continueSimulation(owner); if (pending) await pending; }
       return layer;
     } catch (error) {
-      if (layer) this.remove(layer.guid);
+      // Stop cancelled the wait; its teardown already ran, so a removal now would send commands after Stop.
+      if (layer && !this.host.stopped()) this.remove(layer.guid);
       if (preload) preloads.release(preload.preloadId);
       throw error;
     }

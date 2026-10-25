@@ -615,6 +615,37 @@ describe("SceneLayer runtime compositor", () => {
     runtime.stop();
   });
 
+  it("sends no layer teardown after Stop cancels a latent create still waiting for readiness", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      seedDemoActors: false,
+      playScene: { ...worldScene("A"), actors: [createActor("caller", "Caller", { classId: "LayerCaller" })] },
+      playSceneGuid: "world",
+      sceneLayerLibrary: { hud: overlayLayer() },
+      deferSceneModelsReady: true,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "layer-caller",
+      classId: "LayerCaller",
+      parentClassId: "Actor",
+      source: "export async function begin(ctx) { await ctx.createSceneLayerAsync('hud', 0); ctx.self.setVariable('created', true); }",
+      anchors: [],
+      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }],
+    }]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.notifySceneModelsReady("world", 1);
+    await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLayerRealized")).toBe(true));
+    expect(runtime.getWorld().findActor("caller")!.getVariable("created")).toBeUndefined();
+    commands.length = 0;
+    runtime.stop();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(commands.filter((command) => command.type === "despawn" || command.type === "sceneLayerRemove")).toEqual([]);
+  });
+
   it("never shares a guid between a global layer's actor and a later Scene actor with the same authored id", () => {
     const hud: SerializedSceneLayer = {
       ...overlayLayer(),
