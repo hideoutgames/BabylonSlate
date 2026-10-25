@@ -34,6 +34,7 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { removeFogVolumes, upsertFogVolumes } from "@haptic/render/fog-volumes";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
+import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => Promise<number[]>) {
   const root = new TransformNode("Local Fog Actor", scene);
@@ -367,20 +368,10 @@ export async function runSpatialEffectsProof(
           canvas.width,
           canvas.height,
         );
-        const result = Array.from(
+        return toRgbaPixels(
           new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+          readbackChannelOrder(engine.isWebGPU),
         );
-        if (
-          backend === "webgpu" &&
-          (
-            navigator as Navigator & {
-              gpu: { getPreferredCanvasFormat(): string };
-            }
-          ).gpu.getPreferredCanvasFormat() === "bgra8unorm"
-        )
-          for (let i = 0; i < result.length; i += 4)
-            [result[i], result[i + 2]] = [result[i + 2]!, result[i]!];
-        return result;
       };
       try {
         if (kind === "fogVolumes") {

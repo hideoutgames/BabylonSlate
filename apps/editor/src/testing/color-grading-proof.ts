@@ -34,6 +34,7 @@ import {
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { sceneRenderingSettings, setSceneEffectsAssets } from "@haptic/render/render-settings";
+import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 64;
 const HEIGHT = 32;
@@ -75,7 +76,6 @@ async function presentPixels(
   engine: AbstractEngine,
   graph: ForwardSceneFrameGraph,
   camera: Camera,
-  backend: "webgl2" | "webgpu",
   deadline: number,
 ): Promise<number[]> {
   await graph.prepare(camera);
@@ -99,11 +99,7 @@ async function presentPixels(
     }
   }
   const pixels = await engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight());
-  const result = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
-  if (backend === "webgpu" &&
-    (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
-    for (let i = 0; i < result.length; i += 4) [result[i], result[i + 2]] = [result[i + 2]!, result[i]!];
-  return result;
+  return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
 }
 
 /** Release the graph and scene, then flush the engine's deferred work. */
@@ -152,7 +148,7 @@ export async function runColorGradingProof(backend: "webgl2" | "webgpu") {
         if (performance.now() > deadline) throw new Error("LUT load timed out");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
-      return presentPixels(engine, graph, camera, backend, deadline);
+      return presentPixels(engine, graph, camera, deadline);
     };
     try {
       const off = await draw();
@@ -337,7 +333,7 @@ export async function runDisplayColorProof(backend: "webgl2" | "webgpu") {
     const graph = new ForwardSceneFrameGraph(scene);
     const draw = () => {
       setSceneRenderSettings(scene, { mode: "pbr", effects });
-      return presentPixels(engine, graph, camera, backend, performance.now() + 15_000);
+      return presentPixels(engine, graph, camera, performance.now() + 15_000);
     };
     try {
       captures.legacy = await draw();

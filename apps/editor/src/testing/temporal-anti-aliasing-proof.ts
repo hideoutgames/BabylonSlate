@@ -12,6 +12,7 @@ import { normalizeRenderEffectsSettings } from "@haptic/core";
 import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
 const HEIGHT = 64;
@@ -76,11 +77,7 @@ export async function runTemporalAntiAliasingProof(backend: "webgl2" | "webgpu")
     };
     const read = async () => {
       const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-      const result = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
-      if (backend === "webgpu" &&
-        (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
-        for (let i = 0; i < result.length; i += 4) [result[i], result[i + 2]] = [result[i + 2]!, result[i]!];
-      return result;
+      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
     };
     try {
       await prepare();
