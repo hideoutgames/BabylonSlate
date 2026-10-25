@@ -10,6 +10,13 @@ import type { SceneRenderCoordinator } from "./scene-render-coordinator";
 
 type ActorOutline = { meshes: AbstractMesh[]; bindings: readonly OutlineBinding[] };
 
+/** Whether an enabled Outline component outlines some actor's meshes. */
+function hasOutlineBinding(actors: ReadonlyMap<string, ActorOutline>): boolean {
+  for (const actor of actors.values())
+    if (actor.meshes.length && actor.bindings.some((binding) => binding.enabled)) return true;
+  return false;
+}
+
 /** Outline authoring changes no geometry, illumination or authored effects. */
 export function isOutlineOnlySceneEdit(previous: SerializedScene | null, next: SerializedScene): boolean {
   if (!previous) return false;
@@ -65,6 +72,8 @@ export class SceneOutlineHost {
   private captureViewCount = 0;
   private gameplay: ReadonlyMap<string, SharedOutlineContribution> = new Map();
   private occluders: AbstractMesh[] = [];
+  /** Nothing is outlined, and the views already hold no contributions or occluders. */
+  private idle = false;
 
   constructor(scene: Scene, renderer: SceneRenderCoordinator, invalidate: () => void) {
     this.scene = scene; this.invalidate = invalidate;
@@ -132,6 +141,20 @@ export class SceneOutlineHost {
   private sync(actors = this.actors, selectedActors = this.selectedActors): void {
     const revision = this.view.revision;
     const { mode, cel } = sceneRenderingSettings(this.scene);
+    // With nothing to outline (no CEL outlines, enabled Outline component or selection) occluders matter to no view,
+    // so a Play spawn or visual change only records membership; the first outline publishes it all again.
+    if (!(mode === "cel" && cel.outlinesEnabled) && !selectedActors.length && !hasOutlineBinding(actors)) {
+      if (!this.idle) this.view.replaceContributions(new Map(), []);
+      this.actors = actors; this.selectedActors = selectedActors;
+      if (!this.idle) {
+        this.idle = true;
+        this.gameplay = new Map();
+        this.occluders = [];
+        for (const [view, capture] of this.captureViews) this.publishCaptureView(view, capture);
+        if (revision !== this.view.revision) this.invalidate();
+      }
+      return;
+    }
     const targets: SharedOutlineTarget[] = [...actors].filter(([, actor]) => actor.meshes.length > 0)
       .map(([key, actor]) => ({ key, meshes: actor.meshes }));
     const contributions = new Map<string, SharedOutlineContribution>();
@@ -155,6 +178,7 @@ export class SceneOutlineHost {
     const occluders = targets.flatMap((target) => target.meshes);
     this.view.replaceContributions(contributions, occluders);
     this.actors = actors; this.selectedActors = selectedActors;
+    this.idle = false;
     contributions.delete("selection");
     this.gameplay = contributions;
     this.occluders = occluders;

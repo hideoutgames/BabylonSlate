@@ -220,6 +220,21 @@ describe("authored scene outline host", () => {
     expect(host.view.contributions.has("component:b:ink")).toBe(false);
   });
 
+  it("records spawns without republishing while nothing is outlined, then outlines every recorded actor", () => {
+    const { scene, host } = setup();
+    const meshes = ["a", "b", "c"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    host.setActor("a", [meshes[0]!], []);
+    const revision = host.view.revision;
+    host.setActor("b", [meshes[1]!], []);
+    host.setActor("c", [meshes[2]!], []);
+    expect(host.view.revision).toBe(revision);
+    expect(host.view.active).toBe(false);
+    setSceneRenderSettings(scene, { mode: "cel" });
+    host.refreshSettings();
+    expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a", "b", "c"]);
+    expect(host.view.meshesForGroup("strict")).toEqual(meshes);
+  });
+
   it("keeps editor guides out of gameplay masks and removes only global CEL on a mode change", () => {
     const { scene, host } = setup();
     const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
