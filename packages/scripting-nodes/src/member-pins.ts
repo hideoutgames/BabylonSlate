@@ -1,6 +1,7 @@
 import {
   pin,
   defaultValueLiteral,
+  localVariableIdent,
   objectRef,
   pinTypeForVariable,
   type GraphPin,
@@ -10,6 +11,7 @@ import { declaredValueUnit, mapDefaultLiteral } from "@haptic/core";
 import { selfPin, subject } from "./self-pin";
 
 export {
+  localVariableIdent,
   pinTypeForMember,
   pinTypeForVariable,
   typeIdFromPinType,
@@ -55,11 +57,6 @@ export function memberTargetPin(
 export function jsIdent(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
-}
-
-/** Function-local ident so authored names cannot collide with `ctx`. */
-export function localVariableIdent(name: string): string {
-  return `__lv_${jsIdent(name)}`;
 }
 
 /**

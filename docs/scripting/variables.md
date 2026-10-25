@@ -61,4 +61,6 @@ A local variable exists only inside one function and starts from its default eac
 
 Local variables appear in **Add Node** only while their function is open.
 
+Each local variable in a function needs its own name. Names that differ only in spaces or punctuation, such as **Move Speed** and **Move_Speed**, count as the same name, and validation reports the second one.
+
 To reuse one, select it, choose **Copy**, then choose **Paste** with the target function selected or open. See [Select, copy and paste members](classes.md#select-copy-and-paste-members).

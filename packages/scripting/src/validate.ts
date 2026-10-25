@@ -29,7 +29,7 @@ import {
   normalizeStringSwitchCases,
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
-import { eventNameForEntry } from "./compile";
+import { eventNameForEntry, localVariableIdent } from "./compile";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
 
@@ -680,19 +680,22 @@ function validateMemberBindings(
   const locals = members.filter(
     (member) => member.kind === "variable" && member.functionId,
   );
-  const seenLocal = new Set<string>();
+  // A function's locals compile to one `let` each, so two names with the same identifier collide.
+  const seenLocal = new Map<string, string>();
   for (const local of locals) {
-    const key = `${local.functionId}:${local.name}`;
+    const key = `${local.functionId}:${localVariableIdent(local.name)}`;
     const classHit = classVars.some((entry) => entry.name === local.name);
-    const duplicate = seenLocal.has(key);
-    seenLocal.add(key);
-    if (!classHit && !duplicate) continue;
+    const previous = seenLocal.get(key);
+    if (previous === undefined) seenLocal.set(key, local.name);
+    if (!classHit && previous === undefined) continue;
     out.push(
       diagnostic({
         code: "member.local_name_conflict",
         message: classHit
           ? `Local variable "${local.name}" collides with a class variable`
-          : `Local variable "${local.name}" is declared more than once`,
+          : previous === local.name
+            ? `Local variable "${local.name}" is declared more than once`
+            : `Local variable "${local.name}" collides with local variable "${previous}"`,
         assetGuid: ctx.assetGuid,
         graphId: graph.id,
       }),
