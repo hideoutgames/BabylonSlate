@@ -24,7 +24,7 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 - Canonical strings such as `Mod+Shift+Z`, `Alt+P`, `F2`, `Delete`. Modifier order: `Mod`, `Ctrl`, `Alt`, `Shift`.
 - `Mod` is Command on Apple platforms and Control elsewhere; `Ctrl` is distinct only on Apple.
 - Letters, digits and punctuation match the physical key (`event.code`), so Option/Shift do not change the bound key.
-- A multi-step shortcut separates steps with one space (`Alt+Shift+P Alt+Shift+B`); `chordSteps` splits, `chordStartsWith` tests a prefix. Use one for commands that must not run from a single stray chord (Project Browser closes the project). `aria-keyshortcuts` cannot express a sequence, so `ariaKeyShortcuts` returns `undefined` for one; `chordHasCommandModifier` requires every step to have one.
+- A multi-step shortcut separates steps with one space (`Alt+Shift+P Alt+Shift+B`); `chordSteps` splits, `chordStartsWith` tests a prefix. No default uses one today; users can record one in Keybinds. Destructive defaults use a three-modifier chord instead (Project Browser, `Mod+Alt+Shift+B`, closes the project). `aria-keyshortcuts` cannot express a sequence, so `ariaKeyShortcuts` returns `undefined` for one; `chordHasCommandModifier` requires every step to have one.
 
 ## Adding a command
 

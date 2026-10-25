@@ -90,7 +90,11 @@ describe("KeybindSettings", () => {
   });
 
   it("warns when a chord begins another command's two-step shortcut", () => {
-    const view = render(<Harness initial={{ "edit.rename": ["Alt+Shift+P"] }} />);
+    const view = render(
+      <Harness
+        initial={{ "editor.projectBrowser": ["Alt+Shift+P Alt+Shift+B"], "edit.rename": ["Alt+Shift+P"] }}
+      />,
+    );
     expect(view.getByTestId("keybind-conflict-edit.rename").textContent).toContain("Project Browser");
     expect(view.getByTestId("keybind-conflict-editor.projectBrowser").textContent).toContain("Rename");
   });
