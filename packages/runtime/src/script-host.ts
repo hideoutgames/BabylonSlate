@@ -3032,35 +3032,21 @@ function animationGraphComponentOf(target: unknown): ActorComponent | null {
   return null;
 }
 
+const CAMERA_CLASS_IDS: ReadonlySet<string> = new Set(["CameraComponent"]);
+const LIGHT_CLASS_IDS: ReadonlySet<string> = new Set(["LightComponent", "AreaRectLightComponent", "HemisphericFillLightComponent"]);
+
+/** The target itself when it is a live component of these classes, else its actor's first live one. */
+function liveComponentOf(target: unknown, classIds: ReadonlySet<string>): ActorComponent | null {
+  if (target instanceof ActorComponent && classIds.has(target.classId)) return target.destroyed ? null : target;
+  return actorOf(target)?.components.find((component) => classIds.has(component.classId) && !component.destroyed) ?? null;
+}
+
 function cameraComponentOf(target: unknown): ActorComponent | null {
-  if (target instanceof ActorComponent && target.classId === "CameraComponent") {
-    return target.destroyed ? null : target;
-  }
-  return (
-    actorOf(target)?.components.find(
-      (component) => component.classId === "CameraComponent" && !component.destroyed,
-    ) ?? null
-  );
+  return liveComponentOf(target, CAMERA_CLASS_IDS);
 }
 
 function lightComponentOf(target: unknown): ActorComponent | null {
-  if (
-    target instanceof ActorComponent &&
-    (target.classId === "LightComponent" ||
-      target.classId === "AreaRectLightComponent" ||
-      target.classId === "HemisphericFillLightComponent")
-  ) {
-    return target.destroyed ? null : target;
-  }
-  return (
-    actorOf(target)?.components.find(
-      (component) =>
-        (component.classId === "LightComponent" ||
-          component.classId === "AreaRectLightComponent" ||
-          component.classId === "HemisphericFillLightComponent") &&
-        !component.destroyed,
-    ) ?? null
-  );
+  return liveComponentOf(target, LIGHT_CLASS_IDS);
 }
 
 /** A layer guid string, or a live SceneLayer's guid. */
