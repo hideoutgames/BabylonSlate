@@ -62,7 +62,7 @@ function isDataOnly(node: GraphNode): boolean {
  * Node ids that `compileGraph` / `compileTransitionRuleGraph` would emit:
  * trigger entries, exec-reachable successors, and data-only pures those
  * nodes read. Isolated leftover nodes are omitted (match the emitted
- * program, not compile.ts's extra ensurePure-all loop).
+ * program, not compileGraph's extra ensurePure-all loop).
  */
 export function compiledNodeIds(graph: LogicGraph): Set<string> {
   const nodes = nodesById(graph);
