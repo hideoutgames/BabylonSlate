@@ -24,7 +24,7 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment, type FilteredEnvironmentTarget } from "./environment-prefilter";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
-import { setMeshEnvironmentResolver } from "./mesh-environment";
+import { markMeshEnvironmentChanged, setMeshEnvironmentResolver } from "./mesh-environment";
 import { drawOutsideSceneView } from "./render-target-capture";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
@@ -300,6 +300,8 @@ export class ReflectionProbes {
     if (view.boundingBoxSize.equals(size) && view.boundingBoxPosition.equals(center)) return;
     view.boundingBoxPosition = center.clone();
     view.boundingBoxSize = size.clone();
+    // Frozen materials keep the old box in their uniform buffers until forced to rebind.
+    markMeshEnvironmentChanged(view);
     if (probe.published) this.generation++;
   }
 

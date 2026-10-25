@@ -21,8 +21,10 @@ import {
 export type MeshEnvironmentResolver = (mesh: AbstractMesh) => BaseTexture | null;
 
 const resolvers = new WeakMap<Scene, MeshEnvironmentResolver>();
-/** The cube each material's uniforms last bound, so a switch forces a rebind. */
-const lastBound = new WeakMap<Material, BaseTexture | null>();
+/** Bumped when a resolved cube's bound values (its projection box) change in place. */
+const revisions = new WeakMap<BaseTexture, number>();
+/** The cube, and its revision, each material's uniforms last bound, so a switch or change forces a rebind. */
+const lastBound = new WeakMap<Material, { view: BaseTexture | null; revision: number }>();
 
 type EnvironmentScene = Scene & { _environmentTexture: Nullable<BaseTexture> };
 type ReadyForSubMesh = (this: Material, mesh: AbstractMesh, subMesh: SubMesh, useInstances?: boolean) => boolean;
@@ -35,6 +37,11 @@ export function setMeshEnvironmentResolver(scene: Scene, resolver: MeshEnvironme
   if (!resolver) { resolvers.delete(scene); return; }
   install();
   resolvers.set(scene, resolver);
+}
+
+/** `view`'s box moved or resized: materials that bound it rebind its uniforms on their next draw, frozen ones included. */
+export function markMeshEnvironmentChanged(view: BaseTexture): void {
+  revisions.set(view, (revisions.get(view) ?? 0) + 1);
 }
 
 /**
@@ -65,9 +72,11 @@ function install(): void {
     prototype.bindForSubMesh = function (world, mesh, subMesh) {
       withMeshEnvironment(this, mesh, () => bind.call(this, world, mesh, subMesh), (view) => {
         // Consecutive meshes sharing a material skip rebinding, and a frozen
-        // material skips its uniform buffer: a different cube must rebind both.
-        if (lastBound.get(this) === view) return;
-        lastBound.set(this, view);
+        // material skips its uniform buffer: a different or changed cube must rebind both.
+        const revision = view ? revisions.get(view) ?? 0 : 0;
+        const last = lastBound.get(this);
+        if (last && last.view === view && last.revision === revision) return;
+        lastBound.set(this, { view, revision });
         if (subMesh._drawWrapper) subMesh._drawWrapper._forceRebindOnNextCall = true;
       });
     };

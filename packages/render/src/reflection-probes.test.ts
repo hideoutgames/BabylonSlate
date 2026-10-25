@@ -1,17 +1,16 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   CubeTexture,
-  Effect,
   FreeCamera,
   MeshBuilder,
   NullEngine,
+  NullEngineOptions,
   PBRMaterial,
   Quaternion,
   Scene,
   SphericalPolynomial,
   TransformNode,
   Vector3,
-  type BaseTexture,
   type Mesh,
   type RenderTargetWrapper,
 } from "@babylonjs/core";
@@ -43,7 +42,10 @@ afterEach(() => {
 });
 
 function fixture() {
-  const engine = new NullEngine();
+  const options = new NullEngineOptions();
+  // Babylon's headless WebGL2 option keeps real CPU-side uniform buffers, which frozen materials bind from.
+  options.enableMultiview = true;
+  const engine = new NullEngine(options);
   // The installed NullEngine builds a cube target's texture but never attaches it.
   const createCube = engine.createRenderTargetCubeTexture.bind(engine);
   engine.createRenderTargetCubeTexture = (...args) => {
@@ -101,34 +103,32 @@ async function readyDefines(scene: Scene, material: PBRMaterial, mesh: Mesh): Pr
   return subMesh.materialDefines as unknown as Record<string, unknown>;
 }
 
-/** The environment cube `mesh`'s draw binds. */
-function boundEnvironment(scene: Scene, material: PBRMaterial, mesh: Mesh): BaseTexture | undefined {
+/** Draw `mesh` in a new frame and return the projection box size its material's uniform buffer then holds. */
+function boundReflectionSize(scene: Scene, material: PBRMaterial, mesh: Mesh): number[] {
   scene.activeCamera ??= new FreeCamera("camera", new Vector3(0, 0, -5), scene);
   scene.updateTransformMatrix(true);
-  let bound: BaseTexture | undefined;
-  const setTexture = Effect.prototype.setTexture;
-  const spy = vi.spyOn(Effect.prototype, "setTexture").mockImplementation(function (this: Effect, channel, texture) {
-    if (channel === "reflectionSampler" && texture) bound = texture as BaseTexture;
-    return setTexture.call(this, channel, texture);
-  });
+  scene.resetCachedMaterial();
   material.bindForSubMesh(mesh.getWorldMatrix(), mesh, mesh.subMeshes[0]!);
-  spy.mockRestore();
-  return bound;
+  const ubo = material._uniformBuffer;
+  const offset = (ubo as unknown as { _uniformLocations: Record<string, number> })._uniformLocations.vReflectionSize!;
+  return [...ubo.getData().subarray(offset, offset + 3)];
 }
 
 it("projects reflections onto the probe's new box when its actor turns, even at the same volume and centre", async () => {
   const { scene, material, inside, root, frame, publish } = fixture();
+  // The editor freezes its default material, which then rebinds its uniform buffer only when forced to.
+  material.freeze();
   root.rotationQuaternion = Quaternion.RotationYawPitchRoll(Math.PI / 6, 0, 0);
   await publish([8, 2, 4]);
   await readyDefines(scene, material, inside);
+  const before = boundReflectionSize(scene, material, inside);
+  [8.928, 2, 7.464].forEach((extent, axis) => expect(before[axis]).toBeCloseTo(extent, 3));
   // Turning from 30 to 60 degrees swaps the world box's x and z extents.
   root.rotationQuaternion = Quaternion.RotationYawPitchRoll(Math.PI / 3, 0, 0);
   frame();
   await readyDefines(scene, material, inside);
-  const box = (boundEnvironment(scene, material, inside) as CubeTexture).boundingBoxSize;
-  expect(box.x).toBeCloseTo(7.464, 3);
-  expect(box.y).toBeCloseTo(2, 3);
-  expect(box.z).toBeCloseTo(8.928, 3);
+  const after = boundReflectionSize(scene, material, inside);
+  [7.464, 2, 8.928].forEach((extent, axis) => expect(after[axis]).toBeCloseTo(extent, 3));
 });
 
 it("recompiles meshes for a probe's cube when the first probe publishes and for the scene's when the last goes", async () => {
