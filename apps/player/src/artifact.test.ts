@@ -93,6 +93,37 @@ describe("loadGameFromFiles", () => {
     expect(game.fontMsdfPng.size).toBe(0);
     game.dispose!();
   });
+  it("boots with a source-only Font that 3D Text and MSDF 2D Text select", async () => {
+    const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [
+      { classId: "Text3DComponent", properties: { fontAssetGuid: "font" } },
+      { classId: "2DTextComponent", properties: { fontAssetGuid: "font", renderer: "msdf" } },
+    ] }] };
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(scene)) },
+      { guid: "font", type: "Font", name: "Body", sceneGuid: "scene", bytes: new Uint8Array([1]) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    expect(game.scenes.has("scene")).toBe(true);
+    expect(game.fontFacetypeBytes.has("font")).toBe(false);
+    expect(game.fontMsdfPng.has("font")).toBe(false);
+    game.dispose!();
+  });
+  it("does not read the default Font's facetype for 3D Text without a Font", async () => {
+    const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [{ classId: "Text3DComponent", properties: { text: "Hi" } }] }] };
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(scene)) },
+      { guid: "font", type: "Font", name: "Body", sceneGuid: "scene", bytes: new Uint8Array([1]) },
+      { guid: fontFacetypeExportGuid("font"), type: FONT_FACETYPE_EXPORT_TYPE, sceneGuid: "scene", bytes: encoder.encode("{}") },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const paths: string[] = [];
+    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE));
+    const game = await loadGameFromFiles(metadata, { readFile: async path => { paths.push(path); return exported.value.files.get(path)!; } });
+    expect(paths).not.toContain(exported.value.manifest.assets.find(asset => asset.guid === fontFacetypeExportGuid("font"))!.path);
+    expect(game.fontFacetypeBytes.size).toBe(0);
+    game.dispose!();
+  });
   it("overlaps asset HTTP requests with a bounded pool", async () => {
     const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: Array.from({ length: 15 }, (_, index) => ({ guid: `texture-${index}`, type: "Texture", startupRequired: true, sceneGuid: "scene", bytes: new Uint8Array([index]) })) });

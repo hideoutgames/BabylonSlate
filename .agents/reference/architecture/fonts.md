@@ -21,7 +21,7 @@ Font assets, optional facetype/MSDF chunks, CSS fallback stacks and the main-thr
 - Optional chunks are import-only, never baked in-engine: `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`), `msdf-atlas` (JSON), `msdf-atlas-png` (PNG). The MSDF PNG is a Font companion, not a Texture asset.
 - Imported Fonts store their payload on the `.hasset` header (no `document` chunk); `decodeAssetDocument` falls back to `header.payload`. Saving keeps the extra chunks beside the rewritten body.
 - Attaching MSDF merges representation flags with OR (never clears `source`) and writes both the header and any saved `document` chunk; an open Font tab merges only those flags into its payload.
-- Export packs `font-facetype:<guid>`, `font-msdf:<guid>` and `font-msdf-png:<guid>` sidecars so the source Font stays a font file. A player missing the MSDF sidecar falls back to Bitmap (log once).
+- Export packs `font-facetype:<guid>`, `font-msdf:<guid>` and `font-msdf-png:<guid>` sidecars so the source Font stays a font file, each only when the Font has that chunk. The player requests only sidecars its catalog lists, so a source-only Font still loads; a player missing the MSDF sidecar falls back to Bitmap (log once).
 
 ## Fallback stack
 
@@ -53,7 +53,7 @@ Bitmap 2D Text measures and rasterizes its glyphs once, when its mesh is built, 
 ## 3D Text
 
 - `Text3DComponent` is a flat triangulated TypeFace mesh (`CreateTextShapePaths` + `CreatePolygon` + injected `earcut`), one unlit two-sided material. It is a scene mesh, not a DynamicTexture plane, and not Development Only.
-- Uses the Font's `facetype-glyphs` chunk when it parses, else the bundled ASCII TypeFace (5×7 pixels greedy-merged). Play/export collect those bytes independently of `FontFace` source bytes.
+- Uses the Font's `facetype-glyphs` chunk when it parses, else the bundled ASCII TypeFace (5×7 pixels greedy-merged). 3D Text without a Font uses the bundled face, never the project default Font, so no host loads a Font for it. Play/export collect those bytes independently of `FontFace` source bytes.
 - Newlines stack upward from a bottom origin; `alignment` is the horizontal anchor, not a wrap width.
 
 ## Overlay 2D Text

@@ -340,8 +340,10 @@ export async function loadGameFromFiles(
       if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
       const row = value as Record<string, unknown>;
       const properties = row.properties as Record<string, unknown> | undefined;
-      if (row.classId === "Text3DComponent") requireFont(typeof properties?.fontAssetGuid === "string" ? properties.fontAssetGuid : undefined, "facetype");
-      else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
+      if (row.classId === "Text3DComponent") {
+        // 3D Text without a Font draws the bundled face, never the project default Font.
+        if (typeof properties?.fontAssetGuid === "string" && properties.fontAssetGuid) requireFont(properties.fontAssetGuid, "facetype");
+      } else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
         const text = parseText2DProperties(properties);
         requireFont(text.fontAssetGuid, text.renderer === "msdf" ? "msdf" : "bitmap");
       }
@@ -358,10 +360,12 @@ export async function loadGameFromFiles(
     };
     for (const [guid, selected] of modes) inheritModes(guid, selected);
     const variants = new Set<string>();
+    // A Font exports only the representations it has; the renderer falls back without the others.
+    const addSidecar = (id: string) => { if (entries.has(id)) variants.add(id); };
     for (const [guid, selected] of modes) {
       if (selected.has("bitmap")) variants.add(guid);
-      if (selected.has("facetype")) variants.add(fontFacetypeExportGuid(guid));
-      if (selected.has("msdf")) { variants.add(fontMsdfExportGuid(guid)); variants.add(fontMsdfAtlasExportGuid(guid)); }
+      if (selected.has("facetype")) addSidecar(fontFacetypeExportGuid(guid));
+      if (selected.has("msdf")) { addSidecar(fontMsdfExportGuid(guid)); addSidecar(fontMsdfAtlasExportGuid(guid)); }
     }
     const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
     // A Model's collision triangles are a separate cached representation, cooked
