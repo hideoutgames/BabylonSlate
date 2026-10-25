@@ -32,7 +32,7 @@ Optional Git LFS file locking: the `LockProvider` port, the LFS client, token st
 - **Create is the race-free check**: 201 holds the lock. A 409 carries no ours/theirs, so `GitLfsLockProvider.create` then verifies: a path in `ours` is returned as held; otherwise it is a theirs conflict. If verify fails, the 409 stays a conflict.
 - Calls go to `{lfsBase}/locks` with `application/vnd.git-lfs+json` and Basic auth `x-access-token:<PAT>`: `POST /locks`, `POST /locks/verify` (cursor pagination), `POST /locks/:id/unlock`. `ref.name` is `refs/heads/<branch>`.
 - Lock state comes only from verify (`GET /locks` cannot tell ours from theirs). A malformed verify body or a repeated `next_cursor` is an `http` error, so a refresh keeps the last known locks.
-- `lfsEndpointFromRepoUrl` derives `https://<host>/<path>.git/info/lfs` from the **configured** repository URL (HTTPS, SSH or scp-style; `http://` is upgraded, the token never goes over plain HTTP; an SSH remote's user and port are dropped, so it maps to the default HTTPS port, as git-lfs does). `.git/config` + `HEAD` only prefill settings when readable; Working Copy exposes the working tree only.
+- `lfsEndpointFromRepoUrl` derives `https://<host>/<path>.git/info/lfs` from the **configured** repository URL (HTTPS, SSH or scp-style; `http://` is upgraded, the token never goes over plain HTTP; an `ssh://` remote's user and port are dropped, so it maps to the default HTTPS port, as git-lfs does). `.git/config` + `HEAD` only prefill settings when readable; Working Copy exposes the working tree only.
 
 ## Secrets
 
