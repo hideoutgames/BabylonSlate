@@ -288,7 +288,7 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
-  it("emits a diagnostic when the tree guid is missing", () => {
+  it("emits a diagnostic once for each reason an actor's tree is missing", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -300,10 +300,15 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.start();
     runtime.realizePlayWorld();
     runtime.tick();
-    const diags = commands.filter((command) => command.type === "diagnostic");
-    expect(diags.some((command) => command.type === "diagnostic" && command.code === "bt.missing_tree")).toBe(
-      true,
-    );
+    runtime.tick();
+    runtime.getWorld().findActor("guard")!.components
+      .find((component) => component.classId === "BehaviourTreeComponent")!
+      .setVariable("treeGuid", "absent");
+    runtime.tick();
+    runtime.tick();
+    expect(commands.flatMap((command) =>
+      command.type === "diagnostic" && command.code === "bt.missing_tree" ? [command.message] : [],
+    )).toEqual(["BehaviourTreeComponent has no treeGuid", "Behaviour tree not loaded: absent"]);
     runtime.stop();
   });
 

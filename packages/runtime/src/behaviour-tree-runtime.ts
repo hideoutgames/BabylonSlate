@@ -565,9 +565,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     return result;
   }
 
+  /** Report once per actor and reason, so a tree that goes missing differently later is still reported. */
   private emitMissing(actorGuid: string, message: string): void {
-    if (this.missingWarned.has(actorGuid)) return;
-    this.missingWarned.add(actorGuid);
+    const key = `${actorGuid}\0${message}`;
+    if (this.missingWarned.has(key)) return;
+    this.missingWarned.add(key);
     const frameId = this.host.frameId();
     const diag: RuntimeDiagnostic = {
       code: "bt.missing_tree",
