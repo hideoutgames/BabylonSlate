@@ -1433,9 +1433,13 @@ function initializeEngine(
       sameScene = true;
       lastSceneAssetGuid = loadOptions.sceneAssetGuid;
     }
+    if (editorSync && sameScene && isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      // Only the moved actors re-realize; anything the fast path cannot cover takes the full apply.
+      if (!editorSync.applyPoses(sceneData)) editorSync.apply(sceneData);
+      return;
+    }
     if (editorSync && sameScene &&
-      (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
-        isDeformerOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
+      (isDeformerOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
         isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
