@@ -58,6 +58,11 @@ export async function loadEnginePluginStorage(options: {
 
 let cachedEnginePluginStorage: ProjectStorage | null = null;
 
+/** False for the empty fallback (or any load not kept), which a later call retries. */
+export function isCachedEnginePluginStorage(storage: ProjectStorage): boolean {
+  return storage === cachedEnginePluginStorage;
+}
+
 /** Fetch bundled engine plugins once per editor session after a successful load. */
 export async function ensureEnginePluginStorage(options?: {
   fetch?: typeof fetch;

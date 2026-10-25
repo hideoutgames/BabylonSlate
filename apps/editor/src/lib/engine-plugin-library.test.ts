@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultPluginSettings,
@@ -8,7 +11,20 @@ import {
 } from "@haptic/assets";
 import { unpackEnginePluginZip } from "../../../../packages/assets/src/test-support/engine-plugins";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
 import { EnginePluginLibrary } from "./engine-plugin-library";
+
+vi.mock("@haptic/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/vfs")>();
+  return {
+    ...actual,
+    createTemplateStorage: async (folder: string) => {
+      const result = new actual.MemoryStorageAdapter("opfs");
+      await result.openDocumentsProject(folder);
+      return result;
+    },
+  };
+});
 
 async function storage(name: string) {
   const result = new MemoryStorageAdapter("opfs");
@@ -192,5 +208,36 @@ describe("EnginePluginLibrary", () => {
     expect((await store.list()).map((entry) => entry.enabledByDefault)).toEqual([false, false]);
     await store.setEnabledByDefault("user-guid", true);
     expect((await store.list()).find((entry) => entry.pluginGuid === "user-guid")?.enabledByDefault).toBe(true);
+  });
+});
+
+describe("ensureEnginePluginLibrary", () => {
+  it("retries the bundled catalog after a failed index load instead of keeping the empty fallback", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "engine-plugin-library-"));
+    try {
+      const source = await storage("source");
+      const plugin = await writeProjectPlugin(source, "pack",
+        createDefaultPluginSettings({ pluginGuid: "bundled-guid", displayName: "Bundled Pack" }));
+      const sourceDir = join(directory, "source"), publicDir = join(directory, "public");
+      mkdirSync(join(sourceDir, "pack"), { recursive: true });
+      writeFileSync(join(sourceDir, "pack", "pack.plugin.hasset"), await source.readBinary(plugin.settingsPath));
+      await (enginePluginsVitePlugin({ sourceDir, publicDir }).configResolved as () => Promise<void>)();
+      let indexRequests = 0;
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+        const file = String(input).split("engine-plugins/")[1]!;
+        if (file === "index.json" && ++indexRequests === 1) return new Response("unavailable", { status: 503 });
+        return new Response(new Uint8Array(readFileSync(join(publicDir, file))));
+      });
+      vi.resetModules();
+      const { ensureEnginePluginLibrary } = await import("./engine-plugin-library");
+
+      expect(await (await ensureEnginePluginLibrary()).list()).toEqual([]);
+      const recovered = await ensureEnginePluginLibrary();
+      expect((await recovered.list()).map((entry) => entry.pluginGuid)).toEqual(["bundled-guid"]);
+      expect(await ensureEnginePluginLibrary()).toBe(recovered);
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

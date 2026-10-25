@@ -16,7 +16,7 @@ import {
   ENGINE_PLUGIN_LIBRARY_FOLDER,
   MemoryStorageAdapter,
 } from "@haptic/vfs";
-import { ensureEnginePluginStorage } from "./engine-plugins";
+import { ensureEnginePluginStorage, isCachedEnginePluginStorage } from "./engine-plugins";
 
 export const ENGINE_PLUGIN_LIBRARY_ROOT = ENGINE_PLUGIN_LIBRARY_FOLDER;
 const DEFAULTS_FILE = "defaults.json";
@@ -286,7 +286,12 @@ export function ensureEnginePluginLibrary(): Promise<EnginePluginLibrary> {
     cachedLibrary = Promise.all([
       ensureEnginePluginStorage(),
       createTemplateStorage(ENGINE_PLUGIN_LIBRARY_ROOT),
-    ]).then(([bundled, library]) => new EnginePluginLibrary(bundled, library));
+    ]).then(([bundled, library]) => {
+      // Never pin the session to the empty fallback: New Project would copy no
+      // bundled plugins until reload. The next call retries the bundled index.
+      if (!isCachedEnginePluginStorage(bundled)) cachedLibrary = null;
+      return new EnginePluginLibrary(bundled, library);
+    });
     void cachedLibrary.catch(() => { cachedLibrary = null; });
   }
   return cachedLibrary;
