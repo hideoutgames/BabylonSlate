@@ -42,18 +42,8 @@ function componentParents(target: ActorComponent): ActorComponent[] | null {
 export function tweenWorldTransformDepth(target: TweenTransformTarget, findActor: ActorLookup): number | null {
   const owner = liveSpatialOwner(target, findActor);
   if (!owner) return null;
-  let depth = 0;
-  let actor = owner;
-  const visited = new Set<string>();
-  for (;;) {
-    if (actor.destroyed || visited.has(actor.guid)) return null;
-    visited.add(actor.guid);
-    const parentId = actorParentGuid(actor);
-    const parent = parentId ? findActor(parentId) : undefined;
-    if (!parent) break;
-    depth++;
-    actor = parent;
-  }
+  let depth = actorChainDepth(owner, findActor);
+  if (depth === null) return null;
   if (target instanceof ActorComponent) {
     const parents = componentParents(target);
     if (!parents) return null;
@@ -62,10 +52,26 @@ export function tweenWorldTransformDepth(target: TweenTransformTarget, findActor
   return depth;
 }
 
+/** Ancestors above `actor` through `findActor`, or null on a destroyed link or a parent cycle. */
+function actorChainDepth(actor: Actor, findActor: ActorLookup): number | null {
+  let depth = 0;
+  const visited = new Set<string>();
+  for (let current = actor; ;) {
+    if (current.destroyed || visited.has(current.guid)) return null;
+    visited.add(current.guid);
+    const parentId = actorParentGuid(current);
+    const parent = parentId ? findActor(parentId) : undefined;
+    if (!parent) return depth;
+    depth++;
+    current = parent;
+  }
+}
+
 function parentFrame(target: TweenTransformTarget, findActor: ActorLookup): Transform | null {
   if (target instanceof Actor) {
-    // Validate the entire chain, including cycles that return to the target.
-    if (!actorChainWorldTransform(target, findActor)) return null;
+    // Validate the entire chain, including cycles that return to the target,
+    // without composing it: only the parent's pose is needed.
+    if (actorChainDepth(target, findActor) === null) return null;
     const parentId = actorParentGuid(target);
     const parent = parentId ? findActor(parentId) : undefined;
     return parent ? actorChainWorldTransform(parent, findActor) : identityTransform();

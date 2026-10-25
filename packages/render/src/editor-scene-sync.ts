@@ -705,12 +705,13 @@ export class EditorSceneSync {
 
   /**
    * `lastScene.actors.find` for an id, through an index built once per applied
-   * Scene so per-actor consumers (deformers, brushes) do not scan every actor.
+   * Scene so per-actor consumers (deformers, brushes, gizmo selection roots) do
+   * not scan every actor.
    * Applying drops the index, so a document edited in place between applies is
    * read again; the actors array identity and length also guard it. The first
    * actor with an id wins, like `find`.
    */
-  private lastSceneActor(actorId: string): SerializedActor | undefined {
+  lastSceneActor(actorId: string): SerializedActor | undefined {
     const actors = this.lastScene?.actors;
     if (!actors) return undefined;
     let index = this.lastSceneActors;
