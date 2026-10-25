@@ -66,6 +66,7 @@ import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
   isEditorModelPlaceholder,
+  isSlotModelInstalled,
   invalidateSlotAnimLoad,
   publishModelHierarchyAnimations,
 } from "./glb-anim";
@@ -1064,6 +1065,19 @@ export function applyAssignMesh(
   if (existing && existing.getScene() === scene && isEditorModelPlaceholder(existing) &&
     modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
     const guid = command.meshAssetGuid;
+    if (isSlotModelInstalled(binding, guid, modelSource, existing)) {
+      // Nothing loads, so register no preparation: same-tick material commands apply directly.
+      stampOverlayPick(existing, command);
+      applyPlayVisualSorting(existing, command.slotId, binding);
+      if (retainedMaterialOwners.get(binding)?.has(command.slotId)) {
+        // A superseded replacement deferred material commands for this instance.
+        applyMaterialToActorMeshes(binding, command.slotId, existing);
+        retireRemovedMaterials();
+        releaseRetainedMaterialOwners(binding, command.slotId);
+        binding.onVisualChanged?.(command.slotId);
+      }
+      return;
+    }
     const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
     pendingMaterialPreparations.set(binding, refreshes);
     const restart = () => applyAssignMesh(scene, binding, command);
