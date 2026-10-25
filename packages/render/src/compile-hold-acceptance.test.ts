@@ -882,28 +882,42 @@ describe("compile holds after the first frame", () => {
     };
   }
 
-  it("a prediction map whose render throws throws nothing out of a frame, is reported once and is not rendered again", async () => {
-    // WebGPU: the prediction map's warm render runs after the view's graph render, inside the frame.
+  it("a prediction map whose render throws mid-draw throws nothing out of a frame, is reported once and is not rendered again", async () => {
+    // WebGPU: the prediction map's warm render runs after the view's graph render, inside the frame. Each prediction
+    // map throws inside its pass, with its target bound; the view keeps drawing. The spot then leaves for longer than
+    // the expiry and comes back: the next prediction's map throws as well, and is not reported again.
     const { world, controller } = await firstSpotMapWorld("webgpu");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     cleanups.push(() => warn.mockRestore());
-    world.place(spot(30, [0, 5, 8], { castShadows: true }));
+    const throwing = new WeakSet<object>();
     let thrown = 0;
     let escaped = 0;
     const drawn: boolean[] = [];
-    for (let index = 0; index < 16; index++) {
-      const map = controller().heldPredictionMaps[0]?.getShadowMap();
-      if (map && !Object.prototype.hasOwnProperty.call(map, "render"))
-        map.render = () => { thrown++; throw new Error("injected prediction map render failure"); };
-      try {
-        const { view } = await world.frame();
-        drawn.push(view?.rendered === true);
-      } catch {
-        escaped++;
+    const frames = async (count: number) => {
+      for (let index = 0; index < count; index++) {
+        const map = controller().heldPredictionMaps[0]?.getShadowMap();
+        if (map && !throwing.has(map)) {
+          throwing.add(map);
+          map.onBeforeRenderObservable.add(() => { thrown++; throw new Error("injected prediction map draw failure"); });
+        }
+        try {
+          const { view } = await world.frame();
+          drawn.push(view?.rendered === true);
+        } catch {
+          escaped++;
+        }
       }
-    }
+    };
+    world.place(spot(30, [0, 5, 8], { castShadows: true }));
+    await frames(16);
+    world.place(spot(30, [0, 5, 40], { castShadows: true }));
+    frameMs = 1_000;
+    await frames(7);
+    frameMs = FRAME_MS;
+    world.place(spot(30, [0, 5, 8], { castShadows: true }));
+    await frames(16);
     const reports = warn.mock.calls.filter(([message]) => String(message).includes("Prediction map render failed")).length;
-    expect({ thrown, escaped, drawn: drawn.every(Boolean), reports }).toEqual({ thrown: 1, escaped: 0, drawn: true, reports: 1 });
+    expect({ thrown, escaped, drawn: drawn.every(Boolean), reports }).toEqual({ thrown: 2, escaped: 0, drawn: true, reports: 1 });
   });
 
   it("a prediction map whose depth shaders load late still gives its casters' depth variants", async () => {

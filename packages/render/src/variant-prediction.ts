@@ -17,7 +17,7 @@ import { withSceneReadinessState, withSceneSignalsHeld } from "./scene-readiness
 import { findSceneShadowController, type SceneShadowController, type ShadowStartPrediction } from "./shadow-controller";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { copyDefines, withPredictedEffects } from "./variant-pipeline-warmup";
-import { beginPipelineDeferral, pipelinesDeferred, releaseWarmPipelines } from "./webgpu-pipeline-deferral";
+import { beginPipelineDeferral, deferredPipelineCount, pipelinesDeferred, releaseWarmPipelines } from "./webgpu-pipeline-deferral";
 
 /**
  * Variant prediction (decision 6): a light within this distance ratio of an admission (the Forward budget's cut-off,
@@ -33,10 +33,11 @@ const PREDICTION_PROMOTION = 4;
 /** New Effects predictions compile per Engine frame (`engine.frameId`), shared by every view on it. */
 export const PREDICTED_COMPILES_PER_FRAME = 2;
 /**
- * Prediction-map warm renders per Engine frame (WebGPU), shared by every view on it; each starts every caster
- * pipeline its map misses.
+ * New render pipelines prediction maps' warm renders may start per Engine frame (WebGPU), shared by every view on it:
+ * a render runs only while the frame has room, and starts every caster pipeline its map misses, so one render can
+ * start more. A render that finds every pipeline costs nothing.
  */
-export const PREDICTION_MAP_RENDERS_PER_FRAME = 1;
+export const PREDICTED_PIPELINES_PER_FRAME = 2;
 /** Predictions held at once; a new one drops the least recently near. */
 export const PREDICTIONS_MAX = 4;
 /** A prediction that came true is kept at most this long for the first draw of a map its admission started. */
@@ -74,8 +75,11 @@ type Prediction = {
   mapWarm?: boolean;
   /** When its admission happened. */
   fulfilled?: number;
-  /** When it was made: one still incomplete `PREDICTION_EXPIRY_MS` later stops probing (`predictLightVariants`). */
-  madeAt: number;
+  /**
+   * When its probe first waited for a map's depth shaders: one still waiting `PREDICTION_EXPIRY_MS` later stops
+   * probing (`predictLightVariants`).
+   */
+  shadersSince?: number;
   complete: boolean;
   lastNear: number;
 };
@@ -83,8 +87,8 @@ type Prediction = {
 type PredictionState = {
   frame: number;
   budget: number;
-  /** Prediction-map warm renders still allowed in this Engine frame. */
-  mapRenders: number;
+  /** Pipelines prediction maps' warm renders may still start in this Engine frame. */
+  pipelineBudget: number;
   predictions: Map<Light, Prediction>;
   /**
    * Render pass ids dropped predictions gave back, for the next to reuse: Babylon numbers pass ids from one counter it
@@ -129,7 +133,7 @@ const states = new WeakMap<AbstractEngine, PredictionState>();
 function stateFor(engine: AbstractEngine): PredictionState {
   let state = states.get(engine);
   if (!state) {
-    state = { frame: -1, budget: 0, mapRenders: 0, predictions: new Map(), free: [], watched: new WeakSet(), releasing: [] };
+    state = { frame: -1, budget: 0, pipelineBudget: 0, predictions: new Map(), free: [], watched: new WeakSet(), releasing: [] };
     states.set(engine, state);
     const created = state;
     engine.onDisposeObservable.addOnce(() => created.predictions.clear());
@@ -137,7 +141,7 @@ function stateFor(engine: AbstractEngine): PredictionState {
   if (state.frame !== engine.frameId) {
     state.frame = engine.frameId;
     state.budget = PREDICTED_COMPILES_PER_FRAME;
-    state.mapRenders = PREDICTION_MAP_RENDERS_PER_FRAME;
+    state.pipelineBudget = PREDICTED_PIPELINES_PER_FRAME;
   }
   return state;
 }
@@ -246,9 +250,9 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
       drop(state, prediction);
       continue;
     }
-    // One that never finishes (a prediction map whose depth shaders never load) stops probing, and holds back neither
-    // the candidates after it nor a map render: what it left out compiles at its admission.
-    if (!prediction.complete && now - prediction.madeAt >= PREDICTION_EXPIRY_MS) {
+    // One whose map's depth shaders never load stops probing, and holds back neither the candidates after it nor a map
+    // render: what it left out compiles at its admission.
+    if (!prediction.complete && prediction.shadersSince !== undefined && now - prediction.shadersSince >= PREDICTION_EXPIRY_MS) {
       prediction.complete = true;
       prediction.mapWarm = true;
     }
@@ -278,7 +282,7 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
       drop(state, oldest);
     }
     prediction = { scene, light, admission: forward.includes(light) ? "forward" : "shadow", context, passes: new Map(),
-      prepared: new WeakSet(), pipelines: new Map(), madeAt: now, complete: false, lastNear: now };
+      prepared: new WeakSet(), pipelines: new Map(), complete: false, lastNear: now };
     state.predictions.set(light, prediction);
   }
   const target = prediction;
@@ -525,7 +529,11 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
     if (generator) prediction.casters = true;
     // A map just built (a prediction map) imports its depth shaders first, and until then prepares no caster: the
     // probe finishes in a later frame.
-    if (generator && !(generator as unknown as { _shadersLoaded: boolean })._shadersLoaded) return false;
+    if (generator && !(generator as unknown as { _shadersLoaded: boolean })._shadersLoaded) {
+      prediction.shadersSince ??= performance.now();
+      return false;
+    }
+    prediction.shadersSince = undefined;
     for (const mesh of generator?.getShadowMap()?.renderList ?? []) {
       if (mesh instanceof InstancedMesh || mesh.isDisposed() || !mesh.subMeshes?.length) continue;
       const { plain, instanced } = mesh instanceof Mesh ? drawnMaterialVariants(mesh) : { plain: true, instanced: false };
@@ -550,25 +558,22 @@ function probe(scene: Scene, prediction: Prediction, passes: readonly Prediction
   }
 }
 
-/** Failures of prediction-map renders already reported, by scene. */
-const mapRenderFailures = new WeakMap<Scene, Set<string>>();
+/** Scenes whose prediction-map renders failed once already, reported once. */
+const mapRenderFailures = new WeakSet<Scene>();
 
 /**
  * Renders a prediction's map (`warmPredictionMap`), which never throws out of the frame: one that fails is not
- * rendered again (its casters' pipelines are created at the admission, as without prediction), and each distinct
- * failure is reported once per scene.
+ * rendered again (its casters' pipelines are created at the admission, as without prediction), and a scene's first
+ * failure is reported.
  */
 function warmPredictionMapSafely(scene: Scene, prediction: Prediction, state: PredictionState): void {
   try {
     warmPredictionMap(scene, prediction, state);
   } catch (error) {
     prediction.mapWarm = true;
-    const message = String(error);
-    let reported = mapRenderFailures.get(scene);
-    if (!reported) mapRenderFailures.set(scene, (reported = new Set()));
-    if (reported.has(message)) return;
-    reported.add(message);
-    console.warn(`[render] Prediction map render failed: ${message}`);
+    if (mapRenderFailures.has(scene)) return;
+    mapRenderFailures.add(scene);
+    console.warn(`[render] Prediction map render failed: ${String(error)}`);
   }
 }
 
@@ -576,17 +581,17 @@ function warmPredictionMapSafely(scene: Scene, prediction: Prediction, state: Pr
  * WebGPU: renders a prediction's prediction map after the view's graph render, inside the Engine frame and a warm
  * deferral scope that admits only the map's own render passes: every listed caster's draw is skipped, and every
  * missing depth pipeline starts creating asynchronously, with the shadow pass's target state (a map's format, not its
- * size, keys the pipeline). At most `PREDICTION_MAP_RENDERS_PER_FRAME` run per Engine frame. The map is attached to no
- * light and its output is never sampled.
+ * size, keys the pipeline), while the Engine frame has room for new pipelines (`PREDICTED_PIPELINES_PER_FRAME`). The map
+ * is attached to no light and its output is never sampled.
  */
 function warmPredictionMap(scene: Scene, prediction: Prediction, state: PredictionState): void {
   const engine = scene.getEngine();
   const map = prediction.map?.getShadowMap();
-  if (!pipelinesDeferred(engine) || !map || state.mapRenders <= 0) return;
+  if (!pipelinesDeferred(engine) || !map || state.pipelineBudget <= 0) return;
   const passes = new Set(map.renderPassIds);
   const scope = beginPipelineDeferral(engine, (pass) => passes.has(pass), { warm: true });
   if (!scope) return;
-  state.mapRenders--;
+  const started = deferredPipelineCount(engine);
   // Every caster the probe prepared draws: the map's own culling follows its light where it is now, short of the
   // admission, and would leave out casters the real map draws once the light is admitted.
   const generator = prediction.map!;
@@ -596,11 +601,25 @@ function warmPredictionMap(scene: Scene, prediction: Prediction, state: Predicti
   generator.customAllowRendering = () => true;
   try {
     // The view's camera, matrices, scene UBO, pass, viewport and colour write come back after the map's pass.
-    withSceneReadinessState(scene, () => map.render());
+    withSceneReadinessState(scene, () => {
+      const target = engine._currentRenderTarget;
+      try {
+        map.render();
+      } catch (error) {
+        // Babylon unbinds the map's target only after its draws: one that throws leaves it bound, and the next
+        // frame's graph would refuse to draw.
+        if (engine._currentRenderTarget !== target) {
+          if (target) engine.bindFramebuffer(target);
+          else engine.restoreDefaultFramebuffer();
+        }
+        throw error;
+      }
+    });
   } finally {
     map.getCustomRenderList = list;
     generator.customAllowRendering = allow;
     scope.close();
+    state.pipelineBudget -= Math.max(0, deferredPipelineCount(engine) - started);
     // The pipelines it started, a failed render's included, go with their Effects.
     for (const [effect, node] of scope.pipelineEffects?.() ?? []) {
       let nodes = prediction.pipelines.get(effect as Effect);
