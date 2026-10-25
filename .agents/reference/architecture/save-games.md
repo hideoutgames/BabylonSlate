@@ -21,7 +21,7 @@ Typed Save Game definitions, the save/load service shared by Play, Preview Build
 | Storage RPC (worker / Preview iframe ↔ host) | [`save-game-rpc.ts`](../../../packages/core/src/save-game-rpc.ts), [`packages/exporter/src/preview-save-storage.ts`](../../../packages/exporter/src/preview-save-storage.ts) |
 | Disposable Simulation overlay | [`session-save-storage.ts`](../../../packages/core/src/session-save-storage.ts) |
 | Actor/component capture, staging, apply | [`packages/runtime/src/save-game-world.ts`](../../../packages/runtime/src/save-game-world.ts) |
-| Script API (`ctx.saveGame`, …) | [`packages/runtime/src/script-host.ts`](../../../packages/runtime/src/script-host.ts) |
+| Script API (`ctx.saveGame`, …) | [`packages/runtime/src/script-host-members.ts`](../../../packages/runtime/src/script-host-members.ts) (save members), [`script-context-factory.ts`](../../../packages/runtime/src/script-context-factory.ts) (migration members) |
 | Host adapters (OPFS, Web Locks, Electron, Capacitor, Node) | [`packages/vfs/src/`](../../../packages/vfs/src/) `save-game-*.ts` |
 | Desktop IPC owner | [`apps/desktop/src/desktop-save-games.ts`](../../../apps/desktop/src/desktop-save-games.ts) |
 | Definition editor, typed nodes, save manager | [`apps/editor/src/`](../../../apps/editor/src/) `panels/save-game-panels.tsx`, `lib/save-game-catalog.ts`, `components/project-save-games-settings.tsx` |

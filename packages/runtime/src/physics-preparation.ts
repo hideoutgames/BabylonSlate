@@ -1,4 +1,4 @@
-import type { Actor, World } from "@haptic/object-model";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import type { Transform } from "@haptic/core";
 import {
   actorParentGuid,
@@ -46,6 +46,63 @@ export function transformDescriptor(
     local.scale.y,
     local.scale.z,
   ];
+}
+
+/**
+ * Variable-length descriptor written in place each tick. Its backing array is
+ * never stored: callers keep `copy()` only when `matches()` reports a change.
+ */
+export class DescriptorScratch {
+  private readonly values: unknown[] = [];
+  private written = 0;
+  private length = 0;
+
+  begin(): void {
+    this.length = 0;
+  }
+
+  push(value: unknown): void {
+    this.values[this.length++] = value;
+  }
+
+  pushTransform(local: ColliderLocalTransform): void {
+    this.push(local.position.x);
+    this.push(local.position.y);
+    this.push(local.position.z);
+    this.push(local.rotation.x);
+    this.push(local.rotation.y);
+    this.push(local.rotation.z);
+    this.push(local.rotation.w);
+    this.push(local.scale.x);
+    this.push(local.scale.y);
+    this.push(local.scale.z);
+  }
+
+  matches(stored: readonly unknown[] | undefined): boolean {
+    // Release references left by a longer previous descriptor.
+    if (this.written > this.length) this.values.fill(undefined, this.length, this.written);
+    this.written = this.length;
+    if (!stored || stored.length !== this.length) return false;
+    for (let index = 0; index < this.length; index++)
+      if (!Object.is(stored[index], this.values[index])) return false;
+    return true;
+  }
+
+  copy(): unknown[] {
+    return this.values.slice(0, this.length);
+  }
+}
+
+export function componentAssetGuid(component: ActorComponent): string | null {
+  const value = component.assetGuid ?? component.getVariable("assetGuid");
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+export function toMap<T>(
+  value: ReadonlyMap<string, T> | Readonly<Record<string, T>>,
+): Map<string, T> {
+  if (value instanceof Map) return new Map(value);
+  return new Map(Object.entries(value));
 }
 
 /** Each prepared component owns these stages; pose/tuning edits borrow its geometry. */
