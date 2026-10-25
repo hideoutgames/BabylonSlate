@@ -130,3 +130,14 @@ it("projects reflections onto the probe's new box when its actor turns, even at 
   expect(box.y).toBeCloseTo(2, 3);
   expect(box.z).toBeCloseTo(8.928, 3);
 });
+
+it("recompiles meshes for a probe's cube when the first probe publishes and for the scene's when the last goes", async () => {
+  const { scene, cube, material, inside, probes, publish } = fixture();
+  // The scene's own cube has no box, so only a probe's cube compiles box projection.
+  scene.environmentTexture = cube("sky");
+  expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(false);
+  await publish([8, 4, 8]);
+  expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(true);
+  probes.remove("actor");
+  expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(false);
+});

@@ -90,6 +90,8 @@ export class ReflectionProbes {
   private readonly assignments = new WeakMap<AbstractMesh, Assignment>();
   /** Bumped whenever the published set changes, invalidating every assignment. */
   private generation = 0;
+  /** Whether materials route through `resolve`: only while a probe is published. */
+  private resolving = false;
   private capturing = false;
   private dirtyAt = -1;
   private disposed = false;
@@ -238,10 +240,32 @@ export class ReflectionProbes {
     markSceneReadinessDirty(this.scene);
   }
 
+  /**
+   * The resolver came or went, so materials compiled without it (or with it)
+   * may need other defines; `resolve` only dirties meshes it assigned before.
+   */
+  private invalidateMaterials(): void {
+    const blocked = this.scene.blockMaterialDirtyMechanism;
+    this.scene.blockMaterialDirtyMechanism = false;
+    try {
+      for (const material of this.scene.materials) {
+        material.markAsDirty(Material.TextureDirtyFlag);
+        material.markDirty(true);
+      }
+      this.scene.resetCachedMaterial();
+    } finally {
+      this.scene.blockMaterialDirtyMechanism = blocked;
+    }
+  }
+
   private republish(): void {
     this.generation++;
     const any = [...this.probes.values()].some((probes) => probes.some((probe) => probe.published));
     setMeshEnvironmentResolver(this.scene, any ? (mesh) => this.resolve(mesh) : null);
+    if (any !== this.resolving) {
+      this.resolving = any;
+      this.invalidateMaterials();
+    }
     markSceneReadinessDirty(this.scene);
   }
 
