@@ -19,6 +19,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 | Port, shapes, hits, contact events | [`backend.ts`](../../../packages/physics/src/backend.ts), [`types.ts`](../../../packages/physics/src/types.ts) |
 | Backend factory (`createPhysicsBackend`, `loadRapier2DBackendFactory`) | [`create-backend.ts`](../../../packages/physics/src/create-backend.ts) |
 | Havok, Rapier, software | [`havok-backend.ts`](../../../packages/physics/src/havok-backend.ts), [`havok-native-adapter.ts`](../../../packages/physics/src/havok-native-adapter.ts), [`rapier-backend.ts`](../../../packages/physics/src/rapier-backend.ts), [`software-backend.ts`](../../../packages/physics/src/software-backend.ts) |
+| Havok queries and query filtering, contacts and trigger pairs, character controllers, shared records and shape construction | [`havok-queries.ts`](../../../packages/physics/src/havok-queries.ts), [`havok-contacts.ts`](../../../packages/physics/src/havok-contacts.ts), [`havok-characters.ts`](../../../packages/physics/src/havok-characters.ts), [`havok-records.ts`](../../../packages/physics/src/havok-records.ts) |
 | Collider TRS bake, validation, pairing diagnostics, query filters, ragdoll | [`packages/physics/src/`](../../../packages/physics/src/) `collider-bake.ts`, `collider-validation.ts`, `pairing.ts`, `query-filter.ts`, `ragdoll.ts` |
 | Actor ↔ body sync: membership pass, body policy, call-time writes, Movement moves | [`physics-sync.ts`](../../../packages/runtime/src/physics-sync.ts) (`PhysicsWorldSync`) |
 | Body sources and Movement drive | [`physics-body-classification.ts`](../../../packages/runtime/src/physics-body-classification.ts) (`PhysicsBodyClassifier`) |
@@ -34,6 +35,8 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 | Mesh collision modes, complex-collision demand scan | [`mesh-collision.ts`](../../../packages/assets/src/mesh-collision.ts), [`collision-mesh.ts`](../../../packages/core/src/collision-mesh.ts) |
 
 `PhysicsWorldSync` keeps the whole public API and builds each collaborator once in its constructor. Collaborators read its state through their `*Host` interfaces, reassigned state (`worldTransforms`, the hosting map) through getters, and never import `physics-sync.ts`.
+
+`HavokPhysicsBackend` owns the world (bodies, colliders, constraints, the mutation queue and `step`) and composes `HavokQueries`, `HavokContacts` and `HavokCharacters` through host interfaces that read its live maps and call back through closures. The parts stay internal to the lazily loaded Havok chunk; never export them from `index.ts`.
 
 `packages/physics` may import `@babylonjs/core` Physics V2 and `@babylonjs/havok`, never React, Capacitor or editor Babylon packages. `packages/runtime` never imports Babylon.
 
