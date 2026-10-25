@@ -42,6 +42,7 @@ import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { createLoadRehearsal } from "../../../../packages/render/src/load-rehearsal";
 import { AUTHORED_LIGHT_PREFIX } from "../../../../packages/render/src/scene-illumination";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { awaitsFirstDraw } from "../../../../packages/render/src/shadow-first-draw";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Step = {
@@ -510,7 +511,7 @@ type Admission = {
   admitted: boolean;
   /** Programs linked while the light waited within reach of the admission, before it. */
   linksAhead: number;
-  /** Programs linked from the change that admits it until every Material drew its new variant. */
+  /** Programs linked from the change that admits it until every Material drew its new variant and a new map drew. */
   linksAtAdmission: number;
   /** Steady frames after that change in which some Material still drew its previous variant. */
   lateFrames: number;
@@ -525,7 +526,7 @@ type Admission = {
  * variants were compiled ahead, so it links no program; jumping in, the same admission links them.
  */
 async function predictedAdmissions() {
-  const run = async (admission: "forward" | "shadow", approach: boolean): Promise<Admission> => {
+  const run = async (admission: "forward" | "shadow" | "first", approach: boolean): Promise<Admission> => {
     const view = await worldView();
     try {
       setSceneRenderSettings(view.scene, {
@@ -535,8 +536,9 @@ async function predictedAdmissions() {
       });
       const sun = new DirectionalLight(`${AUTHORED_LIGHT_PREFIX}sun`, new Vector3(0.3, -1, 0.4), view.scene);
       authored(sun, [1, 0.95, 0.85], 0.4);
-      const shadows = admission === "shadow";
-      const near = shadows
+      const shadows = admission !== "forward";
+      // The first spot map: the nearer holder is a point too.
+      const near = admission === "shadow"
         ? new SpotLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, view.scene)
         : new PointLight(`${AUTHORED_LIGHT_PREFIX}near`, new Vector3(-0.6, 1.6, -1.2), view.scene);
       authored(near, [0.3, 0.4, 1], 0.9, shadows);
@@ -585,6 +587,17 @@ async function predictedAdmissions() {
           else break;
           await pause();
         }
+        // A map the admission starts links its casters' depth programs when it first draws, which can come after the
+        // Materials' new variants.
+        const map = shadows ? findSceneShadowController(view.scene)?.generator(spot) : null;
+        for (let index = 0; index < 30 && map && awaitsFirstDraw(map); index++) {
+          view.frame(true);
+          await pause();
+        }
+        for (let index = 0; index < 4; index++) {
+          view.frame(true);
+          await pause();
+        }
         return {
           admitted: admitted(), linksAhead, linksAtAdmission: links, lateFrames, held,
           glErrors: [...new Set(glErrorTraceEntries().slice(errorsBefore).map((entry) => `${entry.call}: ${entry.code}`))],
@@ -599,6 +612,7 @@ async function predictedAdmissions() {
   return {
     forward: { approached: await run("forward", true), jumped: await run("forward", false) },
     shadow: { approached: await run("shadow", true), jumped: await run("shadow", false) },
+    first: { approached: await run("first", true), jumped: await run("first", false) },
   };
 }
 
