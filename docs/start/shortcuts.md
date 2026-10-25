@@ -17,10 +17,10 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Toggle Focus | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> |
 | Project Settings | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>,</kbd> |
 | Engine Settings | <kbd>Mod</kbd>+<kbd>,</kbd> |
-| Project Browser | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, then <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> |
+| Project Browser | <kbd>Mod</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> |
 | Content Browser | <kbd>Alt</kbd>+<kbd>B</kbd> |
 
-**Project Browser** closes the project, so its shortcut has two steps: press the second straight after the first. Holding <kbd>Alt</kbd>+<kbd>Shift</kbd> while you tap <kbd>P</kbd> and then <kbd>B</kbd> works too.
+**Project Browser** closes the project and returns to the Homepage.
 
 ### Documents
 

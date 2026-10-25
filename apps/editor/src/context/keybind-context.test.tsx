@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useContext, useRef } from "react";
+import { useContext, useRef, type ReactNode } from "react";
 import { GraphKeybindsContext } from "@haptic/graph-ui";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
 import { Sheet, SheetContent, SheetTitle } from "@haptic/ui/components/sheet";
 import { MemoryAppSettingsStore, defaultEngineSettings } from "@haptic/vfs";
 import { AppSettingsProvider } from "./app-settings-context";
-import { KeybindProvider, useKeybindCommand } from "./keybind-context";
+import { KeybindProvider, useKeybindChord, useKeybindCommand } from "./keybind-context";
 import type { EditorCommandId } from "../lib/editor-keybinds";
 
 afterEach(() => {
@@ -242,14 +242,29 @@ describe("KeybindProvider", () => {
     const altShift = (key: string) => ({ key, code: `Key${key}`, altKey: true, shiftKey: true });
     afterEach(() => vi.useRealTimers());
 
-    it("runs Project Browser only once both steps are pressed in time", () => {
-      vi.useFakeTimers();
-      const browse = vi.fn();
+    function Bound() {
+      return <span data-testid="bound">{useKeybindChord("editor.projectBrowser")}</span>;
+    }
+
+    /** Project Browser recorded as a two-step shortcut in Engine Settings. */
+    async function renderWithSequence(children: ReactNode) {
+      const store = new MemoryAppSettingsStore();
+      await store.save({ ...defaultEngineSettings(), keybinds: { "editor.projectBrowser": ["Alt+Shift+P Alt+Shift+B"] } });
       render(
-        <KeybindProvider>
-          <Command id="editor.projectBrowser" run={browse} />
-        </KeybindProvider>,
+        <AppSettingsProvider store={store}>
+          <KeybindProvider>
+            <Bound />
+            {children}
+          </KeybindProvider>
+        </AppSettingsProvider>,
       );
+      await waitFor(() => expect(screen.getByTestId("bound").textContent).toBe("Alt+Shift+P Alt+Shift+B"));
+    }
+
+    it("runs the command only once both steps are pressed in time", async () => {
+      const browse = vi.fn();
+      await renderWithSequence(<Command id="editor.projectBrowser" run={browse} />);
+      vi.useFakeTimers();
       expect(fireEvent.keyDown(document.body, altShift("P"))).toBe(false);
       // Holding the first step and releasing modifiers keep it waiting.
       fireEvent.keyDown(document.body, { ...altShift("P"), repeat: true });
@@ -265,14 +280,14 @@ describe("KeybindProvider", () => {
       expect(browse).toHaveBeenCalledTimes(1);
     });
 
-    it("handles a step that continues no shortcut as a fresh press", () => {
+    it("handles a step that continues no shortcut as a fresh press", async () => {
       const browse = vi.fn();
       const undo = vi.fn();
-      render(
-        <KeybindProvider>
+      await renderWithSequence(
+        <>
           <Command id="editor.projectBrowser" run={browse} />
           <Command id="editor.undo" run={undo} />
-        </KeybindProvider>,
+        </>,
       );
       fireEvent.keyDown(document.body, altShift("P"));
       fireEvent.keyDown(document.body, ctrl("Z"));
@@ -281,13 +296,9 @@ describe("KeybindProvider", () => {
       expect(browse).not.toHaveBeenCalled();
     });
 
-    it("lets the first step through when the command cannot run", () => {
+    it("lets the first step through when the command cannot run", async () => {
       const browse = vi.fn();
-      render(
-        <KeybindProvider>
-          <Command id="editor.projectBrowser" run={browse} enabled={false} />
-        </KeybindProvider>,
-      );
+      await renderWithSequence(<Command id="editor.projectBrowser" run={browse} enabled={false} />);
       expect(fireEvent.keyDown(document.body, altShift("P"))).toBe(true);
     });
   });
