@@ -2,8 +2,6 @@ import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
 import { attachSceneBrushInput, type SceneBrushState } from "@haptic/render";
-import type { AbstractEngine } from "@babylonjs/core";
-import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@haptic/editor-kit";
@@ -18,27 +16,13 @@ import {
   EmptyTitle,
 } from "@haptic/ui/components/empty";
 import {
-  applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
-  beginGizmoMultiSelectDrag,
-  collectNavBakeGeometry,
-  createEngine,
-  captureShadowDiagnostics,
-  EDITOR_CANVAS_COLOR_SCHEME,
-  NavMeshDebugOverlay,
-  navDebugBlockersFromActors,
-  selectionGizmoRoots,
-  setDirectViewPresentationEnabled,
-  setFixedShapeLightGuard,
-  setFixedShapeLightingEnabled,
+  type NavMeshDebugOverlay,
   syncEditorPlayState,
-  whenSubmittedWorkDone,
   engineAdapterInfo,
   type EngineHandle,
-  type EditorSceneLoadOptions,
 } from "@haptic/render";
-import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
-import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
+import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -47,72 +31,44 @@ import {
   useOpenDocument,
 } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
-import { getAppSettingsSnapshot, subscribeAppSettings, useDebugMode } from "../context/app-settings-context";
-import {
-  materialViewportTestSnapshot,
-  type MaterialViewportTestSnapshot,
-} from "../lib/material-viewport-test-snapshot";
+import { getAppSettingsSnapshot, useDebugMode } from "../context/app-settings-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   FALLBACK_PLACE_POSITION,
   useSceneEditing,
 } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
-import { useOptionalNavBake } from "../context/nav-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
-import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { useEditorAudioDebug } from "../lib/use-editor-audio-debug";
 import {
   applyLiveGizmoToActor,
   takeGizmoDragScene,
 } from "../lib/gizmo-drag-commit";
-import {
-  editorDracoPublicBase,
-  editorKtx2PublicBase,
-  editorMeshoptPublicBase,
-} from "../lib/public-engine-assets";
-import { createCanvasResizeGuard, waitForCanvasSize } from "../lib/canvas-resize-guard";
-import {
-  modelSlotMaterialGuidsFromPayloads,
-  overlayTextureGuidsFromScene,
-  skyboxFaceGuidsFromScene,
-  environmentTextureGuidsFromScenes,
-  postProcessTextureGuidsFromScenes,
-  materialInstanceTextureGuidsFromScenes,
-} from "../lib/play-content";
-import { fontMsdfMapsFromPairs, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
-import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
-import {
-  changedTextureEncodings,
-  sceneViewportAssetKey,
-  sceneViewportRequiredAssets,
-  sceneViewportTextureEncodings,
-  stableViewportPayloadRevisions,
-  viewportPayloadRevisions,
-} from "../lib/scene-viewport-assets";
-import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
-import { prepareReferencedAreaEmissions } from "../lib/area-emission-preparation";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
-  MATERIAL_DOCUMENT_KINDS,
-  useOpenDocumentsOfKinds,
-} from "../lib/use-open-documents-of-kinds";
-import {
-  isSceneViewportRemountLoad,
-  runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
   sceneViewportRenderSettings,
-  waitForSceneLoadingPaint,
-  type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
 import { viewportProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
+import { useViewportNavmesh } from "./use-viewport-navmesh";
+import { useViewportEngine } from "./use-viewport-engine";
+import {
+  useViewportSceneLoad,
+  type ViewportDropReady,
+  type ViewportSceneLoadState,
+} from "./use-viewport-scene-load";
+import { useViewportEditorSync } from "./use-viewport-editor-sync";
+import {
+  installViewportTestHost,
+  publishViewportRenderDiagnostics,
+} from "./viewport-test-host";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -125,122 +81,36 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const simulationDetachedRef = useRef(false);
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
-  const appliedSceneRef = useRef<{ scene: SerializedScene; handle: EngineHandle } | null>(null);
-  /** `textures` maps each installed Texture to the stored encoding its bytes came from. */
-  const appliedAssetsRef = useRef<{ key: string; handle: EngineHandle; textures: Map<string, string> } | null>(null);
-  /** The asset load in flight; an encoding swap waits for it rather than racing its install. */
-  const assetLoadRef = useRef<AbortController | null>(null);
-  /** The Texture-encoding swap for one applied asset set; `attempted` is the registry view its last pass finished against. */
-  const textureSwapRef = useRef<{
-    applied: object;
-    attempted: ReadonlyMap<string, string> | null;
-    running: boolean;
-    controller: AbortController;
-  } | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
-  const {
-    applySceneChange,
-    collectPlaySpritePayloads,
-    collectPlayWaterContent,
-    collectPlayRenderTargets,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-    collectPlayAreaEmissions,
-    prepareAreaEmission,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayMaterialLibrary,
-    getOpenDocuments,
-    readAssetChunk,
-  } = useDocumentActions();
+  const { applySceneChange } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const activeDocumentId = useActiveDocumentId();
-  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const {
     selectedActorIds,
-    shapeEditTarget,
-    selectActor,
-    setSelectedActorIds,
-    gizmoTool,
-    gizmoSpace,
-    snapEnabled,
-    viewportMode,
     joystickEnabled,
-    gridVisible,
-    navmeshVisible,
-    dragSelectActive,
-    setDragSelectActive,
     setFrameActorHandler,
     setViewportDropApi,
-    previewGameCamera,
-    saveEditorCameraPose,
-    loadEditorCameraPose,
-    pivotAroundCenter,
-    viewportShadingMode,
-    collisionsVisible,
   } = useSceneEditing();
   const { flySpeed, dropDistance, editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
-  const flySpeedRef = useRef(flySpeed);
-  flySpeedRef.current = flySpeed;
   const {
-    registerSharedEngine,
-    registerScheduler,
     registerSimulationViewport,
     playing,
     preparing,
     ensureSharedEngine,
-    sharedEngineGeneration,
     reportSceneViewportLoading,
   } = usePlay();
-  const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
   const [reloadVersion, setReloadVersion] = useState(0);
-  const navBake = useOptionalNavBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
-  const selectActorRef = useRef(selectActor);
-  selectActorRef.current = selectActor;
-  const setSelectedActorIdsRef = useRef(setSelectedActorIds);
-  setSelectedActorIdsRef.current = setSelectedActorIds;
-  const playingRef = useRef(playing);
-  playingRef.current = playing;
   const joystickLeaseRef = useRef<(() => void) | null>(null);
-  const [marqueeRect, setMarqueeRect] = useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const dragSelectActiveRef = useRef(dragSelectActive);
-  dragSelectActiveRef.current = dragSelectActive;
-  const setDragSelectActiveRef = useRef(setDragSelectActive);
-  setDragSelectActiveRef.current = setDragSelectActive;
-  const setMarqueeRectRef = useRef(setMarqueeRect);
-  setMarqueeRectRef.current = setMarqueeRect;
   const engineGenerationRef = useRef(0);
-  const completedLoadGenerationRef = useRef(-1);
-  const completedRenderSettingsRef = useRef<string | null>(null);
   const appliedRenderSettingsRef = useRef<string | null>(null);
   const loadTransitionRef = useRef(0);
   const blockingLoadRef = useRef<AbortController | null>(null);
-  const [sceneLoad, setSceneLoad] = useState<{
-    open: boolean;
-    progress: number;
-    phase: SceneViewportLoadPhase;
-    failed?: boolean;
-    rendering?: boolean;
-    /** Kept for Debug Mode's Copy Error. */
-    error?: unknown;
-    /** The adapter at failure time; the Engine is released right after. */
-    gpu?: ReturnType<typeof engineAdapterInfo> | null;
-  }>({ open: false, progress: 0, phase: "Preparing Scene" });
+  const [sceneLoad, setSceneLoad] = useState<ViewportSceneLoadState>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
   // Play shares the project Engine; it waits for a blocking load to settle.
   const sceneLoading = sceneLoad.open && sceneLoad.failed !== true;
@@ -249,10 +119,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     reportSceneViewportLoading(documentId, true);
     return () => reportSceneViewportLoading(documentId, false);
   }, [documentId, reportSceneViewportLoading, sceneLoading]);
-  const [dropReady, setDropReady] = useState<{
-    scene: SerializedScene;
-    handle: EngineHandle;
-  } | null>(null);
+  const [dropReady, setDropReady] = useState<ViewportDropReady>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -365,10 +232,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       onError: (error) => engineCommandBus.dispatch({ type: "log", message: `Scene brush could not apply: ${String(error)}` }),
     });
   }, [engineEpoch, sceneMode, sceneTools.landscapeTool, sceneTools.foliageTool, documentId, activeDocumentId, playing, preparing, applySceneChange]);
-  const sceneAssetGuidRef = useRef<string | undefined>(undefined);
-  sceneAssetGuidRef.current = doc?.ref.path
-    ? assetRegistry?.getByPath?.(doc.ref.path)?.header.guid
-    : undefined;
   const audioLibrary = useEditorAudioDebug(Boolean(scene?.actors.some((actor) =>
     selectedActorIds.includes(actor.id) &&
     actor.components.some((component) => component.classId === "AudioComponent"),
@@ -404,82 +267,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     sceneRef.current = scene;
   }, [scene]);
 
-  const registerNavBakeCollector = navBake?.registerCollector;
-  useEffect(() => {
-    if (!registerNavBakeCollector) return;
-    registerNavBakeCollector((extras) => {
-      const handle = engineRef.current;
-      const current = sceneRef.current;
-      if (!handle?.editor || !current) {
-        return { positions: [], indices: [] };
-      }
-      return collectNavBakeGeometry(handle.editor.sync, current, extras);
-    });
-    return () => registerNavBakeCollector(null);
-  }, [registerNavBakeCollector]);
-
-  // A scene edit retries a failed overlay, so one cause is logged once.
-  const navmeshFailureRef = useRef<string | null>(null);
-  const reportNavmeshFailure = useCallback((error: unknown) => {
-    const reason = error instanceof Error ? error.message : String(error);
-    if (navmeshFailureRef.current === reason) return;
-    navmeshFailureRef.current = reason;
-    engineCommandBus.dispatch({ type: "log", message: `Show Navmesh could not draw the navmesh: ${reason}` });
-  }, []);
-  const navmeshPath =
-    doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
-  const navmeshOverlayOn = Boolean(
-    scene && (navmeshVisible || scene.settings.showNavmesh === true),
-  );
-  const lastBakedNavmesh = navBake?.lastBytes ?? null;
-  // The stored chunk changes only with the asset (a registry change), so scene
-  // edits redraw blockers from the bytes already read.
-  const [storedNavmesh, setStoredNavmesh] = useState<{
-    path: string;
-    bytes: Uint8Array | null;
-  } | null>(null);
-  useEffect(() => {
-    void registryEpoch;
-    if (!navmeshOverlayOn || !navmeshPath || lastBakedNavmesh) return;
-    let cancelled = false;
-    void (async () => {
-      let bytes: Uint8Array | null = null;
-      try {
-        bytes = (await readAssetChunk(navmeshPath, NAVMESH_CHUNK_ID)) ?? null;
-      } catch (error) {
-        // The blockers still draw without the bake.
-        if (!cancelled) reportNavmeshFailure(error);
-      }
-      if (!cancelled) setStoredNavmesh({ path: navmeshPath, bytes });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [lastBakedNavmesh, navmeshOverlayOn, navmeshPath, readAssetChunk, registryEpoch, reportNavmeshFailure]);
-
-  useEffect(() => {
-    const overlay = navDebugRef.current;
-    if (!overlay || !navmeshOverlayOn || !scene) {
-      overlay?.clear();
-      return;
-    }
-    const stored = storedNavmesh?.path === navmeshPath ? storedNavmesh : null;
-    // Wait for this scene's stored chunk unless a bake supplies the bytes.
-    if (navmeshPath && !lastBakedNavmesh && !stored) return;
-    overlay.sync(
-      lastBakedNavmesh ?? stored?.bytes ?? null,
-      navDebugBlockersFromActors(scene.actors),
-      scene.settings.physicsWorld,
-    ).then(() => { navmeshFailureRef.current = null; }, reportNavmeshFailure);
-  }, [
-    lastBakedNavmesh,
-    navOverlayGeneration,
-    navmeshOverlayOn,
-    navmeshPath,
-    reportNavmeshFailure,
-    scene,
-    storedNavmesh,
-  ]);
+  useViewportNavmesh({ engineRef, sceneRef, navDebugRef, navOverlayGeneration, doc, scene });
 
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {
@@ -498,8 +286,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
     void applySceneChange(documentId, next);
   }, [applySceneChange, documentId]);
-  const commitGizmoTransformRef = useRef(commitGizmoTransform);
-  commitGizmoTransformRef.current = commitGizmoTransform;
   /** A paused Game Camera pilot gesture becomes one undoable move of the camera actor. */
   const commitPilotedActor = useCallback((live: Parameters<typeof applyLiveGizmoToActor>[1]) => {
     const current = sceneRef.current;
@@ -509,8 +295,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       actors: current.actors.map((entry) => entry.id === live.actorId ? applyLiveGizmoToActor(entry, live) : entry),
     });
   }, [applySceneChange, documentId]);
-  const commitPilotedActorRef = useRef(commitPilotedActor);
-  commitPilotedActorRef.current = commitPilotedActor;
   /** A released shape handle becomes one undoable component property change. */
   const commitComponentShape = useCallback((edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => {
     const current = sceneRef.current;
@@ -526,8 +310,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       }),
     });
   }, [applySceneChange, documentId]);
-  const commitComponentShapeRef = useRef(commitComponentShape);
-  commitComponentShapeRef.current = commitComponentShape;
 
   const dropDisabled = !sceneReady || dropReady?.scene !== scene ||
     dropReady?.handle !== engineRef.current || playing || preparing || !scene?.actors.some(
@@ -551,184 +333,37 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
   };
 
-  useEffect(() => {
-    setSharedEngine(ensureSharedEngine());
-  }, [ensureSharedEngine, sharedEngineGeneration]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!sharedEngine) {
-      // The Engine is gone (a lost device, a backend change, a closed project):
-      // a failed load has nothing left to retry; the next Engine loads anew.
-      setSceneReady(false);
-      setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
-      return;
-    }
-    if (!canvas || simulationDetachedRef.current) return;
-    engineGenerationRef.current += 1;
-    setSceneReady(false);
-    setDropReady(null);
-    setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
-    const controller = new AbortController();
-    blockingLoadRef.current = controller;
-    const disposers: Array<() => void> = [];
-    let released = false;
-    const release = () => {
-      if (released) return;
-      released = true;
-      for (const dispose of disposers.reverse()) dispose();
-    };
-    releaseEngineRef.current = release;
-    void (async () => {
-      try {
-        await waitForCanvasSize(canvas, controller.signal);
-        controller.signal.throwIfAborted();
-        setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
-        await waitForSceneLoadingPaint(controller.signal);
-        controller.signal.throwIfAborted();
-        setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
-
-        const handle = createEngine(canvas, {
-          editor: true,
-          renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
-          editorViewportId: dropViewportId,
-          sharedEngine,
-          viewportMode,
-          overlayTransformBox,
-          colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
-          ktx2BasePath: editorKtx2PublicBase(),
-          dracoBasePath: editorDracoPublicBase(),
-          meshoptBasePath: editorMeshoptPublicBase(),
-          onPickActor: (actorId, pick) =>
-            selectActorRef.current(actorId, pick?.additive === true),
-          onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
-          onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
-          dragSelectActive: () => dragSelectActiveRef.current,
-          onDragSelectEnd: () => {
-            setDragSelectActiveRef.current(false);
-            setMarqueeRectRef.current(null);
-          },
-          onGizmoDragStart: () => {
-            dragStartSceneRef.current = sceneRef.current;
-          },
-          onGizmoDragEnd: () => commitGizmoTransformRef.current(),
-          onComponentShapeEdit: (edit) => commitComponentShapeRef.current(edit),
-          editorFlyEnabled: () => !playingRef.current,
-          onPilotedActorMoveEnd: (live) => commitPilotedActorRef.current(live),
-          editorFlySpeed: () => flySpeedRef.current,
-        });
-        engineRef.current = handle;
-        appliedRenderSettingsRef.current = renderSettingsKey;
-        disposers.push(() => {
-          joystickLeaseRef.current?.();
-          joystickLeaseRef.current = null;
-          if (handle.editor) {
-            saveEditorCameraPose(handle.editor.camera.exportSessionState());
-          }
-          handle.dispose();
-          if (engineRef.current === handle) engineRef.current = null;
-        });
-        handle.setPaused(true);
-        setEngineEpoch((epoch) => epoch + 1);
-        const gridSettings = sceneRef.current?.settings;
-        if (gridSettings) {
-          handle.editor?.setGridSettings({
-            tileSize: gridSettings.grid.tileSize,
-            tileSubdivisions: gridSettings.grid.tileSubdivisions,
-            cameraBounds2D: gridSettings.cameraBounds2D,
-            showGrid: gridVisible,
-          });
-        }
-        handle.editor?.camera.importSessionState(loadEditorCameraPose());
-        const navDebug = new NavMeshDebugOverlay(handle.scene);
-        navDebugRef.current = navDebug;
-        disposers.push(() => {
-          navDebug.dispose();
-          if (navDebugRef.current === navDebug) navDebugRef.current = null;
-        });
-        setNavOverlayGeneration((generation) => generation + 1);
-        handle.editor?.setPreviewCanvas(previewCanvasRef.current);
-        registerSharedEngine(handle.engine);
-        disposers.push(() => registerSharedEngine(null));
-        const unregisterScheduler = registerScheduler({
-          setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
-          setPaused: (v) => handle.setPaused(v),
-        });
-        disposers.push(unregisterScheduler);
-        const detachRenderGate = attachViewportRenderGate({
-          canvas,
-          scheduler: handle.scheduler,
-          scaling: handle.scaling,
-          setLocalQualityOverrides: (overrides) => handle.setLocalQualityOverrides(overrides),
-          setPostProcessingEnabled: (enabled) =>
-            handle.setPostProcessingEnabled(enabled),
-          setTextureBudget: (bytes, enabled) =>
-            handle.setTextureBudget(bytes, enabled),
-          setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
-          setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
-        });
-        disposers.push(detachRenderGate);
-
-        const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
-          onHoldChange: (holding) => handle.scheduler.setResizing(holding),
-        });
-        disposers.push(() => resizeIfSized.dispose());
-        resizeIfSized(canvas);
-
-        const resizeObserver = new ResizeObserver(() => {
-          resizeIfSized(canvas);
-        });
-        disposers.push(() => resizeObserver.disconnect());
-        resizeObserver.observe(canvas);
-
-        const intersectionObserver = new IntersectionObserver((entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              resizeIfSized(canvas);
-            }
-          }
-        });
-        disposers.push(() => intersectionObserver.disconnect());
-        intersectionObserver.observe(canvas);
-
-        const restoreObserver = handle.engine.onContextRestoredObservable.add(() => {
-          if (released || controller.signal.aborted) return;
-          // Restoration is another blocking transition, including on the same Engine.
-          setReloadVersion((version) => version + 1);
-        });
-        disposers.push(() => handle.engine.onContextRestoredObservable.remove(restoreObserver));
-        if (!sceneRef.current) setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
-      } catch (error) {
-        release();
-        if (controller.signal.aborted) return;
-        console.error("[viewport] failed to create scene", error);
-        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true, error });
-      } finally {
-        // Keep construction covered until the scene-loading effect takes over.
-        if (blockingLoadRef.current === controller && (!engineRef.current || !sceneRef.current)) {
-          blockingLoadRef.current = null;
-        }
-      }
-    })();
-
-    return () => {
-      controller.abort();
-      loadTransitionRef.current += 1;
-      release();
-      if (releaseEngineRef.current === release) releaseEngineRef.current = null;
-    };
-    // Mode, selection and tool changes are pushed by effects below.
-    // Remount when overlay vs world manipulator kind is known.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
+  const { marqueeRect } = useViewportEngine({
     dropViewportId,
-    registerSharedEngine,
-    registerScheduler,
-    sharedEngine,
-    overlayTransformBox,
+    canvasRef,
+    previewCanvasRef,
+    engineRef,
+    releaseEngineRef,
+    simulationDetachedRef,
+    engineGenerationRef,
+    loadTransitionRef,
+    blockingLoadRef,
+    appliedRenderSettingsRef,
+    environmentSettingsRef,
+    navDebugRef,
+    sceneRef,
+    dragStartSceneRef,
+    joystickLeaseRef,
+    renderSettingsKey,
     renderMode,
     reloadVersion,
-  ]);
+    overlayTransformBox,
+    flySpeed,
+    commitGizmoTransform,
+    commitPilotedActor,
+    commitComponentShape,
+    setSceneLoad,
+    setSceneReady,
+    setDropReady,
+    setEngineEpoch,
+    setNavOverlayGeneration,
+    setReloadVersion,
+  });
 
   useEffect(() => {
     setFrameActorHandler((actorId) => {
@@ -770,871 +405,35 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing, sceneReady, engineEpoch]);
 
-  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
-  const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(projectDocument?.settings.render.effects));
-  // Depends on the registry alone, so Scene edits do not rebuild it.
-  const materialLibraryKey = useMemo(() => {
-    void registryEpoch;
-    return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryEpoch]);
-  const viewportAssetsKey = useMemo(() => {
-    void registryEpoch;
-    return JSON.stringify([
-      sceneViewportAssetKey(scene, assetRegistry?.list() ?? []),
-      textureLodKey,
-      effectsAssetGuidsKey,
-      projectDocument?.settings.twoD,
-      projectDocument?.settings.fonts,
-    ]);
-  }, [
-    assetRegistry,
-    registryEpoch,
-    scene,
-    textureLodKey,
-    effectsAssetGuidsKey,
-    projectDocument?.settings.twoD,
-    projectDocument?.settings.fonts,
-  ]);
-  const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
-  const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
-  // An assigned emission Texture without prepared data would leave its light off.
-  useEffect(() => {
-    if (assetRegistry) prepareReferencedAreaEmissions(areaTextureGuids, (guid) => assetRegistry.getByGuid(guid), (guid) => prepareAreaEmission(guid));
-  }, [areaTextureGuids, areaEmissionKey, assetRegistry, prepareAreaEmission]);
-  // How each Texture is stored. An encode commit changes this and not `viewportAssetsKey`.
-  const textureEncodings = useMemo(() => {
-    void registryEpoch;
-    return sceneViewportTextureEncodings(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryEpoch]);
-  const textureEncodingsRef = useRef(textureEncodings);
-  textureEncodingsRef.current = textureEncodings;
-  const textureEncodingsKey = useMemo(() => JSON.stringify([...textureEncodings]), [textureEncodings]);
-
-  useEffect(() => {
-    const handle = engineRef.current;
-    if (!scene || !editorScene || !handle || simulationDetachedRef.current) return;
-    // Scene overrides arrive before the coalesced settings transaction. Do not
-    // apply them through incremental loadScene while its blocking UI is pending.
-    if (requestedRenderSettingsKey !== renderSettingsKey) return;
-    setDropReady(null);
-    setSceneReady(false);
-    const controller = new AbortController();
-    assetLoadRef.current = controller;
-    const transitionId = ++loadTransitionRef.current;
-    const isCurrent = () => !controller.signal.aborted &&
-      transitionId === loadTransitionRef.current && engineRef.current === handle;
-    const generation = engineGenerationRef.current;
-    const remount = isSceneViewportRemountLoad(
-      generation,
-      completedLoadGenerationRef.current,
-    );
-    const rendering = !remount && completedRenderSettingsRef.current !== renderSettingsKey;
-    const blocking = remount || rendering;
-    if (blocking) {
-      blockingLoadRef.current = controller;
-      handle.setPaused(true);
-      setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
-    }
-    void (async () => {
-      let collected: EditorSceneLoadOptions | null = null;
-      const realize = async () => {
-        if (!isCurrent()) return;
-        if (appliedRenderSettingsRef.current !== renderSettingsKey) {
-          handle.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
-          appliedRenderSettingsRef.current = renderSettingsKey;
-        }
-        // Saved Material refreshes must not realize or re-dirty scene structure.
-        if (blocking) {
-          if (!collected) throw new Error("Scene assets were not collected before realization.");
-          await handle.loadSceneAsync(editorScene, {
-            ...collected,
-            sceneAssetGuid: sceneAssetGuidRef.current,
-          });
-          if (!isCurrent()) return;
-        } else {
-          if (appliedSceneRef.current?.scene === editorScene && appliedSceneRef.current.handle === handle) return;
-          handle.loadScene(editorScene, { sceneAssetGuid: sceneAssetGuidRef.current });
-        }
-        appliedSceneRef.current = { scene: editorScene, handle };
-      };
-      const applyCollectedAssets = async () => {
-        if (!blocking && appliedAssetsRef.current?.handle === handle &&
-          appliedAssetsRef.current.key === viewportAssetsKey) return;
-        // The encodings the bytes below are read against; a commit that lands
-        // while they load is swapped in afterwards.
-        const encodings = textureEncodingsRef.current;
-        const catalog = assetRegistry?.list() ?? [];
-        // Read before collecting, and again after: a payload whose revision moved meanwhile has none.
-        const payloadRevisionsBefore = viewportPayloadRevisions(catalog, getOpenDocuments());
-        const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
-        const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
-        const required = sceneViewportRequiredAssets(scene, catalog, [
-          ...(JSON.parse(effectsAssetGuidsKey) as string[]),
-          ...bitmapFonts,
-          ...fontGuidsForSceneRepresentation([scene], fontSources, "msdf", projectDocument?.settings.fonts.defaultFontGuid),
-        ]);
-        const sprites = await collectPlaySpritePayloads(scene);
-        controller.signal.throwIfAborted();
-        const tileContent = await collectPlayTilemapContent(scene);
-        const waters = await collectPlayWaterContent(required);
-        const renderTargetAssets = await collectPlayRenderTargets(required);
-        controller.signal.throwIfAborted();
-        const modelBytes = await collectPlayModelBytes(scene, [], required);
-        controller.signal.throwIfAborted();
-        const modelPayloads = await collectPlayModelPayloads(scene);
-        controller.signal.throwIfAborted();
-        const materials = await collectPlayMaterialLibrary(
-          scene,
-          [],
-          [...modelSlotMaterialGuidsFromPayloads(modelPayloads), ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
-        );
-        controller.signal.throwIfAborted();
-        const extraTextureGuids = [
-          ...environmentTextureGuidsFromScenes([scene]),
-          ...postProcessTextureGuidsFromScenes([scene]),
-          ...materialInstanceTextureGuidsFromScenes([scene]),
-          ...materials.textureGuids,
-          ...skyboxFaceGuidsFromScene(scene),
-          ...overlayTextureGuidsFromScene(scene),
-          ...(JSON.parse(effectsAssetGuidsKey) as string[]),
-        ];
-        const textureBytes = await collectPlayTextureBytes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        controller.signal.throwIfAborted();
-        const texturePixelSizes = collectPlayTexturePixelSizes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const areaEmissions = await collectPlayAreaEmissions([scene]);
-        controller.signal.throwIfAborted();
-        const msdf = fontMsdfMapsFromPairs(
-          await collectPlayFontMsdfPair(scene),
-        );
-        controller.signal.throwIfAborted();
-        const fontFaceEntries = await collectPlayFontFaceEntries(bitmapFonts);
-        const fontCss = collectPlayFontCssStacks();
-        if (!isCurrent()) return;
-        await handle.registerFonts(fontFaceEntries);
-        if (!isCurrent()) return;
-        const assets = {
-          resourceCache: handle.resourceCache,
-          spritePayloads: sprites,
-          tilemaps: tileContent.tilemaps,
-          waters,
-          payloadRevisions: stableViewportPayloadRevisions(
-            payloadRevisionsBefore,
-            viewportPayloadRevisions(assetRegistry?.list() ?? [], getOpenDocuments()),
-          ),
-          ...renderTargetAssets,
-          tilesets: tileContent.tilesets,
-          textureBytes,
-          texturePixelSizes,
-          fontFacetypeBytes,
-          areaEmissions,
-          fontMsdfJson: msdf.json,
-          fontMsdfPng: msdf.png,
-          fontCssStack: fontCss.fontCssStack,
-          fontCssStackByGuid: fontCss.fontCssStackByGuid,
-          modelBytes,
-          modelPayloads,
-          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
-          sortingLayers: projectDocument?.settings.twoD.sortingLayers,
-        };
-        if (blocking) {
-          collected = {
-            signal: controller.signal,
-            assets,
-            materialDocuments: materials.documents,
-            materialFunctions: materials.functions,
-            onProgress: (progress) => {
-              if (isCurrent()) setSceneLoad({ open: true, progress: 20 + 25 * progress, phase: "Realizing Scene", rendering });
-            },
-          };
-        } else {
-          handle.setMaterialDocuments(materials.documents, materials.functions);
-          handle.setMeshAssets(assets);
-        }
-        if (isCurrent()) {
-          appliedAssetsRef.current = {
-            key: viewportAssetsKey,
-            handle,
-            textures: new Map([...textureBytes.keys()].map((guid): [string, string] => [guid, encodings.get(guid) ?? ""])),
-          };
-        }
-      };
-      try {
-        if (blocking) {
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          await waitForCanvasSize(canvas, controller.signal);
-          if (!isCurrent()) return;
-          setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
-          await runSceneViewportBlockingLoad({
-            signal: controller.signal,
-            realize,
-            collect: applyCollectedAssets,
-            whenModelsReady: async () => {
-              if (!isCurrent()) return;
-              await handle.whenEditorModelsReady();
-              if (!isCurrent()) return;
-              await handle.whenMaterialTexturesReady();
-            },
-            warmShaders: async () => {
-              if (!isCurrent()) return;
-              await handle.prewarmSceneMaterials();
-            },
-            presentFirstFrame: async () => {
-              if (!isCurrent()) return;
-              await handle.presentFirstFrame();
-            },
-            onProgress: (progress, phase) => {
-              if (!isCurrent()) return;
-              setSceneLoad({ open: true, progress, phase, rendering });
-            },
-          });
-        } else {
-          await realize();
-          await applyCollectedAssets();
-          if (isCurrent()) {
-            await handle.whenEditorModelsReady();
-          }
-        }
-        if (isCurrent()) {
-          setDropReady({ scene, handle });
-          if (blocking) {
-            completedLoadGenerationRef.current = generation;
-            completedRenderSettingsRef.current = renderSettingsKey;
-            setSceneLoad({
-              open: false,
-              progress: 100,
-              phase: "Presenting First Frame",
-              rendering,
-            });
-          }
-          setSceneReady(true);
-        }
-      } catch (error) {
-        if (!isCurrent()) return;
-        console.error("[viewport] failed to load scene", error);
-        const gpu = (() => {
-          const engine = engineRef.current?.engine;
-          try { return engine ? engineAdapterInfo(engine) : null; } catch { return null; }
-        })();
-        releaseEngineRef.current?.();
-        setSceneLoad((current) => ({ ...current, open: true, failed: true, error, gpu }));
-      } finally {
-        if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
-        if (assetLoadRef.current === controller) assetLoadRef.current = null;
-      }
-    })();
-    return () => {
-      controller.abort();
-      if (assetLoadRef.current === controller) assetLoadRef.current = null;
-    };
-  }, [
+  useViewportSceneLoad({
     scene,
     editorScene,
-    viewportAssetsKey,
+    scenePath: doc?.ref.path,
     requestedRenderSettingsKey,
     renderSettingsKey,
-    materialLibraryKey,
-    areaEmissionKey,
-    textureLodKey,
-    effectsAssetGuidsKey,
-    collectPlaySpritePayloads,
-    collectPlayWaterContent,
-    collectPlayRenderTargets,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-    collectPlayAreaEmissions,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayMaterialLibrary,
-    getOpenDocuments,
-    projectDocument?.settings.twoD.pixelsPerUnit,
-    projectDocument?.settings.twoD.sortingLayers,
-    projectDocument?.settings.fonts.defaultFontGuid,
-    projectDocument?.settings.fonts.globalFallback,
     engineEpoch,
-  ]);
+    dropReady,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
+    canvasRef,
+    engineRef,
+    releaseEngineRef,
+    simulationDetachedRef,
+    blockingLoadRef,
+    loadTransitionRef,
+    engineGenerationRef,
+    appliedRenderSettingsRef,
+    environmentSettingsRef,
+    setDropReady,
+    setSceneReady,
+    setSceneLoad,
+  });
 
-  useEffect(() => () => textureSwapRef.current?.controller.abort(), []);
-
-  // A background encode commit swaps how a Texture is stored (PNG to KTX2), not
-  // what it shows, so it never reloads the scene: only the changed Textures are
-  // read again and swapped in place on the live meshes and Materials.
-  // Single-flight per applied asset set: a running swap is never restarted by a
-  // later commit. It collects whatever changed within its paint, and goes round
-  // again if the registry changed while it read. A load in flight stands the swap
-  // down (it reads the latest bytes itself) and re-runs this when it finishes
-  // (`dropReady`). A Texture the engine did not take (not installed yet) stays
-  // pending and is retried when the registry next changes, not on every scene edit.
-  useEffect(() => {
-    const handle = engineRef.current;
-    const applied = appliedAssetsRef.current;
-    if (!handle || !applied || applied.handle !== handle || applied.key !== viewportAssetsKey || assetLoadRef.current) return;
-    if (changedTextureEncodings(applied.textures, textureEncodingsRef.current).length === 0) return;
-    let swap = textureSwapRef.current;
-    if (!swap || swap.applied !== applied) {
-      swap?.controller.abort();
-      swap = textureSwapRef.current = { applied, attempted: null, running: false, controller: new AbortController() };
-    }
-    if (swap.running || swap.attempted === textureEncodingsRef.current) return;
-    const state = swap;
-    const { signal } = state.controller;
-    const isCurrent = () => !signal.aborted && engineRef.current === handle &&
-      appliedAssetsRef.current === applied && assetLoadRef.current === null;
-    state.running = true;
-    void (async () => {
-      try {
-        for (;;) {
-          await waitForSceneLoadingPaint(signal);
-          if (!isCurrent()) return;
-          const encodings = textureEncodingsRef.current;
-          const guids = changedTextureEncodings(applied.textures, encodings);
-          if (guids.length > 0) {
-            const bytes = await collectPlayTextureBytes(new Map(), new Map(), guids);
-            if (!isCurrent()) return;
-            // Only what the engine reports as now stored this way counts as applied.
-            for (const guid of handle.replaceTextureBytes(bytes)) applied.textures.set(guid, encodings.get(guid) ?? "");
-          }
-          state.attempted = encodings;
-          if (textureEncodingsRef.current === encodings) return;
-        }
-      } catch (error) {
-        if (!signal.aborted) console.warn("[viewport] failed to swap Texture encodings", error);
-      } finally {
-        state.running = false;
-      }
-    })();
-  }, [textureEncodingsKey, viewportAssetsKey, dropReady, engineEpoch, collectPlayTextureBytes]);
-
-  useEffect(() => {
-    const handle = engineRef.current;
-    if (!handle) return;
-    void registryEpoch; // Registry headers mutate without replacing the registry.
-    const byPath = new Map(
-      (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" || asset.header.type === "MaterialInstance").map((asset) => [
-        asset.path,
-        asset.header.guid,
-      ]),
-    );
-    const guids = new Set<string>();
-    for (const doc of materialDocuments) {
-      const guid = byPath.get(doc.ref.path);
-      if (guid) guids.add(guid);
-    }
-    handle.setEditingMaterialGuids(guids);
-  }, [materialDocuments, assetRegistry, registryEpoch, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.setSelectedActors(sceneMode === "design" ? selectedActorIds : []);
-    const targetActor = shapeEditTarget && selectedActorIds.length === 1 && shapeEditTarget.actorId === selectedActorIds[0]
-      ? scene?.actors.find((actor) => actor.id === shapeEditTarget.actorId)
-      : undefined;
-    const selectedComponentIds = shapeEditTarget && targetActor?.components.some((component) => component.id === shapeEditTarget.componentId)
-      ? [shapeEditTarget.componentId]
-      : undefined;
-    engineRef.current?.editor?.syncSelectionDebug({
-      sceneData: scene,
-      selectedActorIds,
-      selectedComponentIds,
-      audioLibrary,
-    });
-  }, [scene, selectedActorIds, shapeEditTarget, engineEpoch, audioLibrary, sceneMode]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.setViewportMode(sceneMode === "design" ? viewportMode : "3d");
-  }, [viewportMode, engineEpoch, sceneMode]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
-  }, [viewportShadingMode, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
-  }, [collisionsVisible, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);
-  }, [previewGameCamera, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
-  }, [pivotAroundCenter, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.gizmos.setTool(gizmoTool);
-  }, [gizmoTool, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.gizmos.setSpace(gizmoSpace);
-  }, [gizmoSpace, engineEpoch]);
-
-  useEffect(() => {
-    const grid = scene?.settings.grid;
-    engineRef.current?.editor?.gizmos.setSnap({
-      enabled: snapEnabled,
-      translate: grid?.snapTranslate ?? 1,
-      rotateDeg: grid?.snapRotateDeg ?? 15,
-      scale: grid?.snapScale ?? 0.25,
-    });
-  }, [scene?.settings.grid, snapEnabled, engineEpoch]);
-
-  useEffect(() => {
-    const settings = scene?.settings;
-    if (!settings) return;
-    engineRef.current?.editor?.setGridSettings({
-      tileSize: settings.grid.tileSize,
-      tileSubdivisions: settings.grid.tileSubdivisions,
-      cameraBounds2D: settings.cameraBounds2D,
-      showGrid: gridVisible,
-    });
-    // engineEpoch: the first scene payload often exists before createEngine.
-    // Without it, this effect runs once with a null engineRef and never
-    // reapplies cameraBounds2D (orange frame missing until Show Grid).
-  }, [scene?.settings, viewportMode, gridVisible, engineEpoch]);
-
-  useEffect(() => {
-    engineRef.current?.editor?.grid.setVisible(gridVisible);
-  }, [gridVisible, engineEpoch]);
-
-  useEffect(() => {
-    const twoD = projectDocument?.settings.twoD;
-    const editor = engineRef.current?.editor;
-    if (!editor || !twoD) return;
-    editor.setSortingLayers(twoD.sortingLayers);
-    editor.setPixelPerfect(
-      viewportMode === "2d" && twoD.pixelPerfect
-        ? {
-            pixelsPerUnit: twoD.pixelsPerUnit,
-          }
-        : null,
-    );
-  }, [projectDocument?.settings.twoD, viewportMode, engineEpoch]);
+  useViewportEditorSync({ engineRef, engineEpoch, scene, sceneMode, audioLibrary });
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
-    type ViewportTestHost = {
-      __hapticViewportTest?: {
-        commitGizmoNudge: () => Promise<boolean>;
-        commitMultiSelectGizmoNudge: () => Promise<boolean>;
-        activeSceneMeshPosition: () => [number, number, number] | null;
-        actorCanvasFraction: (actorId: string) => { x: number; y: number } | null;
-        sceneTexturePixels: () => Promise<unknown>;
-        sceneVisuals: () => Array<
-          MaterialViewportTestSnapshot & {
-            actorId: string;
-            position: [number, number, number];
-            materialName: string | null;
-          }
-        >;
-        hardwareScalingLevel: () => number | null;
-        postProcessPassCount: () => number | null;
-        renderingBaseline: () => Record<string, unknown> | null;
-        shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
-        mannequinShadowProbe: (modelOnly?: boolean) => Promise<unknown>;
-        mannequinShadowVisibility: (points: { worldPosition: number[]; region: string }[]) => Promise<boolean[]>;
-        setRenderSettings: EngineHandle["setRenderSettings"];
-        setShadowCaptureView: (position: [number, number, number], target: [number, number, number], fov: number) => void;
-        environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
-        environmentLightingProof: () => Promise<Record<string, unknown>>;
-        measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
-        /** Direct presentation of a sole view (default on); off copies into the view canvas, for A/B runs. */
-        setDirectViewPresentation: (enabled: boolean) => void;
-        /** Fixed-shape forward lighting on the project Engine with that seat guard, or off (null), for A/B runs; false without a view. */
-        setFixedShapeLighting: (guard: "multiply" | "branch" | null) => boolean;
-        /** Destroys the project Engine's WebGPU device, as a real loss would; false on WebGL2 or without a view. */
-        destroyGraphicsDevice: () => boolean;
-        /**
-         * Hold (or resume) this viewport's frames: no step draws or presents (scene loading still may), though a
-         * resize still resizes the Engine. Holding resolves once the GPU finished the submitted work, so a
-         * screenshot shows what stays on screen.
-         */
-        holdViewportFrames: (hold: boolean) => Promise<void>;
-        webgpuPreviewsProof: (
-          options?: import("../testing/webgpu-previews-proof").ViewportProofOptions,
-        ) => Promise<
-          import("../testing/webgpu-previews-proof").ViewportProofResult
-        >;
-        engineSceneDiagnostics: () => Promise<
-          import("../testing/webgpu-previews-proof").EngineSceneDiagnostics | null
-        >;
-        /** Fly the editor camera along a path and record per-frame render events (perf routes only). */
-        flyThrough: (
-          options: import("../testing/flythrough-probe").FlyThroughOptions,
-        ) => Promise<import("../testing/flythrough-probe").FlyThroughResult>;
-      };
-    };
-    const host = globalThis as ViewportTestHost;
-    let viewportFrameCap: number | null = null;
-    const unsubscribeSettings = subscribeAppSettings(({ settings }) => {
-      viewportFrameCap = settings.viewportFrameCap;
-    });
-    const measurements = new Set<() => void>();
-    let releaseFrameHold: (() => void) | null = null;
-
-      host.__hapticViewportTest = {
-      environmentLightingProof: async () => {
-        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
-        return (await import("../lib/environment-lighting-proof")).runEnvironmentLightingProof();
-      },
-      webgpuPreviewsProof: async (options) => {
-        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Preview proof requires a test build.");
-        const handle = engineRef.current;
-        const canvas = canvasRef.current;
-        if (!handle || !canvas) throw new Error("No active viewport for the preview proof");
-        return (await import("../testing/webgpu-previews-proof")).recordViewportProof(handle, canvas, options);
-      },
-      engineSceneDiagnostics: async () => {
-        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Scene diagnostics require a test build.");
-        // Preview Scenes live on the shared Engine, which outlives viewport
-        // remounts. While the Scene document tab is hidden the viewport handle
-        // can be absent (waitForCanvasSize blocks the remount), so read the
-        // session engine rather than engineRef.
-        const engine = ensureSharedEngine();
-        if (!engine) return null;
-        return (await import("../testing/webgpu-previews-proof")).collectEngineSceneDiagnostics(engine, engineRef.current?.scene ?? null);
-      },
-      flyThrough: async (options) => {
-        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Fly-through requires a test build.");
-        const handle = engineRef.current;
-        if (!handle) throw new Error("No active viewport for the fly-through");
-        return (await import("../testing/flythrough-probe")).runFlyThrough(handle, options);
-      },
-      environmentTextureSamples: async () => {
-        const handle = engineRef.current;
-        const texture = handle?.scene.environmentTexture;
-        if (!handle || !texture) return null;
-        if (!texture.isReady()) return { ready: false, loadingError: texture.loadingError,
-          error: texture.errorObject ? { message: texture.errorObject.message, exception: String(texture.errorObject.exception) } : null,
-          size: texture.getSize(), isCube: texture.isCube };
-        const size = texture.getSize();
-        const lastMip = Math.floor(Math.log2(size.width));
-        const samples = [];
-        for (const face of [0, 5]) for (const level of [...new Set([0, lastMip])]) {
-          const pixels = await texture.readPixels(face, level, undefined, true, false, 0, 0, 1, 1);
-          samples.push({ face, level, type: pixels?.constructor.name, values: pixels ? Array.from(pixels as Uint8Array | Float32Array) : null });
-        }
-        return { size, isCube: texture.isCube, gammaSpace: texture.gammaSpace, samples,
-          sceneConsumers: handle.engine.scenes.filter((scene) => scene.environmentTexture === texture).length,
-          gpuType: texture.getInternalTexture()?.type };
-      },
-      measureRenderingBaseline: async (durationMs) => {
-        for (const cancel of measurements) cancel();
-        const handle = engineRef.current;
-        if (!handle) throw new Error("No active viewport for rendering measurement");
-        // Keep collection bounded even if a test supplies an invalid duration.
-        const requestedMs = Number.isFinite(durationMs)
-          ? Math.min(30_000, Math.max(1, durationMs)) : 30_000;
-        return new Promise((resolve) => {
-          const started = performance.now();
-          const frameSamples: Array<{
-            atMs: number; intervalMs: number | null; frameDelta: number;
-            cpuMs: number; gpuMs: number | null; gpuStatus: string;
-            preparationMs: number; copyMs: number; held: number;
-            graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number;
-            viewportFrameCap: number | null; documentVisible: boolean;
-          }> = [];
-          const resourceSamples: Array<Record<string, number>> = [];
-          let lastFrame = handle.renderDiagnostics().presentation?.copied ?? handle.scheduler.stats().renderedFrames;
-          let lastDraw = handle.scheduler.stats().renderedFrames;
-          let lastPresented: number | null = null;
-          let lastResourceAt = -250;
-          let droppedSamples = 0;
-          let finished = false;
-          let previousTextures = new Set(handle.engine.getLoadedTexturesCache());
-          let previousTargets = new Set(handle.engine._renderTargetWrapperCache);
-          let texturesAdded = 0;
-          let texturesRemoved = 0;
-          let targetsAdded = 0;
-          let targetsRemoved = 0;
-          const sampleResources = (atMs: number) => {
-            const textures = new Set(handle.engine.getLoadedTexturesCache());
-            const targets = new Set(handle.engine._renderTargetWrapperCache);
-            for (const texture of textures) if (!previousTextures.has(texture)) texturesAdded += 1;
-            for (const texture of previousTextures) if (!textures.has(texture)) texturesRemoved += 1;
-            for (const target of targets) if (!previousTargets.has(target)) targetsAdded += 1;
-            for (const target of previousTargets) if (!targets.has(target)) targetsRemoved += 1;
-            previousTextures = textures;
-            previousTargets = targets;
-            resourceSamples.push({
-              atMs,
-              estimatedTextureBytes: handle.resourceCache.accountedBytes(),
-              estimatedGeometryBytes: handle.accountedGeometryBytes(),
-              estimatedShadowBytes: handle.renderDiagnostics().shadowMapBytes,
-              sceneMeshes: handle.scene.meshes.length,
-              engineScenes: handle.engine.scenes.length,
-              engineTextures: textures.size,
-              engineRenderTargets: targets.size,
-              texturesAdded, texturesRemoved, targetsAdded, targetsRemoved,
-            });
-            lastResourceAt = atMs;
-          };
-          const finish = (cancelled: string | null = null) => {
-            if (finished) return;
-            finished = true;
-            clearTimeout(timer);
-            handle.engine.onEndFrameObservable.remove(frameObserver);
-            handle.engine.onContextLostObservable.remove(lostObserver);
-            handle.scene.onDisposeObservable.remove(disposeObserver);
-            measurements.delete(cancel);
-            const elapsedMs = performance.now() - started;
-            if (!cancelled) sampleResources(elapsedMs);
-            resolve({ requestedMs, elapsedMs, cancelled, droppedSamples, frameSamples, resourceSamples });
-          };
-          const cancel = () => finish("Viewport measurement was superseded or disposed");
-          const frameObserver = handle.engine.onEndFrameObservable.add(() => {
-            if (engineRef.current !== handle || handle.scene.isDisposed) {
-              cancel();
-              return;
-            }
-            // Scene viewport copies finish inside the native view step. Avoid
-            // scanning resources on shared Engine ticks that did not draw it.
-            const draw = handle.scheduler.stats().renderedFrames;
-            if (draw === lastDraw) return;
-            lastDraw = draw;
-            const diagnostics = handle.renderDiagnostics();
-            const frame = diagnostics.presentation?.copied ?? handle.scheduler.stats().renderedFrames;
-            // Shared Engine end-frame notifications from sibling views are not
-            // presentations of this viewport. Count completed view copies.
-            if (frame === lastFrame) return;
-            const now = performance.now();
-            const atMs = now - started;
-            if (frameSamples.length < 6_000) {
-              frameSamples.push({
-                atMs, intervalMs: lastPresented === null ? null : now - lastPresented,
-                frameDelta: frame - lastFrame,
-                cpuMs: diagnostics.cpuMs, gpuMs: diagnostics.gpuMs,
-                gpuStatus: diagnostics.gpuStatus,
-                preparationMs: diagnostics.presentation?.preparationMs ?? 0,
-                copyMs: diagnostics.presentation?.copyMs ?? 0,
-                held: diagnostics.presentation?.held ?? 0,
-                graphBuilds: diagnostics.rendererWork?.graphBuilds ?? 0,
-                shadowAdmissions: diagnostics.rendererWork?.shadowAdmissions ?? 0,
-                shadowAdmissionMs: diagnostics.rendererWork?.shadowAdmissionMs ?? 0,
-                viewportFrameCap, documentVisible: document.visibilityState === "visible",
-              });
-            } else droppedSamples += 1;
-            lastFrame = frame;
-            lastPresented = now;
-            if (atMs - lastResourceAt >= 250) sampleResources(atMs);
-          });
-          const lostObserver = handle.engine.onContextLostObservable.add(() => finish("Rendering context was lost"));
-          const disposeObserver = handle.scene.onDisposeObservable.addOnce(cancel);
-          const timer = setTimeout(() => finish(), requestedMs);
-          measurements.add(cancel);
-          sampleResources(0);
-        });
-      },
-      shadowDiagnostics: () => {
-        const handle = engineRef.current;
-        return handle ? captureShadowDiagnostics(handle.scene, { host: "editor", meshes: handle.scene.meshes }) : null;
-      },
-      mannequinShadowProbe: async (modelOnly) => {
-        const handle = engineRef.current;
-        if (!handle || import.meta.env.VITE_TEST_MODE !== "true") throw new Error("No test viewport");
-        const result = (await import("../testing/mannequin-shadow-proof")).mannequinShadowProbe(handle.scene, modelOnly);
-        handle.scheduler.invalidate("manual");
-        return result;
-      },
-      mannequinShadowVisibility: async (points) => {
-        const handle = engineRef.current;
-        if (!handle || import.meta.env.VITE_TEST_MODE !== "true") throw new Error("No test viewport");
-        return (await import("../testing/mannequin-shadow-proof")).mannequinShadowVisibility(handle.scene, points);
-      },
-      setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
-      setDirectViewPresentation: (enabled) => setDirectViewPresentationEnabled(enabled),
-      setFixedShapeLighting: (guard) => {
-        const engine = engineRef.current?.engine;
-        if (!engine) return false;
-        if (guard) setFixedShapeLightGuard(engine, guard);
-        setFixedShapeLightingEnabled(engine, guard !== null);
-        engineRef.current?.scheduler.invalidate("asset");
-        return true;
-      },
-      destroyGraphicsDevice: () => {
-        const engine = engineRef.current?.engine;
-        // Pinned Babylon 9.29 owning-device boundary.
-        const device = engine?.isWebGPU ? (engine as unknown as { _device?: { destroy(): void } })._device : undefined;
-        if (!device) return false;
-        device.destroy();
-        return true;
-      },
-      holdViewportFrames: async (hold) => {
-        const handle = engineRef.current;
-        if (!handle) throw new Error("No active viewport to hold.");
-        if (!hold) {
-          releaseFrameHold?.();
-          releaseFrameHold = null;
-          return;
-        }
-        // An obstruction lease composes with the resize guard and modal obstruction, which set their own gates.
-        releaseFrameHold ??= handle.scheduler.acquireObstruction();
-        await whenSubmittedWorkDone(handle.engine);
-      },
-      setShadowCaptureView: (position, target, fov) => {
-        const handle = engineRef.current;
-        const camera = handle?.editor?.camera.camera;
-        if (!handle || !camera) throw new Error("No editor camera for shadow capture");
-        camera.setTarget(Vector3.FromArray(target));
-        camera.setPosition(Vector3.FromArray(position));
-        camera.fov = fov;
-        camera.minZ = 0.1;
-        camera.maxZ = 100;
-        handle.scheduler.invalidate("camera");
-      },
-      renderingBaseline: () => {
-        const handle = engineRef.current;
-        if (!handle) return null;
-        const caps = handle.engine.getCaps();
-        return {
-          userAgent: navigator.userAgent,
-          backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
-          engineCount: EngineStore.Instances.length,
-          webGLVersion: "webGLVersion" in handle.engine ? handle.engine.webGLVersion : null,
-          glInfo: "getGlInfo" in handle.engine && typeof handle.engine.getGlInfo === "function" ? handle.engine.getGlInfo() : null,
-          gpuInfo: "getInfo" in handle.engine && typeof handle.engine.getInfo === "function" ? handle.engine.getInfo() : null,
-          render: handle.renderDiagnostics(),
-          frameCount: handle.scheduler.stats().renderedFrames,
-          viewportFrameCap,
-          drawCalls: handle.drawCalls(),
-          liveObjects: handle.liveObjectCounts(),
-          engineScenes: handle.engine.scenes.length,
-          estimatedTextureBytes: handle.resourceCache.accountedBytes(),
-          estimatedGeometryBytes: handle.accountedGeometryBytes(),
-          ktx2Uploads: handle.engine.getLoadedTexturesCache()
-            .filter((texture) => texture.isReady && texture._extension === ".ktx2")
-            .map((texture) => ({ format: texture.format, type: texture.type, mips: texture.generateMipMaps })),
-          sceneOverrides: sceneRef.current?.settings.shadowOverrides,
-          capabilities: {
-            maxTextureSize: caps.maxTextureSize,
-            maxCubemapTextureSize: caps.maxCubemapTextureSize,
-            maxTexturesImageUnits: caps.maxTexturesImageUnits,
-            textureFloatRender: caps.textureFloatRender,
-            textureHalfFloatRender: caps.textureHalfFloatRender,
-            timerQuery: !!caps.timerQuery,
-          },
-        };
-      },
-      sceneTexturePixels: async () => {
-        const sync = engineRef.current?.editor?.sync;
-        if (!sync) return [];
-        const samples = [];
-        for (const actor of sceneRef.current?.actors ?? []) {
-          const visual = sync.visualMeshesForActor(actor.id)[0];
-          const texture = visual?.material?.getActiveTextures()[0];
-          if (!texture || texture.isCube || !texture.isReady()) continue;
-          const pixels = await texture.readPixels(0, 0, null, true, false, 0, 0, 1, 1);
-          samples.push({ actorId: actor.id, name: texture.name, size: texture.getSize(),
-            pixel: pixels ? Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)) : null });
-        }
-        return samples;
-      },
-      sceneVisuals: () => {
-        const sync = engineRef.current?.editor?.sync;
-        const actors = sceneRef.current?.actors ?? [];
-        if (!sync) return [];
-        return actors.flatMap((actor) => {
-          const visual = sync.visualMeshesForActor(actor.id)[0];
-          if (!visual) return [];
-          visual.computeWorldMatrix(true);
-          const position = visual.getAbsolutePosition();
-          return [
-            {
-              ...materialViewportTestSnapshot(visual),
-              actorId: actor.id,
-              position: [position.x, position.y, position.z],
-              materialName: visual.material?.name ?? null,
-            },
-          ];
-        });
-      },
-      activeSceneMeshPosition: () => {
-        const actorId = sceneRef.current?.actors[0]?.id;
-        if (!actorId) return null;
-        const mesh = engineRef.current?.editor?.sync.meshForActor(actorId);
-        if (!mesh) return null;
-        return [mesh.position.x, mesh.position.y, mesh.position.z];
-      },
-      // Where the actor's mesh centre falls in the canvas, as 0-1 fractions of its width and height
-      // (top-left origin), for a test to tap it.
-      actorCanvasFraction: (actorId) => {
-        const mesh = engineRef.current?.editor?.sync.meshForActor(actorId);
-        const camera = mesh?.getScene().activeCamera;
-        if (!mesh || !camera) return null;
-        mesh.computeWorldMatrix(true);
-        const ndc = Vector3.TransformCoordinates(
-          mesh.getBoundingInfo().boundingBox.centerWorld,
-          camera.getViewMatrix().multiply(camera.getProjectionMatrix()),
-        );
-        return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
-      },
-      hardwareScalingLevel: () => engineRef.current?.scaling.getLevel() ?? null,
-      postProcessPassCount: () =>
-        engineRef.current?.postProcessPassCount() ?? null,
-      /**
-       * Simulate a finished gizmo drag: mutate the live Babylon mesh, then
-       * commit through the same path as onGizmoDragEnd (not a document-only nudge).
-       */
-      commitGizmoNudge: async () => {
-        const handle = engineRef.current;
-        const current = sceneRef.current;
-        const actorId = current?.actors[0]?.id;
-        if (!handle?.editor || !current || !actorId) return false;
-        const mesh = handle.editor.sync.meshForActor(actorId);
-        if (!mesh) return false;
-        handle.editor.setSelectedActors([actorId]);
-        mesh.position.x += 1.5;
-        dragStartSceneRef.current = current;
-        commitGizmoTransform();
-        return true;
-      },
-      commitMultiSelectGizmoNudge: async () => {
-        const handle = engineRef.current;
-        const current = sceneRef.current;
-        if (!handle?.editor || !current || current.actors.length < 2) {
-          return false;
-        }
-        const ids = current.actors
-          .filter((actor) => !actor.locked)
-          .map((actor) => actor.id);
-        handle.editor.setSelectedActors(ids);
-        const attached = handle.editor.gizmos.attachedMesh();
-        if (!attached) return false;
-        const parentIdOf = (id: string) =>
-          current.actors.find((actor) => actor.id === id)?.parentId ?? null;
-        const followers = selectionGizmoRoots(ids, parentIdOf)
-          .map((id) => handle.editor!.sync.meshForActor(id))
-          .filter(
-            (mesh): mesh is NonNullable<typeof mesh> =>
-              mesh !== null && mesh !== attached,
-          );
-        const drag = beginGizmoMultiSelectDrag(attached, followers);
-        attached.position.x += 1.5;
-        if (drag) applyGizmoMultiSelectDrag(drag, attached);
-        dragStartSceneRef.current = current;
-        commitGizmoTransform();
-        return true;
-      },
-    };
-
-    return () => {
-      for (const cancel of measurements) cancel();
-      unsubscribeSettings();
-      releaseFrameHold?.();
-      delete host.__hapticViewportTest;
-    };
+    return installViewportTestHost({ engineRef, canvasRef, sceneRef, dragStartSceneRef, commitGizmoTransform, ensureSharedEngine });
   }, [commitGizmoTransform, ensureSharedEngine]);
 
   useEffect(() => {
@@ -1647,32 +446,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const handle = engineRef.current;
     if (!panel || !canvas || !handle || !sceneReady || sceneLoad.open ||
       requestedRenderSettingsKey !== renderSettingsKey) return;
-    let lastFrame = -1;
-    let lastAt = -Infinity;
-    const publish = () => {
-      const frame = handle.scheduler.stats().renderedFrames;
-      const now = performance.now();
-      if (engineRef.current !== handle || handle.scene.isDisposed ||
-        frame <= 0 || frame === lastFrame || now - lastAt < 250) return;
-      const rect = canvas.getBoundingClientRect();
-      panel.dataset.renderDiagnostics = JSON.stringify({
-        frame, capturedAt: new Date().toISOString(),
-        userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio,
-        canvas: { width: canvas.width, height: canvas.height, cssWidth: rect.width, cssHeight: rect.height },
-        requested: JSON.parse(requestedRenderSettingsKey),
-        render: handle.renderDiagnostics(),
-      });
-      lastFrame = frame;
-      lastAt = now;
-    };
-    // sceneReady follows this view's presented first frame, not a sibling's
-    // shared-Engine notification. Later captures require its own frame count.
-    publish();
-    const observer = handle.engine.onEndFrameObservable.add(publish);
-    return () => {
-      handle.engine.onEndFrameObservable.remove(observer);
-      delete panel.dataset.renderDiagnostics;
-    };
+    return publishViewportRenderDiagnostics({ panel, canvas, handle, engineRef, requestedRenderSettingsKey });
   }, [engineEpoch, sceneReady, sceneLoad.open, requestedRenderSettingsKey, renderSettingsKey]);
 
   const debugMode = useDebugMode();
