@@ -34,7 +34,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | --- | --- |
 | Open | Open the asset in its editor. |
 | Generate Thumbnail | Redraw the thumbnail of a Model, Animation, Material or actor Class. |
-| Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas (JSON and PNG). |
+| Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick its JSON and the PNG it names. Any other PNG in the pick is refused. |
 | Create Material Instance | Materials and Material Instances only. Make a new instance of it. |
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder. References to it stay connected. |

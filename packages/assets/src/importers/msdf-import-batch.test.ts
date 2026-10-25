@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { msdfAtlasPickError } from "./index";
 import { groupMsdfImportBatch } from "./msdf-import-batch";
 
 describe("groupMsdfImportBatch", () => {
@@ -37,5 +38,23 @@ describe("groupMsdfImportBatch", () => {
   it("keeps an unpaired /msdf/ PNG so importFont can create or attach a Font", () => {
     const png = { name: "Display.msdf.png", bytes: new Uint8Array([9]) };
     expect(groupMsdfImportBatch([png])).toEqual([png]);
+  });
+});
+
+describe("msdfAtlasPickError", () => {
+  const json = {
+    name: "Ui-msdf.json",
+    bytes: new TextEncoder().encode(JSON.stringify({ pages: ["Ui-msdf.png"], chars: [] })),
+  };
+  const atlas = { name: "Ui-msdf.png", bytes: new Uint8Array([1]) };
+
+  it("accepts an MSDF JSON with the atlas PNG it names", () => {
+    expect(msdfAtlasPickError([json, atlas])).toBeNull();
+  });
+
+  it("refuses a PNG the MSDF JSON does not pair with, alone or beside the atlas", () => {
+    const other = { name: "hero.png", bytes: new Uint8Array([2]) };
+    expect(msdfAtlasPickError([json, other])).toContain("hero.png");
+    expect(msdfAtlasPickError([json, atlas, other])).toContain("hero.png");
   });
 });

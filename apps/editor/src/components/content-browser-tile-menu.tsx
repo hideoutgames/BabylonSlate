@@ -172,7 +172,8 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
               accept: ".json,.png",
             });
             if (!files.length) return;
-            // As the Font editor does: a lone PNG would attach as a Texture chunk.
+            // As the Font editor does: refuse anything but an MSDF JSON and the
+            // PNG it pairs with (an unpaired PNG would attach as a Texture chunk).
             const pickError = msdfAtlasPickError(files);
             if (pickError) {
               setImportErrors([pickError]);
