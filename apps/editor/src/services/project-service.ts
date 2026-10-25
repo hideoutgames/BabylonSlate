@@ -287,11 +287,8 @@ export class ProjectService {
         },
       },
       materials: { convertGlsl: convertGlslToMaterial },
-      log: (id, message) => {
-        const line = `[Extension ${id}] ${message}`;
-        this.diagnostics.push(line);
-        for (const listener of this.diagnosticListeners) listener(line);
-      },
+      // Kept with the session's other diagnostics, under the same cap.
+      log: (id, message) => this.pushDiagnostic(`[Extension ${id}] ${message}`),
     }, { runAuthoringWrite: operation => this.writeAdmission.run(operation) });
     this.blobs = createVfsBlobStore(storage);
     this.projectPlugins = new ProjectPlugins({
