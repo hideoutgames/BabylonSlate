@@ -317,18 +317,21 @@ it("keeps a refused open readable instead of failing silently", async () => {
   );
 });
 
-it("says Copy Failed instead of failing silently when the clipboard refuses the report", async () => {
-  const writeText = vi.fn(async () => {
-    throw new Error("Clipboard access denied");
-  });
+it("says Copied when the clipboard takes the report, and Copy Failed instead of failing silently when it refuses", async () => {
+  const writeText = vi.fn(async () => undefined);
   vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
   // The fallback copy is refused too.
   Object.defineProperty(document, "execCommand", { configurable: true, value: vi.fn(() => false) });
   try {
     renderReport([entry({ assetGuid: HERO.path, nodeId: "print", message: "Hero exploded" })], sources());
-    fireEvent.click(screen.getByTestId("session-report-copy"));
+    const copy = screen.getByTestId("session-report-copy");
+    fireEvent.click(copy);
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Hero exploded"));
-    await waitFor(() => expect(screen.getByTestId("session-report-copy").textContent).toBe("Copy Failed"));
+    await waitFor(() => expect(copy.textContent).toBe("Copied"));
+
+    writeText.mockRejectedValueOnce(new Error("Clipboard access denied"));
+    fireEvent.click(copy);
+    await waitFor(() => expect(copy.textContent).toBe("Copy Failed"));
   } finally {
     Reflect.deleteProperty(document, "execCommand");
   }
