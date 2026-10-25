@@ -195,6 +195,8 @@ export class AssetLoadingService {
   private readonly entriesByAsset = new Map<string, Set<CacheEntry>>();
   private readonly scopes = new Set<AssetLoadScope>();
   private readonly rootRequests = new Map<Acquisition, RootRequestState>();
+  /** `rootRequests` grouped by asset id, so a load-state read scans only that asset's live requests. */
+  private readonly rootRequestsByAsset = new Map<string, Set<RootRequestState>>();
   private readonly rootFailures = new Map<string, RootRequestState>();
   private readonly queue: CacheEntry[] = [];
   private readonly budgets: AssetLoadingBudgets;
@@ -229,7 +231,7 @@ export class AssetLoadingService {
   getLoadState(assetId: string, representation?: string): AssetLoadState {
     const matches = (request: RootRequestState) => request.assetId === assetId
       && (!representation || request.representation === representation);
-    const requests = [...this.rootRequests.values()].filter(matches);
+    const requests = [...this.rootRequestsByAsset.get(assetId) ?? []].filter(matches);
     if (requests.some(request => request.state === "loading")) return "loading";
     let latest: CacheEntry | undefined;
     for (const entry of this.entriesByAsset.get(assetId) ?? []) {
@@ -247,6 +249,15 @@ export class AssetLoadingService {
       }
     }
     return latest?.state ?? "unloaded";
+  }
+
+  private forgetRootRequest(ticket: Acquisition): void {
+    const request = this.rootRequests.get(ticket);
+    if (!request) return;
+    this.rootRequests.delete(ticket);
+    const assetRequests = this.rootRequestsByAsset.get(request.assetId);
+    assetRequests?.delete(request);
+    if (!assetRequests?.size) this.rootRequestsByAsset.delete(request.assetId);
   }
 
   snapshot(): AssetLoadingSnapshot {
@@ -302,6 +313,9 @@ export class AssetLoadingService {
       assetId, representation: representation?.key, order: this.order++, state: "loading", lastUsed: this.now(),
     };
     this.rootRequests.set(ticket, request);
+    let assetRequests = this.rootRequestsByAsset.get(assetId);
+    if (!assetRequests) this.rootRequestsByAsset.set(assetId, assetRequests = new Set());
+    assetRequests.add(request);
     try {
       const records = new Map<string, AssetCatalogRecord>();
       const visited = new Set<string>();
@@ -354,7 +368,7 @@ export class AssetLoadingService {
 
   /** @internal */
   release(ticket: Acquisition): void {
-    this.rootRequests.delete(ticket);
+    this.forgetRootRequest(ticket);
     ticket.controller.abort();
     for (const entry of ticket.entries) {
       entry.owners.delete(ticket);
