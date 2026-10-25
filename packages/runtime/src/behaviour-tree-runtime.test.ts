@@ -27,7 +27,15 @@ const btStates = (commands: readonly CommandMessage[]) =>
   commands.flatMap((command) => command.type === "btState" ? [command] : []);
 
 describe("BehaviourTreeRuntime", () => {
-  it("stops every Play Sound voice the tree started when the actor's slot is released", () => {
+  it.each([
+    ["the actor's slot is released", (runtime: ReturnType<typeof createInProcessRuntime>) => {
+      runtime.getWorld().destroyActor("guard");
+    }],
+    // A dropped tree has no nodes left to abort, but the voices it started still stop.
+    ["the source catalog drops the running tree", (runtime: ReturnType<typeof createInProcessRuntime>) => {
+      runtime.registerSceneContent({ assetGuids: [] });
+    }],
+  ] as const)("stops every Play Sound voice the tree started when %s", (_how, remove) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1, maxActors: 4, seedDemoActors: false, playScene: guardScene(),
@@ -48,7 +56,7 @@ describe("BehaviourTreeRuntime", () => {
         .toEqual(["bt:guard:first", "bt:guard:second"]);
 
       commands.length = 0;
-      runtime.getWorld().destroyActor("guard");
+      remove(runtime);
       runtime.tick();
       expect(commands.filter((command) => command.type === "stopSound")).toEqual([
         { type: "stopSound", voiceId: "bt:guard:first" },

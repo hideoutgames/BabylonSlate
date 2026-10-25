@@ -741,6 +741,26 @@ describe("P19 behaviour tree task hosts", () => {
     expect(stateIds(commands)).toEqual(firstTick);
     runtime.stop();
   });
+
+  it("Animation Graph drives the slot again once a running Play Animation's tree is switched to one that is not loaded", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = graphAndPlayAnimationRuntime(commands);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "animState").at(-1)).toMatchObject({ stateId: "bt.playAnimation" });
+    runtime.getWorld().findActor("guard")!.components
+      .find((component) => component.classId === "BehaviourTreeComponent")!
+      .setVariable("treeGuid", "missing");
+    // The Animation Graph ticks before the trees, so it takes the slot back on the tick after the switch.
+    runtime.tick();
+    commands.length = 0;
+    runtime.tick();
+    const states = commands.filter((command) => command.type === "animState");
+    expect(states).toEqual([expect.objectContaining({ slotId: 0 })]);
+    expect(states[0]).not.toMatchObject({ stateId: "bt.playAnimation" });
+    runtime.stop();
+  });
 });
 
 describe("trace restore of Play Sound voices", () => {

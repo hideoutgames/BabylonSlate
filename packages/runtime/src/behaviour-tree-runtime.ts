@@ -739,7 +739,9 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
    * no loaded tree any more: abort the old tree's running tasks and drop its
    * evaluation and Play Animation ownership, so a new source starts at its
    * root with fresh Blackboard defaults. A tree the source catalog already
-   * dropped has no nodes left to abort; its slot state still clears.
+   * dropped has no nodes left to abort, so its navigation agent and `onAbort`
+   * handlers are not reached; its Play Sound voices still stop, as on slot
+   * release, and its slot state still clears.
    */
   private resetEvaluation(actor: Actor, slotId: number, dtSeconds: number): void {
     const previous = this.evalBySlot.get(slotId);
@@ -753,6 +755,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
         }
       }
       this.assetGuid = null;
+    } else if (previous) {
+      this.stopPlaySound(actor.guid);
     }
     this.evalBySlot.delete(slotId);
     this.sourceBySlot.delete(slotId);
