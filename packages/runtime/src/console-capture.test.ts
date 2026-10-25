@@ -86,6 +86,10 @@ describe("captureConsoleLogs", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain("[Circular]");
     expect(messages[0]).toContain("5");
+    const outer: { child?: { back: unknown } } = {};
+    outer.child = { back: outer };
+    target.log(outer);
+    expect(messages[1]).toBe('{"child":{"back":"[Circular]"}}');
     stop?.();
   });
 
@@ -98,6 +102,24 @@ describe("captureConsoleLogs", () => {
     const point = { x: 1 };
     target.log({ start: point, end: point, path: [point, point] });
     expect(messages).toEqual(['{"start":{"x":1},"end":{"x":1},"path":[{"x":1},{"x":1}]}']);
+    stop();
+  });
+
+  it("bounds a value shared along exponentially many paths and marks the cut", () => {
+    const target: Pick<Console, "log" | "info" | "debug" | "warn" | "error"> = {
+      log: () => {}, info: () => {}, debug: () => {}, warn: () => {}, error: () => {},
+    };
+    const messages: string[] = [];
+    const stop = runtime.captureConsoleLogs(target, (message) => messages.push(message));
+    // Each node holds the next one twice: about a million paths to the innermost node.
+    let node: object = {};
+    for (let level = 0; level < 20; level++) node = { a: node, b: node };
+    target.log(node);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatch(/^\{"a":\{"a":/);
+    expect(messages[0]).toContain("[Truncated]");
+    expect(messages[0]).not.toContain("[Circular]");
+    expect(messages[0].length).toBeLessThan(2_000_000);
     stop();
   });
 });
