@@ -1,4 +1,6 @@
+import { parseSplineProperties, type SerializedComponent } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
+import { rowId, type ComponentPropertyUpdate } from "./component-property-row-helpers";
 
 type PathPropertyRowsOptions = {
   idPrefix: string;
@@ -66,5 +68,33 @@ export function pathPropertyRows({
       },
       ...(extraPointRows?.(index) ?? []),
     ]),
+  ];
+}
+
+export function splinePropertyRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: ComponentPropertyUpdate,
+): PropertyRow[] {
+  const spline = parseSplineProperties(component.properties);
+  return [
+    {
+      kind: "boolean",
+      id: rowId(actorId, component.id, "closed"),
+      label: "Closed Loop",
+      value: spline.closed,
+      disabled: spline.points.length < 3,
+      description: "Connects the last point to the first. Requires at least three points.",
+      onChange: (value) => update("closed", value),
+    },
+    ...pathPropertyRows({
+      idPrefix: `${actorId}-${component.id}`,
+      points: spline.points,
+      curvature: spline.curvature,
+      minPoints: spline.closed ? 3 : 2,
+      curvatureDescription: "0 joins points with straight segments; 1 bends the spline smoothly through every point in 3D.",
+      pointsDescription: "Points use local X, Y and Z coordinates. In the viewport, drag points, drag a midpoint to add a point, and double-click a point to remove it.",
+      update,
+    }),
   ];
 }
