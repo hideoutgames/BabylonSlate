@@ -64,6 +64,8 @@ export async function loadEnginePluginStorage(options: {
 }
 
 let cachedEnginePluginStorage: ProjectStorage | null = null;
+/** The load concurrent callers share until it settles. */
+let pendingEnginePluginStorage: Promise<ProjectStorage> | null = null;
 
 /** False for the empty fallback (or any load not kept), which a later call retries. */
 export function isCachedEnginePluginStorage(storage: ProjectStorage): boolean {
@@ -76,11 +78,15 @@ export async function ensureEnginePluginStorage(options?: {
   baseUrl?: string;
 }): Promise<ProjectStorage> {
   if (cachedEnginePluginStorage) return cachedEnginePluginStorage;
-  const storage = await loadEnginePluginCatalog({
+  pendingEnginePluginStorage ??= loadEnginePluginCatalog({
     fetch: options?.fetch ?? fetch.bind(globalThis),
     baseUrl: options?.baseUrl ?? import.meta.env.BASE_URL,
+  }).then((storage) => {
+    if (!storage) return emptyEnginePluginStorage();
+    cachedEnginePluginStorage = storage;
+    return storage;
+  }).finally(() => {
+    pendingEnginePluginStorage = null;
   });
-  if (!storage) return emptyEnginePluginStorage();
-  cachedEnginePluginStorage = storage;
-  return storage;
+  return pendingEnginePluginStorage;
 }
