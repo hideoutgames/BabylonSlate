@@ -167,7 +167,7 @@ export async function buildTestArtifact(options = {}) {
   }
 }
 
-export async function buildOwnedArtifact() {
+export async function buildOwnedArtifact(options = {}) {
   const directory = process.env.HAPTIC_TEST_BUILD_DESTINATION;
   const expected = JSON.parse(process.env.HAPTIC_TEST_BUILD_IDENTITY ?? "null");
   const resultPath = process.env.HAPTIC_TEST_BUILD_RESULT;
@@ -211,10 +211,11 @@ export async function buildOwnedArtifact() {
   }
   // Each hosted browser shard bundles independently. This is not a claim that
   // typechecking already passed: the separate required static check owns it.
+  const stage = { signal: options.signal };
   if (buildContract(process.env) === "independent-required-static") {
-    await runPnpm("build", ["--filter", "player", "exec", "vite", "build"]);
-    await runPnpm("build", ["--filter", "editor", "exec", "vite", "build"]);
-  } else await runPnpm("build", ["--filter", "editor", "build"]);
+    await runPnpm("build", ["--filter", "player", "exec", "vite", "build"], stage);
+    await runPnpm("build", ["--filter", "editor", "exec", "vite", "build"], stage);
+  } else await runPnpm("build", ["--filter", "editor", "build"], stage);
   const unchanged = () =>
     assertUnchanged(
       expected,
