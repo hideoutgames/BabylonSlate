@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireResources } from "./resource-admission.mjs";
 import { existsSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 test("a stricter host policy before launch rejects stale worker settings and releases the nested scope", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "runner policy change "));
@@ -101,6 +103,55 @@ test("scoped lint and typecheck preserve the selected files and workspace", asyn
   const equals = await runTests("typecheck", ["--filter=docs-site"], options);
   assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--filter=docs-site", "-r", "typecheck"]);
   await assert.rejects(runTests("typecheck", ["--filter"], options), /requires a workspace selector/);
+});
+
+test("a reader that closes early does not strand the stage's reservation", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "closed reader "));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const config = join(directory, "resources.json");
+  const manager = join(directory, "package-manager.mjs");
+  const closed = join(directory, "reader-closed");
+  await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
+  // Like Vitest piped to `head`, the command outlives the reader.
+  await writeFile(
+    manager,
+    `import { existsSync } from "node:fs";
+while (!existsSync(${JSON.stringify(closed)}))
+  await new Promise((resolve) => setTimeout(resolve, 10));
+`,
+  );
+  const env = {
+    HAPTIC_EXECUTION_POLICY: "local",
+    HAPTIC_TEST_PROFILE: "shared",
+    LOCALAPPDATA: directory,
+    HAPTIC_LOCAL_RESOURCE_CONFIG: config,
+  };
+  const lease = await acquireResources(
+    { workers: 3, browsers: 0, memoryGiB: 2 },
+    { directory, env, freeMemory: () => 16 * 1024 ** 3 },
+  );
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL("./run-tests.mjs", import.meta.url)), "lint"],
+    {
+      env: {
+        ...process.env,
+        ...env,
+        npm_execpath: manager,
+        HAPTIC_TEST_LEASE: JSON.stringify({
+          ticket: lease.ticket,
+          token: lease.token,
+        }),
+      },
+      stdio: ["ignore", "pipe", "ignore"],
+    },
+  );
+  child.stdout.once("data", () => child.stdout.destroy());
+  // Only a closed pipe can fail the command's later progress writes.
+  child.stdout.once("close", () => writeFileSync(closed, ""));
+  await new Promise((resolve) => child.once("exit", resolve));
+  // A stranded nested scope makes the owner's release fail.
+  await lease.release();
 });
 
 test("one resolved policy reaches child worker settings regardless of local CI flags", async (t) => {
