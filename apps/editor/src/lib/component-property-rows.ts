@@ -51,6 +51,7 @@ import { cableComponentPropertyRows, dynamicRuntimeMeshPropertyRows, meshPropert
 import { navAgentPropertyRows, navMeshBlockerPropertyRows, navMeshPropertyRows } from "./navigation-property-rows";
 import { anchor2DPropertyRows, joystick2DPropertyRows, panel2DPropertyRows, visual2DPropertyRows } from "./overlay-element-property-rows";
 import { splinePropertyRows } from "./path-property-rows";
+import { foliagePropertyRows, landscapePropertyRows } from "./landscape-property-rows";
 import { colliderPropertyRows, ragdollPropertyRows, rigidBodyPropertyRows } from "./physics-body-property-rows";
 import {
   fogVolumePropertyRows,
@@ -141,6 +142,8 @@ const COMPONENT_ROW_BUILDERS = {
   ReflectionProbeComponent: reflectionProbePropertyRows,
 
   SplineComponent: splinePropertyRows,
+  LandscapeComponent: landscapePropertyRows,
+  FoliageComponent: foliagePropertyRows,
   WaterRemovalVolumeComponent: waterRemovalPropertyRows,
   WaterBuoyancyComponent: waterBuoyancyPropertyRows,
 

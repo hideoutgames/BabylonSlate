@@ -12,7 +12,8 @@ export type AssetPickRequest = {
   property: string;
   allowedTypes: string[];
   title?: string;
-  materialDomain?: "text";
+  /** Offer only Materials of this domain, and create new ones in it. */
+  materialDomain?: "text" | "landscape";
 };
 
 export type ComponentPropertyContext = {
@@ -69,6 +70,7 @@ export function assetRow(
   context: ComponentPropertyContext,
   title?: string,
   placeholder = "None",
+  materialDomain?: AssetPickRequest["materialDomain"],
 ): PropertyRow {
   const value = componentPropertyGuid(component, property);
   const name = value ? context.assetLabel(value) : undefined;
@@ -92,6 +94,7 @@ export function assetRow(
         property,
         allowedTypes,
         title,
+        ...(materialDomain ? { materialDomain } : {}),
       }),
     onChange: (next) => update(property, next),
   };
