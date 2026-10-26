@@ -1491,7 +1491,7 @@ describe("prediction maps", () => {
 });
 
 describe("maps a tried change takes", () => {
-  /** A sun casting onto a box, its map built, and a snapshot taken to try a change that keeps the maps it takes. */
+  /** A sun casting onto a box, its map built and drawn, and a snapshot taken to try a change that keeps the maps it takes. */
   function tried() {
     const { scene, controller } = fixture();
     const box = MeshBuilder.CreateBox("box", {}, scene);
@@ -1500,6 +1500,8 @@ describe("maps a tried change takes", () => {
     controller.register(sun, true);
     controller.sync();
     const map = controller.generator(sun)!;
+    // Drawn, so a map given back can only be neutral because the give-back made it so.
+    prepareShadowLayers(map);
     return { scene, controller, sun, map, snapshot: controller.snapshotAdmission({ keepReleasedMaps: true }) };
   }
   type Tried = ReturnType<typeof tried>;
@@ -1511,13 +1513,14 @@ describe("maps a tried change takes", () => {
   it.each(changes)("takes the map off its light for %s and gives it back, neutral until it draws, when the restore admits the light again", (_, apply, revert) => {
     const context = tried();
     const { controller, sun, map, snapshot } = context;
+    const drawn = !awaitsFirstDraw(map) && map.getDarkness() === 0;
     apply(context);
     controller.sync();
     const applied = { admitted: controller.generator(sun), bound: sun.getShadowGenerator(), allocated: map.getShadowMap() !== null };
     revert(context);
     controller.restoreAdmission(snapshot);
-    expect({ applied, restored: controller.generator(sun) === map, neutral: awaitsFirstDraw(map) && map.getDarkness() === 1 })
-      .toEqual({ applied: { admitted: null, bound: null, allocated: true }, restored: true, neutral: true });
+    expect({ drawn, applied, restored: controller.generator(sun) === map, neutral: awaitsFirstDraw(map) && map.getDarkness() === 1 })
+      .toEqual({ drawn: true, applied: { admitted: null, bound: null, allocated: true }, restored: true, neutral: true });
   });
 
   it.each(changes)("disposes the map at the restore when its light stays without one after %s", (_, apply) => {
