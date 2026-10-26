@@ -26,7 +26,7 @@ Use **Search settings** in either window to find a setting by name. Choosing a r
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
 - **Debugger**: Play debugging defaults and **Debug Mode**. See [Debugging](../debugging/index.md).
-- **Viewport**: **Viewport Frame Cap (FPS)** (default 30), **Camera Speed**, **Drop Distance**, and **Override Project Rendering**, which lets the editor preview use its own resolution and post-processing.
+- **Viewport**: **Viewport Frame Cap (FPS)** (default 30), **Camera Preview Frame Rate (FPS)** for the preview of a selected Camera or Render Target Capture (default 30), **Camera Speed**, **Drop Distance**, and **Override Project Rendering**, which lets the editor preview use its own resolution and post-processing.
 - **Graph**: default zoom, connection helpers and **Add Node History** for node graphs. See [Scripting](../scripting/index.md#add-a-node).
 - **Assets**: model import scale, editor texture quality, and texture and audio memory budgets.
 - **Thumbnails**: turn Content Browser thumbnails on or off.
