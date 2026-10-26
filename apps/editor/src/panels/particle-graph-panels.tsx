@@ -852,6 +852,7 @@ function ParticleGraphCanvas() {
         diagnostics={diagnostics}
         paletteNodes={paletteNodes}
         pinCompatibility={particlePinsAreCompatible}
+        addNodeHistoryScope="particle"
         canConnect={canConnect}
         sessionViewport={sessionViewport}
         onSessionViewportChange={onSessionViewportChange}
