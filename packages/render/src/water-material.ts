@@ -21,7 +21,7 @@ import { WATER_REMOVAL_SLOTS } from "./water-shader-chunks";
 import {
   BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, DEFAULT_TIER, EMPTY_TEXTURE, FFT, FFT_UNIFORMS, PLANAR, PLANAR_REACH, Q, REFRACTION, SSR, SSR_MAX_DISTANCE, SSR_STEPS,
   WATER_BLEND_DEFINE, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE, WATER_PLANAR_SAMPLER,
-  WATER_SCENE_SAMPLER, WATER_SHADING_TIERS, waterFoamThresholdOf,
+  WATER_SCENE_SAMPLER, WATER_SHADING_TIERS, waterFoamDrift, waterFoamThresholdOf,
 } from "./water-shader-defines";
 import { injectionFor, VERTEX_WAVE_ATTRIBUTES, VERTEX_WAVE_DEFINES } from "./water-shader-source";
 import { bindWaterVertexUniforms, SPECTRUM_UNIFORM_FLOATS, waterGridOffset, waterSpectrumUniforms } from "./water-vertex-waves";
@@ -39,6 +39,7 @@ export {
   WATER_FFT_SAMPLER,
   WATER_FOAM_SAMPLER,
   waterHazeConstants,
+  waterFoamDrift,
   waterFoamThresholdOf,
 } from "./water-shader-defines";
 export {
@@ -120,6 +121,7 @@ const FRAME_UNIFORMS: readonly string[] = [
 ];
 const FRAME_BLEND_START = FRAME_UNIFORMS.length - BLEND_COLOR_UNIFORMS.length;
 const NO_BLEND_PARTNERS: readonly (WaterDefinition | null)[] = Object.freeze([null, null, null]);
+const foamDrift = { x: 0, z: 0 };
 /** The numeric definition fields the packed vec4s read besides the colours (`frameInputsChanged`). */
 const FRAME_DEFINITION_FIELDS = [
   "opacity", "reflectionStrength", "foamAmount", "foamWidth", "depthColorDistance",
@@ -556,7 +558,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     o = putLinear(v, o, w.shallowColor, w.opacity, exact);
     o = putLinear(v, o, w.deepColor, w.reflectionStrength, exact);
     o = putLinear(v, o, w.foamColor, w.foamAmount, exact);
-    o = put4(v, o, this.time, 0, 0, w.foamWidth);
+    const drift = waterFoamDrift(w, scale, foamDrift);
+    o = put4(v, o, this.time, drift.x, drift.z, w.foamWidth);
     o = put4(v, o, 0, w.depthColorDistance, 0, w.subsurface);
     o = put4(v, o, w.waveHeight * scale, w.waveLength, w.waveSpeed, w.waveDirection * Math.PI / 180);
     const sun = lighting.sun, sunColor = lighting.sunColor, sky = lighting.sky, horizon = lighting.horizon;
