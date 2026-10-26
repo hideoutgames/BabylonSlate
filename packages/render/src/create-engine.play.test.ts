@@ -60,6 +60,7 @@ import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
+import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
@@ -3177,7 +3178,7 @@ describe("Play createEngine view", () => {
       });
       editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [camera] }, selectedActorIds: [camera.id] });
       previewRenders.mockClear();
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000 / DEFAULT_CAMERA_PREVIEW_FRAME_RATE);
       expect(previewRenders).toHaveBeenCalledOnce();
       const playCanvas = new FakeCanvas();
       const play = createEngine(playCanvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
@@ -3214,7 +3215,7 @@ describe("Play createEngine view", () => {
       vi.advanceTimersByTime(3000);
       expect(previewRenders).not.toHaveBeenCalled();
       syncEditorPlayState(editor, false);
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000 / DEFAULT_CAMERA_PREVIEW_FRAME_RATE);
       expect(previewRenders).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();

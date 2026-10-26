@@ -168,6 +168,8 @@ export function createEditorViewportTools({
   const gizmosRef: { host: GizmoHost | null } = { host: null };
   const debugOverlayInstance = new EditorDebugOverlay(scene, {
     renderTargets: () => binding.renderTargets,
+    previewFrameRate: options.cameraPreviewFrameRate,
+    isShown: () => scheduler.isShown(),
   });
   onRollback(() => debugOverlayInstance.dispose());
   const gizmos = createGizmoHost(scene, {

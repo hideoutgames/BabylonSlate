@@ -17,6 +17,10 @@ export const MAX_UNDO_BYTE_BUDGET = 1024 * MEBIBYTE;
 /** Below this a visible viewport is unusably choppy. */
 export const MIN_VIEWPORT_FRAME_CAP = 10;
 export const MAX_VIEWPORT_FRAME_CAP = 240;
+/** Selected camera and capture lens previews; at most the rate a 60 Hz viewport presents. */
+export const MIN_CAMERA_PREVIEW_FRAME_RATE = 1;
+export const MAX_CAMERA_PREVIEW_FRAME_RATE = 60;
+export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
 /** Hardware scaling 1 is native resolution; 4 is the quarter-scale floor rendering quality accepts. */
 export const MIN_HARDWARE_SCALING_LEVEL = 1;
 export const MAX_HARDWARE_SCALING_LEVEL = 4;
@@ -175,6 +179,10 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_VIEWPORT_FRAME_CAP, Math.max(MIN_VIEWPORT_FRAME_CAP, value));
   }, z.number().min(MIN_VIEWPORT_FRAME_CAP).max(MAX_VIEWPORT_FRAME_CAP).default(30)),
+  cameraPreviewFrameRate: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_CAMERA_PREVIEW_FRAME_RATE, Math.max(MIN_CAMERA_PREVIEW_FRAME_RATE, value));
+  }, z.number().min(MIN_CAMERA_PREVIEW_FRAME_RATE).max(MAX_CAMERA_PREVIEW_FRAME_RATE).default(DEFAULT_CAMERA_PREVIEW_FRAME_RATE)),
   viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
   renderingOverridesEnabled: z.boolean().default(false),
   /** Shows developer diagnostics: the Feature Test starter, its device check, and Copy Error on load failures. */

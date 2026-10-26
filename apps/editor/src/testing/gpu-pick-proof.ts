@@ -73,6 +73,11 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu", variant: Gpu
     // Near is drawn first: only the depth test keeps Far from overwriting it.
     box("Near", 0.6, -2.7, 0, -1);
     box("Far", 1.5, -2.75, 0, 1);
+    // An editor pick proxy (actor origin sphere): drawn by neither view, yet picked in front of what lies behind it.
+    const proxy = MeshBuilder.CreateSphere("Hidden Proxy", { diameter: 0.6 }, scene);
+    proxy.position.set(-0.9, -1.2, -1);
+    proxy.visibility = 0;
+    box("Behind Proxy", 0.4, -0.9, -1.2);
 
     await scene.whenReadyAsync();
     const gizmoLayer = variant === "editor" ? new UtilityLayerRenderer(scene, true, true) : undefined;
@@ -109,6 +114,7 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu", variant: Gpu
       bottomRightDisplaced: await at({ x: WIDTH - 0.5, y: HEIGHT - 0.5 }),
       displacedCornerBindPose: await at(toPixel(0.75, -1.75)),
       leftEdgeOccluded: await at({ x: 0.5, y: HEIGHT / 2 + 0.5 }),
+      hiddenProxy: await at(toPixel(-0.9, -1.2)),
     });
     const orthographic = await pickAll();
     camera.mode = Camera.PERSPECTIVE_CAMERA;

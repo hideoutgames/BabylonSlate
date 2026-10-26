@@ -47,6 +47,7 @@ export interface ViewportEngineDeps {
   reloadVersion: number;
   overlayTransformBox: boolean;
   flySpeed: number;
+  cameraPreviewFrameRate: number;
   commitGizmoTransform: () => void;
   commitPilotedActor: (live: Parameters<typeof applyLiveGizmoToActor>[1]) => void;
   commitComponentShape: (edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => void;
@@ -86,6 +87,7 @@ export function useViewportEngine({
   reloadVersion,
   overlayTransformBox,
   flySpeed,
+  cameraPreviewFrameRate,
   commitGizmoTransform,
   commitPilotedActor,
   commitComponentShape,
@@ -115,6 +117,8 @@ export function useViewportEngine({
   } = usePlay();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
+  const cameraPreviewFrameRateRef = useRef(cameraPreviewFrameRate);
+  cameraPreviewFrameRateRef.current = cameraPreviewFrameRate;
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const selectActorRef = useRef(selectActor);
   selectActorRef.current = selectActor;
@@ -206,6 +210,7 @@ export function useViewportEngine({
           editorFlyEnabled: () => !playingRef.current,
           onPilotedActorMoveEnd: (live) => commitPilotedActorRef.current(live),
           editorFlySpeed: () => flySpeedRef.current,
+          cameraPreviewFrameRate: () => cameraPreviewFrameRateRef.current,
         });
         engineRef.current = handle;
         appliedRenderSettingsRef.current = renderSettingsKey;

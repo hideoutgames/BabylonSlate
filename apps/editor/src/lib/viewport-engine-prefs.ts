@@ -5,6 +5,7 @@ import {
 
 export function useEditorViewportPrefs(): {
   flySpeed: number;
+  cameraPreviewFrameRate: number;
   dropDistance: number;
   gridSize: number;
   snapTranslate: number;
@@ -17,6 +18,7 @@ export function useEditorViewportPrefs(): {
 
   return {
     flySpeed: settings.viewportFlySpeed,
+    cameraPreviewFrameRate: settings.cameraPreviewFrameRate,
     dropDistance: settings.viewportDropDistance,
     gridSize: settings.viewportGridSize,
     snapTranslate: settings.viewportSnapTranslate,
