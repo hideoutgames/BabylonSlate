@@ -55,7 +55,7 @@ Project-wide settings are in the **Geometry** group of **Project Settings > Rend
 | Setting | Low | Medium | High | Ultra |
 | --- | --- | --- | --- | --- |
 | **Auto LOD** | On | On | On | On |
-| **LOD Distance Scale** | 0.5 | 1 | 1.5 | 2 |
+| **LOD Distance Scale** | 0.75 | 1.25 | 1.5 | 2 |
 
 Higher LOD Distance Scale values keep full detail farther away (range 0.25 to 4). Turning project Auto LOD off draws full detail everywhere.
 

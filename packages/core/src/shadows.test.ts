@@ -20,7 +20,7 @@ describe("shadow settings", () => {
       distance: 350,
       normalBias: 0.02,
     });
-    expect(normalizeShadowSettings(undefined).distance).toBe(200);
+    expect(normalizeShadowSettings(undefined).distance).toBe(250);
   });
   it("preserves user budgets and PBR filters without hardware policy caps", () => {
     const requested = normalizeShadowSettings({
@@ -50,7 +50,7 @@ describe("shadow settings", () => {
       normalBias: NaN,
       filter: "pcss",
     });
-    expect(requested.distance).toBe(200);
+    expect(requested.distance).toBe(250);
     expect(
       effectiveShadowSettings(requested, false, "cel").settings,
     ).toMatchObject({ cascades: 1, filter: "pcf" });

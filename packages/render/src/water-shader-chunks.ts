@@ -42,7 +42,7 @@ float swNoise(vec2 p) {
  * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
  * water is about 1.6 `width` deep (between 1 and 2.4 along the shore), with bands that wash in toward the shore, out of
  * step along it. `<prefix>ContactFoamAmount(p, t, dist, width)` is an object's: a tight band at its waterline, thinning
- * out within 0.35 to 1.9 `width`, varying along the object and slowly over time, so no even ring surrounds it.
+ * out within 0.3 to 1.2 `width`, varying along the object and slowly over time, so no even ring surrounds it.
  */
 export function edgeFoamHelpers(prefix: string): string {
   return `
@@ -64,9 +64,9 @@ float ${prefix}ShoreFoamAmount(vec2 p, float t, float depth, float width) {
   return max(close * close, wash);
 }
 float ${prefix}ContactFoamAmount(vec2 p, float t, float dist, float width) {
-  float band = 1.0 - smoothstep(0.03, 0.06 + width * 0.08, dist);
-  float close = 1.0 - smoothstep(0.0, width * mix(0.35, 1.9, ${prefix}Noise(p * 0.25 + vec2(t * 0.03, 4.4))), dist);
-  return max(close * close, band * 0.95);
+  float band = 1.0 - smoothstep(0.03, 0.05 + width * 0.05, dist);
+  float close = 1.0 - smoothstep(0.0, width * mix(0.3, 1.2, ${prefix}Noise(p * 0.25 + vec2(t * 0.03, 4.4))), dist);
+  return max(close * close * 0.8, band * 0.9);
 }
 `;
 }
