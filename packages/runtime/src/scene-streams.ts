@@ -12,7 +12,6 @@ import {
   Scene,
   SceneStreamingActor,
   hydrateScenePropertyReferences,
-  sceneAssetClassId,
   type EngineObject,
   type LifecycleHooks,
   type World,
@@ -64,6 +63,8 @@ interface SceneStreamsHost {
   /** The host acknowledges model readiness itself (`notifyReady`). */
   deferModelsReady(): boolean;
   scripts(): Pick<ScriptHost, "hooksFor" | "bindInterfaceHandlers">;
+  /** Lifecycle of a streamed Scene's SceneScript (`Scene:<guid>`). */
+  embeddedScriptHooks(): LifecycleHooks;
   createActor(serialized: SerializedActor): Actor | null;
   realizeActor(actor: Actor, checkpoint: () => void): void;
   /** Break parent cycles in a loaded batch; `detach` reparents a broken child. */
@@ -174,9 +175,10 @@ export class SceneStreams implements RuntimeSubsystem {
   tickScenes(dt: number, canTick: () => boolean): void {
     for (const stream of this.streams.values()) {
       if (!canTick()) break;
-      if (this.ready(stream)) {
+      // Its SceneScript ticks once its Begin Play has run.
+      if (this.ready(stream) && this.admission.isCreated(stream.scene)) {
         const world = this.host.world();
-        this.host.scripts().hooksFor(stream.scene.classId)?.onTick?.(stream.scene, { dt, tickIndex: world.clock.tickIndex, world });
+        stream.scene.callOnTick({ dt, tickIndex: world.clock.tickIndex, world });
       }
     }
   }
@@ -227,7 +229,7 @@ export class SceneStreams implements RuntimeSubsystem {
     // Cancellation may happen before a graph attaches its awaited continuation.
     void promise.catch(() => {});
     const scene = new Scene({ guid: `stream:${actor.guid}:${loadId}`, assetGuid: guid, sceneName: document?.name ?? String(component?.getVariable("sceneName") ?? guid),
-      hooks: this.sceneHooks(sceneAssetClassId(guid)) });
+      hooks: this.host.embeddedScriptHooks() });
     const stream: SceneStream = { actor, loadId, assetGuid: guid, state: "Loading", progress: 0,
       actors: new Set(), idMap: new Map(), scene, controller: new AbortController(), realized: false, notified: false,
       promise, resolve, reject, navObstacles: [] };
@@ -342,16 +344,6 @@ export class SceneStreams implements RuntimeSubsystem {
       }
       break;
     }
-  }
-
-  /** Lifecycle hooks of a streamed Scene of this class, when it has a script. */
-  private sceneHooks(classId: string): LifecycleHooks | undefined {
-    const hooks = this.host.scripts().hooksFor(classId);
-    return hooks ? {
-      onCreation: (self) => this.admission.runCreation(self, () => hooks.onCreation?.(self)),
-      onTick: (self, context) => this.admission.guard(() => hooks.onTick?.(self, context)),
-      onDestroyed: (self) => this.admission.runDestroyed(self, () => hooks.onDestroyed?.(self)),
-    } : undefined;
   }
 
   private streamFor(owner?: EngineObject | null): SceneStream | undefined {

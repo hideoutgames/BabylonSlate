@@ -1,6 +1,6 @@
 import type { CommandMessage } from "@haptic/bridge";
 import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, updateSceneLayerCamera, type SceneLayerCamera, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
-import { hydrateScenePropertyReferences, type Actor, type EngineObject, type SceneLayer, type World } from "@haptic/object-model";
+import { hydrateScenePropertyReferences, sceneLayerAssetClassId, type Actor, type EngineObject, type LifecycleHooks, type SceneLayer, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
 import { callerSceneLayerId } from "./runtime-host-physics";
@@ -53,6 +53,8 @@ interface SceneLayersHost {
   deferLoadingPaint(): boolean;
   /** The Scene Layer document of an asset guid, when loaded. */
   document(assetGuid: string): SerializedSceneLayer | undefined;
+  /** Lifecycle of a layer instance's SceneLayerScript (`SceneLayer:<guid>`). */
+  embeddedScriptHooks(): LifecycleHooks;
   /** Script-created layers prepare their asset on demand first. */
   demandAssets(): boolean;
   assetPreloads(): Pick<RuntimeAssetPreloads, "acquire" | "transferOwner" | "release" | "releaseOwner">;
@@ -413,7 +415,12 @@ export class SceneLayers implements RuntimeSubsystem {
       return null;
     }
     const document = normalizeSceneLayer({ ...raw, actors: [], folders: [] });
+    // Each instance is an object of its asset's class and runs its SceneLayerScript.
+    const classId = sceneLayerAssetClassId(guid);
+    world.classRegistry.ensure({ id: classId, parentClassId: "SceneLayer", kind: "object", variables: [], implementedInterfaces: [] });
     const layer = world.createSceneLayer({
+      classId,
+      hooks: this.host.embeddedScriptHooks(),
       assetGuid: guid,
       zOrder: Math.trunc(Number(zOrder) || 0),
       ownerSceneGuid,

@@ -21,6 +21,18 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
   });
 
+  it("collects the assets a Scene's or Scene Layer's script references, as a Class graph would", () => {
+    const script = { nodes: [], edges: [], members: [
+      { kind: "variable", name: "Music", typeId: "asset", typeClassId: "Audio", loading: "hard", defaultValue: "music" },
+      { kind: "variable", name: "Splash", typeId: "asset", typeClassId: "Texture", defaultValue: "splash" },
+    ] };
+    for (const type of ["Scene", "SceneLayer"]) {
+      const metadata = collectAssetDependencyMetadata(type, { settings: {}, actors: [], script });
+      expect(metadata.dependencies).toEqual(["music", "splash"]);
+      expect(metadata.requiredDependencies).toEqual(["music"]);
+    }
+  });
+
   it("keeps an environment cube unused by a Skybox-lit scene reachable without requiring it", () => {
     const metadata = collectAssetDependencyMetadata("Scene", {
       settings: { environmentSource: "skybox", environmentTextureGuid: "environment" },

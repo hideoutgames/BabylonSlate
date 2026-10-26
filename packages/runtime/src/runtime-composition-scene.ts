@@ -37,6 +37,7 @@ export function createStreams(rt: RuntimeComposition): SceneStreams {
     cooperativeLoading: () => rt.cooperativeSceneLoading ?? {},
     deferModelsReady: () => rt.deferSceneModelsReady,
     scripts: () => rt.scriptHost,
+    embeddedScriptHooks: () => rt.scriptRuntime.embeddedScriptHooks(),
     createActor: (serialized) => createActorFromSerialized(rt.world, serialized, rt.actors.sceneActorHooks),
     realizeActor: (actor, checkpoint) => rt.actors.realize(actor, checkpoint),
     breakParentCycles: (actors, detach) => rt.actors.breakLoadedParentCycles(actors, detach),
@@ -77,6 +78,7 @@ export function createSceneRealizer(rt: RuntimeComposition): SceneRealizer {
     navigation: () => rt.navigation,
     layers: () => rt.layers,
     scripts: () => rt.scriptHost,
+    embeddedScriptHooks: () => rt.scriptRuntime.embeddedScriptHooks(),
     startWorld: () => {
       rt.tilemapAnimationTimeMs = 0;
       if (rt.hasAnimatedTiles) rt.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
@@ -245,6 +247,7 @@ export function createLayers(rt: RuntimeComposition): SceneLayers {
     deferModelsReady: () => rt.deferSceneModelsReady,
     deferLoadingPaint: () => rt.deferSceneLoadingPaint,
     document: (assetGuid) => rt.sceneLayerLibrary.get(assetGuid),
+    embeddedScriptHooks: () => rt.scriptRuntime.embeddedScriptHooks(),
     demandAssets: () => rt.demandAssetCatalog,
     assetPreloads: () => rt.assetPreloads,
     continueSimulation: (owner) => rt.waits.continueSimulation(owner),

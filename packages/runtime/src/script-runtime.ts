@@ -2,6 +2,7 @@ import type { UserCommandDef } from "@haptic/debugger";
 import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
+  embeddedScriptParentOf,
   instantiableSubsystemClassIds,
   isLockedEngineClassId,
   hydrateClassVariableValue,
@@ -9,6 +10,7 @@ import {
   type EngineObject,
   type ClassKind,
   type GameSubsystemHooks,
+  type LifecycleHooks,
   type SceneSubsystem,
   type SceneSubsystemHooks,
   type Subsystem,
@@ -121,9 +123,7 @@ export class ScriptRuntime {
       const ordered = parentFirstScriptOrder([...requested.values()], (classId) => world.classRegistry.has(classId));
       await this.host.scriptHost().replaceScripts(ordered);
       if (this.host.stopped()) throw new Error("The runtime stopped during script preparation.");
-      const classes = this.host.world().classRegistry;
-      for (const classId of [...new Set([...this.scriptSources.values()].map((script) => script.classId))]
-        .sort((a, b) => classes.ancestry(b).length - classes.ancestry(a).length)) classes.unregister(classId);
+      this.unregisterScriptClasses();
       for (const previous of this.scriptSources.values()) {
         this.host.deleteAnchors(compiledScriptSourceLabel(previous));
         this.host.deleteAnchors(previous.assetGuid);
@@ -172,11 +172,51 @@ export class ScriptRuntime {
 
   /** Stop: unregister the script classes (children first) and forget their sources. */
   unregisterClasses(): void {
+    this.unregisterScriptClasses();
+    this.scriptSources.clear();
+  }
+
+  /**
+   * Unregister the loaded script classes, children first. A Scene or Scene
+   * Layer asset class stays registered without its script's members: its
+   * Scene and layer objects exist whether or not a script runs on them.
+   */
+  private unregisterScriptClasses(): void {
     const classes = this.host.world().classRegistry;
     for (const classId of [...new Set([...this.scriptSources.values()].map((script) => script.classId))]
-      .sort((a, b) => classes.ancestry(b).length - classes.ancestry(a).length))
-      classes.unregister(classId);
-    this.scriptSources.clear();
+      .sort((a, b) => classes.ancestry(b).length - classes.ancestry(a).length)) {
+      const parentClassId = embeddedScriptParentOf(classId);
+      if (!classes.unregister(classId) || !parentClassId) continue;
+      classes.ensure({ id: classId, parentClassId, kind: "object", variables: [], implementedInterfaces: [] });
+    }
+  }
+
+  /**
+   * Lifecycle of a SceneScript or SceneLayerScript: the main or a streamed
+   * Scene, or a Scene Layer instance, runs the script of its asset class
+   * (`Scene:<guid>`, `SceneLayer:<guid>`). Scripts resolve lazily, so objects
+   * built before `loadScripts` still run them; Begin Play waits until the
+   * owner is ready, and On Destroyed runs only after Begin Play did.
+   */
+  embeddedScriptHooks(): LifecycleHooks {
+    const scripts = () => this.host.scriptHost();
+    return {
+      onCreation: (self) => {
+        this.applyClassDefaults(self);
+        this.admission.runCreation(self, () => scripts().hooksFor(self.classId)?.onCreation?.(self));
+      },
+      onTick: (self, ctx) => this.admission.guard(() => scripts().hooksFor(self.classId)?.onTick?.(self, ctx)),
+      onDestroyed: (self) => this.admission.runDestroyed(self, () => scripts().hooksFor(self.classId)?.onDestroyed?.(self)),
+    };
+  }
+
+  /** Tick the main Scene's script and each ready Scene Layer's, once their Begin Play has run. */
+  tickEmbeddedScripts(dt: number): void {
+    const world = this.host.world();
+    const ctx = { dt, tickIndex: world.clock.tickIndex, world };
+    for (const owner of [world.currentScene, ...world.getSceneLayers()]) {
+      if (owner && !owner.destroyed && this.admission.isCreated(owner) && this.admission.canRun(owner)) owner.callOnTick(ctx);
+    }
   }
 
   /** Whether a script spawn may create an actor of this class. */
@@ -230,21 +270,28 @@ export class ScriptRuntime {
    * on the instance win, as with `World.createGameInstance`.
    */
   private applyGameInstanceClassDefaults(): void {
-    const world = this.host.world();
-    const gameInstance = world.gameInstance;
-    if (!gameInstance) return;
-    const classes = world.classRegistry;
-    for (const variable of classes.inheritedVariables(gameInstance.classId)) {
-      if (gameInstance.variables.has(variable.name)) continue;
+    const gameInstance = this.host.world().gameInstance;
+    if (gameInstance) this.applyClassDefaults(gameInstance);
+  }
+
+  /**
+   * Class variable defaults, inherited interfaces and interface handlers for
+   * an object created before (or without) its class's script defaults: the
+   * Game Instance, a Scene, a Scene Layer. Values already on it win.
+   */
+  private applyClassDefaults(owner: EngineObject): void {
+    const classes = this.host.world().classRegistry;
+    for (const variable of classes.inheritedVariables(owner.classId)) {
+      if (owner.variables.has(variable.name)) continue;
       const value = hydrateClassVariableValue(variable);
-      if (value !== undefined) gameInstance.setVariable(variable.name, value);
+      if (value !== undefined) owner.setVariable(variable.name, value);
     }
-    const interfaces = new Set(gameInstance.implementedInterfaces);
-    for (const iface of classes.inheritedInterfaces(gameInstance.classId)) {
+    const interfaces = new Set(owner.implementedInterfaces);
+    for (const iface of classes.inheritedInterfaces(owner.classId)) {
       interfaces.add(iface);
     }
-    gameInstance.implementedInterfaces = [...interfaces];
-    this.host.scriptHost().bindInterfaceHandlers(gameInstance);
+    owner.implementedInterfaces = [...interfaces];
+    this.host.scriptHost().bindInterfaceHandlers(owner);
   }
 
   private registerScriptClass(script: CompiledScript): void {
