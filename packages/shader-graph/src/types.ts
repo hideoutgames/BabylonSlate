@@ -49,13 +49,17 @@ export interface MaterialConversion {
   to: MaterialNumericType;
 }
 
-/** Preserve leading channels, discard excess channels, and fill missing channels with 1. */
+/**
+ * A Float fills every channel. A vector preserves leading channels, discards
+ * excess channels, and fills missing channels with 1.
+ */
 export function convertMaterialValue(
   value: readonly number[],
   conversion: MaterialConversion,
 ): number[] {
   const sourceWidth = componentCount(conversion.from);
   return Array.from({ length: componentCount(conversion.to) }, (_, index) => {
+    if (conversion.from === "float") return value[0] ?? 1;
     return index < sourceWidth ? (value[index] ?? 1) : 1;
   });
 }

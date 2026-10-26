@@ -24,12 +24,12 @@ describe("material value types", () => {
   });
 
   it.each([
-    ["float", [2], [[2], [2, 1], [2, 1, 1], [2, 1, 1, 1]]],
-    ["float", [0], [[0], [0, 1], [0, 1, 1], [0, 1, 1, 1]]],
+    ["float", [2], [[2], [2, 2], [2, 2, 2], [2, 2, 2, 2]]],
+    ["float", [0], [[0], [0, 0], [0, 0, 0], [0, 0, 0, 0]]],
     ["vec2", [2, 0], [[2], [2, 0], [2, 0, 1], [2, 0, 1, 1]]],
     ["vec3", [2, -3, 0], [[2], [2, -3], [2, -3, 0], [2, -3, 0, 1]]],
     ["vec4", [2, -3, 4, 0], [[2], [2, -3], [2, -3, 4], [2, -3, 4, 0]]],
-  ] as const)("converts %s to every numeric width without broadcasting", (from, value, expected) => {
+  ] as const)("converts %s to every numeric width, broadcasting only a Float", (from, value, expected) => {
     for (const [index, to] of (["float", "vec2", "vec3", "vec4"] as const).entries()) {
       expect(typesAreAssignable(from, to)).toBe(true);
       const conversion = conversionFor(from, to);
