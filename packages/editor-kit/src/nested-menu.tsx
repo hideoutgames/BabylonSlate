@@ -83,6 +83,7 @@ export type NestedMenuItem =
         value: string;
         disabled?: boolean;
         testId?: string;
+        shortcut?: KeyChord;
       }>;
     }
   | {
@@ -176,8 +177,14 @@ function NestedMenuItems({
                   closeOnClick={item.closeOnClick}
                   className={itemClass}
                   data-testid={itemTestId(option)}
+                  aria-keyshortcuts={option.shortcut ? ariaKeyShortcuts(option.shortcut) : undefined}
                 >
                   {option.label}
+                  {option.shortcut ? (
+                    <DropdownMenuShortcut className="pl-4 tracking-normal pointer-coarse:hidden">
+                      <ShortcutKeys chord={option.shortcut} decorative />
+                    </DropdownMenuShortcut>
+                  ) : null}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
