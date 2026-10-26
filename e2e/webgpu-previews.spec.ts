@@ -305,13 +305,22 @@ for (const backend of ["webgpu"] as const) {
       await openAssetFromBrowser(page, PBR_MATERIAL_ASSET);
       await compileMaterialPreview(page);
       const materialCanvas = page.getByTestId("material-preview-canvas");
-      // Compilation completes before asynchronous GPU readback reaches the canvas.
+      // "ready" means the compiled Material is bound, not that a frame drawn
+      // with it has been read back to the canvas. A remounted preview shows
+      // its default checker cube until then, so wait for the authored colour.
       await expect
-        .poll(async () => (await canvasEvidence(materialCanvas)).nonBlank, {
-          timeout: 30_000,
-          message: `material preview blank on ${backend}/${mode}`,
-        })
-        .toBeGreaterThan(200);
+        .poll(
+          async () => {
+            const evidence = await canvasEvidence(materialCanvas);
+            const [red, green, blue] = centerPixel(evidence);
+            return evidence.nonBlank > 200 && red! > Math.max(green!, blue!);
+          },
+          {
+            timeout: 30_000,
+            message: `material preview never showed its red base color on ${backend}/${mode}`,
+          },
+        )
+        .toBe(true);
       const material = await canvasEvidence(materialCanvas);
       await materialCanvas.screenshot({
         path: testInfo.outputPath(`material-${mode}-${backend}.png`),
