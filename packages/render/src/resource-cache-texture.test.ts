@@ -817,6 +817,34 @@ describe("bindResourceCacheToHandle", () => {
     inner.dispose();
     engine.dispose();
   });
+
+  it("flushes a sampling left without leases once another handle leases its texture in another sampling", () => {
+    const engine = textureEngine();
+    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const play = bindResourceCacheToHandle(inner);
+    const preview = bindResourceCacheToHandle(inner);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const liveNative = () => engine.getLoadedTexturesCache().filter((texture) => texture._references > 0);
+    // Released while nothing else leases the asset, so its unreferenced entry keeps it for reuse.
+    const flippedLease = play.cache.acquireTexture("albedo", engine, bytes);
+    const flipped = flippedLease.resource;
+    const flippedNative = flipped.getInternalTexture();
+    const flippedBytes = inner.accountedBytes();
+    flippedLease.release();
+    // A lease in another sampling keeps the entry from eviction, and with it the idle sampling.
+    const material = acquireMaterialTexture(preview.cache, "albedo", engine, bytes)!.resource;
+    const bothBytes = inner.accountedBytes();
+    expect(bothBytes).toBeGreaterThan(flippedBytes);
+    play.dispose();
+    expect(isDisposedGpuTexture(flipped)).toBe(true);
+    expect(liveNative()).not.toContain(flippedNative);
+    expect(inner.accountedBytes()).toBe(bothBytes - flippedBytes);
+    expect(isDisposedGpuTexture(material)).toBe(false);
+    expect(liveNative()).toContain(material.getInternalTexture());
+    preview.dispose();
+    inner.dispose();
+    engine.dispose();
+  });
 });
 
 describe("WebGPU KTX2 off the 4x4 block grid", () => {

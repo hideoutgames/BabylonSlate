@@ -917,6 +917,11 @@ export class ResourceCache {
     for (const entry of [...this.entries.values()]) {
       if (this.isUnreferenced(entry)) {
         this.evictEntry(entry.key, "flush");
+      } else if (entry.refCount > 0) {
+        // A sampling whose last lease went while its entry was unreferenced stays pinned once another lease holds the
+        // entry again; flush it like an unreferenced entry. Six-face cube wrappers record no sampling.
+        for (const [sampling, texture] of [...entry.textures])
+          if (this.textureSamplings.get(texture) === sampling && !entry.samplingLeases?.get(sampling)) this.retireSampling(entry, sampling);
       }
     }
   }
