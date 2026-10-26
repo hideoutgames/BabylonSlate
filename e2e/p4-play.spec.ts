@@ -78,6 +78,7 @@ test.describe("P4 Play overlay and session report", () => {
                   visuals: () => { slotId: number }[];
                   whenModelsReady: () => Promise<void>;
                   modelLoadCount: () => number;
+                  loadRehearsal: () => unknown;
                   liveObjectCounts: () => {
                     meshes: number;
                     textures: number;
@@ -85,7 +86,8 @@ test.describe("P4 Play overlay and session report", () => {
                 };
               };
               const api = host.__hapticPlayTest;
-              if (!api || api.modelLoadCount() === 0) return false;
+              // Play's load rehearsal releases and rebuilds shadow maps before its first presented frame.
+              if (!api || api.modelLoadCount() === 0 || api.loadRehearsal() === null) return false;
               await api.whenModelsReady();
               const visuals = api.visuals().length;
               const counts = api.liveObjectCounts();
