@@ -1,763 +1,122 @@
 import { createSaveStorageServer, createSessionSaveStorage } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs";
-import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@haptic/core";
-import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
+import type { ScalabilityAcknowledgement } from "@haptic/core";
 import {
-  parseAnimGraphDocument,
-  resolveAnimGraphClips,
-  type AnimClipCatalogEntry,
-} from "@haptic/anim-graph";
-import {
-  parseBehaviourTreeDocument,
-  parseBlackboardDocument,
-} from "@haptic/behaviour-tree";
-import {
-  createPlayBootCoordinator,
-  createPlayPauseGate,
+  type createPlayPauseGate,
   createRuntimeFromLoad,
-  createSceneSourceHost,
-  applyRuntimeSourceControl,
-  type AcquireRuntimeScene,
   captureConsoleLogs,
   SessionDiagnosticAggregator,
-  type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@haptic/runtime";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
-import { materialParameterTextureAssetGuids } from "@haptic/assets";
-import {
-  DEFAULT_PLAY_FRAME_CAP,
-  printHudCssColor,
-  type AudioProjectSettings,
-  type ResolvedRenderingPipeline,
-  type SerializedScene,
-  type SerializedSceneLayer,
-} from "@haptic/core";
-import type {
-  SpriteAnimationPayload,
-  SpritePayload,
-  TilemapPayload,
-  TilesetPayload,
-  ModelPayload,
-  RetargetAnimationLoad,
-} from "@haptic/assets";
-import type {
-  MaterialDocument,
-  MaterialFunctionDocument,
-} from "@haptic/shader-graph";
-import {
-  playLoadModelsControl,
-  playLoadSpritesControl,
-  playLoadTilemapsControl,
-  playSceneByGuid,
-} from "../lib/play-content";
+import type { ResolvedRenderingPipeline } from "@haptic/core";
 import {
   createEngine,
-  createSceneLoadReadiness,
-  createSceneStreamingReadiness,
-  describeEngineTexture,
-  internalTexturesHeldByScene,
-  waitForSceneLoadingPaint,
-  type SceneLoadProgress,
   navDebugBlockersFromActors,
-  type AudioLibrary,
-  type EngineHandle,
-  type ParticleLibrary,
-  type PlayActorPosition,
-  type SceneSourceAssets,
 } from "@haptic/render";
-import { spawnableLightsFromScripts, type SpawnableLight } from "@haptic/render/spawnable-lights";
+import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import { encodeInputEvents } from "@haptic/input";
 import {
-  isPlayEngineCommandType,
   snapshotFloatCount,
-  snapshotTickIndex,
   type CommandMessage,
   type ControlMessage,
-  type DebugObserveTarget,
-  type ScriptBundleEntry,
-  type SessionPauseCause,
-  type Breakpoint,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
-import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
+import { RuntimeInspectorClient } from "./runtime-inspector-client";
 import { RuntimeMaterialEditHost } from "./runtime-material-edit-host";
 import { SimulationCaptureClient } from "./simulation-capture-client";
 import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
-import { playLoadControl, type PlayPhysicsSettings } from "./play-physics";
 import {
   editorDracoPublicBase,
   editorKtx2PublicBase,
   editorMeshoptPublicBase,
-  editorThirdPartyNoticesUrl,
 } from "../lib/public-engine-assets";
 import {
-  INFINITE_LOOP_DIAGNOSTIC_CODE,
   SessionDiagnostics,
   createDiagnosticOperationClient,
   createMessageRateMeter,
   observeBrowserLongTasks,
-  type PerformanceProfile,
   type TracePayload,
 } from "@haptic/debugger";
+import {
+  applyPlayBreakpoints,
+  applyPlayFpsSample,
+  applyPlayGraphDebugObserve,
+  applyPlayHudConsoleCommand,
+  applyPlaySessionPausedCommand,
+  applyPlaySessionStep,
+  applyPlaySnapshotTick,
+  applyWorkerPlayStats,
+  deliverInspectSnapshot,
+  describeRetainedTextures,
+  diagnosticFromCommand,
+  isFatalPlayDiagnostic,
+  playInputStampTick,
+  printEntryFromCommand,
+  resolvePlayFrameCap,
+  shouldForwardPlayEngineCommand,
+  texturesRetainedAfterPlay,
+} from "./play-session-helpers";
+import {
+  bootInProcessPlay,
+  playSessionLoad,
+  playSessionWorkerControls,
+  schedulePreviewFixtureThrow,
+} from "./play-session-boot";
+import { createPlaySourceTracker } from "./play-session-sources";
+import { createPlaySceneReadiness } from "./play-scene-readiness";
+import type {
+  PlayHudStats,
+  PlaySession,
+  PlaySessionOptions,
+  PlaySessionResult,
+} from "./play-session-types";
 
-/**
- * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
- * feed the same `SessionDiagnosticAggregator` the in-process driver uses.
- * The dedicated Worker path never runs `RuntimeDriver.reportError` on the
- * main thread, so without this the Preview session report would stay empty
- * for real script errors that occur while Play uses the Worker transport.
- */
-export function diagnosticFromCommand(
-  command: CommandMessage,
-): RuntimeDiagnostic | null {
-  if (command.type !== "diagnostic") return null;
-  return {
-    code: command.code,
-    message: command.message,
-    severity: command.severity,
-    assetGuid: command.assetGuid,
-    graphId: command.graphId,
-    nodeId: command.nodeId,
-    btNodeId: command.btNodeId,
-    bodyLine: command.bodyLine,
-    stack: command.stack,
-    frameId: command.frameId,
-  };
-}
+// Play's helpers, types, boot and Scene readiness live in their own modules;
+// importers keep this path, which re-exports their public names.
+export {
+  diagnosticFromCommand,
+  inspectSnapshotFromCommand,
+  deliverInspectSnapshot,
+  isFatalPlayDiagnostic,
+  applyPlaySessionPausedCommand,
+  shouldForwardPlayEngineCommand,
+  applyPlayHudConsoleCommand,
+  applyPlaySessionStep,
+  applyPlayGraphDebugObserve,
+  texturesRetainedAfterPlay,
+  resolvePlayFrameCap,
+  playInputStampTick,
+  applyPlaySnapshotTick,
+  printEntryFromCommand,
+  applyWorkerPlayStats,
+  applyPlayFpsSample,
+} from "./play-session-helpers";
+export type { PlaySessionStepTarget, PlaySessionGraphDebugTarget } from "./play-session-helpers";
+export { applyPlayActiveScene } from "./play-scene-readiness";
+export { playSessionBootControls, previewFixtureThrowHint } from "./play-session-boot";
+export type {
+  PlaySessionResult,
+  PlaySession,
+  PlaySourcePreparation,
+  PlaySceneSourceLoader,
+  PlayAssetSourceLoader,
+  PlayPrintEntry,
+  PlayHudStats,
+} from "./play-session-types";
 
-export function inspectSnapshotFromCommand(
-  command: CommandMessage,
-): DebugInspectSnapshot | null {
-  if (command.type !== "inspectSnapshot") return null;
-  return command.snapshot;
-}
-
-/** Resolve the next inspect waiter from a worker inspectSnapshot command. */
-export function deliverInspectSnapshot(
-  waiters: Array<(snapshot: DebugInspectSnapshot) => void>,
-  command: CommandMessage,
-): boolean {
-  const snapshot = inspectSnapshotFromCommand(command);
-  if (!snapshot) return false;
-  waiters.shift()?.(snapshot);
-  return true;
-}
-
-export function isFatalPlayDiagnostic(code: string | undefined): boolean {
-  return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
-}
-
-/** Apply worker sessionPaused onto Play overlay chrome, with the error it paused on, if any. */
-export function applyPlaySessionPausedCommand(
-  command: CommandMessage,
-  onSessionPaused?: (paused: boolean, cause?: SessionPauseCause) => void,
-): boolean {
-  if (command.type !== "sessionPaused") return false;
-  onSessionPaused?.(command.paused, command.cause);
-  return true;
-}
-
-export function shouldForwardPlayEngineCommand(type: string): boolean {
-  return isPlayEngineCommandType(type);
-}
-
-export function applyPlayActiveScene(options: {
-  handle: {
-    loadScene: (
-      scene: SerializedScene,
-      options?: { sceneAssetGuid?: string },
-    ) => void;
-    applySceneEnvironment: (scene: SerializedScene) => void;
-    resetAudioSession: () => void;
-    setAudioReverbField?: (bytes: Uint8Array | null) => void;
-    resetParticleSession: () => void;
-  };
-  command: { type: string; sceneAssetGuid?: string };
-  scenes: ReadonlyArray<{ guid: string; scene: SerializedScene }>;
-  boot: { guid?: string; scene?: SerializedScene };
-  currentSceneGuid: string | null;
-  forceReload?: boolean;
-  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
-}): string | null {
-  if (
-    options.command.type !== "activeScene" ||
-    typeof options.command.sceneAssetGuid !== "string"
-  ) {
-    return options.currentSceneGuid;
-  }
-  const guid = options.command.sceneAssetGuid;
-  if (!options.forceReload && guid === options.currentSceneGuid) {
-    return options.currentSceneGuid;
-  }
-  const scene = playSceneByGuid(guid, options.scenes, options.boot);
-  if (!scene) throw new Error("The requested scene is not available in this Play session.");
-  options.handle.loadScene(scene, { sceneAssetGuid: guid });
-  options.handle.applySceneEnvironment(scene);
-  options.handle.resetAudioSession();
-  options.handle.setAudioReverbField?.(options.audioReverbByScene?.get(guid) ?? null);
-  options.handle.resetParticleSession();
-  return guid;
-}
-
-export function applyPlayHudConsoleCommand(
-  command: CommandMessage,
-  handlers: {
-    onShowFps?: (enabled: boolean) => void;
-    onStat?: (name: string, enabled: boolean) => void;
-    onFreeCam?: (enabled: boolean) => void;
-  },
-): boolean {
-  if (command.type === "setShowFps") {
-    handlers.onShowFps?.(command.enabled);
-    return true;
-  }
-  if (command.type === "setStat") {
-    handlers.onShowFps?.(true);
-    handlers.onStat?.(command.name, command.enabled);
-    return true;
-  }
-  if (command.type === "setFreeCam") {
-    handlers.onFreeCam?.(command.enabled);
-    return true;
-  }
-  return false;
-}
-
-export type PlaySessionStepTarget = {
-  worker?: { postControl: (message: ControlMessage) => void } | null;
-  runtime?: {
-    resume(): void;
-    tick(): void;
-    pause(): void;
-  } | null;
-};
-
-/** Advance one paused tick: worker `step` control, or in-process resume/tick/pause. */
-export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
-  if (target.worker) {
-    target.worker.postControl({ type: "step" });
-    return true;
-  }
-  if (target.runtime) {
-    target.runtime.resume();
-    // A throwing tick still returns to pause; Step never leaves the game running.
-    try {
-      target.runtime.tick();
-    } finally {
-      target.runtime.pause();
-    }
-    return true;
-  }
-  return false;
-}
-
-export type PlaySessionGraphDebugTarget = {
-  worker?: { postControl: (message: ControlMessage) => void } | null;
-  runtime?: { applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void } | null;
-};
-
-/** Point the runtime's graph debugger at a target and instance: a worker control, or the in-process runtime directly. */
-export function applyPlayGraphDebugObserve(
-  target: PlaySessionGraphDebugTarget,
-  observe: DebugObserveTarget | null,
-  instanceId: string | null,
-): void {
-  if (target.worker) target.worker.postControl({ type: "debugObserve", target: observe, instanceId });
-  else target.runtime?.applyDebugObserve(observe, instanceId);
-}
-
-/** Replace the session's node breakpoints: a worker control, or the in-process runtime directly. */
-function applyPlayBreakpoints(
-  target: {
-    worker?: { postControl: (message: ControlMessage) => void } | null;
-    runtime?: { applyBreakpoints(breakpoints: readonly Breakpoint[]): void } | null;
-  },
-  breakpoints: Breakpoint[],
-): void {
-  if (target.worker) target.worker.postControl({ type: "setBreakpoints", breakpoints });
-  else target.runtime?.applyBreakpoints(breakpoints);
-}
-
-export function playSessionBootControls(options: {
-  load: Extract<ControlMessage, { type: "load" }>;
-  scripts?: readonly ScriptBundleEntry[];
-  animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
-  behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
-  blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
-  waters?: Extract<ControlMessage, { type: "loadWater" }> | null;
-  tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
-  sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
-  models?: Extract<ControlMessage, { type: "loadModels" }> | null;
-  navmeshBytes?: Uint8Array | null;
-  pauseOnPlay?: boolean;
-}): ControlMessage[] {
-  const controls: ControlMessage[] = [options.load];
-  if ((options.scripts?.length ?? 0) > 0) {
-    controls.push({
-      type: "loadScripts",
-      scripts: [...(options.scripts ?? [])],
-      spawn: [],
-    });
-  }
-  if ((options.animGraphs?.length ?? 0) > 0) {
-    controls.push({
-      type: "loadAnimGraphs",
-      graphs: [...(options.animGraphs ?? [])],
-    });
-  }
-  if (
-    (options.behaviourTrees?.length ?? 0) > 0 ||
-    (options.blackboards?.length ?? 0) > 0
-  ) {
-    controls.push({
-      type: "loadBehaviourTrees",
-      trees: [...(options.behaviourTrees ?? [])],
-      blackboards: [...(options.blackboards ?? [])],
-    });
-  }
-  if (options.waters) controls.push(options.waters);
-  if (options.tilemaps) controls.push(options.tilemaps);
-  if (options.sprites) controls.push(options.sprites);
-  if (options.models) controls.push(options.models);
-  const navmesh = options.navmeshBytes;
-  if (navmesh && navmesh.byteLength > 0) {
-    // `load` already clones every Scene's mesh into the worker, the startup one included; asking the
-    // worker to import that entry avoids a second copy. Otherwise send one private buffer, which the
-    // host transfers.
-    const catalogued = options.load.sceneNavmeshBytes?.[options.load.sceneAssetGuid] === navmesh;
-    controls.push(catalogued ? { type: "loadNavMesh" } : {
-      type: "loadNavMesh",
-      bytes: navmesh.buffer.slice(navmesh.byteOffset, navmesh.byteOffset + navmesh.byteLength) as ArrayBuffer,
-    });
-  }
-  controls.push({ type: "play" });
-  if (options.pauseOnPlay) {
-    controls.push({ type: "setPaused", paused: true });
-  }
-  return controls;
-}
-
-/**
- * Textures created during a session that are still in the shared Engine's
- * cache, compared by identity rather than count. Babylon's 1×1 placeholders
- * are created once per Engine on first use and live as long as it, so they
- * are not a session leak. Nor is a texture a live Scene outside the session
- * still references: an editor preview opened mid-session (a Class graph's
- * viewport) draws on the shared Engine and creates its own default checker and
- * BRDF table, which it releases when it closes. A texture no live Scene
- * references, or that only one of `playScenes` does, stays retained.
- */
-export function texturesRetainedAfterPlay(
-  engine: Pick<EngineHandle["engine"], "getLoadedTexturesCache" | "scenes">,
-  before: ReadonlySet<unknown>,
-  playScenes: ReadonlySet<EngineHandle["scene"]>,
-): ReturnType<EngineHandle["engine"]["getLoadedTexturesCache"]> {
-  const native = engine as unknown as Partial<Record<"_emptyTexture" | "_emptyCubeTexture" | "_emptyTexture3D" | "_emptyTexture2DArray", unknown>>;
-  const placeholders = new Set([native._emptyTexture, native._emptyCubeTexture, native._emptyTexture3D, native._emptyTexture2DArray]);
-  const created = engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture));
-  if (created.length === 0) return created;
-  const heldByOthers = new Set<unknown>();
-  for (const scene of engine.scenes) {
-    if (playScenes.has(scene)) continue;
-    for (const texture of internalTexturesHeldByScene(scene)) heldByOthers.add(texture);
-  }
-  return created.filter((texture) => !heldByOthers.has(texture));
-}
-
-/** Each retained texture by name, with its size, native references and ResourceCache owner, so a leak report names the owner. */
-function describeRetainedTextures(
-  engine: EngineHandle["engine"],
-  retained: ReturnType<typeof texturesRetainedAfterPlay>,
-): string {
-  const shown = retained.slice(0, 8).map((texture) => {
-    const description = describeEngineTexture(engine, texture);
-    const owner = description.resourceCache
-      ? `ResourceCache ${description.resourceCache.assetGuid} (${description.resourceCache.leases} leases)`
-      : "not ResourceCache-owned";
-    return `${description.name} ${description.size}${description.cube ? " cube" : ""}, ${description.references} reference(s), ${owner}`;
-  });
-  return retained.length > shown.length ? `${shown.join("; ")}; and ${retained.length - shown.length} more` : shown.join("; ");
-}
-
-export interface PlaySessionResult {
-  diagnostics: SessionReportEntry[];
-  droppedDiagnostics: number;
-  textureCountBefore: number;
-  /**
-   * Settles after the shared-Engine teardown confirms actual release and a
-   * stopped worker was terminated, then measures the texture cache.
-   * `quarantined` is true when release never confirmed; the promise never
-   * rejects.
-   */
-  released: Promise<{
-    textureCountAfter: number;
-    /** True when textures created during Play outlived its release. */
-    textureLeak: boolean;
-    quarantined: boolean;
-    /** When `textureLeak`: the retained textures by name, size, references and owner. */
-    textureLeakDetail?: string;
-  }>;
-  /** Which runtime host was used. */
-  runtimeMode: "worker" | "in-process";
-  liveObjectCounts?: { meshes: number; textures: number };
-  /** Finalized recorder payload, if snapshot start ran this session. */
-  lastTrace: TracePayload | null;
-}
-
-export interface PlaySession {
-  canvas: HTMLCanvasElement;
-  handle: EngineHandle;
-  runtime: RuntimeDriver | null;
-  worker: GameWorkerHost | null;
-  runtimeMode: "worker" | "in-process";
-  diagnostics: SessionDiagnostics<import("@haptic/render").RenderFrameReport>;
-  setPaused: (paused: boolean) => void;
-  setPauseReason: (reason: import("@haptic/bridge").SessionPauseReason, paused: boolean) => Promise<import("@haptic/bridge").SessionBoundaryResult>;
-  setInputMode: (mode: "game" | "edit") => Promise<void>;
-  /**
-   * Point the graph debugger at the live instances of `target` (null stops) and follow
-   * `instanceId`. The runtime answers with `onDebugRoster` and, for the followed instance
-   * only, `onExecutionTrace` each tick (and a Behaviour Tree's `onBtState`).
-   */
-  observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
-  /** Replace the node breakpoints a Simulation stops at (its scripts check them). */
-  setBreakpoints: (breakpoints: Breakpoint[]) => void;
-  requestPausedRedraw: () => { accepted: boolean; reason?: string };
-  /** Last resolved Move.x from the in-process runtime; null on the worker path. */
-  lastMoveX: () => number | null;
-  /** Latest snapshot actor positions for e2e collision / motion. */
-  lastActorPositions: () => readonly PlayActorPosition[];
-  /** Latest sim tick (in-process World clock, else last published snapshot). */
-  lastTickIndex: () => number;
-  /** Session-only Play/Preview fps cap; does not write `project.json`. */
-  setFrameCap: (fps: number) => void;
-  /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
-  spawnedActorGuids: () => readonly string[];
-  executeConsoleCommand: (
-    line: string,
-  ) => Promise<{ success: boolean; output: string }>;
-  inspectWorld: () => Promise<DebugInspectSnapshot>;
-  /** Correlated typed selection and live edits; continuous drafts are coalesced. */
-  requestRuntimeInspection: (action: RuntimeInspectionAction, options?: RuntimeInspectionWriteOptions) => Promise<import("@haptic/bridge").RuntimeInspectorResult>;
-  /** Complete final canonical scene, captured before destructive Stop/End Play. */
-  captureSimulationScene: (maxBytes?: number) => Promise<import("@haptic/runtime").SimulationSceneCaptureResult>;
-  /** Advance one simulation tick while paused. */
-  step: () => void;
-  /**
-   * Simulation's Step: one tick of a session paused only by the user, acknowledged through the
-   * session boundary after the tick's commands, so the paused view can redraw the result.
-   */
-  stepPaused: () => Promise<import("@haptic/bridge").SessionBoundaryResult>;
-  lastTrace: () => TracePayload | null;
-  accountedBytes: () => number;
-  liveObjectCounts: () => { meshes: number; textures: number };
-  whenModelsReady: () => Promise<void>;
-  modelLoadCount: () => number;
-  drawCalls: () => number;
-  bridgeMessagesPerSec: () => number;
-  stop: () => PlaySessionResult;
-}
-
-export type PlaySourcePreparation = {
-  sources: SceneSourceAssets;
-  controls?: ControlMessage[];
-  getControls?: () => ControlMessage[];
-  release(): void;
-  controlsAfterRelease?: () => ControlMessage[];
-  required?: ReadonlySet<string>;
-};
-export type PlaySceneSourceLoader = (guid: string, options: {
-  consumer: string; signal: AbortSignal;
-}) => Promise<PlaySourcePreparation & { scene: SerializedScene; /** The Scene's baked reverb field, if any. */ audioReverb: Uint8Array | null }>;
-export type PlayAssetSourceLoader = (guids: string[], options: {
-  consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
-  /** Orders this load's source reads against other queued work; default gameplay. */
-  priority?: import("@haptic/core").RuntimeAssetSchedulerPriority;
-  fontModes?: import("@haptic/render").CommandFontModes;
-}) => Promise<PlaySourcePreparation>;
-
-/** Resolve a Play session cap; omitted or non-positive values become 60. */
-export function resolvePlayFrameCap(fps?: number): number {
-  return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
-}
-
-/**
- * Tick stamp for Play canvas events. In-process Play uses World.clock;
- * the worker host has no World on the main thread, so it must use the last
- * snapshot `tickIndex` rather than `performance.now() / (1000/60)`.
- */
-export function playInputStampTick(
-  inProcessTickIndex: number | undefined,
-  lastWorkerTickIndex: number,
-): number {
-  return inProcessTickIndex ?? lastWorkerTickIndex;
-}
-
-/** Worker hosts stamp input from snapshot tickIndex so throttled stats cannot drop sticks. */
-export function applyPlaySnapshotTick(
-  previous: number,
-  buffer: Float32Array,
-): number {
-  return snapshotTickIndex(buffer) ?? previous;
-}
-
-/** One Print node message as the HUD and console show it. */
-export interface PlayPrintEntry {
-  message: string;
-  key: string;
-  duration: number;
-  color: string;
-}
-
-/** A worker `print` command as a HUD entry. An empty message is a valid empty line; a non-string is not. */
-export function printEntryFromCommand(command: CommandMessage): PlayPrintEntry | null {
-  if (command.type !== "print" || typeof command.message !== "string") return null;
-  return {
-    message: command.message,
-    key: command.key ?? "",
-    duration: command.duration ?? 2,
-    color: printHudCssColor(command.color),
-  };
-}
-
-export interface PlayHudStats {
-  fps: number;
-  scriptMs: number;
-  physicsMs: number;
-  /** Snapshot publish time, reported apart from the tick's script/physics budget. */
-  publishMs: number;
-  /** The last tick's milliseconds per timed phase (`TICK_TIMING_PHASES`), when the worker reports them. */
-  phaseMs?: readonly number[];
-  frameId: number;
-  /** The worker's tick index, from its latest `stats` command. */
-  ticks?: number;
-  liveActors?: number;
-  snapshotCapacity?: number;
-}
-
-/** Worker `stats` commands are the source of truth for script/physics/publish ms. */
-export function applyWorkerPlayStats(
-  previous: PlayHudStats | undefined,
-  command: {
-    fps?: number;
-    scriptMs: number;
-    physicsMs: number;
-    publishMs?: number;
-    phaseMs?: readonly number[];
-    frameId: number;
-    ticks?: number;
-    liveActors?: number;
-    snapshotCapacity?: number;
-  },
-): PlayHudStats {
-  return {
-    fps: previous?.fps ?? 0,
-    scriptMs: command.scriptMs,
-    physicsMs: command.physicsMs,
-    publishMs: command.publishMs ?? 0,
-    ...(command.phaseMs ? { phaseMs: command.phaseMs } : {}),
-    frameId: command.frameId,
-    ticks: command.ticks ?? previous?.ticks ?? 0,
-    liveActors: command.liveActors ?? previous?.liveActors ?? 0,
-    snapshotCapacity:
-      command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
-  };
-}
-
-/** Main-thread FPS sample must not zero worker timings. */
-export function applyPlayFpsSample(
-  previous: PlayHudStats | undefined,
-  fps: number,
-): PlayHudStats {
-  return {
-    fps,
-    scriptMs: previous?.scriptMs ?? 0,
-    physicsMs: previous?.physicsMs ?? 0,
-    publishMs: previous?.publishMs ?? 0,
-    ...(previous?.phaseMs ? { phaseMs: previous.phaseMs } : {}),
-    frameId: previous?.frameId ?? 0,
-    ticks: previous?.ticks ?? 0,
-    liveActors: previous?.liveActors ?? 0,
-    snapshotCapacity: previous?.snapshotCapacity ?? 0,
-  };
-}
-
-const FIXTURE_ASSET = "preview-fixture";
 /** How long a stopped worker may take to run End Play and finish its save writes. */
 const WORKER_STOP_TIMEOUT_MS = 3000;
-const FIXTURE_NODE = "throw-node";
-
-/** When Play injects a fixture throw and a tree is loaded, navigate to the task. */
-export function previewFixtureThrowHint(
-  trees?: ReadonlyArray<{ guid: string; document: unknown }>,
-): { assetGuid: string; btNodeId: string } | null {
-  const entry = trees?.[0];
-  if (!entry) return null;
-  const parsed = parseBehaviourTreeDocument(entry.document);
-  const task = parsed?.nodes.find((node) => node.kind === "task");
-  if (!task) return null;
-  return { assetGuid: entry.guid, btNodeId: task.id };
-}
 
 /**
  * Start a fullscreen Play session. Prefers a dedicated game Worker; falls back
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
-export function startPlaySession(options: {
-  /** Preview uses the packaged player, never this in-process presentation host. */
-  mode?: "play" | "simulate";
-  sessionGeneration?: number;
-  /** Transfer the preparation overlay, including wipe-on-start, to this owner. */
-  simulationSaveStorage?: ReturnType<typeof createSessionSaveStorage>;
-  /** Authoring asset identities admitted by preparation; this does not load assets. */
-  simulationAssetGuids?: readonly string[];
-  onRetentionUnavailable?: (reason: string) => void;
-  saveGame?: import("@haptic/core").SaveGameConfiguration;
-  renderSettings?: import("@haptic/render").RenderShadingSettings;
-  consoleRenderSettings?: import("@haptic/render").RenderShadingSettings;
-  canvas: HTMLCanvasElement;
-  sharedEngine: EngineHandle["engine"];
-  injectFixtureThrow?: boolean;
-  /** Scene physics world and gravity from the open scene document. */
-  physics?: PlayPhysicsSettings;
-  /** Compiled project graphs to run for this session. */
-  scripts?: readonly ScriptBundleEntry[];
-  /** The light parts the startup sources may spawn (`spawnableLightsOfLoad`); defaults to those of `scripts`. */
-  spawnableLights?: ReadonlyMap<string, SpawnableLight>;
-  /** Authored scene instantiated in the worker instead of demo actors. */
-  sceneAssetGuid?: string;
-  scene?: SerializedScene;
-  project?: { name: string; version: string };
-  gameInstanceClass?: string;
-  scenes?: Array<{ guid: string; scene: SerializedScene }>;
-  sceneCatalog?: Array<{ guid: string; name: string }>;
-  classAssetGuids?: Record<string, string>;
-  consoleCommands?: Array<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
-  audioAssetGuids?: string[];
-  acquireSceneSources?: PlaySceneSourceLoader;
-  acquireAssetSources?: PlayAssetSourceLoader;
-  releaseInitialSources?: () => void | ControlMessage[];
-  sessionSources?: SceneSourceAssets;
-  getAssetLoadState?: (guid: string) => import("@haptic/core").RuntimeAssetLoadState;
-  getSourceControls?: () => ControlMessage[];
-  sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
-  onStats?: (stats: PlayHudStats) => void;
-  onLog?: (message: string, severity: string) => void;
-  /** Each log the runtime raises (Log nodes included), with its category; the host's Output Log feed. */
-  onRuntimeLog?: (entry: { category: string; severity: string; message: string }) => void;
-  onPrint?: (entry: PlayPrintEntry) => void;
-  /** Project `playFrameCap`; omitted or invalid → 60. */
-  frameCap?: number;
-  /** Engine Settings trace retention budget, captured when Play starts. */
-  traceByteBudget?: number;
-  onProfile?: (profile: PerformanceProfile) => void;
-  /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
-  animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
-  /** BehaviourTree / Blackboard documents for worker load. */
-  behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
-  blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
-  /** Sprite payloads keyed by asset guid for Play clip UV seeks. */
-  spritePayloads?: ReadonlyMap<string, SpritePayload>;
-  /** Sprite Animation clips referenced by loaded Animation Graphs. */
-  spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
-  /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
-  renderTargets?: ReadonlyMap<string, import("@haptic/core").RenderTargetPayload>;
-  renderTargetTextures?: ReadonlyMap<string, import("@haptic/core").RenderTargetTexturePayload>;
-  waterPayloads?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;
-  tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
-  tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
-  textureBytes?: ReadonlyMap<string, Uint8Array>;
-  areaEmissions?: ReadonlyMap<string, import("@haptic/assets").AreaEmissionPixels>;
-  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
-  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
-  fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
-  fontFaceEntries?: readonly import("@haptic/render").FontAssetEntry[];
-  fontCssStack?: string;
-  fontCssStackByGuid?: ReadonlyMap<string, string>;
-  modelBytes?: ReadonlyMap<string, Uint8Array>;
-  modelPayloads?: ReadonlyMap<string, ModelPayload>;
-  /** Complex Collision meshes cooked during source preparation; Play never re-cooks them. */
-  complexMeshes?: ReadonlyMap<string, import("@haptic/core").CollisionTriangleMesh>;
-  /** Answers the runtime's `requestComplexCollision` for a Model the content scan missed. */
-  cookComplexCollision?: (assetGuid: string) => Promise<import("@haptic/core").CollisionTriangleMesh | null>;
-  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
-  retargetAnimationLoads?: ReadonlyMap<
-    string,
-    readonly RetargetAnimationLoad[]
-  >;
-  loadAudioSourceBytes?: import("@haptic/render").AudioSourceBytesLoader;
-  audioLibrary?: AudioLibrary;
-  /** Animation / Sprite Animation clip metadata for BT Play Animation. */
-  animClipCatalog?: readonly AnimClipCatalogEntry[];
-  particleLibrary?: ParticleLibrary;
-  /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
-  audioReverbBytes?: Uint8Array | null;
-  audioProjectSettings?: Partial<
-    Pick<
-      AudioProjectSettings,
-      | "occlusionEnabled"
-      | "reverbWetScale"
-      | "reverbDecayScale"
-      | "reverbDampingScale"
-    >
-  >;
-  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
-  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Reads bake assets (project registry or packed container). */
-  postProcessingEnabled?: boolean;
-  hardwareScalingLevel?: number;
-  pixelsPerUnit?: number;
-  /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
-  collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
-  sortingLayers?: readonly string[];
-  pixelPerfect?: boolean;
-  /** Overlay 2DButton pick floor in CSS pixels. */
-  touchMinTargetPx?: number;
-  /** Baked Scene navmesh bytes; Play imports and never generates. */
-  navmeshBytes?: Uint8Array | null;
-  sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
-  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
-  infiniteLoopDetection?: boolean;
-  /** Simulation: pause the first time each node reports an error (Engine Settings, Pause On Errors). */
-  pauseOnErrors?: boolean;
-  /** Simulation: the enabled node breakpoints when it starts; `setBreakpoints` changes them. */
-  breakpoints?: Breakpoint[];
-  loopCount?: number;
-  inputAssets?: import("@haptic/core").InputAssetDefinition[];
-  dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
-  /** Packaged authored assets the Asset Registry nodes query, snapshotted when Play starts. */
-  assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
-  focusNavigation?: import("@haptic/core").FocusNavigationSettings;
-  /** Called when a session-fatal diagnostic (infinite loop) arrives. */
-  onFatalDiagnostic?: () => void;
-  /** Called when the runtime ended its own session (console `quit`); the host stops as for its Stop control. */
-  onSessionEnded?: () => void;
-  /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
-  pauseOnPlay?: boolean;
-  onSceneLoading?: (state: SceneLoadProgress | null) => void;
-  /** A scene load failed; it stays pending until the session stops, and the session reports a fatal diagnostic next. */
-  onSceneLoadFailed?: () => void;
-  onSessionPaused?: (paused: boolean, cause?: SessionPauseCause) => void;
-  onShowFps?: (enabled: boolean) => void;
-  onStatHighlight?: (name: string, enabled: boolean) => void;
-  onFreeCam?: (enabled: boolean) => void;
-  onSetRenderResolution?: (width: number, height: number) => void;
-  onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
-  onBehaviourTreeDebug?: (enabled: boolean) => void;
-  onBehaviourTreeSnapshot?: (
-    trees: readonly import("@haptic/bridge").DebugBehaviourTree[],
-  ) => void;
-  onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
-  onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
-  onDebugVariables?: (report: Extract<CommandMessage, { type: "debugVariables" }>) => void;
-  onBtState?: (state: Extract<CommandMessage, { type: "btState" }>) => void;
-}): PlaySession {
+export function startPlaySession(options: PlaySessionOptions): PlaySession {
   options = { ...options };
   const { canvas, sharedEngine } = options;
   const texturesBefore = new Set(sharedEngine.getLoadedTexturesCache());
@@ -908,7 +267,7 @@ export function startPlaySession(options: {
     loadAudioSourceBytes: options.loadAudioSourceBytes,
     prepareAudioAsset: options.acquireAssetSources ? async (guid, request) => {
       const prepared = await options.acquireAssetSources!([guid], request);
-      return prepareSources(prepared, request.signal);
+      return sourceTracker.prepareSources(prepared, request.signal);
     } : undefined,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,
@@ -940,11 +299,10 @@ export function startPlaySession(options: {
     onAudioDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
       if (diagnostic.assetGuid && ["audio.missing_source", "audio.decode_failed", "audio.budget_exceeded", "audio.play_failed", "audio.load_failed"].includes(diagnostic.code))
-        publishAssetStates([diagnostic.assetGuid], "failed");
+        sourceTracker.publishAssetStates([diagnostic.assetGuid], "failed");
     },
     onAudioAssetReady: (guid) => {
-      for (const [prepared, scope] of preparedSourceScopes) if (scope.guids.includes(guid)) markSourceReady(prepared);
-      publishAssetStates([guid], "ready");
+      sourceTracker.audioAssetReady(guid);
     },
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
@@ -1044,315 +402,21 @@ export function startPlaySession(options: {
   const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
-  let releaseSessionSources: (() => void) | undefined;
-  const sessionSourcesReady = options.sessionSources ? handle.acquireSceneSources(options.sessionSources).then((release) => {
-    if (stopped) release(); else releaseSessionSources = release;
-  }) : Promise.resolve();
-  void sessionSourcesReady.catch((error: unknown) => options.onLog?.(`Session sources: ${String(error)}`, "error"));
-  const preparedScenes = new Map((options.scenes ?? []).map((entry) => [entry.guid, entry.scene]));
-  // Baked reverb follows its prepared Scene, so every later activation finds it.
-  const preparedSceneReverbs = new Map(options.audioReverbByScene ?? []);
-  const sceneSourceOwners = new Map<string, number>();
-  let nextSourceRequestId = 0;
-  const sourceRequests = new Map<number, { resolve(): void; reject(error: Error): void }>();
-  const publishSourceControl = async (control: ControlMessage) => {
-    if (worker && control.type === "loadScripts") {
-      const requestId = ++nextSourceRequestId;
-      await new Promise<void>((resolve, reject) => {
-        sourceRequests.set(requestId, { resolve, reject });
-        worker!.postControl({ ...control, requestId });
-      });
-    } else if (worker) worker.postControl(control);
-    else if (runtime && !await applyRuntimeSourceControl(runtime, control))
-      throw new Error(`Unsupported source preparation control: ${control.type}.`);
-  };
-  // Runtime fallback for a Complex Collision Model the content scan missed. The
-  // answer is always asynchronous, so it never re-enters the requesting tick.
-  const answerComplexCollision = (assetGuid: string) => {
-    void Promise.resolve()
-      .then(() => options.cookComplexCollision?.(assetGuid) ?? null)
-      .catch((error: unknown) => {
-        options.onLog?.(`Complex Collision for ${assetGuid}: ${error instanceof Error ? error.message : String(error)}`, "warning");
-        return null;
-      })
-      .then((mesh) => stopped ? undefined : publishSourceControl(mesh
-        ? { type: "loadComplexCollision", meshes: [{ guid: assetGuid, positions: mesh.positions, indices: mesh.indices }] }
-        : { type: "loadComplexCollision", meshes: [], unavailable: [assetGuid] }))
-      .catch((error: unknown) => options.onLog?.(`Complex Collision for ${assetGuid}: ${String(error)}`, "error"));
-  };
-  const knownAssetGuids = new Set<string>();
-  const preparedAssetGuids = new Set<string>();
-  const initialSourceGuids = new Set(options.getSourceControls?.().flatMap((control) => control.type === "loadSceneContent" ? control.assetGuids : []) ?? []);
-  let initialSourcesReady = false;
-  const publishedAssetStates = new Map<string, import("@haptic/core").RuntimeAssetLoadState>();
-  const preparedSourceScopes = new Map<PlaySourcePreparation, { guids: string[]; ready: boolean }>();
-  const sceneSourceScopes = new Map<string, Set<PlaySourcePreparation>>();
-  const streamSceneAssets = new Map<string, { guid: string; loadId: number; prepared?: PlaySourcePreparation }>();
-  const publishAssetStates = (guids: readonly string[], fallback: import("@haptic/core").RuntimeAssetLoadState, queryCache = false) => {
-    const states = guids.map((guid) => {
-      knownAssetGuids.add(guid);
-      if (!queryCache && fallback === "ready") preparedAssetGuids.add(guid);
-      const cached = queryCache ? options.getAssetLoadState?.(guid) : undefined;
-      let state = cached === "ready" && !preparedAssetGuids.has(guid) ? "unloaded" as const : cached ?? fallback;
-      if (state === "unloaded" && publishedAssetStates.get(guid) === "failed") state = "failed";
-      publishedAssetStates.set(guid, state);
-      return { guid, state };
-    });
-    if (worker) worker.postControl({ type: "assetLoadStates", states });
-    else runtime?.setAssetLoadStates(states);
-  };
-  const markSourceReady = (prepared: PlaySourcePreparation) => {
-    const scope = preparedSourceScopes.get(prepared);
-    if (!scope) return;
-    scope.ready = true;
-    publishAssetStates(scope.guids, "ready");
-  };
-  let sourceControlWork: Promise<void> = Promise.resolve();
-  const publishSourceBatch = (getControls: () => readonly ControlMessage[] | void): Promise<void> => {
-    const work = sourceControlWork.catch(() => {}).then(async () => {
-      if (stopped) return;
-      for (const control of options.getSourceControls?.() ?? getControls() ?? []) {
-        await publishSourceControl(control);
-      }
-    });
-    sourceControlWork = work;
-    return work;
-  };
-  const publishReleasedSources = (controls: readonly ControlMessage[] | void | (() => readonly ControlMessage[] | void)) => {
-    if (stopped) return;
-    void publishSourceBatch(typeof controls === "function" ? controls : () => controls).catch((error: unknown) => {
-      options.onLog?.(`Source release: ${error instanceof Error ? error.message : String(error)}`, "error");
-    });
-    if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
-  };
-  const prepareSources = async (
-    prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false,
-    priority: import("@haptic/core").RuntimeAssetSchedulerPriority = "gameplay", warm = false,
-  ) => {
-    let releaseRender: (() => void) | undefined;
-    const scope = { guids: [...(prepared.required ?? [])], ready: false };
-    preparedSourceScopes.set(prepared, scope);
-    publishAssetStates(scope.guids, "loading");
-    const releaseState = () => {
-      preparedSourceScopes.delete(prepared);
-      const remaining = new Set([...preparedSourceScopes.values()].filter((owner) => owner.ready).flatMap((owner) => owner.guids));
-      if (initialSourcesReady) for (const guid of initialSourceGuids) remaining.add(guid);
-      for (const guid of scope.guids) if (!remaining.has(guid)) preparedAssetGuids.delete(guid);
-      publishAssetStates(scope.guids.filter((guid) => !remaining.has(guid)), "unloaded");
-    };
-    try {
-      signal.throwIfAborted();
-      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, warm, signal, priority });
-      signal.throwIfAborted();
-      await publishSourceBatch(() => prepared.getControls?.() ?? prepared.controls);
-      signal.throwIfAborted();
-      if (prepare) markSourceReady(prepared);
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        releaseRender?.();
-        releaseRender = undefined;
-        prepared.release();
-        releaseState();
-        publishReleasedSources(prepared.controlsAfterRelease);
-      };
-    } catch (error) {
-      releaseRender?.();
-      prepared.release();
-      publishAssetStates(scope.guids, signal.aborted ? "unloaded" : "failed");
-      releaseState();
-      publishReleasedSources(prepared.controlsAfterRelease);
-      throw error;
-    }
-  };
-  const acquireScene: AcquireRuntimeScene | undefined = options.acquireSceneSources ? async (guid, request) => {
-    publishAssetStates([guid], "loading");
-    if (request.stream) streamSceneAssets.set(request.stream.actorGuid, { guid, loadId: request.stream.streamLoadId });
-    let prepared: Awaited<ReturnType<PlaySceneSourceLoader>>;
-    let release: () => void;
-    try {
-      prepared = await options.acquireSceneSources!(guid, request);
-      release = await prepareSources(prepared, request.signal, true);
-    } catch (error) {
-      publishAssetStates([guid], request.signal.aborted ? "unloaded" : "failed");
-      throw error;
-    }
-    preparedScenes.set(guid, prepared.scene);
-    if (prepared.audioReverb) preparedSceneReverbs.set(guid, prepared.audioReverb);
-    else preparedSceneReverbs.delete(guid);
-    let sceneScopes = sceneSourceScopes.get(guid);
-    if (!sceneScopes) sceneSourceScopes.set(guid, sceneScopes = new Set());
-    sceneScopes.add(prepared);
-    if (request.stream) streamSceneAssets.set(request.stream.actorGuid, { guid, loadId: request.stream.streamLoadId, prepared });
-    sceneSourceOwners.set(guid, (sceneSourceOwners.get(guid) ?? 0) + 1);
-    let released = false;
-    return { scene: prepared.scene, release: () => {
-      if (released) return;
-      released = true;
-      sceneSourceScopes.get(guid)?.delete(prepared);
-      if (!sceneSourceScopes.get(guid)?.size) sceneSourceScopes.delete(guid);
-      const remaining = (sceneSourceOwners.get(guid) ?? 1) - 1;
-      if (remaining) sceneSourceOwners.set(guid, remaining);
-      else {
-        sceneSourceOwners.delete(guid); preparedScenes.delete(guid); preparedSceneReverbs.delete(guid);
-        preparedAssetGuids.delete(guid); publishAssetStates([guid], "unloaded");
-      }
-      release();
-    } };
-  } : undefined;
-  handle.setCommandSourceLoader?.(options.acquireAssetSources ? async (guids, request) =>
-    prepareSources(await options.acquireAssetSources!([...guids], request), request.signal, true) : null);
-  const sceneSources = acquireScene ? createSceneSourceHost({ acquireScene,
-    send: (control) => worker?.postControl(control),
-  }) : undefined;
-  const preloads = new Map<string, { controller: AbortController; release?: () => void; guids: string[] }>();
-  const publishPreloadResult = (result: { preloadId: string; success: boolean; error?: string; progress?: number }) => {
-    if (worker) worker.postControl({ type: "assetPreloadResult", ...result });
-    else runtime?.notifyAssetPreloadResult(result);
-  };
-  const releasePreload = (preloadId: string) => {
-    const request = preloads.get(preloadId);
-    if (!request) return;
-    preloads.delete(preloadId);
-    request.controller.abort(new Error("Asset preload was released."));
-    request.release?.();
-    if (options.getAssetLoadState) publishAssetStates(request.guids, "unloaded", true);
-  };
-  const receivePreload = (command: CommandMessage) => {
-    if (command.type === "assetPreloadRelease") { releasePreload(command.preloadId); return true; }
-    if (command.type !== "assetPreload") return false;
-    const { preloadId, assetGuids, ownerId, priority } = command;
-    if (preloads.has(preloadId)) return true;
-    if (!options.acquireAssetSources) {
-      publishPreloadResult({ preloadId, success: false, error: "This Play session has no asset source loader." });
-      return true;
-    }
-    const request: { controller: AbortController; release?: () => void; guids: string[] } = {
-      controller: new AbortController(), guids: assetGuids,
-    };
-    preloads.set(preloadId, request);
-    publishAssetStates(assetGuids, "loading");
-    void options.acquireAssetSources(assetGuids, { consumer: ownerId, signal: request.controller.signal, priority,
-      onProgress: (progress) => {
-        if (preloads.get(preloadId) === request) publishPreloadResult({ preloadId, success: true, progress: Math.min(0.9, progress * 0.9) });
-      },
-    // A preload is a latent spawn's (Spawn Actor, a Class load): it resolves with the actor's variants compiled.
-    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, priority, true)).then((release) => {
-      if (preloads.get(preloadId) !== request) { release(); return; }
-      request.release = release;
-      publishAssetStates(assetGuids, "ready");
-      publishPreloadResult({ preloadId, success: true, progress: 1 });
-    }).catch((error: unknown) => {
-      if (preloads.get(preloadId) !== request) return;
-      releasePreload(preloadId);
-      publishAssetStates(assetGuids, "failed");
-      publishPreloadResult({ preloadId, success: false, error: `Assets requested by ${ownerId}: ${error instanceof Error ? error.message : String(error)}` });
-    });
-    return true;
-  };
-  let initialSourcesReleased = false;
-  const releaseInitialSources = () => {
-    if (initialSourcesReleased) return;
-    initialSourcesReleased = true;
-    handle.releaseInitialSources();
-    publishReleasedSources(options.releaseInitialSources?.());
-    const scoped = new Set([...preparedSourceScopes.values()].flatMap((scope) => scope.guids));
-    const persistent = options.getSourceControls?.().flatMap((control) => control.type === "loadSceneContent" ? control.assetGuids : []) ?? [];
-    for (const guid of initialSourceGuids) if (!scoped.has(guid)) preparedAssetGuids.delete(guid);
-    initialSourceGuids.clear();
-    for (const guid of persistent) if (!scoped.has(guid)) initialSourceGuids.add(guid);
-    if (initialSourcesReady) publishAssetStates([...initialSourceGuids], "ready");
-    for (const guid of preparedScenes.keys()) if (!sceneSourceOwners.has(guid)) preparedScenes.delete(guid);
-    for (const guid of preparedSceneReverbs.keys()) if (!sceneSourceOwners.has(guid)) preparedSceneReverbs.delete(guid);
-    for (const key of ["textureBytes", "modelBytes", "modelPayloads", "complexMeshes", "spritePayloads", "spriteAnimationPayloads",
-      "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
-      "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
-      "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
-      "retargetAnimationLoads", "animGraphs", "behaviourTrees", "blackboards", "dataAssets", "sceneNavmeshBytes",
-      "audioReverbByScene", "navmeshBytes", "audioReverbBytes", "scenes", "scene", "sceneLayers"] as const) delete options[key];
-    loadControl.scene = undefined;
-    loadControl.scenes = undefined;
-    loadControl.sceneLayers = undefined;
-  };
-  let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
-  let receivedActiveScene = false;
-  const sceneReadiness = createSceneLoadReadiness({
-    handle: { ...handle, whenEditorModelsReady: async (owner) => {
-      await sessionSourcesReady;
-      await handle.whenEditorModelsReady(owner);
-    } },
-    loading: {
-      acquire: () => handle.scheduler.acquireObstruction(),
-      progress: (state) => options.onSceneLoading?.(state),
-      paint: waitForSceneLoadingPaint,
-      layerPainted: ({ layerId, layerLoadId }) => {
-        worker?.postControl({ type: "sceneLayerLoadingPainted", layerId, layerLoadId });
-        runtime?.notifySceneLayerLoadingPainted(layerId, layerLoadId);
-      },
-      painted: ({ sceneAssetGuid, sceneLoadId }) => {
-        worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
-        runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
-      },
-    },
-    activate: ({ sceneAssetGuid }) => {
-      hostSceneGuid = applyPlayActiveScene({
-        handle,
-        command: { type: "activeScene", sceneAssetGuid },
-        scenes: [...preparedScenes].map(([guid, scene]) => ({ guid, scene })),
-        boot: { guid: options.sceneAssetGuid, scene: options.scene },
-        currentSceneGuid: hostSceneGuid,
-        forceReload: receivedActiveScene,
-        audioReverbByScene: preparedSceneReverbs,
-      });
-      if (receivedActiveScene && options.acquireSceneSources) releaseInitialSources();
-      receivedActiveScene = true;
-    },
-    onReady: ({ sceneAssetGuid, sceneLoadId }) => {
-      if (!initialSourcesReleased) { initialSourcesReady = true; publishAssetStates([...initialSourceGuids], "ready"); }
-      for (const prepared of sceneSourceScopes.get(sceneAssetGuid) ?? []) markSourceReady(prepared);
-      publishAssetStates([sceneAssetGuid], "ready");
-      worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
-      runtime?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
-    },
-    onLayerReady: ({ layerId, layerLoadId }) => {
-      worker?.postControl({ type: "sceneLayerReady", layerId, layerLoadId });
-      runtime?.notifySceneLayerReady(layerId, layerLoadId);
-    },
-    onFailed: (scene, error) => {
-      if (scene.sceneAssetGuid) publishAssetStates([scene.sceneAssetGuid], "failed");
-      const message = `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`;
-      hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
-        assetGuid: scene.sceneAssetGuid, frameId: 0,
-        stack: error instanceof Error ? error.stack : undefined });
-      try {
-        options.onSceneLoadFailed?.();
-        options.onLog?.(message, "error");
-      } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
-    },
-  });
-  const streamReadiness = createSceneStreamingReadiness({
+  const sourceTracker = createPlaySourceTracker({
+    options,
     handle,
-    onProgress: ({ actorGuid, streamLoadId }, progress) => {
-      worker?.postControl({ type: "sceneStreamProgress", actorGuid, streamLoadId, progress });
-      runtime?.notifySceneStreamProgress(actorGuid, streamLoadId, progress);
-    },
-    onReady: ({ actorGuid, streamLoadId }) => {
-      const source = streamSceneAssets.get(actorGuid);
-      if (source?.loadId === streamLoadId) {
-        if (source.prepared) markSourceReady(source.prepared);
-        publishAssetStates([source.guid], "ready");
-      }
-      worker?.postControl({ type: "sceneStreamReady", actorGuid, streamLoadId });
-      runtime?.notifySceneStreamReady(actorGuid, streamLoadId);
-    },
-    onFailed: ({ actorGuid, streamLoadId }, error) => {
-      const source = streamSceneAssets.get(actorGuid);
-      if (source?.loadId === streamLoadId) publishAssetStates([source.guid], "failed");
-      const message = error instanceof Error ? error.message : String(error);
-      worker?.postControl({ type: "sceneStreamFailed", actorGuid, streamLoadId, message });
-      runtime?.notifySceneStreamFailed(actorGuid, streamLoadId, message);
-    },
+    worker: () => worker,
+    runtime: () => runtime,
+    stopped: () => stopped,
+    loadControl: () => loadControl,
+  });
+  const sceneLoads = createPlaySceneReadiness({
+    handle,
+    options,
+    sources: sourceTracker,
+    hostDiagnostics,
+    worker: () => worker,
+    runtime: () => runtime,
   });
   const consoleWaiters: Array<
     (result: { success: boolean; output: string }) => void
@@ -1451,8 +515,7 @@ export function startPlaySession(options: {
     const realized = realizedAwaitingSnapshot;
     realizedAwaitingSnapshot = [];
     for (const command of realized) {
-      sceneReadiness.receive(command);
-      streamReadiness.receive(command);
+      sceneLoads.receive(command);
     }
   };
   const reportRuntimeLog = (command: Extract<CommandMessage, { type: "log" }>) => {
@@ -1504,16 +567,7 @@ export function startPlaySession(options: {
       inspectorClient.receive(command);
       return;
     }
-    if (command.type === "assetSourcesReady") {
-      const request = sourceRequests.get(command.requestId);
-      sourceRequests.delete(command.requestId);
-      if (command.success) request?.resolve();
-      else request?.reject(new Error(command.error ?? "Script sources failed to prepare."));
-      return;
-    }
-    if (command.type === "requestComplexCollision") { answerComplexCollision(command.assetGuid); return; }
-    if (receivePreload(command)) return;
-    if (sceneSources?.receive(command)) return;
+    if (sourceTracker.receive(command)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     bridgeRate.note();
     if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
@@ -1537,8 +591,7 @@ export function startPlaySession(options: {
       deliverRealized();
       return;
     }
-    sceneReadiness.receive(command);
-    streamReadiness.receive(command);
+    sceneLoads.receive(command);
     if (command.type === "log") reportRuntimeLog(command);
     const printEntry = printEntryFromCommand(command);
     if (printEntry) options.onPrint?.(printEntry);
@@ -1591,57 +644,7 @@ export function startPlaySession(options: {
       options.onBehaviourTreeSnapshot?.(command.trees);
   };
 
-  const scripts = options.scripts ?? [];
-  const physics = options.physics ?? {
-    physicsWorld: "3d" as const,
-    gravity: [0, -9.81, 0] as [number, number, number],
-  };
-  const animClipCatalog = options.animClipCatalog && [...options.animClipCatalog];
-  const animGraphs = options.animGraphs?.map((entry) => {
-    const document = parseAnimGraphDocument(entry.document);
-    return document && animClipCatalog
-      ? { ...entry, document: resolveAnimGraphClips(document, animClipCatalog) }
-      : entry;
-  });
-  const loadControl = playLoadControl({
-    sessionMode: options.mode ?? "play",
-    sessionGeneration: options.sessionGeneration,
-    simulationAssetGuids: options.simulationAssetGuids ? [...options.simulationAssetGuids] : undefined,
-    saveGame: options.saveGame,
-    frameCap: resolvePlayFrameCap(options.frameCap),
-    traceByteBudget: options.traceByteBudget,
-    renderSettings: options.consoleRenderSettings ?? options.renderSettings,
-    sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
-    scene: options.scene,
-    physicsWorld: physics.physicsWorld,
-    gravity: physics.gravity,
-    project: options.project,
-    thirdPartyNoticesUrl: editorThirdPartyNoticesUrl(),
-    gameInstanceClass: options.gameInstanceClass,
-    scenes: options.scenes,
-    sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
-    sceneLayers: options.sceneLayers,
-    infiniteLoopDetection: options.infiniteLoopDetection,
-    loopCount: options.loopCount,
-    pauseOnErrors: options.pauseOnErrors,
-    breakpoints: options.breakpoints,
-    inputAssets: options.inputAssets,
-    dataAssets: options.dataAssets,
-    assetCatalog: options.assetCatalog,
-    focusNavigation: options.focusNavigation,
-    pixelsPerUnit: options.pixelsPerUnit,
-    collisionPresets: options.collisionPresets,
-    texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
-    audioAssetGuids: options.audioAssetGuids ?? [...(options.audioLibrary?.audio.keys() ?? [])],
-    materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
-    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
-    animClipCatalog,
-    renderTargets: Object.fromEntries(options.renderTargets ?? []),
-    renderTargetTextures: Object.fromEntries(options.renderTargetTextures ?? []),
-  });
-  if (acquireScene) loadControl.sceneCatalog = options.sceneCatalog ?? [];
-  if (options.classAssetGuids) loadControl.classAssetGuids = options.classAssetGuids;
-  if (options.consoleCommands) loadControl.consoleCommands = options.consoleCommands;
+  const { loadControl, scripts, animGraphs } = playSessionLoad(options, sourceTracker.acquireScene !== undefined);
 
   try {
     worker = createGameWorkerHost();
@@ -1652,27 +655,7 @@ export function startPlaySession(options: {
       lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
     });
-    for (const control of playSessionBootControls({
-      load: loadControl,
-      scripts,
-      animGraphs,
-      behaviourTrees: options.behaviourTrees,
-      blackboards: options.blackboards,
-      waters: { type: "loadWater", waters: [...(options.waterPayloads ?? [])].map(([guid, document]) => ({ guid, document })) },
-      tilemaps: playLoadTilemapsControl(
-        options.tilemapPayloads,
-        options.tilesetPayloads,
-        options.pixelsPerUnit,
-      ),
-      sprites: playLoadSpritesControl(
-        options.spritePayloads,
-        options.spriteAnimationPayloads,
-        options.pixelsPerUnit,
-      ),
-      models: playLoadModelsControl(options.modelPayloads, options.complexMeshes),
-      navmeshBytes: options.navmeshBytes,
-      pauseOnPlay: options.pauseOnPlay,
-    })) {
+    for (const control of playSessionWorkerControls(options, { loadControl, scripts, animGraphs })) {
       worker.postControl(control);
     }
   } catch (err) {
@@ -1683,78 +666,9 @@ export function startPlaySession(options: {
     runtime = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command),
       saveStorage,
-      acquireScene ? { acquireScene } : undefined,
+      sourceTracker.acquireScene ? { acquireScene: sourceTracker.acquireScene } : undefined,
     );
-    runtime.registerAnchors(FIXTURE_ASSET, [
-      {
-        line: 1,
-        column: 0,
-        assetGuid: FIXTURE_ASSET,
-        graphId: "event-graph",
-        nodeId: FIXTURE_NODE,
-      },
-    ]);
-    const inProcess = runtime;
-    const boot = createPlayBootCoordinator();
-    resetBoot = () => boot.reset();
-    pauseGate = createPlayPauseGate({
-      pause: () => inProcess.pause(),
-      resume: () => inProcess.resume(),
-    });
-    if (scripts.length > 0) {
-      boot.queueScripts(inProcess, scripts, []);
-    }
-    for (const entry of animGraphs ?? []) {
-      const document = parseAnimGraphDocument(entry.document);
-      if (document) inProcess.registerAnimGraph(entry.guid, document);
-    }
-    for (const entry of options.behaviourTrees ?? []) {
-      const document = parseBehaviourTreeDocument(entry.document);
-      if (document) inProcess.registerBehaviourTree(entry.guid, document);
-    }
-    inProcess.registerWaterContent(options.waterPayloads ?? new Map());
-    for (const entry of options.blackboards ?? []) {
-      const document = parseBlackboardDocument(entry.document);
-      if (document) inProcess.registerBlackboard(entry.guid, document);
-    }
-    if (
-      (options.tilemapPayloads && options.tilemapPayloads.size > 0) ||
-      (options.tilesetPayloads && options.tilesetPayloads.size > 0)
-    ) {
-      inProcess.registerTileContent({
-        tilemaps: options.tilemapPayloads ?? new Map(),
-        tilesets: options.tilesetPayloads ?? new Map(),
-        pixelsPerUnit: options.pixelsPerUnit,
-      });
-    }
-    if (
-      (options.spritePayloads && options.spritePayloads.size > 0) ||
-      (options.spriteAnimationPayloads &&
-        options.spriteAnimationPayloads.size > 0)
-    ) {
-      inProcess.registerSpriteContent({
-        sprites: options.spritePayloads ?? new Map(),
-        spriteAnimations: options.spriteAnimationPayloads ?? new Map(),
-        pixelsPerUnit: options.pixelsPerUnit,
-      });
-    }
-    if (options.modelPayloads && options.modelPayloads.size > 0) {
-      inProcess.registerModelContent({
-        models: options.modelPayloads,
-        complexMeshes: options.complexMeshes,
-      });
-    }
-    if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
-      boot.queueNavMesh(inProcess, options.navmeshBytes);
-    }
-    void pauseGate
-      .beginPlay((onStarted) => boot.play(inProcess, onStarted))
-      .catch((error: unknown) => {
-        if (!stopped) inProcess.reportError(error);
-      });
-    if (options.pauseOnPlay) {
-      pauseGate.setPaused(true);
-    }
+    ({ pauseGate, resetBoot } = bootInProcessPlay(runtime, { options, scripts, animGraphs, stopped: () => stopped }));
     options.onLog?.(
       `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,
       "warning",
@@ -1830,30 +744,7 @@ export function startPlaySession(options: {
   };
   raf = requestAnimationFrame(pump);
 
-  if (options.injectFixtureThrow) {
-    queueMicrotask(() => {
-      const hint = previewFixtureThrowHint(options.behaviourTrees);
-      if (runtime) {
-        const err = new Error("Preview fixture throw");
-        err.stack = `Error: Preview fixture throw\n    at run (haptic:///${FIXTURE_ASSET}.js:1:1)`;
-        runtime.reportError(err, undefined, hint ?? undefined);
-      } else if (worker) {
-        // Worker path: route through the same aggregator a real worker
-        // `diagnostic` command would use, rather than a report shortcut.
-        workerDiagnostics.push({
-          code: "runtime.uncaught",
-          message: "Preview fixture throw",
-          severity: "error",
-          assetGuid: hint?.assetGuid ?? FIXTURE_ASSET,
-          graphId: hint ? undefined : "event-graph",
-          nodeId: hint ? undefined : FIXTURE_NODE,
-          btNodeId: hint?.btNodeId,
-          frameId: 1,
-        });
-        options.onLog?.("Preview fixture throw", "error");
-      }
-    });
-  }
+  schedulePreviewFixtureThrow({ options, runtime: () => runtime, worker: () => worker, workerDiagnostics });
 
   const diagnosticSessionId = `play:${options.sessionGeneration ?? 0}:${performance.now()}`;
   performanceDiagnostics = new SessionDiagnostics({
@@ -1864,7 +755,7 @@ export function startPlaySession(options: {
       const frameCap = handle.scheduler.gateState().frameCap;
       return { sessionId: diagnosticSessionId, mode: options.mode ?? "play", sourceSha: build?.sourceSha ?? null,
         buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
-        sceneId: hostSceneGuid ?? options.sceneAssetGuid ?? "play-scene",
+        sceneId: sceneLoads.currentSceneGuid() ?? options.sceneAssetGuid ?? "play-scene",
         backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
         runtimeHost: runtimeMode, quality: JSON.stringify(render ?? {}), frameCap: Number.isFinite(frameCap) ? frameCap : null,
         dynamicResolution: render?.quality?.resolution?.dynamic === true,
@@ -1997,7 +888,7 @@ export function startPlaySession(options: {
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
     liveObjectCounts: () => handle.liveObjectCounts(),
-    whenModelsReady: async () => { await sessionSourcesReady; await handle.whenEditorModelsReady(); },
+    whenModelsReady: async () => { await sourceTracker.sessionSourcesReady; await handle.whenEditorModelsReady(); },
     modelLoadCount: () => handle.modelLoadCount(),
     drawCalls: () => handle.drawCalls(),
     bridgeMessagesPerSec: () => bridgeRate.perSecond(),
@@ -2006,8 +897,7 @@ export function startPlaySession(options: {
       void performanceDiagnostics?.dispose().finally(() => diagnosticClient.dispose());
       resetBoot();
       pauseGate?.reset();
-      sceneReadiness.dispose();
-      streamReadiness.dispose();
+      sceneLoads.dispose();
       stopped = true;
       boundaryClient.dispose();
       inspectorClient.dispose();
@@ -2056,23 +946,13 @@ export function startPlaySession(options: {
       } else {
         saveServer.dispose();
       }
-      for (const request of sourceRequests.values()) request.reject(new Error("Play stopped during script preparation."));
-      sourceRequests.clear();
-      sceneSources?.dispose();
-      for (const preloadId of preloads.keys()) releasePreload(preloadId);
-      preparedScenes.clear();
-      preparedSceneReverbs.clear();
-      sceneSourceOwners.clear();
-      streamSceneAssets.clear();
-      sceneSourceScopes.clear();
-      preparedSourceScopes.clear();
+      sourceTracker.dispose();
       const liveAfter = handle.liveObjectCounts();
       // The leak check runs once release confirms, when these Scenes are disposed. One that is not still owns what it holds.
       const playScenes = new Set(handle.ownedScenes());
       handle.dispose();
-      releaseSessionSources?.();
-      releaseSessionSources = undefined;
-      releaseInitialSources();
+      sourceTracker.releaseSessionSources();
+      sourceTracker.releaseInitialSources();
       // Shared-Engine teardown defers Scene/library release until actual
       // native release confirms; measure the texture cache only then. A
       // rejected release quarantines the owners — retained textures are not a

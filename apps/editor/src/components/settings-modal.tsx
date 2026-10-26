@@ -1,20 +1,11 @@
-import { AlwaysPackageFoldersField } from "./always-package-folders-field";
 import { ProjectSaveGamesSettings } from "./project-save-games-settings";
-import { RenderQualityFields } from "./render-quality-fields";
 import { FocusNavigationFields } from "./focus-navigation-fields";
-import { RenderPipelineFields } from "./render-pipeline-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
-import { ShadowSettingsFields } from "./shadow-settings-fields";
-import { EnvironmentLightingFields } from "./environment-lighting-fields";
-import { RenderEffectsFields } from "./render-effects-fields";
-import { MAX_WATER_BLEND_DISTANCE, normalizeShadowSettings, normalizeWaterBlendDistance } from "@haptic/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CelShadingFields } from "./cel-shading-fields";
 import {
   AssetPicker,
   AssetPickerControl,
   CatalogDialog,
-  DisclosureSection,
   ClassPicker,
   CollisionPresetsField,
   NamedListEditor,
@@ -23,17 +14,10 @@ import {
   classRowIdentity,
   selectedPickerIdentity,
   type AssetCreateOptions,
-  type CatalogCategory,
-  type CatalogCategoryGroup,
 } from "@haptic/editor-kit";
 import {
-  defaultExportPreset,
-  isErr,
   MAX_COLLISION_LAYERS,
-  normalizeCelShadingSettings,
-  normalizeEnvironmentLightingSettings,
   normalizeRenderEffectsSettings,
-  type ExportPreset,
 } from "@haptic/core";
 import {
   Empty,
@@ -42,24 +26,10 @@ import {
   EmptyTitle,
 } from "@haptic/ui/components/empty";
 import { Button } from "@haptic/ui/components/button";
-import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
-import { Checkbox } from "@haptic/ui/components/checkbox";
 import { Input } from "@haptic/ui/components/input";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@haptic/ui/components/alert-dialog";
-import {
   Field,
-  FieldContent,
   FieldDescription,
-  FieldError,
   FieldGroup,
   FieldLabel,
   FieldLegend,
@@ -68,13 +38,11 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@haptic/ui/components/select";
 import { Switch } from "@haptic/ui/components/switch";
-import { Slider } from "@haptic/ui/components/slider";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
@@ -91,17 +59,28 @@ import {
 } from "../context/document-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
-import { classIdFromClassAsset } from "../lib/content-browser-helpers";
-import { projectArchiveDownloadName } from "../lib/display-project-name";
-import { downloadZipArchive } from "../lib/download";
-import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
 } from "./engine-settings-form";
-import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { ProjectPluginsSettings } from "./project-plugins-settings";
 import { ProjectExtensionsSettings } from "./project-extensions-settings";
+import { ProjectGameSettings } from "./project-game-settings";
+import { ProjectAudioSettings } from "./project-audio-settings";
+import { ProjectRenderingSettings } from "./project-rendering-settings";
+import { ProjectExportSettings } from "./project-export-settings";
+import {
+  DisableSourceControlDialog,
+  ProjectSourceControlSettings,
+} from "./project-source-control-settings";
+import { useProjectExport } from "./use-project-export";
+import {
+  ENGINE_CATEGORIES,
+  ENGINE_GROUPS,
+  PROJECT_CATEGORIES,
+  PROJECT_GROUPS,
+  matchesSearch,
+} from "../lib/settings-catalog";
 import {
   ENGINE_SETTING_FIELDS,
   PROJECT_SETTING_FIELDS,
@@ -119,162 +98,6 @@ interface SettingsModalProps {
   "data-testid"?: string;
 }
 
-const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
-  {
-    id: "general",
-    label: "General",
-    keywords:
-      "project version build compile autosave editor utility objects infinite loop detection loop count",
-  },
-  {
-    id: "game",
-    label: "Game",
-    keywords:
-      "startup scene game instance class 2d pixels per unit pixel perfect sorting layers",
-  },
-  { id: "saveGames", label: "Save Games", keywords: "save game data definition default slot profile wipe reset import export persistence" },
-  {
-    id: "physics",
-    label: "Physics",
-    keywords: "collision layers presets collide mask havok",
-  },
-  { id: "focusNavigation", label: "Focus Navigation", keywords: "focus keyboard gamepad navigation repeat wrap input activate" },
-  {
-    id: "fonts",
-    label: "Fonts",
-    keywords: "default font fallback family stack",
-  },
-  {
-    id: "audio",
-    label: "Audio",
-    keywords: "mixer channel volume attenuation",
-  },
-  {
-    id: "rendering",
-    label: "Rendering",
-    keywords:
-      "frame cap fps play preview aspect ratio letterbox follow system custom resolution width height black bars PBR CEL shader shadow bands specular light mixing strongest additive blend outlines outline color width",
-  },
-  {
-    id: "textures",
-    label: "Textures",
-    keywords: "max dimension encoding retry compression",
-  },
-  {
-    id: "plugins",
-    label: "Plugins",
-    keywords: "plugins enable engine project starter content hplugin",
-  },
-  {
-    id: "extensions",
-    label: "Project Extensions",
-    keywords: "extensions editor code typescript javascript GLSL material converter hextension",
-  },
-  {
-    id: "export",
-    label: "Export",
-    keywords:
-      "export project zip download packaged player export game debugger file count always package folders folder include unreferenced",
-  },
-  {
-    id: "sourceControl",
-    label: "Source Control",
-    keywords: "git lfs lock token repository branch poll auto lock",
-  },
-];
-
-const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  {
-    label: "Project",
-    ids: [
-      "general",
-      "game",
-      "saveGames",
-      "physics",
-      "focusNavigation",
-      "fonts",
-      "audio",
-      "rendering",
-      "textures",
-      "plugins",
-      "extensions",
-      "export",
-      "sourceControl",
-    ],
-  },
-];
-
-const ENGINE_CATEGORIES: Array<
-  CatalogCategory & { keywords: string; id: EngineSettingsCategoryId }
-> = [
-  {
-    id: "about",
-    label: "About",
-    keywords: "version channel build commit source release test automatic updates GitHub",
-  },
-  {
-    id: "interface",
-    label: "Interface",
-    keywords: "interface compact mode density touch targets rows size",
-  },
-  {
-    id: "undo",
-    label: "Undo",
-    keywords: "undo history length stack memory limit budget",
-  },
-  {
-    id: "debugger",
-    label: "Debugger",
-    keywords: "trace htrace snapshot performance profiler recording duration gpu timing frames memory budget pause play simulation debug mode diagnostics feature test copy error",
-  },
-  {
-    id: "viewport",
-    label: "Viewport",
-    keywords: "frame cap hardware scaling post processing camera speed fly",
-  },
-  {
-    id: "assets",
-    label: "Assets",
-    keywords:
-      "model import default scale glb gltf texture lod budget quality audio pcm voices",
-  },
-  {
-    id: "graph",
-    label: "Graph",
-    keywords: "graph default zoom node canvas fit view assistant connection distance shake disconnect read-only read only lock pin defaults inline input values",
-  },
-  {
-    id: "thumbnails",
-    label: "Thumbnails",
-    keywords: "generate thumbnails",
-  },
-  {
-    id: "templates",
-    label: "Templates",
-    keywords: "templates library add template homepage",
-  },
-  {
-    id: "plugins",
-    label: "Engine Plugins",
-    keywords: "plugins default enabled disabled export bundled library",
-  },
-  {
-    id: "extensions",
-    label: "Engine Extensions",
-    keywords: "extensions default enabled editor code GLSL material converter library",
-  },
-  {
-    id: "focus",
-    label: "Focus",
-    keywords: "focus keep tabs panels layout",
-  },
-  {
-    id: "keybinds",
-    label: "Keybinds",
-    keywords: "keyboard shortcuts hotkeys keybinds keys bindings",
-  },
-];
-
 /**
  * Project Settings pickers create in the project content root, never beside
  * the active tab (which may sit in a plugin that can be disabled).
@@ -288,33 +111,6 @@ const GENERIC_FONT_FALLBACKS = [
   "system-ui",
 ] as const;
 
-const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  {
-    label: "Editor",
-    ids: [
-      "undo",
-      "debugger",
-      "viewport",
-      "graph",
-      "assets",
-      "thumbnails",
-      "focus",
-      "keybinds",
-      "interface",
-      "about",
-    ],
-  },
-  { label: "Projects", ids: ["templates", "plugins", "extensions"] },
-];
-
-function matchesSearch(
-  label: string,
-  keywords: string,
-  needle: string,
-): boolean {
-  return !needle || `${label} ${keywords}`.toLowerCase().includes(needle);
-}
-
 export function SettingsModal({
   open,
   onOpenChange,
@@ -325,9 +121,6 @@ export function SettingsModal({
   const resolvedTestId =
     testId ?? (scope === "engine" ? "engine-settings-modal" : "settings-modal");
   const {
-    exportProject,
-    exportGameArtifact,
-    zipExportedGame,
     retryFailedTextureEncoding,
     updateProjectSettings: applyProjectSettings,
     updateProjectVersion,
@@ -400,11 +193,7 @@ export function SettingsModal({
   const [lutPickerOpen, setLutPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
-  const [exportGameError, setExportGameError] = useState<string | null>(null);
-  const [exportGameBusy, setExportGameBusy] = useState(false);
-  const [exportProjectBusy, setExportProjectBusy] = useState(false);
-  const [exportProjectError, setExportProjectError] = useState<string | null>(null);
-  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const projectExport = useProjectExport(projectDocument);
   const [sourceControlUrlMissing, setSourceControlUrlMissing] = useState(false);
   const [disableSourceControlOpen, setDisableSourceControlOpen] =
     useState(false);
@@ -493,56 +282,6 @@ export function SettingsModal({
       setActiveCategoryId(categories[0]?.id ?? source[0]?.id ?? "general");
     }
   }, [activeCategoryId, categories, source]);
-
-  const handleExport = async () => {
-    if (!projectDocument || exportProjectBusy) return;
-    setExportProjectBusy(true);
-    setExportProjectError(null);
-    setExportNotice(null);
-    try {
-      const bytes = await exportProject(projectDocument);
-      downloadZipArchive(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
-      setExportNotice("Project backup prepared. Check your downloads.");
-    } catch (error) {
-      setExportProjectError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setExportProjectBusy(false);
-    }
-  };
-
-  const handleExportGame = async () => {
-    if (!projectDocument) return;
-    setExportGameBusy(true);
-    setExportGameError(null);
-    setExportNotice(null);
-    try {
-      const result = await exportGameArtifact({ projectSnapshot: projectDocument });
-      if (isErr(result)) {
-        setExportGameError(exportGameFailureMessage(result.error));
-        return;
-      }
-      downloadZipArchive(
-        zipExportedGame(result.value),
-        `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`,
-      );
-      setExportNotice("Game export prepared. Check your downloads.");
-    } catch (error) {
-      console.error("[editor] Export Game failed", error);
-      setExportGameError(exportGameFailureMessage(error));
-    } finally {
-      setExportGameBusy(false);
-    }
-  };
-
-  const exportPreset =
-    projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
-  /** The Export fields edit the first preset; later presets stay as stored. */
-  const updateExportPreset = (patch: Partial<ExportPreset>) => {
-    if (!projectDocument) return;
-    const [current = defaultExportPreset(), ...rest] =
-      projectDocument.settings.exportPresets;
-    updateProjectSettings({ exportPresets: [{ ...current, ...patch }, ...rest] });
-  };
 
   const twoD = projectDocument?.settings.twoD;
   const showProjectBody =
@@ -769,156 +508,13 @@ export function SettingsModal({
         projectDocument &&
         twoD &&
         activeCategoryId === "game" ? (
-        <FieldGroup className="gap-4">
-          <FieldSet>
-            <FieldLegend>Game</FieldLegend>
-            <Field>
-              <FieldLabel>Startup Scene</FieldLabel>
-              <AssetPickerControl
-                value={projectDocument.settings.startupSceneGuid}
-              >
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                  onClick={() => setScenePickerOpen(true)}
-                  data-testid="settings-startup-scene"
-                  id="settings-startup-scene"
-                >
-                  {selectedPickerIdentity(
-                    assetRowIdentity(
-                      (() => {
-                        const asset = assetRegistry
-                          ?.list()
-                          .find(
-                            (entry) =>
-                              entry.header.guid ===
-                              projectDocument.settings.startupSceneGuid,
-                          );
-                        return asset
-                          ? {
-                              name: asset.header.name,
-                              type: asset.header.type,
-                            }
-                          : undefined;
-                      })(),
-                    ),
-                  )}
-                </Button>
-              </AssetPickerControl>
-              <FieldDescription>
-                Exported games start here. Play and Preview use it when Play
-                From Scene is off.
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>Game Instance</FieldLabel>
-              <AssetPickerControl
-                value={
-                  assetRegistry
-                    ?.list()
-                    .find(
-                      (asset) =>
-                        asset.header.type === "Class" &&
-                        classIdFromClassAsset(asset) ===
-                          projectDocument.settings.gameInstanceClass,
-                    )?.header.guid
-                }
-              >
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                onClick={() => setGameInstancePickerOpen(true)}
-                data-testid="settings-game-instance"
-                id="settings-game-instance"
-              >
-                {selectedPickerIdentity(
-                  classRowIdentity(
-                    gameInstanceClassEntries(
-                      assetRegistry?.list() ?? [],
-                    ).find(
-                      (entry) =>
-                        entry.id ===
-                        projectDocument.settings.gameInstanceClass,
-                    ),
-                    projectDocument.settings.gameInstanceClass,
-                  ),
-                )}
-              </Button>
-              </AssetPickerControl>
-              <FieldDescription>
-                GameInstance subclass created for Play, Preview and exported
-                games.
-              </FieldDescription>
-            </Field>
-          </FieldSet>
-          <FieldSet>
-            <FieldLegend>2D</FieldLegend>
-              <Field className="settings-field">
-                <FieldLabel htmlFor="pixels-per-unit">
-                  Pixels Per Unit
-                </FieldLabel>
-              <NumberField
-                id="pixels-per-unit"
-                aria-describedby="pixels-per-unit-description"
-                min={1}
-                step={1}
-                  className="min-h-[var(--chrome-row,28px)]"
-                value={twoD.pixelsPerUnit}
-                onChange={(pixelsPerUnit) =>
-                  updateProjectSettings({
-                    twoD: {
-                      ...twoD,
-                      pixelsPerUnit,
-                    },
-                  })
-                }
-                data-testid="settings-pixels-per-unit"
-              />
-              <FieldDescription id="pixels-per-unit-description">
-                Texture pixels per world unit. Sizes sprites, tilemaps and 2D
-                text.
-              </FieldDescription>
-            </Field>
-              <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="settings-pixel-perfect">
-                  Pixel-Perfect Mode
-              </FieldLabel>
-              <Switch
-                id="settings-pixel-perfect"
-                aria-describedby="settings-pixel-perfect-description"
-                checked={twoD.pixelPerfect}
-                onCheckedChange={(checked) =>
-                  updateProjectSettings({
-                    twoD: { ...twoD, pixelPerfect: checked === true },
-                  })
-                }
-                data-testid="settings-pixel-perfect"
-              />
-              <FieldDescription id="settings-pixel-perfect-description">
-                Frames the 2D editor view 1:1 with nearest sampling. Play and
-                exported games snap the game camera to the pixel grid.
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>Sorting Layers</FieldLabel>
-              <NamedListEditor
-                values={twoD.sortingLayers}
-                onChange={(sortingLayers) =>
-                  updateProjectSettings({
-                    twoD: { ...twoD, sortingLayers },
-                  })
-                }
-                itemLabel="Sorting Layer"
-                addPlaceholder="New Layer"
-                addLabel="Add Layer"
-                data-testid="settings-sorting-layers"
-              />
-                <FieldDescription>Ordered back to front.</FieldDescription>
-            </Field>
-          </FieldSet>
-        </FieldGroup>
+        <ProjectGameSettings
+          projectDocument={projectDocument}
+          updateProjectSettings={updateProjectSettings}
+          assetRegistry={assetRegistry}
+          setScenePickerOpen={setScenePickerOpen}
+          setGameInstancePickerOpen={setGameInstancePickerOpen}
+        />
       ) : null}
 
         {showProjectBody &&
@@ -1063,353 +659,24 @@ export function SettingsModal({
       /> : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "audio" ? (
-        <FieldGroup>
-          <FieldSet>
-            <FieldLegend>Audio</FieldLegend>
-            <Field>
-              <FieldLabel>Audio Mixer</FieldLabel>
-              <AssetPickerControl
-                value={projectDocument.settings.audio.audioMixerGuid}
-              >
-                <Button
-                  type="button"
-                  variant="outline"
-                    className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                  onClick={() => setMixerPickerOpen(true)}
-                  data-testid="settings-audio-mixer"
-                  id="settings-audio-mixer"
-                >
-                  {selectedPickerIdentity(
-                    assetRowIdentity(
-                      (() => {
-                        const asset = assetRegistry
-                          ?.list()
-                          .find(
-                            (entry) =>
-                              entry.header.guid ===
-                              projectDocument.settings.audio.audioMixerGuid,
-                          );
-                        return asset
-                          ? {
-                              name: asset.header.name,
-                              type: asset.header.type,
-                            }
-                          : undefined;
-                      })(),
-                    ),
-                  )}
-                </Button>
-              </AssetPickerControl>
-              <FieldDescription>
-                  None bypasses channel and master volume controls.
-              </FieldDescription>
-            </Field>
-              <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="settings-audio-occlusion">
-                Occlusion
-              </FieldLabel>
-              <Switch
-                id="settings-audio-occlusion"
-                aria-describedby="settings-audio-occlusion-description"
-                checked={projectDocument.settings.audio.occlusionEnabled}
-                onCheckedChange={(checked) =>
-                  updateProjectSettings({
-                    audio: {
-                      ...projectDocument.settings.audio,
-                      occlusionEnabled: checked === true,
-                    },
-                  })
-                }
-                data-testid="settings-audio-occlusion"
-              />
-              <FieldDescription id="settings-audio-occlusion-description">
-                Wall muffling for channels with Muffle Through Walls enabled.
-              </FieldDescription>
-            </Field>
-            {(
-              [
-                  [
-                    "settings-audio-reverb-wet-scale",
-                    "Reverb Wet Scale",
-                    "reverbWetScale",
-                  ],
-                  [
-                    "settings-audio-reverb-decay-scale",
-                    "Reverb Decay Scale",
-                    "reverbDecayScale",
-                  ],
-                [
-                  "settings-audio-reverb-damping-scale",
-                  "Reverb Damping Scale",
-                  "reverbDampingScale",
-                ],
-              ] as const
-            ).map(([id, label, key]) => (
-              <Field key={id}>
-                <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>
-                <div className="flex min-w-0 items-center gap-2">
-                  <Slider
-                    aria-labelledby={`${id}-label`}
-                    className="min-w-0 flex-1"
-                    min={0}
-                    max={2}
-                    step={0.05}
-                    value={projectDocument.settings.audio[key]}
-                    onValueChange={(next) => {
-                      const scale = Array.isArray(next) ? next[0] : next;
-                      if (typeof scale !== "number") return;
-                      updateProjectSettings({
-                        audio: {
-                          ...projectDocument.settings.audio,
-                          [key]: scale,
-                        },
-                      });
-                    }}
-                    data-testid={`${id}-slider`}
-                  />
-                  <div className="w-20 shrink-0">
-                    <NumberField
-                      id={id}
-                      min={0}
-                      max={2}
-                      step={0.05}
-                        className="min-h-[var(--chrome-row,28px)]"
-                      value={projectDocument.settings.audio[key]}
-                      onChange={(scale) =>
-                        updateProjectSettings({
-                          audio: {
-                            ...projectDocument.settings.audio,
-                            [key]: scale,
-                          },
-                        })
-                      }
-                      data-testid={id}
-                    />
-                  </div>
-                </div>
-              </Field>
-            ))}
-            <FieldDescription>
-              Scales baked environment reverb. Sounds without a channel stay dry.
-            </FieldDescription>
-          </FieldSet>
-        </FieldGroup>
+        <ProjectAudioSettings
+          projectDocument={projectDocument}
+          updateProjectSettings={updateProjectSettings}
+          assetRegistry={assetRegistry}
+          setMixerPickerOpen={setMixerPickerOpen}
+        />
       ) : null}
 
         {showProjectBody &&
         projectDocument &&
         activeCategoryId === "rendering" ? (
-        <FieldGroup className="gap-4">
-          <FieldSet>
-            <FieldLegend>Rendering</FieldLegend>
-            <RenderPipelineFields hideTitle scope="project" project={projectDocument.settings.render}
-              onChange={(pipeline) => updateProjectSettings({ render: { ...projectDocument.settings.render, ...pipeline } })} />
-            <Field className="settings-field">
-              <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>
-              <Select value={projectDocument.settings.render.mode ?? "pbr"}
-                onValueChange={(mode) => {
-                  if (mode === "pbr" || mode === "cel") updateProjectSettings({ render: { ...projectDocument.settings.render, mode } });
-                }}>
-                <SelectTrigger id="setting-render-mode" data-testid="setting-render-mode">
-                  <SelectValue>{projectDocument.settings.render.mode === "cel" ? "CEL" : "PBR"}</SelectValue>
-                </SelectTrigger>
-                <SelectContent><SelectGroup>
-                  <SelectItem value="pbr">PBR</SelectItem>
-                  <SelectItem value="cel">CEL</SelectItem>
-                </SelectGroup></SelectContent>
-              </Select>
-              <FieldDescription>CEL uses banded lighting. Scenes can override its style.</FieldDescription>
-            </Field>
-            <DisclosureSection title="Scalability" {...renderingSection("scalability")}>
-              <RenderQualityFields hideTitle settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
-            </DisclosureSection>
-            <DisclosureSection title="Shadows" {...renderingSection("shadows")}>
-              <ShadowSettingsFields hideTitle project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
-            </DisclosureSection>
-            <DisclosureSection title="Environment Lighting" {...renderingSection("environment")}>
-              <EnvironmentLightingFields hideTitle cel={projectDocument.settings.render.mode === "cel"} project={projectDocument.settings.render.environmentLighting} onChange={(environmentLighting) => updateProjectSettings({ render: { ...projectDocument.settings.render, environmentLighting: normalizeEnvironmentLightingSettings(environmentLighting) } })} />
-            </DisclosureSection>
-            <DisclosureSection title="Post Processing" {...renderingSection("postProcessing")}>
-              <RenderEffectsFields
-                hideTitle
-                project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)}
-                onChange={(effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } })}
-                lutControl={
-                  <AssetPickerControl value={normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid}>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                      onClick={() => setLutPickerOpen(true)}
-                      data-testid="project-effects-lut"
-                      id="project-effects-lut"
-                    >
-                      {selectedPickerIdentity(
-                        assetRowIdentity(
-                          (() => {
-                            const guid = normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid;
-                            const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
-                            return asset ? { name: asset.header.name, type: asset.header.type } : undefined;
-                          })(),
-                        ),
-                      )}
-                    </Button>
-                  </AssetPickerControl>
-                }
-              />
-            </DisclosureSection>
-            {projectDocument.settings.render.mode === "cel" ? (
-              <DisclosureSection title="CEL Shading" {...renderingSection("cel")}>
-                <CelShadingFields
-                  hideTitle
-                  project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
-                  onChange={(cel) => updateProjectSettings({ render: { ...projectDocument.settings.render, cel: normalizeCelShadingSettings(cel) } })}
-                />
-              </DisclosureSection>
-            ) : null}
-            <DisclosureSection title="Resolution" {...renderingSection("resolution")}>
-            <FieldGroup className="gap-2">
-              <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="setting-render-custom">
-                Custom Resolution
-              </FieldLabel>
-              <Switch
-                id="setting-render-custom"
-                aria-describedby="setting-render-custom-description"
-                checked={projectDocument.settings.render.customResolution}
-                onCheckedChange={(checked) =>
-                  updateProjectSettings({
-                    render: {
-                      ...projectDocument.settings.render,
-                      customResolution: checked === true,
-                    },
-                  })
-                }
-                data-testid="setting-render-custom"
-              />
-              <FieldDescription id="setting-render-custom-description">
-                Sets the design size for Play and exported games. Overrides
-                Follow System.
-              </FieldDescription>
-            </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-render-width">
-                Render Size
-              </FieldLabel>
-              <div className="flex items-center gap-2">
-                <NumberField
-                  id="setting-render-width"
-                  min={1}
-                  step={1}
-                  disabled={!projectDocument.settings.render.customResolution}
-                    className="min-h-[var(--chrome-row,28px)]"
-                  value={projectDocument.settings.render.width}
-                  onChange={(width) =>
-                    updateProjectSettings({
-                      render: { ...projectDocument.settings.render, width },
-                    })
-                  }
-                  data-testid="setting-render-width"
-                  aria-label="Render Width"
-                />
-                <span aria-hidden="true">×</span>
-                <NumberField
-                  id="setting-render-height"
-                  min={1}
-                  step={1}
-                  disabled={!projectDocument.settings.render.customResolution}
-                    className="min-h-[var(--chrome-row,28px)]"
-                  value={projectDocument.settings.render.height}
-                  onChange={(height) =>
-                    updateProjectSettings({
-                      render: { ...projectDocument.settings.render, height },
-                    })
-                  }
-                  data-testid="setting-render-height"
-                  aria-label="Render Height"
-                />
-              </div>
-            </Field>
-            <Field orientation="horizontal">
-              <Checkbox
-                id="setting-render-black-bars"
-                aria-describedby="setting-render-black-bars-description"
-                checked={projectDocument.settings.render.blackBars}
-                disabled={!projectDocument.settings.render.customResolution}
-                onCheckedChange={(checked) =>
-                  updateProjectSettings({
-                    render: {
-                      ...projectDocument.settings.render,
-                      blackBars: checked === true,
-                    },
-                  })
-                }
-                data-testid="setting-render-black-bars"
-              />
-              <FieldContent>
-                <FieldLabel htmlFor="setting-render-black-bars">
-                  Black Bars
-                </FieldLabel>
-                <FieldDescription id="setting-render-black-bars-description">
-                  Adds bars to preserve the design size. Off fills the window
-                  without stretching.
-                </FieldDescription>
-              </FieldContent>
-            </Field>
-            </FieldGroup>
-            </DisclosureSection>
-            <DisclosureSection title="Water" {...renderingSection("water")}>
-              <Field className="settings-field">
-                <FieldLabel htmlFor="setting-water-blend-distance">Water Blend Distance</FieldLabel>
-                <NumberField
-                  id="setting-water-blend-distance"
-                  min={0}
-                  max={MAX_WATER_BLEND_DISTANCE}
-                  step={0.5}
-                  className="min-h-[var(--chrome-row,28px)]"
-                  value={normalizeWaterBlendDistance(projectDocument.settings.render.water?.blendDistance)}
-                  onChange={(blendDistance) =>
-                    updateProjectSettings({
-                      render: { ...projectDocument.settings.render, water: { ...projectDocument.settings.render.water, blendDistance: normalizeWaterBlendDistance(blendDistance) } },
-                    })
-                  }
-                  data-testid="setting-water-blend-distance"
-                />
-                <FieldDescription>
-                  Metres within which water bodies merge into one surface, in rendering and water queries. 0 turns it off.
-                </FieldDescription>
-              </Field>
-            </DisclosureSection>
-            <DisclosureSection title="Play Preview" {...renderingSection("playPreview")}>
-            <FieldGroup className="gap-2">
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-play-frame-cap">
-                  Play Frame Cap
-              </FieldLabel>
-              <NumberField
-                id="setting-play-frame-cap"
-                min={1}
-                  className="min-h-[var(--chrome-row,28px)]"
-                data-testid="setting-play-frame-cap"
-                value={projectDocument.settings.playFrameCap}
-                onChange={(playFrameCap) =>
-                  updateProjectSettings({ playFrameCap })
-                }
-              />
-              <FieldDescription>
-                  Applies to Play and Preview.
-              </FieldDescription>
-            </Field>
-            <PlayPreviewSettingsFields
-              settings={projectDocument.settings.playPreview}
-              onChange={(playPreview) =>
-                updateProjectSettings({ playPreview })
-              }
-            />
-            </FieldGroup>
-            </DisclosureSection>
-          </FieldSet>
-        </FieldGroup>
+        <ProjectRenderingSettings
+          projectDocument={projectDocument}
+          updateProjectSettings={updateProjectSettings}
+          assetRegistry={assetRegistry}
+          renderingSection={renderingSection}
+          setLutPickerOpen={setLutPickerOpen}
+        />
       ) : null}
 
         {showProjectBody &&
@@ -1446,327 +713,31 @@ export function SettingsModal({
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "export" ? (
-        <FieldGroup className="gap-4">
-          <FieldSet>
-            <FieldLegend>Export</FieldLegend>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-export-debugger">
-                Bundle Debugger
-              </FieldLabel>
-              <Switch
-                id="setting-export-debugger"
-                checked={exportPreset.bundleDebugger}
-                onCheckedChange={(checked) =>
-                  updateExportPreset({ bundleDebugger: checked === true })
-                }
-                data-testid="setting-export-debugger"
-              />
-              <FieldDescription>
-                  Includes debugging tools and Development Only nodes in the
-                  export.
-              </FieldDescription>
-            </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-export-file-warn">
-                File Count Warn
-              </FieldLabel>
-              <NumberField
-                id="setting-export-file-warn"
-                min={1}
-                value={exportPreset.fileCountWarn}
-                onChange={(value) => updateExportPreset({ fileCountWarn: value })}
-                data-testid="setting-export-file-warn"
-              />
-            </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-export-file-fail">
-                File Count Fail
-              </FieldLabel>
-              <NumberField
-                id="setting-export-file-fail"
-                min={1}
-                value={exportPreset.fileCountFail}
-                onChange={(value) => updateExportPreset({ fileCountFail: value })}
-                data-testid="setting-export-file-fail"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Always Package Folders</FieldLabel>
-              <AlwaysPackageFoldersField
-                folders={projectDocument.settings.alwaysPackageFolders}
-                onChange={(alwaysPackageFolders) =>
-                  updateProjectSettings({ alwaysPackageFolders })
-                }
-              />
-              <FieldDescription>
-                Assets in these folders and their subfolders ship in every
-                export and Preview Build, even when nothing references them.
-                Editor-only assets and disabled plugin content stay out.
-              </FieldDescription>
-            </Field>
-            {exportGameError ? (
-                <p
-                  className="text-sm text-destructive"
-                  data-testid="export-game-error"
-                >
-                {exportGameError}
-              </p>
-            ) : null}
-            <Field>
-              <div className="flex">
-                <Button
-                  className="min-h-[var(--chrome-row,28px)] w-fit"
-                  data-testid="export-game"
-                  id="export-game"
-                  disabled={exportGameBusy}
-                  onClick={() => void handleExportGame()}
-                >
-                  {exportGameBusy ? "Exporting Game…" : "Export Game"}
-                </Button>
-              </div>
-              <FieldDescription>Playable ZIP for web hosting.</FieldDescription>
-            </Field>
-            <Field>
-              <div className="flex">
-                <Button
-                  className="min-h-[var(--chrome-row,28px)] w-fit"
-                  data-testid="export-project"
-                  id="export-project"
-                  disabled={exportProjectBusy}
-                  onClick={() => void handleExport()}
-                >
-                  {exportProjectBusy ? "Exporting Project…" : "Export Project"}
-                </Button>
-              </div>
-              <FieldDescription>Editable project backup.</FieldDescription>
-            </Field>
-            {exportProjectError ? (
-              <Alert variant="destructive">
-                <AlertTitle>Project Export Failed</AlertTitle>
-                <AlertDescription>{exportProjectError}</AlertDescription>
-              </Alert>
-            ) : null}
-            {exportNotice ? <p role="status" className="text-sm text-muted-foreground">{exportNotice}</p> : null}
-          </FieldSet>
-        </FieldGroup>
+        <ProjectExportSettings
+          projectDocument={projectDocument}
+          updateProjectSettings={updateProjectSettings}
+          {...projectExport}
+        />
       ) : null}
 
       {showProjectBody &&
       projectDocument &&
       activeCategoryId === "sourceControl" ? (
-        <FieldGroup>
-          <FieldSet>
-            <FieldLegend>Source Control</FieldLegend>
-              <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="settings-source-control-enabled">
-                Enable
-              </FieldLabel>
-              <Switch
-                id="settings-source-control-enabled"
-                checked={projectDocument.settings.sourceControl.enabled}
-                onCheckedChange={(checked) => {
-                  const enabled = checked === true;
-                  const current = projectDocument.settings.sourceControl;
-                  if (!enabled) {
-                    setDisableSourceControlOpen(true);
-                    return;
-                  }
-                  if (current.repositoryUrl.trim()) {
-                    setSourceControlUrlMissing(false);
-                    updateProjectSettings({
-                      sourceControl: { ...current, enabled },
-                    });
-                    return;
-                  }
-                  // No URL typed: read the folder's Git settings, and refuse
-                  // to enable when they hold none either.
-                  const requestedProject = projectGuid;
-                  void prefillSourceControlFromGit().then((prefill) => {
-                    // Fill from the settings as they are now: a URL typed
-                    // during the Git read wins.
-                    const live = latest.current;
-                    if (!live.project || live.projectGuid !== requestedProject) return;
-                    const now = live.project.settings.sourceControl;
-                    const repositoryUrl = now.repositoryUrl.trim() || prefill.repositoryUrl;
-                    if (!repositoryUrl) {
-                      setSourceControlUrlMissing(true);
-                      return;
-                    }
-                    setSourceControlUrlMissing(false);
-                    live.applyProjectSettings({
-                      sourceControl: {
-                        ...now,
-                        enabled: true,
-                        repositoryUrl,
-                        branch:
-                          now.branch === current.branch && prefill.branch
-                            ? prefill.branch
-                            : now.branch,
-                      },
-                    });
-                  });
-                }}
-                data-testid="settings-source-control-enabled"
-              />
-            </Field>
-              <Field className="settings-field" data-invalid={sourceControlUrlMissing || undefined}>
-              <FieldLabel htmlFor="settings-source-control-url">
-                Repository URL
-              </FieldLabel>
-              <Input
-                id="settings-source-control-url"
-                value={projectDocument.settings.sourceControl.repositoryUrl}
-                aria-invalid={sourceControlUrlMissing || undefined}
-                aria-describedby={sourceControlUrlMissing ? "settings-source-control-url-error" : undefined}
-                onChange={(event) => {
-                  setSourceControlUrlMissing(false);
-                  updateProjectSettings({
-                    sourceControl: {
-                      ...projectDocument.settings.sourceControl,
-                      repositoryUrl: event.target.value,
-                    },
-                  });
-                }}
-                data-testid="settings-source-control-url"
-              />
-              {sourceControlUrlMissing ? (
-                <FieldError id="settings-source-control-url-error" data-testid="settings-source-control-url-error">
-                  Enter a Repository URL before turning on Source Control.
-                </FieldError>
-              ) : null}
-            </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="settings-source-control-branch">
-                Branch
-              </FieldLabel>
-              <Input
-                id="settings-source-control-branch"
-                value={projectDocument.settings.sourceControl.branch}
-                onChange={(event) =>
-                  updateProjectSettings({
-                    sourceControl: {
-                      ...projectDocument.settings.sourceControl,
-                      branch: event.target.value,
-                    },
-                  })
-                }
-                data-testid="settings-source-control-branch"
-              />
-            </Field>
-              <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="settings-source-control-auto-lock">
-                Auto-Lock On First Edit
-              </FieldLabel>
-              <Switch
-                id="settings-source-control-auto-lock"
-                  checked={
-                    projectDocument.settings.sourceControl.autoLockOnEdit
-                  }
-                onCheckedChange={(checked) =>
-                  updateProjectSettings({
-                    sourceControl: {
-                      ...projectDocument.settings.sourceControl,
-                      autoLockOnEdit: checked === true,
-                    },
-                  })
-                }
-                data-testid="settings-source-control-auto-lock"
-              />
-            </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="settings-source-control-poll">
-                  Poll Interval (Seconds)
-              </FieldLabel>
-              <NumberField
-                id="settings-source-control-poll"
-                min={1}
-                className="min-h-[var(--chrome-row,28px)]"
-                value={Math.round(
-                    projectDocument.settings.sourceControl.pollIntervalMs /
-                      1000,
-                )}
-                onChange={(seconds) =>
-                  updateProjectSettings({
-                    sourceControl: {
-                      ...projectDocument.settings.sourceControl,
-                      pollIntervalMs: Math.round(seconds * 1000),
-                    },
-                  })
-                }
-                data-testid="settings-source-control-poll"
-              />
-            </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="settings-source-control-token">
-                Token
-              </FieldLabel>
-              <Input
-                id="settings-source-control-token"
-                type="password"
-                autoComplete="off"
-                value={tokenDraft}
-                aria-invalid={tokenError ? true : undefined}
-                aria-describedby={tokenError ? "settings-source-control-token-error" : undefined}
-                onChange={(event) => {
-                  setTokenError(null);
-                  setTokenDraft(event.target.value);
-                }}
-                data-testid="settings-source-control-token"
-              />
-              {tokenError ? (
-                <FieldError id="settings-source-control-token-error" data-testid="settings-source-control-token-error">
-                  {tokenError}
-                </FieldError>
-              ) : null}
-              <FieldDescription data-testid="settings-source-control-token-help">
-                Create one in{" "}
-                <a
-                  href="https://github.com/settings/tokens"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  GitHub Token Settings
-                </a>{" "}
-                with repo scope, or Contents: Read and Write for a fine-grained
-                token. GitLab and Gitea tokens with push access also work.
-              </FieldDescription>
-              <FieldDescription data-testid="settings-source-control-token-copy">
-                {sourceControl.hasToken ? "Token Saved. " : ""}
-                  Stored on this device for this project. Never included in project files or Git.
-              </FieldDescription>
-            </Field>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                  className="min-h-[var(--chrome-row,28px)]"
-                data-testid="settings-source-control-save-token"
-                disabled={!tokenDraft}
-                onClick={() => {
-                  setTokenError(null);
-                  void sourceControl.saveToken(tokenDraft).then(() => {
-                    setTokenDraft("");
-                  }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
-                }}
-              >
-                Save Token
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                  className="min-h-[var(--chrome-row,28px)]"
-                data-testid="settings-source-control-clear-token"
-                onClick={() => {
-                  setTokenError(null);
-                  void sourceControl.clearToken().then(() => {
-                    setTokenDraft("");
-                  }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
-                }}
-              >
-                Clear Token
-              </Button>
-            </div>
-          </FieldSet>
-        </FieldGroup>
+        <ProjectSourceControlSettings
+          projectDocument={projectDocument}
+          updateProjectSettings={updateProjectSettings}
+          projectGuid={projectGuid}
+          latest={latest}
+          prefillSourceControlFromGit={prefillSourceControlFromGit}
+          sourceControl={sourceControl}
+          tokenDraft={tokenDraft}
+          setTokenDraft={setTokenDraft}
+          tokenError={tokenError}
+          setTokenError={setTokenError}
+          sourceControlUrlMissing={sourceControlUrlMissing}
+          setSourceControlUrlMissing={setSourceControlUrlMissing}
+          setDisableSourceControlOpen={setDisableSourceControlOpen}
+        />
       ) : null}
 
       </div>}
@@ -1905,36 +876,12 @@ export function SettingsModal({
           data-testid="settings-editor-utility-object-picker"
         />
       ) : null}
-      <AlertDialog
-        open={disableSourceControlOpen}
-        onOpenChange={setDisableSourceControlOpen}
-      >
-        <AlertDialogContent data-testid="settings-source-control-disable-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Turn Off Source Control?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Locks stay until you release them. Turning Enable back on keeps
-              the lock list.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="settings-source-control-disable-confirm-action"
-              onClick={() => {
-                if (!projectDocument) return;
-                const current = projectDocument.settings.sourceControl;
-                updateProjectSettings({
-                  sourceControl: { ...current, enabled: false },
-                });
-                setDisableSourceControlOpen(false);
-              }}
-            >
-              Turn Off
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DisableSourceControlDialog
+        disableSourceControlOpen={disableSourceControlOpen}
+        setDisableSourceControlOpen={setDisableSourceControlOpen}
+        projectDocument={projectDocument}
+        updateProjectSettings={updateProjectSettings}
+      />
     </>
   );
 }
