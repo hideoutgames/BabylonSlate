@@ -136,8 +136,8 @@ test("scalability updates budgets, persists Custom and preserves independent set
     contentType: "application/json",
   });
   expect(allocation.shadowPasses).toBe(4);
-  expect(allocation.shadowMapBytes).toBeGreaterThan(0);
-  expect(allocation.shadowMapBytes).toBeLessThanOrEqual(384 * 1024 ** 2);
+  // The Ultra sun at its requested 4096: four cascades of half-float red colour plus 32-bit depth.
+  expect(allocation.shadowMapBytes).toBe(4 * 4096 ** 2 * 6);
   await openRendering(page);
   await expect(value(page, "Render Mode")).toHaveText("CEL");
   await openEnvironment(page);

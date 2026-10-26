@@ -1,7 +1,7 @@
 import type { AbstractEngine } from "@babylonjs/core";
 
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
-export const MANAGED_RENDER_BYTE_LIMIT = 512 * 1024 ** 2;
+export const MANAGED_RENDER_BYTE_LIMIT = 1024 * 1024 ** 2;
 /**
  * `shadow` holds per-view shadow maps (a Full Quality capture's own sun maps);
  * a scene view's maps reserve through reserveManagedShadowBytes instead.
