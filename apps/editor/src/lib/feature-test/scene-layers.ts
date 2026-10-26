@@ -21,6 +21,7 @@ import {
 } from "./context";
 import { classGraph, gChain, getVar, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
+import { ownedActorProbeScript } from "./scene-scripts";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
 export const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
@@ -212,6 +213,10 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   addWidgetRow(refs, add);
   addClassRow(refs, add);
   addJoystickAndPainter(add);
+  // The SceneLayerScript of every FT_HUD instance probes its own title.
+  const title = layer.actors.find((actor) => actor.id === "ft-ui-title");
+  if (!title) throw new Error("FT_HUD has no title for its Scene Layer Script.");
+  layer.script = ownedActorProbeScript("FT_HUD", title);
   return layer;
 }
 

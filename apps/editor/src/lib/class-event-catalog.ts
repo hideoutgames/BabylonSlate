@@ -10,7 +10,7 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@haptic/object-model";
-import { SUBSYSTEM_GET_NODE_ID } from "@haptic/scripting-nodes";
+import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID } from "@haptic/scripting-nodes";
 
 export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.gameLoaded",
@@ -198,6 +198,15 @@ function ancestryChain(options?: ClassEventOptions): string[] {
   return walkAncestry(options?.parentClass ?? "Actor", parentOf);
 }
 
+/**
+ * SceneScript (`Scene:<guid>`) and SceneLayerScript (`SceneLayer:<guid>`)
+ * chains: the script runs as the Scene or layer object, with Begin Play, Tick
+ * and Destroyed like an Actor.
+ */
+function isEmbeddedScriptChain(chain: readonly string[]): boolean {
+  return chain.includes("Scene") || chain.includes("SceneLayer");
+}
+
 function isSubsystemChain(chain: readonly string[]): boolean {
   return (
     chain.includes(GAME_SUBSYSTEM_CLASS_ID) ||
@@ -291,6 +300,8 @@ export function nativeEventStubs(
   const types: string[] = [];
   if (chain.includes("Actor") || chain.includes("ActorComponent")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
+  } else if (isEmbeddedScriptChain(chain)) {
+    types.push("flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed");
   }
   // Game Instance, GameSubsystem and SceneSubsystem lifecycles come from the
   // engine catalog so the editor and runtime share one table.
@@ -298,7 +309,8 @@ export function nativeEventStubs(
   if (chain.includes("DebugCommand")) {
     types.push("flow.event.commandRun");
   }
-  return eventStubsForTypes(types).map((stub) => chain.includes("ActorComponent") && stub.eventType === "flow.event.destroyed" ? { ...stub, name: "Event Destroyed" } : stub);
+  const destroyedTitle = chain.includes("ActorComponent") || (!chain.includes("Actor") && isEmbeddedScriptChain(chain));
+  return eventStubsForTypes(types).map((stub) => destroyedTitle && stub.eventType === "flow.event.destroyed" ? { ...stub, name: "Event Destroyed" } : stub);
 }
 
 /** Whether a script catalog node is legal on a Class graph for this parent. */
@@ -354,6 +366,10 @@ export function isScriptCatalogNodeAllowed(
   }
   // One Get <Subsystem> row per project subsystem class is injected instead.
   if (nodeId === SUBSYSTEM_GET_NODE_ID) {
+    return false;
+  }
+  // A SceneScript / SceneLayerScript gets one injected row per placed actor and component.
+  if (nodeId === OWNED_ACTOR_GET_NODE_ID || nodeId === OWNED_COMPONENT_GET_NODE_ID) {
     return false;
   }
   if (nodeId === "struct.break") {
@@ -478,10 +494,10 @@ export function isScriptCatalogNodeAllowed(
     nodeId === "flow.event.beginPlay" ||
     nodeId === "flow.event.destroyed"
   ) {
-    return chain.includes("Actor") || chain.includes("ActorComponent");
+    return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain);
   }
   if (nodeId === "flow.event.tick") {
-    return chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId);
+    return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain) || lineageEvents.has(nodeId);
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("DebugCommand");

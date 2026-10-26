@@ -54,7 +54,7 @@ Open a scene from the Content Browser, or use the console `changescene` command 
 
 ## Main scene zones
 
-The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
+The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play. Its Scene Script (`scene-scripts.ts`) asserts on Begin Play that Get <Actor> and Get <Component> (<Actor>) return the hub Mannequin and its first component; `FT_HUD`'s Scene Layer Script does the same for its title.
 
 | Zone (center x, z) | Module | Contents |
 | --- | --- | --- |

@@ -19,6 +19,7 @@ import type {
   SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
+  SetSceneScriptCommand,
 } from "./scene-fields";
 import { snapshotBytes } from "../snapshot-bytes";
 import { replaceActor, replaceComponent } from "./scene-actor";
@@ -852,6 +853,7 @@ export type SceneEditCommand =
   | SetComponentTransformPresenceCommand
   | ReorderFolderCommand
   | SetSceneOverlayEditorCommand
+  | SetSceneScriptCommand
   | ReplaceSceneCommand
   | AddActorCommand
   | RemoveActorCommand
@@ -887,6 +889,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.setComponentTransformPresence",
   "scene.reorderFolder",
   "scene.setOverlayEditor",
+  "scene.setScript",
   "scene.replace",
   "scene.addActor",
   "scene.removeActor",

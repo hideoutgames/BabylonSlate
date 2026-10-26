@@ -20,7 +20,7 @@ import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_CLASS_SCRIPT_APIS,
   ENGINE_COMPONENT_CLASS_IDS,
-  isSceneAssetClassId,
+  embeddedScriptParentOf,
 } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import type { PinCompatibilityRule } from "@haptic/graph-ui";
@@ -29,7 +29,8 @@ export function parentLookup(
   parentOf?: (id: string) => string | null | undefined,
 ): (id: string) => string | null | undefined {
   return (id) => {
-    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
+    const embeddedParent = embeddedScriptParentOf(id);
+    if (embeddedParent) return embeddedParent;
     return parentOf?.(id) ?? engineParentOf(id);
   };
 }

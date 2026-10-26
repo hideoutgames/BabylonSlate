@@ -11,6 +11,7 @@ import type { ProjectAppearance } from "./project-appearance";
 import { normalizeTagRegistry, type TagRegistry } from "./tags";
 import { normalizeAlwaysPackageFolders } from "./asset-folders";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
+import type { SceneLayerActorDesign } from "./scene-layer";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -384,6 +385,8 @@ export interface SerializedGraph {
   >;
   /** Prefab Root Actor Defaults copied onto spawned / scene-realized actors. */
   actorDefaults?: ActorDefaults;
+  /** Editor-only SceneLayerActor Prefab frame; never read by Play. */
+  overlayDesign?: SceneLayerActorDesign;
 }
 
 /** Event Tick Actor Default; omitted means `"inherit"`. */

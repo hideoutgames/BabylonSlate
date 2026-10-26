@@ -2,7 +2,7 @@ import { validateSaveGameDefinition, type SaveGameConfiguration } from "@haptic/
 import { subsystemBaseClassIdOf } from "@haptic/object-model";
 import { dataTypeSchemas } from "@haptic/scripting";
 import type { DataAssetCatalogEntry } from "@haptic/core";
-import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeEmbeddedScript, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
 import {
   collectExportReachability,
   exportGame,
@@ -54,6 +54,7 @@ import {
 } from "@haptic/shader-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
+import { embeddedScriptHost } from "../lib/embedded-script";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
 
@@ -331,6 +332,8 @@ export async function collectAndExportGame(
     parentClassId?: string | null;
   }> = [];
   const animDocs: Array<{ guid: string; name: string; document: unknown }> = [];
+  /** SceneScripts and SceneLayerScripts, compiled as their owner's `Scene:` / `SceneLayer:` class. */
+  const embeddedDocs: Array<{ guid: string; content: SerializedGraph; classId: string; className: string; parentClassId: string }> = [];
   const exportAssets: ExportAssetBytes[] = [];
   const subsystemHierarchy = { ancestry(classId: string) { const result: string[] = []; const seen = new Set<string>(); let current: string | null | undefined = classId; while (current && !seen.has(current)) { seen.add(current); result.push(current); current = params.parentOf(current); } return result; } };
   const requiredEmissions = new Set<string>();
@@ -362,6 +365,14 @@ export async function collectAndExportGame(
     if (asset.type === "AnimationGraph") {
       const payload = params.payloadByGuid?.(guid) ?? null;
       if (payload) animDocs.push({ guid, name: asset.name, document: payload });
+    }
+    if (asset.type === "Scene" || asset.type === "SceneLayer") {
+      const document = asset.type === "Scene" ? params.sceneByGuid(guid) : params.payloadByGuid?.(guid);
+      const script = normalizeEmbeddedScript((document as { script?: unknown } | null | undefined)?.script);
+      const host = embeddedScriptHost(asset.type === "Scene" ? "scene" : "scene-layer", { header: { guid, name: asset.name } });
+      if (script && host) {
+        embeddedDocs.push({ guid, content: script, classId: host.classId, className: host.className, parentClassId: host.parentClass });
+      }
     }
     let bytes: Uint8Array | null;
     try {
@@ -522,7 +533,7 @@ export async function collectAndExportGame(
   });
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
-  if (graphDocs.length || animDocs.length) {
+  if (graphDocs.length || animDocs.length || embeddedDocs.length) {
     const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath, classDisplayNameForGraphPath } = await import("./script-compiler");
     // A script that fails codegen fails the export instead of shipping without it.
     const compileOptions = {
@@ -535,7 +546,10 @@ export async function collectAndExportGame(
     };
     try {
       scripts.push(
-        ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), className: classDisplayNameForGraphPath(document.path), path: document.guid })), compileOptions),
+        ...compileGraphDocuments([
+          ...graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), className: classDisplayNameForGraphPath(document.path), path: document.guid })),
+          ...embeddedDocs.map(document => ({ ...document, path: document.guid })),
+        ], compileOptions),
         // Exported Animation Graph scripts are keyed by guid, as the pack is.
         ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), compileOptions),
       );

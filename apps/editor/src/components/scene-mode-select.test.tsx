@@ -29,6 +29,16 @@ describe("SceneModeSelect", () => {
     ]);
   });
 
+  it("offers a Scene Layer only Design and Script, with Shift+4 for Script", () => {
+    render(<KeybindProvider><SceneModeSelect kind="scene-layer" /></KeybindProvider>);
+    fireEvent.keyDown(document.body, shiftDigit(2));
+    fireEvent.keyDown(document.body, shiftDigit(4));
+    expect(setSceneMode.mock.calls).toEqual([["scene-1", "script"]]);
+    fireEvent.click(screen.getByTestId("scene-mode-select"));
+    expect(screen.getAllByRole("option").map((option) => option.getAttribute("aria-keyshortcuts"))).toEqual(["Shift+1", "Shift+4"]);
+    expect(screen.queryByRole("option", { name: /Landscape/ })).toBeNull();
+  });
+
   it("ignores the mode shortcuts while the select is disabled for Play", () => {
     render(<KeybindProvider><SceneModeSelect disabled /></KeybindProvider>);
     fireEvent.keyDown(document.body, shiftDigit(2));

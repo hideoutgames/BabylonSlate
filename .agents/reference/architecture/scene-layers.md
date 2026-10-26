@@ -39,7 +39,8 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Instance actor guids are `<layer guid>:<authored id>` with references remapped ([object-model.md](object-model.md#guids-and-identity)); component ids stay authored. Repeated actor ids fail to load.
 - Every `2D*` component is overlay-only (`SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS`); world-only components (Landscape, Foliage, water, Skybox, cameras, lights, fog, streaming, Movement, buoyancy …) are stripped from layers and refused at runtime. `ENGINE_COMPONENT_DESCRIPTORS` decides placement for Add Component, Place Actors, serialization and instantiation.
 - Spawn Actor and world instantiation never create `SceneLayerActor`. World Place Actors uses `overlay: false` and never lists overlay stamps.
-- A Class or new Prefab with no authored components gets the starter Box only in a 3D world Scene (`defaultPrefabComponents`); overlay placement and 2D Scenes leave it empty, and `spawnPlacedActor` decides at placement time, not the Class.
+- A Class or new Prefab with no authored components gets the starter Box only in a 3D world Scene (`defaultPrefabComponents`); overlay placement and 2D Scenes leave it empty, and `spawnPlacedActor` decides at placement time, not the Class. A SceneLayerActor Class with no authored components shows none in its Prefab, thumbnail and member paste target.
+- SceneLayerActor Prefab frame: editor-only `SerializedGraph.overlayDesign` (`SceneLayerActorDesign`: `sizeMode` fullscreen / desired / custom, `customSizePx`, `rootAnchor`, default `topRight`), edited by `graph.setOverlayDesign`, never compiled or read by Play. `sceneLayerActorFrameBounds` gives the orange frame: Fullscreen is `SCENE_LAYER_DEFAULT_LAYER_BOUNDS` and Custom is px / `pixelsPerUnit`, both offset so `rootAnchor` sits on the origin; Desired is the XY union of drawn visuals (`EditorTools.visualBounds2D`), none without content. The Prefab Root gets no transform box and no pivot write.
 
 ## Runtime and render
 
@@ -54,6 +55,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 
 ## Physics and input
 
+- **SceneLayerScript**: `SerializedSceneLayer.script` (carried through `sceneLayerToEditorScene` / `editorSceneToSceneLayer`), edited in the tab's Script mode (Scene Layer modes are Design and Script). Every instance is created as class `SceneLayer:<asset guid>` (registered on creation; `SceneLayer` is locked, so the script needs the subclass) with `ScriptRuntime.embeddedScriptHooks`: class defaults and interfaces, Begin Play at that instance's readiness (before its actors' Begin Play), Tick while it may run, On Destroyed on remove (actors already gone). Stop does not run it. Contract: [scripting.md](scripting.md#embedded-scene-scripts).
 - Physics is opt-in per asset. Each enabled instance gets its own Rapier 2D world, independent of the world and other layers; disabled layers have no world (bodies, colliders and overlap events do nothing).
 - Traces, sweeps and overlaps answer from the caller's world; `showcollision` draws layer colliders in that layer's own scene.
 - Picking walks layers high → low `zOrder`, honoring Hit Test (Ignore / Block / Pass Through), then the world. `2DButton` opts an actor into pointer events and is the only source of pointer graph events (no `onTouch*` nodes). Engine Settings `touchMinTargetPx` widens pick AABBs, not visuals.

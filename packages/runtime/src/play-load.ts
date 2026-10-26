@@ -1,6 +1,6 @@
 import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import { type SerializedScene, type SerializedSceneLayer } from "@haptic/core";
-import { isSceneAssetClassId } from "@haptic/object-model";
+import { isSceneAssetClassId, isSceneLayerAssetClassId } from "@haptic/object-model";
 import {
   createInProcessRuntime,
   type RuntimeDriver,
@@ -165,9 +165,9 @@ const NON_ACTOR_SCRIPT_CLASS_IDS = new Set([
   "Scene",
 ]);
 
-/** GameInstance, FunctionLibrary, editor, Scene, and Scene:{guid} classes are never spawned as Actors. */
+/** GameInstance, FunctionLibrary, editor, Scene, Scene:{guid} and SceneLayer:{guid} classes are never spawned as Actors. */
 export function shouldSpawnScriptedActor(classId: string): boolean {
-  if (isSceneAssetClassId(classId)) return false;
+  if (isSceneAssetClassId(classId) || isSceneLayerAssetClassId(classId)) return false;
   return !NON_ACTOR_SCRIPT_CLASS_IDS.has(classId);
 }
 

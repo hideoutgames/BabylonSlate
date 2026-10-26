@@ -8,6 +8,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphActorDefaultsCommand,
+  SetGraphOverlayDesignCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -20,6 +21,7 @@ import {
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
   createSetGraphActorDefaultsCommandFromJson,
+  createSetGraphOverlayDesignCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -60,6 +62,7 @@ import {
   createSetComponentNameCommandFromJson,
   createSetComponentTransformPresenceCommandFromJson,
   createSetSceneOverlayEditorCommandFromJson,
+  createSetSceneScriptCommandFromJson,
 } from "./commands/scene-fields";
 
 export interface JournalLine {
@@ -254,6 +257,14 @@ export function commandToJournalPayload(
         to: actorDefaults.to,
       };
     }
+    case "graph.setOverlayDesign": {
+      const overlayDesign = command as SetGraphOverlayDesignCommand;
+      return {
+        type: overlayDesign.type,
+        from: overlayDesign.from,
+        to: overlayDesign.to,
+      };
+    }
     default: {
       if (
         command.type.startsWith("scene.") ||
@@ -285,6 +296,7 @@ const SUPERSEDING_COMMAND_TYPES = new Set([
   "scene.setComponentProperty",
   "scene.setComponentTransform",
   "scene.setSceneSetting",
+  "scene.setScript",
   "scene.renameActor",
   "scene.renameFolder",
 ]);
@@ -383,6 +395,10 @@ export function registerGraphCommandRevivers(): void {
     "graph.setActorDefaults",
     createSetGraphActorDefaultsCommandFromJson,
   );
+  registerCommandReviver(
+    "graph.setOverlayDesign",
+    createSetGraphOverlayDesignCommandFromJson,
+  );
 }
 
 export function registerSceneCommandRevivers(): void {
@@ -395,6 +411,7 @@ export function registerSceneCommandRevivers(): void {
   registerCommandReviver("scene.setComponentTransformPresence", createSetComponentTransformPresenceCommandFromJson);
   registerCommandReviver("scene.reorderFolder", createReorderFolderCommandFromJson);
   registerCommandReviver("scene.setOverlayEditor", createSetSceneOverlayEditorCommandFromJson);
+  registerCommandReviver("scene.setScript", createSetSceneScriptCommandFromJson);
   registerCommandReviver("scene.replace", createReplaceSceneCommandFromJson);
   registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);

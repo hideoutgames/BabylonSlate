@@ -447,6 +447,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       }
       components(actor.components);
     }
+    // The SceneScript / SceneLayerScript references assets like a Class graph.
+    if (payload.script) graph(payload.script);
   } else if (assetType === "Class") {
     addClass(context.parentClass);
     components(payload.components);

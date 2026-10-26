@@ -18,6 +18,7 @@ import {
   EngineObject,
   MaterialObject,
   Scene,
+  SceneLayer,
   dispatchInterface,
   type InterfaceDispatchTarget,
   type TickContext,
@@ -390,6 +391,9 @@ export function createScriptContext(
         services.getSceneReference?.(target) ?? null,
       );
     };
+    context.getOwnedActor = (actorId) => ownedActor(services, self, String(actorId ?? ""));
+    context.getOwnedComponent = (actorId, componentId) =>
+      findComponentById(ownedActor(services, self, String(actorId ?? "")), String(componentId ?? ""));
     context.callComponentFunction = (target, name, args) =>
       callNativeComponentFunction(host, target, String(name ?? ""), args ?? {});
     context.addComponent = (actor, classId, transform) => {
@@ -711,4 +715,20 @@ export function createScriptContext(
     context.setBlackboard = extras?.setBlackboard ?? NO_BT_HOOK;
   }
   return context;
+}
+
+/**
+ * The actor a Scene or Scene Layer instance placed under an authored actor id:
+ * a layer instance's actors are `<layer guid>:<id>`, a streamed Scene's follow
+ * its instance id map, and the main Scene's keep their ids (never a layer's).
+ */
+function ownedActor(services: ScriptHostServices, owner: EngineObject | null, actorId: string): Actor | null {
+  if (!actorId) return null;
+  if (owner instanceof SceneLayer) {
+    const actor = services.findActor?.(`${owner.guid}:${actorId}`);
+    return actor && actor.sceneLayerId === owner.guid ? actor : null;
+  }
+  if (!(owner instanceof Scene)) return null;
+  const actor = services.findActor?.(services.resolveInstanceId?.(owner, actorId) ?? actorId);
+  return actor && !actor.sceneLayerId ? actor : null;
 }

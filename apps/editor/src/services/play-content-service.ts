@@ -9,6 +9,7 @@ import {
   type ProjectDocument,
   type RenderTargetPayload,
   type RenderTargetTexturePayload,
+  normalizeEmbeddedScript,
   type SerializedGraph,
   type SerializedScene,
   type WaterDefinition,
@@ -26,6 +27,8 @@ import {
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { sceneAssetClassId } from "@haptic/object-model";
+import { embeddedScriptHost } from "../lib/embedded-script";
+import { ownedActorsOfScene, ownedGetDiagnostics, type OwnedActorEntry } from "../lib/owned-actor-gets";
 import { encodeRgbaPng } from "@haptic/render/png-encode";
 import type { Diagnostic } from "@haptic/scripting";
 import {
@@ -108,6 +111,18 @@ export interface PlayContentServiceOptions {
 }
 
 export type PlayContentService = ReturnType<typeof createPlayContentService>;
+
+/** A SceneScript or SceneLayerScript compiled like a Class document of its owner's class. */
+type EmbeddedScriptDocument = {
+  path: string;
+  content: SerializedGraph;
+  documentKind: "scene" | "scene-layer";
+  classId: string;
+  className: string;
+  parentClassId: string;
+  /** The owner's actors, which its Get <Actor> / Get <Component> (<Actor>) nodes name. */
+  ownedActors: OwnedActorEntry[];
+};
 
 function openGraphCompileDocuments(
   openDocuments: readonly OpenDocument[],
@@ -290,6 +305,43 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return collectPlayScriptDocuments(documents, headers, parentOf);
   };
 
+  /**
+   * SceneScripts and SceneLayerScripts of the Scenes and Scene Layers in the
+   * closure (all of them without one), as Class documents of their
+   * `Scene:<guid>` / `SceneLayer:<guid>` classes. Open tabs win over saved files.
+   */
+  const loadEmbeddedScriptDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false): Promise<
+    EmbeddedScriptDocument[]
+  > => {
+    const assets = (projectService.registry?.list() ?? []).filter((asset) =>
+      (asset.header.type === "Scene" || asset.header.type === "SceneLayer") &&
+      (!requiredGuids || requiredGuids.has(asset.header.guid)));
+    const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
+    const documents: EmbeddedScriptDocument[] = [];
+    for (const asset of assets) {
+      const kind = asset.header.type === "Scene" ? "scene" : "scene-layer";
+      const host = embeddedScriptHost(kind, asset);
+      if (!host) continue;
+      let content = open.get(documentId({ kind, path: asset.path }))?.content as { script?: unknown; actors?: SerializedScene["actors"] } | null | undefined;
+      if (!content) {
+        try {
+          content = await projectService.loadDocument(kind, asset.path) as { script?: unknown; actors?: SerializedScene["actors"] };
+        } catch (error) {
+          reportLoadFailure(kind === "scene" ? "Scene" : "Scene Layer", asset.path, error, strict);
+          continue;
+        }
+      }
+      const script = normalizeEmbeddedScript(content?.script);
+      if (!script) continue;
+      documents.push({
+        path: asset.path, content: script, documentKind: kind,
+        classId: host.classId, className: host.className, parentClassId: host.parentClass,
+        ownedActors: ownedActorsOfScene({ actors: Array.isArray(content?.actors) ? content.actors : [] }),
+      });
+    }
+    return documents;
+  };
+
   const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false) => {
     const assets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "AnimationGraph" && (!requiredGuids || requiredGuids.has(asset.header.guid)),
@@ -372,7 +424,9 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     // left out of the recorded signature, so it reads as needing a compile, as
     // it does when it loads after any recorded compile.
     const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()].map((document) => ({ ...document }));
-    const documents = await loadProjectGraphDocuments(requiredGuids, openDocuments, strict);
+    const classDocuments = await loadProjectGraphDocuments(requiredGuids, openDocuments, strict);
+    const embeddedDocuments = await loadEmbeddedScriptDocuments(requiredGuids, openDocuments, strict);
+    const documents = [...classDocuments, ...embeddedDocuments];
     const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, openDocuments, strict);
     const parentOf = registryClassParentLookup(projectService.registry);
     const assets = projectService.registry?.list() ?? [];
@@ -382,7 +436,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       classIdForPath: classIdForGraphPath,
     });
     for (const doc of documents) {
-      classGraphs[classIdForGraphPath(doc.path)] = doc.content;
+      classGraphs[doc.classId ?? classIdForGraphPath(doc.path)] = doc.content;
     }
     const typeSchemas = typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments }));
     const sceneClassIds = collectSceneDocumentsForPalette({
@@ -398,7 +452,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
-        graphId: documentId({ kind: "graph", path: doc.path }),
+        graphId: documentId({ kind: "documentKind" in doc ? (doc as EmbeddedScriptDocument).documentKind : "graph", path: doc.path }),
         classId: doc.classId ?? classIdForGraphPath(doc.path),
         hierarchy: classHierarchyFromParentOf(parentOf),
         members: classMemberSymbolsFromGraphs(classGraphs, { parentOf }),
@@ -420,6 +474,11 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         subsystemClasses,
       }),
     );
+    for (const doc of embeddedDocuments) {
+      diagnostics.push(...ownedGetDiagnostics(doc.content, doc.ownedActors,
+        { assetGuid: doc.path, graphId: documentId({ kind: doc.documentKind, path: doc.path }) },
+        doc.documentKind === "scene" ? "Scene" : "Scene Layer"));
+    }
     const bundles = [
       ...compileGraphDocuments(documents, {
         inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], openDocuments),

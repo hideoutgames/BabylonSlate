@@ -66,7 +66,7 @@ Changing **Viewport** to 2D does not change **Physics World**. Set both for a 2D
 
 ## Scene modes
 
-The **Scene Mode** picker in the toolbar switches the open scene between **Design** (placing and editing actors), **Landscape** (sculpting terrain) and **Foliage** (painting instanced models). See [Landscape and Foliage](landscape.md).
+The **Scene Mode** picker in the toolbar switches the open scene between **Design** (placing and editing actors), **Landscape** (sculpting terrain), **Foliage** (painting instanced models) and **Script** (the scene's own script). See [Landscape and Foliage](landscape.md) and [Scene Scripts](../scripting/scene-scripts.md).
 
 ## Play a scene
 

@@ -57,6 +57,7 @@ import {
 import { classDocumentShowsPrefab, classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-component-catalog";
 import {
+  applyLogicGraphCommit,
   commitLogicGraph,
   collectClassGraphsForPalette,
   collectScriptInterfacesForPalette,
@@ -66,6 +67,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { logicGraphHostClass } from "../lib/embedded-script";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { ClassMemberDetails } from "./inspector-class-member-details";
 import { PrefabComponentDetails } from "./inspector-prefab-component-details";
@@ -89,8 +91,8 @@ export function InspectorPanel(props: IDockviewPanelProps) {
 function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { applyGraphChange, applyAssetDocumentChange, reparentClassDocument } =
-    useDocumentActions();
+  const documentActions = useDocumentActions();
+  const { applyAssetDocumentChange, reparentClassDocument } = documentActions;
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const { animEditorMode } = useActiveDocumentState();
@@ -133,7 +135,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
 
   const doc = useOpenDocument(documentId);
   const docPath = doc?.ref.path;
-  const catalogs = useInspectorCatalogs(docPath);
+  const catalogs = useInspectorCatalogs(docPath, doc?.ref.kind);
   const {
     indexed,
     parentClass,
@@ -155,6 +157,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   // Open Class and Script Interface tabs' unsaved content feeds pin hydration.
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
+  const graphClassId = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath).classId;
   const parsedAnim = useMemo(
     () =>
       doc?.ref.kind === "anim-graph"
@@ -198,12 +201,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       );
       return;
     }
-    const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
-    if (commit.kind !== "graph") {
-      void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
-      return;
-    }
-    void applyGraphChange(documentId, commit.graph);
+    applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
   };
   const inspectGraph = useMemo(() => {
     if (!graph) return null;
@@ -254,7 +252,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       dataDefinitions: typeSchemas.dataDefinitions,
       enums: typeSchemas.enums,
       dataAssets,
-      classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
+      classId: graphClassId,
       otherClassGraphs: collectClassGraphsForPalette({
         assets: assetRegistry?.list() ?? [],
         openDocuments: classDocuments,
@@ -269,7 +267,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   }, [
     assetRegistry,
     classDocuments,
-    doc?.ref.path,
+    graphClassId,
     graph?.functionGraphs,
     inspectGraph,
     interfaceDocuments,
@@ -419,7 +417,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           pickerAssets={pickerAssets}
           schemas={typeSchemas}
           enumMembers={enumMembers}
-          classId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined}
+          classId={graphClassId}
           onChange={persistGraph}
         />
       </PanelFrame>

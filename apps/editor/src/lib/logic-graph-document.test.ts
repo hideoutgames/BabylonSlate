@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classHeaderMeta, type SerializedGraph } from "@haptic/core";
+import { classHeaderMeta, createDefaultScene, type SerializedGraph } from "@haptic/core";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
@@ -469,6 +469,16 @@ describe("commitLogicGraph", () => {
         members: [{ id: "fn-1", kind: "function", name: "Jump" }],
       },
     });
+  });
+
+  it("reads and writes a Scene's script without the Actor-only parts", () => {
+    const scene = { ...createDefaultScene(), name: "Level" };
+    expect(serializedGraphFromDocument("scene", scene)).toBeNull();
+    const next: SerializedGraph = { nodes: [], edges: [], members: [], components: [], actorDefaults: { eventTick: "disabled" } };
+    const commit = commitLogicGraph("scene", scene, next);
+    expect(commit).toEqual({ kind: "scene", scene: { ...scene, script: { nodes: [], edges: [], members: [] } } });
+    if (commit.kind !== "scene") return;
+    expect(serializedGraphFromDocument("scene-layer", commit.scene)).toEqual({ nodes: [], edges: [], members: [] });
   });
 
   it("writes Animation Object graphs without dropping states", () => {

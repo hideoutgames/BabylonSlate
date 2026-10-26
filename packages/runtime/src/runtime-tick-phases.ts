@@ -93,6 +93,8 @@ function tickWorld(rt: RuntimeComposition, pending: readonly RawInputEvent[], si
     // notifications after actor and component creation hooks have completed.
     rt.admission.flush();
     if (rt.admission.canTickScene()) rt.streams.tickScenes(simDt, () => rt.admission.canTickScene());
+    // The main Scene's SceneScript and each ready Scene Layer's SceneLayerScript.
+    rt.scriptRuntime.tickEmbeddedScripts(simDt);
   } catch (error) {
     if (!isInfiniteLoopError(error)) throw error;
   }

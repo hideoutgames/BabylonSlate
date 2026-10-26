@@ -149,7 +149,8 @@ export function ensureCallParentForEvent(
   },
 ): SerializedGraph {
   const parentClassId = options.parentClassId.trim();
-  if (!parentClassId) return graph;
+  // A SceneScript / SceneLayerScript runs as its Scene or layer: there is no parent script to call.
+  if (!parentClassId || parentClassId === "Scene" || parentClassId === "SceneLayer") return graph;
   const eventNode = graph.nodes.find((node) => node.id === options.eventNodeId);
   if (!eventNode) return graph;
 

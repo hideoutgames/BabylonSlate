@@ -1,4 +1,4 @@
-import type { SerializedScene, SerializedTransform } from "@haptic/core";
+import type { SerializedGraph, SerializedScene, SerializedTransform } from "@haptic/core";
 import type { EditCommand } from "../command";
 import { snapshotBytes } from "../snapshot-bytes";
 import { replaceActor, replaceComponent } from "./scene-actor";
@@ -243,6 +243,41 @@ export class SetSceneOverlayEditorCommand implements EditCommand<SerializedScene
   }
 }
 
+/**
+ * The Scene's or Scene Layer's embedded script graph. `mergeKey` folds one
+ * continuous graph gesture (a node drag, a pin scrub) into one Undo step.
+ */
+export class SetSceneScriptCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.setScript";
+  readonly mergeKey: string | undefined;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
+  readonly from: SerializedGraph | undefined;
+  readonly to: SerializedGraph | undefined;
+
+  constructor(from: SerializedGraph | undefined, to: SerializedGraph | undefined, mergeKey?: string) {
+    this.from = from;
+    this.to = to;
+    this.mergeKey = mergeKey;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    const next = { ...doc };
+    if (this.to === undefined) delete next.script;
+    else next.script = this.to;
+    return next;
+  }
+
+  invert(): SetSceneScriptCommand {
+    const inverse = new SetSceneScriptCommand(this.to, this.from, this.mergeKey);
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
+  }
+}
+
 const optionalRecord = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
@@ -277,4 +312,13 @@ export function createReorderFolderCommandFromJson(payload: Record<string, unkno
 export function createSetSceneOverlayEditorCommandFromJson(payload: Record<string, unknown>): SetSceneOverlayEditorCommand {
   const flag = (value: unknown) => typeof value === "boolean" ? value : undefined;
   return new SetSceneOverlayEditorCommand(flag(payload.from), flag(payload.to));
+}
+
+export function createSetSceneScriptCommandFromJson(payload: Record<string, unknown>): SetSceneScriptCommand {
+  const graph = (value: unknown) => optionalRecord(value) as SerializedGraph | undefined;
+  return new SetSceneScriptCommand(
+    graph(payload.from),
+    graph(payload.to),
+    typeof payload.mergeKey === "string" ? payload.mergeKey : undefined,
+  );
 }

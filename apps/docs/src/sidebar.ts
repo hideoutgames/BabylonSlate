@@ -124,6 +124,7 @@ export function guideSidebar(): SidebarItem[] {
       "data",
       "save-games",
       "game-instance",
+      "scene-scripts",
       "editor-scripting",
       ...(existsSync(path.join(docsRoot, "scripting/javascript.md")) ? ["javascript"] : []),
     ]),

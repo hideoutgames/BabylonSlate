@@ -4,7 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
 } from "@haptic/core";
-import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
+import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand, SetGraphOverlayDesignCommand } from "./commands/graph";
 import {
   AddActorCommand,
   AddComponentCommand,
@@ -42,6 +42,7 @@ import {
   SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
+  SetSceneScriptCommand,
 } from "./commands/scene-fields";
 import {
   commandToJournalPayload,
@@ -144,6 +145,13 @@ describe("journal", () => {
     expect((revived!.apply({ nodes: [], edges: [] }) as { actorDefaults?: unknown }).actorDefaults).toEqual(actorDefaults);
   });
 
+  it("round-trips SetGraphOverlayDesignCommand through the journal", () => {
+    const overlayDesign = { sizeMode: "desired" as const, customSizePx: { width: 400, height: 300 }, rootAnchor: "center" as const };
+    const revived = reviveCommand(commandToJournalPayload(new SetGraphOverlayDesignCommand(undefined, overlayDesign)));
+    expect(revived).toBeInstanceOf(SetGraphOverlayDesignCommand);
+    expect((revived!.apply({ nodes: [], edges: [] }) as { overlayDesign?: unknown }).overlayDesign).toEqual(overlayDesign);
+  });
+
   it("round-trips every scene command type through the journal", () => {
     const scene = createDefaultScene();
     scene.actors[0]!.components.push(createMeshComponent("c1", "box"));
@@ -160,6 +168,7 @@ describe("journal", () => {
       new SetComponentTransformPresenceCommand(actorId, componentId, scene.actors[0]!.components[0]!.transform, undefined),
       new ReorderFolderCommand("f1", 0, 1),
       new SetSceneOverlayEditorCommand(undefined, true),
+      new SetSceneScriptCommand(undefined, { nodes: [], edges: [], members: [] }, "script:move:n1"),
       new AddActorCommand(createActor("added", "Added"), 1),
       new RemoveActorCommand(scene.actors[0]!, 0),
       new SetActorTransformCommand(

@@ -2,7 +2,13 @@ import { useCallback, useRef, useState, type RefObject } from "react";
 import type { DockviewApi } from "dockview-react";
 import type { createAppSettingsStore } from "@haptic/vfs";
 import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
-import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
+import {
+  documentSceneMode,
+  hasSceneModes,
+  parseSceneDocumentLayout,
+  sceneModesForKind,
+  type SceneMode,
+} from "../shell/scene-document-layout";
 import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
@@ -62,7 +68,7 @@ function dockOptionsForIndexed(
       !indexed ||
       classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
     sourceControl: sourceControlEnabled,
-    sceneMode: kind === "scene" ? (sceneMode ?? "design") : undefined,
+    sceneMode: hasSceneModes(kind) ? (sceneMode ?? "design") : undefined,
     animEditorMode:
       kind === "anim-graph" ? (animEditorMode ?? "stateMachine") : undefined,
   };
@@ -154,9 +160,9 @@ export function useDocumentDockLayouts({
   const captureLayoutForId = useCallback(
     (id: string) => {
       const doc = documentService.getDocument(id);
-      if (doc?.ref.kind === "scene") {
-        const layout = parseSceneDocumentLayout(doc.layout);
-        for (const mode of SCENE_MODES) {
+      if (hasSceneModes(doc?.ref.kind)) {
+        const layout = parseSceneDocumentLayout(doc.layout, doc.ref.kind);
+        for (const mode of sceneModesForKind(doc.ref.kind)) {
           const key = dockviewApiKey(id, mode);
           const api = dockviewApisRef.current.get(key);
           const beforeFocus = preFocusLayoutsRef.current.get(key);
@@ -329,7 +335,7 @@ export function useDocumentDockLayouts({
         parentOf,
         sourceControlRef.current.enabled,
         animSurfaceMode,
-        surface === "design" || surface === "landscape" || surface === "foliage" ? surface : undefined,
+        surface === "design" || surface === "landscape" || surface === "foliage" || surface === "script" ? surface : undefined,
       );
       for (const panel of listDockPanels(dock)) {
         // Function graph tabs persist in the DockView snapshot, not as
@@ -340,7 +346,7 @@ export function useDocumentDockLayouts({
           : undefined;
         const placement = capturePanelPlacement(dock, panel.id, def);
         if (placement) {
-          documentService.setPanelPlacement(id, kind === "scene" ? `${surface}:${panel.id}` : panel.id, placement);
+          documentService.setPanelPlacement(id, hasSceneModes(kind) ? `${surface}:${panel.id}` : panel.id, placement);
         }
       }
     };
@@ -370,8 +376,9 @@ export function useDocumentDockLayouts({
     if (!activeDocumentId) return undefined;
     const doc = documentService.getDocument(activeDocumentId);
     if (!doc) return undefined;
-    if (doc.ref.kind === "scene") {
-      return dockviewApisRef.current.get(dockviewApiKey(activeDocumentId, parseSceneDocumentLayout(doc.layout).sceneMode));
+    const sceneMode = documentSceneMode(doc.ref.kind, doc.layout);
+    if (sceneMode) {
+      return dockviewApisRef.current.get(dockviewApiKey(activeDocumentId, sceneMode));
     }
     if (doc.ref.kind === "anim-graph") {
       const mode = animEditorModeForDocument(
@@ -424,9 +431,10 @@ export function useDocumentDockLayouts({
   );
 
   const setSceneMode = useCallback((id: string, mode: SceneMode) => {
-    if (documentService.getDocument(id)?.ref.kind !== "scene") return;
+    const kind = documentService.getDocument(id)?.ref.kind;
+    if (!hasSceneModes(kind) || !sceneModesForKind(kind).includes(mode)) return;
     captureLayoutForId(id);
-    const layout = parseSceneDocumentLayout(documentService.getDocument(id)?.layout);
+    const layout = parseSceneDocumentLayout(documentService.getDocument(id)?.layout, kind);
     documentService.setLayout(id, { ...layout, sceneMode: mode });
     bump();
     bumpDockWindows();
@@ -455,11 +463,11 @@ export function useDocumentDockLayouts({
       doc.ref.kind === "anim-graph"
         ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
         : undefined,
-      doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined,
+      documentSceneMode(doc.ref.kind, doc.layout),
     );
     const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
     if (!def) return;
-    const placementKey = doc.ref.kind === "scene" ? `${dockOptions.sceneMode}:${panelId}` : panelId;
+    const placementKey = hasSceneModes(doc.ref.kind) ? `${dockOptions.sceneMode}:${panelId}` : panelId;
     const placements = documentService.getPanelPlacements(activeDocumentId);
     const remembered = placements[placementKey] ?? (dockOptions.sceneMode === "design" ? placements[panelId] : null) ?? null;
     const result = toggleDockWindowOnApi(
@@ -499,7 +507,7 @@ export function useDocumentDockLayouts({
     const api = activeDockApi();
     if (!api) return;
 
-    const sceneMode = doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined;
+    const sceneMode = documentSceneMode(doc.ref.kind, doc.layout);
     const focusKey = sceneMode ? dockviewApiKey(activeDocumentId, sceneMode) : activeDocumentId;
     if (preFocusLayoutsRef.current.has(focusKey)) {
       const snapshot = preFocusLayoutsRef.current.get(focusKey);

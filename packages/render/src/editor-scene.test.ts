@@ -1958,6 +1958,13 @@ describe("editor grid", () => {
     const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 10, height: 6 });
     expect(scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME)).not.toBeNull();
+    expect(grid.boundsMesh?.position.asArray()).toEqual([0, 0, 0]);
+    grid.setCameraBounds({ width: 10, height: 6, center: [-5, -3] });
+    expect(grid.boundsMesh?.position.x).toBe(-5);
+    expect(grid.boundsMesh?.position.y).toBe(-3);
+    expect(grid.boundsMesh?.scaling.x).toBe(10);
+    grid.setCameraBounds({ width: 10, height: 6 });
+    expect(grid.boundsMesh?.position.x).toBe(0);
     expect(grid.boundsMesh?.isVisible).toBe(true);
     expect(grid.boundsMesh?.visibility).toBe(1);
     expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);

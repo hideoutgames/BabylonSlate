@@ -3,9 +3,11 @@ import {
   createDefaultSceneLayer,
   editorSceneToSceneLayer,
   normalizeSceneLayer,
+  normalizeSceneLayerActorDesign,
   normalizeSceneLayerSpawnList,
   parseOverlayPanelProperties,
   parseSceneLayerAnchor,
+  sceneLayerActorFrameBounds,
   sceneLayerCanvasToLayer,
   sceneLayerFrustumSize,
   sceneLayerOrthoBounds,
@@ -299,5 +301,55 @@ describe("2DPanel properties", () => {
   it("keeps margins as 0-1 source fractions", () => {
     expect(parseOverlayPanelProperties({ marginLeft: 0.5 }).marginLeft).toBe(0.5);
     expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(1);
+  });
+});
+
+describe("SceneLayerActor Prefab frame", () => {
+  it("defaults to a Fullscreen frame hanging from the Root at its top right", () => {
+    const design = normalizeSceneLayerActorDesign(undefined);
+    expect(design).toMatchObject({ sizeMode: "fullscreen", rootAnchor: "topRight" });
+    expect(sceneLayerActorFrameBounds(design, 100, null)).toEqual({ width: 32, height: 18, center: [-16, -9] });
+  });
+
+  it("drops unknown modes, anchors and non-positive sizes", () => {
+    expect(normalizeSceneLayerActorDesign({ sizeMode: "stretch", rootAnchor: "middle", customSizePx: { width: 0, height: -2 } }))
+      .toEqual(normalizeSceneLayerActorDesign(undefined));
+  });
+
+  it("converts a Custom pixel size to layer units around the chosen pivot", () => {
+    const design = normalizeSceneLayerActorDesign({ sizeMode: "custom", customSizePx: { width: 400, height: 200 }, rootAnchor: "bottomLeft" });
+    expect(sceneLayerActorFrameBounds(design, 100, null)).toEqual({ width: 4, height: 2, center: [2, 1] });
+    const centred = { ...design, rootAnchor: "center" as const };
+    expect(sceneLayerActorFrameBounds(centred, 50, null)).toEqual({ width: 8, height: 4, center: [0, 0] });
+  });
+
+  it("wraps Desired around the content and has no frame without content", () => {
+    const design = normalizeSceneLayerActorDesign({ sizeMode: "desired" });
+    expect(sceneLayerActorFrameBounds(design, 100, null)).toBeNull();
+    expect(sceneLayerActorFrameBounds(design, 100, { minX: -1, minY: 2, maxX: 3, maxY: 5 }))
+      .toEqual({ width: 4, height: 3, center: [1, 3.5] });
+  });
+});
+
+describe("embedded scripts", () => {
+  const script = {
+    nodes: [{ id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} }],
+    edges: [],
+    members: [{ id: "score", kind: "variable" as const, name: "Score", typeId: "int" }],
+  };
+
+  it("keeps a Scene's script and drops a malformed one or Actor-only parts", () => {
+    expect(normalizeScene({ script: { ...script, components: [{ id: "c" }] } }).script).toEqual(script);
+    expect(normalizeScene({ script: { nodes: "x" } })).not.toHaveProperty("script");
+    expect(normalizeScene({})).not.toHaveProperty("script");
+  });
+
+  it("carries a Scene Layer's script through the editor tab and back", () => {
+    const layer = normalizeSceneLayer({ ...createDefaultSceneLayer(), script });
+    expect(layer.script).toEqual(script);
+    const editor = sceneLayerToEditorScene(layer);
+    expect(editor.script).toEqual(script);
+    expect(editorSceneToSceneLayer(editor).script).toEqual(script);
+    expect(editorSceneToSceneLayer({ ...editor, script: undefined })).not.toHaveProperty("script");
   });
 });

@@ -1,7 +1,7 @@
 import type { CommandMessage } from "@haptic/bridge";
 import { assertUniqueSceneActorIds, type SerializedActor, type SerializedScene } from "@haptic/core";
 import { initNavigation } from "@haptic/navigation";
-import { hydrateScenePropertyReferences, type Actor, type Scene, type SceneLayer, type World } from "@haptic/object-model";
+import { hydrateScenePropertyReferences, type Actor, type LifecycleHooks, type Scene, type SceneLayer, type World } from "@haptic/object-model";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";
@@ -59,6 +59,8 @@ interface SceneRealizerHost {
   navigation(): Pick<RuntimeNavigation, "needsInitialization" | "markInitialized" | "prepareScene" | "registerAgents" | "registerObstacles">;
   layers(): Pick<SceneLayers, "createSteps" | "ownedReady">;
   scripts(): Pick<ScriptHost, "bindInterfaceHandlers">;
+  /** Lifecycle of the Scene object's SceneScript (`Scene:<guid>`). */
+  embeddedScriptHooks(): LifecycleHooks;
   /** Restart tile animation time and the infinite-loop guard, then start the World. */
   startWorld(): void;
   setWorldGravity(gravity: { x: number; y: number; z: number }): void;
@@ -419,8 +421,9 @@ export class SceneRealizer implements RuntimeSubsystem {
         z: Number(authoredGravity?.[2] ?? this.host.physics().gravity[2]),
       };
       this.host.setWorldGravity(gravity);
+      // The Scene object runs its SceneScript: Begin Play once the Scene is ready.
       work.sceneInstance = world.createScene({ assetGuid: guid, sceneName: name,
-        postProcessStack: scene.settings.postProcessStack, variables: { gravity } });
+        postProcessStack: scene.settings.postProcessStack, variables: { gravity }, hooks: this.host.embeddedScriptHooks() });
       this.host.recordSimulationStart({ sceneAssetGuid: guid, sceneInstanceId: work.sceneInstance.guid, sceneLoadId: loadId });
       checkpoint();
       this.host.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId: loadId });

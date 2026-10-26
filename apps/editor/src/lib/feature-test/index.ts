@@ -24,6 +24,7 @@ import { buildFeatureTestParticles, placeFeatureTestParticles } from "./particle
 import { buildFeatureTestPhysics, placeFeatureTestPhysics } from "./physics";
 import { buildFeatureTestRendering, placeFeatureTestRendering } from "./rendering";
 import { buildFeatureTestSceneLayers, placeFeatureTestSceneLayers } from "./scene-layers";
+import { placeFeatureTestSceneScript } from "./scene-scripts";
 import {
   buildFeatureTestScripting,
   buildFeatureTestScriptingTypes,
@@ -92,6 +93,7 @@ export async function applyFeatureTestScaffold(options: {
   await placeFeatureTestAi(ctx);
   await placeFeatureTestScripting(ctx);
   await placeFeatureTestSceneLayers(ctx);
+  placeFeatureTestSceneScript(ctx);
 
   await saveSceneDocuments(ctx);
   return { applySettings: (settings) => applyFeatureTestProjectSettings(ctx, settings) };

@@ -18,6 +18,7 @@ export {
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetGraphActorDefaultsCommand,
+  SetGraphOverlayDesignCommand,
   SetNodeDataCommand,
   createMoveNodeCommandFromJson,
   createAddEdgeCommandFromJson,
@@ -29,6 +30,7 @@ export {
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
   createSetGraphActorDefaultsCommandFromJson,
+  createSetGraphOverlayDesignCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {
@@ -69,6 +71,7 @@ export {
   SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
+  SetSceneScriptCommand,
 } from "./commands/scene-fields";
 export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";

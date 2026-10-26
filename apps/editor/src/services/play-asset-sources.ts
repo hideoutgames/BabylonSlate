@@ -458,11 +458,21 @@ async function acquirePlayAssetSourcesAttempt(
     const root = roots[0] ?? required.values().next().value;
     const compileInputs = revisions.filter(([guid]) => COMPILE_INPUT_TYPES.has(host.registry.getByGuid(guid)!.header.type))
       .sort(([a], [b]) => a.localeCompare(b));
-    const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ?? root;
+    // A Scene's SceneScript and a Scene Layer's SceneLayerScript compile too; their
+    // scripts, not the whole Scene revisions, key the compile.
+    const embeddedScripts = revisions
+      .filter(([guid]) => EMBEDDED_SCRIPT_OWNER_TYPES.has(host.registry.getByGuid(guid)!.header.type))
+      .flatMap(([guid]) => {
+        const script = (documents.get(guid)!.document.payload as { script?: unknown }).script;
+        return script ? [[guid, script] as const] : [];
+      })
+      .sort(([a], [b]) => a.localeCompare(b));
+    const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ??
+      embeddedScripts[0]?.[0] ?? root;
     const compileInputBytes = compileInputs.reduce((total, [guid]) => total + JSON.stringify(documents.get(guid)!.document.payload).length * 2, 0);
     const workingInputs = [...(host.documentOverrides ?? [])].map(([guid, value]) => [guid, value.cacheKey]).sort(([a], [b]) => a.localeCompare(b));
     const compiled = compileRoot ? await scope.acquire(compileRoot, {
-      key: `play-scripts:v1:${JSON.stringify([compileInputs, host.registry.generation,
+      key: `play-scripts:v1:${JSON.stringify([compileInputs, embeddedScripts, host.registry.generation,
         workingInputs, project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
         host.traceExecution === true])}`,
       estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
@@ -581,6 +591,8 @@ function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: Reado
 }
 
 const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);
+/** Assets that may embed a script (SceneScript, SceneLayerScript). */
+const EMBEDDED_SCRIPT_OWNER_TYPES = new Set(["Scene", "SceneLayer"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 
 /** Drop cache-owned containers without mutating authored payload objects. */

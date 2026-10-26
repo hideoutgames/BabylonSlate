@@ -85,5 +85,6 @@ Results you may meet while wiring:
 - [Data Definitions and Data Trees](data.md)
 - [Save Games](save-games.md)
 - [Game Instance and Subsystems](game-instance.md)
+- [Scene Scripts](scene-scripts.md)
 - [Editor Scripting](editor-scripting.md)
 - [Execute JavaScript](javascript.md)

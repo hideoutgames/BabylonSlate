@@ -14,6 +14,7 @@ Double-tap a Scene Layer to open it.
 - **Outliner**: the layer's actors. Tap **+** to place them; **Place Actors** adds an **Overlay** category of ready-made 2D elements.
 - **Inspector**: the selected actor, or the layer's settings when nothing is selected.
 - **Output Log** and **Compiler Results**: messages and script errors.
+- **Scene Mode** picker: **Design** or **Script**. Script edits the layer's own [Scene Layer Script](../scripting/scene-scripts.md).
 
 Overlay components, such as 2D Text and 2D Button, work only in Scene Layers.
 

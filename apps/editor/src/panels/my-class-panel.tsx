@@ -75,6 +75,7 @@ import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useWatchStore } from "../context/watch-store-context";
 import { defaultNodeRegistry } from "../services/graph-validation";
+import { embeddedScriptHost, logicGraphHostClass } from "../lib/embedded-script";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
@@ -82,6 +83,7 @@ import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   collectClassGraphsForPalette,
   collectScriptInterfacesForPalette,
+  applyLogicGraphCommit,
   commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
@@ -1343,8 +1345,8 @@ export function ClassMembersView({
 export function MyClassPanel(props: MyClassPanelProps) {
   const dockApi = props.containerApi as MyClassPanelProps["containerApi"] | undefined;
   const { documentId } = useDocumentWorkspace();
-  const { applyGraphChange, applyAssetDocumentChange, openDocument } =
-    useDocumentActions();
+  const documentActions = useDocumentActions();
+  const { openDocument } = documentActions;
   const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
@@ -1366,14 +1368,8 @@ export function MyClassPanel(props: MyClassPanelProps) {
     (doc ? { nodes: [], edges: [] } : null);
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
-    const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
-    if (commit.kind !== "graph") {
-      void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
-      return;
-    }
-    void applyGraphChange(documentId, commit.graph);
+    applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
   };
-  const className = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
   const docPath = doc?.ref.path;
   // Registry-only views follow the registry epoch, not edits of this Class.
   const { interfaceAssets, indexed, parentOf } = useMemo(() => {
@@ -1391,13 +1387,17 @@ export function MyClassPanel(props: MyClassPanelProps) {
       parentOf: classParentLookup(assets),
     };
   }, [assetRegistry, docPath, registryEpoch]);
+  // A Scene or Scene Layer edits its script as `Scene:<guid>` / `SceneLayer:<guid>`.
+  const host = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath);
+  const className = host.classId ?? null;
+  const embedded = embeddedScriptHost(doc?.ref.kind, indexed);
   // Parent graphs and interfaces also read open (unsaved) documents.
   const membersOptions = useMemo(() => {
     void registryEpoch;
     const assets = assetRegistry?.list() ?? [];
     return {
       classId: className ?? undefined,
-      parentClass: indexed?.header.parentClass ?? null,
+      parentClass: host.parentClass,
       parentOf,
       parentGraphs: collectClassGraphsForPalette({
         assets,
@@ -1410,7 +1410,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
         openDocuments: interfaceDocuments,
       }),
     };
-  }, [assetRegistry, className, classDocuments, indexed, interfaceDocuments, parentOf, registryEpoch]);
+  }, [assetRegistry, className, classDocuments, host.parentClass, indexed, interfaceDocuments, parentOf, registryEpoch]);
 
   const focusEvent = (nodeId: string, name: string) => {
     dockApi?.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
@@ -1431,7 +1431,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
       <div className="flex h-full min-h-0 flex-col">
       {className ? (
         <p className="shrink-0 border-b border-border px-2 py-1 text-xs text-muted-foreground">
-          {className}
+          {embedded ? `${embedded.className} ${embedded.parentClass === "Scene" ? "Scene Script" : "Scene Layer Script"}` : className}
         </p>
       ) : null}
       <div className="relative min-h-0 flex-1">

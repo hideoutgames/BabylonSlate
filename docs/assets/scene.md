@@ -16,7 +16,7 @@ Double-tap a Scene to open it.
 - **Outliner**: the actor hierarchy. Tap **+** to place actors.
 - **Inspector**: the selected actor's components, or **Scene Settings** when nothing is selected.
 - **Output Log** and **Compiler Results**: messages and script errors, docked below the viewport.
-- **Scene Mode** picker: **Design**, **Landscape** or **Foliage**.
+- **Scene Mode** picker: **Design**, **Landscape**, **Foliage** or **Script**. Script edits the Scene's own [Scene Script](../scripting/scene-scripts.md).
 
 ## Settings
 

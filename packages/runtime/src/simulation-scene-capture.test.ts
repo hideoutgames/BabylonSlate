@@ -60,6 +60,13 @@ describe("complete simulation scene capture", () => {
     expect(complete(captureSimulationScene(input)).scene).toEqual(input.baseline);
   });
 
+  it("keeps the authored SceneScript", () => {
+    const { input } = fixture();
+    const script = { nodes: [{ id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} }], edges: [], members: [] };
+    const baseline = { ...input.baseline, script };
+    expect(complete(captureSimulationScene({ ...input, baseline })).scene.script).toEqual(script);
+  });
+
   it("round-trips gameplay spawns, deletions, local transforms, typed references and private material values", () => {
     const { input, world, actors, materialParameters } = fixture();
     const baseline = structuredClone(input.baseline), hero = actors[0]!;

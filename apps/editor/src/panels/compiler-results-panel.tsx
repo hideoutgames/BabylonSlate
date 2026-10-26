@@ -1,5 +1,6 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { documentSceneMode } from "../shell/scene-document-layout";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
 import {
@@ -68,7 +69,8 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   const sceneEditing = useOptionalSceneEditing();
   const documentId = workspace?.documentId;
   const doc = useOpenDocument(documentId);
-  const sceneKind = doc?.ref.kind === "scene";
+  // In Script mode the graph publishes its own diagnostics into this list.
+  const sceneKind = doc?.ref.kind === "scene" && documentSceneMode(doc.ref.kind, doc.layout) !== "script";
   const scenePath = doc?.ref.path;
   const sceneContent = doc?.content;
   // A Model's simple collision shapes come from its open tab first, then the registry.

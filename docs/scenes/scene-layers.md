@@ -35,7 +35,18 @@ Sprites, tilemaps, meshes, 3D text, sound, particles, Rigid Bodies, Colliders an
 
 An actor with a mesh or 3D text can be tilted: its **Inspector** shows Rotation and Scale on X, Y and Z, while Position stays X and Y with **Z-Order**. In the viewport it keeps the 2D box; moving or rotating it there keeps its X and Y tilt.
 
-To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. The **2D Scene Layer Actor Switcher** shows one Scene Layer Actor Class at a time from its list; **Initial Index** picks the first one (−1 starts empty), and the **Switch Scene Layer Actor** function changes it.
+To script the layer as a whole, set **Scene Mode** to **Script** and edit its [Scene Layer Script](../scripting/scene-scripts.md): each copy of the layer runs it for as long as that copy exists. To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. A new Scene Layer Actor starts with no components.
+
+In a Scene Layer Actor's **Prefab**, the orange frame shows the space the actor is designed for, and the **Prefab Root** sits on one of its points. The root has no box and does not move; move the components instead. The **Frame** menu on the viewport toolbar sets:
+
+| Option | Description |
+| --- | --- |
+| Fullscreen | The default. The frame is a full Scene Layer canvas (32 × 18 layer units), so the actor shows at the size it has on a layer. |
+| Desired | The frame wraps everything the actor draws, including its child components. |
+| Custom | The frame is the size you type in the **W** and **H** fields that appear beside the menu, in pixels (divided by **Pixels Per Unit** in **Project Settings > Game > 2D** to get layer units). |
+| Root Pivot | The point of a Fullscreen or Custom frame that sits on the Prefab Root: one of the corners, edge centres or the centre. Default **Top Right**. A Desired frame follows the content instead. |
+
+The frame is saved with the Class and only changes the editor view; it does not affect the game. The **2D Scene Layer Actor Switcher** shows one Scene Layer Actor Class at a time from its list; **Initial Index** picks the first one (−1 starts empty), and the **Switch Scene Layer Actor** function changes it.
 
 ## Show a layer in the game
 

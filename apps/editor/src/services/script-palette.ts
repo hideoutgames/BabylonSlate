@@ -21,11 +21,12 @@ import {
   castPaletteNodes,
   functionRows,
   subsystemGetPaletteNodes,
+  ownedGetPaletteNodes,
   variableAccessPaletteNodes,
   type ScriptPaletteOptions,
 } from "./script-palette-members";
 
-export type { PaletteSceneDocument, ScriptPaletteOptions } from "./script-palette-members";
+export type { PaletteOwnedActor, PaletteSceneDocument, ScriptPaletteOptions } from "./script-palette-members";
 
 function structPaletteNodes(
   nodeRegistry: NodeRegistry,
@@ -290,6 +291,7 @@ export function scriptPaletteInjectorKey(
     functionLibraries: options?.functionLibraries ?? [],
     scriptInterfaces: options?.scriptInterfaces ?? [],
     subsystemClasses: options?.subsystemClasses ?? [],
+    ownedActors: options?.ownedActors ?? [],
     structures: options?.structures ?? [],
     dataDefinitions: options?.dataDefinitions ?? [],
     saveGameDefinition: options?.saveGameDefinition,
@@ -437,6 +439,7 @@ function scriptPaletteInjectorNodes(
       ...variableAccessPaletteNodes(nodeRegistry, options),
       ...castPaletteNodes(nodeRegistry, options),
       ...subsystemGetPaletteNodes(nodeRegistry, options),
+      ...ownedGetPaletteNodes(nodeRegistry, options),
       ...structPaletteNodes(nodeRegistry, options),
       ...saveGamePaletteNodes(nodeRegistry, options),
       ...dataPaletteNodes(nodeRegistry, options),

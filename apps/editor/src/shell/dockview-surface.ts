@@ -3,6 +3,7 @@ export type DockviewSurface =
   | "design"
   | "landscape"
   | "foliage"
+  | "script"
   | "stateMachine"
   | "animationObject";
 
@@ -31,6 +32,7 @@ const DOCKVIEW_SURFACES: readonly DockviewSurface[] = [
   "design",
   "landscape",
   "foliage",
+  "script",
 ];
 
 export function dockviewApiKeysForDocument(documentId: string): string[] {

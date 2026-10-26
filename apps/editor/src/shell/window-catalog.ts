@@ -164,6 +164,9 @@ export function primaryDockPanel(
   if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
     return "anim-object-graph";
   }
+  if ((kind === "scene" || kind === "scene-layer") && options?.sceneMode === "script") {
+    return "graph";
+  }
   return DOCK_PRIMARY_PANEL[kind];
 }
 
@@ -316,6 +319,44 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
     },
   },
   BREAKPOINTS_WINDOW,
+];
+
+/**
+ * Scene and Scene Layer Script mode: the SceneScript / SceneLayerScript, laid
+ * out like an Object Class (no Prefab or Components).
+ */
+const SCENE_SCRIPT_WINDOWS: DockWindowDefinition[] = [
+  { id: "graph", component: "graph", title: EVENT_GRAPH_TITLE },
+  {
+    id: "my-class",
+    component: "my-class",
+    title: "Script",
+    defaultPosition: {
+      referencePanelId: "graph",
+      direction: "left",
+      initialWidth: 260,
+    },
+  },
+  {
+    id: "inspector",
+    component: "inspector",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "graph",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+  {
+    id: "compiler-results",
+    component: "compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "graph",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
 ];
 
 const GRAPH_WINDOWS: DockWindowDefinition[] = [
@@ -1047,6 +1088,7 @@ export function listDockWindows(
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
   if (kind === "scene" || kind === "scene-layer") {
+    if (options?.sceneMode === "script") return withOptionalLocks(kind, SCENE_SCRIPT_WINDOWS, options);
     if (kind === "scene" && options?.sceneMode === "landscape") return withOptionalLocks(kind, LANDSCAPE_WINDOWS, options);
     if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
     return withOptionalLocks(kind, SCENE_WINDOWS, options);

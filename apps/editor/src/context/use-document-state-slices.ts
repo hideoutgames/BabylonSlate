@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import type { DocumentRef } from "@haptic/core";
 import type { EditSession } from "@haptic/edit";
-import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
+import { documentSceneMode } from "../shell/scene-document-layout";
 import type { AnimEditorMode } from "../shell/anim-document-layout";
 import {
   dockviewApiKey,
@@ -90,10 +90,11 @@ export function useDocumentStateSlices({
   const activeDoc = activeId ? documentService.getDocument(activeId) : undefined;
   const activeStack = activeId ? editSessionRef.current.getStack(activeId) : null;
   const authoringReadOnly = documentService.getAuthoringLock().readOnly;
-  const sceneMode = parseSceneDocumentLayout(activeDoc?.layout).sceneMode;
+  const documentMode = documentSceneMode(activeDoc?.ref.kind, activeDoc?.layout);
+  const sceneMode = documentMode ?? "design";
   const focusKey =
-    activeId && activeDoc?.ref.kind === "scene"
-      ? dockviewApiKey(activeId, sceneMode)
+    activeId && documentMode
+      ? dockviewApiKey(activeId, documentMode)
       : activeId;
   const animEditorMode = activeId
     ? animEditorModeForDocument(activeId, animEditorModes, activeDoc)
