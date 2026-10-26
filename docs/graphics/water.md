@@ -63,11 +63,12 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 
 | Setting | Low | Medium | High | Ultra |
 | --- | --- | --- | --- | --- |
-| **Water Shading Detail** | Low | Medium | High | Ultra |
-| **Water Mesh Density** | 0.5 | 0.75 | 1 | 1.5 |
-| **Contact Resolution** | 256 | 256 | 1024 | 1024 |
-| **Water Refraction** | Off | On | On | On |
-| **Water Reflections** | Sky Only | Sky Only | Screen Space | Planar |
+| **Water Shading Detail** | Medium | Medium | High | Ultra |
+| **Water Mesh Density** | 0.75 | 1 | 1 | 1.5 |
+| **Contact Resolution** | 256 | 512 | 1024 | 1024 |
+| **Water Refraction** | On | On | On | On |
+| **Water Reflections** | Planar | Planar | Planar | Planar |
+| **Planar Resolution** | 0.25 | 0.5 | 0.75 | 0.75 |
 | **FFT Size** | 128 | 256 | 256 | 256 |
 | **FFT Cascades** | 3 | 3 | 3 | 3 |
 
@@ -78,6 +79,8 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 - Floating objects and queries follow the larger waves; the shortest rendered ripples are visual only.
 
 A Water asset reflects scene objects only when its **Object Reflections** is on.
+
+Built-in water takes no **Ambient Occlusion** or **Real-Time Reflections** from [Post Processing](post-processing.md): occlusion would darken the moving waves in patches, and the water draws its own reflections.
 
 ## Custom water Materials
 

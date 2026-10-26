@@ -21,7 +21,7 @@ import {
 } from "@babylonjs/core";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
-import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@haptic/core";
+import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CelMaterial } from "./cel-material";
 import {
@@ -134,9 +134,9 @@ describe("fixed-shape light binding", () => {
   it("compiles one Effect per layout: toggles, seat changes within a class and a new light of the class change bindings only", async () => {
     const { engine, scene } = world();
     const { points, spots } = lightRig(scene);
-    // Two more points than the low preset's four local lights.
+    // Two more points than a budget of four local lights.
     const extra = [3, 5].map((x, index) => new PointLight(`extra-${index}`, new Vector3(x, 2, 1), scene));
-    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("low")) });
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 4 } }) });
     const { pairs } = receivers(scene);
     frame(scene);
     const before: Effect[] = [];

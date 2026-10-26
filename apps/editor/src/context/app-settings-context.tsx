@@ -201,7 +201,7 @@ export function AppSettingsProvider({
   return (
     <AppSettingsContext.Provider value={value}>
       <AppSettingsOwnerContext.Provider value={owner}>
-      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults }}>
+      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults, addNodeHistoryEnabled: snapshot.settings.graphAddNodeHistoryEnabled }}>
         {children}
       </GraphInteractionSettingsContext.Provider>
       </AppSettingsOwnerContext.Provider>

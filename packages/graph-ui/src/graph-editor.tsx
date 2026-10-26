@@ -90,6 +90,11 @@ import {
 import { styleFlowEdges } from "./edge-style";
 import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
+import {
+  addNodeHistoryKey,
+  getAddNodeHistory,
+  type AddNodeHistoryScope,
+} from "./add-node-history";
 import { GraphConnectionLine } from "./connection-line";
 import { GraphRunOverlay } from "./graph-run-overlay";
 import type { GraphRunTrace } from "./run-trace";
@@ -294,6 +299,11 @@ export interface GraphEditorProps {
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
   /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /**
+   * Learn Add Node picks made from a dragged pin and rank them first next time
+   * (Engine Settings **Add Node History**). Unset keeps the default order.
+   */
+  addNodeHistoryScope?: AddNodeHistoryScope;
   /** Struct/enum guid → display name for on-node type fields. */
   pinTypeNames?: PinTypeNames;
   /** Registers client hit-test / flow conversion for Class-member drops. */
@@ -737,6 +747,7 @@ function GraphEditorCanvas({
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
   pinCompatibility,
+  addNodeHistoryScope,
   pinTypeNames,
   onCanvasApi,
   preparePaste,
@@ -1869,6 +1880,39 @@ function GraphEditorCanvas({
     ],
   );
 
+  const historyEnabled = Boolean(
+    addNodeHistoryScope && interactions.addNodeHistoryEnabled,
+  );
+  useEffect(() => {
+    if (historyEnabled) getAddNodeHistory();
+  }, [historyEnabled]);
+  /** Add Node history context while the palette is open from a dragged pin. */
+  const historyKey = useMemo(() => {
+    if (!historyEnabled || !pendingConnect?.pin || !pendingConnect.nodeId) {
+      return null;
+    }
+    const nodeId = pendingConnect.nodeId;
+    const source = nodes.find((node) => node.id === nodeId);
+    const sourceType =
+      typeof source?.data.__nodeType === "string"
+        ? source.data.__nodeType
+        : source?.type;
+    if (!sourceType) return null;
+    return addNodeHistoryKey(
+      addNodeHistoryScope!,
+      sourceType,
+      overlayPin(pendingConnect.pin, nodeId, pinDisplayTypes),
+    );
+  }, [addNodeHistoryScope, historyEnabled, nodes, pendingConnect, pinDisplayTypes]);
+  const rankPinSuggestions = useMemo(
+    () =>
+      historyKey
+        ? (suggested: PaletteNode[]) =>
+            getAddNodeHistory().rank(historyKey, suggested)
+        : undefined,
+    [historyKey],
+  );
+
   const handleAddPaletteNode = useCallback(
     (paletteNode: PaletteNode) => {
       // Toolbar additions have no chosen point: centre them on the canvas and
@@ -1940,6 +1984,7 @@ function GraphEditorCanvas({
           pinCompatibility,
         );
         if (match) {
+          if (historyKey) getAddNodeHistory().record(historyKey, paletteNode.id);
           const sourceIsDragged = connect.pin.direction === "out";
           const source = sourceIsDragged ? connect.nodeId : id;
           const sourceHandle = sourceIsDragged ? connect.pin.id : match.id;
@@ -1977,6 +2022,7 @@ function GraphEditorCanvas({
     [
       commitGraph,
       defaultEdgeOptions.type,
+      historyKey,
       knownTypes,
       nodeDragHandle,
       noteReplacedWire,
@@ -3134,6 +3180,7 @@ function GraphEditorCanvas({
           }
           pinCompatibility={pinCompatibility}
           sourcePins={paletteSourcePins}
+          rankPinSuggestions={rankPinSuggestions}
           onAddNode={handleAddPaletteNode}
           anchor={paletteAnchor}
           presentation={paletteModal ? "modal" : "popup"}

@@ -1088,10 +1088,10 @@ it.each(["isReady", "render"] as const)("applies a new shadow profile while %s i
   let shadersReady = false;
   scene.addIsReadyCheck({ isReady: () => shadersReady });
   markSceneReadinessDirty(scene);
-  setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "low", cascades: 1 }) });
+  setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "ultra", cascades: 1 }) });
   if (probe === "isReady") expect(renderer.isReady()).toBe(false);
   else expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
-  expect(controller.generator(sun)?.getShadowMap()?.getSize().width).toBe(1024);
+  expect(controller.generator(sun)?.getShadowMap()?.getSize().width).toBe(4096);
   shadersReady = true;
   await renderer.prepare();
   expect(renderer.isReady()).toBe(true);

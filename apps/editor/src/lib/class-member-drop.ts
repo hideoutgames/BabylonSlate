@@ -128,7 +128,7 @@ function dropNodeHeight(
       ? [{ direction: "in" }, { direction: "in" }, { direction: "out" }, { direction: "out" }]
       : access === "validatedGet"
         ? [{ direction: "in" }, { direction: "out" }, { direction: "out" }, { direction: "out" }]
-        : // exec in / out plus the Target (Self) input of a member Call.
+        : // exec in / out plus the Self-reading Target input of a member Call.
           [{ direction: "in" }, ...(pins ?? [])];
   return estimateGraphNodeSize(rows).height;
 }

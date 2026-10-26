@@ -21,5 +21,6 @@ Removes an actor's parent so it no longer follows another actor.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - The actor's location, rotation and scale values stay the same but now apply in world space, so it can jump.
 - Any bone attachment is released as well.

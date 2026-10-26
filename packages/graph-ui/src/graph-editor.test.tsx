@@ -19,6 +19,7 @@ import { animGraphEdgeTypes } from "./anim-graph-nodes";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { basicParticleStageRole } from "@haptic/ui/lib/data-types";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
+import { getAddNodeHistory } from "./add-node-history";
 import { useGraphEditorContext } from "./graph-editor-context";
 
 afterEach(() => {
@@ -2629,21 +2630,25 @@ describe("GraphEditor", () => {
       },
     };
 
-    it("labels an unwired pin 'Target (Self)' as text, not as a field", () => {
+    it("shows a read-only Self field before the 'Target' label of an unwired pin", () => {
       const { container } = render(<GraphEditor initialGraph={{ nodes: [destroy], edges: [] }} />);
       const label = container.querySelector('[data-id="destroy"] [data-pin-label="target"]');
-      expect(label?.textContent).toBe("Target (Self)");
+      expect(label?.textContent).toBe("Target");
+      const field = container.querySelector('[data-id="destroy"] [data-pin-id="target"] [data-pin-default="objectRef"]');
+      expect(field?.textContent).toBe("Self");
+      expect(field?.getAttribute("data-pin-placeholder")).toBe("true");
+      expect(field?.closest("input, button")).toBeNull();
       expect(container.querySelector('[data-id="destroy"] [data-handleid="target"]')?.getAttribute("aria-label")).toBe("Target (Self)");
-      expect(container.querySelector('[data-id="destroy"] [data-pin-default]')).toBeNull();
     });
 
-    it("drops '(Self)' once a wire is plugged in", () => {
+    it("drops the Self field once a wire is plugged in", () => {
       const graph: GraphDocument = {
         nodes: [getSelf, destroy],
         edges: [{ id: "e", source: "self", target: "destroy", sourceHandle: "out", targetHandle: "target" }],
       };
       const { container } = render(<GraphEditor initialGraph={graph} />);
       expect(container.querySelector('[data-id="destroy"] [data-pin-label="target"]')?.textContent).toBe("Target");
+      expect(container.querySelector('[data-id="destroy"] [data-pin-default]')).toBeNull();
       expect(container.querySelector('[data-id="destroy"] [data-handleid="target"]')?.getAttribute("aria-label")).toBe("Target");
     });
   });
@@ -5521,4 +5526,54 @@ describe("inline pin editing", () => {
       expect(onChange).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("Add Node history", () => {
+  afterEach(() => getAddNodeHistory().clear());
+
+  it("lists a node picked twice from the same pin first while history is on, keeping it when off", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const palette = [
+        ...pinDragPalette,
+        { id: "debug.print", title: "Print", category: "Debug", pins: debugLogPins },
+      ];
+      const view = (addNodeHistoryEnabled: boolean) => (
+        <GraphInteractionSettingsContext.Provider
+          value={{ assistantEnabled: false, assistantDistance: 48, shakeEnabled: false, addNodeHistoryEnabled }}
+        >
+          <GraphEditor
+            initialGraph={graphWithPins()}
+            paletteNodes={palette}
+            addNodeHistoryScope="script"
+          />
+        </GraphInteractionSettingsContext.Provider>
+      );
+      const { container, getByTestId, rerender } = render(view(true));
+      const rows = () =>
+        [...document.querySelectorAll('[data-testid^="node-palette-item-"]')].map((el) =>
+          el.getAttribute("data-testid")!.replace("node-palette-item-", ""),
+        );
+      const dragFromLogExec = () =>
+        act(() => {
+          dragHandle(mockPinDragLayout(container), { x: 22, y: 22 }, farDrop);
+        });
+
+      dragFromLogExec();
+      expect(rows()).toEqual(["debug.log", "debug.print"]);
+      fireEvent.click(getByTestId("node-palette-item-debug.print"));
+      dragFromLogExec();
+      expect(rows()).toEqual(["debug.log", "debug.print"]);
+      fireEvent.click(getByTestId("node-palette-item-debug.print"));
+      dragFromLogExec();
+      expect(rows()).toEqual(["debug.print", "debug.log"]);
+
+      rerender(view(false));
+      expect(rows()).toEqual(["debug.log", "debug.print"]);
+      rerender(view(true));
+      expect(rows()).toEqual(["debug.print", "debug.log"]);
+    } finally {
+      restoreLayout();
+    }
+  });
 });

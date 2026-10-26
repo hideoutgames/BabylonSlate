@@ -124,12 +124,12 @@ async function captureAmbientOcclusion(
   return { off, on, linear, orthographic, orthographicOff, disabled };
 }
 
-/** The render mode and CEL opt-ins the proof's next draw applies. */
-type ReflectionRender = { mode: RenderMode; celReflections: boolean; celTextures: boolean };
+/** The render mode and CEL Reflection Textures setting the proof's next draw applies. */
+type ReflectionRender = { mode: RenderMode; celTextures: boolean };
 
 /**
  * A red unlit box over a floor, drawn without and with Real-Time Reflections for each surface kind: an authored
- * graph mirror in PBR, in CEL by default and in CEL with the opt-in, a native PBR metal under CEL's adapter, a
+ * graph mirror in PBR and in CEL, a native PBR metal under CEL's adapter, a
  * native metal whose metalness and roughness come from a glTF metallic-roughness map, under CEL with factors only and
  * with Reflection Textures, and an unlit Standard floor, whose white default specular color must not make it a mirror.
  */
@@ -141,16 +141,16 @@ async function captureReflections(
   effects: ReturnType<typeof normalizeRenderEffectsSettings>,
   draw: () => Promise<number[]>,
 ) {
-  const pair = async (material: Material, mode: RenderMode, celReflections: boolean, celTextures = false) => {
+  const pair = async (material: Material, mode: RenderMode, celTextures = false) => {
     floor.material = material;
-    Object.assign(render, { mode, celReflections, celTextures });
+    Object.assign(render, { mode, celTextures });
     const capture = async (enabled: boolean) => {
       effects.reflections.enabled = enabled;
       try {
         return await draw();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${material.name}, ${mode}${celReflections ? " with CEL reflections" : ""}${celTextures ? " and textures" : ""}, reflections ${enabled ? "on" : "off"}: ${message}`, { cause: error });
+        throw new Error(`${material.name}, ${mode}${celTextures ? " with Reflection Textures" : ""}, reflections ${enabled ? "on" : "off"}: ${message}`, { cause: error });
       }
     };
     const off = await capture(false);
@@ -172,13 +172,12 @@ async function captureReflections(
   unlit.disableLighting = true;
   unlit.diffuseColor = new Color3(0.1, 0.1, 0.1);
   return {
-    pbr: await pair(mirror, "pbr", false),
-    celDefault: await pair(mirror, "cel", false),
-    cel: await pair(mirror, "cel", true),
-    celNative: await pair(metal, "cel", true),
-    celTexturedFactors: await pair(textured, "cel", true),
-    celTextured: await pair(textured, "cel", true, true),
-    unlitStandard: await pair(unlit, "pbr", false),
+    pbr: await pair(mirror, "pbr"),
+    cel: await pair(mirror, "cel"),
+    celNative: await pair(metal, "cel"),
+    celTexturedFactors: await pair(textured, "cel"),
+    celTextured: await pair(textured, "cel", true),
+    unlitStandard: await pair(unlit, "pbr"),
   };
 }
 
@@ -313,14 +312,11 @@ export async function runSpatialEffectsProof(
           enabled: false, density: 0, intensity: 0, resolutionScale: 1, maxDistance: 20,
         });
       }
-      const render: ReflectionRender = { mode: "pbr", celReflections: false, celTextures: false };
+      const render: ReflectionRender = { mode: "pbr", celTextures: false };
       const settings = () =>
         setSceneRenderSettings(scene, {
           mode: render.mode,
-          cel: normalizeCelShadingSettings({
-            reflectionsEnabled: render.celReflections,
-            reflectionTexturesEnabled: render.celTextures,
-          }),
+          cel: normalizeCelShadingSettings({ reflectionTexturesEnabled: render.celTextures }),
           effects,
           // Medium, the default tier, skips reflections and scene-wide volumetrics.
           quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),

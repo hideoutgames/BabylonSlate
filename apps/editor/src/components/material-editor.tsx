@@ -320,6 +320,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes(document.domain)}
           pinCompatibility={materialPinsAreCompatible}
+          addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
@@ -383,6 +384,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes("surface")}
           pinCompatibility={materialPinsAreCompatible}
+          addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}

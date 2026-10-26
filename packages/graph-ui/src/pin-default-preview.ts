@@ -197,8 +197,8 @@ export function pinDefaultPreview(
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
   }
-  // A pin that reads Self while unwired says so in its label, not in a field.
-  if (pin.selfWhenUnwired === true) return null;
+  // A pin that reads Self while unwired names Self where an empty reference names its class.
+  if (pin.selfWhenUnwired === true) return { kind: "objectRef", text: "Self", placeholder: true };
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;
   const type = literalPinType(pin);

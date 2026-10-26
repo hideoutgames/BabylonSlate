@@ -8,8 +8,8 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 
 | Effect | Settings | Description |
 | --- | --- | --- |
-| **Ambient Occlusion** | **Occlusion Radius**, **Occlusion Strength**, **Occlusion Distance**, **Occlusion Resolution Scale**, **Occlusion Samples** | Darkens creases and contact points between PBR surfaces. |
-| **Real-Time Reflections** | **Reflection Resolution Scale**, **Reflection Steps**, **Reflection Distance**, **Reflection Thickness**, **Reflection Strength** | Reflects visible objects on lit metal and smooth surfaces; unlit surfaces never reflect. In CEL it also needs **Real-Time Reflections** in [CEL Shading](lighting.md#cel-shading), and metal defined by textures needs **Reflection Textures** there. Environment lighting still covers what is off screen. |
+| **Ambient Occlusion** | **Occlusion Radius**, **Occlusion Strength**, **Occlusion Distance**, **Occlusion Resolution Scale**, **Occlusion Samples** | Darkens creases and contact points between PBR surfaces. Built-in water is never darkened. |
+| **Real-Time Reflections** | **Reflection Resolution Scale**, **Reflection Steps**, **Reflection Distance**, **Reflection Thickness**, **Reflection Strength** | Reflects visible objects on lit metal and smooth surfaces; unlit surfaces never reflect. It applies in PBR and CEL alike; in CEL, metal defined by textures needs **Reflection Textures** in [CEL Shading](lighting.md#cel-shading). Environment lighting still covers what is off screen. Built-in water keeps its own [Water Reflections](water.md#water-quality) instead. |
 | **Volumetric Fog** | See [Sky and Fog](sky-and-fog.md#volumetric-fog) | Fog lit by scene lights. |
 | **Bloom** | **Bloom Threshold** (0.9), **Bloom Weight** (0.15), **Bloom Kernel** (64), **Bloom Scale** (0.5) | Glow around bright surfaces. |
 | **Vignette** | **Vignette Weight** (1.5), **Vignette Color** (black) | Darkens the frame edges. |
@@ -38,8 +38,8 @@ Post-processing cost follows the **Post Processing** group in **Project Settings
 
 | Level | Post Processing Resolution Scale | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
 | --- | --- | --- | --- | --- |
-| Low | 0.5 | Off | Off | Off |
-| Medium | 0.75 | On | Off | Off |
+| Low | 0.75 | Off | Off | Off |
+| Medium | 1 | On | On | Off |
 | High | 1 | On | On | On |
 | Ultra | 1 | On | On | On |
 

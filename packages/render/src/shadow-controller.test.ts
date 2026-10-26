@@ -345,8 +345,9 @@ describe("shared shadow lifecycle", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     engine.getCaps().maxTextureSize = 256;
+    // The Low tier with one 1024 map over 80 m, so texel sizes stay round numbers.
     updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings(qualityPresetPatch("low").shadows),
+      shadows: normalizeShadowSettings({ ...qualityPresetPatch("low").shadows, preset: "custom", distance: 80, mapSize: 1024, cascades: 1 }),
     });
     const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
     controller.register(light, true);
@@ -1476,7 +1477,7 @@ describe("prediction maps", () => {
 
   it.each([
     ["new shadow settings", ({ scene, controller }: ReturnType<typeof predicting>) => {
-      updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, filterQuality: "high" }) });
+      updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, filterQuality: "low" }) });
       controller.sync();
     }],
     ["a restored context", ({ engine }: ReturnType<typeof predicting>) => engine.onContextRestoredObservable.notifyObservers(engine)],

@@ -238,7 +238,6 @@ function replanSceneEffects(state: SceneRendering): void {
     fogVolumesPresent: state.fogVolumesPresent,
     colorGradingTexture: state.colorGradingTexture,
     allowed: state.effectAllowances,
-    celReflections: state.cel.reflectionsEnabled,
   };
   state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
@@ -250,10 +249,9 @@ export function sceneEffectsQualityLimits(scene: Scene): string[] {
   if (!state.effectsEnabled) return [];
   const { effects, effectAllowances: allowed } = state;
   const pbr = state.mode === "pbr";
-  const reflections = pbr || state.cel.reflectionsEnabled;
   const skipped = [
     pbr && effects.ambientOcclusion.enabled && !allowed.ambientOcclusion ? "ambient occlusion" : null,
-    reflections && effects.reflections.enabled && !allowed.reflections ? "reflections" : null,
+    effects.reflections.enabled && !allowed.reflections ? "reflections" : null,
     effects.volumetricLighting.enabled && !allowed.volumetricLighting ? "scene-wide volumetric lighting" : null,
   ].filter((name): name is string => name !== null);
   return skipped.length ? [`post processing quality skips ${skipped.join(", ")}`] : [];

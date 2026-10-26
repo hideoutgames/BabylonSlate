@@ -11,7 +11,7 @@ Adds a new component of a chosen type to an actor and returns it.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Actor | Actor Reference | The actor that receives the component. Left unconnected the pin reads **Actor (Self)** and is the actor running the graph. |
+| Actor | Actor Reference | The actor that receives the component. Left unconnected the pin shows **Self** and is the actor running the graph. |
 | Class ID | ActorComponent Class |  |
 | Transform | Transform | Starting transform of the new component. When not connected, it has no offset, no rotation and a scale of 1. |
 

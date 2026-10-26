@@ -4,9 +4,10 @@ import {
   type Mesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
-  RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel,
+  RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel, WATER_SHADING_DETAILS, type WaterShadingDetail,
 } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
+import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import {
@@ -259,7 +260,7 @@ describe("Water material binding", () => {
       new FreeCamera("camera", new Vector3(0, 5, -10), scene);
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
       new PointLight("lamp", new Vector3(0, 3, 0), scene);
-      const tier = (level: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+      const tier = (shadingDetail: WaterShadingDetail) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { shadingDetail } }) });
       const compiled = async () => {
         const mesh = createWaterMesh(scene, "water", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
@@ -269,8 +270,7 @@ describe("Water material binding", () => {
         mesh.dispose();
         return defines;
       };
-      const levels: QualityLevel[] = ["low", "medium", "high", "ultra"];
-      for (const [index, level] of levels.entries()) {
+      for (const [index, level] of WATER_SHADING_DETAILS.entries()) {
         tier(level);
         const realistic = await compiled();
         expect(realistic).toContain(`#define SLATE_WATER_QUALITY ${index}`);
@@ -344,7 +344,7 @@ describe("Water material binding", () => {
       lake.rotation.z = 0;
       updateSceneWater(scene);
       expect(await compiled(lake)).toContain("SLATE_WATER_PLANAR\n");
-      level("high");
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "screenSpace" } }) });
       updateSceneWater(scene);
       expect(await compiled(lake)).not.toContain("SLATE_WATER_PLANAR\n");
       lake.dispose();
@@ -353,6 +353,32 @@ describe("Water material binding", () => {
       const mirrorless = createWaterMesh(scene, "mirrorless", normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(), objectReflections: false });
       expect(await compiled(mirrorless)).not.toContain("SLATE_WATER_PLANAR\n");
       mirrorless.dispose();
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("leaves its normal and reflectivity out of the scene effects' geometry pass only", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
+      const material = lake.material as PBRMaterial, subMesh = lake.subMeshes[0]!;
+      const main = engine.currentRenderPassId;
+      const compiled = async (pass: number) => {
+        await vi.waitFor(() => {
+          engine.currentRenderPassId = pass;
+          expect(material.isReadyForSubMesh(lake, subMesh)).toBe(true);
+        });
+        try { return subMesh.effect!; } finally { engine.currentRenderPassId = main; }
+      };
+      const spatial = engine.createRenderPassId("Spatial Geometry"), authored = engine.createRenderPassId("Post-process Geometry");
+      registerSpatialGeometryPass(scene, spatial);
+      const excluded = await compiled(spatial);
+      expect(excluded.defines).toContain("#define SLATE_WATER_EFFECTS_GEOMETRY\n");
+      expect(excluded.fragmentSourceCodeBeforeMigration).toContain("specularEnvironmentR0 = vec3(0.0);");
+      // The view's colour passes and an authored post-process chain's geometry pass keep the water's own surface.
+      for (const pass of [main, authored]) expect((await compiled(pass)).defines).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+      unregisterSpatialGeometryPass(scene, spatial);
     } finally { scene.dispose(); engine.dispose(); }
   });
 

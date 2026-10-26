@@ -31,6 +31,8 @@ Open **Add Node** in any of these ways:
 
 Type in **Search Nodes** or browse the categories. Search words can be in any order and spaces are optional, so **Int to String** finds **To String (Int)** and **BeginPlay** finds **Event Begin Play**. The best match comes first: node names before aliases (such as **label** for **Set Text**), and those before descriptions. Categories are listed by their best match, and the highlighted first row is the one **Enter** adds. **Context Sensitive** is on by default: it hides nodes that need a target object from another class, and when you drag from a pin it shows only compatible nodes. Turn it off to see every node the graph allows.
 
+In Class, Material and Particle graphs, Add Node learns from the nodes you add from a pin. Once you add the same node from the same pin on the same kind of node twice, it moves to the top of the list the next time you drag from that pin, with up to five learned nodes listed first. Choices you stop making gradually lose their place. The list without a dragged pin always keeps its default order. History is kept on this device only.
+
 ## Connect pins
 
 - Drag from one pin to another, or tap a pin and then tap the pin to connect.
@@ -44,7 +46,7 @@ The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **B
 
 Right-click a node (long-press on touch) for a menu with **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**, plus actions such as **Rename Event** where they apply. Opening the menu on an unselected node selects only that node; opening it on a selected node keeps the whole selection. **Paste** and **Duplicate** add new nodes with the same values and the wires that ran between the copied nodes, offset from the originals. Nodes a graph protects, such as a function's **Input** and **Output**, cannot be copied, duplicated or deleted. Events keep their one place on the graph: a copied custom event gets a new name, and an event the graph already has is left out, as described in [Copy and duplicate events](events.md#copy-and-duplicate-events). The same actions have keyboard shortcuts: <kbd>Mod</kbd>+<kbd>C</kbd>, <kbd>Mod</kbd>+<kbd>V</kbd>, <kbd>Mod</kbd>+<kbd>D</kbd> and <kbd>Delete</kbd> or <kbd>Backspace</kbd> ([Keyboard Shortcuts](../start/shortcuts.md)). Gestures are listed in [Touch gestures](../start/gestures.md).
 
-**Engine Settings > Graph** controls the **Node Connection Assistant** (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Read-Only Pin Defaults** and **Graph Default Zoom**.
+**Engine Settings > Graph** controls the **Node Connection Assistant** (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Add Node History**, **Read-Only Pin Defaults** and **Graph Default Zoom**. Turning **Add Node History** off restores the default order and stops learning without deleting what was learned; **Clear Add Node History** deletes it.
 
 ## Compile and play
 

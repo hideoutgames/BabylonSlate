@@ -6,6 +6,7 @@ import { WATER_FFT_CASCADES_MAX, waterBankFadeLength, waterFoamScale, type Water
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterFftResult } from "./water-fft";
 import { invalidateSceneLighting } from "./scene-lighting";
+import { isSpatialGeometryPass } from "./spatial-geometry-passes";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_FINE_DEPTH_SPAN, type WaterField } from "./water-field";
 import { waterPlanarReflectionForCamera, type WaterPlanarReflection } from "./water-planar-reflection";
@@ -19,8 +20,8 @@ import {
 import { WATER_REMOVAL_SLOTS } from "./water-shader-chunks";
 import {
   BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, DEFAULT_TIER, EMPTY_TEXTURE, FFT, FFT_UNIFORMS, PLANAR, PLANAR_REACH, Q, REFRACTION, SSR, SSR_MAX_DISTANCE, SSR_STEPS,
-  WATER_BLEND_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE, WATER_PLANAR_SAMPLER, WATER_SCENE_SAMPLER, WATER_SHADING_TIERS,
-  waterFoamThresholdOf,
+  WATER_BLEND_DEFINE, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE, WATER_PLANAR_SAMPLER,
+  WATER_SCENE_SAMPLER, WATER_SHADING_TIERS, waterFoamThresholdOf,
 } from "./water-shader-defines";
 import { injectionFor, VERTEX_WAVE_ATTRIBUTES, VERTEX_WAVE_DEFINES } from "./water-shader-source";
 import { bindWaterVertexUniforms, SPECTRUM_UNIFORM_FLOATS, waterGridOffset, waterSpectrumUniforms } from "./water-vertex-waves";
@@ -230,7 +231,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, {
       SLATE_WATER: true, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
-      [REFRACTION]: false, [SSR]: false, [SSR_STEPS]: 0, [PLANAR]: false, [FFT]: 1, [WATER_BLEND_DEFINE]: false,
+      [REFRACTION]: false, [SSR]: false, [SSR_STEPS]: 0, [PLANAR]: false, [FFT]: 1, [WATER_BLEND_DEFINE]: false, [WATER_EFFECTS_GEOMETRY_DEFINE]: false,
     }, true, false);
     this.water = water;
     this.body = body;
@@ -349,6 +350,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     changed = setDefine(defines, PLANAR, this.mirrors) || changed;
     changed = setDefine(defines, FFT, this.fftCascades) || changed;
     changed = setDefine(defines, WATER_BLEND_DEFINE, this._blend) || changed;
+    // Registered with the pass's geometry task, before its first readiness probe, and never changes for the pass.
+    changed = setDefine(defines, WATER_EFFECTS_GEOMETRY_DEFINE, isSpatialGeometryPass(scene, scene.getEngine().currentRenderPassId)) || changed;
     if (changed) {
       defines.markAsUnprocessed();
       recordWaterVariant(defines, this.mesh, scene);

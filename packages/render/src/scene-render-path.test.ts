@@ -157,7 +157,7 @@ describe("scene render path selection", () => {
     lights[0]!.position.x = -100;
     syncSceneLighting(scene);
     expect(container(scene)).toBe(owner);
-    const low = normalizeRenderingQuality({ lighting: { profile: "low" } });
+    const low = normalizeRenderingQuality({ lighting: { profile: "low", localLightMode: "manual", maxLocalLights: 4 } });
     setSceneRenderSettings(scene, { renderPath: "auto", quality: low });
     expect(sceneRenderPathStatus(scene).effective.renderPath).toBe("forward");
     expect(owner.isDisposed()).toBe(true);

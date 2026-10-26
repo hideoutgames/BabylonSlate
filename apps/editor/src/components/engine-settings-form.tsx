@@ -4,6 +4,7 @@ import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { CompactModeField } from "./compact-mode-field";
+import { AddNodeHistoryFields } from "./add-node-history-fields";
 import { NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -642,6 +643,10 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-graph-shake">Shake Nodes To Disconnect</FieldLabel>
             <Switch id="setting-graph-shake" checked={settings.graphShakeEnabled} onCheckedChange={(checked) => void onChange({ graphShakeEnabled: checked === true })} />
           </Field>
+          <AddNodeHistoryFields
+            enabled={settings.graphAddNodeHistoryEnabled}
+            onEnabledChange={(graphAddNodeHistoryEnabled) => void onChange({ graphAddNodeHistoryEnabled })}
+          />
           <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-read-only-pin-defaults">Read-Only Pin Defaults</FieldLabel>

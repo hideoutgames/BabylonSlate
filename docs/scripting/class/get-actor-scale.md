@@ -20,5 +20,6 @@ Returns an actor's scale on each axis as a vector.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - A scale of 1 on every axis is the actor's original size.
 - Returns 1 on every axis, and logs an error, when the reference is empty.

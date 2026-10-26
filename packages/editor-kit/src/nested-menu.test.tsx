@@ -177,6 +177,37 @@ describe("NestedMenu dropdown", () => {
     expect(getByTestId("menu-content").getAttribute("data-closed")).toBeNull();
   });
 
+  it("shows a radio item's shortcut", () => {
+    const { getByTestId } = render(
+      <NestedMenu
+        items={[
+          {
+            id: "mode",
+            type: "radio-group",
+            value: "design",
+            onValueChange: () => {},
+            items: [
+              { id: "design", label: "Design", value: "design", shortcut: "Shift+1" },
+              { id: "landscape", label: "Landscape", value: "landscape" },
+            ],
+          },
+        ]}
+        trigger={
+          <button type="button" data-testid="menu-trigger">
+            Open
+          </button>
+        }
+        contentTestId="menu-content"
+      />,
+    );
+
+    fireEvent.click(getByTestId("menu-trigger"));
+    const design = getByTestId("context-menu-item-design");
+    expect(design.getAttribute("aria-keyshortcuts")).toBe("Shift+1");
+    expect(design.querySelector("[data-slot=shortcut-keys]")).toBeTruthy();
+    expect(getByTestId("context-menu-item-landscape").hasAttribute("aria-keyshortcuts")).toBe(false);
+  });
+
   it("does not open a disabled submenu", () => {
     const { getByTestId, queryByTestId } = render(
       <NestedMenu

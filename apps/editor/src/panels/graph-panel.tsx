@@ -638,6 +638,7 @@ export function GraphPanel(
             paletteNodes={paletteNodes}
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
+            addNodeHistoryScope="script"
             pinTypeNames={pinTypeNames}
             onCanvasApi={setCanvasApi}
             onNavigateRequest={onNavigateRequest}

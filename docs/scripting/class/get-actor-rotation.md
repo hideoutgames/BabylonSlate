@@ -20,4 +20,5 @@ Returns an actor's rotation as a rotator in degrees.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - For an attached actor, the rotation is relative to its parent.

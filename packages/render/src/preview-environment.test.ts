@@ -1,5 +1,5 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PBRMaterial, Texture } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import { createMaterialPreviewScene } from "./material-preview";
@@ -40,6 +40,22 @@ describe("installPreviewEnvironment", () => {
     expect(material.reflectionTexture?.coordinatesMode).toBe(
       Texture.SKYBOX_MODE,
     );
+    host.dispose();
+  });
+
+  it("lights the preview from its sky, so metals reflect it", async () => {
+    const handle = createTestEngine();
+    mockCubeTextureIO(handle.engine);
+    handles.push(handle);
+    const host = createMaterialPreviewScene(handle.engine);
+
+    const skybox = installPreviewEnvironment(host.scene);
+
+    const sky = (skybox.material as PBRMaterial).reflectionTexture!;
+    await vi.waitFor(() => {
+      host.scene.render();
+      expect(host.scene.environmentTexture?.getInternalTexture()).toBe(sky.getInternalTexture());
+    });
     host.dispose();
   });
 

@@ -24,10 +24,10 @@ describe("rendering quality sessions", () => {
     });
     session.execute(undefined, "low");
     expect(session.effective().shadows).toMatchObject({
-      distance: 80,
+      distance: 120,
       maxLocalLights: 1,
       localLightMode: "auto",
-      mapSize: 1024,
+      mapSize: 2048,
     });
     session.execute("shadows", "budget", "12");
     session.execute("shadows", "ultra");
@@ -132,21 +132,44 @@ describe("rendering quality sessions", () => {
       qualityGroupLabel(resolveRenderingQuality(reapplied), "shadows"),
     ).toBe("high");
   });
+  it("loads an unedited Low or Medium group saved by an earlier release as that level's current values", () => {
+    const earlierMedium = {
+      water: {
+        profile: "medium", preset: "medium", shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256, refraction: true,
+        refractionScale: 0.5, reflections: "sky", reflectionSteps: 8, planarScale: 0.5, fftSize: 256, fftCascades: 3,
+      },
+      lighting: { profile: "low", preset: "low", localLightMode: "auto", maxLocalLights: 4 },
+      textures: { profile: "medium", preset: "medium", lodBias: 0, anisotropy: 4, byteBudget: 512 * 1024 ** 2 },
+      geometry: { profile: "medium", preset: "medium", autoLod: true, lodDistanceScale: 1 },
+    };
+    const shadows = { profile: "medium", preset: "medium", enabled: true, distance: 200, fadeFraction: 0.1, mapSize: 2048, cascades: 2, filter: "pcf",
+      filterQuality: "medium", softness: 0.05, autoBias: true, depthBias: 0.0001, normalBias: 0.005, localLightMode: "auto", maxLocalLights: 2, localMapSize: 1024 };
+    const loaded = normalizeProjectSettings(JSON.parse(JSON.stringify({ render: { ...DEFAULT_RENDER_PROJECT_SETTINGS, quality: earlierMedium, shadows } }))).render;
+    const effective = resolveRenderingQuality(loaded);
+    expect(effective.water).toEqual({ ...RENDER_QUALITY_PROFILES.medium.water, profile: "medium", preset: "medium" });
+    expect(effective.lighting).toMatchObject({ ...RENDER_QUALITY_PROFILES.low.lighting, preset: "low" });
+    expect(effective.textures).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.textures, preset: "medium" });
+    expect(effective.shadows).toMatchObject({ ...qualityPresetPatch("medium").shadows, preset: "medium" });
+    // An edited group, or one saved Custom with those values, keeps what it holds.
+    const edited = normalizeRenderingQuality({ geometry: { ...earlierMedium.geometry, lodDistanceScale: 0.9 }, water: { ...earlierMedium.water, preset: "custom" } });
+    expect(edited.geometry).toMatchObject({ lodDistanceScale: 0.9, preset: "custom" });
+    expect(edited.water).toMatchObject({ meshDensity: 0.75, reflections: "sky", preset: "custom" });
+  });
   it("fills water fields added by later releases from the saved water tier, not Medium", () => {
     const { profile, preset, shadingDetail, refraction } = qualityPresetPatch("high").water!;
     const quality = normalizeRenderingQuality({ water: { profile, preset, shadingDetail, refraction, reflections: "mirror" } });
     expect(quality.water).toEqual({ ...RENDER_QUALITY_PROFILES.high.water, profile: "high", preset: "high" });
     const low = normalizeRenderingQuality({ water: { profile: "low", meshDensity: 9, fftSize: 100, reflectionSteps: 3.6, contactResolution: 300.4 } });
-    expect(low.water).toMatchObject({ meshDensity: 1.5, fftSize: 128, reflectionSteps: 4, contactResolution: 300, refraction: false, preset: "custom" });
+    expect(low.water).toMatchObject({ meshDensity: 1.5, fftSize: 128, reflectionSteps: 4, contactResolution: 300, refractionScale: 0.5, preset: "custom" });
   });
   it("allows screen-space effects by the saved Post Processing tier and keeps explicit allowances", () => {
     // Saved before allowances existed: the saved tier fills them, Medium without one.
     const savedHigh = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high", resolutionScale: 1 } });
     expect(savedHigh.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: true, volumetricLighting: true, preset: "high" });
     const unprofiled = normalizeRenderingQuality({});
-    expect(unprofiled.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: false, volumetricLighting: false, preset: "medium" });
-    const custom = resolveRenderingQuality({ quality: unprofiled }, {}, qualitySettingPatch("postprocessing", { reflections: true }));
-    expect(custom.postprocessing).toMatchObject({ reflections: true, preset: "custom" });
+    expect(unprofiled.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: true, volumetricLighting: false, preset: "medium" });
+    const custom = resolveRenderingQuality({ quality: unprofiled }, {}, qualitySettingPatch("postprocessing", { volumetricLighting: true }));
+    expect(custom.postprocessing).toMatchObject({ volumetricLighting: true, preset: "custom" });
     expect(resolveRenderingQuality({ quality: unprofiled }, {}, qualityPresetPatch("low")).postprocessing)
       .toMatchObject({ ambientOcclusion: false, reflections: false, volumetricLighting: false, preset: "low" });
   });
@@ -163,7 +186,7 @@ describe("rendering quality sessions", () => {
       ["reflections", "mirror"], ["fft", "yes"], ["contactResolution", "128"], ["octaves", "3"], ["meshDensity", ""]])
       expect(session.execute("water", field, value).success).toBe(false);
     expect(session.execute("geometry", "meshDensity", "1").success).toBe(false);
-    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 256 });
+    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 512 });
     session.execute("water", "reset");
     expect(session.effective().water).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.water, preset: "medium" });
   });
@@ -175,7 +198,7 @@ describe("rendering quality sessions", () => {
     expect(session.execute("geometry", "distance", "10").success).toBe(false);
     expect(session.effective().geometry.lodDistanceScale).toBe(2.5);
     session.execute("geometry", "reset");
-    expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1 });
+    expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1.25 });
   });
   it("detects legacy mismatched shadow settings without overwriting their values", () => {
     const settings = normalizeProjectSettings({
@@ -199,7 +222,7 @@ describe("rendering quality sessions", () => {
     { distance: 123 },
     { fadeFraction: 0.2 },
     { mapSize: 512 },
-    { cascades: 3 },
+    { cascades: 4 },
     { filter: "pcss" as const },
     { filterQuality: "low" as const },
     { softness: 0.1 },
@@ -278,10 +301,10 @@ describe("rendering quality sessions", () => {
     });
     expect(session.effective().shadows.maxLocalLights).toBe(8);
     session.execute("lighting", "budget", "auto");
-    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(4);
+    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(6);
     expect(session.effective().lighting.maxLocalLights).toBe(99);
     session.execute("lighting", "medium");
-    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(16);
-    expect(session.effective().lighting.maxLocalLights).toBe(16);
+    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(32);
+    expect(session.effective().lighting.maxLocalLights).toBe(32);
   });
 });

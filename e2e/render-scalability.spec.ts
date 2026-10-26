@@ -172,7 +172,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
   await choose(page, "Textures Quality", "Medium");
   await expect(
     page.getByLabel("Texture Budget (MiB)", { exact: true }),
-  ).toHaveValue("512");
+  ).toHaveValue("768");
   await expect(value(page, "Render Mode")).toHaveText("CEL");
   await page.screenshot({
     path: testInfo.outputPath("scalability-categories.png"),

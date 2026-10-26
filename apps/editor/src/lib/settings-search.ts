@@ -224,6 +224,8 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["graph", "Node Connection Assistant", "setting-graph-assistant"],
   ["graph", "Connection Distance (Pixels)", "setting-graph-distance"],
   ["graph", "Shake Nodes To Disconnect", "setting-graph-shake"],
+  ["graph", "Add Node History", "setting-graph-add-node-history"],
+  ["graph", "Clear Add Node History", "setting-graph-add-node-history-clear"],
   ["thumbnails", "Generate Thumbnails", "setting-thumbnails"],
   ["extensions", "Engine Extensions"],
   ["focus", "Keep Panels In Focus Mode"],

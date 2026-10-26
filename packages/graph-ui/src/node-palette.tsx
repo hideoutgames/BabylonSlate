@@ -23,6 +23,8 @@ export interface NodePaletteProps {
   sourcePins?: SerializedPin[];
   /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /** Reorders the pin-compatible rows (Add Node history); search keeps it within a tier. */
+  rankPinSuggestions?: (suggested: PaletteNode[]) => PaletteNode[];
   /**
    * Viewport point the menu opens from (pointer, double tap, or under the Add
    * Node button). Without one the menu is centered.
@@ -137,6 +139,7 @@ export function NodePalette({
   filterPin = null,
   sourcePins,
   pinCompatibility,
+  rankPinSuggestions,
   anchor,
   presentation = "popup",
 }: NodePaletteProps) {
@@ -146,12 +149,21 @@ export function NodePalette({
   const allNodes = useMemo(() => {
     const nodes = paletteNodes ?? [];
     if (pinFiltered) {
-      return filterPaletteForPin(nodes, filterPin!, pinCompatibility, sourcePins);
+      const suggested = filterPaletteForPin(nodes, filterPin!, pinCompatibility, sourcePins);
+      return rankPinSuggestions ? rankPinSuggestions(suggested) : suggested;
     }
     return contextSensitive
       ? nodes.filter((node) => node.outOfContext !== true)
       : nodes;
-  }, [contextSensitive, filterPin, paletteNodes, pinCompatibility, pinFiltered, sourcePins]);
+  }, [
+    contextSensitive,
+    filterPin,
+    paletteNodes,
+    pinCompatibility,
+    pinFiltered,
+    rankPinSuggestions,
+    sourcePins,
+  ]);
 
   const filterItems = useCallback(
     (nodes: readonly PaletteNode[], query: string) => filterNodes([...nodes], query),

@@ -36,19 +36,19 @@ const SHADOW_PROFILE_COMMON = {
 export const SHADOW_PROFILES = {
   low: {
     ...SHADOW_PROFILE_COMMON,
-    distance: 80,
-    mapSize: 1024,
-    cascades: 1,
+    distance: 120,
+    mapSize: 2048,
+    cascades: 2,
     filterQuality: "low",
     localMapSize: 512,
     maxLocalLights: 1,
   },
   medium: {
     ...SHADOW_PROFILE_COMMON,
-    distance: 200,
+    distance: 250,
     mapSize: 2048,
-    cascades: 2,
-    filterQuality: "medium",
+    cascades: 3,
+    filterQuality: "high",
     localMapSize: 1024,
     maxLocalLights: 2,
   },
@@ -74,6 +74,14 @@ export const SHADOW_PROFILES = {
   ShadowProfile,
   Omit<ShadowSettings, "profile" | "preset">
 >;
+/**
+ * Values earlier releases gave a level. Saved settings still labelled with that level and holding exactly these were
+ * never edited, so they load as the level's current values instead of turning Custom.
+ */
+const SUPERSEDED_SHADOW_PROFILES: Partial<Record<ShadowProfile, Omit<ShadowSettings, "profile" | "preset">>> = {
+  low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1 },
+  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2 },
+};
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   profile: "medium",
   ...SHADOW_PROFILES.medium,
@@ -180,6 +188,11 @@ export function normalizeShadowSettings(value: unknown): ShadowSettings {
                 settings[key as keyof ShadowSettings] === expected,
             ),
         ) ?? "custom");
+  const saved = clean.preset;
+  const superseded = saved && saved !== "custom" && saved === settings.profile ? SUPERSEDED_SHADOW_PROFILES[saved] : undefined;
+  if (settings.preset === "custom" && superseded &&
+    Object.entries(superseded).every(([key, expected]) => settings[key as keyof ShadowSettings] === expected))
+    return { ...settings, ...SHADOW_PROFILES[saved as ShadowProfile], preset: saved };
   return settings;
 }
 export function resolveShadowSettings(

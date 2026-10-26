@@ -85,9 +85,9 @@ it("applies local lighting scalability without suppressing the sun and restores 
   };
   apply("low");
   expect(sun.isEnabled()).toBe(true);
-  expect(locals.filter((light) => light.isEnabled())).toHaveLength(4);
-  expect(locals.filter(isForwardLightExcluded)).toHaveLength(3);
-  expect(sceneLightingLimits(scene).join()).toContain("4 scalability local lights");
+  expect(locals.filter((light) => light.isEnabled())).toHaveLength(6);
+  expect(locals.filter(isForwardLightExcluded)).toHaveLength(1);
+  expect(sceneLightingLimits(scene).join()).toContain("6 scalability local lights");
   const manual = normalizeRenderingQuality(qualityPresetPatch("low"));
   manual.lighting.localLightMode = "manual";
   manual.lighting.maxLocalLights = 5;

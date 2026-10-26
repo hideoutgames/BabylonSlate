@@ -1,19 +1,36 @@
-import { useToolbarOverflowEntry } from "@haptic/editor-kit";
+import { ShortcutKeys, ariaKeyShortcuts, useToolbarOverflowEntry } from "@haptic/editor-kit";
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue,
 } from "@haptic/ui/components/select";
 import { useActiveDocumentState, useDocumentActions } from "../context/document-context";
-import { SCENE_MODE_LABELS, normalizeSceneMode, sceneModesForKind } from "../shell/scene-document-layout";
+import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
+import type { EditorCommandId } from "../lib/editor-keybinds";
+import { SCENE_MODE_LABELS, normalizeSceneMode, sceneModesForKind, type SceneMode } from "../shell/scene-document-layout";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 
+const SCENE_MODE_COMMANDS: Record<SceneMode, EditorCommandId> = {
+  design: "scene.modeDesign",
+  landscape: "scene.modeLandscape",
+  foliage: "scene.modeFoliage",
+  script: "scene.modeScript",
+};
+
 /** Scene: Design / Landscape / Foliage / Script. Scene Layer: Design / Script. */
-export function SceneModeSelect({ kind, disabled = false }: { kind: "scene" | "scene-layer"; disabled?: boolean }) {
+export function SceneModeSelect({ kind = "scene", disabled = false }: { kind?: "scene" | "scene-layer"; disabled?: boolean }) {
   const { setSceneMode } = useDocumentActions();
   const { sceneMode, activeDocumentId } = useActiveDocumentState();
+  const bindings = useKeybindings();
   const modes = sceneModesForKind(kind);
   const chooseMode = (value: string | null) => {
     if (activeDocumentId && value) setSceneMode(activeDocumentId, normalizeSceneMode(value, kind));
   };
+  // A mode the document does not offer (Landscape on a Scene Layer) keeps its shortcut unbound.
+  const modeKeys = (mode: SceneMode) => ({ enabled: !disabled && Boolean(activeDocumentId) && modes.includes(mode) });
+  useKeybindCommand(SCENE_MODE_COMMANDS.design, () => chooseMode("design"), modeKeys("design"));
+  useKeybindCommand(SCENE_MODE_COMMANDS.landscape, () => chooseMode("landscape"), modeKeys("landscape"));
+  useKeybindCommand(SCENE_MODE_COMMANDS.foliage, () => chooseMode("foliage"), modeKeys("foliage"));
+  useKeybindCommand(SCENE_MODE_COMMANDS.script, () => chooseMode("script"), modeKeys("script"));
+  const chordFor = (mode: SceneMode) => bindings.get(SCENE_MODE_COMMANDS[mode])?.[0];
   // Collapsed into the toolbar's More Actions menu when the bar is too narrow.
   useToolbarOverflowEntry("scene-mode", TOOLBAR_OVERFLOW_PRIORITY.sceneMode, [{
     type: "submenu",
@@ -26,7 +43,7 @@ export function SceneModeSelect({ kind, disabled = false }: { kind: "scene" | "s
       value: sceneMode,
       closeOnClick: true,
       onValueChange: chooseMode,
-      items: modes.map((mode) => ({ id: `scene-mode-${mode}`, value: mode, label: SCENE_MODE_LABELS[mode] })),
+      items: modes.map((mode) => ({ id: `scene-mode-${mode}`, value: mode, label: SCENE_MODE_LABELS[mode], shortcut: chordFor(mode) })),
     }],
   }]);
   return (
@@ -41,7 +58,15 @@ export function SceneModeSelect({ kind, disabled = false }: { kind: "scene" | "s
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {modes.map((mode) => <SelectItem key={mode} value={mode}>{SCENE_MODE_LABELS[mode]}</SelectItem>)}
+          {modes.map((mode) => {
+            const chord = chordFor(mode);
+            return (
+              <SelectItem key={mode} value={mode} aria-keyshortcuts={chord ? ariaKeyShortcuts(chord) : undefined}>
+                {SCENE_MODE_LABELS[mode]}
+                {chord ? <ShortcutKeys chord={chord} decorative className="ml-auto pl-4 text-muted-foreground pointer-coarse:hidden" /> : null}
+              </SelectItem>
+            );
+          })}
         </SelectGroup>
       </SelectContent>
     </Select>

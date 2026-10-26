@@ -83,6 +83,9 @@ function host({ sharedDepth = true, options = new NullEngineOptions() } = {}) {
   return { engine, scene, camera };
 }
 
+/** Water quality whose water samples no scene copy: no Water Refraction, Sky Only reflections. */
+const noCopyQuality = () => normalizeRenderingQuality({ water: { refraction: false, reflections: "sky" } });
+
 function lake(scene: Scene, water = createDefaultWaterDefinition()): Mesh {
   return createWaterMesh(scene, "lake", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water);
 }
@@ -188,8 +191,8 @@ it("admits the copy only without per-group depth clears, and re-plans when that 
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toContain("Water scene copy");
-  // Low quality turns refraction off and reflects the sky only: the copy is not planned.
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
+  // Without Water Refraction, reflecting the sky only, the copy is not planned.
+  updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
   graph.dispose();
@@ -220,7 +223,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 3, copies: 3 });
   expect(clears).toHaveBeenCalledTimes(3);
-  expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.5 });
+  expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.75 });
   // Opaques draw into the own pair; water, transparents and particles after the copy, in the registered pass only
   // (water's depth pre-pass under that pass's own pre-pass id).
   expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent depth pre-pass → texture", "Forward transparent → texture"]));
@@ -321,8 +324,9 @@ it("plans no copy for water whose asset samples none of the features the quality
   // Refraction 0 never samples the copy; Object Reflections only sample it under a screen-space march.
   const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: true });
   const waterDraws = drawnBy(scene, water);
+  // Refraction with Sky Only reflections: nothing is planned, reserved or allocated.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "sky" } }) });
   const graph = new ForwardSceneFrameGraph(scene);
-  // Medium refracts and reflects the sky only: nothing is planned, reserved or allocated.
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
   expect(graph.waterSceneCopyDiagnostics()).toBeNull();
@@ -394,19 +398,19 @@ it("registers the transparent pass before its first readiness probe and unregist
   expect(isMainWaterPass(scene, first)).toBe(true);
   expect(isMainWaterPass(scene, camera.renderPassId)).toBe(false);
   expect(copy.invSize).toEqual([1 / engine.getRenderWidth(true), 1 / engine.getRenderHeight(true)]);
-  expect(copy.scale).toBe(0.5);
+  expect(copy.scale).toBe(0.75);
   expect(copy.texture.wrapU).toBe(0);
   expect(copy.texture.getSize()).toMatchObject({
-    width: Math.round(engine.getRenderWidth(true) * 0.5), height: Math.round(engine.getRenderHeight(true) * 0.5),
+    width: Math.round(engine.getRenderWidth(true) * 0.75), height: Math.round(engine.getRenderHeight(true) * 0.75),
   });
 
   // A retained graph keeps its registration until its deferred release.
   const releasePrevious = graph.retainResources();
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refractionScale: 0.75 } }) });
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refractionScale: 0.5 } }) });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const second = graph.waterSceneCopyDiagnostics()!.renderPassId;
   expect(second).not.toBe(first);
-  expect(waterSceneCopyForPass(scene, second)?.scale).toBe(0.75);
+  expect(waterSceneCopyForPass(scene, second)?.scale).toBe(0.5);
   expect(waterSceneCopyForPass(scene, first)).toBe(copy);
   releasePrevious();
   expect(waterSceneCopyForPass(scene, first)).toBeNull();
@@ -446,13 +450,21 @@ it("compiles refraction and the screen-space march only into the copy's pass, fo
   expect(compiled(plain, objects)).toContain("#define SLATE_WATER\n");
   expect(compiled(plain, objects)).not.toContain("SLATE_WATER_REFRACTION\n");
   expect(compiled(plain, objects)).not.toContain("SLATE_WATER_SSR\n");
-  // Medium refracts and reflects the sky only; Low plans no copy, and the water compiles neither feature.
+  // Planar's march on water that is not flat: Medium 12 steps, Low 6.
   quality("medium");
   const medium = (await plan())!;
-  expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_REFRACTION\n");
-  expect(compiled(sampling, medium)).not.toContain("SLATE_WATER_SSR\n");
-  expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_SSR_STEPS 0\n");
+  expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_SSR_STEPS 12\n");
   quality("low");
+  const low = (await plan())!;
+  expect(compiled(sampling, low)).toContain("#define SLATE_WATER_SSR_STEPS 6\n");
+  // Refraction with Sky Only reflections compiles no march.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "sky" } }) });
+  const sky = (await plan())!;
+  expect(compiled(sampling, sky)).toContain("#define SLATE_WATER_REFRACTION\n");
+  expect(compiled(sampling, sky)).not.toContain("SLATE_WATER_SSR\n");
+  expect(compiled(sampling, sky)).toContain("#define SLATE_WATER_SSR_STEPS 0\n");
+  // Without Water Refraction, reflecting the sky only, no copy is planned and the water compiles neither feature.
+  updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
   expect(await plan()).toBeNull();
   for (const pass of [objectsPass(), camera.renderPassId]) {
     expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_REFRACTION\n");
@@ -495,9 +507,9 @@ it("compiles the water variants the view draws before its first frame, and none 
   expect(graph.readiness(camera)).toMatchObject({ ready: false, preparationRequired: true });
   graph.sceneStrictlyReady(camera);
   expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
-  // Low plans no copy: the re-plan compiles the variant the main pass then draws before the next frame.
+  // Without a copy, the re-plan compiles the variant the main pass then draws before the next frame.
   drawn.clear();
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
+  updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const replanned = compiledWaterVariants(engine);
   expect(replanned).toContain("colour without copy");
@@ -509,7 +521,7 @@ it("compiles the water variants the view draws before its first frame, and none 
 
 it("leaves a view without a scene copy's water to the graph's probe, which compiles the variant it draws", async () => {
   const { engine, scene, camera } = host();
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
+  updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
   const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35 });
   const drawn = new Set<string>();
   water.onAfterRenderObservable.add(() => drawn.add(waterVariant(water.subMeshes[0]!.effect?.defines ?? "")));
@@ -769,10 +781,10 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   const copy = waterSceneCopyForPass(scene, renderPassId)!;
   expect(copy.invSize).toEqual([1 / 256, 1 / 160]);
   expect(copy.revision).not.toBe(revision);
-  expect(copy.texture.getSize()).toEqual({ width: 128, height: 80 });
+  expect(copy.texture.getSize()).toEqual({ width: 192, height: 120 });
   // The resized copy and own pair replace the previous charge.
   expect(managedRenderReservations(engine)).toMatchObject({ pendingBytes: 0 });
-  expect(managedRenderReservations(engine).categoryBytes.water).toBe(128 * 80 * 8 + 256 * 160 * 8);
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(192 * 120 * 8 + 256 * 160 * 8);
   // Water reads the copy's size on every draw, so its refraction and march follow the resize without recompiling.
   const binds = vi.spyOn((water.material as unknown as { _uniformBuffer: UniformBuffer })._uniformBuffer, "updateFloat4");
   await settle(graph, camera);
@@ -788,7 +800,7 @@ it("charges the copy and own pair to the water ledger and releases them with the
   const width = engine.getRenderWidth(true), height = engine.getRenderHeight(true);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  const copyBytes = Math.round(width * 0.5) * Math.round(height * 0.5) * 8;
+  const copyBytes = Math.round(width * 0.75) * Math.round(height * 0.75) * 8;
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(copyBytes + width * height * 8);
   graph.dispose();
   await graph.whenReleased();

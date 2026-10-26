@@ -11,7 +11,7 @@ Sends an actor toward a destination along the navigation mesh.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Actor Reference | Actor to move. It needs a Nav Agent component. |
+| Target | Actor Reference | Actor to move. It needs a Nav Agent component. Left unconnected the pin shows **Self** and uses the actor running the graph. |
 | Destination | Vector 3 | World position to walk to. |
 
 ## Outputs
