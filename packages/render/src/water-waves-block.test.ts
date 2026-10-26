@@ -8,7 +8,7 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocu
 import { acquireAuthoredMaterialVariant, compileMaterialPlan } from "./material-compiler";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftCycle, waterFftSynthesize, waterSpectrumInitial, waterSpectrumLayout } from "./water-fft-spectrum";
-import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource } from "./water-material";
+import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, waterFoamDrift, waterWaveBlockSource } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { materialHasWaterWaves } from "./water-waves-block";
 
@@ -217,7 +217,8 @@ describe("Water Waves node", () => {
     const offsetA = bind(a), offsetB = bind(b);
     for (const [i, expected] of [40, 0, -25].entries()) expect(Math.abs(offsetA[i]! - expected)).toBeLessThanOrEqual(cell);
     for (const [i, expected] of [-60, 0, 5].entries()) expect(Math.abs(offsetB[i]! - expected)).toBeLessThanOrEqual(cell);
-    expect(bound.get("slateWaterClock")).toEqual([2, 0, 0, 0]);
+    const drift = waterFoamDrift(createDefaultWaterDefinition(), normalizeWaterBody({}, "global").waveScale, { x: 0, z: 0 });
+    expect(bound.get("slateWaterClock")).toEqual([2, drift.x, drift.z, 0]);
   });
 });
 

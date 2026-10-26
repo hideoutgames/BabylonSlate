@@ -12,7 +12,7 @@ import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import {
   WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS,
-  WaterMaterialPlugin, WaterVertexWaves, stripShaderComments, waterFoamThresholdOf, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
+  WaterMaterialPlugin, WaterVertexWaves, stripShaderComments, waterFoamDrift, waterFoamThresholdOf, waterHazeConstants, waterOutlineVertexSource, waterShaderSource,
 } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -539,7 +539,9 @@ describe("Water material binding", () => {
       for (const name of WATER_VERTEX_WAVE_UNIFORMS) expect(own.vectors.get(name), name).toEqual(pass.vectors.get(name));
       expect(own.textures.get(WATER_FFT_SAMPLER)).toBe(pass.textures.get(WATER_FFT_SAMPLER));
       expect(own.textures.has(WATER_FOAM_SAMPLER)).toBe(true);
-      expect(own.vectors.get(WATER_CLOCK_UNIFORM)).toEqual([7.25, 0, 0, 0]);
+      const drift = waterFoamDrift(plugin.water, plugin.body.waveScale, { x: 0, z: 0 });
+      expect(Math.hypot(drift.x, drift.z)).toBeGreaterThan(0);
+      expect(own.vectors.get(WATER_CLOCK_UNIFORM)).toEqual([7.25, drift.x, drift.z, 0]);
       expect(own.vectors.get(WATER_EYE_UNIFORM)).toEqual([3, 4, -5, 0]);
       const { fftSize, fftCascades } = sceneWaterQualityDeviceClamp(scene).quality;
       expect(own.vectors.get(WATER_NODE_FOAM_UNIFORM)).toEqual([plugin.water.crestFoam, plugin.water.foamAmount,

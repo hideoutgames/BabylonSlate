@@ -339,6 +339,20 @@ describe("Water rendering", () => {
       expect(drawnTime()).toBeCloseTo(0.25, 12);
     } finally { scene.dispose(); engine.dispose(); }
   });
+  it("drifts foam downwind along the asset's Wave Direction, and not on calm water", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const water = createDefaultWaterDefinition();
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10 }), water);
+      const drift = () => { const [, x, z] = bindWater(mesh).get("slateWaterMotion")!; return { x, z, heading: Math.atan2(z, x) * 180 / Math.PI }; };
+      expect(drift().heading).toBeCloseTo(water.waveDirection, 6);
+      expect(Math.hypot(drift().x, drift().z)).toBeGreaterThan(0);
+      updateWaterMeshDefinition(mesh, { ...water, waveDirection: -120 });
+      expect(drift().heading).toBeCloseTo(-120, 6);
+      updateWaterMeshBody(mesh, normalizeWaterBody({ width: 10, length: 10, waveScale: 0 }));
+      expect(Math.hypot(drift().x!, drift().z!)).toBe(0);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("leaves the CPU work of water drawn only by another pass to the frame's own update after an early settle", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
@@ -556,7 +570,10 @@ describe("Water rendering", () => {
       waves.bindForSubMesh(gpu.computeWorldMatrix(true), gpu, gpu.subMeshes[0]!);
       const reference = new Map<string, number[]>();
       pluginOf(builtIn).bindVertexWaves({ setFloat4: (name: string, ...values: number[]) => reference.set(name, values), setTexture: () => {} } as unknown as Parameters<WaterMaterialPlugin["bindVertexWaves"]>[0], scene, builtIn);
-      expect(bound.get("slateWaterClock")).toEqual([3, 0, 0, 0]);
+      // The clock carries built-in water's foam drift too, so the Water Foam node's foam drifts in step.
+      const [, driftX, driftZ] = bindWater(builtIn).get("slateWaterMotion")!;
+      expect(Math.hypot(driftX!, driftZ!)).toBeGreaterThan(0);
+      expect(bound.get("slateWaterClock")).toEqual([3, driftX, driftZ, 0]);
       for (const name of ["slateWaterFft", "slateWaterFftCascade0", "slateWaterSwellInfo", "slateWaterGridOffset"]) {
         expect(reference.get(name), name).toBeDefined();
         expect(bound.get(name), name).toEqual(reference.get(name));

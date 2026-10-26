@@ -67,7 +67,7 @@ float ${prefix}ShoreFoamAmount(vec2 p, float t, float depth, float width) {
 float ${prefix}ContactFoamAmount(vec2 p, float t, float dist, float width) {
   float band = 1.0 - smoothstep(0.03, 0.05 + width * 0.05, dist);
   float close = 1.0 - smoothstep(0.0, width * mix(0.3, 1.2, ${prefix}Noise(p * 0.25 + vec2(0.0, 4.4))), dist);
-  return max(close * close * 0.6, band * 0.75);
+  return max(close * close * 0.7, band * 0.82);
 }
 `;
 }
