@@ -11,7 +11,7 @@ Attaches an actor to a named bone of another actor's model so it follows that bo
 | Pin | Type | Description |
 | --- | --- | --- |
 | Exec | Exec |  |
-| Actor | Actor Reference | The actor to attach. Left unconnected the pin reads **Actor (Self)** and attaches the actor running the graph. |
+| Actor | Actor Reference | The actor to attach. Left unconnected the pin shows **Self** and attaches the actor running the graph. |
 | Target | Actor Reference | The actor whose model has the bone. |
 | Bone Name | String |  |
 

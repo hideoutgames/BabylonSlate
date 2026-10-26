@@ -39,6 +39,11 @@ const CASES = [
   { typeId: "component.get", title: "Get Component", pin: "actor", label: "Actor", method: "getComponent", pure: true },
   { typeId: "component.has", title: "Has Component", pin: "actor", label: "Actor", method: "getComponent", pure: true },
   { typeId: "component.add", title: "Add Component", pin: "actor", label: "Actor", method: "addComponent", pure: false },
+  { typeId: "camera.possess", title: "Possess Camera", pin: "target", label: "Target", method: "possessCamera", pure: false },
+  { typeId: "transform.setLocation", title: "Set Actor Location", pin: "target", label: "Target", method: "setActorLocation", pure: false },
+  { typeId: "physics.addImpulse", title: "Add Impulse", pin: "target", label: "Target", method: "addImpulse", pure: false },
+  { typeId: "navigation.moveTo", title: "Move To", pin: "target", label: "Target", method: "moveTo", pure: false },
+  { typeId: "actor.getOwner", title: "Get Owner", pin: "target", label: "Target", method: "getOwner", pure: true },
 ] as const;
 
 /** Begin Play into the node, or into Print when the node is a pure value. */
@@ -95,7 +100,7 @@ describe("optional Actor pins that read Self", () => {
   const registry = createDefaultNodeRegistry();
 
   it.each(CASES)("$typeId passes Self when its Actor pin is unwired and reports nothing missing", (testCase) => {
-    // The graph labels the pin "(Self)" only when the catalog pin says it reads Self.
+    // The graph shows a Self field only when the catalog pin says it reads Self.
     expect(registry.get(testCase.typeId)?.pins({}).find((entry) => entry.id === testCase.pin)).toMatchObject({
       optional: true,
       selfWhenUnwired: true,

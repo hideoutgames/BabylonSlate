@@ -22,5 +22,6 @@ Records an actor as the owner of another actor, without attaching or moving it.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - Ownership is separate from attachment and does not change either actor's transform.
 - An empty **Owner** clears the link. A destroyed owner leaves the existing owner unchanged.

@@ -76,13 +76,21 @@ describe("Tween script targets", () => {
     expect(actor.getVariable("score")).toBe(20);
     expect(completed).toHaveBeenCalledOnce();
 
-    graph.nodes = [node("entry", "flow.entry"), node("tween", "tween.actorPosition", {
-      "default:a": { x: 10, y: 0, z: 0 }, "default:b": { x: 20, y: 0, z: 0 }, "default:duration": 0,
-    }), node("done", "debug.log", { "default:message": "completed" })];
-    graph.edges = [edge("entry", "execOut", "tween", "execIn"), edge("tween", "execOut", "done", "execIn")];
+    graph.nodes = [node("entry", "flow.entry"),
+      node("owner", "variables.get", { variableName: "Other", typeId: "object", typeClassId: "Actor", implicitSelf: true }),
+      node("tween", "tween.actorPosition", {
+        "default:a": { x: 10, y: 0, z: 0 }, "default:b": { x: 20, y: 0, z: 0 }, "default:duration": 0,
+      }), node("done", "debug.log", { "default:message": "completed" })];
+    graph.edges = [edge("entry", "execOut", "tween", "execIn"), edge("owner", "value", "tween", "target"),
+      edge("tween", "execOut", "done", "execIn")];
     await run();
     expect(actor.transform.position).toEqual({ x: 0, y: 0, z: 0 });
     expect(completed).toHaveBeenCalledOnce();
+
+    // Unwired, the Actor Target reads Self.
+    graph.edges = graph.edges.filter((entry) => entry.targetPinId !== "target");
+    await run();
+    expect(actor.transform.position).toEqual({ x: 20, y: 0, z: 0 });
   });
 
   it("makes named property tweens and ordinary writable references replace each other", async () => {

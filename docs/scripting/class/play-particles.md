@@ -11,7 +11,7 @@ Starts the particle systems on an actor.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Actor | Actor Reference | The actor to play. Left unconnected the pin reads **Actor (Self)** and plays the actor running the graph. |
+| Actor | Actor Reference | The actor to play. Left unconnected the pin shows **Self** and plays the actor running the graph. |
 
 ## Outputs
 

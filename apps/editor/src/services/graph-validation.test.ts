@@ -85,7 +85,7 @@ describe("hydrateSerializedGraphForEditor", () => {
   });
 
   it("replaces the pins saved on nodes whose Target or Actor now reads Self, keeping their wires", () => {
-    // Pins as saved before these inputs were labelled "(Self)": required, with no Self flag, and no Target on an own-class call.
+    // Pins as saved before these inputs read Self: required, with no Self flag, and no Target on an own-class call.
     const stale = (typeId: string, properties: Record<string, unknown> = {}) =>
       registry.get(typeId)!.pins(properties).filter((pin) => pin.id !== "target" && pin.id !== "actor");
     const graph: SerializedGraph = {
@@ -93,6 +93,9 @@ describe("hydrateSerializedGraphForEditor", () => {
         { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
         { id: "destroy", type: "actor.destroy", position: { x: 0, y: 0 }, data: { __pins: [
           ...stale("actor.destroy"), { id: "target", name: "target", kind: "data", direction: "in", type: { kind: "objectRef", classId: "Actor" } },
+        ] } },
+        { id: "possess", type: "camera.possess", position: { x: 0, y: 0 }, data: { __pins: [
+          ...stale("camera.possess"), { id: "target", name: "target", kind: "data", direction: "in", type: { kind: "objectRef", classId: "Actor" } },
         ] } },
         { id: "call", type: "functions.call", position: { x: 0, y: 0 }, data: {
           functionName: "Jump", classId: "Hero", implicitSelf: true, pins: [],
@@ -104,6 +107,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     const hydrated = hydrateSerializedGraphForEditor(graph, registry);
     const pinsOf = (id: string) => hydrated.nodes.find((node) => node.id === id)!.data.__pins as SerializedPin[];
     expect(pinsOf("destroy").find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
+    expect(pinsOf("possess").find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
     expect(pinsOf("call").find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
     expect(hydrated.edges).toHaveLength(1);
   });

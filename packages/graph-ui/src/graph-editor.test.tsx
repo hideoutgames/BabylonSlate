@@ -2629,21 +2629,25 @@ describe("GraphEditor", () => {
       },
     };
 
-    it("labels an unwired pin 'Target (Self)' as text, not as a field", () => {
+    it("shows a read-only Self field before the 'Target' label of an unwired pin", () => {
       const { container } = render(<GraphEditor initialGraph={{ nodes: [destroy], edges: [] }} />);
       const label = container.querySelector('[data-id="destroy"] [data-pin-label="target"]');
-      expect(label?.textContent).toBe("Target (Self)");
+      expect(label?.textContent).toBe("Target");
+      const field = container.querySelector('[data-id="destroy"] [data-pin-id="target"] [data-pin-default="objectRef"]');
+      expect(field?.textContent).toBe("Self");
+      expect(field?.getAttribute("data-pin-placeholder")).toBe("true");
+      expect(field?.closest("input, button")).toBeNull();
       expect(container.querySelector('[data-id="destroy"] [data-handleid="target"]')?.getAttribute("aria-label")).toBe("Target (Self)");
-      expect(container.querySelector('[data-id="destroy"] [data-pin-default]')).toBeNull();
     });
 
-    it("drops '(Self)' once a wire is plugged in", () => {
+    it("drops the Self field once a wire is plugged in", () => {
       const graph: GraphDocument = {
         nodes: [getSelf, destroy],
         edges: [{ id: "e", source: "self", target: "destroy", sourceHandle: "out", targetHandle: "target" }],
       };
       const { container } = render(<GraphEditor initialGraph={graph} />);
       expect(container.querySelector('[data-id="destroy"] [data-pin-label="target"]')?.textContent).toBe("Target");
+      expect(container.querySelector('[data-id="destroy"] [data-pin-default]')).toBeNull();
       expect(container.querySelector('[data-id="destroy"] [data-handleid="target"]')?.getAttribute("aria-label")).toBe("Target");
     });
   });

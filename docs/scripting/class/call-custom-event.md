@@ -11,7 +11,7 @@ Runs a custom event on a target object, then continues.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Object Reference | The object whose event runs. For an event of this graph's own class the pin reads **Target (Self)** and runs it on the object running the graph; connect another object of the class to run it there. An event of another class needs the pin connected. |
+| Target | Object Reference | The object whose event runs. For an event of this graph's own class the pin shows **Self** and runs it on the object running the graph; connect another object of the class to run it there. An event of another class needs the pin connected. |
 
 ## Outputs
 

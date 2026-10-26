@@ -11,7 +11,7 @@ Sets an actor's rotation from pitch, yaw and roll angles in degrees.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Actor Reference |  |
+| Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
 | Rotation | Rotator | Pitch, yaw and roll in degrees. |
 
 ## Outputs
