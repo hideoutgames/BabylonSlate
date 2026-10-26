@@ -20,37 +20,23 @@ export function releaseBootIntro() {
 }
 
 /**
- * Drives the intro while the boot transition runs (`state`), reports the end
- * of its fade, and releases it once the transition is over (`null`).
+ * Labels the intro while the boot transition runs (`state`), and removes it
+ * at once when the transition is over (`null`); it never fades.
  */
 export function useBootIntro(
-  state: { leaving: boolean; label: string; status: string } | null,
-  onFadeEnd: () => void,
+  state: { label: string; status: string } | null,
 ) {
   const active = state !== null;
   useEffect(() => {
-    const intro = bootIntro();
-    if (!intro) return;
-    if (!active) {
-      releaseBootIntro();
-      return;
-    }
-    const finish = (event: TransitionEvent) => {
-      if (event.target === intro && event.propertyName === "opacity")
-        onFadeEnd();
-    };
-    intro.addEventListener("transitionend", finish);
-    return () => intro.removeEventListener("transitionend", finish);
-  }, [active, onFadeEnd]);
-  const leaving = state?.leaving;
+    if (!active) releaseBootIntro();
+  }, [active]);
   const label = state?.label;
   const status = state?.status;
   useEffect(() => {
     const intro = bootIntro();
-    if (!intro || leaving === undefined) return;
-    intro.dataset.leaving = String(leaving);
+    if (!intro) return;
     if (label) intro.setAttribute("aria-label", label);
     const statusText = intro.querySelector(".haptic-intro-status");
     if (statusText && status) statusText.textContent = status;
-  }, [leaving, label, status]);
+  }, [label, status]);
 }

@@ -68,10 +68,6 @@ export default defineConfig({
   base: process.env.VITE_BASE_PATH ?? "/",
   plugins: [
     {
-      name: "slate-loading-build-label",
-      transformIndexHtml: (html) => html.replace("__SLATE_BUILD_LABEL__", buildLabel),
-    },
-    {
       // Only a distribution build, which refuses test-mode storage, may ship the generated
       // manifest: native packaging and signing require it as proof of a production bundle.
       name: "slate-distribution-manifest",

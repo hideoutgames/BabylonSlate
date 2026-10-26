@@ -84,6 +84,18 @@ function changeReducedMotion(value: boolean) {
   });
 }
 
+/** Ends the boot intro, then shows the project-open card until it starts to fade. */
+function openProjectUntilFade(launcher: ReturnType<typeof renderTransition>) {
+  act(() => launcher.controls().ready("home"));
+  advance(2600);
+  act(() => launcher.controls().begin("Test Project"));
+  launcher.setRoute("editor");
+  act(() => launcher.controls().ready("editor"));
+  act(() => launcher.controls().settle());
+  advance(2000);
+  return screen.getByRole("status");
+}
+
 function finishTransition(element: Element, propertyName = "opacity") {
   // jsdom has no TransitionEvent constructor, so preserve the browser payload.
   fireEvent(
@@ -121,39 +133,46 @@ describe("Launcher Transition", () => {
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
   });
 
-  it("unlocks the route when its opacity fade finishes, ignoring unrelated transition events", () => {
+  it("ends the boot intro at once, without a fade, when its minimum time is over", () => {
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
-    const overlay = screen.getByRole("status");
 
-    finishTransition(overlay);
+    advance(2599);
+    expect(document.getElementById("haptic-intro")).toBeTruthy();
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
-    advance(2600);
+
+    advance(1);
+    expect(document.getElementById("haptic-intro")).toBeNull();
+    expect(launcher.surface().hasAttribute("inert")).toBe(false);
+  });
+
+  it("unlocks the route when the project-open card's opacity fade finishes, ignoring unrelated transition events", () => {
+    const launcher = renderTransition();
+    const overlay = openProjectUntilFade(launcher);
+
     finishTransition(overlay.firstElementChild!);
     finishTransition(overlay, "transform");
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
-    advance(300);
     finishTransition(overlay);
     expect(screen.queryByRole("status")).toBeNull();
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
   });
 
-  it("releases the route if the browser never reports fade completion", () => {
+  it("releases the route if the browser never reports the project-open card's fade completion", () => {
     const launcher = renderTransition();
-    act(() => launcher.controls().ready("home"));
-    advance(2600);
+    openProjectUntilFade(launcher);
+    advance(649);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
-    advance(1800);
+    advance(1);
     expect(screen.queryByRole("status")).toBeNull();
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
   });
 
-  it("enables the visible route when reduced motion is turned on during its fade", () => {
+  it("enables the visible route when reduced motion is turned on during the project-open card's fade", () => {
     const launcher = renderTransition();
-    act(() => launcher.controls().ready("home"));
-    advance(2600);
+    openProjectUntilFade(launcher);
     advance(100);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
@@ -183,7 +202,6 @@ describe("Launcher Transition", () => {
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
     advance(2600);
-    advance(1800);
 
     act(() => launcher.controls().begin("Cancelled Project"));
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
