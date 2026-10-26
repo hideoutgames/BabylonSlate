@@ -51,7 +51,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `showfps` | `on`/`off` | Shows or hides Stats. | Yes |
 | `stat unit` | `on`/`off` | Adds the tick total, the time of each tick phase, the publish time and a history graph to Stats. | Yes |
 | `stat memory` | `on`/`off` | Adds memory use to Stats. | Yes |
-| `stat draws` | `on`/`off` | Adds draw calls, meshes, textures and render timings to Stats. | Yes |
+| `stat draws` | `on`/`off` | Adds draw calls, meshes, textures, render timings and first shader draws to Stats. | Yes |
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |
 | `lightsdebug` | `on`/`off` | Shows which lights illuminate and which cast shadows. | Yes |
 | `wireframe` | `on`/`off` | Draws meshes as wireframes. | Yes |
