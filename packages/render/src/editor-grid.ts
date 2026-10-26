@@ -198,6 +198,7 @@ uniform axisColorU: vec3f;
 uniform axisColorV: vec3f;
 uniform spacing: f32;
 uniform subdivisions: f32;
+uniform logSubdivisions: f32;
 uniform macroOffsets0: vec4f;
 uniform macroOffsets1: vec4f;
 uniform axisOrigin: vec2f;
@@ -234,7 +235,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   var levels = vec3f(0.0);
   if (uniforms.subdivisions > 1.5) {
     let minor = major / uniforms.subdivisions;
-    levels = gridLevel(levels, p / minor, vec2f(minor) / unitsPerPx, logMajorPx - log(uniforms.subdivisions), thin);
+    levels = gridLevel(levels, p / minor, vec2f(minor) / unitsPerPx, logMajorPx - uniforms.logSubdivisions, thin);
   }
   levels = gridLevel(levels, p / major, majorPx, logMajorPx, thin);
   levels = gridLevel(levels, p / (major * 10.0) + uniforms.macroOffsets0.xy, vec2f(major * 10.0) / unitsPerPx, logMajorPx + LN10, thin);
@@ -277,6 +278,7 @@ uniform vec3 axisColorU;
 uniform vec3 axisColorV;
 uniform float spacing;
 uniform float subdivisions;
+uniform float logSubdivisions;
 uniform vec4 macroOffsets0;
 uniform vec4 macroOffsets1;
 uniform vec2 axisOrigin;
@@ -324,7 +326,7 @@ void main() {
   vec3 levels = vec3(0.0);
   if (subdivisions > 1.5) {
     float minor = major / subdivisions;
-    levels = gridLevel(levels, p / minor, vec2(minor) / unitsPerPx, logMajorPx - log(subdivisions), thin);
+    levels = gridLevel(levels, p / minor, vec2(minor) / unitsPerPx, logMajorPx - logSubdivisions, thin);
   }
   levels = gridLevel(levels, p / major, majorPx, logMajorPx, thin);
   levels = gridLevel(levels, p / (major * 10.0) + macroOffsets0.xy, vec2(major * 10.0) / unitsPerPx, logMajorPx + LN10, thin);
@@ -462,6 +464,7 @@ export function createEditorGrid(
         "worldViewProjection",
         "spacing",
         "subdivisions",
+        "logSubdivisions",
         "majorColor",
         "minorColor",
         "axisColorU",
@@ -492,6 +495,8 @@ export function createEditorGrid(
   const applyUniforms = () => {
     material.setFloat("spacing", spacing);
     material.setFloat("subdivisions", subdivisions);
+    // The shader's minor level takes its log cell size as the major level's minus this.
+    material.setFloat("logSubdivisions", Math.log(subdivisions));
     material.setColor3("majorColor", sceneColor(color));
     material.setColor3("minorColor", sceneColor(minorColor));
     // The plane's u axis is world X; v is world Z in 3D and world Y in 2D.
