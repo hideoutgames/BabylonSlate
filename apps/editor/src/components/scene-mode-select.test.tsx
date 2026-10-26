@@ -35,7 +35,8 @@ describe("SceneModeSelect", () => {
     fireEvent.keyDown(document.body, shiftDigit(4));
     expect(setSceneMode.mock.calls).toEqual([["scene-1", "script"]]);
     fireEvent.click(screen.getByTestId("scene-mode-select"));
-    expect(screen.getAllByRole("option").map((option) => option.textContent?.replace(/Shift.*$/, "").trim())).toEqual(["Design", "Script"]);
+    expect(screen.getAllByRole("option").map((option) => option.getAttribute("aria-keyshortcuts"))).toEqual(["Shift+1", "Shift+4"]);
+    expect(screen.queryByRole("option", { name: /Landscape/ })).toBeNull();
   });
 
   it("ignores the mode shortcuts while the select is disabled for Play", () => {
