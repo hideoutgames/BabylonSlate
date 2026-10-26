@@ -41,10 +41,10 @@ const TransitionContext = createContext<{
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
 
-/** The boot intro (index.html) settles its letters at about 2.2 s and fades
- * out over about 1.2 s; the project-open card is quicker. */
+/** The boot intro (index.html) settles its letters at about 2.2 s and then
+ * ends at once; the project-open card is quicker and fades out. */
 const MINIMUM_MS = { boot: 2600, open: 2000 };
-const FADE_FALLBACK_MS = { boot: 1800, open: 650 };
+const OPEN_FADE_FALLBACK_MS = 650;
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 function subscribeReducedMotion(update: () => void) {
@@ -157,7 +157,7 @@ export function LauncherTransitionProvider({
     const delay = transition.leaving
       ? // transitionend normally releases the route; this also covers browsers
         // that omit the event, such as a backgrounded webview.
-        FADE_FALLBACK_MS[kind]
+        OPEN_FADE_FALLBACK_MS
       : Math.max(
           0,
           MINIMUM_MS[kind] - (performance.now() - since),
@@ -170,7 +170,8 @@ export function LauncherTransitionProvider({
       () =>
         setTransition((current) =>
           current === transition
-            ? current.leaving || reducedMotion
+            ? // The boot intro ends at once; only the project-open card fades.
+              current.leaving || reducedMotion || current.boot
               ? null
               : { ...current, leaving: true }
             : current,
@@ -184,18 +185,8 @@ export function LauncherTransitionProvider({
     transition?.target === "home"
       ? "Loading Haptic"
       : `Opening ${transition?.label ?? "Haptic"}`;
-  const releaseBoot = useCallback(
-    () =>
-      setTransition((current) =>
-        current?.boot && current.leaving ? null : current,
-      ),
-    [],
-  );
   useBootIntro(
-    transition?.boot
-      ? { leaving: transition.leaving, label, status: transition.status }
-      : null,
-    releaseBoot,
+    transition?.boot ? { label, status: transition.status } : null,
   );
   const value = useMemo(
     () => ({
