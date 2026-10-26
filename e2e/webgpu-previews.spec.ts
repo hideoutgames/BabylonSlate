@@ -305,13 +305,22 @@ for (const backend of ["webgpu"] as const) {
       await openAssetFromBrowser(page, PBR_MATERIAL_ASSET);
       await compileMaterialPreview(page);
       const materialCanvas = page.getByTestId("material-preview-canvas");
-      // Compilation completes before asynchronous GPU readback reaches the canvas.
+      // "ready" means the compiled Material is bound, not that a frame drawn
+      // with it has been read back to the canvas. A remounted preview shows
+      // its default checker cube until then, so wait for the authored colour.
       await expect
-        .poll(async () => (await canvasEvidence(materialCanvas)).nonBlank, {
-          timeout: 30_000,
-          message: `material preview blank on ${backend}/${mode}`,
-        })
-        .toBeGreaterThan(200);
+        .poll(
+          async () => {
+            const evidence = await canvasEvidence(materialCanvas);
+            const [red, green, blue] = centerPixel(evidence);
+            return evidence.nonBlank > 200 && red! > Math.max(green!, blue!);
+          },
+          {
+            timeout: 30_000,
+            message: `material preview never showed its red base color on ${backend}/${mode}`,
+          },
+        )
+        .toBe(true);
       const material = await canvasEvidence(materialCanvas);
       await materialCanvas.screenshot({
         path: testInfo.outputPath(`material-${mode}-${backend}.png`),
@@ -383,28 +392,21 @@ for (const backend of ["webgpu"] as const) {
       // scene at all. Preview scenes persist on that Engine across the
       // rebuild — re-query until the API reports a preview scene instead of
       // racing the reload (or a mid-recreation preview Scene).
-      let diagnostics: {
-        scenes: {
-          kind: string;
-          skyboxMesh: boolean;
-          shadowGeneratorCount: number;
-          lights: { name: string }[];
-          materials: { className: string }[];
-        }[];
-      } | null = null;
-      let previewScenes: {
+      type SceneDiagnostics = {
         kind: string;
         skyboxMesh: boolean;
         shadowGeneratorCount: number;
         lights: { name: string }[];
         materials: { className: string }[];
-      }[] = [];
+      };
+      // Asserted rather than annotated: the poll callback assigns it, so a
+      // `null` initializer would narrow it to `null` after the poll.
+      let diagnostics = null as { scenes: SceneDiagnostics[] } | null;
+      let previewScenes: SceneDiagnostics[] = [];
       await expect
         .poll(
           async () => {
-            diagnostics = (await engineSceneDiagnostics(page)) as
-              | typeof diagnostics
-              | null;
+            diagnostics = (await engineSceneDiagnostics(page)) as typeof diagnostics;
             previewScenes = (diagnostics?.scenes ?? []).filter(
               (scene) => scene.kind === "preview",
             );

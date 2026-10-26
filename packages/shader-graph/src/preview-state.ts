@@ -71,7 +71,7 @@ export interface MaterialPreviewState {
   queuedGeneration: number | null;
   /** Generation currently compiling, if any. */
   compilingGeneration: number | null;
-  /** Newest generation whose result is on screen. */
+  /** Newest generation whose result is bound; a frame drawn with it may not have reached the canvas yet. */
   readyGeneration: number | null;
   costClass: MaterialCostClass;
   lastError: string | null;

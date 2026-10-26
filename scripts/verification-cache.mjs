@@ -64,15 +64,14 @@ export async function cachedVerificationPhase(phase, execute, options = {}) {
   };
   let inputs = initial.digest;
   if (phase.scope === "typecheck" && initial.clean) {
-    // Workspace tsc inputs include code, tests, assets, manifests and root config.
-    // Browser scenarios and prose are not compiled by workspace typechecks.
+    // Workspace tsc inputs include code, tests, assets, manifests, root config
+    // and the browser scenarios (the editor typechecks e2e/). Prose is not compiled.
     inputs = await gitOutput(cwd, [
       "ls-files",
       "--stage",
       "-z",
       "--",
       ".",
-      ":(glob,exclude)e2e/**",
       ":(glob,exclude)**/*.md",
     ]);
   }

@@ -10,6 +10,20 @@ import {
 } from "./process-runner.mjs";
 import { cachedVerificationPhase } from "./verification-cache.mjs";
 
+let reporting = false;
+/** A reader that closes early (`| head`) must not kill this owner before it releases. */
+function report(value) {
+  if (!reporting) {
+    reporting = true;
+    process.stdout.on("error", (error) => {
+      if (error.code !== "EPIPE") throw error;
+    });
+  }
+  process.stdout.write(
+    (typeof value === "string" ? value : JSON.stringify(value)) + "\n",
+  );
+}
+
 export async function runStage(profile, command, args, options = {}) {
   const signal = options.signal;
   const environment = { ...process.env, ...options.env };
@@ -27,10 +41,7 @@ export async function runStage(profile, command, args, options = {}) {
           env: environment,
           config: plan.config,
           owned: true,
-          onQueued: (waiting) =>
-            process.stdout.write(
-              JSON.stringify({ event: "queued", profile, ...waiting }) + "\n",
-            ),
+          onQueued: (waiting) => report({ event: "queued", profile, ...waiting }),
         });
   const env = {
     ...environment,
@@ -47,11 +58,8 @@ export async function runStage(profile, command, args, options = {}) {
         }
       : {}),
   };
-  for (const message of plan.messages) process.stdout.write(message + "\n");
-  process.stdout.write(
-    JSON.stringify({ event: "stage", profile, queueMs: lease?.queueMs ?? 0 }) +
-      "\n",
-  );
+  for (const message of plan.messages) report(message);
+  report({ event: "stage", profile, queueMs: lease?.queueMs ?? 0 });
   try {
     // A host owner may tighten policy while this immutable plan is queued.
     // Admission already combines current reservations, but must not launch the
@@ -72,17 +80,15 @@ export async function runStage(profile, command, args, options = {}) {
       env,
       onSpawn: (pid) => lease?.child(pid),
     });
-    process.stdout.write(
-      JSON.stringify({
-        event: "stage-result",
-        profile,
-        exitCode: result.code,
-        nativeExitCode: result.nativeExitCode,
-        signal: result.signal,
-        executionMs: result.elapsedMs,
-        queueMs: lease?.queueMs ?? 0,
-      }) + "\n",
-    );
+    report({
+      event: "stage-result",
+      profile,
+      exitCode: result.code,
+      nativeExitCode: result.nativeExitCode,
+      signal: result.signal,
+      executionMs: result.elapsedMs,
+      queueMs: lease?.queueMs ?? 0,
+    });
     if (result.code !== 0)
       throw Object.assign(
         new Error(`${profile} command failed (${result.code})`),

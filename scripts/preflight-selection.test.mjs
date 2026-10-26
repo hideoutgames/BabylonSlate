@@ -47,6 +47,13 @@ test("test edits select the exact existing test and never select a deleted test"
   assert.deepEqual(result.unitTests, ["apps/editor/src/panel.test.tsx"]);
 });
 
+test("browser scenario and Playwright configuration edits typecheck the editor, which covers e2e", () => {
+  for (const file of ["e2e/editor-smoke.spec.ts", "e2e/save-all.ts", "playwright.config.ts"]) {
+    assert.deepEqual(selectChecks([file], packages, tests).packages, ["editor"], file);
+  }
+  assert.deepEqual(selectChecks(["e2e/fixtures/scene.json"], packages, tests).packages, []);
+});
+
 test("agent guidance and repository prose remain diff-only locally", () => {
   for (const file of [
     "AGENTS.md",

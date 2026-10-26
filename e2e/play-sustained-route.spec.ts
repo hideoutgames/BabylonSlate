@@ -271,7 +271,10 @@ test(`sustained route (${QUALITY}, ${MINUTES}min, play + preview build)`, async 
     .frameLocator('[data-testid="preview-build-iframe"]')
     .getByTestId("player-canvas");
   await expect(playerCanvas).toBeVisible({ timeout: 60_000 });
-  const previewFrame = await page.getByTestId("preview-build-iframe").contentFrame();
+  // Locator.contentFrame() is a FrameLocator, which cannot evaluate; sampling needs the Frame.
+  const previewFrame = await (
+    await page.getByTestId("preview-build-iframe").elementHandle()
+  )?.contentFrame();
   if (!previewFrame) throw new Error("Preview Build iframe did not expose a Frame.");
   const previewBootMs = Date.now() - previewStarted;
   await page.waitForTimeout(WARMUP_MS);

@@ -15,6 +15,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { artifactIdentity, verifyArtifactIdentity } from "./test-build.mjs";
 
@@ -34,6 +35,7 @@ async function fixture(t) {
     await mkdir(join(directory, "apps/player"), { recursive: true });
     for (const script of [
       "test-build.mjs",
+      "build-test-artifact.mjs",
       "source-state.mjs",
       "process-runner.mjs",
       "shared-test-artifacts.mjs",
@@ -76,10 +78,33 @@ export async function runStage(profile, command, args, options = {}) {
       await cp(process.env.FIXTURE_QUEUED_CACHE, process.env.FIXTURE_CACHE, { recursive: true });
     if (process.env.FIXTURE_QUEUE_CHANGE)
       await writeFile(join(repoRoot, 'apps/editor/src/main.js'), 'changed while queued');
+    if (process.env.FIXTURE_HOLD_BUILD || process.env.FIXTURE_TERMINATE_AFTER_BUILD) {
+      // Launch the real entry point as its own process, as the admitted stage does.
+      const { spawn } = await import('node:child_process');
+      const child = spawn(command, args, { env: process.env, stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      const [code, signal] = await new Promise((resolve) => child.once('close', (...result) => resolve(result)));
+      if (code !== 0) throw new Error(stderr.trim() || 'build stopped by ' + signal);
+      return;
+    }
     return await (await import('./test-build.mjs')).buildOwnedArtifact();
   } finally { process.env = original; }
 }
-export async function runPnpm(profile, args) {
+export async function runPnpm(profile, args, options) {
+  if (process.env.FIXTURE_HOLD_BUILD) {
+    // Stands in for a nested stage that releases its scope once cancelled.
+    await mkdir(join(repoRoot, '.cache'), { recursive: true });
+    await writeFile(join(repoRoot, '.cache/build-started'), String(process.pid));
+    await new Promise((resolve) => {
+      const alive = setInterval(() => {}, 1000);
+      const stop = () => { clearInterval(alive); resolve(); };
+      if (options?.signal?.aborted) stop();
+      else options?.signal?.addEventListener('abort', stop, { once: true });
+    });
+    await writeFile(join(repoRoot, '.cache/build-stopped'), '');
+    throw Object.assign(new Error('build command failed (130)'), { exitCode: 130 });
+  }
   if (process.env.FIXTURE_FAIL_FILTER && args[1] === process.env.FIXTURE_FAIL_FILTER)
     throw new Error('Selected bundle failed');
   const dist = join(repoRoot, 'apps/editor/dist');
@@ -91,6 +116,11 @@ export async function runPnpm(profile, args) {
   await writeFile(join(dist, 'assets/main.js'), await readFile(join(repoRoot, 'apps/editor/src/main.js')));
   if (process.env.FIXTURE_BUILD_CHANGE)
     await writeFile(join(repoRoot, 'apps/editor/src/main.js'), 'changed during compile');
+  if (process.env.FIXTURE_TERMINATE_AFTER_BUILD) {
+    // The cancellation lands after the last stage finished, before publishing.
+    process.kill(process.pid, 'SIGTERM');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 `,
     );
@@ -495,6 +525,46 @@ test("a source changed during compilation publishes neither local nor shared out
     (await publishedArtifacts(join(directory, ".cache/test-build"))).length,
     0,
   );
+});
+
+test("a terminated artifact build lets its running stage stop before it exits", async (t) => {
+  const f = await fixture(t);
+  const directory = await f.worktree("terminated");
+  let settled = false;
+  const pending = f.run(directory, { FIXTURE_HOLD_BUILD: "1" }).finally(() => {
+    settled = true;
+  });
+  const started = join(directory, ".cache/build-started");
+  let pid = "";
+  while (!settled && !pid) {
+    pid = await readFile(started, "utf8").catch(() => "");
+    if (!pid) await delay(20);
+  }
+  assert.ok(pid, "the build reached its compile stage");
+  // A cancelled `pnpm test:e2e` sends SIGTERM to the whole build group.
+  process.kill(Number(pid), "SIGTERM");
+  const result = await pending;
+  assert.match(result.error ?? "", /build command failed \(130\)/);
+  // A build killed outright leaves its nested scope claimed under the root lease.
+  assert.equal(
+    await readFile(join(directory, ".cache/build-stopped"), "utf8").then(
+      () => true,
+      () => false,
+    ),
+    true,
+  );
+});
+
+test("an artifact build terminated after its last stage publishes nothing", async (t) => {
+  const f = await fixture(t);
+  const directory = await f.worktree("terminated-after-build");
+  const result = await f.run(directory, { FIXTURE_TERMINATE_AFTER_BUILD: "1" });
+  assert.match(result.error ?? "", /aborted/);
+  assert.equal(
+    (await publishedArtifacts(join(directory, ".cache/test-build"))).length,
+    0,
+  );
+  assert.equal((await publishedArtifacts(f.cache)).length, 0);
 });
 
 test("a queued browser rejects changed source or damaged build files without starting another compilation", async (t) => {

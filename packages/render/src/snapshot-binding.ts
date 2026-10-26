@@ -38,7 +38,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   reflectionProbes: Map<number, { actorId: string; bindings: import("@haptic/core").ReflectionProbeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
-  meshes: Map<number, Mesh>;
+  meshes: SlotRootMap;
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
   cameras: Map<number, Camera>;
@@ -173,6 +173,44 @@ export class SlotKeyedMap<V> extends Map<string, V> {
   }
 }
 
+/**
+ * Slot roots by slot id that also index the roots themselves, so asking whether
+ * a mesh is some slot's root never copies every slot. Every write and delete
+ * goes through `set`/`delete`/`clear`, wherever it is made.
+ */
+export class SlotRootMap extends Map<number, Mesh> {
+  /** How many slots hold each root. */
+  private readonly rootSlots = new Map<AbstractMesh, number>();
+
+  override set(slotId: number, root: Mesh): this {
+    this.release(slotId);
+    this.rootSlots.set(root, (this.rootSlots.get(root) ?? 0) + 1);
+    return super.set(slotId, root);
+  }
+
+  override delete(slotId: number): boolean {
+    this.release(slotId);
+    return super.delete(slotId);
+  }
+
+  override clear(): void {
+    super.clear();
+    this.rootSlots.clear();
+  }
+
+  hasRoot(mesh: AbstractMesh): boolean {
+    return this.rootSlots.has(mesh);
+  }
+
+  private release(slotId: number): void {
+    const root = this.get(slotId);
+    if (!root) return;
+    const slots = this.rootSlots.get(root)!;
+    if (slots > 1) this.rootSlots.set(root, slots - 1);
+    else this.rootSlots.delete(root);
+  }
+}
+
 /** Keys of one slot; stores a caller swapped in for a plain Map fall back to the scan. */
 export function slotKeysOf(store: Map<string, unknown>, slotId: number): Iterable<string> {
   if (store instanceof SlotKeyedMap) return store.keysOfSlot(slotId);
@@ -186,7 +224,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     deformers: new Map(),
     fogVolumes: new Map(),
     reflectionProbes: new Map(),
-    meshes: new Map(),
+    meshes: new SlotRootMap(),
     boneAttachments: new Map(),
     lights: new Map(),
     cameras: new Map(),

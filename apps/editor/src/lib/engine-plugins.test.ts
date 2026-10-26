@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AssetRegistry, STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles, discoverEnginePlugins } from "@haptic/assets";
 import type { HttpStorageCatalog } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
@@ -62,5 +62,22 @@ describe("ensureEnginePluginStorage", () => {
     const first = await ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" });
     expect(await ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" })).toBe(first);
     expect(indexRequests).toBe(1);
+  });
+
+  it("shares the first index load between concurrent callers", async () => {
+    vi.resetModules();
+    const fresh = await import("./engine-plugins");
+    let indexRequests = 0;
+    const fetchFn: typeof fetch = async () => {
+      indexRequests++;
+      return new Response(JSON.stringify({ version: 1, files: [], plugins: [] }));
+    };
+    const [first, second] = await Promise.all([
+      fresh.ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" }),
+      fresh.ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" }),
+    ]);
+    expect(indexRequests).toBe(1);
+    expect(second).toBe(first);
+    expect(fresh.isCachedEnginePluginStorage(first)).toBe(true);
   });
 });

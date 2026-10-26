@@ -3,6 +3,7 @@ import type { mannequinShadowProbe } from "../apps/editor/src/testing/mannequin-
 import type { Locator } from "@playwright/test";
 
 type V = number[];
+type V3 = [number, number, number];
 export type MannequinGeometry = Awaited<ReturnType<typeof mannequinShadowProbe>>;
 export async function captureMannequinPixels(canvas: Locator, points: ReturnType<typeof mannequinShadowSamples>) {
   return canvas.evaluate((node: HTMLCanvasElement, points) => {
@@ -38,8 +39,8 @@ export function posedMannequin(geometry: MannequinGeometry, state: ShadowDiagnos
     const determinant = dot(a, cross(b, c));
     return { ...part, vertices: part.vertices.map(vertex => ({
       ...vertex,
-      position: transform(vertex.localPosition, matrix).slice(0, 3),
-      normal: unit(add(add(cross(b, c).map(v => v * vertex.localNormal[0]!), cross(c, a), vertex.localNormal[1]!), cross(a, b), vertex.localNormal[2]!).map(v => v / determinant)),
+      position: transform(vertex.localPosition, matrix).slice(0, 3) as V3,
+      normal: unit(add(add(cross(b, c).map(v => v * vertex.localNormal[0]!), cross(c, a), vertex.localNormal[1]!), cross(a, b), vertex.localNormal[2]!).map(v => v / determinant)) as V3,
     })) };
   });
 }

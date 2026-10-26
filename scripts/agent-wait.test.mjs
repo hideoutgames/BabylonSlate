@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
@@ -41,6 +41,12 @@ if (action === 'tree') {
   setInterval(()=>{},100);
 }
 if (action === 'slow') { console.log('ready-pid='+process.pid); setInterval(() => console.log('quiet heartbeat 🌍'), 30); }
+if (action === 'graceful') {
+  // Like a stage owner releasing its admission ticket after a cancellation.
+  process.on('SIGTERM', () => setTimeout(() => { writeFileSync(process.env.WAIT_FIXTURE_MARKER, 'released'); process.exit(143); }, 1000));
+  console.log('graceful-ready');
+  setInterval(() => {}, 100);
+}
 `,
   );
   await writeFile(join(cwd, "source.txt"), "original");
@@ -216,6 +222,25 @@ test("cancellation stops descendants but leaves an unrelated process alive", asy
   assert.equal((await pending).status, "cancellation");
   assert.throws(() => process.kill(Number(pid), 0), { code: "ESRCH" });
   assert.doesNotThrow(() => process.kill(unrelated.pid, 0));
+});
+
+test("cancellation lets an owned process finish its cleanup before escalating", async (t) => {
+  const f = await fixture(t, "graceful");
+  const markers = await mkdtemp(join(tmpdir(), "agent wait cleanup "));
+  t.after(() => rm(markers, { recursive: true, force: true }));
+  const marker = join(markers, "released");
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const pending = run(local, {
+    ...f.context,
+    env: { ...f.env, WAIT_FIXTURE_MARKER: marker },
+    signal: controller.signal,
+  });
+  await waitForLog(f, /graceful-ready/);
+  controller.abort();
+  assert.equal((await pending).status, "cancellation");
+  // A SIGKILL during cleanup would strand the owner's admission ticket.
+  assert.equal(await readFile(marker, "utf8"), "released");
 });
 
 test("deadline terminates a slow owned process and cannot pass", async (t) => {
