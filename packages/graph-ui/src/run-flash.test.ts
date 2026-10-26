@@ -177,6 +177,16 @@ describe("createRunFlasher", () => {
     }
   });
 
+  it("clears a held highlight when it is disposed, so a kept canvas does not stay lit", () => {
+    const { root, flasher } = canvas();
+    flasher.flash({ nodes: ["make"], edges: [] });
+    runFrame();
+    const [make] = animated(root, '[data-id="make"] [data-node-role]');
+    flasher.hold(true);
+    flasher.dispose();
+    expect(make!.animation.cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing after it is disposed", () => {
     const { flasher } = canvas();
     flasher.flash({ nodes: ["log"], edges: [] });

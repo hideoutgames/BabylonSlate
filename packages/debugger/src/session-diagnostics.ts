@@ -1,5 +1,6 @@
+import type { DiagnosticOperation, DiagnosticOperationResult, PerformanceScriptEntry } from "@haptic/bridge";
 import { DEFAULT_PROFILE_DURATION_MS, PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, PerformanceRecorder, type PerformanceFrameSample,
-  type PerformanceGpuSample, type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile, type PerformanceScriptEntry,
+  type PerformanceGpuSample, type PerformanceIdentity, type PerformanceLongTaskSample, type PerformanceProfile,
   type PerformanceStopReason, type PerformanceTickSample } from "./performance-recorder";
 import { STATS_COMMAND_INTERVAL_MS } from "./stats";
 
@@ -8,11 +9,8 @@ const SCRIPT_ROW_WIDTH = PERFORMANCE_SCRIPT_COLUMNS.length;
 /** The runtime delivers a chunk before its script rows outgrow this. */
 const MAX_CHUNK_SCRIPT_ROWS = 4096;
 
-export type DiagnosticOperationRequest = {
-  kind: "profile" | "frame"; action: "start" | "stop"; recordingId: string;
-  durationMs?: number; byteBudget?: number;
-};
-export type DiagnosticOperationResult = { success: boolean; reason?: string };
+/** What a diagnostic operation resolves with: the runtime's reply without its correlation fields. */
+export type DiagnosticOperationOutcome = Pick<DiagnosticOperationResult, "success" | "reason">;
 export type SessionDiagnosticPorts<FrameReport> = {
   mode: "play" | "preview" | "simulate";
   identity: () => PerformanceIdentity;
@@ -25,14 +23,14 @@ export type SessionDiagnosticPorts<FrameReport> = {
   /** Main-thread long tasks as the browser reports them; null where it does not (Safari). */
   observeLongTasks?: (consume: (task: PerformanceLongTaskSample) => void) => (() => void) | null;
   /** Correlated runtime admission. Stop flushes accepted ticks before resolving. */
-  runtimeOperation: (request: DiagnosticOperationRequest) => Promise<DiagnosticOperationResult>;
+  runtimeOperation: (operation: DiagnosticOperation) => Promise<DiagnosticOperationOutcome>;
   captureFrame: (signal: AbortSignal) => Promise<FrameReport>;
   onProfile?: (profile: PerformanceProfile) => void;
   now?: () => number;
 };
 type Operation = {
   kind: "profile" | "frame"; id: string; abort: AbortController;
-  admission: Promise<DiagnosticOperationResult>; stopping?: Promise<PerformanceProfile | null>;
+  admission: Promise<DiagnosticOperationOutcome>; stopping?: Promise<PerformanceProfile | null>;
   recorder?: PerformanceRecorder; releaseFrames?: () => void; releaseGpu?: () => void;
   releaseLongTasks?: () => void; memoryTimer?: ReturnType<typeof setInterval>;
   timer?: ReturnType<typeof setTimeout>; deadline?: number; sequence: number;
@@ -57,7 +55,7 @@ export class SessionDiagnostics<FrameReport> {
   /** Transfer owners release the player's copy after the editor has received it. */
   forgetProfile(profile: PerformanceProfile): void { if (this.retained === profile) this.retained = null; }
 
-  async startProfile(options: { durationMs?: number; byteBudget?: number; gpuTiming?: boolean } = {}): Promise<DiagnosticOperationResult> {
+  async startProfile(options: { durationMs?: number; byteBudget?: number; gpuTiming?: boolean } = {}): Promise<DiagnosticOperationOutcome> {
     const refusal = this.refusal();
     if (refusal) return { success: false, reason: refusal };
     let identity = { ...this.ports.identity(), gpuTiming: "disabled", gpuReason: undefined, gpuAttribution: undefined } as PerformanceIdentity;
@@ -92,11 +90,9 @@ export class SessionDiagnostics<FrameReport> {
         ...(sampleMemory ? ["memory"] : []), ...(state.releaseLongTasks ? ["long-tasks"] : [])] };
       recorder.start(identity, options);
       state.recorder = recorder;
-      if (sampleMemory) {
-        const sample = () => admit(() => recorder.recordMemory({ sampledAtMs: this.now(), ...sampleMemory() }));
-        sample();
-        state.memoryTimer = setInterval(sample, STATS_COMMAND_INTERVAL_MS);
-      }
+      const sampleMemoryNow = sampleMemory &&
+        (() => admit(() => recorder.recordMemory({ sampledAtMs: this.now(), ...sampleMemory() })));
+      if (sampleMemoryNow) state.memoryTimer = setInterval(sampleMemoryNow, STATS_COMMAND_INTERVAL_MS);
       state.deadline = this.now() + (options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
       state.releaseFrames = this.ports.observeFrames((sample) => {
         if (state.stopping || this.operation !== state) return;
@@ -106,6 +102,12 @@ export class SessionDiagnostics<FrameReport> {
         try { recorder.recordFrame(sample); } catch { void this.finish(state, "error"); }
       });
       state.timer = setTimeout(() => { void this.finish(state, "duration"); }, options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
+      // Sampled once everything is acquired: an invalid first sample ends the recording, and the stop must release it all.
+      sampleMemoryNow?.();
+      if (state.stopping) {
+        await state.stopping;
+        return { success: false, reason: "Performance recording stopped while starting." };
+      }
       this.retained = null;
       return { success: true };
     } catch (error) {
@@ -220,10 +222,10 @@ export class SessionDiagnostics<FrameReport> {
     })();
     return state.stopping;
   }
-  private async request(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
+  private async request(operation: DiagnosticOperation): Promise<DiagnosticOperationOutcome> {
     // Backstop for ports without their own deadline. The correlated client fails first
     // (2.5 s) with a specific reason and frees its pending slot.
-    try { return await bounded(this.ports.runtimeOperation(request), 3000); }
+    try { return await bounded(this.ports.runtimeOperation(operation), 3000); }
     catch (error) { return { success: false, reason: error instanceof Error ? error.message : String(error) }; }
   }
 }

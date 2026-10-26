@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as assets from "@haptic/assets";
 import * as physics from "@haptic/physics";
+import { HavokPhysicsBackend } from "@haptic/physics/havok-backend";
 import { identityTransform } from "@haptic/core";
 import { ClassRegistry, World } from "@haptic/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
@@ -179,7 +180,7 @@ describe("physics preparation work", () => {
 });
 
 it("keeps real Havok shapes/helpers stable while moving unchanged high-vertex collision content", async () => {
-  const native = await physics.HavokPhysicsBackend.create({
+  const native = await HavokPhysicsBackend.create({
     kind: "3d",
     gravity: { x: 0, y: 0, z: 0 },
   });

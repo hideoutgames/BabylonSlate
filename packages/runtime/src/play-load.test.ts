@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@haptic/bridge";
 import { createDefaultSceneLayer, type InputAssetDefinition } from "@haptic/core";
-import {
-  loadedBackendModules,
-  resetHavokModuleCache,
-  resetLoadedBackendModules,
-} from "@haptic/physics";
+import { loadedBackendModules } from "@haptic/physics";
+import { resetHavokModuleCache, resetLoadedBackendModules } from "@haptic/physics/testing";
 import {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,

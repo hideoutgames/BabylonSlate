@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { identityTransform } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { ClassRegistry, World } from "@haptic/object-model";
-import { HavokPhysicsBackend } from "@haptic/physics";
+import { HavokPhysicsBackend } from "@haptic/physics/havok-backend";
 import { PhysicsWorldSync } from "./physics-sync";
 import { RagdollWorldSync } from "./ragdoll-sync";
 

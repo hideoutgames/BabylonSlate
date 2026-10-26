@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { Toggle } from "@haptic/ui/components/toggle";
 
-export const DEFAULT_FLAG_BIT_COUNT = 32;
+const DEFAULT_FLAG_BIT_COUNT = 32;
 /** Masks are unsigned 32-bit integers; JavaScript bit operators stop at bit 31. */
 const MAX_FLAG_BIT_COUNT = 32;
 

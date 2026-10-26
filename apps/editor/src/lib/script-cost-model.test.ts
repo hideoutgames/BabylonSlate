@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PerformanceRecorder, type PerformanceScriptEntry } from "@haptic/debugger";
+import type { PerformanceScriptEntry } from "@haptic/bridge";
+import { PerformanceRecorder } from "@haptic/debugger";
 import { scriptCosts } from "./script-cost-model";
 
 const DOOR_TICK: PerformanceScriptEntry = { assetGuid: "Door.class", classId: "Door", className: "Front Door", exportName: "onTick",

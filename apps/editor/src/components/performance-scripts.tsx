@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import type { PerformanceProfile, PerformanceScriptEntry } from "@haptic/debugger";
+import type { PerformanceScriptEntry } from "@haptic/bridge";
+import type { PerformanceProfile } from "@haptic/debugger";
 import { PropertySectionTitle, SearchInput, SelectableText, ToolbarStrip } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";

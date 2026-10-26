@@ -14,16 +14,19 @@ function StatefulField({
   initial,
   onChange,
   onDragEnd,
+  validate,
 }: {
   initial: number;
   onChange?: (value: number) => void;
   onDragEnd?: (value: number) => void;
+  validate?: (value: number) => string | undefined;
 }) {
   const [value, setValue] = useState(initial);
   return (
     <NumericDragField
       label="X"
       value={value}
+      validate={validate}
       onChange={(next) => {
         setValue(next);
         onChange?.(next);
@@ -237,6 +240,31 @@ describe("NumericDragField", () => {
     expect(input.value).toBe("12");
     expect(onChange).toHaveBeenLastCalledWith(12);
     expect(onDragEnd).not.toHaveBeenCalled();
+
+    // The cancelled value must not end a later edit that sends nothing.
+    input.focus();
+    fireEvent.change(input, { target: { value: "1+" } });
+    fireEvent.blur(input);
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("ends a typed edit that fails validation on the last value it sent", () => {
+    const onDragEnd = vi.fn();
+    render(
+      <StatefulField
+        initial={5}
+        onDragEnd={onDragEnd}
+        validate={(next) => (next === 13 ? "No." : undefined)}
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.change(input, { target: { value: "13" } });
+    fireEvent.blur(input);
+
+    expect(input.value).toBe("12");
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(12);
   });
 
   it("keeps out-of-range text as a draft and explains clamping on blur", () => {

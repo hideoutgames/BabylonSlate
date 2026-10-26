@@ -37,13 +37,10 @@ export {
   canvasNodeTitle,
   graphNodeTypes,
   resolveNodeType,
-  VariableGetNode,
   zipPinRows,
 } from "./graph-nodes";
 export type { CanvasNode } from "./graph-nodes";
 export {
-  AnimStateNode,
-  AnimTransitionEdge,
   animGraphEdgeTypes,
   animGraphNodeTypes,
 } from "./anim-graph-nodes";

@@ -8,7 +8,7 @@ export type InlineRenameEnd = "enter" | "escape" | "blur";
 const FOCUS_SETTLE_MS = 400;
 
 /** Taps closer together than this count as a double-tap rename gesture. */
-export const INLINE_RENAME_DOUBLE_TAP_MS = 350;
+const INLINE_RENAME_DOUBLE_TAP_MS = 350;
 
 export interface InlineRenameInputProps {
   value: string;

@@ -8,7 +8,6 @@ export {
   type RawInputEvent,
 } from "./ring-buffer";
 export {
-  DEFAULT_INPUT_MAPPINGS,
   createDefaultInputMappings,
   normalizeInputMappings,
   type ActionBinding,
@@ -24,8 +23,7 @@ export {
   bindingCodesForDevice,
   type BindingCatalogEntry,
 } from "./binding-catalog";
-export { TOUCH_GESTURE_CODES } from "./gestures";
-export { MOTION_CODES, mappingsUseDeviceMotion } from "./motion";
+export { mappingsUseDeviceMotion } from "./motion";
 export {
   InputResolver,
   type ActionState,

@@ -60,7 +60,7 @@ function useConnectedSides(id: string): string {
   );
 }
 
-export function AnimStateNode({
+function AnimStateNode({
   id,
   data,
   selected,
@@ -153,7 +153,7 @@ function insetTowardNode(
   }
 }
 
-export function AnimTransitionEdge({
+function AnimTransitionEdge({
   id,
   sourceX,
   sourceY,

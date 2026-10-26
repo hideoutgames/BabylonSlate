@@ -27,6 +27,23 @@ function boundary(name, files, groups) {
   };
 }
 
+const PURE_PACKAGE_GROUPS = [
+  {
+    group: REACT_PATTERNS,
+    message:
+      "core, assets, edit, object-model, bridge, runtime, debugger, anim-graph, behaviour-tree, shader-graph, particle-graph, input, scripting, scripting-nodes, exporter, source-control, and test-kit must not import React (engineplan section 2.2).",
+  },
+  {
+    group: BABYLON_PATTERNS,
+    message:
+      "core, assets, edit, object-model, bridge, runtime, debugger, anim-graph, behaviour-tree, shader-graph, particle-graph, input, scripting, scripting-nodes, exporter, source-control, and test-kit must not import Babylon (engineplan section 2.2).",
+  },
+  {
+    group: CAPACITOR_PATTERNS,
+    message: "Only vfs adapters may import Capacitor (engineplan section 2.2).",
+  },
+];
+
 const pureNoReactNoBabylon = boundary(
   "boundary/pure-packages",
   [
@@ -36,7 +53,6 @@ const pureNoReactNoBabylon = boundary(
     "packages/object-model/**/*.{ts,tsx}",
     "packages/bridge/**/*.{ts,tsx}",
     "packages/runtime/**/*.{ts,tsx}",
-    "packages/debugger/**/*.{ts,tsx}",
     "packages/anim-graph/**/*.{ts,tsx}",
     "packages/behaviour-tree/**/*.{ts,tsx}",
     "packages/shader-graph/**/*.{ts,tsx}",
@@ -48,20 +64,23 @@ const pureNoReactNoBabylon = boundary(
     "packages/source-control/**/*.{ts,tsx}",
     "packages/test-kit/**/*.{ts,tsx}",
   ],
+  PURE_PACKAGE_GROUPS,
+);
+
+/**
+ * The debugger is a pure package that takes only types from the bridge, which
+ * owns the diagnostic wire types. It repeats the pure-package groups because a
+ * later `no-restricted-imports` block replaces an earlier one's options.
+ */
+const debuggerTypesFromBridge = boundary(
+  "boundary/debugger",
+  ["packages/debugger/**/*.{ts,tsx}"],
   [
+    ...PURE_PACKAGE_GROUPS,
     {
-      group: REACT_PATTERNS,
-      message:
-        "core, assets, edit, object-model, bridge, runtime, debugger, anim-graph, behaviour-tree, shader-graph, particle-graph, input, scripting, scripting-nodes, exporter, source-control, and test-kit must not import React (engineplan section 2.2).",
-    },
-    {
-      group: BABYLON_PATTERNS,
-      message:
-        "core, assets, edit, object-model, bridge, runtime, debugger, anim-graph, behaviour-tree, shader-graph, particle-graph, input, scripting, scripting-nodes, exporter, source-control, and test-kit must not import Babylon (engineplan section 2.2).",
-    },
-    {
-      group: CAPACITOR_PATTERNS,
-      message: "Only vfs adapters may import Capacitor (engineplan section 2.2).",
+      group: ["@haptic/bridge", "@haptic/bridge/*"],
+      allowTypeImports: true,
+      message: "debugger may import only types from @haptic/bridge.",
     },
   ],
 );
@@ -267,6 +286,7 @@ export default defineConfig(
     },
   },
   pureNoReactNoBabylon,
+  debuggerTypesFromBridge,
   physicsNoReactNoCapacitor,
   navigationNoReactNoBabylon,
   vfsNoReactNoBabylon,
