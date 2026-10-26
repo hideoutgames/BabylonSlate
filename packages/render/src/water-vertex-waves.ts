@@ -9,11 +9,12 @@ import { waterFftForSurface, type WaterFftResult } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import { placeholderFft, sceneWaterNodeLighting } from "./water-scene-state";
 import { SPECTRUM_LOD_SCALE } from "./water-shader-chunks";
-import { FFT_UNIFORMS, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, waterFoamThresholdOf } from "./water-shader-defines";
+import { FFT_UNIFORMS, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, waterFoamDrift, waterFoamThresholdOf } from "./water-shader-defines";
 import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM } from "./water-shader-source";
 
 const gridOffsets = new WeakMap<AbstractMesh, Float64Array>();
 const gridWorld = new Float64Array(3);
+const foamDrift = { x: 0, z: 0 };
 
 /**
  * Registers `offset` (local X, Z; read live) as the translation of `mesh`'s uploaded rest positions: Global Water
@@ -118,7 +119,8 @@ export class WaterVertexWaves {
     const band = waterSpectrumUniforms(scene, this.water, scale, this.cascades(scene), this.spectrum);
     bindWaterVertexUniforms(sink, scene, waterGridOffset(mesh), this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, scale), this.spectrum, band);
     sink.setTexture(WATER_FOAM_SAMPLER, band?.foam ?? placeholderFft(scene));
-    sink.setFloat4(WATER_CLOCK_UNIFORM, this.time, 0, 0, 0);
+    const drift = waterFoamDrift(this.water, scale, foamDrift);
+    sink.setFloat4(WATER_CLOCK_UNIFORM, this.time, drift.x, drift.z, 0);
     const camera = scene.activeCamera, origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     const eye = camera?.globalPosition ?? Vector3.ZeroReadOnly;
     sink.setFloat4(WATER_EYE_UNIFORM, eye.x - origin.x, eye.y - origin.y, eye.z - origin.z, 0);

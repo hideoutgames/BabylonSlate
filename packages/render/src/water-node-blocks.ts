@@ -403,11 +403,11 @@ ${edgeFoamHelpers("swn")}`, wgsl), "");
     const gpuHeight = this.value(this.waveHeight, "0.0");
     const assign = (output: NodeMaterialConnectionPoint, name: string | undefined, value: string) => output.hasEndpoints ? `${name} = ${value};\n` : "";
     state.compilationString += `{\n${surfaceLocals(state, this.worldPosition.associatedVariableName)}#ifdef ${WATER_SURFACE_DEFINE}\n`
-      + bind(`float swnHeight = swnData.x;\nfloat swnTime = swnData.w;\n`, wgsl)
-      + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${gpuHeight};\nswnTime = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x;\n#endif\n`
+      + bind(`float swnHeight = swnData.x;\nfloat swnTime = swnData.w;\nvec2 swnDrift = vec2(0.0);\n`, wgsl)
+      + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${gpuHeight};\nswnTime = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x;\nswnDrift = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.yz;\n#endif\n`
       + bind(`${depthSource("swnHeight")}
 vec4 swnTerms = U.${FOAM_UNIFORM};
-vec2 swnFlowed = swnPos.xz - swnFlow.xz * swnTime;
+vec2 swnFlowed = swnPos.xz - (swnFlow.xz + swnDrift) * swnTime;
 float swnFoot = length(fwidth(swnPos.xz));
 float swnShoreAmount = swnField.w * swnShoreFoamAmount(swnFlowed, swnTime, swnDepth, swnTerms.x * 0.35 + 0.08) * swnTerms.z;
 float swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
