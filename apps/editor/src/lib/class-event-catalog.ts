@@ -309,7 +309,8 @@ export function nativeEventStubs(
   if (chain.includes("DebugCommand")) {
     types.push("flow.event.commandRun");
   }
-  return eventStubsForTypes(types).map((stub) => chain.includes("ActorComponent") && stub.eventType === "flow.event.destroyed" ? { ...stub, name: "Event Destroyed" } : stub);
+  const destroyedTitle = chain.includes("ActorComponent") || (!chain.includes("Actor") && isEmbeddedScriptChain(chain));
+  return eventStubsForTypes(types).map((stub) => destroyedTitle && stub.eventType === "flow.event.destroyed" ? { ...stub, name: "Event Destroyed" } : stub);
 }
 
 /** Whether a script catalog node is legal on a Class graph for this parent. */

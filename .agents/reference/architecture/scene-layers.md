@@ -55,6 +55,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 
 ## Physics and input
 
+- **SceneLayerScript**: `SerializedSceneLayer.script` (carried through `sceneLayerToEditorScene` / `editorSceneToSceneLayer`), edited in the tab's Script mode (Scene Layer modes are Design and Script). Every instance is created as class `SceneLayer:<asset guid>` (registered on creation; `SceneLayer` is locked, so the script needs the subclass) with `ScriptRuntime.embeddedScriptHooks`: class defaults and interfaces, Begin Play at that instance's readiness (before its actors' Begin Play), Tick while it may run, On Destroyed on remove (actors already gone). Stop does not run it. Contract: [scripting.md](scripting.md#embedded-scene-scripts).
 - Physics is opt-in per asset. Each enabled instance gets its own Rapier 2D world, independent of the world and other layers; disabled layers have no world (bodies, colliders and overlap events do nothing).
 - Traces, sweeps and overlaps answer from the caller's world; `showcollision` draws layer colliders in that layer's own scene.
 - Picking walks layers high → low `zOrder`, honoring Hit Test (Ignore / Block / Pass Through), then the world. `2DButton` opts an actor into pointer events and is the only source of pointer graph events (no `onTouch*` nodes). Engine Settings `touchMinTargetPx` widens pick AABBs, not visuals.

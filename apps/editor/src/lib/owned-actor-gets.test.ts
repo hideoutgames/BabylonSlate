@@ -25,16 +25,16 @@ describe("Get <Actor> and Get <Component> (<Actor>) in a SceneScript", () => {
   it("shows a renamed actor's current name and reports targets that are gone", () => {
     const graph: SerializedGraph = {
       nodes: [
-        getNode("a", "scene.getOwnedActor", { actorId: "hero", actorName: "Old Name", title: "Get Old Name" }),
-        getNode("c", "scene.getOwnedComponent", { actorId: "hero", actorName: "Old Name", componentId: "body", componentName: "Body" }),
-        getNode("gone", "scene.getOwnedComponent", { actorId: "hero", actorName: "Hero", componentId: "removed", componentName: "Light" }),
+        getNode("a", "scene.getOwnedActor", { sceneActorId: "hero", sceneActorName: "Old Name", title: "Get Old Name" }),
+        getNode("c", "scene.getOwnedComponent", { sceneActorId: "hero", sceneActorName: "Old Name", sceneComponentId: "body", sceneComponentName: "Body" }),
+        getNode("gone", "scene.getOwnedComponent", { sceneActorId: "hero", sceneActorName: "Hero", sceneComponentId: "removed", sceneComponentName: "Light" }),
       ],
       edges: [],
-      functionGraphs: { fn: { nodes: [getNode("lost", "scene.getOwnedActor", { actorId: "deleted", actorName: "Crate" })], edges: [] } },
+      functionGraphs: { fn: { nodes: [getNode("lost", "scene.getOwnedActor", { sceneActorId: "deleted", sceneActorName: "Crate" })], edges: [] } },
     };
     const actors = ownedActorsOfScene(scene);
     const refreshed = refreshOwnedGetNodes(graph, actors);
-    expect(refreshed.nodes[0]!.data).toMatchObject({ actorName: "Hero", actorClassId: "Player", title: "Get Hero" });
+    expect(refreshed.nodes[0]!.data).toMatchObject({ sceneActorName: "Hero", sceneActorClassId: "Player", title: "Get Hero" });
     expect(refreshed.nodes[1]!.data.title).toBe(`Get ${actors[0]!.components[0]!.name} (Hero)`);
     // A missing component keeps its last name.
     expect(refreshed.nodes[2]).toBe(graph.nodes[2]);

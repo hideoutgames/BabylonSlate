@@ -110,9 +110,9 @@ describe("Get <Actor> and Get <Component> (<Actor>)", () => {
       id: "event-graph", kind: "event",
       nodes: [
         node("begin", "flow.event.beginPlay"),
-        node("actor", OWNED_ACTOR_GET_NODE_ID, { actorId: "panel", actorName: "Panel", actorClassId: "Actor" }),
-        node("component", OWNED_COMPONENT_GET_NODE_ID, { actorId: "panel", actorName: "Panel", componentId: "panel-mesh", componentName: "Mesh", componentClassId: "MeshComponent" }),
-        node("missing", OWNED_ACTOR_GET_NODE_ID, { actorId: "gone", actorName: "Gone" }),
+        node("actor", OWNED_ACTOR_GET_NODE_ID, { sceneActorId: "panel", sceneActorName: "Panel", sceneActorClassId: "Actor" }),
+        node("component", OWNED_COMPONENT_GET_NODE_ID, { sceneActorId: "panel", sceneActorName: "Panel", sceneComponentId: "panel-mesh", sceneComponentName: "Mesh", sceneComponentClassId: "MeshComponent" }),
+        node("missing", OWNED_ACTOR_GET_NODE_ID, { sceneActorId: "gone", sceneActorName: "Gone" }),
         node("log", "debug.executeJavaScript", {
           inputs: [{ name: "actor", type: STRING }, { name: "component", type: STRING }, { name: "missing", type: STRING }],
           outputs: [],

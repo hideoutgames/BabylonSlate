@@ -35,7 +35,7 @@ Sprites, tilemaps, meshes, 3D text, sound, particles, Rigid Bodies, Colliders an
 
 An actor with a mesh or 3D text can be tilted: its **Inspector** shows Rotation and Scale on X, Y and Z, while Position stays X and Y with **Z-Order**. In the viewport it keeps the 2D box; moving or rotating it there keeps its X and Y tilt.
 
-To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. A new Scene Layer Actor starts with no components.
+To script the layer as a whole, set **Scene Mode** to **Script** and edit its [Scene Layer Script](../scripting/scene-scripts.md): each copy of the layer runs it for as long as that copy exists. To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. A new Scene Layer Actor starts with no components.
 
 In a Scene Layer Actor's **Prefab**, the orange frame shows the space the actor is designed for, and the **Prefab Root** sits on one of its points. The root has no box and does not move; move the components instead. The **Frame** menu on the viewport toolbar sets:
 

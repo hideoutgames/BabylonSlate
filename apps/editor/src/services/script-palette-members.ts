@@ -28,6 +28,7 @@ import {
   OWNED_COMPONENT_GET_NODE_ID,
   ownedActorGetTitle,
   ownedComponentGetTitle,
+  ownedGetNodeProperties,
   subsystemGetPaletteCategory,
   subsystemGetProperties,
   subsystemGetTitle,
@@ -752,7 +753,8 @@ export function ownedGetPaletteNodes(
   const componentDef = nodeRegistry.get(OWNED_COMPONENT_GET_NODE_ID);
   if (!actorDef || !componentDef) return [];
   return (options?.ownedActors ?? []).flatMap((actor) => {
-    const actorData = { actorId: actor.id, actorName: actor.name, actorClassId: actor.classId };
+    const target = { actorId: actor.id, actorName: actor.name, actorClassId: actor.classId };
+    const actorData = ownedGetNodeProperties(target);
     return [
       {
         id: `${OWNED_ACTOR_GET_NODE_ID}:${actor.id}`,
@@ -765,7 +767,12 @@ export function ownedGetPaletteNodes(
         defaultData: { ...actorData },
       },
       ...actor.components.map((component) => {
-        const data = { ...actorData, componentId: component.id, componentName: component.name || prefabComponentLabel(component), componentClassId: component.classId };
+        const data = ownedGetNodeProperties({
+          ...target,
+          componentId: component.id,
+          componentName: component.name || prefabComponentLabel(component),
+          componentClassId: component.classId,
+        });
         return {
           id: `${OWNED_COMPONENT_GET_NODE_ID}:${actor.id}:${component.id}`,
           nodeType: OWNED_COMPONENT_GET_NODE_ID,

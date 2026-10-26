@@ -5,6 +5,7 @@ import {
   OWNED_COMPONENT_GET_NODE_ID,
   ownedActorGetTitle,
   ownedComponentGetTitle,
+  ownedGetNodeProperties,
   ownedGetProperties,
 } from "@haptic/scripting-nodes";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
@@ -54,9 +55,10 @@ function refreshNodes(nodes: GraphNodes, actors: readonly OwnedActorEntry[]): Gr
     if (!actor || (node.type === OWNED_COMPONENT_GET_NODE_ID && !component)) return node;
     const data: Record<string, unknown> = {
       ...node.data,
-      actorName: actor.name,
-      actorClassId: actor.classId,
-      ...(component ? { componentName: component.name, componentClassId: component.classId } : {}),
+      ...ownedGetNodeProperties({
+        actorId: actor.id, actorName: actor.name, actorClassId: actor.classId,
+        ...(component ? { componentId: component.id, componentName: component.name, componentClassId: component.classId } : {}),
+      }),
     };
     data.title = node.type === OWNED_ACTOR_GET_NODE_ID ? ownedActorGetTitle(data) : ownedComponentGetTitle(data);
     if (Object.keys(data).every((key) => data[key] === node.data[key])) return node;

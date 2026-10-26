@@ -9,7 +9,11 @@ import { pin, type NodeDefinition, objectRef } from "@haptic/scripting";
 export const OWNED_ACTOR_GET_NODE_ID = "scene.getOwnedActor";
 export const OWNED_COMPONENT_GET_NODE_ID = "scene.getOwnedComponent";
 
-/** What a Get <Actor> / Get <Component> (<Actor>) node names. */
+/**
+ * What a Get <Actor> / Get <Component> (<Actor>) node names. Stored as
+ * `sceneActorId`, `sceneActorName`, ... node properties: a plain
+ * `componentId` would mark the node as bound to a component of its own Class.
+ */
 export type OwnedGetProperties = {
   actorId: string;
   actorName: string;
@@ -25,12 +29,26 @@ function text(value: unknown): string {
 
 export function ownedGetProperties(properties: Record<string, unknown>): OwnedGetProperties {
   return {
-    actorId: text(properties.actorId),
-    actorName: text(properties.actorName),
-    actorClassId: text(properties.actorClassId),
-    componentId: text(properties.componentId),
-    componentName: text(properties.componentName),
-    componentClassId: text(properties.componentClassId),
+    actorId: text(properties.sceneActorId),
+    actorName: text(properties.sceneActorName),
+    actorClassId: text(properties.sceneActorClassId),
+    componentId: text(properties.sceneComponentId),
+    componentName: text(properties.sceneComponentName),
+    componentClassId: text(properties.sceneComponentClassId),
+  };
+}
+
+/** Node properties naming an owned actor and, for Get <Component> (<Actor>), one of its components. */
+export function ownedGetNodeProperties(target: OwnedGetProperties): Record<string, string> {
+  return {
+    sceneActorId: target.actorId,
+    sceneActorName: target.actorName,
+    sceneActorClassId: target.actorClassId,
+    ...(target.componentId ? {
+      sceneComponentId: target.componentId,
+      sceneComponentName: target.componentName ?? "",
+      sceneComponentClassId: target.componentClassId ?? "",
+    } : {}),
   };
 }
 

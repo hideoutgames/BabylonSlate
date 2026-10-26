@@ -582,6 +582,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Change Scene](change-scene.md) | Leaves the current Scene and loads another one. |
+| [Get Scene Actor](get-scene-actor.md) | Returns an actor this Scene or Scene Layer places, in its Scene Script or Scene Layer Script. |
+| [Get Scene Actor Component](get-scene-actor-component.md) | Returns a component of an actor this Scene or Scene Layer places, in its script. |
 | [Get Scene Load Progress](get-scene-load-progress.md) | Returns how far a streamed Scene has loaded, from 0 to 1. |
 | [Get Scene State](get-scene-state.md) | Returns whether a streamed Scene is unloaded, loading, loaded or unloading. |
 | [Get Target Scene Name](get-target-scene-name.md) | Returns the name of the Scene that a Scene Streaming Actor loads. |

@@ -18,4 +18,5 @@ An asset editor tab is a **DockView** document (`DockviewShell`), so its panels 
 
 - Never use shadcn `Tabs` or hand-rolled split panes as the document layout. Nested `Tabs` may switch mutually exclusive modes inside one panel.
 - The Animation Graph is the one exception: its **State Machine | Animation Object** mode bar (`AnimEditorModeBar`) sits outside DockView above two stacked DockView surfaces saved separately in `layout.json`; Windows and Focus follow the active mode.
+- Scene and Scene Layer modes (`SceneModeSelect` in the action bar) mount one DockView surface per mode, saved separately in `layout.json` (`scene-document-layout.ts`); a Scene Layer layout saved flat before it had modes restores as its Design surface.
 - Content Browser stays a pinned chrome tab, not a DockView document.

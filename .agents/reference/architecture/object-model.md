@@ -16,8 +16,8 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 | `Object` (`EngineObject`) | Root class. guid, classId, variables, `onCreation` / `onTick` / `onDestroyed`. `variablesRevision` advances only on a real change. |
 | `Actor` | Transform plus ordered components. Writing `parentId` / `name` through `variables` bumps `World.structuralRevision`. |
 | `ActorComponent` | Own variables and interfaces; Begin Play after owner spawn. `attachComponent` throws on a destroyed actor. |
-| `Scene` | Live Play scene, `classId` `Scene:{assetGuid}`; `sceneName`, `assetGuid` (Get-only), `gravity` (Get/Set). Not spawnable. |
-| `SceneLayer` / `SceneLayerActor` | Overlay session instance (not an Actor) / overlay actor tagged `sceneLayerId`, same World tick. |
+| `Scene` | Live Play scene, `classId` `Scene:{assetGuid}`, running its SceneScript; `sceneName`, `assetGuid` (Get-only), `gravity` (Get/Set). Not spawnable. |
+| `SceneLayer` / `SceneLayerActor` | Overlay session instance (not an Actor; `classId` `SceneLayer:{assetGuid}`, running its SceneLayerScript) / overlay actor tagged `sceneLayerId`, same World tick. |
 | `GameInstance` | Session singleton. |
 | `Subsystem` → `GameSubsystem`, `SceneSubsystem` | Hidden abstract base (never in pickers) → session-lifetime / main-Scene-lifetime singletons. ClassKind stays `object`. |
 | `World` | Owns GI, subsystems, actors in spawn order, seeded RNG, deferred destroy, `currentScene`. |
