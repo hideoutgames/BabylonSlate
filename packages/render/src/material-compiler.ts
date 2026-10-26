@@ -407,7 +407,10 @@ export function compileMaterialPlan(
         const merge = new VectorMergerBlock(blockName);
         created.push(merge);
         point.connectTo(conversion.from === "float" ? merge.x : conversion.from === "vec2" ? merge.xyIn : merge.xyzIn);
-        const padding = constantPoint("float", [1], `${blockName}_padding`, false);
+        // A Float fills every channel; a vector pads its missing channels with 1.
+        const padding = conversion.from === "float"
+          ? point
+          : constantPoint("float", [1], `${blockName}_padding`, false);
         const channels = [merge.x, merge.y, merge.z, merge.w];
         for (const channel of channels.slice(componentCount(conversion.from), componentCount(conversion.to))) {
           padding.connectTo(channel);

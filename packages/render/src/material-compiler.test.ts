@@ -537,6 +537,21 @@ describe("material compiler", () => {
     expect(afterRelease.material.buildId).not.toBe(first.material.buildId);
   });
 
+  it("broadcasts a wired Float into every channel of a wider vector input", () => {
+    const scene = host();
+    const doc = multiplyMaterial();
+    doc.nodes.push({ id: "gain", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Gain", value: [10] } });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-mul");
+    doc.edges.push({ id: "e-gain-mul", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "mul", targetPinId: "a" });
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "test" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.material.dispose());
+    const merge = result.material.attachedBlocks.find((block) => block.getClassName() === "VectorMergerBlock");
+    const gain = result.material.getBlockByName("gain")!.outputs[0];
+    expect(["x", "y", "z"].map((channel) => merge?.getInputByName(channel)?.connectedPoint)).toEqual([gain, gain, gain]);
+    expect(merge?.getInputByName("w")?.isConnected).toBe(false);
+  });
+
   it("carries a constant value onto its input block", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();

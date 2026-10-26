@@ -52,7 +52,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 
 ## Type rules
 
-- Any numeric output connects to any numeric input. Conversion keeps leading channels, drops trailing ones and fills missing channels with **1** (Float `x` → V3 `(x,1,1)`); supplied zeros are preserved. Generic nodes take the widest connected input regardless of order. Declared function and Custom GLSL pins keep explicit types. The scripting graph keeps its stricter exact-kind rule.
+- Any numeric output connects to any numeric input. A Float fills every channel (Float `x` → V3 `(x,x,x)`), as in GLSL and Unreal. A vector keeps leading channels, drops trailing ones and fills missing channels with **1** (V2 `(x,y)` → V3 `(x,y,1)`); supplied zeros are preserved. Generic nodes take the widest connected input regardless of order. Declared function and Custom GLSL pins keep explicit types. The scripting graph keeps its stricter exact-kind rule.
 - A scalar default on a wider pin fills every channel. Conversions compose across function boundaries and participate in the plan hash; render realises them with splitter/merger blocks and CPU baking applies the same rule.
 
 ## Validation and lowering
