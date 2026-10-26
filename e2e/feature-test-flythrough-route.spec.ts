@@ -30,7 +30,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  *
  * Env: HAPTIC_PERF_SCENES (comma list of main|world|clustered|stress|2d; default main,world),
  *      HAPTIC_PERF_BACKEND (webgl2|webgpu; default: the project's WebGL2),
- *      HAPTIC_PERF_QUALITY (low|medium|high|ultra; default: the starter's Medium. Sets the project's Overall Quality in
+ *      HAPTIC_PERF_QUALITY (low|medium|high|ultra; default: the starter's High. Sets the project's Overall Quality in
  *        Project Settings, with Dynamic Resolution off so the workload stays fixed. High and Ultra allow the starter's
  *        scene-wide Volumetric Lighting, which Medium skips),
  *      HAPTIC_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise

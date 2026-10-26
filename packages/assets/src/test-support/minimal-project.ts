@@ -5,6 +5,7 @@ import {
   createDefaultScene,
   createEmptyProject,
   createMeshComponent,
+  DEFAULT_RENDER_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
@@ -23,6 +24,9 @@ export async function minimalProjectFiles(
   project.metadata.createdAt = project.metadata.updatedAt =
     "2026-01-01T00:00:00.000Z";
   project.settings.startupSceneGuid = sceneGuid;
+  // Tests keep a light render workload instead of the High new-project default.
+  const { quality, shadows } = DEFAULT_RENDER_PROJECT_SETTINGS;
+  project.settings.render = { ...project.settings.render, quality, shadows };
   const scene = createDefaultScene();
   scene.actors = [
     createActor("actor-1", "Actor", {

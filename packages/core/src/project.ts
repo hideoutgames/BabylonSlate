@@ -1,5 +1,5 @@
 import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
-import { normalizeRenderingQuality, type RenderingQuality } from "./render-quality";
+import { applyProjectQualityPatch, normalizeRenderingQuality, qualityPresetPatch, type RenderingQuality } from "./render-quality";
 import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./render-path";
 import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
@@ -151,20 +151,13 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   blackBars: false,
 };
 
-/** New projects default 1920×1080 custom resolution with Black Bars off (fill). */
+/**
+ * New projects start at High in every Scalability group, with 1920×1080
+ * custom resolution and Black Bars off (fill).
+ */
 export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
-  ...normalizeRenderingPipeline(undefined),
-  quality: normalizeRenderingQuality(undefined),
-  shadows: normalizeShadowSettings(undefined),
-  mode: "pbr",
-  environmentLighting: normalizeEnvironmentLightingSettings(undefined),
-  cel: normalizeCelShadingSettings(undefined),
-  effects: normalizeRenderEffectsSettings(undefined),
-  water: normalizeWaterProjectSettings(undefined),
+  ...applyProjectQualityPatch(DEFAULT_RENDER_PROJECT_SETTINGS, qualityPresetPatch("high")),
   customResolution: true,
-  width: DEFAULT_RENDER_WIDTH,
-  height: DEFAULT_RENDER_HEIGHT,
-  blackBars: false,
 };
 
 export interface ProjectSettings {

@@ -34,7 +34,7 @@ Preview Build and exported games have no Retry. If their graphics device stops w
 
 ## Scalability
 
-**Scalability** sets quality per group: **Shadows**, **Resolution**, **Textures**, **Geometry**, **Water**, **Post Processing** and **Lighting**. Pick a level for all groups with **Overall Quality**, or set groups individually. When groups differ, Overall Quality shows **Custom**. New projects use Medium.
+**Scalability** sets quality per group: **Shadows**, **Resolution**, **Textures**, **Geometry**, **Water**, **Post Processing** and **Lighting**. Pick a level for all groups with **Overall Quality**, or set groups individually. When groups differ, Overall Quality shows **Custom**. New projects use High.
 
 | Level | Target device | Resolution Scale | Texture Budget | Local lights | Shadow Distance |
 | --- | --- | --- | --- | --- | --- |

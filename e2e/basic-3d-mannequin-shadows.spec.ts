@@ -19,8 +19,8 @@ type Viewport = {
 };
 declare global { interface Window { __hapticViewportTest: Viewport } }
 
-// The default WebGL2 PBR Medium editor view. The hosts spec adds CEL; webgpu-backend.spec.ts covers WebGPU shadows.
-const variant = { backend: "webgl2", mode: "pbr", profile: "medium" } as const;
+// The default WebGL2 PBR High editor view. The hosts spec adds CEL; webgpu-backend.spec.ts covers WebGPU shadows.
+const variant = { backend: "webgl2", mode: "pbr", profile: "high" } as const;
 test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} keeps shadows with collider helpers visible`, async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
