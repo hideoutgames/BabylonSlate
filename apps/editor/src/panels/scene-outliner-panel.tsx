@@ -657,6 +657,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     if (applied) setSelectedActorIds(copies.map((copy) => copy.id));
   }, [scene, sessionState, overlay, applySceneChange, documentId, setSelectedActorIds]);
   const canPaste = sessionState.hasCopiedActors(overlay);
+  /** Duplicates the actors as one group (references between them point at the copies) and selects the copies. */
+  const duplicateActors = useCallback((ids: readonly string[]) => {
+    if (!scene || ids.length === 0) return;
+    const copies = duplicateSceneActors(scene, ids);
+    if (copies.length === 0) return;
+    mutate({ ...scene, actors: [...scene.actors, ...copies] });
+    setSelectedActorIds(copies.map((copy) => copy.id));
+  }, [scene, mutate, setSelectedActorIds]);
 
   const selectedRowIds = useMemo(
     () => [
@@ -1095,17 +1103,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         icon: <CopyPlusIcon />,
         shortcut: keybinds.get("edit.duplicate")?.[0],
         testId: `outliner-duplicate-${actorId}`,
-        onSelect: () => {
-          if (!scene) return;
-          const source = scene.actors.find((entry) => entry.id === actorId);
-          if (!source) return;
-          const copy = duplicateSceneActor(scene, source);
-          mutate({
-            ...scene,
-            actors: [...scene.actors, copy],
-          });
-          selectActor(copy.id);
-        },
+        // Like Copy: the whole selection when this row is in it, otherwise just this row.
+        onSelect: () => duplicateActors(selectedActorIdSet.has(actorId) ? selectedActorIds : [actorId]),
       },
       { type: "separator", id: "delete-separator" },
       {
@@ -1131,12 +1130,11 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     copyActors,
     pasteActors,
     classAssetById,
+    duplicateActors,
     frameActor,
     keybinds,
-    mutate,
     openDocument,
     removeActors,
-    scene,
     selectActor,
     selectedActorIdSet,
     selectedActorIds,
@@ -1192,17 +1190,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     },
     outlinerKeys,
   );
-  useKeybindCommand(
-    "edit.duplicate",
-    () => {
-      if (!scene || selectedActorIds.length === 0) return;
-      const copies = duplicateSceneActors(scene, selectedActorIds);
-      if (copies.length === 0) return;
-      mutate({ ...scene, actors: [...scene.actors, ...copies] });
-      setSelectedActorIds(copies.map((copy) => copy.id));
-    },
-    outlinerKeys,
-  );
+  useKeybindCommand("edit.duplicate", () => duplicateActors(selectedActorIds), outlinerKeys);
   useKeybindCommand(
     "edit.rename",
     () => {
