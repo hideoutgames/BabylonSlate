@@ -503,6 +503,25 @@ export function createEditorViewportTools({
         cameraController.frame(center);
       }
     },
+    visualBounds2D: (actorIds) => {
+      let bounds: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+      for (const actorId of actorIds) {
+        for (const mesh of editorSync.visualMeshesForActor(actorId)) {
+          if (!mesh.isEnabled() || mesh.getTotalVertices() === 0) continue;
+          mesh.computeWorldMatrix(true);
+          const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
+          bounds = bounds
+            ? {
+                minX: Math.min(bounds.minX, min.x),
+                minY: Math.min(bounds.minY, min.y),
+                maxX: Math.max(bounds.maxX, max.x),
+                maxY: Math.max(bounds.maxY, max.y),
+              }
+            : { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y };
+        }
+      }
+      return bounds;
+    },
     selectedActorTransforms,
     dropSelectedActors: (selectedActorIds, maxDistance) => {
       const sceneData = editorSync.serializedScene();

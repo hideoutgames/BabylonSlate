@@ -578,9 +578,9 @@ function declaredMembers(graph: SerializedGraph | undefined, kind: GraphClassMem
 
 /**
  * The target's component tree. `local` is what the Class authors; a Class that
- * never authored any and inherits none shows the starter box, which a new
- * component must not displace. `components` adds the inherited ones, whose ids
- * a copy must not take.
+ * never authored any and inherits none shows the starter box (a SceneLayerActor
+ * shows none), which a new component must not displace. `components` adds the
+ * inherited ones, whose ids a copy must not take.
  */
 function componentTarget(options: ClassMemberPasteOptions): {
   local: SerializedComponent[];
@@ -589,9 +589,9 @@ function componentTarget(options: ClassMemberPasteOptions): {
 } {
   const inherited = (options.ancestors ?? []).flatMap((ancestor) => ancestor.graph.components ?? []);
   const authored = options.graph.components;
-  const local = Array.isArray(authored) ? authored : inherited.length > 0 ? [] : defaultPrefabComponents();
   const parentOf = options.eventOptions?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
   const overlay = walkAncestry(options.eventOptions?.parentClass ?? null, parentOf).includes("SceneLayerActor");
+  const local = Array.isArray(authored) ? authored : inherited.length > 0 ? [] : defaultPrefabComponents(overlay ? "2d" : "3d");
   return {
     local,
     components: [...inherited, ...local],

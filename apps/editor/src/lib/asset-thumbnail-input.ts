@@ -95,7 +95,9 @@ export async function prepareAssetThumbnailInput(
     const seen = new Set<string>([classIdForGraphPath(asset.path)]);
     let parent: string | null = parentClass(asset);
     let isActor = false;
+    let overlay = false;
     while (parent && !seen.has(parent)) {
+      if (parent === "SceneLayerActor") overlay = true;
       if (parent === "Actor") {
         isActor = true;
         break;
@@ -127,7 +129,7 @@ export async function prepareAssetThumbnailInput(
       ? content.components as SerializedComponent[]
       : ancestors.some((entry) => entry.components.length > 0)
         ? []
-        : prefabComponentsFromGraph(null);
+        : prefabComponentsFromGraph(null, overlay ? "2d" : "3d");
     const components = mergePrefabComponents(ancestors, local);
     const spriteOnly = components.some((component) => component.classId === "SpriteComponent") &&
       !components.some((component) => ["MeshComponent", "Text3DComponent", "LandscapeComponent", "FoliageComponent", "CableComponent"].includes(component.classId));

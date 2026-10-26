@@ -2,17 +2,26 @@ import type { AbstractEngine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AssetLoadError } from "@haptic/assets";
-import { areaEmissionTextureGuids, requestEditorDrop } from "@haptic/core";
+import {
+  areaEmissionTextureGuids,
+  normalizeSceneLayerActorDesign,
+  requestEditorDrop,
+  sceneLayerActorFrameBounds,
+  type SceneLayerActorDesign,
+  type SerializedGraph,
+} from "@haptic/core";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
   applyViewportJoystickSteer,
   syncEditorPlayState,
+  type EditorCameraBounds2D,
   type EngineHandle,
 } from "@haptic/render";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
+import { SceneLayerActorFrameControls } from "../components/scene-layer-actor-frame-controls";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { usePlay } from "../context/play-context";
@@ -73,6 +82,10 @@ import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
  */
 const WORLD_KINDS = ["scene", "scene-layer"] as const;
 
+/** World Prefabs keep the fixed 16:9 game-camera guide. */
+const WORLD_PREFAB_FRAME: EditorCameraBounds2D = { width: 16, height: 9 };
+
+
 export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -115,6 +128,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
   } = useDocumentActions();
   const { projectDocument } = useProjectState();
+  const { applyGraphChange } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   // The open world Scene or Scene Layer sets the preview's physics world.
   const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
@@ -126,7 +140,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const previewComponentsRef = useRef(previewComponents);
   previewComponentsRef.current = previewComponents;
   const { documentId } = useDocumentWorkspace();
-  const documentPath = useOpenDocument(documentId)?.ref.path;
+  const openDocument = useOpenDocument(documentId);
+  const documentPath = openDocument?.ref.path;
+  const classGraph = openDocument?.ref.kind === "graph" ? (openDocument.content as SerializedGraph | null) : null;
   const overlayPrefab = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const listed = assetRegistry?.list() ?? [];
@@ -143,6 +159,23 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     : physicsWorldFromOpenDocuments(worldDocuments);
   const prefabPhysicsWorldRef = useRef(prefabPhysicsWorld);
   prefabPhysicsWorldRef.current = prefabPhysicsWorld;
+  const overlayPrefabRef = useRef(overlayPrefab);
+  overlayPrefabRef.current = overlayPrefab;
+  const overlayDesign = useMemo(
+    () => overlayPrefab ? normalizeSceneLayerActorDesign(classGraph?.overlayDesign) : null,
+    [classGraph?.overlayDesign, overlayPrefab],
+  );
+  const setOverlayDesign = (next: SceneLayerActorDesign) => {
+    if (classGraph) void applyGraphChange(documentId, { ...classGraph, overlayDesign: next });
+  };
+  const [contentBounds, setContentBounds] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
+  const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit ?? 100;
+  const frameBounds = useMemo(
+    () => overlayDesign ? sceneLayerActorFrameBounds(overlayDesign, pixelsPerUnit, contentBounds) : WORLD_PREFAB_FRAME,
+    [contentBounds, overlayDesign, pixelsPerUnit],
+  );
+  const frameBoundsRef = useRef(frameBounds);
+  frameBoundsRef.current = frameBounds;
   const {
     gizmoTool,
     gizmoSpace,
@@ -243,7 +276,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           scale: live.scale,
         };
         if (selected === PREFAB_ROOT_ID) {
-          applyPivotTransformRef.current(transform);
+          // A SceneLayerActor Root is fixed to the frame pivot.
+          if (!overlayPrefabRef.current) applyPivotTransformRef.current(transform);
           return;
         }
         commitComponentGizmoRef.current(
@@ -267,9 +301,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     handle.editor?.setGridSettings({
       tileSize: gridSize,
       tileSubdivisions: 4,
-      cameraBounds2D: { width: 16, height: 9 },
+      cameraBounds2D: frameBoundsRef.current ?? WORLD_PREFAB_FRAME,
       showGrid: gridVisible,
     });
+    if (!frameBoundsRef.current) handle.editor?.grid.setCameraBounds(null);
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
     handle.editor?.setPreviewCanvas(previewCanvasRef.current);
     const unregisterScheduler = registerScheduler({
@@ -543,10 +578,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.setGridSettings({
       tileSize: gridSize,
       tileSubdivisions: 4,
-      cameraBounds2D: { width: 16, height: 9 },
+      cameraBounds2D: frameBounds ?? WORLD_PREFAB_FRAME,
       showGrid: gridVisible,
     });
+    // Desired with no drawn content has no frame.
+    if (!frameBounds) engineRef.current?.editor?.grid.setCameraBounds(null);
   }, [
+    frameBounds,
     snapEnabled,
     gridSize,
     snapTranslate,
@@ -560,10 +598,27 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.grid.setVisible(gridVisible);
   }, [gridVisible]);
 
+  // Desired wraps the drawn content, measured once the visuals have loaded and after each move.
+  const measureContent = overlayDesign?.sizeMode === "desired";
+  useEffect(() => {
+    if (!measureContent) return;
+    const handle = engineRef.current;
+    if (!handle?.editor) return;
+    const frame = requestAnimationFrame(() => {
+      const ids = componentsRef.current.map((component) => component.id);
+      const next = handle.editor?.visualBounds2D(ids) ?? null;
+      setContentBounds((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [measureContent, dropReady, previewLoadKey, previewTransformKey, engineEpoch]);
+
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle?.editor) return;
-    const selectedActors = prefabSelectedActorIds(selectedId);
+    // A SceneLayerActor Root has no transform box: it stays on the frame pivot.
+    const selectedActors = prefabSelectedActorIds(
+      overlayPrefab && selectedId === PREFAB_ROOT_ID ? null : selectedId,
+    );
     handle.editor.setSelectedActors(selectedActors);
     const scene = previewSceneFor(components, prefabPhysicsWorld);
     handle.editor.syncSelectionDebug({
@@ -576,7 +631,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           ? selectedIds
           : undefined,
     });
-  }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch, audioLibrary]);
+  }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch, audioLibrary, overlayPrefab]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -652,6 +707,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
             showGizmoTools={!overlayPrefab}
             onDrop={dropSelection}
             dropDisabled={dropDisabled}
+            extra={overlayDesign ? (
+              <SceneLayerActorFrameControls
+                design={overlayDesign}
+                disabled={!classGraph}
+                onChange={setOverlayDesign}
+              />
+            ) : undefined}
           />
         </div>
       </div>

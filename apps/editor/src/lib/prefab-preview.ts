@@ -42,11 +42,15 @@ export function authoredPrefabComponents(
   return graph && Array.isArray(graph.components) ? graph.components : undefined;
 }
 
-/** Authored list when present (including empty); otherwise the default mesh. */
+/**
+ * Authored list when present (including empty); otherwise the default mesh,
+ * which a 2D or SceneLayerActor Class (`viewportMode: "2d"`) does not get.
+ */
 export function prefabComponentsFromGraph(
   graph: { components?: SerializedComponent[] } | null | undefined,
+  viewportMode: ViewportMode = "3d",
 ): SerializedComponent[] {
-  return authoredPrefabComponents(graph) ?? defaultPrefabComponents();
+  return authoredPrefabComponents(graph) ?? defaultPrefabComponents(viewportMode);
 }
 
 export type PrefabComponentView = SerializedComponent & {

@@ -8,6 +8,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphActorDefaultsCommand,
+  SetGraphOverlayDesignCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -20,6 +21,7 @@ import {
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
   createSetGraphActorDefaultsCommandFromJson,
+  createSetGraphOverlayDesignCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -254,6 +256,14 @@ export function commandToJournalPayload(
         to: actorDefaults.to,
       };
     }
+    case "graph.setOverlayDesign": {
+      const overlayDesign = command as SetGraphOverlayDesignCommand;
+      return {
+        type: overlayDesign.type,
+        from: overlayDesign.from,
+        to: overlayDesign.to,
+      };
+    }
     default: {
       if (
         command.type.startsWith("scene.") ||
@@ -382,6 +392,10 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver(
     "graph.setActorDefaults",
     createSetGraphActorDefaultsCommandFromJson,
+  );
+  registerCommandReviver(
+    "graph.setOverlayDesign",
+    createSetGraphOverlayDesignCommandFromJson,
   );
 }
 

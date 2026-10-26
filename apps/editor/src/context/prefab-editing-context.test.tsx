@@ -189,6 +189,27 @@ describe("PrefabEditingContext inherited components", () => {
     },
   };
 
+  it("gives a SceneLayerActor Class that never authored components no starter box", () => {
+    const graphFor = (path: string) => ({
+      id: `graph:${path}`,
+      ref: { kind: "graph", path },
+      content: { nodes: [], edges: [], members: [] },
+    });
+    for (const [parentClass, expected] of [["SceneLayerActor", ""], ["Actor", "prefab-mesh"]] as const) {
+      documentOverrides.value = {
+        openDocuments: [graphFor("assets/Hero.class.hasset")],
+        assetRegistry: { list: () => [{ path: "assets/Hero.class.hasset", header: { type: "Class", name: "Hero", parentClass } }] },
+      };
+      render(
+        <PrefabEditingProvider>
+          <ComponentsProbe seen={[]} />
+        </PrefabEditingProvider>,
+      );
+      expect(screen.getByTestId("prefab-component-ids").textContent).toBe(expected);
+      cleanup();
+    }
+  });
+
   it("follows a Class reparented in place in the registry", () => {
     const heroGraph = {
       id: "graph:assets/Hero.class.hasset",

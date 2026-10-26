@@ -380,6 +380,35 @@ export class SetGraphActorDefaultsCommand implements EditCommand<SerializedGraph
   }
 }
 
+export class SetGraphOverlayDesignCommand implements EditCommand<SerializedGraph> {
+  readonly type = "graph.setOverlayDesign";
+  readonly from: SerializedGraph["overlayDesign"];
+  readonly to: SerializedGraph["overlayDesign"];
+  readonly byteSize: number;
+
+  constructor(
+    from: SerializedGraph["overlayDesign"],
+    to: SerializedGraph["overlayDesign"],
+  ) {
+    this.from = from;
+    this.to = to;
+    this.byteSize = snapshotBytes({ from, to });
+  }
+
+  apply(doc: SerializedGraph): SerializedGraph {
+    if (this.to === undefined) {
+      const next = { ...doc };
+      delete next.overlayDesign;
+      return next;
+    }
+    return { ...doc, overlayDesign: this.to };
+  }
+
+  invert(): SetGraphOverlayDesignCommand {
+    return new SetGraphOverlayDesignCommand(this.to, this.from);
+  }
+}
+
 export function createMoveNodeCommandFromJson(
   payload: Record<string, unknown>,
 ): MoveNodeCommand {
@@ -469,5 +498,14 @@ export function createSetGraphActorDefaultsCommandFromJson(
   return new SetGraphActorDefaultsCommand(
     payload.from as SerializedGraph["actorDefaults"],
     payload.to as SerializedGraph["actorDefaults"],
+  );
+}
+
+export function createSetGraphOverlayDesignCommandFromJson(
+  payload: Record<string, unknown>,
+): SetGraphOverlayDesignCommand {
+  return new SetGraphOverlayDesignCommand(
+    payload.from as SerializedGraph["overlayDesign"],
+    payload.to as SerializedGraph["overlayDesign"],
   );
 }

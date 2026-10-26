@@ -17,7 +17,7 @@ import {
   type SerializedPrefab,
   type SerializedTransform,
 } from "@haptic/core";
-import type { TreeDropPlacement } from "@haptic/editor-kit";
+import { walkAncestry, type TreeDropPlacement } from "@haptic/editor-kit";
 import { patchInspectorComponentProperty } from "../lib/mesh-material-properties";
 import {
   useDocumentActions,
@@ -290,9 +290,14 @@ export function PrefabEditingProvider({
     registryEpoch,
   ]);
 
+  // A SceneLayerActor Class never authored components starts empty, not with the box.
+  const overlayClass = useMemo(
+    () => classId !== null && walkAncestry(classId, parentOf).includes("SceneLayerActor"),
+    [classId, parentOf],
+  );
   const localComponents = useMemo(
-    () => prefabComponentsFromGraph(graph),
-    [graph],
+    () => prefabComponentsFromGraph(graph, overlayClass ? "2d" : "3d"),
+    [graph, overlayClass],
   );
 
   const components = useMemo(() => {

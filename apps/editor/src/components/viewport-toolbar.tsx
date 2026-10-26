@@ -34,7 +34,7 @@ import {
   SquareDashedMousePointerIcon,
   VideoIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   useDocumentActions,
   useProjectState,
@@ -81,6 +81,7 @@ export function ViewportToolbar({
   showGameCamera = true,
   onDrop,
   dropDisabled = true,
+  extra,
 }: {
   testIdPrefix?: string;
   showDragSelect?: boolean;
@@ -90,6 +91,8 @@ export function ViewportToolbar({
   showGameCamera?: boolean;
   onDrop?: () => void;
   dropDisabled?: boolean;
+  /** Host-specific controls after a separator at the end of the island. */
+  extra?: ReactNode;
 }) {
   const { documentId } = useDocumentWorkspace();
   const { applySceneChange } = useDocumentActions();
@@ -578,6 +581,12 @@ export function ViewportToolbar({
               Switch 2D / 3D <ShortcutKeys chord={modeChord} decorative />
             </TooltipContent>
           </Tooltip>
+        </>
+      ) : null}
+      {extra ? (
+        <>
+          <ToolbarSeparator />
+          {extra}
         </>
       ) : null}
       <GridSizeDialog

@@ -7,6 +7,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphActorDefaultsCommand,
+  SetGraphOverlayDesignCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -182,6 +183,7 @@ export function diffGraphCommands(
   | SetGraphComponentsCommand
   | SetGraphFunctionGraphsCommand
   | SetGraphActorDefaultsCommand
+  | SetGraphOverlayDesignCommand
 > {
   const commands: Array<
     | MoveNodeCommand
@@ -194,6 +196,7 @@ export function diffGraphCommands(
     | SetGraphComponentsCommand
     | SetGraphFunctionGraphsCommand
     | SetGraphActorDefaultsCommand
+    | SetGraphOverlayDesignCommand
   > = [];
 
   // A retyped node is a different node under the same id: it leaves and returns.
@@ -257,6 +260,12 @@ export function diffGraphCommands(
   if (!actorDefaultsEqual(before.actorDefaults, after.actorDefaults)) {
     commands.push(
       new SetGraphActorDefaultsCommand(before.actorDefaults, after.actorDefaults),
+    );
+  }
+
+  if (JSON.stringify(before.overlayDesign ?? null) !== JSON.stringify(after.overlayDesign ?? null)) {
+    commands.push(
+      new SetGraphOverlayDesignCommand(before.overlayDesign, after.overlayDesign),
     );
   }
 

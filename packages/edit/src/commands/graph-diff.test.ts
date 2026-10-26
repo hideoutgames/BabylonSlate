@@ -9,6 +9,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphActorDefaultsCommand,
+  SetGraphOverlayDesignCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -91,6 +92,20 @@ describe("diffGraphCommands", () => {
     expect(command).toBeInstanceOf(SetGraphActorDefaultsCommand);
     expect(command.apply(before).actorDefaults).toEqual(after.actorDefaults);
     expect(command.invert().apply(after)).not.toHaveProperty("actorDefaults");
+  });
+
+  it("emits an undoable SetGraphOverlayDesignCommand when the SceneLayerActor frame changes", () => {
+    const before = oneNodeGraph();
+    const after = {
+      ...before,
+      overlayDesign: { sizeMode: "custom" as const, customSizePx: { width: 320, height: 200 }, rootAnchor: "topLeft" as const },
+    };
+    const commands = diffGraphCommands(before, after);
+    expect(commands).toHaveLength(1);
+    const command = commands[0] as SetGraphOverlayDesignCommand;
+    expect(command).toBeInstanceOf(SetGraphOverlayDesignCommand);
+    expect(command.apply(before).overlayDesign).toEqual(after.overlayDesign);
+    expect(command.invert().apply(after)).not.toHaveProperty("overlayDesign");
   });
 
   it("emits SetGraphComponentsCommand when prefab components change", () => {

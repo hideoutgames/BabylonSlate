@@ -4,7 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
 } from "@haptic/core";
-import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
+import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand, SetGraphOverlayDesignCommand } from "./commands/graph";
 import {
   AddActorCommand,
   AddComponentCommand,
@@ -142,6 +142,13 @@ describe("journal", () => {
     const revived = reviveCommand(commandToJournalPayload(new SetGraphActorDefaultsCommand(undefined, actorDefaults)));
     expect(revived).toBeInstanceOf(SetGraphActorDefaultsCommand);
     expect((revived!.apply({ nodes: [], edges: [] }) as { actorDefaults?: unknown }).actorDefaults).toEqual(actorDefaults);
+  });
+
+  it("round-trips SetGraphOverlayDesignCommand through the journal", () => {
+    const overlayDesign = { sizeMode: "desired" as const, customSizePx: { width: 400, height: 300 }, rootAnchor: "center" as const };
+    const revived = reviveCommand(commandToJournalPayload(new SetGraphOverlayDesignCommand(undefined, overlayDesign)));
+    expect(revived).toBeInstanceOf(SetGraphOverlayDesignCommand);
+    expect((revived!.apply({ nodes: [], edges: [] }) as { overlayDesign?: unknown }).overlayDesign).toEqual(overlayDesign);
   });
 
   it("round-trips every scene command type through the journal", () => {

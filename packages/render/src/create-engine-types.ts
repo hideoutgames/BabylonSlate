@@ -37,7 +37,7 @@ import type {
   MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import type { EditorCameraController } from "./editor-camera";
-import type { EditorGrid } from "./editor-grid";
+import type { EditorCameraBounds2D, EditorGrid } from "./editor-grid";
 import type { EditorSceneSync } from "./editor-scene-sync";
 import type { EditorDropTransform } from "./editor-drop";
 import type { ViewportShadingMode } from "./viewport-shading-mode";
@@ -535,7 +535,8 @@ export interface EditorTools {
   setGridSettings: (settings: {
     tileSize: number;
     tileSubdivisions: number;
-    cameraBounds2D: { width: number; height: number };
+    /** The orange frame; `center` offsets it from the origin (SceneLayerActor Prefab Root pivot). */
+    cameraBounds2D: EditorCameraBounds2D;
     showGrid?: boolean;
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
@@ -551,6 +552,8 @@ export interface EditorTools {
   }) => void;
   setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameActor: (actorId: string) => void;
+  /** XY world bounds of the drawn visuals of `actorIds`; null when none draw. */
+  visualBounds2D: (actorIds: readonly string[]) => { minX: number; minY: number; maxX: number; maxY: number } | null;
   /** Live local TRS of each selection-root mesh after a gizmo drag. */
   selectedActorTransforms: () => Array<{
     actorId: string;

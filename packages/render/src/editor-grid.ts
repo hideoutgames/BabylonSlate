@@ -406,6 +406,12 @@ void main() {
 `;
 }
 
+export interface EditorCameraBounds2D {
+  width: number;
+  height: number;
+  center?: readonly [number, number];
+}
+
 export interface EditorGrid {
   readonly mesh: Mesh;
   readonly boundsMesh: AbstractMesh | null;
@@ -413,8 +419,11 @@ export interface EditorGrid {
   setSpacing: (spacing: number) => void;
   setSubdivisions: (subdivisions: number) => void;
   setVisible: (visible: boolean) => void;
-  /** Draw the rectangle the game camera will frame (2D only). */
-  setCameraBounds: (bounds: { width: number; height: number } | null) => void;
+  /**
+   * Draw the rectangle the game camera will frame (2D only), centred on
+   * `center` (XY, default the origin).
+   */
+  setCameraBounds: (bounds: EditorCameraBounds2D | null) => void;
   /** Snap/scale the plane to the live camera. Also runs each frame. */
   sync: () => void;
   dispose: () => void;
@@ -434,7 +443,7 @@ export function createEditorGrid(
   const minorColor = options.minorColor ?? GRID_MINOR_COLOR;
   const camera = options.camera ?? null;
 
-  let requestedBounds: { width: number; height: number } | null = null;
+  let requestedBounds: EditorCameraBounds2D | null = null;
   let visible = true;
 
   const mesh = MeshBuilder.CreatePlane(
@@ -556,6 +565,8 @@ export function createEditorGrid(
   const applyBounds = () => {
     if (requestedBounds) {
       boundsMesh.scaling.set(requestedBounds.width, requestedBounds.height, 1);
+      boundsMesh.position.x = requestedBounds.center?.[0] ?? 0;
+      boundsMesh.position.y = requestedBounds.center?.[1] ?? 0;
     }
     boundsMaterial.setColor3("lineColor", sceneColor(CAMERA_BOUNDS_COLOR));
     boundsMaterial.setFloat("lineWidth", CAMERA_BOUNDS_LINE_WIDTH);

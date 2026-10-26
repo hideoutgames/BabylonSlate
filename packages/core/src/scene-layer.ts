@@ -29,6 +29,82 @@ export const SCENE_LAYER_ANCHORS = [
 
 export type SceneLayerAnchor = (typeof SCENE_LAYER_ANCHORS)[number];
 
+/**
+ * How the SceneLayerActor Prefab sizes its orange frame: the default Scene
+ * Layer canvas, the bounds of the content, or an authored pixel size.
+ */
+export const SCENE_LAYER_ACTOR_SIZE_MODES = ["fullscreen", "desired", "custom"] as const;
+export type SceneLayerActorSizeMode = (typeof SCENE_LAYER_ACTOR_SIZE_MODES)[number];
+
+/** Editor-only SceneLayerActor Prefab frame, saved with the Class. */
+export interface SceneLayerActorDesign {
+  sizeMode: SceneLayerActorSizeMode;
+  /** Frame size in pixels for `custom`. */
+  customSizePx: { width: number; height: number };
+  /** Frame point that sits on the Prefab Root. */
+  rootAnchor: SceneLayerAnchor;
+}
+
+export const SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX = { width: 400, height: 300 } as const;
+
+export function normalizeSceneLayerActorDesign(value: unknown): SceneLayerActorDesign {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const size = (source.customSizePx ?? {}) as Record<string, unknown>;
+  const positive = (entry: unknown, fallback: number) =>
+    typeof entry === "number" && Number.isFinite(entry) && entry > 0 ? entry : fallback;
+  return {
+    sizeMode: (SCENE_LAYER_ACTOR_SIZE_MODES as readonly unknown[]).includes(source.sizeMode)
+      ? source.sizeMode as SceneLayerActorSizeMode
+      : "fullscreen",
+    customSizePx: {
+      width: positive(size.width, SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX.width),
+      height: positive(size.height, SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX.height),
+    },
+    rootAnchor: (SCENE_LAYER_ANCHORS as readonly unknown[]).includes(source.rootAnchor)
+      ? source.rootAnchor as SceneLayerAnchor
+      : "topRight",
+  };
+}
+
+/**
+ * The SceneLayerActor Prefab's orange frame in layer units: the default Scene
+ * Layer canvas (Fullscreen) or `customSizePx` (Custom), hanging from the
+ * Prefab Root at `rootAnchor`; or the content bounds wherever they are
+ * (Desired, null without content).
+ */
+export function sceneLayerActorFrameBounds(
+  design: SceneLayerActorDesign,
+  pixelsPerUnit: number,
+  contentBounds: { minX: number; minY: number; maxX: number; maxY: number } | null,
+): { width: number; height: number; center: [number, number] } | null {
+  if (design.sizeMode === "desired") {
+    if (!contentBounds) return null;
+    return {
+      width: Math.max(contentBounds.maxX - contentBounds.minX, 1e-3),
+      height: Math.max(contentBounds.maxY - contentBounds.minY, 1e-3),
+      center: [(contentBounds.minX + contentBounds.maxX) / 2, (contentBounds.minY + contentBounds.maxY) / 2],
+    };
+  }
+  const { width, height } = design.sizeMode === "custom"
+    ? { width: design.customSizePx.width / pixelsPerUnit, height: design.customSizePx.height / pixelsPerUnit }
+    : SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
+  return { width, height, center: sceneLayerAnchoredFrameCenter(design.rootAnchor, width, height) };
+}
+
+/**
+ * Centre of a `width` × `height` frame whose `anchor` point sits on the
+ * origin (+X right, +Y up).
+ */
+export function sceneLayerAnchoredFrameCenter(
+  anchor: SceneLayerAnchor,
+  width: number,
+  height: number,
+): [number, number] {
+  const [x, y] = ANCHOR_ORIGIN[anchor];
+  // `+ 0` keeps a centred axis at 0 rather than -0.
+  return [(-x * width) / 2 + 0, (-y * height) / 2 + 0];
+}
+
 export const SCENE_LAYER_HIT_TESTS = [
   "ignore",
   "block",
