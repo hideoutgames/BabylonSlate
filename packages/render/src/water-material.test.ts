@@ -343,7 +343,7 @@ describe("Water material binding", () => {
       lake.rotation.z = 0;
       updateSceneWater(scene);
       expect(await compiled(lake)).toContain("SLATE_WATER_PLANAR\n");
-      level("high");
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "screenSpace" } }) });
       updateSceneWater(scene);
       expect(await compiled(lake)).not.toContain("SLATE_WATER_PLANAR\n");
       lake.dispose();

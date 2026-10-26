@@ -143,9 +143,9 @@ it("switches automatic LOD and scales its distances within the Geometry tier", a
 it("edits Water quality within its tier and disables rows whose feature is off", async () => {
   render(<Fields />);
   expect(selected("Water Quality")).toBe("High");
-  expect(selected("Water Reflections")).toBe("Screen Space");
+  expect(selected("Water Reflections")).toBe("Planar");
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", false);
-  expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("disabled", true);
+  expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("disabled", false);
   fireEvent.click(screen.getByRole("switch", { name: "Water Refraction" }));
   expect(selected("Water Quality")).toBe("Custom");
   expect(selected("Overall Quality")).toBe("Custom");
@@ -157,7 +157,8 @@ it("edits Water quality within its tier and disables rows whose feature is off",
   expect(selected("Water Shading Detail")).toBe("Medium");
   expect(screen.getByRole("switch", { name: "Water Refraction" }).getAttribute("aria-checked")).toBe("true");
   expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", false);
-  expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", true);
+  expect(selected("Water Reflections")).toBe("Planar");
+  expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("value", "0.25");
   expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.75");
   expect(selected("Geometry Quality")).toBe("High");
 });

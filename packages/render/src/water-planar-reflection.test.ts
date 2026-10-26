@@ -45,6 +45,11 @@ function quality(scene: Scene, level: QualityLevel) {
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
 }
 
+/** Screen Space water reflections: no planar reflection. */
+function screenSpaceReflections(scene: Scene) {
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "screenSpace" } }) });
+}
+
 function host(options: { floatingOrigin?: boolean; eye?: Vector3; target?: Vector3; gpu?: "mock" | "real" } = {}) {
   const engine = new NullEngine();
   engines.push(engine);
@@ -243,7 +248,7 @@ it("allocates nothing until a view's water asks for a reflection that can draw",
   // Sky Only / Screen Space quality: lookups neither record a view nor draw.
   reflective.dispose();
   lake(scene, "lake", 40, Vector3.Zero());
-  quality(scene, "high");
+  screenSpaceReflections(scene);
   for (let i = 0; i < 3; i++) expect(frame()).toBeNull();
   expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ views: 0, targets: 0, draws: 0 });
   // Babylon defers removing an observer during its own notification by one task.
@@ -289,7 +294,7 @@ it("leases its target under the water category, resizes in place and frees idle 
   expect(resized.texture.getInternalTexture()).toMatchObject({ width: 192, height: 192 });
   expect(waterBytes(engine)).toBe(allocated / 2);
   // Leaving Planar releases everything at once.
-  quality(scene, "high");
+  screenSpaceReflections(scene);
   frame();
   expect(waterBytes(engine)).toBe(0);
   expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ views: 0, targets: 0 });

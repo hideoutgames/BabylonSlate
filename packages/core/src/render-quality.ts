@@ -187,8 +187,8 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     geometry: { autoLod: true, lodDistanceScale: 0.75 },
     water: {
       shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
-      refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fftSize: 128, fftCascades: 3,
+      refraction: true, refractionScale: 0.5, reflections: "planar", reflectionSteps: 6,
+      planarScale: 0.25, fftSize: 128, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 0.75, ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
@@ -199,7 +199,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     geometry: { autoLod: true, lodDistanceScale: 1.25 },
     water: {
       shadingDetail: "medium", meshDensity: 1, contactResolution: 512,
-      refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 12,
+      refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 12,
       planarScale: 0.5, fftSize: 256, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: false },
@@ -211,8 +211,8 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     geometry: { autoLod: true, lodDistanceScale: 1.5 },
     water: {
       shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
-      refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
-      planarScale: 0.5, fftSize: 256, fftCascades: 3,
+      refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 16,
+      planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
@@ -257,6 +257,13 @@ const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof Renderi
       planarScale: 0.5, fftSize, fftCascades: 3,
     }) as const),
     postprocessing: [{ resolutionScale: 0.75, ambientOcclusion: true, reflections: false, volumetricLighting: false }],
+  },
+  high: {
+    water: [{
+      shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
+      refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
+      planarScale: 0.5, fftSize: 256, fftCascades: 3,
+    }],
   },
 };
 /** `value` (labelled Custom) as its saved level's current values when it holds that level's values from an earlier release. */

@@ -450,15 +450,19 @@ it("compiles refraction and the screen-space march only into the copy's pass, fo
   expect(compiled(plain, objects)).toContain("#define SLATE_WATER\n");
   expect(compiled(plain, objects)).not.toContain("SLATE_WATER_REFRACTION\n");
   expect(compiled(plain, objects)).not.toContain("SLATE_WATER_SSR\n");
-  // Medium marches 12 steps; Low refracts and reflects the sky only.
+  // Planar's march on water that is not flat: Medium 12 steps, Low 6.
   quality("medium");
   const medium = (await plan())!;
   expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_SSR_STEPS 12\n");
   quality("low");
   const low = (await plan())!;
-  expect(compiled(sampling, low)).toContain("#define SLATE_WATER_REFRACTION\n");
-  expect(compiled(sampling, low)).not.toContain("SLATE_WATER_SSR\n");
-  expect(compiled(sampling, low)).toContain("#define SLATE_WATER_SSR_STEPS 0\n");
+  expect(compiled(sampling, low)).toContain("#define SLATE_WATER_SSR_STEPS 6\n");
+  // Refraction with Sky Only reflections compiles no march.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "sky" } }) });
+  const sky = (await plan())!;
+  expect(compiled(sampling, sky)).toContain("#define SLATE_WATER_REFRACTION\n");
+  expect(compiled(sampling, sky)).not.toContain("SLATE_WATER_SSR\n");
+  expect(compiled(sampling, sky)).toContain("#define SLATE_WATER_SSR_STEPS 0\n");
   // Without Water Refraction, reflecting the sky only, no copy is planned and the water compiles neither feature.
   updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
   expect(await plan()).toBeNull();

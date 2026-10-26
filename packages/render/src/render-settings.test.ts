@@ -130,7 +130,7 @@ it("resolves a followed Scene's water quality, as SceneLayers do through the wor
 
 it("reports device-clamped water features while keeping the requested quality", () => {
   const scene = fixture();
-  updateSceneRenderingSettings(scene, tier("high"));
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "screenSpace" } }) });
   const caps = scene.getEngine().getCaps();
   caps.textureFloatRender = false;
   caps.textureHalfFloatRender = false;
