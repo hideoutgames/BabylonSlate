@@ -78,7 +78,7 @@ export async function runStage(profile, command, args, options = {}) {
       await cp(process.env.FIXTURE_QUEUED_CACHE, process.env.FIXTURE_CACHE, { recursive: true });
     if (process.env.FIXTURE_QUEUE_CHANGE)
       await writeFile(join(repoRoot, 'apps/editor/src/main.js'), 'changed while queued');
-    if (process.env.FIXTURE_HOLD_BUILD) {
+    if (process.env.FIXTURE_HOLD_BUILD || process.env.FIXTURE_TERMINATE_AFTER_BUILD) {
       // Launch the real entry point as its own process, as the admitted stage does.
       const { spawn } = await import('node:child_process');
       const child = spawn(command, args, { env: process.env, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -116,6 +116,11 @@ export async function runPnpm(profile, args, options) {
   await writeFile(join(dist, 'assets/main.js'), await readFile(join(repoRoot, 'apps/editor/src/main.js')));
   if (process.env.FIXTURE_BUILD_CHANGE)
     await writeFile(join(repoRoot, 'apps/editor/src/main.js'), 'changed during compile');
+  if (process.env.FIXTURE_TERMINATE_AFTER_BUILD) {
+    // The cancellation lands after the last stage finished, before publishing.
+    process.kill(process.pid, 'SIGTERM');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 `,
     );
@@ -548,6 +553,18 @@ test("a terminated artifact build lets its running stage stop before it exits", 
     ),
     true,
   );
+});
+
+test("an artifact build terminated after its last stage publishes nothing", async (t) => {
+  const f = await fixture(t);
+  const directory = await f.worktree("terminated-after-build");
+  const result = await f.run(directory, { FIXTURE_TERMINATE_AFTER_BUILD: "1" });
+  assert.match(result.error ?? "", /aborted/);
+  assert.equal(
+    (await publishedArtifacts(join(directory, ".cache/test-build"))).length,
+    0,
+  );
+  assert.equal((await publishedArtifacts(f.cache)).length, 0);
 });
 
 test("a queued browser rejects changed source or damaged build files without starting another compilation", async (t) => {

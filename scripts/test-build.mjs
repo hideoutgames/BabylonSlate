@@ -216,12 +216,15 @@ export async function buildOwnedArtifact(options = {}) {
     await runPnpm("build", ["--filter", "player", "exec", "vite", "build"], stage);
     await runPnpm("build", ["--filter", "editor", "exec", "vite", "build"], stage);
   } else await runPnpm("build", ["--filter", "editor", "build"], stage);
-  const unchanged = () =>
-    assertUnchanged(
+  // A build cancelled after its last stage publishes nothing.
+  const unchanged = () => {
+    options.signal?.throwIfAborted();
+    return assertUnchanged(
       expected,
       process.env,
       "Source changed during the build; artifact rejected",
     );
+  };
   await unchanged();
   const published = await publishLocalArtifact(
     join(repoRoot, "apps", "editor", "dist"),
@@ -230,6 +233,7 @@ export async function buildOwnedArtifact(options = {}) {
     validArtifact,
     unchanged,
   );
+  options.signal?.throwIfAborted();
   await publishSharedArtifact(cache, published, expected, validArtifact);
   await writeFile(
     join(root, "latest.json"),
