@@ -115,7 +115,10 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
  * (`slateWaterSwellInfo.x`), the grid offset and the spectrum's.
  */
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = ["slateWaterSwellInfo", "slateWaterGridOffset", ...FFT_UNIFORMS];
-/** The surface's water clock in seconds (x), for a Custom Material's Water Waves node (`WaterVertexWaves.bind`). */
+/**
+ * The surface's water clock in seconds (x) and its foam drift in metres per second (yz, `waterFoamDrift`), for a Custom
+ * Material's Water Waves and Water Foam nodes (`WaterVertexWaves.bind`).
+ */
 export const WATER_CLOCK_UNIFORM = "slateWaterClock";
 /** `vertexWaveDefines` per blend state (off, on) and spectrum cascades (1-3): built once. */
 export const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((blend) =>

@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, RawTexture, Scene, StandardMaterial, Vector3, type PBRMaterial, type SubMesh, type UniformBuffer } from "@babylonjs/core";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
-import { RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
+import { RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, parseMirrorProperties, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { createMirrorSurfaceMesh } from "./mirrors";
 import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
 import { SharedOutlineOwner } from "./shared-outline";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
@@ -51,6 +52,34 @@ it("retains a live instance mask program across pruning and releases it with its
     mask.prune();
     await mask.whenReleased();
     expect(subMesh._getDrawWrapper(objects.renderPassId)).toBeUndefined();
+  } finally {
+    mask.dispose(); objects.dispose(); view.dispose();
+    await owner.whenReleased();
+    scene.dispose(); engine.dispose();
+  }
+});
+
+it("masks a Mirror surface with the built-in mirror material as opaque coverage", async () => {
+  // The mask pass prepares every mesh it draws, not only outlined ones, so a scene with outlines and a Mirror loads.
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
+  scene.activeCamera = camera;
+  const outlined = MeshBuilder.CreateBox("actor", {}, scene);
+  const mirror = createMirrorSurfaceMesh(scene, "mirror", parseMirrorProperties({ width: 2, height: 2 }));
+  const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
+  view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [outlined] }],
+    color: [1, 0, 0], width: 1 });
+  registerSharedOutlineShaders();
+  const objects = new ObjectRenderer("mask", scene);
+  objects.activeCamera = camera;
+  objects.renderList = [outlined, mirror];
+  const mask = new SharedOutlineMaskRenderer(objects, view, "strict");
+  try {
+    expect(objects.isReadyForRendering(80, 64)).toBe(true);
+    const defines = mirror.subMeshes[0]!._getDrawWrapper(objects.renderPassId)?.defines;
+    expect(defines).toBeTypeOf("string");
+    expect(defines).not.toContain("ALPHATEST");
   } finally {
     mask.dispose(); objects.dispose(); view.dispose();
     await owner.whenReleased();
