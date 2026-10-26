@@ -12,7 +12,7 @@ import {
   type PaletteNode,
 } from "@haptic/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
-import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
+import { isEditorGraphHost, type SerializedGraph, type SerializedScene } from "@haptic/core";
 import {
   Empty,
   EmptyDescription,
@@ -56,6 +56,7 @@ import {
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
+import { ownedActorsOfScene, ownedGetDiagnostics, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { GraphSteppingBar } from "../components/graph-stepping-bar";
@@ -155,6 +156,14 @@ export function GraphPanel(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
   );
+  // A SceneScript / SceneLayerScript names its owner's actors in Get <Actor> and Get <Component> (<Actor>).
+  const ownerActors = doc?.ref.kind === "scene" || doc?.ref.kind === "scene-layer"
+    ? (doc.content as SerializedScene | null)?.actors
+    : undefined;
+  const ownedActors = useMemo(
+    () => ownerActors ? ownedActorsOfScene({ actors: ownerActors }) : undefined,
+    [ownerActors],
+  );
   // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
   const runGraphId = activeFunctionId
     ? functionGraphExportName({
@@ -224,7 +233,7 @@ export function GraphPanel(
         }
       : graphContent;
     return hydrateSerializedGraphForEditor(
-      visible ??
+      (visible && ownedActors ? refreshOwnedGetNodes(visible, ownedActors) : visible) ??
         createDefaultLogicGraphSerialized(registry, {
           parentClass,
           parentOf,
@@ -251,6 +260,7 @@ export function GraphPanel(
     graphContent,
     indexed?.header.type,
     otherClassGraphs,
+    ownedActors,
     parentClass,
     parentOf,
     scriptInterfaces,
@@ -421,6 +431,10 @@ export function GraphPanel(
           otherClassGraphs,
           subsystemClasses,
         }),
+        ...(ownedActors
+          ? ownedGetDiagnostics(graphPayload, ownedActors, { assetGuid, graphId: documentId },
+            doc?.ref.kind === "scene" ? "Scene" : "Scene Layer")
+          : []),
         ...physicsPairingDiagnostics(
           [
             {
@@ -464,6 +478,7 @@ export function GraphPanel(
     focused,
     materialDomains,
     subsystemClasses,
+    ownedActors,
   ]);
 
   const paletteInput = {
@@ -485,6 +500,7 @@ export function GraphPanel(
     enums: typeAssets.enums,
     sceneDocuments,
     subsystemClasses,
+    ownedActors,
     animationGraphHost:
       doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
   };

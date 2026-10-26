@@ -251,6 +251,13 @@ export interface ScriptContext {
     actor: EngineObject | null | undefined,
     componentId: string,
   ): unknown;
+  /**
+   * Get <Actor> in a SceneScript / SceneLayerScript: the live actor this Scene
+   * or Scene Layer instance placed under the authored `actorId`, else null.
+   */
+  getOwnedActor(actorId: string): Actor | null;
+  /** Get <Component> (<Actor>): that actor's component with the authored `componentId`, else null. */
+  getOwnedComponent(actorId: string, componentId: string): ActorComponent | null;
   callComponentFunction(
     target: EngineObject | null | undefined,
     name: string,

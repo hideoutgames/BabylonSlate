@@ -24,6 +24,10 @@ import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   callInterfaceTitle,
   SUBSYSTEM_GET_NODE_ID,
+  OWNED_ACTOR_GET_NODE_ID,
+  OWNED_COMPONENT_GET_NODE_ID,
+  ownedActorGetTitle,
+  ownedComponentGetTitle,
   subsystemGetPaletteCategory,
   subsystemGetProperties,
   subsystemGetTitle,
@@ -67,6 +71,18 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   sceneDocuments?: readonly PaletteSceneDocument[];
   /** Project subsystem classes; each gets a Get <ClassId> row. */
   subsystemClasses?: readonly SubsystemClassEntry[];
+  /**
+   * A SceneScript's or SceneLayerScript's own actors: each gets a Get <Actor>
+   * row and each of its components a Get <Component> (<Actor>) row.
+   */
+  ownedActors?: readonly PaletteOwnedActor[];
+};
+
+export type PaletteOwnedActor = {
+  id: string;
+  name: string;
+  classId: string;
+  components: ReadonlyArray<{ id: string; classId: string; name?: string }>;
 };
 
 export type PaletteSceneDocument = {
@@ -641,6 +657,8 @@ function scenePlacedComponentRows(
   }> = [];
   for (const scene of options?.sceneDocuments ?? []) {
     const classId = sceneAssetClassId(scene.guid);
+    // In its own SceneScript, Get <Component> (<Actor>) rows name these components.
+    if (options?.ownedActors && classId === options.classId) continue;
     const entries = scene.actors.flatMap((actor) =>
       actor.components.map((component) => ({ actor, component })),
     );
@@ -719,6 +737,47 @@ export function castPaletteNodes(
       latent: def.latent,
       defaultData,
     };
+  });
+}
+
+/**
+ * Get <Actor> and Get <Component> (<Actor>) rows for the actors a SceneScript's
+ * Scene or a SceneLayerScript's layer places, in Outliner order.
+ */
+export function ownedGetPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const actorDef = nodeRegistry.get(OWNED_ACTOR_GET_NODE_ID);
+  const componentDef = nodeRegistry.get(OWNED_COMPONENT_GET_NODE_ID);
+  if (!actorDef || !componentDef) return [];
+  return (options?.ownedActors ?? []).flatMap((actor) => {
+    const actorData = { actorId: actor.id, actorName: actor.name, actorClassId: actor.classId };
+    return [
+      {
+        id: `${OWNED_ACTOR_GET_NODE_ID}:${actor.id}`,
+        nodeType: OWNED_ACTOR_GET_NODE_ID,
+        title: ownedActorGetTitle(actorData),
+        category: "scene-actors",
+        pins: actorDef.pins(actorData),
+        pure: actorDef.pure,
+        latent: actorDef.latent,
+        defaultData: { ...actorData },
+      },
+      ...actor.components.map((component) => {
+        const data = { ...actorData, componentId: component.id, componentName: component.name || prefabComponentLabel(component), componentClassId: component.classId };
+        return {
+          id: `${OWNED_COMPONENT_GET_NODE_ID}:${actor.id}:${component.id}`,
+          nodeType: OWNED_COMPONENT_GET_NODE_ID,
+          title: ownedComponentGetTitle(data),
+          category: "scene-actors",
+          pins: componentDef.pins(data),
+          pure: componentDef.pure,
+          latent: componentDef.latent,
+          defaultData: data,
+        };
+      }),
+    ];
   });
 }
 

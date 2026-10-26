@@ -22,6 +22,10 @@ import {
   callInterfaceTitle,
   isCallInterfaceMethodPin,
   SUBSYSTEM_GET_NODE_ID,
+  OWNED_ACTOR_GET_NODE_ID,
+  OWNED_COMPONENT_GET_NODE_ID,
+  ownedActorGetTitle,
+  ownedComponentGetTitle,
   subsystemGetClassId,
   subsystemGetTitle,
 } from "@haptic/scripting-nodes";
@@ -76,6 +80,8 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === "casting.cast" ||
     typeId === ASSET_REGISTRY_BY_CLASS_NODE_ID ||
     typeId === SUBSYSTEM_GET_NODE_ID ||
+    typeId === OWNED_ACTOR_GET_NODE_ID ||
+    typeId === OWNED_COMPONENT_GET_NODE_ID ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
     typeId === "enum.make" ||
@@ -398,6 +404,8 @@ export function hydratedNodeTitle(
   if (typeId === SUBSYSTEM_GET_NODE_ID) {
     return subsystemGetTitle(subsystemGetClassId(properties));
   }
+  if (typeId === OWNED_ACTOR_GET_NODE_ID) return ownedActorGetTitle(properties);
+  if (typeId === OWNED_COMPONENT_GET_NODE_ID) return ownedComponentGetTitle(properties);
   if (
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||

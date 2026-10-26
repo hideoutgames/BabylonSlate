@@ -23,6 +23,7 @@ import { projectNodes } from "./project";
 import { saveGameNodes } from "./save-game";
 import { gameInstanceNodes } from "./game-instance";
 import { subsystemNodes } from "./subsystem";
+import { sceneOwnedNodes } from "./scene-owned";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { scalabilityNodes } from "./scalability";
 import { renderTargetNodes } from "./render-target";
@@ -72,6 +73,7 @@ export * from "./project";
 export * from "./save-game";
 export * from "./game-instance";
 export * from "./subsystem";
+export * from "./scene-owned";
 export * from "./scene-layer";
 export * from "./render-target";
 export * from "./scalability";
@@ -124,6 +126,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...saveGameNodes,
     ...gameInstanceNodes,
     ...subsystemNodes,
+    ...sceneOwnedNodes,
     ...sceneLayerNodes,
     ...renderTargetNodes,
     ...scalabilityNodes,

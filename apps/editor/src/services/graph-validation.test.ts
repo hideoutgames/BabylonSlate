@@ -3540,6 +3540,25 @@ describe("subsystems", () => {
     expect(nodes.some((node) => node.id === "gameInstance.get")).toBe(false);
   });
 
+  it("offers a Scene's own script one Get row per placed actor and component, and drops its placed-component member rows", () => {
+    const sceneActors = [{ id: "hero", name: "Hero", classId: "Actor", components: [
+      { id: "body", classId: "MeshComponent", name: "Body" }, { id: "light", classId: "PointLightComponent", name: "Point Light" },
+    ] }];
+    const host = { parentClass: "Scene", classId: "Scene:level", parentOf,
+      sceneDocuments: [{ guid: "level", name: "Level", actors: [{ name: "Hero", components: [{ id: "body", classId: "MeshComponent" }] }] }] };
+    const nodes = scriptPaletteNodes(registry, { ...host, ownedActors: sceneActors });
+    const rows = nodes.filter((node) => (node.nodeType ?? node.id).startsWith("scene.getOwned"));
+    expect(rows.map((row) => [row.title, row.outOfContext ?? false])).toEqual([
+      ["Get Hero", false], ["Get Body (Hero)", false], ["Get Point Light (Hero)", false],
+    ]);
+    expect(rows[1]?.pins).toEqual([expect.objectContaining({ id: "component", type: objectRef("MeshComponent") })]);
+    expect(nodes.some((node) => node.nodeType === "variables.get" && node.defaultData?.componentId === "body")).toBe(false);
+    // Without its own actors (any other Class) there are no such rows, and the Scene's member rows stay.
+    const other = scriptPaletteNodes(registry, host);
+    expect(other.some((node) => (node.nodeType ?? node.id).startsWith("scene.getOwned"))).toBe(false);
+    expect(other.some((node) => node.nodeType === "variables.get" && node.defaultData?.componentId === "body")).toBe(true);
+  });
+
   it("never offers Cast to the hidden Subsystem base", () => {
     const ids = scriptPaletteNodes(registry, { parentClass: "Actor", parentOf, subsystemClasses }).map(
       (node) => node.id,

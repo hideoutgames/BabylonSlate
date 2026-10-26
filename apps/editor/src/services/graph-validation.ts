@@ -79,6 +79,7 @@ export {
   scriptPaletteNodes,
 } from "./script-palette";
 export type {
+  PaletteOwnedActor,
   PaletteSceneDocument,
   ScriptPaletteBuildOptions,
   ScriptPaletteOptions,

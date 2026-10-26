@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, type SerializedScene } from "@haptic/core";
 import { sceneAssetClassId, sceneLayerAssetClassId } from "@haptic/object-model";
+import { compileGraph, STRING, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { createDefaultNodeRegistry, OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -93,6 +95,64 @@ describe("SceneScript and SceneLayerScript", () => {
     }
     runtime.tick();
     expect(layers.map((layer) => layer.getVariable("ticks"))).toEqual([1, 1]);
+    runtime.stop();
+  });
+});
+
+describe("Get <Actor> and Get <Component> (<Actor>)", () => {
+  const registry = createDefaultNodeRegistry();
+  const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
+    id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties,
+  });
+  /** Begin Play logs the guid of the owner's `panel` actor and of its `panel-mesh` component. */
+  function referenceScript(classId: string, parentClassId: "Scene" | "SceneLayer"): CompiledScript {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("actor", OWNED_ACTOR_GET_NODE_ID, { actorId: "panel", actorName: "Panel", actorClassId: "Actor" }),
+        node("component", OWNED_COMPONENT_GET_NODE_ID, { actorId: "panel", actorName: "Panel", componentId: "panel-mesh", componentName: "Mesh", componentClassId: "MeshComponent" }),
+        node("missing", OWNED_ACTOR_GET_NODE_ID, { actorId: "gone", actorName: "Gone" }),
+        node("log", "debug.executeJavaScript", {
+          inputs: [{ name: "actor", type: STRING }, { name: "component", type: STRING }, { name: "missing", type: STRING }],
+          outputs: [],
+          body: 'ctx.log("log", "Script", "refs:" + ctx.self.guid + ":" + actor?.guid + ":" + component?.owner?.guid + ":" + component?.classId + ":" + missing);',
+        }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "actor", sourcePinId: "actor", targetNodeId: "log", targetPinId: "in_actor" },
+        { id: "e3", sourceNodeId: "component", sourcePinId: "component", targetNodeId: "log", targetPinId: "in_component" },
+        { id: "e4", sourceNodeId: "missing", sourcePinId: "actor", targetNodeId: "log", targetPinId: "in_missing" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: classId, registry });
+    return { classId, parentClassId, assetGuid: classId, source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints };
+  }
+
+  it("resolves the owner's own placed actor and component, per Scene Layer instance", async () => {
+    const commands: CommandMessage[] = [];
+    const panel = (classId: string) => createActor("panel", "Panel", { classId, components: [createMeshComponent("panel-mesh", "box")] });
+    const level = { ...scene("Level1", ["overlay", "overlay"]), actors: [panel("Actor")] };
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: level, playSceneGuid: "level-1",
+      sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [panel("SceneLayerActor")] } },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      referenceScript(sceneAssetClassId("level-1"), "Scene"),
+      referenceScript(sceneLayerAssetClassId("overlay"), "SceneLayer"),
+    ]);
+    runtime.realizePlayWorld();
+    const world = runtime.getWorld();
+    const references = logs(commands).filter((message) => message.startsWith("refs:"));
+    // The main Scene's `panel` is its own actor, never a layer's of the same authored id.
+    expect(references).toContain(`refs:${world.currentScene!.guid}:panel:panel:MeshComponent:null`);
+    for (const layer of world.getSceneLayers()) {
+      expect(references).toContain(`refs:${layer.guid}:${layer.guid}:panel:${layer.guid}:panel:MeshComponent:null`);
+    }
+    expect(references).toHaveLength(3);
     runtime.stop();
   });
 });

@@ -10,7 +10,7 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@haptic/object-model";
-import { SUBSYSTEM_GET_NODE_ID } from "@haptic/scripting-nodes";
+import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID } from "@haptic/scripting-nodes";
 
 export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.gameLoaded",
@@ -365,6 +365,10 @@ export function isScriptCatalogNodeAllowed(
   }
   // One Get <Subsystem> row per project subsystem class is injected instead.
   if (nodeId === SUBSYSTEM_GET_NODE_ID) {
+    return false;
+  }
+  // A SceneScript / SceneLayerScript gets one injected row per placed actor and component.
+  if (nodeId === OWNED_ACTOR_GET_NODE_ID || nodeId === OWNED_COMPONENT_GET_NODE_ID) {
     return false;
   }
   if (nodeId === "struct.break") {
