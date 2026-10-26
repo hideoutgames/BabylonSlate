@@ -1416,3 +1416,32 @@ it("edits slider visual asset slots independently and exposes ordered range valu
   const lower = rows.find(row => row.label === "Lower Value");
   expect(lower).toMatchObject({ kind: "number", value: 20, min: 10, max: 40 });
 });
+
+it("edits a Landscape's size, cells, collisions and landscape Material without exposing its heights or paint weights", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "terrain", classId: "LandscapeComponent",
+    properties: { ...defaultPropertiesFor("LandscapeComponent"), subdivisions: 4, materialGuid: "ground" } });
+  expect(rows.map((row) => row.label)).toEqual(["Size", "Cells", "Landscape Collisions", "Landscape Material"]);
+
+  const cells = rows.find((row) => row.label === "Cells");
+  if (cells?.kind !== "number") throw new Error("Missing Cells row");
+  cells.onChange(8);
+  // The height and weight grids are resampled in the same edit as the resolution.
+  expect(update).toHaveBeenLastCalledWith("subdivisions", 8, {
+    heights: expect.any(Array),
+    weights: expect.any(Array),
+  });
+  const alsoSet = update.mock.lastCall![2] as { heights: number[]; weights: number[] };
+  expect([alsoSet.heights.length, alsoSet.weights.length]).toEqual([81, 81 * 4]);
+
+  const material = rows.find((row) => row.label === "Landscape Material");
+  if (material?.kind !== "asset") throw new Error("Missing Landscape Material row");
+  expect(material.value).toBe("ground");
+  material.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "materialGuid", materialDomain: "landscape" }));
+});
+
+it("shows no raw Foliage instance data or group id", () => {
+  const { rows } = rowsFor({ id: "grass", classId: "FoliageComponent",
+    properties: { groupId: "group-1", batches: [{ modelGuid: "m", transforms: [[0, 0, 0, 0, 1]] }] } });
+  expect(rows).toEqual([]);
+});

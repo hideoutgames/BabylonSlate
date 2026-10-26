@@ -704,7 +704,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.materialDomain === "text" ? pickerAssets.filter((asset) => materialDomains[asset.guid] === "text") : assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
+        assets={assetPick?.materialDomain ? pickerAssets.filter((asset) => materialDomains[asset.guid] === assetPick.materialDomain) : assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
@@ -716,7 +716,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
-          if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
+          if (guid && assetPick.materialDomain && materialDomains[guid] !== assetPick.materialDomain) return;
           const { componentId, property } = assetPick;
           if (property === "sceneGuid" && actor.components.some((candidate) => candidate.id === componentId && candidate.classId === "SceneStreamingComponent")) {
             updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, componentId, guid, assetLabel(guid) ?? "") }));
