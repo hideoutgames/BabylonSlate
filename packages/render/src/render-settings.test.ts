@@ -207,15 +207,15 @@ it("tells CEL surfaces once per change whether reflections run, after the plan i
   state.listeners.add((mode) => seen.push([mode, state.celReflections, state.effectsPlan?.reflections != null]));
   const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
   state.qualityOverrides = qualityPresetPatch("high");
-  // Entering CEL with the opt-in on is one change: a surface rebuilds once, already reflective.
-  updateSceneRenderingSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({ reflectionsEnabled: true }), effects });
+  // Entering CEL with the project's Real-Time Reflections on is one change: a surface rebuilds once, already reflective.
+  updateSceneRenderingSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({}), effects });
   expect(seen).toEqual([["cel", true, true]]);
   updateSceneRenderingSettings(scene);
   expect(seen).toHaveLength(1);
-  // A scene override, the quality tier and the session toggle each stop reflections.
-  updateSceneRenderingSettings(scene, undefined, { reflectionsEnabled: false });
+  // The project effect, the quality tier and the session toggle each stop reflections.
+  updateSceneRenderingSettings(scene, { mode: "cel", effects: DEFAULT_RENDER_EFFECTS });
   expect(seen.at(-1)).toEqual(["cel", false, false]);
-  updateSceneRenderingSettings(scene, undefined, {});
+  updateSceneRenderingSettings(scene, { mode: "cel", effects });
   expect(seen.at(-1)).toEqual(["cel", true, true]);
   state.qualityOverrides = qualityPresetPatch("low");
   updateSceneRenderingSettings(scene);
@@ -227,14 +227,8 @@ it("tells CEL surfaces once per change whether reflections run, after the plan i
   expect(seen.slice(-2)).toEqual([["cel", true, true], ["cel", false, false]]);
   setSceneEffectsEnabled(scene, true);
   // PBR reflections never mark CEL surfaces reflective.
-  updateSceneRenderingSettings(scene, { mode: "pbr", cel: normalizeCelShadingSettings({ reflectionsEnabled: true }), effects });
+  updateSceneRenderingSettings(scene, { mode: "pbr", cel: normalizeCelShadingSettings({}), effects });
   expect(seen.at(-1)).toEqual(["pbr", false, true]);
-  // Without the opt-in CEL draws no reflections, so the quality tier skips none.
-  updateSceneRenderingSettings(scene, { mode: "cel", effects });
-  state.qualityOverrides = qualityPresetPatch("low");
-  updateSceneRenderingSettings(scene);
-  expect(state.celReflections).toBe(false);
-  expect(sceneEffectsQualityLimits(scene)).toEqual([]);
 });
 
 it("applies CEL Reflection Textures only while CEL reflections run", () => {
@@ -243,7 +237,7 @@ it("applies CEL Reflection Textures only while CEL reflections run", () => {
   let changes = 0;
   state.listeners.add(() => changes++);
   const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
-  const cel = normalizeCelShadingSettings({ reflectionsEnabled: true, reflectionTexturesEnabled: true });
+  const cel = normalizeCelShadingSettings({ reflectionTexturesEnabled: true });
   state.qualityOverrides = qualityPresetPatch("high");
   updateSceneRenderingSettings(scene, { mode: "cel", cel, effects });
   expect([state.celReflectionTextures, changes]).toEqual([true, 1]);
