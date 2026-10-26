@@ -4,7 +4,8 @@
  */
 import { ThinTexture } from "@babylonjs/core";
 import {
-  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, waterFoamScale, waterFoamThreshold, waterSpectrum, type WaterDefinition, type WaterShadingDetail,
+  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold, waterSpectrum, type WaterDefinition,
+  type WaterShadingDetail,
   type WaterSpectrum,
 } from "@haptic/core";
 
@@ -201,3 +202,18 @@ export const SPECTRUM_FOAM_SCALE = 2.4;
  * glassy.
  */
 export const EDGE_FOAM_CALM = -0.5;
+
+/** Share of the wind sea's peak phase speed at which foam patterns drift downwind, as foam on a real sea does. */
+export const FOAM_DRIFT_SHARE = 0.03;
+/**
+ * Velocity (metres per second of water time, world x and z) at which a body's foam patterns drift with its waves: along
+ * Wave Direction, `FOAM_DRIFT_SHARE` of the peak wave's phase speed at Wave Speed, scaled by Wave Scale up to 1, so calm
+ * water keeps its foam in place. Built-in water and the Water Foam node add it to the current.
+ */
+export function waterFoamDrift(water: WaterDefinition, waveScale: number, out: { x: number; z: number }): { x: number; z: number } {
+  const speed = FOAM_DRIFT_SHARE * Math.sqrt(WATER_SPECTRUM_GRAVITY * Math.max(water.waveLength, 0) / (2 * Math.PI)) * water.waveSpeed
+    * Math.min(1, Math.max(0, waveScale));
+  const heading = water.waveDirection * Math.PI / 180;
+  out.x = Math.cos(heading) * speed; out.z = Math.sin(heading) * speed;
+  return out;
+}

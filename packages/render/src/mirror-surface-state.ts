@@ -1,4 +1,4 @@
-import { Matrix, Vector3, type AbstractMesh, type ThinTexture } from "@babylonjs/core";
+import { Matrix, Vector3, type AbstractMesh, type Material, type ThinTexture } from "@babylonjs/core";
 
 /** What a Mirror surface's material samples: written by the scene's mirror owner, read by Mirror Reflection blocks. */
 export interface MirrorReflectionBinding {
@@ -26,6 +26,18 @@ export function createMirrorReflectionBinding(mesh: AbstractMesh, tint: [number,
 
 export function mirrorReflectionBinding(mesh: AbstractMesh | null | undefined): MirrorReflectionBinding | undefined {
   return mesh ? bindings.get(mesh) : undefined;
+}
+
+const builtInMirrorMaterials = new WeakSet<Material>();
+
+/** Marks a scene's built-in mirror surface material (`builtInMirrorMaterial`). */
+export function markBuiltInMirrorMaterial(material: Material): void {
+  builtInMirrorMaterials.add(material);
+}
+
+/** The engine's own mirror surface material: opaque and unlit, so its coverage is its geometry's. */
+export function isBuiltInMirrorMaterial(material: Material): boolean {
+  return builtInMirrorMaterials.has(material);
 }
 
 /** A Mirror component's surface: Mirror Reflection reads its reflection here and outputs black on any other mesh. */

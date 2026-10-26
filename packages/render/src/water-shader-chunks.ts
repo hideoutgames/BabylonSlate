@@ -42,7 +42,8 @@ float swNoise(vec2 p) {
  * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
  * water is about 1.6 `width` deep (between 1 and 2.4 along the shore), with bands that wash in toward the shore, out of
  * step along it. `<prefix>ContactFoamAmount(p, t, dist, width)` is an object's: a tight band at its waterline, thinning
- * out within 0.3 to 1.2 `width`, varying along the object and slowly over time, so no even ring surrounds it.
+ * out within 0.3 to 1.2 `width`, varying along the object, so no even ring surrounds it. Every pattern moves only with
+ * `p`, which the caller flows with the current and the waves' downwind drift.
  */
 export function edgeFoamHelpers(prefix: string): string {
   return `
@@ -65,8 +66,8 @@ float ${prefix}ShoreFoamAmount(vec2 p, float t, float depth, float width) {
 }
 float ${prefix}ContactFoamAmount(vec2 p, float t, float dist, float width) {
   float band = 1.0 - smoothstep(0.03, 0.05 + width * 0.05, dist);
-  float close = 1.0 - smoothstep(0.0, width * mix(0.3, 1.2, ${prefix}Noise(p * 0.25 + vec2(t * 0.03, 4.4))), dist);
-  return max(close * close * 0.8, band * 0.9);
+  float close = 1.0 - smoothstep(0.0, width * mix(0.3, 1.2, ${prefix}Noise(p * 0.25 + vec2(0.0, 4.4))), dist);
+  return max(close * close * 0.7, band * 0.82);
 }
 `;
 }
@@ -612,7 +613,8 @@ float swAirKeep = 1.0;
 #endif
 float swAirOn = 1.0 - S.projection[3][3];
 float swAir = 1.0 - (1.0 - (1.0 - exp(-swEyeDist * U.slateWaterHaze.x)) * swAirKeep * swAirOn) * (1.0 - smoothstep(U.slateWaterHaze.y, U.slateWaterHaze.z, swEyeDist) * swAirOn);
-vec2 swFlowed = swWorld - IN.vSlateWaterFlow.xy * swTime;
+// Foam patterns ride the current and drift downwind with the waves (\`waterFoamDrift\`).
+vec2 swFlowed = swWorld - (IN.vSlateWaterFlow.xy + U.slateWaterMotion.yz) * swTime;
 // Rest (Lagrangian) point relative to the floating origin: the interpolated offset is exact on the displaced triangle.
 vec2 swRest = IN.vPositionW.xz - IN.vSlateWaterFlow.zw;
 vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
@@ -677,7 +679,7 @@ float swFoamAt = swFoamSum * U.slateWaterTerms.z;
 float swCrestPast = swFoamAt - U.slateWaterShape.x;
 float swCrestRaw = swCrestPast * ${f(SPECTRUM_FOAM_SCALE)};
 // Fine bubbly breakup drifting with the water, faded before it would alias.
-float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9 + vec2(swTime * 0.05, 0.0)) * 0.65 + swNoise(swFlowed * 3.1 - vec2(0.0, swTime * 0.08)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swFoot));
+float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9) * 0.65 + swNoise(swFlowed * 3.1 + vec2(5.3, 1.9)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swFoot));
 // Many patches away the foam's repeat would show as a grid of the same caps: it fades out there (beyond a kilometre or
 // two for a sea of 20 m waves, a few metres for ripples).
 float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swEyeDist * swSc0.x);
